@@ -198,10 +198,15 @@ export function SalesDashboard() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {formatDistanceToNow(new Date(sale.timestamp), { 
-                          addSuffix: true,
-                          locale: es 
-                        })}
+                        {(() => {
+                          const date = new Date(sale.timestamp);
+                          return isNaN(date.getTime()) 
+                            ? 'Fecha inválida'
+                            : formatDistanceToNow(date, { 
+                                addSuffix: true,
+                                locale: es 
+                              });
+                        })()}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -271,10 +276,15 @@ export function SalesDashboard() {
                 <p className="font-bold">₡{selectedSale.total.toLocaleString()}</p>
               </div>
               <div className="col-span-2 text-sm text-muted-foreground">
-                {formatDistanceToNow(new Date(selectedSale.timestamp), { 
-                  addSuffix: true,
-                  locale: es 
-                })}
+                {(() => {
+                  const date = new Date(selectedSale.timestamp);
+                  return isNaN(date.getTime())
+                    ? 'Fecha inválida'
+                    : formatDistanceToNow(date, { 
+                        addSuffix: true,
+                        locale: es 
+                      });
+                })()}
               </div>
             </div>
           )}

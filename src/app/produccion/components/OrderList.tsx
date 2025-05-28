@@ -76,10 +76,15 @@ export function OrderList({ orders, onSelectOrder, loading, error }: OrderListPr
             <TableCell>
               <div>
                 <p className="text-sm">
-                  {formatDistanceToNow(new Date(order.timestamp), {
-                    addSuffix: true,
-                    locale: es
-                  })}
+                  {(() => {
+                    const date = new Date(order.timestamp);
+                    return isNaN(date.getTime())
+                      ? 'Fecha inválida'
+                      : formatDistanceToNow(date, {
+                          addSuffix: true,
+                          locale: es
+                        });
+                  })()}
                 </p>
                 {order.orderType === 'EA' ? (
                   <p className="text-xs text-muted-foreground">Espera: {order.expectedDate}</p>

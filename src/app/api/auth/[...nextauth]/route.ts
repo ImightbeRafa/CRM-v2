@@ -20,7 +20,7 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user }) {
       return user.email === ALLOWED_EMAIL
     },
-    async session({ session, token }) {
+    async session({ session }) {
       if (!session?.user?.email) return { expires: "" }
       if (session.user.email !== ALLOWED_EMAIL) {
         return { expires: "" }

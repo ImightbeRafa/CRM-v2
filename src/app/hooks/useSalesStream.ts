@@ -19,7 +19,21 @@ export function useSalesStream({
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const parseOrder = useCallback((data: any): Sale => {
+  // Clear cache on component mount
+  useEffect(() => {
+    localStorage.removeItem('salesCache');
+  }, []);
+
+  const parseOrder = useCallback((data: any): Sale | null => {
+    // Validate required fields and format
+    if (!data.orderId || typeof data.orderId !== 'string' || !data.orderId.match(/^(EA|RA)\d{4}$/)) {
+      console.warn('Invalid order format:', data);
+      return null;
+    }
+
+    // Debug log for each order being parsed
+    console.log('Parsing order:', data);
+    
     const commonFields = {
       orderId: data.orderId || '',
       status: data.status || 'Pendiente',
@@ -57,7 +71,7 @@ export function useSalesStream({
         shippingCost: Number(data.shippingCost) || 0,
         iva: Number(data.iva) || 0,
       };
-    } else {
+    } else if (data.orderType === 'RA') {
       return {
         ...commonFields,
         orderType: 'RA',
@@ -69,10 +83,13 @@ export function useSalesStream({
         address: data.address || '',
       };
     }
+    
+    return null;
   }, []);
   
   const fetchSales = useCallback(async () => {
     try {
+      console.log('Fetching sales data...');
       const response = await fetch('/api/sales/stream', {
         headers: {
           'Cache-Control': 'no-cache',
@@ -84,20 +101,35 @@ export function useSalesStream({
       }
 
       const result = await response.json();
+      console.log('Received data:', result);
       
       if (result.status === 'error') {
         throw new Error(result.error || 'Unknown error');
       }
 
-      const parsedSales = result.data.map(parseOrder);
+      // Filter out invalid orders and parse valid ones
+      const parsedSales: Sale[] = result.data
+        .map(parseOrder)
+        .filter((sale: Sale | null): sale is Sale => sale !== null);
 
+      console.log('Parsed sales:', parsedSales);
+
+      // Deduplicate sales by orderId
+      const uniqueSales: Sale[] = Array.from(
+        new Map(parsedSales.map((sale: Sale) => [sale.orderId, sale])).values()
+      );
+      console.log('Unique sales after deduplication:', uniqueSales);
+
+      // Clear existing cache
+      localStorage.removeItem('salesCache');
+      
       localStorage.setItem('salesCache', JSON.stringify({
-        data: parsedSales,
+        data: uniqueSales,
         timestamp: Date.now()
       }));
 
-      setSales(parsedSales);
-      onData?.(parsedSales);
+      setSales(uniqueSales);
+      onData?.(uniqueSales);
       setError(null);
       
     } catch (err) {
@@ -117,17 +149,6 @@ export function useSalesStream({
   }, [onData, onError, toast, parseOrder]);
 
   useEffect(() => {
-    const cachedData = localStorage.getItem('salesCache');
-    if (cachedData) {
-      const { data, timestamp } = JSON.parse(cachedData);
-      const isCacheValid = Date.now() - timestamp < 60000;
-      
-      if (isCacheValid) {
-        setSales(data);
-        setIsLoading(false);
-      }
-    }
-    
     fetchSales();
   }, [fetchSales]);
 

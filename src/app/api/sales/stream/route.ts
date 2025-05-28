@@ -93,7 +93,6 @@ function parsePipeDelimitedData(text: string): SaleData[] {
         }
       });
   } catch (error) {
-    console.error('Error parsing pipe-delimited data:', error);
     throw new Error('Failed to parse sales data');
   }
 }
@@ -123,7 +122,6 @@ export async function GET() {
 
     const text = await response.text();
     
-    // Try to parse as JSON first
     try {
       const data = JSON.parse(text);
       if (data.status === 'error') {
@@ -131,7 +129,6 @@ export async function GET() {
       }
       return NextResponse.json(data);
     } catch (jsonError) {
-      // If JSON parsing fails, try pipe-delimited format
       const sales = parsePipeDelimitedData(text);
       return NextResponse.json({
         status: 'success',
@@ -139,7 +136,6 @@ export async function GET() {
       });
     }
   } catch (error) {
-    console.error('Sales Stream API Error:', error);
     return NextResponse.json(
       {
         status: 'error',

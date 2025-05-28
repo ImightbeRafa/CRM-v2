@@ -171,84 +171,97 @@ function processRAOrder(rawData, sheet) {
   }
 }
 
-
-
 // Dashboard data processing
 function getAllSales() {
   try {
-    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const eaSheet = spreadsheet.getSheetByName('EA');
-    const raSheet = spreadsheet.getSheetByName('RA');
-    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const eaSheet = ss.getSheetByName('EA');
+    const raSheet = ss.getSheetByName('RA');
+
     if (!eaSheet || !raSheet) {
-      throw new Error('Required sheets (EA and/or RA) not found');
+      throw new Error('Required sheets not found');
     }
-    
+
     // Get EA sales with full field mapping
     const eaData = eaSheet.getDataRange().getValues();
     const eaHeaders = eaData[0];
-    const eaSales = eaData.slice(1).map(row => ({
-      orderId: row[0] || '',                    // Column 1 - EA
-      status: row[1] || 'Pendiente',            // Estado
-      delivery: row[2] || '',                   // Entrega
-      expectedDate: row[3] || '',               // Fecha Esperada
-      saleDate: row[4] || '',                   // Dia de Venta
-      courier: row[5] || '',                    // Mensajeria
-      seller: row[6] || '',                     // Vendedor
-      customerName: row[7] || '',               // Cliente
-      username: row[8] || '',                   // Usuario
-      phone: row[9] || '',                      // Telefono
-      email: row[10] || '',                     // Correo
-      province: row[11] || '',                  // Provincia
-      canton: row[12] || '',                    // Canton
-      district: row[13] || '',                  // Distrito
-      address: row[14] || '',                   // Direccion
-      business: row[15] || 'No especificado',   // Negocio
-      product: row[16] || '',                   // Producto
-      quantity: Number(row[17]) || 0,           // Cantidad
-      size: row[18] || '',                      // Tamaño
-      color: row[19] || '',                     // Color
-      packaging: row[20] || '',                 // Empaque
-      customization: row[21] || '',             // Personalizado
-      comments: row[22] || '',                  // Comentario
-      productCost: Number(row[23]) || 0,        // Costo Producto
-      shippingCost: Number(row[24]) || 0,       // Envio
-      iva: Number(row[25]) || 0,                // IVA
-      total: Number(row[26]) || 0,              // Total
-      timestamp: row[27] || '',                 // TimeStamp
-      funnel: row[28] || 'No especificado',     // Funnel
-      orderType: 'EA'                           // Order Type
-    }));
+    const eaSales = eaData.slice(1)
+      .filter(row => row[0] && String(row[0]).match(/^EA\d{4}$/)) // Validate EA order IDs
+      .map(row => ({
+        orderId: row[0] || '',                    // Column 1 - EA
+        status: row[1] || 'Pendiente',            // Estado
+        delivery: row[2] || '',                   // Entrega
+        customerName: row[3] || '',               // Nombre
+        username: row[4] || '',                   // Usuario
+        phone: row[5] || '',                      // Teléfono
+        email: row[6] || '',                      // Correo
+        expectedDate: row[7] || '',               // Fecha Esperada
+        saleDate: row[8] || '',                   // Fecha Venta
+        courier: row[9] || '',                    // Mensajería
+        seller: row[10] || '',                    // Vendedor
+        province: row[11] || '',                  // Provincia
+        canton: row[12] || '',                    // Cantón
+        district: row[13] || '',                  // Distrito
+        address: row[14] || '',                   // Dirección
+        business: row[15] || 'No especificado',   // Negocio
+        product: row[16] || '',                   // Producto
+        quantity: Number(row[17]) || 0,           // Cantidad
+        size: row[18] || '',                      // Tamaño
+        color: row[19] || '',                     // Color
+        packaging: row[20] || '',                 // Empaque
+        customization: row[21] || '',             // Personalizado
+        comments: row[22] || '',                  // Comentario
+        productCost: Number(row[23]) || 0,        // Costo Producto
+        shippingCost: Number(row[24]) || 0,       // Costo Envío
+        iva: Number(row[25]) || 0,                // IVA
+        total: Number(row[26]) || 0,              // Total
+        timestamp: row[27] || '',                 // TimeStamp
+        funnel: row[28] || 'No especificado',     // Funnel
+        orderType: 'EA'                           // Order Type
+      }));
 
     // Get RA sales with full field mapping
     const raData = raSheet.getDataRange().getValues();
     const raHeaders = raData[0];
-    const raSales = raData.slice(1).map(row => ({
-      orderId: row[0] || '',                    // Column 1 - RA
-      status: row[1] || 'Pendiente',            // Estado
-      delivery: row[2] || '',                   // Entrega
-      seller: row[3] || '',                     // Vendedor
-      customerName: row[4] || '',               // Nombre
-      username: row[5] || '',                   // Usuario
-      phone: row[6] || '',                      // Teléfono
-      email: row[7] || '',                      // Correo
-      agreedDate: row[8] || '',                 // Fecha Acordada
-      pickupDate: row[9] || '',                 // Fecha Retirada
-      business: row[10] || 'No especificado',   // Negocio
-      product: row[11] || '',                   // Producto
-      quantity: Number(row[12]) || 0,           // Cantidad
-      size: row[13] || '',                      // Tamaño
-      color: row[14] || '',                     // Color
-      packaging: row[15] || '',                 // Empaque
-      customization: row[16] || '',             // Personalizado
-      comments: row[17] || '',                  // Comentario
-      productCost: Number(row[18]) || 0,        // Costo Producto
-      iva: Number(row[19]) || 0,                // IVA
-      total: Number(row[20]) || 0,              // Total
-      timestamp: row[21] || '',                 // TimeStamp
-      funnel: row[22] || 'No especificado',     // Funnel
-      orderType: 'RA'                           // Order Type
-    }));
+    const raSales = raData.slice(1)
+      .filter(row => row[0] && String(row[0]).match(/^RA\d{4}$/)) // Validate RA order IDs
+      .map(row => ({
+        orderId: row[0] || '',                    // Column 1 - RA
+        status: row[1] || 'Pendiente',            // Estado
+        delivery: row[2] || '',                   // Entrega
+        seller: row[3] || '',                     // Vendedor
+        customerName: row[4] || '',               // Nombre
+        username: row[5] || '',                   // Usuario
+        phone: row[6] || '',                      // Teléfono
+        email: row[7] || '',                      // Correo
+        agreedDate: row[8] || '',                 // Fecha Acordada
+        pickupDate: row[9] || '',                 // Fecha Retirada
+        business: row[10] || 'No especificado',   // Negocio
+        product: row[11] || '',                   // Producto
+        quantity: Number(row[12]) || 0,           // Cantidad
+        size: row[13] || '',                      // Tamaño
+        color: row[14] || '',                     // Color
+        packaging: row[15] || '',                 // Empaque
+        customization: row[16] || '',             // Personalizado
+        comments: row[17] || '',                  // Comentario
+        productCost: Number(row[18]) || 0,        // Costo Producto
+        iva: Number(row[19]) || 0,                // IVA
+        total: Number(row[20]) || 0,              // Total
+        timestamp: row[21] || '',                 // TimeStamp
+        funnel: row[22] || 'No especificado',     // Funnel
+        orderType: 'RA'                           // Order Type
+      }));
+
+    // Log any invalid orders for debugging
+    const invalidEaOrders = eaData.slice(1).filter(row => !row[0] || !String(row[0]).match(/^EA\d{4}$/));
+    const invalidRaOrders = raData.slice(1).filter(row => !row[0] || !String(row[0]).match(/^RA\d{4}$/));
+    
+    if (invalidEaOrders.length > 0) {
+      logToSheet('Invalid EA orders found: ' + JSON.stringify(invalidEaOrders));
+    }
+    if (invalidRaOrders.length > 0) {
+      logToSheet('Invalid RA orders found: ' + JSON.stringify(invalidRaOrders));
+    }
 
     // Combine and sort all sales by timestamp
     const allSales = [...eaSales, ...raSales].sort((a, b) => 

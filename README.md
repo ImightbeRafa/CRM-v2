@@ -104,6 +104,23 @@ npx prisma studio
 - Mejoras de UX
 - Limpieza de código
 
+## 📄 Licencia
+
+Este proyecto está licenciado bajo la **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+
+### ✅ Permisos
+- **Uso libre** para fines no comerciales
+- **Colaboración** y contribuciones
+- **Modificación** y mejora del código
+- **Distribución** del código fuente
+
+### ❌ Restricciones
+- **No comercialización** del software
+- **No creación** de productos derivados comerciales
+- **No forking** para fines lucrativos
+
+Para más detalles, consulta el archivo [LICENSE](LICENSE).
+
 ---
 
 **Betsy CRM** - Sistema moderno para gestión de ventas y producción

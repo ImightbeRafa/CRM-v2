@@ -15,6 +15,7 @@ import { OrderList } from './OrderList';
 import { OrderDetails } from './OrderDetail';
 import { Sale } from '../types/sales';
 import { Loader2 } from 'lucide-react';
+import { Loading, LoadingCard } from "@/app/components/ui/loading";
 import { useToast } from "@/app/hooks/use-toast";
 import { GuiaGenerator } from './GuiaGenerator';
 import { Button } from "@/app/components/ui/button";

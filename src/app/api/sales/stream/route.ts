@@ -97,51 +97,23 @@ function parsePipeDelimitedData(text: string): SaleData[] {
   }
 }
 
+import { prisma } from '@/lib/db'
+
 export async function GET() {
-  if (!process.env.NEXT_PUBLIC_SCRIPT_URL) {
+  try {
+    const orders = await prisma.order.findMany({
+      orderBy: { timestamp: 'desc' }
+    })
+    return NextResponse.json({ status: 'success', data: orders })
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : ''
+    // Handle missing table during first run before migrations
+    if (error?.code === 'P2021' || message.includes('no such table')) {
+      return NextResponse.json({ status: 'success', data: [] })
+    }
     return NextResponse.json(
-      { error: 'Script URL not configured' },
+      { status: 'error', error: message || 'Failed to fetch sales data' },
       { status: 500 }
     )
-  }
-
-  try {
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_SCRIPT_URL}?type=list`,
-      {
-        headers: {
-          'Cache-Control': 'no-cache',
-        },
-        next: { revalidate: 0 }
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const text = await response.text();
-    
-    try {
-      const data = JSON.parse(text);
-      if (data.status === 'error') {
-        throw new Error(data.error || 'Unknown error from server');
-      }
-      return NextResponse.json(data);
-    } catch (jsonError) {
-      const sales = parsePipeDelimitedData(text);
-      return NextResponse.json({
-        status: 'success',
-        data: sales
-      });
-    }
-  } catch (error) {
-    return NextResponse.json(
-      {
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Failed to fetch sales data'
-      },
-      { status: 500 }
-    );
   }
 }

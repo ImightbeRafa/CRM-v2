@@ -26,7 +26,7 @@ export function useSalesStream({
 
   const parseOrder = useCallback((data: any): Sale | null => {
     // Validate required fields and format
-    if (!data.orderId || typeof data.orderId !== 'string' || !data.orderId.match(/^(EA|RA)\d{4}$/)) {
+    if (!data.orderId || typeof data.orderId !== 'string' || !data.orderId.match(/^(EA|RA)-\d{4}-\d{3}$/)) {
       console.warn('Invalid order format:', data);
       return null;
     }

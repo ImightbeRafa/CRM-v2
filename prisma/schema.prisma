@@ -1,0 +1,184 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Order {
+  id           String   @id @default(cuid())
+  orderId      String   @unique
+  orderType    String   // 'EA' | 'RA'
+  status       String
+  delivery     String?
+  timestamp    DateTime @default(now())
+  // Customer
+  customerName String
+  username     String?
+  phone        String?
+  email        String?
+  business     String?
+  // Product
+  product      String?
+  quantity     Int      @default(0)
+  size         String?
+  color        String?
+  packaging    String?
+  customization String?
+  comments     String?
+  // Financial
+  total        Float    @default(0)
+  iva          Float?   // VAT
+  shippingCost Float? 
+  productCost  Float?
+  funnel       String?
+  // EA-specific
+  expectedDate String?
+  saleDate     String?
+  courier      String?
+  // Shared seller field used by both types
+  seller       String?
+  province     String?
+  canton       String?
+  district     String?
+  address      String?
+  // RA-specific
+  agreedDate   String?
+  pickupDate   String?
+
+  @@index([status])
+  @@index([orderType])
+  @@index([timestamp])
+  @@index([customerName])
+  @@index([seller])
+  @@index([saleDate])
+}
+
+// Modular product configuration for dynamic fields and options
+model ProductField {
+  id        String  @id @default(cuid())
+  key       String  @unique
+  label     String
+  type      FieldType
+  required  Boolean @default(false)
+  order     Int     @default(0)
+  // If the field uses an option set (for select/multiselect)
+  optionSet ProductOptionSet? @relation(fields: [optionSetId], references: [id])
+  optionSetId String?
+  multiSelect Boolean @default(false)
+  active    Boolean @default(true)
+
+  @@index([active])
+  @@index([order])
+}
+
+model ProductOptionSet {
+  id      String          @id @default(cuid())
+  key     String          @unique
+  name    String
+  options ProductOption[]
+  fields  ProductField[]
+  active  Boolean         @default(true)
+
+  @@index([active])
+}
+
+model ProductOption {
+  id        String           @id @default(cuid())
+  set       ProductOptionSet @relation(fields: [setId], references: [id])
+  setId     String
+  label     String
+  value     String
+  priceDelta Float           @default(0)
+  metadata  Json?
+  active    Boolean          @default(true)
+
+  @@index([setId])
+  @@index([active])
+}
+
+model ShippingMethod {
+  id         String  @id @default(cuid())
+  name       String
+  carrier    String?
+  basePrice  Float   @default(0)
+  active     Boolean @default(true)
+
+  @@index([active])
+}
+
+model Seller {
+  id     String  @id @default(cuid())
+  name   String  @unique
+  active Boolean @default(true)
+
+  @@index([active])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String   // Hashed password
+  role      UserRole @default(REGULAR)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+  @@index([role])
+}
+
+enum FieldType {
+  text
+  number
+  select
+  multiselect
+  boolean
+}
+
+enum UserRole {
+  MASTER
+  REGULAR
+}
+
+// Audit trail for tracking all data changes
+model AuditLog {
+  id          String      @id @default(cuid())
+  action      AuditAction
+  entityType  String      // 'order', 'user', 'field', 'optionSet', 'option', etc.
+  entityId    String      // ID of the affected entity
+  entityName  String?     // Human-readable name of the entity
+  oldValues   Json?       // Previous values (for updates)
+  newValues   Json?       // New values (for creates/updates)
+  reason      String?     // Reason for the change (especially for deletions)
+  userId      String      // ID of the user who made the change
+  userName    String      // Username for display
+  userRole    UserRole    // Role of the user who made the change
+  timestamp   DateTime    @default(now())
+  ipAddress   String?     // IP address of the user
+  userAgent   String?     // Browser/device info
+  
+  @@index([action])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([userId])
+  @@index([timestamp])
+  @@index([userRole])
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  BULK_DELETE
+  BULK_UPDATE
+  BULK_TOGGLE
+  LOGIN
+  LOGOUT
+  EXPORT
+  IMPORT
+}
+
+

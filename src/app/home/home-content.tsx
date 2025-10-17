@@ -2,6 +2,7 @@
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { MasterMenu } from "../components/MasterMenu";
 import LogoutButton from "@/app/components/LogoutButton";
 
 export default function HomeContent() {
@@ -46,9 +47,19 @@ export default function HomeContent() {
           <div>
             <h1 className="text-4xl font-bold text-gray-800 mb-2">Betsy CRM</h1>
             <p className="text-gray-600">Sistema de Gestión</p>
-            <p className="text-sm text-gray-500 mt-2">Bienvenido, {session.user?.email}</p>
+            <div className="flex items-center gap-2 mt-2">
+              <p className="text-sm text-gray-500">Bienvenido, {session.user?.email}</p>
+              {session.user?.role === 'MASTER' && (
+                <span className="bg-red-600 text-white text-xs px-2 py-1 rounded-full font-bold">
+                  M
+                </span>
+              )}
+            </div>
           </div>
-          <LogoutButton />
+          <div className="flex items-center gap-4">
+            <MasterMenu />
+            <LogoutButton />
+          </div>
         </div>
 
         {/* Main Navigation Cards */}

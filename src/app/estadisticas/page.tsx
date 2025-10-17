@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth/next"
 import { redirect } from "next/navigation"
-import { authOptions } from "@/app/api/auth/[...nextauth]/route"
+import { authOptions } from "@/lib/auth-options"
 import EstadisticasLogic from "./components/estadisticas";
 import HomeButton from "@/app/components/ui/HomeButtom";
 

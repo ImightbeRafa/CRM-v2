@@ -27,7 +27,7 @@
         "./src/*"
       ]
     },
-    "types": ["node"]
+    "types": ["node", "next-auth"]
   },
   "include": [
     "**/*.ts",

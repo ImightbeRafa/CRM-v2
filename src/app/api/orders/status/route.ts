@@ -1,82 +1,74 @@
-// src/app/api/orders/update/route.ts
-import { NextResponse } from 'next/server';
-
-const GOOGLE_SCRIPT_URL = process.env.NEXT_PUBLIC_SCRIPT_URL;
+import { NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { logUpdate } from '@/lib/auditLogger'
 
 export async function POST(request: Request) {
-  console.log('API Route hit: /api/orders/update');
-
   try {
-    // Validate environment variable
-    if (!GOOGLE_SCRIPT_URL) {
-      console.error('Google Script URL not configured');
+    const body = await request.json()
+    if (!body.orderId || !body.status) {
       return NextResponse.json(
-        { error: 'Server configuration error' },
-        { status: 500 }
-      );
-    }
-
-    // Parse request body
-    const body = await request.json();
-    console.log('Received request body:', body);
-
-    // Validate request
-    if (!body.orderId) {
-      return NextResponse.json(
-        { error: 'Missing required fields: orderId' },
+        { error: 'Missing required fields: orderId, status' },
         { status: 400 }
-      );
+      )
     }
 
-    // Forward to Google Script
-    const response = await fetch(GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'updateOrder',
-        orderId: body.orderId,
-        data: body
-      })
-    });
+    // Get the existing order for audit logging
+    const existingOrder = await prisma.order.findUnique({
+      where: { orderId: body.orderId }
+    })
 
-    // Handle Google Script HTML error response
-    const contentType = response.headers.get('content-type');
-    if (contentType?.includes('text/html')) {
-      const text = await response.text();
-      console.error('Received HTML response:', text);
+    if (!existingOrder) {
       return NextResponse.json(
-        { error: 'Server is busy, please try again' },
-        { status: 503 }
-      );
+        { error: 'Order not found' },
+        { status: 404 }
+      )
     }
 
-    // Handle non-OK response
-    if (!response.ok) {
-      throw new Error(`Google Script responded with status ${response.status}`);
+    const updatedOrder = await prisma.order.update({
+      where: { orderId: body.orderId },
+      data: { status: body.status }
+    })
+
+    // Log audit trail
+    try {
+      console.log('Logging order status update:', {
+        orderId: body.orderId,
+        oldStatus: existingOrder.status,
+        newStatus: body.status
+      })
+      await logUpdate(request as any, 'order', updatedOrder.id, `Order #${body.orderId}`, 
+        { status: existingOrder.status }, 
+        { status: body.status })
+    } catch (auditError) {
+      console.error('Failed to log audit trail:', auditError)
+      // Try manual audit log
+      try {
+        await prisma.auditLog.create({
+          data: {
+            action: 'UPDATE',
+            entityType: 'order',
+            entityId: updatedOrder.id,
+            entityName: `Order #${body.orderId}`,
+            oldValues: { status: existingOrder.status },
+            newValues: { status: body.status },
+            userId: 'system',
+            userName: 'System',
+            userRole: 'MASTER',
+            ipAddress: 'unknown',
+            userAgent: 'unknown'
+          }
+        })
+        console.log('Manual audit log created for status update')
+      } catch (manualError) {
+        console.error('Failed to create manual audit log:', manualError)
+      }
     }
 
-    const result = await response.json();
-    return NextResponse.json(result);
+    return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error in order update:', error);
     return NextResponse.json(
-      { error: 'Failed to update order' },
+      { error: 'Internal server error' },
       { status: 500 }
-    );
+    )
   }
-}
-
-// Handle OPTIONS for CORS
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Max-Age': '86400',
-    },
-  });
 }

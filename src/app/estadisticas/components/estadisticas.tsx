@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 
 export default function Estadisticas() {
@@ -34,16 +34,7 @@ export default function Estadisticas() {
     fetchData();
   }, []);
 
-  useEffect(() => {
-    applyFilters();
-  }, [filters]);
-
-  const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFilters({ ...filters, [name]: value });
-  };
-
-  const applyFilters = () => {
+  const applyFilters = useCallback(() => {
     let filtered = Array.isArray(data) ? [...data] : [];
     
     if (filters.startDate) {
@@ -66,6 +57,15 @@ export default function Estadisticas() {
 
     setFilteredData(filtered);
     calculateTotals(filtered);
+  }, [data, filters]);
+
+  useEffect(() => {
+    applyFilters();
+  }, [filters, applyFilters]);
+
+  const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFilters({ ...filters, [name]: value });
   };
 
   const calculateTotals = (filtered: any[]) => {

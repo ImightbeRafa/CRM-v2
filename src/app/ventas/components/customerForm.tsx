@@ -103,7 +103,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
       {/* Customer Information Display */}
       <div className="mt-4 space-y-4 border rounded-lg p-4 bg-gray-50">
         <h3 className="font-medium text-lg">Info cliente:</h3>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Common fields */}
           <div>
             <label className="block text-sm text-gray-600">
@@ -140,7 +140,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
               value={customerInfo.email}
               onChange={handleInputChange}
               placeholder="No detectado"
-              required
             />
           </div>
           <div>
@@ -152,11 +151,10 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
               value={customerInfo.username}
               onChange={handleInputChange}
               placeholder="Usuario de Instagram/Facebook"
-              required
             />
           </div>
 
-          {/* EA-specific fields */}
+          {/* Location fields only for EA (shipping) */}
           {customerInfo.orderType === 'EA' && (
             <>
               <div>
@@ -195,7 +193,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                   required
                 />
               </div>
-              <div className="col-span-2">
+              <div className="col-span-1 sm:col-span-2">
                 <label className="block text-sm text-gray-600">Dirección</label>
                 <textarea
                   name="address"
@@ -232,30 +230,17 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
       {/* Date fields */}
       <div className="grid grid-cols-2 gap-4">
         {customerInfo.orderType === 'EA' ? (
-          <>
-            <div>
-              <label className="block font-medium">Fecha de Venta</label>
-              <input
-                type="date"
-                name="diaVenta"
-                className="w-full p-2 border rounded"
-                value={customerInfo.diaVenta}
-                onChange={handleInputChange}
-                required
-              />
-            </div>
-            <div>
-              <label className="block font-medium">Fecha Esperada de Entrega</label>
-              <input
-                type="date"
-                name="fechaEsperada"
-                className="w-full p-2 border rounded"
-                value={customerInfo.fechaEsperada}
-                onChange={handleInputChange}
-                required
-              />
-            </div>
-          </>
+          <div>
+            <label className="block font-medium">Fecha Esperada de Entrega</label>
+            <input
+              type="date"
+              name="fechaEsperada"
+              className="w-full p-2 border rounded"
+              value={customerInfo.fechaEsperada}
+              onChange={handleInputChange}
+              required
+            />
+          </div>
         ) : (
           <>
             <div>

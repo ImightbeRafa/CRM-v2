@@ -26,13 +26,11 @@ export function useSalesStream({
 
   const parseOrder = useCallback((data: any): Sale | null => {
     // Validate required fields and format
-    if (!data.orderId || typeof data.orderId !== 'string' || !data.orderId.match(/^(EA|RA)-\d{4}-\d{3}$/)) {
+    if (!data.orderId || typeof data.orderId !== 'string') {
       console.warn('Invalid order format:', data);
       return null;
     }
 
-    // Debug log for each order being parsed
-    console.log('Parsing order:', data);
     
     const commonFields = {
       orderId: data.orderId || '',
@@ -89,8 +87,7 @@ export function useSalesStream({
   
   const fetchSales = useCallback(async () => {
     try {
-      console.log('Fetching sales data...');
-      const response = await fetch('/api/sales/stream', {
+      const response = await fetch('/api/orders', {
         headers: {
           'Cache-Control': 'no-cache',
         },
@@ -101,7 +98,6 @@ export function useSalesStream({
       }
 
       const result = await response.json();
-      console.log('Received data:', result);
       
       if (result.status === 'error') {
         throw new Error(result.error || 'Unknown error');
@@ -112,13 +108,11 @@ export function useSalesStream({
         .map(parseOrder)
         .filter((sale: Sale | null): sale is Sale => sale !== null);
 
-      console.log('Parsed sales:', parsedSales);
 
       // Deduplicate sales by orderId
       const uniqueSales: Sale[] = Array.from(
         new Map(parsedSales.map((sale: Sale) => [sale.orderId, sale])).values()
       );
-      console.log('Unique sales after deduplication:', uniqueSales);
 
       // Clear existing cache
       localStorage.removeItem('salesCache');

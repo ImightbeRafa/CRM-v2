@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Clock, User, Trash2, Edit, Plus, AlertTriangle, CheckCircle, Shield, Download, Filter, Activity, Zap, ToggleLeft } from 'lucide-react'
+import { Clock, User, Trash2, Edit, Plus, AlertTriangle, CheckCircle, Shield, Download, Filter, Activity, Zap, ToggleLeft, RefreshCw } from 'lucide-react'
 
 interface SimpleAuditDashboardProps {
   isMaster: boolean
@@ -9,6 +9,12 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
   const [auditLogs, setAuditLogs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showFilters, setShowFilters] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage] = useState(20)
+  const [dateRange, setDateRange] = useState({
+    startDate: '',
+    endDate: ''
+  })
   const [filters, setFilters] = useState({
     action: '',
     entityType: '',
@@ -19,38 +25,26 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
     if (isMaster) {
       const loadAuditLogs = async () => {
         try {
-          // Try to load real audit logs first
-          let response = await fetch('/api/audit/logs')
-          let data = await response.json()
+          console.log('Loading audit logs...')
+          const response = await fetch('/api/audit/logs')
+          console.log('Response status:', response.status)
           
-          // If real audit logs fail, try mock data
-          if (data.status !== 'success') {
-            console.log('Real audit logs failed, trying mock data...')
-            response = await fetch('/api/audit/logs-mock')
-            data = await response.json()
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
           }
+          
+          const data = await response.json()
+          console.log('Audit logs data:', data)
           
           if (data.status === 'success') {
             setAuditLogs(data.data.logs || data.data || [])
           } else {
-            // Fallback to empty state
+            console.log('No audit logs found or error:', data)
             setAuditLogs([])
           }
         } catch (error) {
           console.error('Failed to load audit logs:', error)
-          // Try mock data as fallback
-          try {
-            const mockResponse = await fetch('/api/audit/logs-mock')
-            const mockData = await mockResponse.json()
-            if (mockData.status === 'success') {
-              setAuditLogs(mockData.data.logs || [])
-            } else {
-              setAuditLogs([])
-            }
-          } catch (mockError) {
-            console.error('Mock audit logs also failed:', mockError)
-            setAuditLogs([])
-          }
+          setAuditLogs([])
         } finally {
           setLoading(false)
         }
@@ -100,6 +94,12 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
     alert('Funcionalidad de exportación en desarrollo')
   }
 
+  const refreshLogs = () => {
+    setLoading(true)
+    // Reload the logs
+    window.location.reload()
+  }
+
   const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setFilters({ ...filters, [e.target.name]: e.target.value })
   }
@@ -108,7 +108,35 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
     if (filters.action && log.action !== filters.action) return false
     if (filters.entityType && log.entityType !== filters.entityType) return false
     if (filters.userRole && log.userRole !== filters.userRole) return false
+    
+    // Date range filtering
+    if (dateRange.startDate) {
+      const logDate = new Date(log.timestamp)
+      const startDate = new Date(dateRange.startDate)
+      if (logDate < startDate) return false
+    }
+    if (dateRange.endDate) {
+      const logDate = new Date(log.timestamp)
+      const endDate = new Date(dateRange.endDate)
+      endDate.setHours(23, 59, 59, 999) // Include the entire end date
+      if (logDate > endDate) return false
+    }
+    
     return true
+  })
+
+  // Pagination
+  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedLogs = filteredLogs.slice(startIndex, endIndex)
+
+  // Recent activity (last 24 hours)
+  const recentLogs = auditLogs.filter(log => {
+    const logDate = new Date(log.timestamp)
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    return logDate > yesterday
   })
 
   if (!isMaster) {
@@ -149,6 +177,9 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
             <div className="text-right">
               <div className="text-2xl font-bold">{filteredLogs.length}</div>
               <div className="text-purple-100 text-sm">registros</div>
+              <div className="text-purple-200 text-xs mt-1">
+                {recentLogs.length} en las últimas 24h
+              </div>
             </div>
             <div className="flex gap-2">
               <button
@@ -157,6 +188,13 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
               >
                 <Filter className="w-4 h-4" />
                 Filtros
+              </button>
+              <button
+                onClick={refreshLogs}
+                className="flex items-center gap-2 px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-all duration-200"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Actualizar
               </button>
               <button
                 onClick={handleExport}
@@ -170,11 +208,28 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
         </div>
       </div>
 
+      {/* Recent Activity Summary */}
+      {recentLogs.length > 0 && (
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <Activity className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-green-800">Actividad Reciente</h3>
+              <p className="text-green-700 text-sm">
+                {recentLogs.length} cambios en las últimas 24 horas
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
       {showFilters && (
         <div className="bg-white rounded-xl p-6 shadow-lg border border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Filtros de Búsqueda</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Acción</label>
               <select
@@ -187,6 +242,9 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
                 <option value="CREATE">Crear</option>
                 <option value="UPDATE">Actualizar</option>
                 <option value="DELETE">Eliminar</option>
+                <option value="BULK_DELETE">Eliminación Masiva</option>
+                <option value="BULK_UPDATE">Actualización Masiva</option>
+                <option value="BULK_TOGGLE">Cambio de Estado Masivo</option>
               </select>
             </div>
             <div>
@@ -199,8 +257,10 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
               >
                 <option value="">Todos los tipos</option>
                 <option value="user">Usuario</option>
+                <option value="order">Orden</option>
                 <option value="field">Campo</option>
                 <option value="option">Opción</option>
+                <option value="shipping">Envío</option>
               </select>
             </div>
             <div>
@@ -216,6 +276,43 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
                 <option value="REGULAR">REGULAR</option>
               </select>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Rango de Fechas</label>
+              <div className="space-y-2">
+                <input
+                  type="date"
+                  value={dateRange.startDate}
+                  onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
+                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm"
+                  placeholder="Fecha inicio"
+                />
+                <input
+                  type="date"
+                  value={dateRange.endDate}
+                  onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
+                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm"
+                  placeholder="Fecha fin"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              onClick={() => {
+                setFilters({ action: '', entityType: '', userRole: '' })
+                setDateRange({ startDate: '', endDate: '' })
+                setCurrentPage(1)
+              }}
+              className="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm font-medium"
+            >
+              Limpiar Filtros
+            </button>
+            <button
+              onClick={() => setShowFilters(false)}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium"
+            >
+              Aplicar Filtros
+            </button>
           </div>
         </div>
       )}
@@ -238,8 +335,9 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
             <p className="text-gray-500">Los registros de auditoría aparecerán aquí cuando se realicen cambios en el sistema.</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
-            {filteredLogs.map((log, index) => (
+          <div>
+            <div className="divide-y divide-gray-100">
+              {paginatedLogs.map((log, index) => (
               <div key={log.id} className="p-6 hover:bg-gradient-to-r hover:from-gray-50 hover:to-blue-50 transition-all duration-200 group">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-4">
@@ -350,6 +448,67 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
                 </div>
               </div>
             ))}
+            </div>
+            
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-700">
+                    Mostrando {startIndex + 1} a {Math.min(endIndex, filteredLogs.length)} de {filteredLogs.length} registros
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Anterior
+                    </button>
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        const pageNum = i + 1
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => setCurrentPage(pageNum)}
+                            className={`px-3 py-1 text-sm rounded-md ${
+                              currentPage === pageNum
+                                ? 'bg-purple-600 text-white'
+                                : 'border border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        )
+                      })}
+                      {totalPages > 5 && (
+                        <>
+                          <span className="text-gray-500">...</span>
+                          <button
+                            onClick={() => setCurrentPage(totalPages)}
+                            className={`px-3 py-1 text-sm rounded-md ${
+                              currentPage === totalPages
+                                ? 'bg-purple-600 text-white'
+                                : 'border border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            {totalPages}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

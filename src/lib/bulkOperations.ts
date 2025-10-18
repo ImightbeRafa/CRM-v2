@@ -139,6 +139,12 @@ export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperat
     // Log audit trail
     if (httpRequest && result.success > 0) {
       try {
+        console.log('Logging bulk delete:', {
+          type,
+          count: result.success,
+          entityNames: entityNames.slice(0, result.success),
+          reason
+        })
         await logBulkDelete(httpRequest, type, ids.slice(0, result.success), entityNames.slice(0, result.success), reason)
       } catch (auditError) {
         console.error('Failed to log bulk delete audit:', auditError)
@@ -237,6 +243,57 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
 
       default:
         throw new Error(`Unsupported bulk update type: ${type}`)
+    }
+
+    // Log audit trail for bulk updates
+    if (request && result.success > 0) {
+      try {
+        console.log('Logging bulk update:', {
+          type,
+          count: result.success,
+          updates
+        })
+        // Get entity names for audit logging
+        let entityNames: string[] = []
+        try {
+          switch (type) {
+            case 'users':
+              const users = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, username: true } })
+              entityNames = users.map(u => u.username)
+              break
+            case 'orders':
+              const orders = await prisma.order.findMany({ where: { id: { in: ids } }, select: { id: true, orderId: true } })
+              entityNames = orders.map(o => o.orderId)
+              break
+            case 'fields':
+              const fields = await prisma.productField.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
+              entityNames = fields.map(f => f.label)
+              break
+            case 'optionSets':
+              const optionSets = await prisma.productOptionSet.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+              entityNames = optionSets.map(os => os.name)
+              break
+            case 'options':
+              const options = await prisma.productOption.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
+              entityNames = options.map(o => o.label)
+              break
+            case 'shipping':
+              const shipping = await prisma.shippingMethod.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+              entityNames = shipping.map(s => s.name)
+              break
+            case 'sellers':
+              const sellers = await prisma.seller.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+              entityNames = sellers.map(s => s.name)
+              break
+          }
+        } catch (error) {
+          console.error('Failed to get entity names for bulk update audit:', error)
+        }
+        
+        await logBulkUpdate(request, type, ids.slice(0, result.success), entityNames.slice(0, result.success), updates)
+      } catch (auditError) {
+        console.error('Failed to log bulk update audit:', auditError)
+      }
     }
 
     return result

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { BulkOperations } from '../components/ui/bulk-operations'
 import { SimpleAuditDashboard } from '../components/SimpleAuditDashboard'
+import { MasterConfigDashboard } from './components/MasterConfigDashboard'
 import { Settings, Users, Shield, Database, BarChart3, Zap } from 'lucide-react'
 
 export default function ConfigPage() {
@@ -30,9 +31,11 @@ export default function ConfigPage() {
   const [showFieldForm, setShowFieldForm] = useState(false)
   const [showOptionSetForm, setShowOptionSetForm] = useState(false)
   const [showShippingForm, setShowShippingForm] = useState(false)
+  const [showUserForm, setShowUserForm] = useState(false)
   const [editingField, setEditingField] = useState<any>(null)
   const [editingOptionSet, setEditingOptionSet] = useState<any>(null)
   const [editingShipping, setEditingShipping] = useState<any>(null)
+  const [editingUser, setEditingUser] = useState<any>(null)
 
   const loadData = async () => {
     setLoading(true)
@@ -236,6 +239,65 @@ export default function ConfigPage() {
     }
   }
 
+  // User management functions
+  const handleEditUser = (user: any) => {
+    setEditingUser(user)
+    setShowUserForm(true)
+  }
+
+  const handleDeleteUser = async (id: string) => {
+    if (!confirm('⚠️ ¿Eliminar este usuario? Esta acción no se puede deshacer.')) return
+    try {
+      const res = await fetch(`/api/users?id=${id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (json.status === 'success') {
+        setUsers(prev => prev.filter(u => u.id !== id))
+        alert('✅ Usuario eliminado exitosamente')
+      } else {
+        alert(`❌ Error: ${json.error || 'Error al eliminar usuario'}`)
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error)
+      alert('❌ Error al eliminar usuario')
+    }
+  }
+
+  const handleUserSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const formData = new FormData(e.target as HTMLFormElement)
+    const userData = {
+      username: formData.get('username'),
+      role: formData.get('role'),
+      active: formData.get('active') === 'on'
+    }
+
+    try {
+      const url = editingUser ? '/api/users' : '/api/users'
+      const method = editingUser ? 'PUT' : 'POST'
+      const body = editingUser ? { id: editingUser.id, ...userData } : userData
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        await loadData()
+        setShowUserForm(false)
+        setEditingUser(null)
+        alert(editingUser ? '✅ Usuario actualizado exitosamente' : '✅ Usuario creado exitosamente')
+      } else {
+        alert(`❌ Error: ${result.error || 'Error al guardar usuario'}`)
+      }
+    } catch (error) {
+      console.error('Error saving user:', error)
+      alert('❌ Error al guardar usuario')
+    }
+  }
+
   // Bulk operations for configuration items
   const handleBulkDeleteFields = async (ids: string[], reason?: string) => {
     try {
@@ -330,6 +392,7 @@ export default function ConfigPage() {
   const tabs = [
     { id: 'fields', label: 'Configuración', icon: Settings },
     { id: 'users', label: 'Usuarios', icon: Users },
+    { id: 'master', label: 'Productos y Clientes Recurrentes', icon: Zap },
     { id: 'audit', label: 'Auditoría', icon: Shield }
   ]
 
@@ -626,30 +689,28 @@ export default function ConfigPage() {
           {/* Users Tab */}
           {activeTab === 'users' && (
             <div className="space-y-6">
-              {/* Bulk Operations for Users */}
-              <BulkOperations
-                selectedItems={selectedUsers}
-                onSelectionChange={setSelectedUsers}
-                onBulkDelete={handleBulkDelete}
-                onBulkUpdate={handleBulkUpdate}
-                onBulkToggle={handleBulkToggle}
-                totalItems={users.length}
-                itemType="usuarios"
-                showUpdate={true}
-                showToggle={true}
-              />
-
               {/* Users Table */}
               <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
                 <div className="bg-gradient-to-r from-purple-500 to-indigo-600 p-6 text-white">
-                  <div className="flex items-center gap-4">
-                    <div className="p-3 bg-white bg-opacity-20 rounded-xl">
-                      <Users className="w-8 h-8" />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-white bg-opacity-20 rounded-xl">
+                        <Users className="w-8 h-8" />
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-bold">Gestión de Usuarios</h2>
+                        <p className="text-purple-100">Administra usuarios y permisos del sistema</p>
+                      </div>
                     </div>
-                    <div>
-                      <h2 className="text-2xl font-bold">Gestión de Usuarios</h2>
-                      <p className="text-purple-100">Administra usuarios y permisos del sistema</p>
-                    </div>
+                    <button 
+                      onClick={() => {
+                        setEditingUser(null)
+                        setShowUserForm(true)
+                      }}
+                      className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
+                    >
+                      + Agregar Usuario
+                    </button>
                   </div>
                 </div>
                 
@@ -658,46 +719,64 @@ export default function ConfigPage() {
                     <div className="flex items-center justify-center py-12">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
                       <span className="ml-3 text-gray-600">Cargando usuarios...</span>
-                      </div>
+                    </div>
                   ) : users.length === 0 ? (
                     <div className="text-center py-12">
                       <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                       <p className="text-gray-500">No hay usuarios configurados</p>
+                      <button 
+                        onClick={() => {
+                          setEditingUser(null)
+                          setShowUserForm(true)
+                        }}
+                        className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                      >
+                        Crear Primer Usuario
+                      </button>
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="grid gap-4">
                       {users.map((user) => (
                         <div key={user.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={selectedUsers.includes(user.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedUsers([...selectedUsers, user.id])
-                                } else {
-                                  setSelectedUsers(selectedUsers.filter(id => id !== user.id))
-                                }
-                              }}
-                              className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                            />
-                            <div>
-                              <div className="font-medium text-gray-900">{user.username}</div>
-                              <div className="text-sm text-gray-500">
-                                {user.role} • {user.active ? 'Activo' : 'Inactivo'}
+                          <div className="flex items-center gap-4">
+                            <div className="p-2 bg-purple-100 rounded-lg">
+                              <Users className="w-5 h-5 text-purple-600" />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3">
+                                <div className="font-medium text-gray-900">{user.username}</div>
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                  user.role === 'MASTER' 
+                                    ? 'bg-purple-100 text-purple-800' 
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {user.role}
+                                </span>
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                  user.active 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : 'bg-red-100 text-red-800'
+                                }`}>
+                                  {user.active ? 'Activo' : 'Inactivo'}
+                                </span>
+                              </div>
+                              <div className="text-sm text-gray-500 mt-1">
+                                Última actividad: {new Date().toLocaleDateString()}
                               </div>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              user.role === 'MASTER' 
-                                ? 'bg-purple-100 text-purple-800' 
-                                : 'bg-gray-100 text-gray-800'
-                            }`}>
-                              {user.role}
-                            </span>
-                            <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                            <button 
+                              onClick={() => handleEditUser(user)}
+                              className="text-blue-600 hover:text-blue-800 text-sm font-medium px-3 py-1 rounded-md hover:bg-blue-50"
+                            >
                               Editar
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteUser(user.id)}
+                              className="text-red-600 hover:text-red-800 text-sm font-medium px-3 py-1 rounded-md hover:bg-red-50"
+                            >
+                              Eliminar
                             </button>
                           </div>
                         </div>
@@ -706,6 +785,13 @@ export default function ConfigPage() {
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Master Config Tab */}
+          {activeTab === 'master' && (
+            <div className="space-y-6">
+              <MasterConfigDashboard />
             </div>
           )}
 
@@ -741,6 +827,7 @@ export default function ConfigPage() {
                       itemType="órdenes"
                       showUpdate={true}
                       showToggle={true}
+                      allItemIds={orders.map(order => order.id)}
                     />
                     {orders.length > 0 && (
                       <div className="mt-4 space-y-2">
@@ -776,28 +863,7 @@ export default function ConfigPage() {
               </div>
 
               {/* Audit Dashboard */}
-              <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-                <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-6 text-white">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 bg-white bg-opacity-20 rounded-xl">
-                        <Shield className="w-8 h-8" />
-                      </div>
-                      <div>
-                        <h2 className="text-2xl font-bold">Historial de Auditoría</h2>
-                        <p className="text-indigo-100">Rastrea todos los cambios realizados en el sistema</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={loadData}
-                      className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
-                    >
-                      🔄 Actualizar
-                    </button>
-                  </div>
-                </div>
-                <SimpleAuditDashboard isMaster={isMasterUser} />
-              </div>
+              <SimpleAuditDashboard isMaster={isMasterUser} />
             </div>
           )}
         </div>
@@ -1028,6 +1094,77 @@ export default function ConfigPage() {
           </form>
         </div>
       </div>
+      )}
+
+      {/* User Form Modal */}
+      {showUserForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">
+              {editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
+            </h3>
+            {!editingUser && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-700">
+                  <strong>Nota:</strong> Los nuevos usuarios tendrán la contraseña por defecto: <code className="bg-blue-100 px-1 rounded">password123</code>
+                </p>
+              </div>
+            )}
+            <form onSubmit={handleUserSubmit}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de Usuario</label>
+                  <input
+                    type="text"
+                    name="username"
+                    defaultValue={editingUser?.username || ''}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
+                  <select
+                    name="role"
+                    defaultValue={editingUser?.role || 'REGULAR'}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    required
+                  >
+                    <option value="REGULAR">REGULAR</option>
+                    <option value="MASTER">MASTER</option>
+                  </select>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    name="active"
+                    defaultChecked={editingUser?.active !== false}
+                    className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                  />
+                  <label className="ml-2 text-sm text-gray-700">Usuario activo</label>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUserForm(false)
+                    setEditingUser(null)
+                  }}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                >
+                  {editingUser ? 'Actualizar' : 'Crear'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   )

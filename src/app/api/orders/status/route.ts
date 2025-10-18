@@ -30,39 +30,15 @@ export async function POST(request: Request) {
     })
 
     // Log audit trail
-    try {
-      console.log('Logging order status update:', {
-        orderId: body.orderId,
-        oldStatus: existingOrder.status,
-        newStatus: body.status
-      })
-      await logUpdate(request as any, 'order', updatedOrder.id, `Order #${body.orderId}`, 
-        { status: existingOrder.status }, 
-        { status: body.status })
-    } catch (auditError) {
-      console.error('Failed to log audit trail:', auditError)
-      // Try manual audit log
-      try {
-        await prisma.auditLog.create({
-          data: {
-            action: 'UPDATE',
-            entityType: 'order',
-            entityId: updatedOrder.id,
-            entityName: `Order #${body.orderId}`,
-            oldValues: { status: existingOrder.status },
-            newValues: { status: body.status },
-            userId: 'system',
-            userName: 'System',
-            userRole: 'MASTER',
-            ipAddress: 'unknown',
-            userAgent: 'unknown'
-          }
-        })
-        console.log('Manual audit log created for status update')
-      } catch (manualError) {
-        console.error('Failed to create manual audit log:', manualError)
-      }
-    }
+    console.log('Logging status update:', {
+      orderId: body.orderId,
+      oldStatus: existingOrder.status,
+      newStatus: body.status,
+      userId: 'will-be-determined-by-audit-logger'
+    })
+    await logUpdate(request as any, 'order', updatedOrder.id, `Order #${body.orderId}`, 
+      { status: existingOrder.status }, 
+      { status: body.status })
 
     return NextResponse.json({ success: true })
   } catch (error) {

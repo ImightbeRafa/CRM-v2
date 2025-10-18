@@ -6,7 +6,6 @@
     "framework": "nextjs",
     "regions": ["sfo1"],
     "env": {
-      "NEXT_PUBLIC_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbw5yZ3S2407T2Ezbwftj-FE437OMdC6CHS0Li4si5886wgrH4LgdOUR5h8s9p8I01ip/exec"
     },
     "headers": [
       {

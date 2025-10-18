@@ -7,120 +7,48 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Core business models
 model Order {
-  id           String   @id @default(cuid())
-  orderId      String   @unique
-  orderType    String   // 'EA' | 'RA'
-  status       String
-  delivery     String?
-  timestamp    DateTime @default(now())
-  // Customer
-  customerName String
-  username     String?
-  phone        String?
-  email        String?
-  business     String?
-  // Product
-  product      String?
-  quantity     Int      @default(0)
-  size         String?
-  color        String?
-  packaging    String?
-  customization String?
-  comments     String?
-  // Financial
-  total        Float    @default(0)
-  iva          Float?   // VAT
-  shippingCost Float? 
-  productCost  Float?
-  funnel       String?
-  // EA-specific
-  expectedDate String?
-  saleDate     String?
-  courier      String?
-  // Shared seller field used by both types
-  seller       String?
-  province     String?
-  canton       String?
-  district     String?
-  address      String?
-  // RA-specific
-  agreedDate   String?
-  pickupDate   String?
+  id            String   @id @default(cuid())
+  orderId       String   @unique
+  orderType     String   // EA or RA
+  status        String   @default("Pendiente")
+  timestamp     DateTime @default(now())
+  customerName  String
+  phone         String?
+  email         String?
+  business      String?
+  product       String?
+  quantity      Int      @default(0)
+  size          String?
+  color         String?
+  packaging     String?
+  comments      String?
+  total         Float    @default(0)
+  iva           Float?
+  shippingCost  Float?
+  productCost   Float?
+  address       String?
+  province      String?
+  canton        String?
+  district      String?
+  courier       String?
+  expectedDate  String?
+  agreedDate    String?
+  pickupDate    String?
+  saleDate      String?
+  seller        String?
 
   @@index([status])
   @@index([orderType])
   @@index([timestamp])
   @@index([customerName])
-  @@index([seller])
-  @@index([saleDate])
-}
-
-// Modular product configuration for dynamic fields and options
-model ProductField {
-  id        String  @id @default(cuid())
-  key       String  @unique
-  label     String
-  type      FieldType
-  required  Boolean @default(false)
-  order     Int     @default(0)
-  // If the field uses an option set (for select/multiselect)
-  optionSet ProductOptionSet? @relation(fields: [optionSetId], references: [id])
-  optionSetId String?
-  multiSelect Boolean @default(false)
-  active    Boolean @default(true)
-
-  @@index([active])
-  @@index([order])
-}
-
-model ProductOptionSet {
-  id      String          @id @default(cuid())
-  key     String          @unique
-  name    String
-  options ProductOption[]
-  fields  ProductField[]
-  active  Boolean         @default(true)
-
-  @@index([active])
-}
-
-model ProductOption {
-  id        String           @id @default(cuid())
-  set       ProductOptionSet @relation(fields: [setId], references: [id])
-  setId     String
-  label     String
-  value     String
-  priceDelta Float           @default(0)
-  metadata  Json?
-  active    Boolean          @default(true)
-
-  @@index([setId])
-  @@index([active])
-}
-
-model ShippingMethod {
-  id         String  @id @default(cuid())
-  name       String
-  carrier    String?
-  basePrice  Float   @default(0)
-  active     Boolean @default(true)
-
-  @@index([active])
-}
-
-model Seller {
-  id     String  @id @default(cuid())
-  name   String  @unique
-  active Boolean @default(true)
-
-  @@index([active])
 }
 
 model User {
   id        String   @id @default(cuid())
   username  String   @unique
-  password  String   // Hashed password
+  password  String
   role      UserRole @default(REGULAR)
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -130,42 +58,72 @@ model User {
   @@index([role])
 }
 
-enum FieldType {
-  text
-  number
-  select
-  multiselect
-  boolean
+model AuditLog {
+  id         String      @id @default(cuid())
+  action     AuditAction
+  entityType String
+  entityId   String
+  entityName String?
+  oldValues  Json?
+  newValues  Json?
+  reason     String?
+  userId     String
+  userName   String
+  userRole   UserRole
+  timestamp  DateTime    @default(now())
+
+  @@index([action])
+  @@index([entityType])
+  @@index([userId])
+  @@index([timestamp])
+}
+
+model FrequentProduct {
+  id          String   @id @default(cuid())
+  name        String
+  type        String
+  color       String?
+  tamano      String?
+  baseCost    Float
+  isFavorite  Boolean  @default(false)
+  lastUsed    DateTime @default(now())
+  useCount    Int      @default(0)
+  active      Boolean  @default(true)
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active])
+  @@index([isFavorite])
+  @@index([useCount])
+}
+
+model FrequentCustomer {
+  id           String   @id @default(cuid())
+  name         String
+  phone        String
+  province     String
+  canton       String
+  district     String
+  email        String?
+  username     String?
+  address      String?
+  business     String?
+  totalOrders  Int      @default(0)
+  lastOrder    DateTime @default(now())
+  active       Boolean  @default(true)
+  createdBy    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([active])
+  @@index([totalOrders])
+  @@index([lastOrder])
 }
 
 enum UserRole {
   MASTER
   REGULAR
-}
-
-// Audit trail for tracking all data changes
-model AuditLog {
-  id          String      @id @default(cuid())
-  action      AuditAction
-  entityType  String      // 'order', 'user', 'field', 'optionSet', 'option', etc.
-  entityId    String      // ID of the affected entity
-  entityName  String?     // Human-readable name of the entity
-  oldValues   Json?       // Previous values (for updates)
-  newValues   Json?       // New values (for creates/updates)
-  reason      String?     // Reason for the change (especially for deletions)
-  userId      String      // ID of the user who made the change
-  userName    String      // Username for display
-  userRole    UserRole    // Role of the user who made the change
-  timestamp   DateTime    @default(now())
-  ipAddress   String?     // IP address of the user
-  userAgent   String?     // Browser/device info
-  
-  @@index([action])
-  @@index([entityType])
-  @@index([entityId])
-  @@index([userId])
-  @@index([timestamp])
-  @@index([userRole])
 }
 
 enum AuditAction {
@@ -175,10 +133,4 @@ enum AuditAction {
   BULK_DELETE
   BULK_UPDATE
   BULK_TOGGLE
-  LOGIN
-  LOGOUT
-  EXPORT
-  IMPORT
 }
-
-

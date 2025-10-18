@@ -133,59 +133,27 @@ export async function POST(request: Request) {
       : await prisma.order.create({ data })
 
     // Log audit trail with smart change detection
-    try {
-      if (existing) {
-        // Only log if there are actual changes
-        const changes = detectChanges(existing, data)
-        if (changes.length > 0) {
-          console.log('Logging order update with changes:', changes)
-          await logUpdate(request as any, 'order', result.id, `Order #${result.orderId}`, 
-            { changes: changes }, 
-            { changes: changes })
-        }
-      } else {
-        console.log('Logging order creation')
-        await logCreate(request as any, 'order', result.id, `Order #${result.orderId}`, 
-          { orderId: result.orderId, customerName: data.customerName, status: data.status })
-      }
-    } catch (auditError) {
-      console.error('Failed to log audit trail:', auditError)
-      // Try to log manually if the audit logger fails
-      try {
-        const changes = existing ? detectChanges(existing, data) : []
-        await prisma.auditLog.create({
-          data: {
-            action: existing ? 'UPDATE' : 'CREATE',
-            entityType: 'order',
-            entityId: result.id,
-            entityName: `Order #${result.orderId}`,
-            oldValues: existing ? { changes: changes } : null,
-            newValues: existing ? { changes: changes } : { 
-              orderId: result.orderId, 
-              customerName: data.customerName, 
-              status: data.status 
-            },
-            userId: 'system',
-            userName: 'System',
-            userRole: 'MASTER',
-            ipAddress: 'unknown',
-            userAgent: 'unknown'
-          }
-        })
-        console.log('Manual audit log created successfully')
-      } catch (manualError) {
-        console.error('Failed to create manual audit log:', manualError)
-        // Create a simple audit log entry
-        const changes = existing ? detectChanges(existing, data) : []
-        console.log('AUDIT LOG:', {
-          action: existing ? 'UPDATE' : 'CREATE',
-          entityType: 'order',
-          entityId: result.id,
-          entityName: `Order #${result.orderId}`,
+    if (existing) {
+      // Only log if there are actual changes
+      const changes = detectChanges(existing, data)
+      if (changes.length > 0) {
+        console.log('Logging order update with changes:', {
+          orderId: result.orderId,
           changes: changes,
-          timestamp: new Date().toISOString()
+          userId: 'will-be-determined-by-audit-logger'
         })
+        await logUpdate(request as any, 'order', result.id, `Order #${result.orderId}`, 
+          { changes: changes }, 
+          { changes: changes })
       }
+    } else {
+      console.log('Logging order creation:', {
+        orderId: result.orderId,
+        customerName: data.customerName,
+        status: data.status
+      })
+      await logCreate(request as any, 'order', result.id, `Order #${result.orderId}`, 
+        { orderId: result.orderId, customerName: data.customerName, status: data.status })
     }
 
     return createSuccessResponse(result, existing ? 'Order updated successfully' : 'Order created successfully')

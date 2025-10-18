@@ -69,7 +69,7 @@ export function SalesDashboard() {
     .slice(0, 10);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" style={{ zIndex: 1, position: 'relative' }}>
       {/* Stats Overview */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
@@ -108,7 +108,8 @@ export function SalesDashboard() {
               size="sm" 
               onClick={refresh}
               disabled={isLoading}
-              className="gap-2"
+              className="gap-2 relative z-10"
+              style={{ position: 'relative', zIndex: 10 }}
             >
               {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
               {isLoading ? 'Actualizando...' : 'Actualizar'}
@@ -137,8 +138,8 @@ export function SalesDashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border overflow-hidden">
+            <Table className="relative">
               <TableHeader>
                 <TableRow>
                   <TableHead>Orden</TableHead>
@@ -175,9 +176,9 @@ export function SalesDashboard() {
                   filteredSales.map((sale) => (
                     <TableRow key={sale.orderId}>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span>{sale.orderId}</span>
-                          <Badge variant={sale.orderType === 'EA' ? 'default' : 'secondary'}>
+                        <div className="flex items-center gap-2 relative z-10" style={{ position: 'relative', zIndex: 10 }}>
+                          <span className="relative z-10">{sale.orderId}</span>
+                          <Badge variant={sale.orderType === 'EA' ? 'default' : 'secondary'} className="relative z-10">
                             {sale.orderType}
                           </Badge>
                         </div>

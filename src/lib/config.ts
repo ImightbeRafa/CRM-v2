@@ -1,63 +1,119 @@
-import { z } from "zod";
+import { z } from 'zod'
 
-const EnvSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-
+// Configuration schema with validation
+const configSchema = z.object({
+  // Database
+  DATABASE_URL: z.string().optional(),
+  
+  // Authentication
+  NEXTAUTH_SECRET: z.string().min(1, 'NEXTAUTH_SECRET is required'),
   NEXTAUTH_URL: z.string().url().optional(),
-  NEXTAUTH_SECRET: z.string().min(1, "NEXTAUTH_SECRET is required in non-demo mode").optional(),
-
-  // OAuth providers (optional)
-  GOOGLE_ID: z.string().optional(),
-  GOOGLE_SECRET: z.string().optional(),
-
-  // Legacy GAS endpoint (optional)
+  
+  // External API integration (optional for demo mode)
   NEXT_PUBLIC_SCRIPT_URL: z.string().url().optional(),
+  
+  // Demo mode settings
+  DEMO_MODE: z.enum(['true', 'false']).default('false'),
+  ALLOWED_EMAILS: z.string().optional(),
+  
+  // Application settings
+  APP_NAME: z.string().default('Betsy CRM'),
+  APP_VERSION: z.string().default('1.0.0'),
+  
+  // Security
+  CORS_ORIGINS: z.string().optional(),
+  RATE_LIMIT_MAX: z.string().default('100'),
+  
+  // Backup settings
+  BACKUP_RETENTION_DAYS: z.string().default('30'),
+  BACKUP_SCHEDULE: z.string().default('0 2 * * *'), // Daily at 2 AM
+})
 
-  // Access control
-  AUTH_DEMO_MODE: z.string().optional(), // "true" to enable demo credentials provider
-  AUTH_ALLOWLIST_EMAILS: z.string().optional(), // comma-separated emails
-  AUTH_DEFAULT_ROLE: z.string().optional(), // default role in demo
-
-  // Master user bootstrap (non-demo mode)
-  MASTER_EMAIL: z.string().email().optional(),
-  MASTER_PASSWORD: z.string().optional(),
-});
-
-export type AppConfig = z.infer<typeof EnvSchema> & {
-  demoMode: boolean;
-  allowlistEmails: string[];
-  defaultRole: string;
-};
-
-function parseBoolean(value: string | undefined): boolean {
-  if (!value) return false;
-  const normalized = value.trim().toLowerCase();
-  return normalized === "1" || normalized === "true" || normalized === "yes";
+// Parse and validate environment variables
+const parseConfig = () => {
+  try {
+    return configSchema.parse(process.env)
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const missingVars = error.errors.map(err => err.path.join('.')).join(', ')
+      throw new Error(`Missing or invalid environment variables: ${missingVars}`)
+    }
+    throw error
+  }
 }
 
-export function getConfig(): AppConfig {
-  const parsed = EnvSchema.safeParse(process.env);
-  if (!parsed.success) {
-    // In demo mode we will relax requirements; otherwise throw
-    const demoMode = parseBoolean(process.env.AUTH_DEMO_MODE);
-    if (!demoMode) {
-      throw new Error(`Invalid environment configuration: ${parsed.error.message}`);
+// Export validated configuration
+export const config = parseConfig()
+
+// Helper functions
+export const isDemoMode = () => config.DEMO_MODE === 'true'
+export const isProduction = () => process.env.NODE_ENV === 'production'
+export const isDevelopment = () => process.env.NODE_ENV === 'development'
+
+// Demo mode configuration
+export const getDemoConfig = () => ({
+  database: {
+    type: 'sqlite',
+    url: 'file:./prisma/dev.db'
+  },
+  auth: {
+    providers: ['credentials'],
+    session: {
+      strategy: 'jwt',
+      maxAge: 24 * 60 * 60 // 24 hours
+    }
+  },
+  features: {
+    auditLogging: true,
+    userManagement: true,
+    bulkOperations: true,
+    dataExport: true
+  }
+})
+
+// Production configuration
+export const getProductionConfig = () => ({
+  database: {
+    type: config.DATABASE_URL?.includes('postgres') ? 'postgresql' : 'sqlite',
+    url: config.DATABASE_URL || 'file:./prisma/prod.db'
+  },
+  auth: {
+    providers: ['credentials'],
+    session: {
+      strategy: 'jwt',
+      maxAge: 24 * 60 * 60
+    }
+  },
+  features: {
+    auditLogging: true,
+    userManagement: true,
+    bulkOperations: true,
+    dataExport: true
+  }
+})
+
+// Get current configuration based on environment
+export const getCurrentConfig = () => {
+  if (isDemoMode()) {
+    return getDemoConfig()
+  }
+  return getProductionConfig()
+}
+
+// Configuration validation
+export const validateConfig = () => {
+  try {
+    parseConfig()
+    return { valid: true, errors: [] }
+  } catch (error) {
+    return { 
+      valid: false, 
+      errors: error instanceof Error ? [error.message] : ['Unknown configuration error'] 
     }
   }
-
-  const data = parsed.success ? parsed.data : (process.env as Record<string, string>);
-  const demoMode = parseBoolean(data.AUTH_DEMO_MODE);
-  const allowlist = (data.AUTH_ALLOWLIST_EMAILS || "").split(",").map(e => e.trim()).filter(Boolean);
-  const defaultRole = data.AUTH_DEFAULT_ROLE || "admin";
-
-  return {
-    ...(data as any),
-    demoMode,
-    allowlistEmails: allowlist,
-    defaultRole,
-  } as AppConfig;
 }
 
-export const config = getConfig();
-
-
+// Export types
+export type Config = z.infer<typeof configSchema>
+export type DemoConfig = ReturnType<typeof getDemoConfig>
+export type ProductionConfig = ReturnType<typeof getProductionConfig>

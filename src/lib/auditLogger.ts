@@ -49,10 +49,20 @@ export async function getAuditContext(request: NextRequest) {
       return null
     }
 
+    // Get user details from database using the token's sub (user ID)
+    const user = await prisma.user.findUnique({
+      where: { id: token.sub },
+      select: { id: true, username: true, role: true }
+    })
+
+    if (!user) {
+      return null
+    }
+
     return {
-      userId: token.sub || '',
-      userName: (token as any).username || 'Unknown',
-      userRole: (token as any).role as 'MASTER' | 'REGULAR',
+      userId: user.id,
+      userName: user.username,
+      userRole: user.role as 'MASTER' | 'REGULAR',
       ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
       userAgent: request.headers.get('user-agent') || 'unknown'
     }
@@ -74,24 +84,10 @@ export async function logApiAction(
 ) {
   const context = await getAuditContext(request)
   
-  // Use fallback context if no authentication context is available
-  const fallbackContext = {
-    userId: 'system',
-    userName: 'System',
-    userRole: 'MASTER' as const,
-    ipAddress: 'unknown',
-    userAgent: 'unknown'
+  // Only log if we have a valid user context
+  if (!context) {
+    return
   }
-
-  const auditContext = context || fallbackContext
-
-  console.log('Logging audit action:', {
-    action,
-    entityType,
-    entityId,
-    entityName,
-    context: auditContext
-  })
 
   await logAuditEvent({
     action,
@@ -101,11 +97,11 @@ export async function logApiAction(
     oldValues,
     newValues,
     reason,
-    userId: auditContext.userId,
-    userName: auditContext.userName,
-    userRole: auditContext.userRole,
-    ipAddress: auditContext.ipAddress,
-    userAgent: auditContext.userAgent
+    userId: context.userId,
+    userName: context.userName,
+    userRole: context.userRole,
+    ipAddress: context.ipAddress,
+    userAgent: context.userAgent
   })
 }
 

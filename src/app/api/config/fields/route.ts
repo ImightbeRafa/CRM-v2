@@ -25,7 +25,6 @@ export async function POST(request: Request) {
     if (!authorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     
     const body = await request.json()
-    console.log('Creating field with data:', body)
     
     const created = await prisma.productField.create({
       data: {

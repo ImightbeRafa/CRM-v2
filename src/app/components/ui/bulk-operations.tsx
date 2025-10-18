@@ -11,6 +11,7 @@ interface BulkOperationsProps {
   itemType: string
   showUpdate?: boolean
   showToggle?: boolean
+  allItemIds?: string[] // Add this to pass all available item IDs
 }
 
 export function BulkOperations({
@@ -22,7 +23,8 @@ export function BulkOperations({
   totalItems,
   itemType,
   showUpdate = false,
-  showToggle = false
+  showToggle = false,
+  allItemIds = []
 }: BulkOperationsProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showUpdateDialog, setShowUpdateDialog] = useState(false)
@@ -34,10 +36,13 @@ export function BulkOperations({
 
   const handleSelectAll = () => {
     if (selectedItems.length === totalItems) {
+      // If all items are selected, deselect all
       onSelectionChange([])
     } else {
-      // This would need to be passed from parent with all item IDs
-      onSelectionChange([]) // Placeholder - parent should handle this
+      // If not all items are selected, select all available items
+      if (allItemIds.length > 0) {
+        onSelectionChange(allItemIds)
+      }
     }
   }
 
@@ -99,7 +104,7 @@ export function BulkOperations({
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
-              checked={false}
+              checked={selectedItems.length === totalItems && totalItems > 0}
               onChange={handleSelectAll}
               className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
             />

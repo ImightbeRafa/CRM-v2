@@ -1,0 +1,159 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
+import { getToken } from 'next-auth/jwt';
+
+export async function GET(request: NextRequest) {
+  try {
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const frequentCustomers = await prisma.frequentCustomer.findMany({
+      where: { active: true },
+      orderBy: [
+        { totalOrders: 'desc' },
+        { lastOrder: 'desc' }
+      ]
+    });
+
+    return NextResponse.json({
+      status: 'success',
+      data: frequentCustomers
+    });
+  } catch (error) {
+    console.error('Error fetching frequent customers:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch frequent customers' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Check if user is MASTER
+    if ((token as any).role !== 'MASTER') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { name, phone, province, canton, district, email, username, address, business } = body;
+
+    const frequentCustomer = await prisma.frequentCustomer.create({
+      data: {
+        name,
+        phone,
+        province,
+        canton,
+        district,
+        email,
+        username,
+        address,
+        business,
+        createdBy: token.sub as string
+      }
+    });
+
+    return NextResponse.json({
+      status: 'success',
+      data: frequentCustomer
+    });
+  } catch (error) {
+    console.error('Error creating frequent customer:', error);
+    return NextResponse.json(
+      { error: 'Failed to create frequent customer' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Check if user is MASTER
+    if ((token as any).role !== 'MASTER') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { id, name, phone, province, canton, district, email, username, address, business, active } = body;
+
+    const frequentCustomer = await prisma.frequentCustomer.update({
+      where: { id },
+      data: {
+        name,
+        phone,
+        province,
+        canton,
+        district,
+        email,
+        username,
+        address,
+        business,
+        active: active !== undefined ? active : true
+      }
+    });
+
+    return NextResponse.json({
+      status: 'success',
+      data: frequentCustomer
+    });
+  } catch (error) {
+    console.error('Error updating frequent customer:', error);
+    return NextResponse.json(
+      { error: 'Failed to update frequent customer' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Check if user is MASTER
+    if ((token as any).role !== 'MASTER') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: 'Customer ID is required' }, { status: 400 });
+    }
+
+    await prisma.frequentCustomer.update({
+      where: { id },
+      data: { active: false }
+    });
+
+    return NextResponse.json({
+      status: 'success',
+      message: 'Frequent customer deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting frequent customer:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete frequent customer' },
+      { status: 500 }
+    );
+  }
+}

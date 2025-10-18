@@ -2,7 +2,6 @@
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { MasterMenu } from "../components/MasterMenu";
 import LogoutButton from "@/app/components/LogoutButton";
 
 export default function HomeContent() {
@@ -57,7 +56,6 @@ export default function HomeContent() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <MasterMenu />
             <LogoutButton />
           </div>
         </div>

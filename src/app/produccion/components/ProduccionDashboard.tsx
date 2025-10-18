@@ -102,7 +102,14 @@ export function ProductionDashboard({ onGenerateGuias, isGuiaGeneratorOpen, onGu
   const { toast } = useToast();
 
   const { sales: orders, isLoading: loading, error, refresh } = useSalesStream({
-    pollingInterval: 30000
+    pollingInterval: 30000,
+    onError: (error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: `Error al cargar los pedidos: ${error}`,
+      });
+    }
   });
 
   const filteredOrders = useMemo(() => 
@@ -144,11 +151,10 @@ export function ProductionDashboard({ onGenerateGuias, isGuiaGeneratorOpen, onGu
         description: "El estado de la orden ha sido actualizado exitosamente.",
       });
     } catch (error) {
-      console.error('Error updating status:', error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "No se pudo actualizar el estado de la orden.",
+        description: `No se pudo actualizar el estado de la orden: ${error instanceof Error ? error.message : 'Error desconocido'}`,
       });
     }
   };

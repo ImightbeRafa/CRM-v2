@@ -57,6 +57,23 @@ export function OrderDetails({
   const handleSave = async () => {
     try {
       setIsSaving(true);
+      
+      // Detect changes for audit logging
+      const changes: string[] = [];
+      Object.keys(editedOrder).forEach(key => {
+        const oldValue = displayOrder[key as keyof Sale];
+        const newValue = editedOrder[key as keyof Sale];
+        
+        if (oldValue !== newValue && (oldValue || newValue)) {
+          const fieldLabel = getFieldLabel(key);
+          changes.push(`${fieldLabel}: "${oldValue || 'N/A'}" → "${newValue || 'N/A'}"`);
+        }
+      });
+      
+      if (changes.length > 0) {
+        console.log('Order changes detected:', changes);
+      }
+      
       const updatedOrder = await onUpdateOrder(order.orderId, editedOrder);
       setDisplayOrder(updatedOrder);
       setEditedOrder(updatedOrder);
@@ -67,6 +84,40 @@ export function OrderDetails({
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const getFieldLabel = (key: string): string => {
+    const labels: Record<string, string> = {
+      'customerName': 'Cliente',
+      'phone': 'Teléfono',
+      'email': 'Email',
+      'business': 'Negocio',
+      'product': 'Producto',
+      'quantity': 'Cantidad',
+      'size': 'Tamaño',
+      'color': 'Color',
+      'packaging': 'Empaque',
+      'customization': 'Personalización',
+      'delivery': 'Delivery',
+      'status': 'Estado',
+      'funnel': 'Canal',
+      'address': 'Dirección',
+      'expectedDate': 'Fecha Esperada',
+      'saleDate': 'Fecha de Venta',
+      'courier': 'Mensajería',
+      'seller': 'Vendedor',
+      'province': 'Provincia',
+      'canton': 'Cantón',
+      'district': 'Distrito',
+      'productCost': 'Costo de Producto',
+      'shippingCost': 'Costo de Envío',
+      'iva': 'IVA',
+      'total': 'Total',
+      'comments': 'Comentarios',
+      'agreedDate': 'Fecha Acordada',
+      'pickupDate': 'Fecha de Retiro'
+    };
+    return labels[key] || key;
   };
 
   const handleCancelEdit = () => {

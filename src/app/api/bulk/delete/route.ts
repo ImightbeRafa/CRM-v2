@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       ids, 
       type: type as any, 
       reason,
-      request 
+      request: request as any
     })
     
     return createSuccessResponse(result, `Bulk delete completed: ${result.success} successful, ${result.failed} failed`)

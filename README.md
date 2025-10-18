@@ -1,126 +1,213 @@
-# Betsy CRM
+# Betsy CRM - Sistema de Gestión de Ventas
 
-Sistema CRM moderno para gestión de ventas y producción con enfoque en facilidad de uso y trazabilidad completa.
+Un sistema CRM completo para gestión de ventas, pedidos y clientes con funcionalidades avanzadas de auditoría y configuración.
 
 ## 🚀 Características Principales
 
-### Gestión de Ventas
-- 📝 Formularios EA/RA para captura de pedidos
-- 👥 Gestión de clientes y vendedores
-- 📊 Dashboard de ventas con estadísticas
-- 🔄 Seguimiento de estados de pedidos
+### 📊 **Gestión de Ventas**
+- Formulario optimizado para creación de pedidos (EA/RA)
+- Sugerencias inteligentes de productos y clientes frecuentes
+- Dashboard de ventas en tiempo real
+- Gestión de estados de pedidos
+- Cálculo automático de totales e IVA
 
-### Sistema de Auditoría
-- 📋 Historial completo de cambios
-- 👤 Trazabilidad de usuarios
-- 🔍 Seguimiento de modificaciones
-- 📈 Reportes de actividad
+### 👥 **Gestión de Usuarios**
+- Sistema de roles (MASTER/REGULAR)
+- Autenticación segura con NextAuth.js
+- Gestión completa de usuarios desde panel de administración
+- Auditoría de acciones de usuarios
 
-### Gestión de Configuración
-- ⚙️ Campos personalizables de productos
-- 🏷️ Conjuntos de opciones configurables
-- 🚚 Métodos de envío personalizables
-- 👥 Gestión de usuarios y roles
+### 📈 **Panel de Producción**
+- Vista unificada de todos los pedidos
+- Filtros avanzados por estado, tipo y fecha
+- Actualización de estados en tiempo real
+- Generación de guías de envío
 
-## 🛠️ Stack Técnico
+### 🔍 **Sistema de Auditoría**
+- Registro completo de todas las acciones del sistema
+- Filtros por fecha, usuario y tipo de acción
+- Paginación para manejo de grandes volúmenes de datos
+- Exportación de logs de auditoría
 
-- **Frontend**: Next.js 14 + TypeScript
-- **Base de Datos**: SQLite + Prisma ORM
+### ⚙️ **Configuración Avanzada**
+- Gestión de productos y clientes recurrentes
+- Configuración de campos personalizados
+- Métodos de envío configurables
+- Panel de administración completo
+
+## 🛠️ Tecnologías
+
+- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS
+- **Backend**: Next.js API Routes, Prisma ORM
+- **Base de Datos**: SQLite (desarrollo) / PostgreSQL (producción)
 - **Autenticación**: NextAuth.js
-- **UI**: Tailwind CSS + shadcn/ui
-- **Despliegue**: Vercel/Cloudflare
+- **UI Components**: Radix UI, Lucide React
 
-## 🚀 Instalación Rápida
+## 📦 Instalación
 
-### Requisitos
-- Node.js >=18.18.0
-- npm
+### Prerrequisitos
+- Node.js 18+
+- npm o yarn
 
-### Variables de Entorno
-```env
-NEXTAUTH_SECRET=your-secret-key
-NEXT_PUBLIC_SCRIPT_URL=your-google-apps-script-url
+### Pasos de Instalación
+
+1. **Clonar el repositorio**
+```bash
+git clone <repository-url>
+cd Betsy
 ```
 
-### Instalación
+2. **Instalar dependencias**
 ```bash
-# Clonar repositorio
-git clone [repository-url]
-cd Betsy
-
-# Instalar dependencias
 npm install
+```
 
-# Configurar base de datos
+3. **Configurar variables de entorno**
+```bash
+cp env.example .env.local
+```
+
+Editar `.env.local` con tus configuraciones:
+```env
+DATABASE_URL="file:./dev.db"
+NEXTAUTH_SECRET="your-secret-key"
+NEXTAUTH_URL="http://localhost:3000"
+```
+
+4. **Configurar la base de datos**
+```bash
+npx prisma generate
+npx prisma db push
+```
+
+5. **Iniciar el servidor de desarrollo**
+```bash
+npm run dev
+```
+
+## 🗄️ Estructura de la Base de Datos
+
+### Modelos Principales
+
+- **Order**: Pedidos de venta con toda la información del cliente y producto
+- **User**: Usuarios del sistema con roles y permisos
+- **AuditLog**: Registro de auditoría de todas las acciones
+- **FrequentProduct**: Productos recurrentes para sugerencias
+- **FrequentCustomer**: Clientes frecuentes para autocompletado
+
+## 🔐 Autenticación y Roles
+
+### Roles de Usuario
+- **MASTER**: Acceso completo al sistema, gestión de usuarios, configuración
+- **REGULAR**: Acceso a ventas y producción, sin acceso a configuración
+
+### Configuración de Usuarios
+- Los usuarios MASTER pueden crear, editar y eliminar otros usuarios
+- Contraseña por defecto para nuevos usuarios: `password123`
+- Sistema de activación/desactivación de usuarios
+
+## 📱 Funcionalidades por Módulo
+
+### 🏠 **Dashboard Principal**
+- Resumen de ventas del día
+- Acceso rápido a todas las funcionalidades
+- Navegación intuitiva
+
+### 💰 **Módulo de Ventas**
+- Formulario optimizado para creación de pedidos
+- Sugerencias inteligentes basadas en historial
+- Validación automática de campos requeridos
+- Cálculo automático de totales
+
+### 🏭 **Módulo de Producción**
+- Vista de todos los pedidos con filtros
+- Actualización de estados de pedidos
+- Generación de guías de envío
+- Seguimiento de pedidos EA y RA
+
+### ⚙️ **Módulo de Configuración**
+- Gestión de usuarios y roles
+- Configuración de productos recurrentes
+- Configuración de clientes frecuentes
+- Panel de auditoría avanzado
+
+## 🚀 Despliegue en Producción
+
+### Variables de Entorno para Producción
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/betsy"
+NEXTAUTH_SECRET="your-production-secret"
+NEXTAUTH_URL="https://your-domain.com"
+```
+
+### Comandos de Despliegue
+```bash
+# Generar cliente Prisma
+npx prisma generate
+
+# Aplicar migraciones
 npx prisma db push
 
-# Iniciar desarrollo
-npm run dev
-```
-
-## 📁 Estructura del Proyecto
-
-```
-Betsy/
-├── src/
-│   ├── app/
-│   │   ├── ventas/          # Módulo de ventas
-│   │   ├── produccion/      # Módulo de producción
-│   │   ├── config/          # Configuración del sistema
-│   │   ├── api/             # API endpoints
-│   │   └── components/      # Componentes reutilizables
-│   ├── lib/                 # Utilidades y configuración
-│   └── types/               # Definiciones TypeScript
-├── prisma/                  # Esquema de base de datos
-└── public/                  # Archivos estáticos
-```
-
-## 🔧 Comandos de Desarrollo
-
-```bash
-# Desarrollo
-npm run dev
-
-# Construcción
+# Construir para producción
 npm run build
 
-# Base de datos
-npx prisma db push
+# Iniciar en producción
+npm start
+```
+
+## 📊 Monitoreo y Auditoría
+
+### Sistema de Auditoría
+- Registro automático de todas las acciones
+- Filtros por fecha, usuario y tipo de acción
+- Paginación para manejo de grandes volúmenes
+- Exportación de logs
+
+### Métricas Disponibles
+- Total de ventas por día/mes
+- Usuarios más activos
+- Productos más vendidos
+- Estados de pedidos
+
+## 🔧 Mantenimiento
+
+### Comandos Útiles
+```bash
+# Resetear base de datos
+npx prisma db push --force-reset
+
+# Generar datos de prueba
+npm run seed
+
+# Verificar estado de la base de datos
 npx prisma studio
 ```
 
-## ✨ Estado del Proyecto
+### Limpieza de Datos
+- Los logs de auditoría se pueden limpiar periódicamente
+- Los productos y clientes inactivos se pueden archivar
+- Los pedidos completados se pueden exportar y archivar
 
-### ✅ Completado
-- Sistema de autenticación
-- Formularios EA/RA
-- Dashboard de ventas
-- Sistema de auditoría
-- Gestión de configuración
-- Operaciones masivas
+## 🆘 Solución de Problemas
 
-### 🔧 En Refinamiento
-- Optimización de auditoría
-- Mejoras de UX
-- Limpieza de código
+### Problemas Comunes
 
-## 📄 Licencia
+1. **Error de conexión a la base de datos**
+   - Verificar DATABASE_URL en .env.local
+   - Ejecutar `npx prisma db push`
 
-Este proyecto está licenciado bajo la **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+2. **Error de autenticación**
+   - Verificar NEXTAUTH_SECRET
+   - Limpiar cookies del navegador
 
-### ✅ Permisos
-- **Uso libre** para fines no comerciales
-- **Colaboración** y contribuciones
-- **Modificación** y mejora del código
-- **Distribución** del código fuente
+3. **Datos no se muestran**
+   - Verificar que la base de datos tenga datos
+   - Ejecutar `npm run seed` para datos de prueba
 
-### ❌ Restricciones
-- **No comercialización** del software
-- **No creación** de productos derivados comerciales
-- **No forking** para fines lucrativos
+## 📞 Soporte
 
-Para más detalles, consulta el archivo [LICENSE](LICENSE).
+Para soporte técnico o reportar bugs, contactar al equipo de desarrollo.
 
 ---
 
-**Betsy CRM** - Sistema moderno para gestión de ventas y producción
+**Betsy CRM** - Sistema de gestión de ventas optimizado para productividad y eficiencia.

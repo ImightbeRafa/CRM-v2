@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ProductInfo } from './types';
 import { RefreshCw } from 'lucide-react';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
 
 interface ProductFormProps {
   productInfo: ProductInfo;
@@ -8,6 +9,7 @@ interface ProductFormProps {
   onProductInfoChange: (info: ProductInfo) => void;
   applyIVA: boolean;
   onApplyIVAChange: (value: boolean) => void;
+  isAddModal?: boolean;
 }
 
 const ProductForm: React.FC<ProductFormProps> = ({
@@ -16,7 +18,20 @@ const ProductForm: React.FC<ProductFormProps> = ({
   onProductInfoChange,
   applyIVA,
   onApplyIVAChange,
+  isAddModal = false,
 }) => {
+  const { user } = useCurrentUser();
+
+  // Auto-assign vendedor when user is loaded
+  useEffect(() => {
+    if (user && !productInfo.vendedor) {
+      onProductInfoChange({
+        ...productInfo,
+        vendedor: user.username
+      });
+    }
+  }, [user, productInfo.vendedor]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     let numValue = value;
@@ -129,55 +144,6 @@ const ProductForm: React.FC<ProductFormProps> = ({
         </div>
       </div>
 
-      {/* Product Information */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block font-medium">Producto</label>
-          <input 
-            type="text"
-            name="type"
-            className="w-full p-2 border rounded"
-            value={productInfo.type}
-            onChange={handleInputChange}
-            required
-            placeholder="Escriba el producto..."
-          />
-        </div>
-        <div>
-          <label className="block font-medium">Cantidad</label>
-          <input
-            type="number"
-            name="cantidad"
-            value={productInfo.cantidad}
-            onChange={handleInputChange}
-            min="1"
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-          />
-        </div>
-        <div>
-          <label className="block font-medium">Color</label>
-          <input 
-            type="text"
-            name="color"
-            className="w-full p-2 border rounded"
-            value={productInfo.color}
-            onChange={handleInputChange}
-            required
-          />
-        </div>
-        <div>
-          <label className="block font-medium">Tamaño</label>
-          <input
-            type="text"
-            name="tamano"
-            className="w-full p-2 border rounded"
-            value={productInfo.tamano}
-            onChange={handleInputChange}
-            required
-            placeholder="Escriba el tamaño..."
-          />
-        </div>
-      </div>
 
       {/* Dynamic Fields */}
       {loading ? (
@@ -268,113 +234,42 @@ const ProductForm: React.FC<ProductFormProps> = ({
         />
       </div>
 
-      {/* Vendor and Messenger Information */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block font-medium">Vendedor</label>
-          <select 
-            name="vendedor"
-            className="w-full p-2 border rounded"
-            value={productInfo.vendedor}
-            onChange={handleInputChange}
-            required
-          >
-            <option value="">Seleccionar...</option>
-            {sellers.map(s => (
-              <option key={s.id} value={s.name}>{s.name}</option>
-            ))}
-          </select>
-        </div>
 
-        {orderType === 'EA' && (
-          <div>
-            <label className="block font-medium">Mensajería</label>
-            <select
-              name="mensajeria"
-              className="w-full p-2 border rounded"
-              value={productInfo.mensajeria}
-              onChange={handleInputChange}
-              required
-            >
-              <option value="">Seleccionar...</option>
-              {shippingMethods.map(m => (
-                <option key={m.id} value={m.name}>{m.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
-
-      {/* Costs */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block font-medium">Costo del Producto</label>
+      {/* Vendor Information - Only show in edit mode, not in add modal */}
+      {!isAddModal && (
+        <div className="flex flex-col space-y-1">
+          <label className="text-sm font-medium">Vendedor</label>
           <input
-            type="number"
-            name="productCost"
-            value={productInfo.productCost}
-            onChange={handleInputChange}
-            className="w-full p-2 border rounded"
-            min="0"
-            step="any"
-            required
+            type="text"
+            name="vendedor"
+            className="w-full p-2 border rounded text-sm bg-gray-50"
+            value={productInfo.vendedor || user?.username || ''}
+            readOnly
+            title="Vendedor asignado automáticamente"
           />
         </div>
+      )}
 
-        {orderType === 'EA' && (
-          <div>
-            <label className="block font-medium">Costo de Envío</label>
+      {/* Costs - Only show in edit mode, not in add modal */}
+      {!isAddModal && (
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex flex-col space-y-1">
+            <label className="text-sm font-medium">Costo del Producto</label>
             <input
               type="number"
-              name="shippingCost"
-              value={shippingBase}
+              name="productCost"
+              value={productInfo.productCost}
               onChange={handleInputChange}
-              className="w-full p-2 border rounded bg-gray-100"
+              className="w-full p-2 border rounded text-sm"
               min="0"
               step="any"
-              readOnly
+              required
             />
           </div>
-        )}
-      </div>
 
-      {/* IVA and Total */}
-      <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <input
-              type="checkbox"
-              id="applyIVA"
-              checked={applyIVA}
-              onChange={(e) => onApplyIVAChange(e.target.checked)}
-              className="w-4 h-4"
-            />
-            <label htmlFor="applyIVA" className="block font-medium">
-              Aplicar IVA (13%)
-            </label>
-          </div>
-          <input 
-            type="text"
-            className="w-full p-2 border rounded bg-gray-100"
-            value={`₡${productInfo.iva.toFixed(2)}`}
-            readOnly
-          />
         </div>
-        <div>
-          <label className="block font-medium">Total</label>
-          <input 
-            type="text"
-            className="w-full p-2 border rounded bg-gray-100 font-bold"
-            value={`₡${(productInfo.total + optionDeltas).toFixed(2)}`}
-            readOnly
-          />
-          {optionDeltas !== 0 && (
-            <div className="text-xs text-gray-600 mt-1">
-              Incluye opciones: ₡{optionDeltas.toFixed(2)}
-            </div>
-          )}
-        </div>
-      </div>
+      )}
+
     </div>
   );
 };

@@ -43,48 +43,6 @@ Un sistema CRM completo para gestión de ventas, pedidos y clientes con funciona
 - **Autenticación**: NextAuth.js
 - **UI Components**: Radix UI, Lucide React
 
-## 📦 Instalación
-
-### Prerrequisitos
-- Node.js 18+
-- npm o yarn
-
-### Pasos de Instalación
-
-1. **Clonar el repositorio**
-```bash
-git clone <repository-url>
-cd Betsy
-```
-
-2. **Instalar dependencias**
-```bash
-npm install
-```
-
-3. **Configurar variables de entorno**
-```bash
-cp env.example .env.local
-```
-
-Editar `.env.local` con tus configuraciones:
-```env
-DATABASE_URL="file:./dev.db"
-NEXTAUTH_SECRET="your-secret-key"
-NEXTAUTH_URL="http://localhost:3000"
-```
-
-4. **Configurar la base de datos**
-```bash
-npx prisma generate
-npx prisma db push
-```
-
-5. **Iniciar el servidor de desarrollo**
-```bash
-npm run dev
-```
-
 ## 🗄️ Estructura de la Base de Datos
 
 ### Modelos Principales
@@ -131,30 +89,6 @@ npm run dev
 - Configuración de clientes frecuentes
 - Panel de auditoría avanzado
 
-## 🚀 Despliegue en Producción
-
-### Variables de Entorno para Producción
-```env
-DATABASE_URL="postgresql://user:password@localhost:5432/betsy"
-NEXTAUTH_SECRET="your-production-secret"
-NEXTAUTH_URL="https://your-domain.com"
-```
-
-### Comandos de Despliegue
-```bash
-# Generar cliente Prisma
-npx prisma generate
-
-# Aplicar migraciones
-npx prisma db push
-
-# Construir para producción
-npm run build
-
-# Iniciar en producción
-npm start
-```
-
 ## 📊 Monitoreo y Auditoría
 
 ### Sistema de Auditoría
@@ -168,45 +102,6 @@ npm start
 - Usuarios más activos
 - Productos más vendidos
 - Estados de pedidos
-
-## 🔧 Mantenimiento
-
-### Comandos Útiles
-```bash
-# Resetear base de datos
-npx prisma db push --force-reset
-
-# Generar datos de prueba
-npm run seed
-
-# Verificar estado de la base de datos
-npx prisma studio
-```
-
-### Limpieza de Datos
-- Los logs de auditoría se pueden limpiar periódicamente
-- Los productos y clientes inactivos se pueden archivar
-- Los pedidos completados se pueden exportar y archivar
-
-## 🆘 Solución de Problemas
-
-### Problemas Comunes
-
-1. **Error de conexión a la base de datos**
-   - Verificar DATABASE_URL en .env.local
-   - Ejecutar `npx prisma db push`
-
-2. **Error de autenticación**
-   - Verificar NEXTAUTH_SECRET
-   - Limpiar cookies del navegador
-
-3. **Datos no se muestran**
-   - Verificar que la base de datos tenga datos
-   - Ejecutar `npm run seed` para datos de prueba
-
-## 📞 Soporte
-
-Para soporte técnico o reportar bugs, contactar al equipo de desarrollo.
 
 ---
 

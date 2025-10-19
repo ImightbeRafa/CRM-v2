@@ -15,6 +15,8 @@ model Order {
   status        String   @default("Pendiente")
   timestamp     DateTime @default(now())
   customerName  String
+  // User identification for the order creator/owner
+  username      String?
   phone         String?
   email         String?
   business      String?
@@ -23,6 +25,8 @@ model Order {
   size          String?
   color         String?
   packaging     String?
+  // Additional customization details and funnel/source
+  customization String?
   comments      String?
   total         Float    @default(0)
   iva           Float?
@@ -34,10 +38,14 @@ model Order {
   district      String?
   courier       String?
   expectedDate  String?
+  // Sales/marketing funnel
+  funnel        String?
   agreedDate    String?
   pickupDate    String?
   saleDate      String?
   seller        String?
+  // Delivery status or method
+  delivery      String?
 
   @@index([status])
   @@index([orderType])
@@ -71,11 +79,78 @@ model AuditLog {
   userName   String
   userRole   UserRole
   timestamp  DateTime    @default(now())
+  // Request context details
+  ipAddress  String?
+  userAgent  String?
 
   @@index([action])
   @@index([entityType])
   @@index([userId])
   @@index([timestamp])
+}
+
+// ----------------------------------------------------------------------------
+// Product configuration models (used by /api/config/* endpoints)
+// ----------------------------------------------------------------------------
+
+model ProductOptionSet {
+  id      String          @id @default(cuid())
+  key     String          @unique
+  name    String
+  active  Boolean         @default(true)
+  options ProductOption[]
+  productFields ProductField[]
+
+  @@index([active])
+}
+
+model ProductOption {
+  id         String            @id @default(cuid())
+  setId      String
+  set        ProductOptionSet  @relation(fields: [setId], references: [id], onDelete: Cascade)
+  label      String
+  value      String
+  priceDelta Float             @default(0)
+  metadata   Json?
+  active     Boolean           @default(true)
+
+  @@index([setId])
+  @@index([active])
+}
+
+model ProductField {
+  id          String            @id @default(cuid())
+  key         String            @unique
+  label       String
+  type        String
+  required    Boolean           @default(false)
+  order       Int               @default(0)
+  optionSetId String?
+  optionSet   ProductOptionSet? @relation(fields: [optionSetId], references: [id])
+  multiSelect Boolean           @default(false)
+  active      Boolean           @default(true)
+
+  @@index([active])
+  @@index([order])
+}
+
+model Seller {
+  id     String  @id @default(cuid())
+  name   String
+  active Boolean @default(true)
+
+  @@index([active])
+}
+
+model ShippingMethod {
+  id        String  @id @default(cuid())
+  name      String
+  carrier   String?
+  basePrice Float   @default(0)
+  active    Boolean @default(true)
+
+  @@index([active])
+  @@index([name])
 }
 
 model FrequentProduct {

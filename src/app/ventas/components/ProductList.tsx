@@ -21,6 +21,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [draftProduct, setDraftProduct] = useState<ProductInfo | null>(null);
   const { user } = useCurrentUser();
 
 
@@ -63,12 +64,9 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
   }, [orderTotals]);
 
   const addProduct = () => {
-    setShowAddModal(true);
-  };
-
-  const createNewProduct = () => {
-    const newProduct: ProductInfo = {
-      id: `product_${Date.now()}`,
+    // Initialize a draft product so manual inputs persist in the modal
+    setDraftProduct({
+      id: '',
       type: '',
       color: '',
       packaging: '',
@@ -83,15 +81,24 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
       tamano: '',
       personalizado: '',
       optionDeltas: 0
+    });
+    setShowAddModal(true);
+  };
+
+  const confirmAddDraftProduct = () => {
+    if (!draftProduct) return;
+    const finalizedProduct: ProductInfo = {
+      ...draftProduct,
+      id: `product_${Date.now()}`,
+      vendedor: draftProduct.vendedor || user?.username || ''
     };
 
     onOrderInfoChange({
       ...orderInfo,
-      products: [...orderInfo.products, newProduct]
+      products: [...orderInfo.products, finalizedProduct]
     });
-    setEditingProductId(newProduct.id);
-    setShowAddForm(true);
     setShowAddModal(false);
+    setDraftProduct(null);
   };
 
   const removeProduct = (productId: string) => {
@@ -401,6 +408,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowAddModal(false);
+              setDraftProduct(null);
             }
           }}
         >
@@ -412,6 +420,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                   variant="outline"
                   onClick={() => {
                     setShowAddModal(false);
+                    setDraftProduct(null);
                   }}
                   className="h-8 w-8 p-0"
                 >
@@ -419,29 +428,22 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                 </Button>
               </div>
               <ProductForm
-                productInfo={{
-                  id: '',
-                  type: '',
-                  color: '',
-                  packaging: '',
-                  comments: '',
-                  cantidad: 1,
-                  productCost: 0,
-                  shippingCost: 0,
-                  iva: 0,
-                  total: 0,
-                  vendedor: user?.username || '',
-                  mensajeria: '',
-                  tamano: '',
-                  personalizado: '',
-                  optionDeltas: 0
-                }}
+                productInfo={draftProduct as ProductInfo}
                 orderType={orderType}
-                onProductInfoChange={(newProduct) => {
-                  // This will be handled when the form is submitted
+                onProductInfoChange={(newProduct) => setDraftProduct(newProduct)}
+                applyIVA={(draftProduct?.iva || 0) > 0}
+                onApplyIVAChange={(applyIVA) => {
+                  if (!draftProduct) return;
+                  const subtotal = draftProduct.productCost * draftProduct.cantidad;
+                  const ivaAmount = applyIVA ? subtotal * 0.13 : 0;
+                  const shipping = orderType === 'EA' ? draftProduct.shippingCost : 0;
+                  const total = subtotal + shipping + ivaAmount;
+                  setDraftProduct({
+                    ...draftProduct,
+                    iva: ivaAmount,
+                    total
+                  });
                 }}
-                applyIVA={false}
-                onApplyIVAChange={() => {}}
                 isAddModal={true}
               />
               <div className="flex justify-end gap-2 mt-4">
@@ -449,13 +451,15 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                   variant="outline"
                   onClick={() => {
                     setShowAddModal(false);
+                    setDraftProduct(null);
                   }}
                 >
                   Cancelar
                 </Button>
                 <Button
-                  onClick={createNewProduct}
+                  onClick={confirmAddDraftProduct}
                   className="bg-blue-500 hover:bg-blue-600"
+                  disabled={!draftProduct || !(draftProduct.type && draftProduct.type.trim().length > 0)}
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   Agregar Producto

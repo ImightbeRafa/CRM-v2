@@ -34,8 +34,10 @@ export default function ConfigPage() {
   const [showUserForm, setShowUserForm] = useState(false)
   const [editingField, setEditingField] = useState<any>(null)
   const [editingOptionSet, setEditingOptionSet] = useState<any>(null)
+  const [optionSetOptions, setOptionSetOptions] = useState<{ label: string; value: string; priceDelta: number; metadata: string }[]>([])
   const [editingShipping, setEditingShipping] = useState<any>(null)
   const [editingUser, setEditingUser] = useState<any>(null)
+  const [showPassword, setShowPassword] = useState(false)
 
   const loadData = async () => {
     setLoading(true)
@@ -196,6 +198,12 @@ export default function ConfigPage() {
   // Option Set management functions
   const handleEditOptionSet = (set: any) => {
     setEditingOptionSet(set)
+    setOptionSetOptions((set?.options || []).map((o: any) => ({
+      label: o.label || '',
+      value: o.value || '',
+      priceDelta: o.priceDelta || 0,
+      metadata: typeof o.metadata === 'string' ? o.metadata : JSON.stringify(o.metadata || '')
+    })))
     setShowOptionSetForm(true)
   }
 
@@ -268,13 +276,27 @@ export default function ConfigPage() {
     const userData = {
       username: formData.get('username'),
       role: formData.get('role'),
-      active: formData.get('active') === 'on'
+      active: formData.get('active') === 'on',
+      password: (formData.get('password') as string) || ''
     }
 
     try {
-      const url = editingUser ? '/api/users' : '/api/users'
-      const method = editingUser ? 'PUT' : 'POST'
-      const body = editingUser ? { id: editingUser.id, ...userData } : userData
+      const isEditing = Boolean(editingUser)
+      const url = isEditing ? `/api/users/${editingUser.id}` : '/api/users'
+      const method = isEditing ? 'PUT' : 'POST'
+      // For edits, send to /api/users/[id] where password is supported; omit empty password
+      const body = isEditing
+        ? {
+            username: userData.username,
+            role: userData.role,
+            active: userData.active,
+            ...(userData.password && userData.password.length > 0 ? { password: userData.password } : {})
+          }
+        : {
+            username: userData.username,
+            role: userData.role,
+            active: userData.active
+          }
 
       const response = await fetch(url, {
         method,
@@ -288,7 +310,8 @@ export default function ConfigPage() {
         await loadData()
         setShowUserForm(false)
         setEditingUser(null)
-        alert(editingUser ? '✅ Usuario actualizado exitosamente' : '✅ Usuario creado exitosamente')
+        setShowPassword(false)
+        alert(isEditing ? '✅ Usuario actualizado exitosamente' : '✅ Usuario creado exitosamente')
       } else {
         alert(`❌ Error: ${result.error || 'Error al guardar usuario'}`)
       }
@@ -473,10 +496,13 @@ export default function ConfigPage() {
                   </div>
                 </div>
                     <button
-                      onClick={() => setShowFieldForm(true)}
+                      onClick={() => {
+                        setEditingField(null)
+                        setShowFieldForm(true)
+                      }}
                       className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
                     >
-                      + Agregar Campo
+                      + Nuevo Campo
                     </button>
               </div>
                 </div>
@@ -492,10 +518,13 @@ export default function ConfigPage() {
                       <Database className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-500">No hay campos configurados</p>
                       <button
-                        onClick={() => setShowFieldForm(true)}
+                        onClick={() => {
+                          setEditingField(null)
+                          setShowFieldForm(true)
+                        }}
                         className="mt-4 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                       >
-                        Crear Primer Campo
+                        Crear primer campo
                       </button>
                   </div>
                 ) : (
@@ -548,10 +577,14 @@ export default function ConfigPage() {
                   </div>
                 </div>
                             <button 
-                      onClick={() => setShowOptionSetForm(true)}
+                      onClick={() => {
+                        setEditingOptionSet(null)
+                        setOptionSetOptions([{ label: '', value: '', priceDelta: 0, metadata: '' }])
+                        setShowOptionSetForm(true)
+                      }}
                       className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
                     >
-                      + Agregar Conjunto
+                      + Nuevo conjunto
                             </button>
                           </div>
                         </div>
@@ -567,10 +600,14 @@ export default function ConfigPage() {
                       <Zap className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                       <p className="text-gray-500">No hay conjuntos de opciones configurados</p>
                                 <button 
-                        onClick={() => setShowOptionSetForm(true)}
+                        onClick={() => {
+                          setEditingOptionSet(null)
+                          setOptionSetOptions([{ label: '', value: '', priceDelta: 0, metadata: '' }])
+                          setShowOptionSetForm(true)
+                        }}
                         className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
                       >
-                        Crear Primer Conjunto
+                        Crear primer conjunto
                                 </button>
                               </div>
                   ) : (
@@ -623,10 +660,13 @@ export default function ConfigPage() {
                   </div>
                 </div>
                     <button
-                      onClick={() => setShowShippingForm(true)}
+                      onClick={() => {
+                        setEditingShipping(null)
+                        setShowShippingForm(true)
+                      }}
                       className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
                     >
-                      + Agregar Método
+                      + Nuevo método
                     </button>
               </div>
                 </div>
@@ -642,10 +682,13 @@ export default function ConfigPage() {
                       <BarChart3 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                       <p className="text-gray-500">No hay métodos de envío configurados</p>
                       <button
-                        onClick={() => setShowShippingForm(true)}
+                        onClick={() => {
+                          setEditingShipping(null)
+                          setShowShippingForm(true)
+                        }}
                         className="mt-4 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
                       >
-                        Crear Primer Método
+                        Crear primer método
                       </button>
                   </div>
                 ) : (
@@ -659,7 +702,7 @@ export default function ConfigPage() {
                             <div>
                               <div className="font-medium text-gray-900">{method.name}</div>
                               <div className="text-sm text-gray-500">
-                                Precio: ${method.price || 0} • {method.active ? 'Activo' : 'Inactivo'}
+                                Precio base: ₡{method.basePrice || 0} • {method.active ? 'Activo' : 'Inactivo'}
                               </div>
                             </div>
                           </div>
@@ -876,20 +919,58 @@ export default function ConfigPage() {
             <h3 className="text-lg font-semibold mb-4">
               {editingField ? 'Editar Campo' : 'Nuevo Campo'}
             </h3>
-            <form onSubmit={(e) => {
-    e.preventDefault()
+            <form onSubmit={async (e) => {
+              e.preventDefault()
               const formData = new FormData(e.target as HTMLFormElement)
-              const data = {
+              const payload: any = {
                 label: formData.get('label'),
                 type: formData.get('type'),
                 required: formData.get('required') === 'on',
-                order: parseInt(formData.get('order') as string) || 0
+                order: parseInt(formData.get('order') as string) || 0,
+                optionSetId: (formData.get('optionSetId') as string) || null,
+                multiSelect: formData.get('multiSelect') === 'on',
               }
-              console.log('Field form submitted:', data)
-              setShowFieldForm(false)
-              setEditingField(null)
+              if (!editingField) {
+                payload.key = formData.get('key')
+              } else {
+                payload.id = editingField.id
+              }
+
+              try {
+                const res = await fetch('/api/config/fields', {
+                  method: editingField ? 'PUT' : 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload)
+                })
+                const json = await res.json()
+                if (res.ok && json.status === 'success') {
+                  await loadData()
+                  setShowFieldForm(false)
+                  setEditingField(null)
+                  alert(editingField ? '✅ Campo actualizado' : '✅ Campo creado')
+                } else {
+                  alert(`❌ Error: ${json.error || 'No se pudo guardar el campo'}`)
+                }
+              } catch (err) {
+                console.error('Field save error:', err)
+                alert('❌ Error al guardar campo')
+              }
             }}>
               <div className="space-y-4">
+            {!editingField && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Clave única</label>
+                    <input
+                      type="text"
+                      name="key"
+                      defaultValue={''}
+                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      required
+                      pattern="[a-zA-Z0-9_]+"
+                      title="Solo letras, números y guiones bajos"
+                    />
+                  </div>
+                )}
             <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Etiqueta</label>
               <input
@@ -916,6 +997,19 @@ export default function ConfigPage() {
                     <option value="checkbox">Casilla de verificación</option>
               </select>
             </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Conjunto de opciones (opcional)</label>
+                  <select
+                    name="optionSetId"
+                    defaultValue={editingField?.optionSetId || ''}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  >
+                    <option value="">Sin conjunto</option>
+                    {optionSets.map((set) => (
+                      <option key={set.id} value={set.id}>{set.name} ({set.key})</option>
+                    ))}
+                  </select>
+                </div>
             <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Orden</label>
               <input
@@ -925,15 +1019,20 @@ export default function ConfigPage() {
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
               />
             </div>
-                <div className="flex items-center">
-                <input
-                  type="checkbox"
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center"><input
+                    type="checkbox"
                     name="required"
                     defaultChecked={editingField?.required || false}
-                    className="rounded border-gray-300 text-green-600 focus:ring-green-500"
-                  />
-                  <label className="ml-2 text-sm text-gray-700">Campo requerido</label>
-            </div>
+                    className="rounded border-gray-300 text-green-600 focus:ring-green-500 mr-2"
+                  />Requerido</label>
+                  <label className="flex items-center"><input
+                    type="checkbox"
+                    name="multiSelect"
+                    defaultChecked={editingField?.multiSelect || false}
+                    className="rounded border-gray-300 text-green-600 focus:ring-green-500 mr-2"
+                  />Selección múltiple</label>
+                </div>
               </div>
               <div className="flex justify-end gap-3 mt-6">
               <button
@@ -965,16 +1064,55 @@ export default function ConfigPage() {
             <h3 className="text-lg font-semibold mb-4">
               {editingOptionSet ? 'Editar Conjunto de Opciones' : 'Nuevo Conjunto de Opciones'}
             </h3>
-            <form onSubmit={(e) => {
-    e.preventDefault()
+            <form onSubmit={async (e) => {
+              e.preventDefault()
               const formData = new FormData(e.target as HTMLFormElement)
-              const data = {
+              const payload: any = {
                 name: formData.get('name'),
                 key: formData.get('key')
               }
-              console.log('Option set form submitted:', data)
-              setShowOptionSetForm(false)
-              setEditingOptionSet(null)
+              if (editingOptionSet) payload.id = editingOptionSet.id
+              try {
+                // Create or update the option set first
+                const res = await fetch('/api/config/option-sets', {
+                  method: editingOptionSet ? 'PUT' : 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload)
+                })
+                const json = await res.json()
+                if (!(res.ok && json.status === 'success')) {
+                  alert(`❌ Error: ${json.error || 'No se pudo guardar el conjunto'}`)
+                  return
+                }
+
+                const setId = editingOptionSet ? editingOptionSet.id : json.data.id
+
+                // Submit options in sequence
+                for (const opt of optionSetOptions) {
+                  if (!opt.label || !opt.value) continue
+                  const optPayload = {
+                    setId,
+                    label: opt.label,
+                    value: opt.value,
+                    priceDelta: opt.priceDelta || 0,
+                    metadata: opt.metadata || null
+                  }
+                  await fetch('/api/config/options', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(optPayload)
+                  })
+                }
+
+                await loadData()
+                setShowOptionSetForm(false)
+                setEditingOptionSet(null)
+                setOptionSetOptions([])
+                alert(editingOptionSet ? '✅ Conjunto actualizado' : '✅ Conjunto creado')
+              } catch (err) {
+                console.error('Option set save error:', err)
+                alert('❌ Error al guardar conjunto de opciones')
+              }
             }}>
               <div className="space-y-4">
             <div>
@@ -999,6 +1137,75 @@ export default function ConfigPage() {
                     title="Solo letras, números y guiones bajos"
               />
             </div>
+                <div className="border-t pt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-900">Opciones del conjunto</label>
+                    <button
+                      type="button"
+                      onClick={() => setOptionSetOptions(prev => [...prev, { label: '', value: '', priceDelta: 0, metadata: '' }])}
+                      className="text-sm text-purple-600 hover:text-purple-800"
+                    >
+                      + Agregar opción
+                    </button>
+                  </div>
+                  {optionSetOptions.length === 0 ? (
+                    <div className="text-sm text-gray-500">No hay opciones. Agrega al menos una opción.</div>
+                  ) : (
+                    <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                      {optionSetOptions.map((opt, idx) => (
+                        <div key={idx} className="grid grid-cols-6 gap-2 items-center">
+                          <input
+                            type="text"
+                            placeholder="Etiqueta"
+                            value={opt.label}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setOptionSetOptions(prev => prev.map((o, i) => i === idx ? { ...o, label: v } : o))
+                            }}
+                            className="col-span-2 p-2 border rounded"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Valor"
+                            value={opt.value}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setOptionSetOptions(prev => prev.map((o, i) => i === idx ? { ...o, value: v } : o))
+                            }}
+                            className="col-span-2 p-2 border rounded"
+                          />
+                          <input
+                            type="number"
+                            placeholder="Δ precio"
+                            value={opt.priceDelta}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value || '0')
+                              setOptionSetOptions(prev => prev.map((o, i) => i === idx ? { ...o, priceDelta: isNaN(v) ? 0 : v } : o))
+                            }}
+                            className="col-span-1 p-2 border rounded"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setOptionSetOptions(prev => prev.filter((_, i) => i !== idx))}
+                            className="col-span-1 text-red-600 hover:text-red-800 text-sm"
+                          >
+                            Quitar
+                          </button>
+                          <input
+                            type="text"
+                            placeholder="Metadata (JSON o texto)"
+                            value={opt.metadata}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setOptionSetOptions(prev => prev.map((o, i) => i === idx ? { ...o, metadata: v } : o))
+                            }}
+                            className="col-span-6 p-2 border rounded"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
             </div>
               <div className="flex justify-end gap-3 mt-6">
               <button
@@ -1006,6 +1213,7 @@ export default function ConfigPage() {
                   onClick={() => {
                     setShowOptionSetForm(false)
                     setEditingOptionSet(null)
+                    setOptionSetOptions([])
                   }}
                   className="px-4 py-2 text-gray-600 hover:text-gray-800"
               >
@@ -1030,17 +1238,34 @@ export default function ConfigPage() {
             <h3 className="text-lg font-semibold mb-4">
               {editingShipping ? 'Editar Método de Envío' : 'Nuevo Método de Envío'}
             </h3>
-            <form onSubmit={(e) => {
-    e.preventDefault()
+            <form onSubmit={async (e) => {
+              e.preventDefault()
               const formData = new FormData(e.target as HTMLFormElement)
-              const data = {
+              const payload: any = {
                 name: formData.get('name'),
-                price: parseFloat(formData.get('price') as string) || 0,
-                description: formData.get('description')
+                basePrice: parseFloat((formData.get('basePrice') as string) || '0') || 0,
+                carrier: formData.get('carrier') || null,
               }
-              console.log('Shipping form submitted:', data)
-              setShowShippingForm(false)
-              setEditingShipping(null)
+              if (editingShipping) payload.id = editingShipping.id
+              try {
+                const res = await fetch('/api/config/shipping', {
+                  method: editingShipping ? 'PUT' : 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload)
+                })
+                const json = await res.json()
+                if (res.ok && json.status === 'success') {
+                  await loadData()
+                  setShowShippingForm(false)
+                  setEditingShipping(null)
+                  alert(editingShipping ? '✅ Método actualizado' : '✅ Método creado')
+                } else {
+                  alert(`❌ Error: ${json.error || 'No se pudo guardar el método de envío'}`)
+                }
+              } catch (err) {
+                console.error('Shipping save error:', err)
+                alert('❌ Error al guardar método de envío')
+              }
             }}>
               <div className="space-y-4">
         <div>
@@ -1054,22 +1279,23 @@ export default function ConfigPage() {
           />
         </div>
         <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Precio</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Transportista (opcional)</label>
           <input 
-            type="number" 
-                    name="price"
-                    step="0.01"
-                    defaultValue={editingShipping?.price || 0}
+            type="text" 
+                    name="carrier"
+                    defaultValue={editingShipping?.carrier || ''}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
           />
         </div>
         <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
-                  <textarea
-                    name="description"
-                    defaultValue={editingShipping?.description || ''}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Precio base</label>
+          <input 
+            type="number" 
+                    name="basePrice"
+                    step="0.01"
+                    defaultValue={editingShipping?.basePrice || 0}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                    rows={3}
+            required
           />
         </div>
         </div>
@@ -1122,6 +1348,27 @@ export default function ConfigPage() {
                     required
                   />
                 </div>
+                {editingUser && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        name="password"
+                        placeholder="Dejar en blanco para mantener la actual"
+                        className="w-full p-2 pr-24 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(prev => !prev)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-purple-600 hover:text-purple-800"
+                      >
+                        {showPassword ? 'Ocultar' : 'Mostrar'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Dejar vacío para no cambiar la contraseña.</p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
                   <select

@@ -56,6 +56,14 @@ export default function HomeContent() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            {session.user?.role === 'MASTER' && (
+              <Link
+                href="/config"
+                className="inline-block bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-900 transition-colors"
+              >
+                Configuración
+              </Link>
+            )}
             <LogoutButton />
           </div>
         </div>

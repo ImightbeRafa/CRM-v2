@@ -32,54 +32,59 @@ const ProductForm: React.FC<ProductFormProps> = ({
     }
   }, [user, productInfo.vendedor]);
 
+  const recalcProduct = (info: ProductInfo): ProductInfo => {
+    // Recompute option deltas based on current dynamic selections
+    let computedOptionDeltas = 0;
+    fields.forEach(field => {
+      if (field.optionSet && field.optionSet.options) {
+        const selectedValue = (info as any)[field.key];
+        if (selectedValue) {
+          const option = field.optionSet.options.find((o: any) => o.value === selectedValue);
+          if (option) computedOptionDeltas += option.priceDelta || 0;
+        }
+      }
+    });
+
+    const baseSubtotal = info.productCost * info.cantidad;
+    const subtotalWithOptions = baseSubtotal + computedOptionDeltas;
+    const ivaAmount = applyIVA ? subtotalWithOptions * 0.13 : 0;
+    const totalAmount = subtotalWithOptions + ivaAmount;
+
+    return {
+      ...info,
+      optionDeltas: computedOptionDeltas,
+      iva: ivaAmount,
+      total: totalAmount,
+    };
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    let numValue = value;
+    const isNumeric = ['productCost', 'cantidad'].includes(name);
+    const parsedValue = isNumeric ? (value === '' ? 0 : parseFloat(value)) : value;
 
-    // Convert to number for numeric fields
-    if (['productCost', 'shippingCost', 'cantidad'].includes(name)) {
-      numValue = value === '' ? '0' : value;
-      const newInfo = {
-        ...productInfo,
-        [name]: parseFloat(numValue) || 0
-      };
+    const nextInfo = {
+      ...productInfo,
+      [name]: isNumeric ? (isNaN(parsedValue as number) ? 0 : parsedValue) : parsedValue
+    } as unknown as ProductInfo;
 
-      // Calculate total with option deltas
-      const subtotal = newInfo.productCost * newInfo.cantidad;
-      const shipping = orderType === 'EA' ? newInfo.shippingCost : 0;
-      const iva = applyIVA ? subtotal * 0.13 : 0;
-      const total = subtotal + shipping + iva;
-
-      onProductInfoChange({
-        ...newInfo,
-        iva: iva,
-        total: total
-      });
-    } else {
-      onProductInfoChange({
-        ...productInfo,
-        [name]: value
-      });
-    }
+    onProductInfoChange(recalcProduct(nextInfo));
   };
 
   const [fields, setFields] = useState<any[]>([])
   const [sellers, setSellers] = useState<{ id: string; name: string }[]>([])
-  const [shippingMethods, setShippingMethods] = useState<{ id: string; name: string; basePrice: number }[]>([])
   const [loading, setLoading] = useState(true)
 
   const loadData = async () => {
     try {
       setLoading(true)
-      const [fRes, sRes, shipRes] = await Promise.all([
+      const [fRes, sRes] = await Promise.all([
         fetch('/api/config/fields'),
         fetch('/api/config/sellers'),
-        fetch('/api/config/shipping'),
       ])
-      const [fJson, sJson, shipJson] = await Promise.all([fRes.json(), sRes.json(), shipRes.json()])
+      const [fJson, sJson] = await Promise.all([fRes.json(), sRes.json()])
       if (fJson.status === 'success') setFields(fJson.data)
       if (sJson.status === 'success') setSellers(sJson.data)
-      if (shipJson.status === 'success') setShippingMethods(shipJson.data)
     } catch (error) {
       console.error('Error loading form data:', error)
     } finally {
@@ -103,10 +108,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [])
 
-  const shippingBase = useMemo(() => {
-    const m = shippingMethods.find(m => m.name === productInfo.mensajeria)
-    return m ? m.basePrice : 0
-  }, [shippingMethods, productInfo.mensajeria])
+  // No per-product shipping calculation; shipping is handled at order level
 
   // Calculate option price deltas
   const optionDeltas = useMemo(() => {
@@ -145,6 +147,50 @@ const ProductForm: React.FC<ProductFormProps> = ({
       </div>
 
 
+      {/* Basic fields for add modal use-case */}
+      {isAddModal && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block font-medium text-sm text-gray-700 mb-1">Nombre del producto *</label>
+            <input
+              type="text"
+              name="type"
+              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              value={productInfo.type}
+              onChange={handleInputChange}
+              required
+              placeholder="Ej: Camiseta personalizada"
+            />
+          </div>
+          <div>
+            <label className="block font-medium text-sm text-gray-700 mb-1">Cantidad *</label>
+            <input
+              type="number"
+              name="cantidad"
+              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              value={productInfo.cantidad}
+              onChange={handleInputChange}
+              min={1}
+              required
+            />
+          </div>
+          <div>
+            <label className="block font-medium text-sm text-gray-700 mb-1">Costo unitario *</label>
+            <input
+              type="number"
+              name="productCost"
+              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              value={productInfo.productCost}
+              onChange={handleInputChange}
+              min={0}
+              step="any"
+              required
+            />
+          </div>
+          {/* Per-product shipping removed; handled at order level */}
+        </div>
+      )}
+
       {/* Dynamic Fields */}
       {loading ? (
         <div className="bg-gray-50 p-4 rounded-lg">
@@ -158,6 +204,8 @@ const ProductForm: React.FC<ProductFormProps> = ({
           <h4 className="font-medium text-gray-800 mb-3">Campos Personalizados</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {fields.map((field) => {
+              // Avoid duplicating comments if a dynamic field is configured with key 'comments'
+              if (field.key === 'comments') return null
               const name = field.key as keyof ProductInfo
               if (field.type === 'text' || field.type === 'number') {
                 return (
@@ -184,7 +232,10 @@ const ProductForm: React.FC<ProductFormProps> = ({
                       type="checkbox" 
                       name={name as string} 
                       checked={Boolean((productInfo as any)[name])} 
-                      onChange={(e) => onProductInfoChange({ ...productInfo, [name]: e.target.checked ? 'Sí' : '' } as any)} 
+                      onChange={(e) => {
+                        const next = { ...productInfo, [name]: e.target.checked ? 'Sí' : '' } as unknown as ProductInfo
+                        onProductInfoChange(recalcProduct(next))
+                      }} 
                       className="w-4 h-4"
                     />
                     <label className="font-medium text-sm text-gray-700">{field.label}</label>
@@ -222,7 +273,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
         </div>
       ) : null}
 
-      {/* Comments */}
+      {/* Comments - single source of truth to avoid duplicates */}
       <div>
         <label className="block font-medium">Comentarios</label>
         <textarea
@@ -266,7 +317,20 @@ const ProductForm: React.FC<ProductFormProps> = ({
               required
             />
           </div>
-
+          <div className="flex flex-col space-y-1">
+            <label className="text-sm font-medium">Cantidad</label>
+            <input
+              type="number"
+              name="cantidad"
+              value={productInfo.cantidad}
+              onChange={handleInputChange}
+              className="w-full p-2 border rounded text-sm"
+              min="1"
+              step="1"
+              required
+            />
+          </div>
+          {/* Per-product shipping removed; handled at order level */}
         </div>
       )}
 

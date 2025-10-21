@@ -26,6 +26,23 @@ export function OrderDetails({
   onUpdateStatus,
   onUpdateOrder 
 }: OrderDetailsProps) {
+  const [availableStatuses, setAvailableStatuses] = useState<Array<{key: string; label: string}>>([]);
+  
+  // Load available statuses from API
+  useEffect(() => {
+    const loadStatuses = async () => {
+      try {
+        const response = await fetch('/api/config/status');
+        const data = await response.json();
+        if (data.status === 'success' && data.data.length > 0) {
+          setAvailableStatuses(data.data);
+        }
+      } catch (error) {
+        console.error('Error loading statuses:', error);
+      }
+    };
+    loadStatuses();
+  }, []);
   const [isEditing, setIsEditing] = useState(false);
   const [displayOrder, setDisplayOrder] = useState<Sale>(order);
   const [editedOrder, setEditedOrder] = useState<Sale>(order);
@@ -190,10 +207,11 @@ export function OrderDetails({
               onUpdateStatus(e.target.value);
             }}
           >
-            {['Pendiente', 'En Proceso', 'Completado', 'Entregado', 'Drive', 'Impreso', 'PendienteDiseño', 'Enviado']
-              .map(status => (
-                <option key={status} value={status}>{status}</option>
-              ))
+            {availableStatuses.length > 0 
+              ? availableStatuses.map((s: any) => (
+                  <option key={s.key || s.label} value={s.label}>{s.label}</option>
+                ))
+              : <option value={value?.toString() || ''}>{value?.toString() || 'Pendiente'}</option>
             }
           </select>
         </div>

@@ -257,12 +257,12 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
             <span class="info-value">${order.orderType === 'EA' ? order.canton : 'N/A'}</span>
           </div>
           <div class="info-row">
-            <span class="info-label">Dirección:</span>
-            <span class="info-value">${order.address}</span>
+            <span class="info-label">Distrito:</span>
+            <span class="info-value">${order.orderType === 'EA' ? (order.district || 'N/A') : 'N/A'}</span>
           </div>
           <div class="info-row">
-            <span class="info-label">Negocio:</span>
-            <span class="info-value">${order.business}</span>
+            <span class="info-label">Dirección:</span>
+            <span class="info-value">${order.address}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Comentarios:</span>

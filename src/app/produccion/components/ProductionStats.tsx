@@ -60,11 +60,17 @@ export function ProductionStats({ orders, onClose, detailed = false }: Productio
       return orderDate >= thisWeek;
     });
     
-    // Priority orders (older than 24 hours and still pending)
+    // Priority orders (manually marked as urgent OR older than 24 hours and still pending)
     const urgentOrders = orders.filter(o => {
+      // Check if status is manually set to "urgent" or "urgente" (case-insensitive)
+      const isMarkedUrgent = o.status.toLowerCase() === 'urgent' || o.status.toLowerCase() === 'urgente';
+      
+      // Check if order is old and pending
       const orderDate = new Date(o.timestamp);
       const hoursOld = (now.getTime() - orderDate.getTime()) / (1000 * 60 * 60);
-      return hoursOld > 24 && o.status === 'Pendiente';
+      const isOldAndPending = hoursOld > 24 && o.status === 'Pendiente';
+      
+      return isMarkedUrgent || isOldAndPending;
     });
     
     // Completion rate
@@ -185,6 +191,7 @@ export function ProductionStats({ orders, onClose, detailed = false }: Productio
                 value={stats.urgentOrders}
                 icon={<AlertCircle className="h-5 w-5" />}
                 color="text-red-600"
+                subtitle="Estado urgente/+24h pendientes"
               />
             </div>
 
@@ -327,7 +334,7 @@ export function ProductionStats({ orders, onClose, detailed = false }: Productio
         value={stats.urgentOrders}
         icon={<AlertCircle className="h-5 w-5" />}
         color="text-red-600"
-        subtitle="Más de 24h pendientes"
+        subtitle="Estado urgente/+24h pendientes"
       />
     </div>
   );

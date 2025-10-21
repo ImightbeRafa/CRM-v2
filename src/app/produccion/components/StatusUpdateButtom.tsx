@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 export const StatusUpdateButton = ({ 
     currentStatus, 
@@ -11,17 +11,16 @@ export const StatusUpdateButton = ({
   }) => {
     const [updating, setUpdating] = useState(false);
     
-    const statuses = [
-      'Pendiente',
-      'En Proceso',
-      'Listo',
-      'Entregado',
-      'Enviado',
-      'Cancelado',
-      'Drive',
-      'Impreso',
-      'PendienteDiseño',
-    ];
+    const [statuses, setStatuses] = useState<string[]>([]);
+    useEffect(() => {
+      (async () => {
+        try {
+          const res = await fetch('/api/config/status');
+          const json = await res.json();
+          if (json.status === 'success') setStatuses(json.data.map((s: any) => s.label));
+        } catch {}
+      })();
+    }, []);
     
     return (
       <select

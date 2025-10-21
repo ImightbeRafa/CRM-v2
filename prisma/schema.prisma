@@ -4,7 +4,8 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_PRISM_POSTGRES_URL")
+  url      = env("DATABASE_PRISM_PRISMA_DATABASE_URL") // Prisma Accelerate (pooled)
+  directUrl = env("DATABASE_PRISM_POSTGRES_URL") // Direct connection for migrations
 }
 
 // Core business models
@@ -291,6 +292,19 @@ model BusinessInfo {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   createdBy   String   // User who created this field
+
+  @@index([isActive])
+  @@index([order])
+}
+
+// Configurable order statuses used across production components
+model OrderStatus {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  label       String
+  color       String?  // Tailwind classes or hex
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
 
   @@index([isActive])
   @@index([order])

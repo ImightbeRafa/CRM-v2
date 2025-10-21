@@ -1,6 +1,6 @@
 "use client";
 import React from 'react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Card,
   CardContent,
@@ -19,6 +19,42 @@ import { Loading, LoadingCard } from "@/app/components/ui/loading";
 import { useToast } from "@/app/hooks/use-toast";
 import { GuiaGenerator } from './GuiaGenerator';
 import { Button } from "@/app/components/ui/button";
+
+// Dynamic Status Filter Component
+const StatusFilterSelectLegacy = ({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) => {
+  const [statuses, setStatuses] = useState<Array<{key: string; label: string}>>([]);
+
+  useEffect(() => {
+    const loadStatuses = async () => {
+      try {
+        const response = await fetch('/api/config/status');
+        const data = await response.json();
+        if (data.status === 'success' && data.data.length > 0) {
+          setStatuses(data.data);
+        }
+      } catch (error) {
+        console.error('Error loading statuses:', error);
+      }
+    };
+    loadStatuses();
+  }, []);
+
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger className="w-full sm:w-[180px]">
+        <SelectValue placeholder="Estado" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">Todos los estados</SelectItem>
+        {statuses.map((status) => (
+          <SelectItem key={status.key} value={status.label.toLowerCase()}>
+            {status.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+};
 
 // Updated Filter function
 const filterOrders = (orders: Sale[], statusFilter: string, searchTerm: string) => {
@@ -67,22 +103,7 @@ const DashboardHeader = React.memo(({
         onChange={(e) => onSearchChange(e.target.value)}
         className="w-full sm:w-64"
       />
-      <Select value={statusFilter} onValueChange={onStatusChange}>
-        <SelectTrigger className="w-full sm:w-[180px]">
-          <SelectValue placeholder="Estado1" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Todos los estados</SelectItem>
-          <SelectItem value="pendiente">Pendiente</SelectItem>
-          <SelectItem value="en proceso">En Proceso</SelectItem>
-          <SelectItem value="completado">Completado</SelectItem>
-          <SelectItem value="entregado">Entregado</SelectItem>
-          <SelectItem value="Enviado">Enviado</SelectItem>
-          <SelectItem value="Drive">Drive</SelectItem>
-          <SelectItem value="Impreso">Impreso</SelectItem>
-          <SelectItem value="PendienteDiseño">PendienteDiseño</SelectItem>
-        </SelectContent>
-      </Select>
+      <StatusFilterSelectLegacy value={statusFilter} onValueChange={onStatusChange} />
     </div>
   </div>
 ));

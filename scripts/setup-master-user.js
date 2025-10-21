@@ -14,9 +14,9 @@ async function setupMasterUser() {
   try {
     console.log('🔧 Setting up master user...');
     
-    // Check if DATABASE_PRISM_POSTGRES_URL is available
-    if (!process.env.DATABASE_PRISM_POSTGRES_URL) {
-      console.log('⚠️  DATABASE_PRISM_POSTGRES_URL not available. Skipping master user setup.');
+    // Check if database URL is available
+    if (!process.env.DATABASE_PRISM_POSTGRES_URL && !process.env.DATABASE_PRISM_PRISMA_DATABASE_URL) {
+      console.log('⚠️  Database URL not available. Skipping master user setup.');
       console.log('   This is normal during build time. Master user will be created at runtime.');
       return;
     }
@@ -24,8 +24,8 @@ async function setupMasterUser() {
     prisma = new PrismaClient();
     
     // Get master user credentials from environment variables
-    const masterUsername = process.env.MASTER_USERNAME || 'admin';
-    const masterPassword = process.env.MASTER_PASSWORD || 'admin123';
+    const masterUsername = process.env.MASTER_USERNAME || 'master';
+    const masterPassword = process.env.MASTER_PASSWORD || 'Master2024!';
     
     console.log(`📝 Master username: ${masterUsername}`);
     

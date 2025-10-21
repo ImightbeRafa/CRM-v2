@@ -115,7 +115,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
               value={customerInfo.name}
               onChange={handleInputChange}
               placeholder="No detectado"
-              required
             />
           </div>
           <div>
@@ -127,7 +126,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
               value={customerInfo.phone}
               onChange={handleInputChange}
               placeholder="No detectado"
-              required
             />
           </div>
           <div>
@@ -165,7 +163,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                   value={customerInfo.province}
                   onChange={handleInputChange}
                   placeholder="No detectado"
-                  required
                 />
               </div>
               <div>
@@ -177,7 +174,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                   value={customerInfo.canton}
                   onChange={handleInputChange}
                   placeholder="No detectado"
-                  required
                 />
               </div>
               <div>
@@ -189,7 +185,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                   value={customerInfo.district}
                   onChange={handleInputChange}
                   placeholder="No detectado"
-                  required
                 />
               </div>
               <div className="col-span-1 sm:col-span-2">
@@ -201,7 +196,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                   onChange={handleInputChange}
                   placeholder="No detectado"
                   rows={2}
-                  required
                 />
               </div>
             </>
@@ -213,29 +207,16 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
       {/* Date fields */}
       <div className="grid grid-cols-2 gap-4">
         {customerInfo.orderType === 'RA' && (
-          <>
-            <div>
-              <label className="block font-medium">Fecha Acordada</label>
-              <input
-                type="date"
-                name="fechaAcordada"
-                className="w-full p-2 border rounded"
-                value={customerInfo.fechaAcordada}
-                onChange={handleInputChange}
-                required
-              />
-            </div>
-            <div>
-              <label className="block font-medium">Fecha Retirada</label>
-              <input
-                type="date"
-                name="fechaRetirada"
-                className="w-full p-2 border rounded"
-                value={customerInfo.fechaRetirada}
-                onChange={handleInputChange}
-              />
-            </div>
-          </>
+          <div>
+            <label className="block font-medium">Fecha de Retiro</label>
+            <input
+              type="date"
+              name="fechaRetiro"
+              className="w-full p-2 border rounded"
+              value={customerInfo.fechaRetiro}
+              onChange={handleInputChange}
+            />
+          </div>
         )}
       </div>
 

@@ -8,6 +8,23 @@ const config = {
     './src/app/**/*.{ts,tsx}',
     './src/**/*.{ts,tsx}',
   ],
+  safelist: [
+    // Status badge colors (bg-500 variants)
+    'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-orange-500', 'bg-red-500',
+    'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-cyan-500', 'bg-gray-500',
+    'bg-emerald-500', 'bg-lime-500', 'bg-teal-500', 'bg-sky-500', 'bg-violet-500',
+    'bg-fuchsia-500', 'bg-rose-500', 'bg-amber-500',
+    // Background hazes (bg-50/50 variants) - 50% opacity for better differentiation
+    'bg-blue-50/50', 'bg-green-50/50', 'bg-yellow-50/50', 'bg-orange-50/50', 'bg-red-50/50',
+    'bg-purple-50/50', 'bg-pink-50/50', 'bg-indigo-50/50', 'bg-cyan-50/50', 'bg-gray-50/50',
+    'bg-emerald-50/50', 'bg-lime-50/50', 'bg-teal-50/50', 'bg-sky-50/50', 'bg-violet-50/50',
+    'bg-fuchsia-50/50', 'bg-rose-50/50', 'bg-amber-50/50',
+    // Border colors (border-200 variants)
+    'border-blue-200', 'border-green-200', 'border-yellow-200', 'border-orange-200', 'border-red-200',
+    'border-purple-200', 'border-pink-200', 'border-indigo-200', 'border-cyan-200', 'border-gray-200',
+    'border-emerald-200', 'border-lime-200', 'border-teal-200', 'border-sky-200', 'border-violet-200',
+    'border-fuchsia-200', 'border-rose-200', 'border-amber-200',
+  ],
   prefix: "",
   theme: {
     container: {

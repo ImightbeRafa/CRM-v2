@@ -61,6 +61,39 @@ const RecentSales = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showAll, setShowAll] = useState(false);
+  const [configFields, setConfigFields] = useState<any[]>([]);
+
+  // Fetch configuration fields
+  useEffect(() => {
+    const fetchConfigFields = async () => {
+      try {
+        const response = await fetch('/api/config/fields');
+        const data = await response.json();
+        if (data.status === 'success') {
+          setConfigFields(data.data);
+        }
+      } catch (error) {
+        console.error('Error fetching config fields:', error);
+      }
+    };
+
+    fetchConfigFields();
+  }, []);
+
+  // Helper function to get display value for a field
+  const getFieldDisplayValue = (fieldKey: string, productValue: string) => {
+    if (!productValue) {
+      // Find the field configuration
+      const field = configFields.find(f => f.key === fieldKey);
+      if (field && field.optionSet && field.optionSet.options && field.optionSet.options.length > 0) {
+        // Show available options count
+        const optionsCount = field.optionSet.options.length;
+        return `${optionsCount} opciones disponibles`;
+      }
+      return 'No especificado';
+    }
+    return productValue;
+  };
 
   const fetchSales = async () => {
     try {
@@ -426,11 +459,11 @@ const RecentSales = () => {
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-600">Tamaño</label>
-                    <p>{selectedSale.tamano || 'No especificado'}</p>
+                    <p>{getFieldDisplayValue('tamano', selectedSale.tamano)}</p>
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-600">Color</label>
-                    <p>{selectedSale.color || 'No especificado'}</p>
+                    <p>{getFieldDisplayValue('color', selectedSale.color)}</p>
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-600">Empaque</label>

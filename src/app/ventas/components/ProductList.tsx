@@ -22,8 +22,57 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
   const [showAddForm, setShowAddForm] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [draftProduct, setDraftProduct] = useState<ProductInfo | null>(null);
+  const [configFields, setConfigFields] = useState<any[]>([]);
+  const [shippingMethods, setShippingMethods] = useState<Array<{id: string; name: string; basePrice: number}>>([]);
   const { user } = useCurrentUser();
 
+  // Fetch configuration fields
+  useEffect(() => {
+    const fetchConfigFields = async () => {
+      try {
+        const response = await fetch('/api/config/fields');
+        const data = await response.json();
+        if (data.status === 'success') {
+          setConfigFields(data.data);
+        }
+      } catch (error) {
+        console.error('Error fetching config fields:', error);
+      }
+    };
+
+    fetchConfigFields();
+  }, []);
+
+  // Helper function to get display value for a field
+  const getFieldDisplayValue = (fieldKey: string, productValue: string) => {
+    if (!productValue) {
+      // Find the field configuration
+      const field = configFields.find(f => f.key === fieldKey);
+      if (field && field.optionSet && field.optionSet.options && field.optionSet.options.length > 0) {
+        // Show available options count
+        const optionsCount = field.optionSet.options.length;
+        return `${optionsCount} opciones disponibles`;
+      }
+      return 'N/A';
+    }
+    return productValue;
+  };
+
+  // Load shipping methods from API
+  useEffect(() => {
+    const loadShippingMethods = async () => {
+      try {
+        const response = await fetch('/api/config/shipping');
+        const data = await response.json();
+        if (data.status === 'success') {
+          setShippingMethods(data.data);
+        }
+      } catch (error) {
+        console.error('Error loading shipping methods:', error);
+      }
+    };
+    loadShippingMethods();
+  }, []);
 
   // Calculate order totals
   const orderTotals = useMemo(() => {
@@ -31,18 +80,12 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
       sum + (product.productCost * product.cantidad) + (product.optionDeltas || 0), 0
     );
     
-    // Calculate shipping based on order-level shipping method
+    // Calculate shipping based on order-level shipping method from configuration
+    // Only for EA (shipping) orders, RA (local pickup) has no shipping cost
     let shipping = 0;
-    if (orderInfo.orderShippingMethod) {
-      // Define shipping costs based on method
-      const shippingCosts: { [key: string]: number } = {
-        'Correos de Costa Rica': 2000,
-        'DHL': 5000,
-        'FedEx': 4500,
-        'UPS': 4000,
-        'Retiro en tienda': 0
-      };
-      shipping = shippingCosts[orderInfo.orderShippingMethod] || 0;
+    if (orderType === 'EA' && orderInfo.orderShippingMethod) {
+      const selectedMethod = shippingMethods.find(m => m.name === orderInfo.orderShippingMethod);
+      shipping = selectedMethod?.basePrice || 0;
     }
     
     // Calculate IVA based on order-level setting
@@ -50,7 +93,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
     const total = subtotal + shipping + iva;
 
     return { subtotal, shipping, iva, total };
-  }, [orderInfo.products, orderInfo.orderShippingMethod, orderInfo.applyOrderIVA]);
+  }, [orderInfo.products, orderInfo.orderShippingMethod, orderInfo.applyOrderIVA, shippingMethods, orderType]);
 
   // Update order totals when products change
   useEffect(() => {
@@ -197,8 +240,8 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                     </CardTitle>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-2 text-sm text-gray-600">
                       <span className="whitespace-nowrap">Cantidad: {product.cantidad}</span>
-                      <span className="whitespace-nowrap">Color: {product.color || 'N/A'}</span>
-                      <span className="whitespace-nowrap">Tamaño: {product.tamano || 'N/A'}</span>
+                      <span className="whitespace-nowrap">Color: {getFieldDisplayValue('color', product.color)}</span>
+                      <span className="whitespace-nowrap">Tamaño: {getFieldDisplayValue('tamano', product.tamano)}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -336,26 +379,30 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
           <CardContent className="space-y-4">
             {/* Order Configuration */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex flex-col space-y-2">
-                <label className="text-sm font-medium text-gray-700">Mensajería</label>
-                <select
-                  className="w-full p-2 border rounded text-sm"
-                  value={orderInfo.orderShippingMethod || ''}
-                  onChange={(e) => {
-                    onOrderInfoChange({
-                      ...orderInfo,
-                      orderShippingMethod: e.target.value
-                    });
-                  }}
-                >
-                  <option value="">Seleccionar mensajería...</option>
-                  <option value="Correos de Costa Rica">Correos de Costa Rica</option>
-                  <option value="DHL">DHL</option>
-                  <option value="FedEx">FedEx</option>
-                  <option value="UPS">UPS</option>
-                  <option value="Retiro en tienda">Retiro en tienda</option>
-                </select>
-              </div>
+              {/* Shipping method - only for EA (shipping) orders */}
+              {orderType === 'EA' && (
+                <div className="flex flex-col space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Mensajería</label>
+                  <select
+                    className="w-full p-2 border rounded text-sm"
+                    value={orderInfo.orderShippingMethod || ''}
+                    onChange={(e) => {
+                      onOrderInfoChange({
+                        ...orderInfo,
+                        orderShippingMethod: e.target.value
+                      });
+                    }}
+                  >
+                    <option value="">Seleccionar mensajería...</option>
+                    {shippingMethods.map((method) => (
+                      <option key={method.id} value={method.name}>
+                        {method.name} (₡{method.basePrice})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {/* IVA checkbox */}
               <div className="flex flex-col space-y-2">
                 <div className="flex items-center gap-2">
                   <input
@@ -378,15 +425,18 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
             </div>
 
             {/* Order Totals */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className={`grid gap-4 ${orderType === 'EA' ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-2 lg:grid-cols-3'}`}>
               <div className="flex flex-col space-y-1">
                 <span className="text-sm text-gray-600">Subtotal:</span>
                 <p className="text-lg font-semibold">₡{orderTotals.subtotal.toFixed(2)}</p>
               </div>
-              <div className="flex flex-col space-y-1">
-                <span className="text-sm text-gray-600">Envío:</span>
-                <p className="text-lg font-semibold">₡{orderTotals.shipping.toFixed(2)}</p>
-              </div>
+              {/* Show shipping only for EA orders */}
+              {orderType === 'EA' && (
+                <div className="flex flex-col space-y-1">
+                  <span className="text-sm text-gray-600">Envío:</span>
+                  <p className="text-lg font-semibold">₡{orderTotals.shipping.toFixed(2)}</p>
+                </div>
+              )}
               <div className="flex flex-col space-y-1">
                 <span className="text-sm text-gray-600">IVA:</span>
                 <p className="text-lg font-semibold">₡{orderTotals.iva.toFixed(2)}</p>

@@ -15,7 +15,26 @@ export async function POST(request: Request) {
     if (missingField) {
       return createErrorResponse(missingField, 400)
     }
-    
+
+    // Idempotent option creation: if an option with same setId+value exists, reactivate/update
+    const existing = await prisma.productOption.findFirst({
+      where: { setId: body.setId, value: body.value },
+    })
+
+    if (existing) {
+      const updated = await prisma.productOption.update({
+        where: { id: existing.id },
+        data: {
+          label: body.label ?? existing.label,
+          value: body.value,
+          priceDelta: Number(body.priceDelta) || existing.priceDelta,
+          metadata: body.metadata ?? existing.metadata,
+          active: true,
+        },
+      })
+      return createSuccessResponse(updated, 'Option already existed and was reactivated')
+    }
+
     const created = await prisma.productOption.create({
       data: {
         setId: body.setId,

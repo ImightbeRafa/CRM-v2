@@ -124,7 +124,7 @@ export default function HomeContent() {
 
           {/* Statistics Card */}
           <Link
-            href="/estadisticas"
+            href="/home"
             className="group bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 border border-gray-200"
           >
             <div className="flex flex-col items-center">
@@ -144,14 +144,14 @@ export default function HomeContent() {
                 </svg>
               </div>
               <h2 className="text-xl font-semibold text-gray-600 mb-2">Estadísticas</h2>
-              <p className="text-gray-500 text-center text-sm">Data en tiempo real</p>
+              <p className="text-gray-500 text-center text-sm">Working on it...</p>
             </div>
           </Link>
         </div>
 
         {/* Footer Section */}
         <footer className="mt-16 text-center text-gray-500 text-sm">
-          <p>© 2024 Betsy CRM. Hecho por Rafael Garcia Montoya:) </p>
+          <p>© 2024 Betsy CRM.  </p>
           <p>otro dia, otro dolar </p>
           <p>v1.1.1 </p>
         </footer>

@@ -40,7 +40,8 @@ export async function POST(request: Request) {
     })
     
     if (existingSet && existingSet.active) {
-      return createErrorResponse('This key already exists. Please choose a different key.', 409)
+      // Idempotent: return success with existing active set
+      return createSuccessResponse(existingSet, 'Option set already exists')
     }
     
     // If inactive record exists, reactivate it; otherwise create new one

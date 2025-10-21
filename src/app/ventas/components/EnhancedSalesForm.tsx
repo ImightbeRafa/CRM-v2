@@ -15,23 +15,22 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
 const EnhancedSalesForm = () => {
   const { user } = useCurrentUser();
   const [orderInfo, setOrderInfo] = useState<OrderInfo>({
-    customerInfo: {
-      name: '',
-      phone: '',
-      province: '',
-      canton: '',
-      district: '',
-      email: '',
-      username: '',
-      address: '',
-      business: '',
-      funnel: '',
-      fechaEsperada: '',
-      fechaAcordada: '',
-      fechaRetirada: '',
-      diaVenta: '',
-      orderType: 'EA',
-    },
+      customerInfo: {
+        name: '',
+        phone: '',
+        province: '',
+        canton: '',
+        district: '',
+        email: '',
+        username: '',
+        address: '',
+        business: '',
+        funnel: '',
+        fechaEsperada: '',
+        fechaRetiro: '',
+        diaVenta: '',
+        orderType: 'EA',
+      },
     products: [],
     orderTotal: 0,
     orderIVA: 0,
@@ -46,6 +45,24 @@ const EnhancedSalesForm = () => {
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
+  // Resolve expected date from either the canonical field (fechaEsperada)
+  // or from any business info date field (prefer one whose name/label mentions "esperada" or "expected")
+  const resolveExpectedDate = (): string => {
+    const direct = (orderInfo.customerInfo as any).fechaEsperada?.toString()?.trim();
+    if (direct) return direct;
+    let fallback: string = '';
+    for (const f of businessInfoFields) {
+      if (f?.type === 'date') {
+        const value = (orderInfo.customerInfo as any)[f.name]?.toString()?.trim();
+        if (!value) continue;
+        const key = `${f?.name || ''} ${f?.label || ''}`.toLowerCase();
+        if (/(fecha.*esperada|expected)/.test(key)) return value;
+        if (!fallback) fallback = value; // keep first non-empty date as fallback
+      }
+    }
+    return fallback;
+  };
+
 
   // Auto-assign vendedor to products that don't have one
   useEffect(() => {
@@ -150,21 +167,35 @@ const EnhancedSalesForm = () => {
   }, [orderInfo]);
 
   const validateForm = (): string | null => {
-    // Validate customer info
+    // Basic customer info validation (always required)
     if (!orderInfo.customerInfo.name.trim()) {
       return 'El nombre del cliente es requerido';
     }
     if (!orderInfo.customerInfo.phone.trim()) {
       return 'El teléfono del cliente es requerido';
     }
-    if (!orderInfo.customerInfo.province.trim()) {
-      return 'La provincia es requerida';
-    }
-    if (!orderInfo.customerInfo.canton.trim()) {
-      return 'El cantón es requerido';
-    }
-    if (!orderInfo.customerInfo.district.trim()) {
-      return 'El distrito es requerido';
+
+    // Location and shipping info (ONLY required for EA - shipping orders)
+    const isShippingOrder = orderInfo.customerInfo.orderType === 'EA';
+    
+    if (isShippingOrder) {
+      if (!orderInfo.customerInfo.province.trim()) {
+        return 'La provincia es requerida para pedidos de envío';
+      }
+      if (!orderInfo.customerInfo.canton.trim()) {
+        return 'El cantón es requerido para pedidos de envío';
+      }
+      if (!orderInfo.customerInfo.district.trim()) {
+        return 'El distrito es requerido para pedidos de envío';
+      }
+      if (!orderInfo.customerInfo.address.trim()) {
+        return 'La dirección es requerida para pedidos de envío';
+      }
+
+      // Validate order-level shipping method (only for EA - shipping orders)
+      if (!orderInfo.orderShippingMethod?.trim()) {
+        return 'La mensajería del pedido es requerida para envíos';
+      }
     }
 
     // Validate products
@@ -188,23 +219,14 @@ const EnhancedSalesForm = () => {
       }
     }
 
-    // Validate EA-specific fields
-    if (orderInfo.customerInfo.orderType === 'EA') {
-      if (!orderInfo.customerInfo.fechaEsperada.trim()) {
-        return 'La fecha esperada es requerida para pedidos EA';
+    // Validate custom business fields that are marked as required
+    for (const field of businessInfoFields) {
+      if (field.required) {
+        const value = (orderInfo.customerInfo as any)[field.name];
+        if (!value || (typeof value === 'string' && !value.trim())) {
+          return `${field.label} es requerido`;
+        }
       }
-    }
-
-    // Validate RA-specific fields
-    if (orderInfo.customerInfo.orderType === 'RA') {
-      if (!orderInfo.customerInfo.fechaAcordada.trim()) {
-        return 'La fecha acordada es requerida para pedidos RA';
-      }
-    }
-
-    // Validate order-level shipping method
-    if (!orderInfo.orderShippingMethod?.trim()) {
-      return 'La mensajería del pedido es requerida';
     }
 
     return null;
@@ -250,9 +272,9 @@ const EnhancedSalesForm = () => {
         // MISSING FIELDS - Add them here
         funnel: orderInfo.customerInfo.funnel || '',
         seller: orderInfo.products.length > 0 ? orderInfo.products[0].vendedor || user?.username || '' : '',
-        expectedDate: orderInfo.customerInfo.fechaEsperada || '',
-        agreedDate: orderInfo.customerInfo.fechaAcordada || '',
-        pickupDate: orderInfo.customerInfo.fechaRetirada || '',
+        expectedDate: resolveExpectedDate() || '',
+        agreedDate: orderInfo.customerInfo.fechaRetiro || '',
+        pickupDate: orderInfo.customerInfo.fechaRetiro || '',
         productCost: orderInfo.products.reduce((sum, p) => sum + (p.productCost * p.cantidad), 0),
         size: orderInfo.products.map(p => p.tamano).join(', '),
         color: orderInfo.products.map(p => p.color).join(', '),
@@ -348,8 +370,7 @@ const EnhancedSalesForm = () => {
         business: '',
         funnel: '',
         fechaEsperada: '',
-        fechaAcordada: '',
-        fechaRetirada: '',
+        fechaRetiro: '',
         diaVenta: isClient ? new Date().toISOString().split('T')[0] : '',
         orderType: 'EA',
       },
@@ -386,6 +407,7 @@ const EnhancedSalesForm = () => {
       packaging: '',
       comments: '',
       cantidad: 1,
+      // Use selling price as base unit price in sales
       productCost: productTemplate.baseCost,
       shippingCost: 0,
       iva: 0,

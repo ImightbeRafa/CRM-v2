@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Card,
   CardContent,
@@ -24,6 +24,42 @@ import { OrderDetails } from './OrderDetail';
 import { MobileProductionWorkflow } from './MobileProductionWorkflow';
 import { ProductionWorkflowGuide } from './ProductionWorkflowGuide';
 import { GuiaGenerator } from './GuiaGenerator';
+
+// Dynamic Status Filter Component
+const StatusFilterSelect = ({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) => {
+  const [statuses, setStatuses] = useState<Array<{key: string; label: string}>>([]);
+
+  useEffect(() => {
+    const loadStatuses = async () => {
+      try {
+        const response = await fetch('/api/config/status');
+        const data = await response.json();
+        if (data.status === 'success' && data.data.length > 0) {
+          setStatuses(data.data);
+        }
+      } catch (error) {
+        console.error('Error loading statuses:', error);
+      }
+    };
+    loadStatuses();
+  }, []);
+
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger>
+        <SelectValue placeholder="Filtrar por estado" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">Todos los estados</SelectItem>
+        {statuses.map((status) => (
+          <SelectItem key={status.key} value={status.label.toLowerCase()}>
+            {status.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+};
 
 // Enhanced filter function with more options
 const filterOrders = (
@@ -208,22 +244,7 @@ const EnhancedHeader = React.memo(({
         />
       </div>
       
-      <Select value={statusFilter} onValueChange={onStatusChange}>
-        <SelectTrigger>
-          <SelectValue placeholder="Filtrar por estado" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Todos los estados</SelectItem>
-          <SelectItem value="pendiente">Pendiente</SelectItem>
-          <SelectItem value="en proceso">En Proceso</SelectItem>
-          <SelectItem value="completado">Completado</SelectItem>
-          <SelectItem value="entregado">Entregado</SelectItem>
-          <SelectItem value="enviado">Enviado</SelectItem>
-          <SelectItem value="drive">Drive</SelectItem>
-          <SelectItem value="impreso">Impreso</SelectItem>
-          <SelectItem value="pendientediseño">Pendiente Diseño</SelectItem>
-        </SelectContent>
-      </Select>
+      <StatusFilterSelect value={statusFilter} onValueChange={onStatusChange} />
       
       <Button variant="outline" size="sm" className="justify-start">
         <Filter className="h-4 w-4 mr-2" />
@@ -478,7 +499,7 @@ export function EnhancedProductionDashboard({
                         key={order.orderId}
                         order={order}
                         onSelectOrder={setSelectedOrder}
-                        onStatusUpdate={handleStatusUpdate}
+                        onStatusUpdate={updateOrderStatus}
                         isSelected={selectedOrders.includes(order.orderId)}
                         onToggleSelection={(orderId: string) => {
                           setSelectedOrders(prev => 

@@ -111,7 +111,7 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
       type: item.category,
       color: '', // Will be filled by user
       tamano: '', // Will be filled by user
-      baseCost: item.unitCost,
+      baseCost: item.sellingPrice,
       isFavorite: item.isFavorite,
       lastUsed: new Date()
     };

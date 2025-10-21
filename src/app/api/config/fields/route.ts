@@ -25,7 +25,28 @@ export async function POST(request: Request) {
     if (!authorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     
     const body = await request.json()
-    
+    // Idempotent enable/create behavior:
+    // - If a field with the same key exists and is inactive, reactivate and update
+    // - If it exists and is active, return existing as success
+    // - Otherwise, create a new one
+    const existing = await prisma.productField.findUnique({ where: { key: body.key } })
+
+    if (existing) {
+      const updated = await prisma.productField.update({
+        where: { id: existing.id },
+        data: {
+          label: body.label ?? existing.label,
+          type: body.type ?? existing.type,
+          required: body.required !== undefined ? Boolean(body.required) : existing.required,
+          order: body.order !== undefined ? Number(body.order) : existing.order,
+          optionSetId: body.optionSetId !== undefined ? body.optionSetId : existing.optionSetId,
+          multiSelect: body.multiSelect !== undefined ? Boolean(body.multiSelect) : existing.multiSelect,
+          active: true,
+        },
+      })
+      return NextResponse.json({ status: 'success', data: updated })
+    }
+
     const created = await prisma.productField.create({
       data: {
         key: body.key,
@@ -43,7 +64,7 @@ export async function POST(request: Request) {
     console.error('Error creating field:', e)
     return NextResponse.json({ 
       status: 'error', 
-      error: 'Failed to create field',
+      error: 'Failed to create or enable field',
       details: e instanceof Error ? e.message : 'Unknown error'
     }, { status: 500 })
   }

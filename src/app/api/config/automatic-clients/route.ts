@@ -89,8 +89,8 @@ export async function POST(request: NextRequest) {
         totalOrders: 0,
         totalSpent: 0,
         averageOrderValue: 0,
-        firstOrder: new Date().toISOString(),
-        lastOrder: new Date().toISOString(),
+        firstOrder: new Date(),
+        lastOrder: new Date(),
         createdBy: token.sub as string
       }
     });

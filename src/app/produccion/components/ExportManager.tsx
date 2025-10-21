@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -23,6 +23,42 @@ import {
   Loader2
 } from 'lucide-react';
 import { useToast } from "@/app/hooks/use-toast";
+
+// Dynamic Status Filter Component for Export
+const StatusFilterExport = ({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) => {
+  const [statuses, setStatuses] = useState<Array<{key: string; label: string}>>([]);
+
+  useEffect(() => {
+    const loadStatuses = async () => {
+      try {
+        const response = await fetch('/api/config/status');
+        const data = await response.json();
+        if (data.status === 'success' && data.data.length > 0) {
+          setStatuses(data.data);
+        }
+      } catch (error) {
+        console.error('Error loading statuses:', error);
+      }
+    };
+    loadStatuses();
+  }, []);
+
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">Todos los estados</SelectItem>
+        {statuses.map((status) => (
+          <SelectItem key={status.key} value={status.label.toLowerCase()}>
+            {status.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+};
 
 interface ExportManagerProps {
   orders: Sale[];
@@ -105,7 +141,7 @@ export function ExportManager({ orders, onClose }: ExportManagerProps) {
     // Create Excel-like CSV with proper formatting
     const headers = [];
     if (includeFields.customerInfo) {
-      headers.push('ID Orden', 'Cliente', 'Teléfono', 'Email', 'Negocio');
+      headers.push('ID Orden', 'Cliente', 'Teléfono', 'Email');
     }
     if (includeFields.productInfo) {
       headers.push('Producto', 'Cantidad', 'Tamaño', 'Color', 'Empaque', 'Personalización');
@@ -328,19 +364,7 @@ export function ExportManager({ orders, onClose }: ExportManagerProps) {
               </div>
               <div>
                 <label className="text-sm font-medium">Estado:</label>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos los estados</SelectItem>
-                    <SelectItem value="pendiente">Pendiente</SelectItem>
-                    <SelectItem value="en proceso">En Proceso</SelectItem>
-                    <SelectItem value="completado">Completado</SelectItem>
-                    <SelectItem value="enviado">Enviado</SelectItem>
-                    <SelectItem value="entregado">Entregado</SelectItem>
-                  </SelectContent>
-                </Select>
+                <StatusFilterExport value={statusFilter} onValueChange={setStatusFilter} />
               </div>
             </div>
 

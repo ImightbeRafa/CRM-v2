@@ -78,12 +78,30 @@ const ProductForm: React.FC<ProductFormProps> = ({
   const loadData = async () => {
     try {
       setLoading(true)
-      const [fRes, sRes] = await Promise.all([
+      const [fRes, sRes, setsRes] = await Promise.all([
         fetch('/api/config/fields'),
         fetch('/api/config/sellers'),
+        fetch('/api/config/option-sets')
       ])
-      const [fJson, sJson] = await Promise.all([fRes.json(), sRes.json()])
-      if (fJson.status === 'success') setFields(fJson.data)
+      const [fJson, sJson, setsJson] = await Promise.all([fRes.json(), sRes.json(), setsRes.json()])
+      if (fJson.status === 'success') {
+        let nextFields = fJson.data
+        // Defensive fix: some select fields might be missing linked optionSet
+        if (setsJson?.status === 'success') {
+          const setByKey: Record<string, any> = {}
+          ;(setsJson.data || []).forEach((set: any) => { setByKey[set.key] = set })
+          nextFields = nextFields.map((fld: any) => {
+            if ((fld.type === 'select' || fld.type === 'multiselect') && (!fld.optionSet || (fld.optionSet.options || []).length === 0)) {
+              const guess = setByKey[fld.key]
+              if (guess) {
+                return { ...fld, optionSet: guess }
+              }
+            }
+            return fld
+          })
+        }
+        setFields(nextFields)
+      }
       if (sJson.status === 'success') setSellers(sJson.data)
     } catch (error) {
       console.error('Error loading form data:', error)

@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -27,7 +27,7 @@ import { es } from 'date-fns/locale';
 interface EnhancedOrderCardProps {
   order: Sale;
   onSelectOrder: (order: Sale) => void;
-  onStatusUpdate: (newStatus: string) => Promise<void>;
+  onStatusUpdate: (orderId: string, newStatus: string) => Promise<void>;
   isSelected: boolean;
   onToggleSelection: (orderId: string) => void;
 }
@@ -39,9 +39,40 @@ export function EnhancedOrderCard({
   isSelected,
   onToggleSelection 
 }: EnhancedOrderCardProps) {
+  const [availableStatuses, setAvailableStatuses] = useState<Array<{key: string; label: string; color?: string}>>([]);
+  
+  // Load available statuses from API
+  useEffect(() => {
+    const loadStatuses = async () => {
+      try {
+        const response = await fetch('/api/config/status');
+        const data = await response.json();
+        if (data.status === 'success' && data.data.length > 0) {
+          setAvailableStatuses(data.data);
+        }
+      } catch (error) {
+        console.error('Error loading statuses:', error);
+      }
+    };
+    loadStatuses();
+  }, []);
   const [isUpdating, setIsUpdating] = useState(false);
 
   const getStatusInfo = (status: string) => {
+    // First, try to find the status in the configured statuses with custom colors
+    const configuredStatus = availableStatuses.find(s => s.label === status);
+    
+    if (configuredStatus && configuredStatus.color) {
+      // Use the custom color from configuration
+      return {
+        color: `${configuredStatus.color} text-white border-transparent`,
+        icon: <Clock className="h-3 w-3" />,
+        label: configuredStatus.label,
+        priority: 'medium' as const
+      };
+    }
+    
+    // Fallback to hardcoded colors if status not configured
     const statusMap: Record<string, { 
       color: string; 
       icon: React.ReactNode; 
@@ -116,6 +147,42 @@ export function EnhancedOrderCard({
     }
   };
 
+  // Get a subtle background haze color based on the status
+  // Using full class names so Tailwind includes them in the build
+  const getStatusBackgroundHaze = (statusColor: string) => {
+    // Map of status colors to their subtle background variants
+    // Using 50% opacity for better color differentiation
+    const colorHazeMap: Record<string, string> = {
+      'bg-blue-500': 'bg-blue-50/50 border-blue-200',
+      'bg-green-500': 'bg-green-50/50 border-green-200',
+      'bg-yellow-500': 'bg-yellow-50/50 border-yellow-200',
+      'bg-orange-500': 'bg-orange-50/50 border-orange-200',
+      'bg-red-500': 'bg-red-50/50 border-red-200',
+      'bg-purple-500': 'bg-purple-50/50 border-purple-200',
+      'bg-pink-500': 'bg-pink-50/50 border-pink-200',
+      'bg-indigo-500': 'bg-indigo-50/50 border-indigo-200',
+      'bg-cyan-500': 'bg-cyan-50/50 border-cyan-200',
+      'bg-gray-500': 'bg-gray-50/50 border-gray-200',
+      'bg-emerald-500': 'bg-emerald-50/50 border-emerald-200',
+      'bg-lime-500': 'bg-lime-50/50 border-lime-200',
+      'bg-teal-500': 'bg-teal-50/50 border-teal-200',
+      'bg-sky-500': 'bg-sky-50/50 border-sky-200',
+      'bg-violet-500': 'bg-violet-50/50 border-violet-200',
+      'bg-fuchsia-500': 'bg-fuchsia-50/50 border-fuchsia-200',
+      'bg-rose-500': 'bg-rose-50/50 border-rose-200',
+      'bg-amber-500': 'bg-amber-50/50 border-amber-200',
+    };
+    
+    // Extract the main color class (e.g., "bg-blue-500 text-white" -> "bg-blue-500")
+    const colorMatch = statusColor.match(/bg-\w+-\d+/);
+    if (colorMatch && colorHazeMap[colorMatch[0]]) {
+      return colorHazeMap[colorMatch[0]];
+    }
+    
+    // Fallback for unknown colors
+    return 'bg-gray-50/50 border-gray-200';
+  };
+
   const getOrderAge = () => {
     const orderDate = new Date(order.timestamp);
     const now = new Date();
@@ -129,14 +196,14 @@ export function EnhancedOrderCard({
 
   const statusInfo = getStatusInfo(order.status);
   const orderAge = getOrderAge();
-  const priorityColor = getPriorityColor(statusInfo.priority);
+  const statusBackgroundHaze = getStatusBackgroundHaze(statusInfo.color);
 
   const handleStatusChange = async (newStatus: string) => {
     if (newStatus === order.status) return;
     
     setIsUpdating(true);
     try {
-      await onStatusUpdate(newStatus);
+      await onStatusUpdate(order.orderId, newStatus);
     } catch (error) {
       console.error('Error updating status:', error);
     } finally {
@@ -146,8 +213,8 @@ export function EnhancedOrderCard({
 
   return (
     <Card className={`transition-all duration-200 hover:shadow-lg cursor-pointer ${
-      isSelected ? 'ring-2 ring-blue-500 bg-blue-50' : ''
-    } ${priorityColor}`}>
+      isSelected ? 'ring-2 ring-blue-500 bg-blue-100/50' : statusBackgroundHaze
+    }`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">
@@ -326,14 +393,12 @@ export function EnhancedOrderCard({
             onChange={(e) => handleStatusChange(e.target.value)}
             disabled={isUpdating}
           >
-            <option value="Pendiente">Pendiente</option>
-            <option value="En Proceso">En Proceso</option>
-            <option value="Completado">Completado</option>
-            <option value="Enviado">Enviado</option>
-            <option value="Entregado">Entregado</option>
-            <option value="Drive">Drive</option>
-            <option value="Impreso">Impreso</option>
-            <option value="PendienteDiseño">Pendiente Diseño</option>
+            {availableStatuses.length > 0
+              ? availableStatuses.map((s: any) => (
+                  <option key={s.key || s.label} value={s.label}>{s.label}</option>
+                ))
+              : <option value={order.status}>{order.status}</option>
+            }
           </select>
         </div>
       </CardContent>

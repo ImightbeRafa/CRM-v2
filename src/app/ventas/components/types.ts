@@ -10,8 +10,7 @@ export interface CustomerInfo {
   business: string;
   funnel: 'Instagram' | 'Whatsapp' | ''; // Add this line
   fechaEsperada: string;
-  fechaAcordada: string;
-  fechaRetirada: string;
+  fechaRetiro: string;
   diaVenta: string;
   orderType: 'EA' | 'RA';
   // Dynamic business fields

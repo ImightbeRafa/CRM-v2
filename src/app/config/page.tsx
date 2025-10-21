@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { BulkOperations } from '../components/ui/bulk-operations'
 import { SimpleAuditDashboard } from '../components/SimpleAuditDashboard'
 import { MasterConfigDashboard } from './components/MasterConfigDashboard'
+import { UnifiedFieldsManager } from './components/UnifiedFieldsManager'
 import { Settings, Users, Shield, Database, BarChart3, Zap } from 'lucide-react'
 
 export default function ConfigPage() {
@@ -441,7 +442,7 @@ export default function ConfigPage() {
 
 
   const tabs = [
-    { id: 'fields', label: 'Configuración', icon: Settings },
+    { id: 'fields', label: 'Configuración de Campos', icon: Database },
     { id: 'users', label: 'Usuarios', icon: Users },
     { id: 'master', label: 'Productos y Clientes Recurrentes', icon: Zap },
     { id: 'audit', label: 'Auditoría', icon: Shield }
@@ -509,6 +510,11 @@ export default function ConfigPage() {
         <div className="space-y-6">
           {/* Fields Tab */}
           {activeTab === 'fields' && (
+            <UnifiedFieldsManager />
+          )}
+
+          {/* Legacy Fields Tab - keeping for reference */}
+          {activeTab === 'legacy-fields' && (
             <div className="space-y-6">
               {/* Product Fields Management */}
             <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">

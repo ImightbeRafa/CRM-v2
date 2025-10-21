@@ -1181,11 +1181,11 @@ export function UnifiedFieldsManager() {
                   <div className="flex-1">
                     <h4 className="font-semibold text-purple-900 mb-2">💡 Usando Conjuntos de Opciones</h4>
                     <div className="text-sm text-purple-800 space-y-1">
-                      <p><strong>1.</strong> Crea campos personalizados de tipo <strong>"Lista desplegable"</strong></p>
+                      <p><strong>1.</strong> Crea campos personalizados de tipo <strong>&quot;Lista desplegable&quot;</strong></p>
                       <p><strong>2.</strong> Selecciona un <strong>Conjunto de Opciones</strong> existente para ese campo</p>
                       <p><strong>3.</strong> Las opciones del conjunto aparecerán automáticamente en tus formularios</p>
                       <p className="text-xs text-purple-600 mt-2">
-                        ℹ️ Si no tienes conjuntos de opciones, crea uno primero en la pestaña "Conjuntos de Opciones"
+                        ℹ️ Si no tienes conjuntos de opciones, crea uno primero en la pestaña &quot;Conjuntos de Opciones&quot;
                       </p>
                     </div>
                   </div>
@@ -1970,7 +1970,7 @@ function ProductFieldForm({ field, onSave, onCancel, saving, optionSets }: any) 
               </p>
               {formData.optionSetId && (
                 <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs text-green-700">
-                  ✓ Conjunto seleccionado. Las opciones de "{optionSets.find((s: any) => s.id === formData.optionSetId)?.name}" aparecerán en este campo.
+                  ✓ Conjunto seleccionado. Las opciones de &quot;{optionSets.find((s: any) => s.id === formData.optionSetId)?.name}&quot; aparecerán en este campo.
                 </div>
               )}
             </>

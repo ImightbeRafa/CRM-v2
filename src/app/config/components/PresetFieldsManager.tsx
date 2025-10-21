@@ -538,7 +538,7 @@ export function PresetFieldsManager() {
               <p className="text-sm text-blue-700 mt-1">
                 Los campos predefinidos incluyen opciones comunes que puedes activar fácilmente. 
                 Una vez activados, aparecerán automáticamente en tus formularios de ventas.
-                Puedes marcar campos como "Requeridos" para que sean obligatorios.
+                Puedes marcar campos como &quot;Requeridos&quot; para que sean obligatorios.
               </p>
             </div>
           </div>

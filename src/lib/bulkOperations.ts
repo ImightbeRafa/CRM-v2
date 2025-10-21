@@ -290,7 +290,9 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
           console.error('Failed to get entity names for bulk update audit:', error)
         }
         
-        await logBulkUpdate(request, type, ids.slice(0, result.success), entityNames.slice(0, result.success), updates)
+        if (request.request) {
+          await logBulkUpdate(request.request, type, ids.slice(0, result.success), entityNames.slice(0, result.success), updates)
+        }
       } catch (auditError) {
         console.error('Failed to log bulk update audit:', auditError)
       }

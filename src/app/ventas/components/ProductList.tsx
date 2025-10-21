@@ -181,7 +181,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                 No hay productos agregados al pedido
               </p>
               <p className="text-sm text-gray-400 text-center">
-                Haga clic en "Agregar Producto" para comenzar
+                Haga clic en &quot;Agregar Producto&quot; para comenzar
               </p>
             </CardContent>
           </Card>

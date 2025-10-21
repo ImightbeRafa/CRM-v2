@@ -14,6 +14,8 @@ export interface CustomerInfo {
   fechaRetirada: string;
   diaVenta: string;
   orderType: 'EA' | 'RA';
+  // Dynamic business fields
+  [key: string]: any;
 }
 
 export interface ProductInfo {
@@ -70,6 +72,10 @@ export interface CustomerSuggestion {
   province: string;
   canton: string;
   district: string;
+  email?: string;
+  username?: string;
+  address?: string;
+  business?: string;
   lastOrder?: Date;
   totalOrders: number;
 }

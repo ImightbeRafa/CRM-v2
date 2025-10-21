@@ -10,23 +10,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const frequentProducts = await prisma.inventoryItem.findMany({
+    const clients = await prisma.client.findMany({
       where: { isActive: true },
       orderBy: [
         { isFavorite: 'desc' },
-        { totalSold: 'desc' },
-        { lastSold: 'desc' }
+        { totalSpent: 'desc' },
+        { name: 'asc' }
       ]
     });
 
     return NextResponse.json({
       status: 'success',
-      data: frequentProducts
+      data: clients
     });
   } catch (error) {
-    console.error('Error fetching frequent products:', error);
+    console.error('Error fetching automatic clients:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch frequent products' },
+      { error: 'Failed to fetch automatic clients' },
       { status: 500 }
     );
   }
@@ -46,33 +46,63 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, type, color, tamano, baseCost, isFavorite } = body;
+    const {
+      name,
+      phone,
+      email,
+      province,
+      canton,
+      district,
+      address,
+      business,
+      username,
+      notes,
+      isFavorite
+    } = body;
 
-    const frequentProduct = await prisma.inventoryItem.create({
+    // Check if client already exists by phone
+    const existingClient = await prisma.client.findFirst({
+      where: { phone, isActive: true }
+    });
+
+    if (existingClient) {
+      return NextResponse.json(
+        { error: 'Client with this phone number already exists' },
+        { status: 400 }
+      );
+    }
+
+    const client = await prisma.client.create({
       data: {
         name,
-        description: type,
-        category: 'General',
-        sku: `SKU-${Date.now()}`,
-        currentStock: 0,
-        minStock: 0,
-        unitCost: baseCost || 0,
-        sellingPrice: baseCost || 0,
-        isActive: true,
+        phone,
+        email,
+        province,
+        canton,
+        district,
+        address,
+        business,
+        username,
+        notes,
         isFavorite: isFavorite || false,
-        totalSold: 0,
+        isActive: true,
+        totalOrders: 0,
+        totalSpent: 0,
+        averageOrderValue: 0,
+        firstOrder: new Date().toISOString(),
+        lastOrder: new Date().toISOString(),
         createdBy: token.sub as string
       }
     });
 
     return NextResponse.json({
       status: 'success',
-      data: frequentProduct
+      data: client
     });
   } catch (error) {
-    console.error('Error creating frequent product:', error);
+    console.error('Error creating automatic client:', error);
     return NextResponse.json(
-      { error: 'Failed to create frequent product' },
+      { error: 'Failed to create automatic client' },
       { status: 500 }
     );
   }
@@ -92,29 +122,63 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, name, type, color, tamano, baseCost, isFavorite, active } = body;
+    const {
+      id,
+      name,
+      phone,
+      email,
+      province,
+      canton,
+      district,
+      address,
+      business,
+      username,
+      notes,
+      isFavorite
+    } = body;
 
-    const frequentProduct = await prisma.inventoryItem.update({
+    // Check if phone already exists for different client
+    const existingClient = await prisma.client.findFirst({
+      where: { 
+        phone, 
+        isActive: true,
+        id: { not: id }
+      }
+    });
+
+    if (existingClient) {
+      return NextResponse.json(
+        { error: 'Phone number already exists for another client' },
+        { status: 400 }
+      );
+    }
+
+    const client = await prisma.client.update({
       where: { id },
       data: {
         name,
-        description: type,
-        unitCost: baseCost || 0,
-        sellingPrice: baseCost || 0,
+        phone,
+        email,
+        province,
+        canton,
+        district,
+        address,
+        business,
+        username,
+        notes,
         isFavorite,
-        isActive: active !== undefined ? active : true,
         lastUpdated: new Date()
       }
     });
 
     return NextResponse.json({
       status: 'success',
-      data: frequentProduct
+      data: client
     });
   } catch (error) {
-    console.error('Error updating frequent product:', error);
+    console.error('Error updating automatic client:', error);
     return NextResponse.json(
-      { error: 'Failed to update frequent product' },
+      { error: 'Failed to update automatic client' },
       { status: 500 }
     );
   }
@@ -137,22 +201,22 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id');
 
     if (!id) {
-      return NextResponse.json({ error: 'Product ID is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Client ID is required' }, { status: 400 });
     }
 
-    await prisma.inventoryItem.update({
+    await prisma.client.update({
       where: { id },
-      data: { isActive: false, lastUpdated: new Date() }
+      data: { isActive: false }
     });
 
     return NextResponse.json({
       status: 'success',
-      message: 'Frequent product deleted successfully'
+      message: 'Automatic client deleted successfully'
     });
   } catch (error) {
-    console.error('Error deleting frequent product:', error);
+    console.error('Error deleting automatic client:', error);
     return NextResponse.json(
-      { error: 'Failed to delete frequent product' },
+      { error: 'Failed to delete automatic client' },
       { status: 500 }
     );
   }

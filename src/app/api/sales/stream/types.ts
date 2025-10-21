@@ -1,0 +1,34 @@
+export interface SaleData {
+  orderId: string;
+  status: string;
+  delivery: string;
+  customerName: string;
+  username: string;
+  phone: string;
+  email: string;
+  business: string;
+  product: string;
+  quantity: number;
+  size: string;
+  color: string;
+  packaging: string;
+  customization: string;
+  comments: string;
+  productCost: number;
+  iva: number;
+  total: number;
+  timestamp: string;
+  funnel: string;
+  orderType: 'EA' | 'RA';
+  expectedDate?: string;
+  saleDate?: string;
+  courier?: string;
+  seller?: string;
+  province?: string;
+  canton?: string;
+  district?: string;
+  address?: string;
+  shippingCost?: number;
+  agreedDate?: string;
+  pickupDate?: string;
+}

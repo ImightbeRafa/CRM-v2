@@ -8,6 +8,7 @@ import OrderTypeToggle from './OrderTypeToggle';
 import CustomerForm from './customerForm';
 import ProductList from './ProductList';
 import SmartSuggestions from './SmartSuggestions';
+import EnhancedSmartSuggestions from './EnhancedSmartSuggestions';
 import { CustomerInfo, ProductInfo, OrderInfo, SubmitStatus, ProductTemplate, CustomerSuggestion } from './types';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 
@@ -44,6 +45,7 @@ const EnhancedSalesForm = () => {
   const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
   const [isClient, setIsClient] = useState(false);
+  const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
 
   // Auto-assign vendedor to products that don't have one
   useEffect(() => {
@@ -57,6 +59,23 @@ const EnhancedSalesForm = () => {
       }));
     }
   }, [user, orderInfo.products]);
+
+  // Fetch business info fields
+  useEffect(() => {
+    const fetchBusinessInfo = async () => {
+      try {
+        const response = await fetch('/api/config/business-info');
+        const data = await response.json();
+        if (data.status === 'success') {
+          setBusinessInfoFields(data.data);
+        }
+      } catch (error) {
+        console.error('Error fetching business info fields:', error);
+      }
+    };
+
+    fetchBusinessInfo();
+  }, []);
 
   // Initialize client-side state
   useEffect(() => {
@@ -211,7 +230,7 @@ const EnhancedSalesForm = () => {
       // Create order data for database
       const orderData = {
         orderId: `ORDER-${Date.now()}`,
-        orderType: 'EA',
+        orderType: orderInfo.customerInfo.orderType || 'EA',
         status: 'Pendiente',
         customerName: orderInfo.customerInfo.name,
         username: orderInfo.customerInfo.username || '',
@@ -228,9 +247,28 @@ const EnhancedSalesForm = () => {
         canton: orderInfo.customerInfo.canton || '',
         district: orderInfo.customerInfo.district || '',
         courier: orderInfo.orderShippingMethod,
+        // MISSING FIELDS - Add them here
+        funnel: orderInfo.customerInfo.funnel || '',
+        seller: orderInfo.products.length > 0 ? orderInfo.products[0].vendedor || user?.username || '' : '',
+        expectedDate: orderInfo.customerInfo.fechaEsperada || '',
+        agreedDate: orderInfo.customerInfo.fechaAcordada || '',
+        pickupDate: orderInfo.customerInfo.fechaRetirada || '',
+        productCost: orderInfo.products.reduce((sum, p) => sum + (p.productCost * p.cantidad), 0),
+        size: orderInfo.products.map(p => p.tamano).join(', '),
+        color: orderInfo.products.map(p => p.color).join(', '),
+        packaging: orderInfo.products.map(p => p.packaging).join(', '),
+        customization: orderInfo.products.map(p => p.personalizado).join(', '),
         comments: orderInfo.products.map(p => 
           `${p.type} (${p.cantidad}x) - ${p.color || 'N/A'} - ${p.tamano || 'N/A'}`
         ).join('; '),
+        // Store detailed product information for inventory updates
+        productDetails: JSON.stringify(orderInfo.products.map(p => ({
+          type: p.type,
+          cantidad: p.cantidad,
+          color: p.color,
+          tamano: p.tamano,
+          productCost: p.productCost
+        }))),
         timestamp: new Date(),
         saleDate: new Date().toISOString()
       };
@@ -249,6 +287,25 @@ const EnhancedSalesForm = () => {
       }
 
       const result = await response.json();
+
+      // Trigger automatic client sync after successful order creation
+      try {
+        const syncResponse = await fetch('/api/config/automatic-clients/sync', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include'
+        });
+        
+        if (syncResponse.ok) {
+          console.log('Client sync completed successfully');
+        } else {
+          console.warn('Client sync failed, but order was created successfully');
+        }
+      } catch (syncError) {
+        console.warn('Client sync failed, but order was created successfully:', syncError);
+      }
 
       setSubmitStatus({
         type: 'success',
@@ -428,10 +485,83 @@ const EnhancedSalesForm = () => {
                 orderType={orderInfo.customerInfo.orderType}
               />
             </div>
+
+            {/* Business Info Fields */}
+            {businessInfoFields.length > 0 && (
+              <div className="bg-orange-50 p-4 rounded-lg">
+                <h3 className="text-lg font-semibold text-orange-800 mb-4">
+                  🏢 Información de Negocio
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {businessInfoFields.map((field) => (
+                    <div key={field.id} className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        {field.label}
+                        {field.required && <span className="text-red-500 ml-1">*</span>}
+                      </label>
+                      {field.type === 'text' && (
+                        <input
+                          type="text"
+                          value={orderInfo.customerInfo[field.name] || ''}
+                          onChange={(e) => handleCustomerInfoChange({
+                            ...orderInfo.customerInfo,
+                            [field.name]: e.target.value
+                          })}
+                          placeholder={field.placeholder}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          required={field.required}
+                        />
+                      )}
+                      {field.type === 'textarea' && (
+                        <textarea
+                          value={orderInfo.customerInfo[field.name] || ''}
+                          onChange={(e) => handleCustomerInfoChange({
+                            ...orderInfo.customerInfo,
+                            [field.name]: e.target.value
+                          })}
+                          placeholder={field.placeholder}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          rows={3}
+                          required={field.required}
+                        />
+                      )}
+                      {field.type === 'dropdown' && (
+                        <select
+                          value={orderInfo.customerInfo[field.name] || ''}
+                          onChange={(e) => handleCustomerInfoChange({
+                            ...orderInfo.customerInfo,
+                            [field.name]: e.target.value
+                          })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          required={field.required}
+                        >
+                          <option value="">{field.placeholder || 'Seleccionar...'}</option>
+                          {field.options && JSON.parse(field.options).map((option: string) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      )}
+                      {field.type === 'date' && (
+                        <input
+                          type="date"
+                          value={orderInfo.customerInfo[field.name] || ''}
+                          onChange={(e) => handleCustomerInfoChange({
+                            ...orderInfo.customerInfo,
+                            [field.name]: e.target.value
+                          })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          required={field.required}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             
-            {/* Smart Suggestions */}
+            {/* Enhanced Smart Suggestions */}
             <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg">
-              <SmartSuggestions
+              <EnhancedSmartSuggestions
                 onProductSelect={handleProductSelect}
                 onCustomerSelect={handleCustomerSelect}
                 currentCustomerName={orderInfo.customerInfo.name}

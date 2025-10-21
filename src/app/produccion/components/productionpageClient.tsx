@@ -2,14 +2,14 @@
 
 import { useState } from 'react';
 import BackupPage from './BackupPage';
-import { ProductionDashboard } from './ProduccionDashboard';
+import { EnhancedProductionDashboard } from './EnhancedProductionDashboard';
 import HomeButton from '@/app/components/ui/HomeButtom';
 
 export function ProductionPageClient() {
   const [isGuiaGeneratorOpen, setIsGuiaGeneratorOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow-sm border-b sticky top-0 z-10">
         <div className="container mx-auto px-4 py-3">
           <HomeButton />
@@ -17,7 +17,7 @@ export function ProductionPageClient() {
       </nav>
       
       <main className="container mx-auto py-6 space-y-8">
-        <ProductionDashboard 
+        <EnhancedProductionDashboard 
           onGenerateGuias={() => setIsGuiaGeneratorOpen(true)}
           isGuiaGeneratorOpen={isGuiaGeneratorOpen}
           onGuiaGeneratorClose={() => setIsGuiaGeneratorOpen(false)}

@@ -13,6 +13,7 @@ export default function ConfigPage() {
   
   // Data states
   const [fields, setFields] = useState<any[]>([])
+  const [businessFields, setBusinessFields] = useState<any[]>([])
   const [users, setUsers] = useState<any[]>([])
   const [optionSets, setOptionSets] = useState<any[]>([])
   const [shipping, setShipping] = useState<any[]>([])
@@ -29,10 +30,12 @@ export default function ConfigPage() {
   
   // Form states
   const [showFieldForm, setShowFieldForm] = useState(false)
+  const [showBusinessFieldForm, setShowBusinessFieldForm] = useState(false)
   const [showOptionSetForm, setShowOptionSetForm] = useState(false)
   const [showShippingForm, setShowShippingForm] = useState(false)
   const [showUserForm, setShowUserForm] = useState(false)
   const [editingField, setEditingField] = useState<any>(null)
+  const [editingBusinessField, setEditingBusinessField] = useState<any>(null)
   const [editingOptionSet, setEditingOptionSet] = useState<any>(null)
   const [optionSetOptions, setOptionSetOptions] = useState<{ label: string; value: string; priceDelta: number; metadata: string }[]>([])
   const [editingShipping, setEditingShipping] = useState<any>(null)
@@ -42,8 +45,9 @@ export default function ConfigPage() {
   const loadData = async () => {
     setLoading(true)
     try {
-        const [fieldsRes, usersRes, optionSetsRes, shippingRes, sellersRes, ordersRes] = await Promise.all([
+        const [fieldsRes, businessFieldsRes, usersRes, optionSetsRes, shippingRes, sellersRes, ordersRes] = await Promise.all([
           fetch('/api/config/fields').then(r => r.json()).catch(() => ({ status: 'success', data: [] })),
+          fetch('/api/config/business-info').then(r => r.json()).catch(() => ({ status: 'success', data: [] })),
           fetch('/api/users').then(r => r.json()).catch(() => ({ status: 'success', data: [] })),
           fetch('/api/config/option-sets').then(r => r.json()).catch(() => ({ status: 'success', data: [] })),
           fetch('/api/config/shipping').then(r => r.json()).catch(() => ({ status: 'success', data: [] })),
@@ -52,6 +56,7 @@ export default function ConfigPage() {
         ])
       
       if (fieldsRes.status === 'success') setFields(fieldsRes.data)
+      if (businessFieldsRes.status === 'success') setBusinessFields(businessFieldsRes.data)
       if (usersRes.status === 'success') setUsers(usersRes.data)
       if (optionSetsRes.status === 'success') setOptionSets(optionSetsRes.data)
       if (shippingRes.status === 'success') setShipping(shippingRes.data)
@@ -192,6 +197,29 @@ export default function ConfigPage() {
     } catch (error) {
       console.error('Error deleting field:', error)
       alert('Error al eliminar campo')
+    }
+  }
+
+  // Business field management functions
+  const handleEditBusinessField = (field: any) => {
+    setEditingBusinessField(field)
+    setShowBusinessFieldForm(true)
+  }
+
+  const handleDeleteBusinessField = async (id: string) => {
+    if (!confirm('¿Eliminar este campo de negocio?')) return
+    try {
+      const res = await fetch(`/api/config/business-info?id=${id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (json.status === 'success') {
+        setBusinessFields(prev => prev.filter(f => f.id !== id))
+        alert('Campo de negocio eliminado exitosamente')
+      } else {
+        alert(json.error || 'Error al eliminar campo de negocio')
+      }
+    } catch (error) {
+      console.error('Error deleting business field:', error)
+      alert('Error al eliminar campo de negocio')
     }
   }
 
@@ -562,6 +590,87 @@ export default function ConfigPage() {
                 )}
               </div>
             </div>
+
+              {/* Business Info Fields Management */}
+            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+                <div className="bg-gradient-to-r from-blue-500 to-cyan-600 p-6 text-white">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-white bg-opacity-20 rounded-xl">
+                        <Settings className="w-8 h-8" />
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-bold">Campos de Información de Negocio</h2>
+                        <p className="text-blue-100">Gestiona los campos personalizados para tu negocio</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setEditingBusinessField(null)
+                        setShowBusinessFieldForm(true)
+                      }}
+                      className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
+                    >
+                      + Nuevo Campo
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="p-6">
+                  {loading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                      <span className="ml-3 text-gray-600">Cargando campos...</span>
+                    </div>
+                  ) : businessFields.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Settings className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-gray-500">No hay campos de negocio configurados</p>
+                      <button
+                        onClick={() => {
+                          setEditingBusinessField(null)
+                          setShowBusinessFieldForm(true)
+                        }}
+                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                      >
+                        Crear primer campo
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {businessFields.map((field) => (
+                        <div key={field.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-100 rounded-lg">
+                              <Settings className="w-5 h-5 text-blue-600" />
+                            </div>
+                            <div>
+                              <div className="font-medium text-gray-900">{field.label}</div>
+                              <div className="text-sm text-gray-500">
+                                {field.type} • {field.required ? 'Requerido' : 'Opcional'} • Orden: {field.order}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => handleEditBusinessField(field)}
+                              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                            >
+                              Editar
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteBusinessField(field.id)}
+                              className="text-red-600 hover:text-red-800 text-sm font-medium"
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {/* Option Sets Management */}
             <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">

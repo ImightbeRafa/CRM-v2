@@ -6,8 +6,11 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { Badge } from '@/app/components/ui/badge';
-import { Star, Plus, Edit, Trash2, Users, Package } from 'lucide-react';
+import { Star, Plus, Edit, Trash2, Users, Package, Settings, BarChart3, Truck } from 'lucide-react';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { InventoryManagement } from './InventoryManagement';
+import { AutomaticClientManagement } from './AutomaticClientManagement';
+import { ShippingConfigManagement } from './ShippingConfigManagement';
 
 interface FrequentProduct {
   id: string;
@@ -40,7 +43,7 @@ interface FrequentCustomer {
 
 export function MasterConfigDashboard() {
   const { user, loading: userLoading } = useCurrentUser();
-  const [activeTab, setActiveTab] = useState<'products' | 'customers'>('products');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'clients' | 'shipping'>('inventory');
   const [products, setProducts] = useState<FrequentProduct[]>([]);
   const [customers, setCustomers] = useState<FrequentCustomer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -229,28 +232,49 @@ export function MasterConfigDashboard() {
   return (
     <div className="p-4 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Productos y Clientes Recurrentes</h1>
+        <h1 className="text-2xl font-bold">Gestión Avanzada</h1>
         <div className="flex gap-2">
           <Button
-            variant={activeTab === 'products' ? 'default' : 'outline'}
-            onClick={() => setActiveTab('products')}
+            variant={activeTab === 'inventory' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('inventory')}
             className="flex items-center gap-2"
           >
             <Package className="h-4 w-4" />
-            Productos Recurrentes
+            Inventario
           </Button>
           <Button
-            variant={activeTab === 'customers' ? 'default' : 'outline'}
-            onClick={() => setActiveTab('customers')}
+            variant={activeTab === 'clients' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('clients')}
             className="flex items-center gap-2"
           >
             <Users className="h-4 w-4" />
-            Clientes Recurrentes
+            Clientes Automáticos
+          </Button>
+          <Button
+            variant={activeTab === 'shipping' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('shipping')}
+            className="flex items-center gap-2"
+          >
+            <Truck className="h-4 w-4" />
+            Configuración de Envíos
           </Button>
         </div>
       </div>
 
-      {activeTab === 'products' && (
+      {activeTab === 'inventory' && (
+        <InventoryManagement />
+      )}
+
+      {activeTab === 'clients' && (
+        <AutomaticClientManagement />
+      )}
+
+      {activeTab === 'shipping' && (
+        <ShippingConfigManagement />
+      )}
+
+      {/* Legacy code for backward compatibility - removed products tab */}
+      {false && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">Productos Recurrentes</h2>
@@ -398,7 +422,7 @@ export function MasterConfigDashboard() {
         </div>
       )}
 
-      {activeTab === 'customers' && (
+      {false && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">Clientes Recurrentes</h2>

@@ -1,6 +1,5 @@
 import React from 'react';
 import { CustomerInfo } from './types';
-import { FunnelSelect } from '@/app/components/ui/FunnelSelect';
 
 interface CustomerFormProps {
   customerInfo: CustomerInfo;
@@ -210,38 +209,10 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
         </div>
       </div>
 
-      {/* Business Information */}
-      <div className="space-y-2">
-        <label className="block font-medium">Negocio</label>
-        <select 
-          name="business"
-          className="w-full p-2 border rounded"
-          value={customerInfo.business}
-          onChange={handleInputChange}
-          required
-        >
-          <option value="">Seleccionar...</option>
-          <option value="Quark">Quark</option>
-          <option value="WAS">WAS</option>
-          <option value="KROMA">KROMA</option>
-        </select>
-      </div>
 
       {/* Date fields */}
       <div className="grid grid-cols-2 gap-4">
-        {customerInfo.orderType === 'EA' ? (
-          <div>
-            <label className="block font-medium">Fecha Esperada de Entrega</label>
-            <input
-              type="date"
-              name="fechaEsperada"
-              className="w-full p-2 border rounded"
-              value={customerInfo.fechaEsperada}
-              onChange={handleInputChange}
-              required
-            />
-          </div>
-        ) : (
+        {customerInfo.orderType === 'RA' && (
           <>
             <div>
               <label className="block font-medium">Fecha Acordada</label>
@@ -268,14 +239,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
         )}
       </div>
 
-      {/* Add FunnelSelect component here */}
-      <FunnelSelect
-        value={customerInfo.funnel}
-        onChange={(value) => onCustomerInfoChange({
-          ...customerInfo,
-          funnel: value
-        })}
-      />
     </div>
   );
 };

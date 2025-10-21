@@ -10,23 +10,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const frequentProducts = await prisma.inventoryItem.findMany({
+    const businessInfo = await prisma.businessInfo.findMany({
       where: { isActive: true },
-      orderBy: [
-        { isFavorite: 'desc' },
-        { totalSold: 'desc' },
-        { lastSold: 'desc' }
-      ]
+      orderBy: { order: 'asc' }
     });
 
     return NextResponse.json({
       status: 'success',
-      data: frequentProducts
+      data: businessInfo
     });
   } catch (error) {
-    console.error('Error fetching frequent products:', error);
+    console.error('Error fetching business info:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch frequent products' },
+      { error: 'Failed to fetch business info' },
       { status: 500 }
     );
   }
@@ -46,33 +42,30 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, type, color, tamano, baseCost, isFavorite } = body;
+    const { name, type, label, placeholder, options, required, order } = body;
 
-    const frequentProduct = await prisma.inventoryItem.create({
+    const businessInfo = await prisma.businessInfo.create({
       data: {
         name,
-        description: type,
-        category: 'General',
-        sku: `SKU-${Date.now()}`,
-        currentStock: 0,
-        minStock: 0,
-        unitCost: baseCost || 0,
-        sellingPrice: baseCost || 0,
+        type,
+        label,
+        placeholder,
+        options: options ? JSON.stringify(options) : null,
+        required: required || false,
+        order: order || 0,
         isActive: true,
-        isFavorite: isFavorite || false,
-        totalSold: 0,
         createdBy: token.sub as string
       }
     });
 
     return NextResponse.json({
       status: 'success',
-      data: frequentProduct
+      data: businessInfo
     });
   } catch (error) {
-    console.error('Error creating frequent product:', error);
+    console.error('Error creating business info:', error);
     return NextResponse.json(
-      { error: 'Failed to create frequent product' },
+      { error: 'Failed to create business info' },
       { status: 500 }
     );
   }
@@ -92,29 +85,31 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, name, type, color, tamano, baseCost, isFavorite, active } = body;
+    const { id, name, type, label, placeholder, options, required, order, active } = body;
 
-    const frequentProduct = await prisma.inventoryItem.update({
+    const businessInfo = await prisma.businessInfo.update({
       where: { id },
       data: {
         name,
-        description: type,
-        unitCost: baseCost || 0,
-        sellingPrice: baseCost || 0,
-        isFavorite,
+        type,
+        label,
+        placeholder,
+        options: options ? JSON.stringify(options) : null,
+        required: required || false,
+        order: order || 0,
         isActive: active !== undefined ? active : true,
-        lastUpdated: new Date()
+        updatedAt: new Date()
       }
     });
 
     return NextResponse.json({
       status: 'success',
-      data: frequentProduct
+      data: businessInfo
     });
   } catch (error) {
-    console.error('Error updating frequent product:', error);
+    console.error('Error updating business info:', error);
     return NextResponse.json(
-      { error: 'Failed to update frequent product' },
+      { error: 'Failed to update business info' },
       { status: 500 }
     );
   }
@@ -137,22 +132,22 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id');
 
     if (!id) {
-      return NextResponse.json({ error: 'Product ID is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Business info ID is required' }, { status: 400 });
     }
 
-    await prisma.inventoryItem.update({
+    await prisma.businessInfo.update({
       where: { id },
-      data: { isActive: false, lastUpdated: new Date() }
+      data: { isActive: false, updatedAt: new Date() }
     });
 
     return NextResponse.json({
       status: 'success',
-      message: 'Frequent product deleted successfully'
+      message: 'Business info deleted successfully'
     });
   } catch (error) {
-    console.error('Error deleting frequent product:', error);
+    console.error('Error deleting business info:', error);
     return NextResponse.json(
-      { error: 'Failed to delete frequent product' },
+      { error: 'Failed to delete business info' },
       { status: 500 }
     );
   }

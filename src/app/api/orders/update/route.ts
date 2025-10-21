@@ -93,49 +93,53 @@ export async function POST(request: Request) {
     )
 
     const existing = await prisma.order.findUnique({ where: { orderId: cleanData.orderId } })
-    const data = {
-      orderId: cleanData.orderId,
-      orderType: cleanData.orderType || 'EA',
-      status: cleanData.status || 'Pendiente',
-      delivery: cleanData.delivery || null,
-      timestamp: cleanData.timestamp ? new Date(cleanData.timestamp) : undefined,
-      customerName: cleanData.customerName || '',
-      username: cleanData.username || null,
-      phone: cleanData.phone || null,
-      email: cleanData.email || null,
-      business: cleanData.business || null,
-      product: cleanData.product || null,
-      quantity: Number(cleanData.quantity || 0),
-      size: cleanData.size || null,
-      color: cleanData.color || null,
-      packaging: cleanData.packaging || null,
-      customization: cleanData.customization || null,
-      comments: cleanData.comments || null,
-      total: Number(cleanData.total || 0),
-      iva: cleanData.iva != null ? Number(cleanData.iva) : null,
-      shippingCost: cleanData.shippingCost != null ? Number(cleanData.shippingCost) : null,
-      productCost: cleanData.productCost != null ? Number(cleanData.productCost) : null,
-      funnel: cleanData.funnel || null,
-      expectedDate: cleanData.expectedDate || null,
-      saleDate: cleanData.saleDate || null,
-      courier: cleanData.courier || null,
-      seller: cleanData.seller || null,
-      province: cleanData.province || null,
-      canton: cleanData.canton || null,
-      district: cleanData.district || null,
-      address: cleanData.address || null,
-      agreedDate: cleanData.agreedDate || null,
-      pickupDate: cleanData.pickupDate || null,
+    
+    if (!existing) {
+      return createErrorResponse('Order not found', 404)
     }
 
-    const result = existing
-      ? await prisma.order.update({ where: { orderId: cleanData.orderId }, data })
-      : await prisma.order.create({ data })
+    // Only update fields that are provided in the request
+    const updateData: any = {}
+    
+    // Check each field and only include it if it's provided
+    if (cleanData.orderType !== undefined) updateData.orderType = cleanData.orderType
+    if (cleanData.status !== undefined) updateData.status = cleanData.status
+    if (cleanData.delivery !== undefined) updateData.delivery = cleanData.delivery
+    if (cleanData.timestamp !== undefined) updateData.timestamp = new Date(cleanData.timestamp)
+    if (cleanData.customerName !== undefined) updateData.customerName = cleanData.customerName
+    if (cleanData.username !== undefined) updateData.username = cleanData.username
+    if (cleanData.phone !== undefined) updateData.phone = cleanData.phone
+    if (cleanData.email !== undefined) updateData.email = cleanData.email
+    if (cleanData.business !== undefined) updateData.business = cleanData.business
+    if (cleanData.product !== undefined) updateData.product = cleanData.product
+    if (cleanData.quantity !== undefined) updateData.quantity = Number(cleanData.quantity)
+    if (cleanData.size !== undefined) updateData.size = cleanData.size
+    if (cleanData.color !== undefined) updateData.color = cleanData.color
+    if (cleanData.packaging !== undefined) updateData.packaging = cleanData.packaging
+    if (cleanData.customization !== undefined) updateData.customization = cleanData.customization
+    if (cleanData.comments !== undefined) updateData.comments = cleanData.comments
+    if (cleanData.total !== undefined) updateData.total = Number(cleanData.total)
+    if (cleanData.iva !== undefined) updateData.iva = cleanData.iva != null ? Number(cleanData.iva) : null
+    if (cleanData.shippingCost !== undefined) updateData.shippingCost = cleanData.shippingCost != null ? Number(cleanData.shippingCost) : null
+    if (cleanData.productCost !== undefined) updateData.productCost = cleanData.productCost != null ? Number(cleanData.productCost) : null
+    if (cleanData.funnel !== undefined) updateData.funnel = cleanData.funnel
+    if (cleanData.expectedDate !== undefined) updateData.expectedDate = cleanData.expectedDate
+    if (cleanData.saleDate !== undefined) updateData.saleDate = cleanData.saleDate
+    if (cleanData.courier !== undefined) updateData.courier = cleanData.courier
+    if (cleanData.seller !== undefined) updateData.seller = cleanData.seller
+    if (cleanData.province !== undefined) updateData.province = cleanData.province
+    if (cleanData.canton !== undefined) updateData.canton = cleanData.canton
+    if (cleanData.district !== undefined) updateData.district = cleanData.district
+    if (cleanData.address !== undefined) updateData.address = cleanData.address
+    if (cleanData.agreedDate !== undefined) updateData.agreedDate = cleanData.agreedDate
+    if (cleanData.pickupDate !== undefined) updateData.pickupDate = cleanData.pickupDate
+
+    const result = await prisma.order.update({ where: { orderId: cleanData.orderId }, data: updateData })
 
     // Log audit trail with smart change detection
-    if (existing) {
+    if (Object.keys(updateData).length > 0) {
       // Only log if there are actual changes
-      const changes = detectChanges(existing, data)
+      const changes = detectChanges(existing, updateData)
       if (changes.length > 0) {
         console.log('Logging order update with changes:', {
           orderId: result.orderId,
@@ -146,17 +150,9 @@ export async function POST(request: Request) {
           { changes: changes }, 
           { changes: changes })
       }
-    } else {
-      console.log('Logging order creation:', {
-        orderId: result.orderId,
-        customerName: data.customerName,
-        status: data.status
-      })
-      await logCreate(request as any, 'order', result.id, `Order #${result.orderId}`, 
-        { orderId: result.orderId, customerName: data.customerName, status: data.status })
     }
 
-    return createSuccessResponse(result, existing ? 'Order updated successfully' : 'Order created successfully')
+    return createSuccessResponse(result, 'Order updated successfully')
   } catch (error) {
     return handleApiError(error)
   }

@@ -44,6 +44,8 @@ export function OrderList({ orders, onSelectOrder, loading, error }: OrderListPr
           <TableHead>Cliente</TableHead>
           <TableHead>Negocio</TableHead>
           <TableHead>Producto</TableHead>
+          <TableHead>Canal</TableHead>
+          <TableHead>Vendedor</TableHead>
           <TableHead>Estado</TableHead>
           <TableHead>Fecha</TableHead>
           <TableHead></TableHead>
@@ -68,6 +70,31 @@ export function OrderList({ orders, onSelectOrder, loading, error }: OrderListPr
                 <p className="text-sm text-muted-foreground">
                   Cant: {order.quantity} - {order.size}
                 </p>
+                {(order as any).productCost && (
+                  <p className="text-xs text-muted-foreground">
+                    Costo: ₡{Number((order as any).productCost).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            </TableCell>
+            <TableCell>
+              <div>
+                {(order as any).funnel ? (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    {(order as any).funnel}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">No especificado</span>
+                )}
+              </div>
+            </TableCell>
+            <TableCell>
+              <div>
+                {(order as any).seller ? (
+                  <span className="text-sm">{(order as any).seller}</span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">No especificado</span>
+                )}
               </div>
             </TableCell>
             <TableCell>

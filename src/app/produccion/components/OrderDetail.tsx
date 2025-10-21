@@ -244,6 +244,8 @@ export function OrderDetails({
     ['Empaque', 'packaging'],
     ['Personalización', 'customization'],
     ['Delivery', 'delivery'],
+    ['Canal de Ventas', 'funnel'],
+    ['Vendedor', 'seller'],
     ['Timestamp', 'timestamp']
   ];
 

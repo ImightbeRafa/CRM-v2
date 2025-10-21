@@ -10,23 +10,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const frequentProducts = await prisma.inventoryItem.findMany({
+    const inventory = await prisma.inventoryItem.findMany({
       where: { isActive: true },
       orderBy: [
         { isFavorite: 'desc' },
-        { totalSold: 'desc' },
-        { lastSold: 'desc' }
+        { name: 'asc' }
       ]
     });
 
     return NextResponse.json({
       status: 'success',
-      data: frequentProducts
+      data: inventory
     });
   } catch (error) {
-    console.error('Error fetching frequent products:', error);
+    console.error('Error fetching inventory:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch frequent products' },
+      { error: 'Failed to fetch inventory' },
       { status: 500 }
     );
   }
@@ -46,33 +45,64 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, type, color, tamano, baseCost, isFavorite } = body;
+    const {
+      name,
+      description,
+      category,
+      sku,
+      currentStock,
+      minStock,
+      maxStock,
+      unitCost,
+      sellingPrice,
+      supplier,
+      location,
+      reorderPoint,
+      reorderQuantity,
+      isFavorite
+    } = body;
 
-    const frequentProduct = await prisma.inventoryItem.create({
+    // Check if SKU already exists
+    const existingItem = await prisma.inventoryItem.findFirst({
+      where: { sku, isActive: true }
+    });
+
+    if (existingItem) {
+      return NextResponse.json(
+        { error: 'SKU already exists' },
+        { status: 400 }
+      );
+    }
+
+    const inventoryItem = await prisma.inventoryItem.create({
       data: {
         name,
-        description: type,
-        category: 'General',
-        sku: `SKU-${Date.now()}`,
-        currentStock: 0,
-        minStock: 0,
-        unitCost: baseCost || 0,
-        sellingPrice: baseCost || 0,
-        isActive: true,
+        description,
+        category,
+        sku,
+        currentStock,
+        minStock,
+        maxStock,
+        unitCost,
+        sellingPrice,
+        supplier,
+        location,
+        reorderPoint,
+        reorderQuantity,
         isFavorite: isFavorite || false,
-        totalSold: 0,
+        isActive: true,
         createdBy: token.sub as string
       }
     });
 
     return NextResponse.json({
       status: 'success',
-      data: frequentProduct
+      data: inventoryItem
     });
   } catch (error) {
-    console.error('Error creating frequent product:', error);
+    console.error('Error creating inventory item:', error);
     return NextResponse.json(
-      { error: 'Failed to create frequent product' },
+      { error: 'Failed to create inventory item' },
       { status: 500 }
     );
   }
@@ -92,29 +122,69 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, name, type, color, tamano, baseCost, isFavorite, active } = body;
+    const {
+      id,
+      name,
+      description,
+      category,
+      sku,
+      currentStock,
+      minStock,
+      maxStock,
+      unitCost,
+      sellingPrice,
+      supplier,
+      location,
+      reorderPoint,
+      reorderQuantity,
+      isFavorite
+    } = body;
 
-    const frequentProduct = await prisma.inventoryItem.update({
+    // Check if SKU already exists for different item
+    const existingItem = await prisma.inventoryItem.findFirst({
+      where: { 
+        sku, 
+        isActive: true,
+        id: { not: id }
+      }
+    });
+
+    if (existingItem) {
+      return NextResponse.json(
+        { error: 'SKU already exists' },
+        { status: 400 }
+      );
+    }
+
+    const inventoryItem = await prisma.inventoryItem.update({
       where: { id },
       data: {
         name,
-        description: type,
-        unitCost: baseCost || 0,
-        sellingPrice: baseCost || 0,
+        description,
+        category,
+        sku,
+        currentStock,
+        minStock,
+        maxStock,
+        unitCost,
+        sellingPrice,
+        supplier,
+        location,
+        reorderPoint,
+        reorderQuantity,
         isFavorite,
-        isActive: active !== undefined ? active : true,
         lastUpdated: new Date()
       }
     });
 
     return NextResponse.json({
       status: 'success',
-      data: frequentProduct
+      data: inventoryItem
     });
   } catch (error) {
-    console.error('Error updating frequent product:', error);
+    console.error('Error updating inventory item:', error);
     return NextResponse.json(
-      { error: 'Failed to update frequent product' },
+      { error: 'Failed to update inventory item' },
       { status: 500 }
     );
   }
@@ -137,22 +207,22 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id');
 
     if (!id) {
-      return NextResponse.json({ error: 'Product ID is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Item ID is required' }, { status: 400 });
     }
 
     await prisma.inventoryItem.update({
       where: { id },
-      data: { isActive: false, lastUpdated: new Date() }
+      data: { isActive: false }
     });
 
     return NextResponse.json({
       status: 'success',
-      message: 'Frequent product deleted successfully'
+      message: 'Inventory item deleted successfully'
     });
   } catch (error) {
-    console.error('Error deleting frequent product:', error);
+    console.error('Error deleting inventory item:', error);
     return NextResponse.json(
-      { error: 'Failed to delete frequent product' },
+      { error: 'Failed to delete inventory item' },
       { status: 500 }
     );
   }

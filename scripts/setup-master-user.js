@@ -8,11 +8,18 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
-const prisma = new PrismaClient();
-
 async function setupMasterUser() {
   try {
     console.log('🔧 Setting up master user...');
+    
+    // Check if DATABASE_URL is available
+    if (!process.env.DATABASE_URL) {
+      console.log('⚠️  DATABASE_URL not available. Skipping master user setup.');
+      console.log('   This is normal during build time. Master user will be created at runtime.');
+      return;
+    }
+    
+    const prisma = new PrismaClient();
     
     // Get master user credentials from environment variables
     const masterUsername = process.env.MASTER_USERNAME || 'admin';
@@ -57,7 +64,9 @@ async function setupMasterUser() {
     console.error('❌ Error setting up master user:', error);
     process.exit(1);
   } finally {
-    await prisma.$disconnect();
+    if (prisma) {
+      await prisma.$disconnect();
+    }
   }
 }
 

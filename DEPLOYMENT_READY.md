@@ -38,7 +38,7 @@ NEXTAUTH_SECRET=your-production-secret-key-here
 NEXTAUTH_URL=https://your-app-name.vercel.app
 DATABASE_URL=your-production-database-url
 AUTH_DEMO_MODE=false
-MASTER_EMAIL=admin@yourcompany.com
+MASTER_USERNAME=admin
 MASTER_PASSWORD=your-secure-master-password
 ```
 

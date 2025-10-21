@@ -18,8 +18,8 @@ DATABASE_URL=your-production-database-url
 
 # Authentication Settings
 AUTH_DEMO_MODE=false
-MASTER_EMAIL=admin@betsycrm.com
-MASTER_PASSWORD=your-secure-master-password
+MASTER_USERNAME=admin
+MASTER_PASSWORD=21126
 ```
 
 ### **Security Recommendations:**
@@ -65,9 +65,15 @@ MASTER_PASSWORD=your-secure-master-password
 npx prisma db push
 ```
 
-### **3. Initial Configuration**
+### **3. Automatic Master User Creation**
+The system automatically creates your master user during deployment:
+- **Username**: `admin` (from MASTER_USERNAME)
+- **Password**: `21126` (from MASTER_PASSWORD)
+- **Role**: MASTER (full admin access)
+
+### **4. Initial Configuration**
 1. Visit `https://betsycrm.com`
-2. Login with master credentials
+2. Login with master credentials (admin / 21126)
 3. Configure business fields in `/config`
 4. Create additional users for your team
 

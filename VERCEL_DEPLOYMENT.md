@@ -21,7 +21,7 @@ DATABASE_URL=your-production-database-url
 
 # Authentication
 AUTH_DEMO_MODE=false
-MASTER_EMAIL=admin@yourcompany.com
+MASTER_USERNAME=admin
 MASTER_PASSWORD=your-secure-master-password
 ```
 

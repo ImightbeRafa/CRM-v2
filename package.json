@@ -13,7 +13,9 @@
     "db:setup": "node scripts/setup-clean-db.js",
     "db:reset": "prisma db push --force-reset && npm run db:setup",
     "db:seed:full": "node scripts/full-seed.js",
-    "orders:import": "node scripts/import-orders-from-xlsx.js"
+    "orders:import": "node scripts/import-orders-from-xlsx.js",
+    "setup:master": "node scripts/setup-master-user.js",
+    "postbuild": "npm run setup:master"
   },
   "dependencies": {
     "@auth/core": "0.37.4",

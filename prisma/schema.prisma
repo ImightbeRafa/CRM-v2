@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_PRISM_DATABASE_URL")
+  url      = env("DATABASE_PRISM_POSTGRES_URL")
 }
 
 // Core business models

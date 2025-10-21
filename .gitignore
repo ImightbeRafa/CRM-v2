@@ -43,6 +43,9 @@ next-env.d.ts
 
 # Vercel
 .vercel
+test-vercel-api.sh
+test-vercel-api.ps1
+debug-vercel-api.ps1
 
 # PWA files
 **/public/sw.js

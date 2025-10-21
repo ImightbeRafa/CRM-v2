@@ -12,9 +12,9 @@ async function setupMasterUser() {
   try {
     console.log('🔧 Setting up master user...');
     
-    // Check if DATABASE_URL is available
-    if (!process.env.DATABASE_URL) {
-      console.log('⚠️  DATABASE_URL not available. Skipping master user setup.');
+    // Check if DATABASE_PRISM_POSTGRES_URL is available
+    if (!process.env.DATABASE_PRISM_POSTGRES_URL) {
+      console.log('⚠️  DATABASE_PRISM_POSTGRES_URL not available. Skipping master user setup.');
       console.log('   This is normal during build time. Master user will be created at runtime.');
       return;
     }

@@ -11,8 +11,7 @@ import { BillingDashboard } from './components/BillingDashboard'
 import { ExcelImporter } from './components/ExcelImporter'
 import { StatusManager } from './components/StatusManager'
 import { TenantSettingsPanel } from '../components/TenantSettingsPanel'
-import { SettingsTestDisplay } from './components/SettingsTestDisplay'
-import { Settings, Users, Shield, Database, BarChart3, Zap, FileSpreadsheet, List } from 'lucide-react'
+import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap } from 'lucide-react'
 
 export default function ConfigPage() {
   const [activeTab, setActiveTab] = useState('fields')
@@ -483,12 +482,13 @@ export default function ConfigPage() {
   const tabs = [
     { id: 'fields', label: 'Configuración de Campos', icon: Database },
     { id: 'statuses', label: 'Estados de Órdenes', icon: Settings },
+    { id: 'inventory', label: 'Inventario', icon: Package },
+    { id: 'clients', label: 'Clientes', icon: UserCheck },
     { id: 'users', label: 'Usuarios', icon: Users },
-    { id: 'master', label: 'Productos y Clientes Recurrentes', icon: Zap },
     { id: 'import', label: 'Importar Excel', icon: FileSpreadsheet },
     { id: 'billing', label: 'Facturación', icon: BarChart3 },
     { id: 'audit', label: 'Auditoría', icon: Shield }
-  ]
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
@@ -528,22 +528,22 @@ export default function ConfigPage() {
         <div className="mb-6 md:mb-8">
           {/* Desktop: Grid layout, Mobile: Scrollable */}
           <div className="hidden md:block">
-            <div className="flex space-x-1 bg-white p-1 rounded-xl shadow-lg border border-gray-200">
+            <div className="flex gap-2 bg-white p-2 rounded-xl shadow-lg border border-gray-200">
               {tabs.map((tab) => {
                 const Icon = tab.icon
                 return (
                 <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex-1 py-3 px-6 rounded-lg text-sm font-medium transition-all duration-200 ${
+                    className={`flex-1 rounded-lg transition-all duration-200 px-4 py-2 min-h-[44px] ${
                       activeTab === tab.id
-                        ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg transform scale-105'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg ring-1 ring-black/5'
+                        : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                   }`}
                 >
-                  <div className="flex items-center justify-center gap-2">
-                      <Icon className="w-5 h-5" />
-                      {tab.label}
+                  <div className="flex items-center justify-center gap-2 text-center leading-tight whitespace-normal">
+                      <Icon className="w-4 h-4 md:w-5 md:h-5 flex-shrink-0" />
+                      <span className="text-xs md:text-sm">{tab.label}</span>
                   </div>
                 </button>
                 )
@@ -585,6 +585,36 @@ export default function ConfigPage() {
           {/* Statuses Tab */}
           {activeTab === 'statuses' && (
             <StatusManager />
+          )}
+
+          {/* Inventory Tab - locked to inventory only */}
+          {activeTab === 'inventory' && (
+            <MasterConfigDashboard key="inventory" initialTab="inventory" lockToInitial />
+          )}
+
+          {/* Clients Tab - locked to clients only */}
+          {activeTab === 'clients' && (
+            <MasterConfigDashboard key="clients" initialTab="clients" lockToInitial />
+          )}
+
+          {/* Users Tab */}
+          {activeTab === 'users' && (
+            <div>Users management coming soon...</div>
+          )}
+
+          {/* Import Tab */}
+          {activeTab === 'import' && (
+            <ExcelImporter />
+          )}
+
+          {/* Billing Tab */}
+          {activeTab === 'billing' && (
+            <BillingDashboard />
+          )}
+
+          {/* Audit Tab */}
+          {activeTab === 'audit' && (
+            <SimpleAuditDashboard isMaster={isMasterUser} />
           )}
 
           {/* Legacy Fields Tab - keeping for reference */}
@@ -918,107 +948,6 @@ export default function ConfigPage() {
           </div>
           )}
 
-          {/* Users Tab */}
-          {activeTab === 'users' && (
-            <div className="space-y-6">
-              {/* Users Table */}
-              <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-                <div className="bg-gradient-to-r from-purple-500 to-indigo-600 p-6 text-white">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 bg-white bg-opacity-20 rounded-xl">
-                        <Users className="w-8 h-8" />
-                      </div>
-                      <div>
-                        <h2 className="text-2xl font-bold">Gestión de Usuarios</h2>
-                        <p className="text-purple-100">Administra usuarios y permisos del sistema</p>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => {
-                        setEditingUser(null)
-                        setShowUserForm(true)
-                      }}
-                      className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
-                    >
-                      + Agregar Usuario
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="p-6">
-                  {loading ? (
-                    <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-                      <span className="ml-3 text-gray-600">Cargando usuarios...</span>
-                    </div>
-                  ) : users.length === 0 ? (
-                    <div className="text-center py-12">
-                      <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-500">No hay usuarios configurados</p>
-                      <button 
-                        onClick={() => {
-                          setEditingUser(null)
-                          setShowUserForm(true)
-                        }}
-                        className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-                      >
-                        Crear Primer Usuario
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="grid gap-4">
-                      {users.map((user) => (
-                        <div key={user.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                          <div className="flex items-center gap-4">
-                            <div className="p-2 bg-purple-100 rounded-lg">
-                              <Users className="w-5 h-5 text-purple-600" />
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3">
-                                <div className="font-medium text-gray-900">{user.username}</div>
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  user.role === 'MASTER' 
-                                    ? 'bg-purple-100 text-purple-800' 
-                                    : 'bg-gray-100 text-gray-800'
-                                }`}>
-                                  {user.role}
-                                </span>
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  user.active 
-                                    ? 'bg-green-100 text-green-800' 
-                                    : 'bg-red-100 text-red-800'
-                                }`}>
-                                  {user.active ? 'Activo' : 'Inactivo'}
-                                </span>
-                              </div>
-                              <div className="text-sm text-gray-500 mt-1">
-                                Última actividad: {new Date().toLocaleDateString()}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button 
-                              onClick={() => handleEditUser(user)}
-                              className="text-blue-600 hover:text-blue-800 text-sm font-medium px-3 py-1 rounded-md hover:bg-blue-50"
-                            >
-                              Editar
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteUser(user.id)}
-                              className="text-red-600 hover:text-red-800 text-sm font-medium px-3 py-1 rounded-md hover:bg-red-50"
-                            >
-                              Eliminar
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Master Config Tab */}
           {activeTab === 'master' && (
@@ -1647,9 +1576,6 @@ export default function ConfigPage() {
       
       {/* Tenant Settings Gear (only visible on config page) */}
       <TenantSettingsPanel />
-      
-      {/* Debug: Show current settings */}
-      <SettingsTestDisplay />
     </div>
   )
 }

@@ -41,9 +41,14 @@ interface FrequentCustomer {
   active: boolean;
 }
 
-export function MasterConfigDashboard() {
+interface MasterConfigDashboardProps {
+  initialTab?: 'inventory' | 'clients' | 'shipping';
+  lockToInitial?: boolean;
+}
+
+export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial = false }: MasterConfigDashboardProps = {}) {
   const { user, loading: userLoading } = useCurrentUser();
-  const [activeTab, setActiveTab] = useState<'inventory' | 'clients' | 'shipping'>('inventory');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'clients' | 'shipping'>(initialTab);
   const [products, setProducts] = useState<FrequentProduct[]>([]);
   const [customers, setCustomers] = useState<FrequentCustomer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -233,32 +238,34 @@ export function MasterConfigDashboard() {
     <div className="p-4 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Gestión Avanzada</h1>
-        <div className="flex gap-2">
-          <Button
-            variant={activeTab === 'inventory' ? 'default' : 'outline'}
-            onClick={() => setActiveTab('inventory')}
-            className="flex items-center gap-2"
-          >
-            <Package className="h-4 w-4" />
-            Inventario
-          </Button>
-          <Button
-            variant={activeTab === 'clients' ? 'default' : 'outline'}
-            onClick={() => setActiveTab('clients')}
-            className="flex items-center gap-2"
-          >
-            <Users className="h-4 w-4" />
-            Clientes Automáticos
-          </Button>
-          <Button
-            variant={activeTab === 'shipping' ? 'default' : 'outline'}
-            onClick={() => setActiveTab('shipping')}
-            className="flex items-center gap-2"
-          >
-            <Truck className="h-4 w-4" />
-            Configuración de Envíos
-          </Button>
-        </div>
+        {!lockToInitial && (
+          <div className="flex gap-2">
+            <Button
+              variant={activeTab === 'inventory' ? 'default' : 'outline'}
+              onClick={() => setActiveTab('inventory')}
+              className="flex items-center gap-2"
+            >
+              <Package className="h-4 w-4" />
+              Inventario
+            </Button>
+            <Button
+              variant={activeTab === 'clients' ? 'default' : 'outline'}
+              onClick={() => setActiveTab('clients')}
+              className="flex items-center gap-2"
+            >
+              <Users className="h-4 w-4" />
+              Clientes Automáticos
+            </Button>
+            <Button
+              variant={activeTab === 'shipping' ? 'default' : 'outline'}
+              onClick={() => setActiveTab('shipping')}
+              className="flex items-center gap-2"
+            >
+              <Truck className="h-4 w-4" />
+              Configuración de Envíos
+            </Button>
+          </div>
+        )}
       </div>
 
       {activeTab === 'inventory' && (

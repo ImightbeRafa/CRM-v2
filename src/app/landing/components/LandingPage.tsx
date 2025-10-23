@@ -908,10 +908,10 @@ export default function LandingPage() {
             <div>
               <h4 className="text-lg font-semibold mb-4">Legal</h4>
               <ul className="space-y-2">
-                <li><a href="#" className="text-gray-400 hover:text-white">Terms of Service</a></li>
-                <li><a href="#" className="text-gray-400 hover:text-white">Privacy Policy</a></li>
-                <li><a href="#" className="text-gray-400 hover:text-white">Security</a></li>
-                <li><a href="#" className="text-gray-400 hover:text-white">GDPR</a></li>
+                <li><a href="/terms" className="text-gray-400 hover:text-white">Terms of Service</a></li>
+                <li><a href="/privacy" className="text-gray-400 hover:text-white">Privacy Policy</a></li>
+                <li><a href="/privacy#security" className="text-gray-400 hover:text-white">Security</a></li>
+                <li><a href="/privacy#gdpr" className="text-gray-400 hover:text-white">GDPR</a></li>
               </ul>
             </div>
           </div>

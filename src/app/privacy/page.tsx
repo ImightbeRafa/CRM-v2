@@ -72,7 +72,7 @@ export default function PrivacyPage() {
             </ul>
           </section>
 
-          <section>
+          <section id="security">
             <h2 className="text-xl font-semibold text-gray-900 mb-3">5. Data Security</h2>
             <p>
               We implement appropriate security measures to protect your information:
@@ -178,7 +178,7 @@ export default function PrivacyPage() {
             </ul>
           </section>
 
-          <section className="border-t pt-6 mt-8">
+          <section id="gdpr" className="border-t pt-6 mt-8">
             <h2 className="text-xl font-semibold text-gray-900 mb-3">GDPR Compliance (EU Users)</h2>
             <p>
               If you are located in the European Economic Area (EEA), you have additional rights under the 

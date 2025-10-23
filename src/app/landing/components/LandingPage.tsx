@@ -29,6 +29,7 @@ import SimpleAuthModal from './SimpleAuthModal';
 export default function LandingPage() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
 
   const features = [
     {
@@ -172,8 +173,17 @@ export default function LandingPage() {
                 Start Free Trial
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
-              <Button variant="outline" size="lg" className="text-lg px-8 py-3">
+              <Button 
+                variant="outline" 
+                size="lg" 
+                className="text-lg px-8 py-3"
+                onClick={() => {
+                  const aboutSection = document.getElementById('about');
+                  aboutSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              >
                 See How It Works
+                <Eye className="ml-2 h-5 w-5" />
               </Button>
             </div>
             <p className="text-sm text-gray-500 mt-4">
@@ -598,45 +608,199 @@ export default function LandingPage() {
                 </Button>
               </div>
             </div>
-            <div className="bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl p-8 text-white">
-              <h3 className="text-2xl font-bold mb-6">What You Get:</h3>
-              <ul className="space-y-4">
-                <li className="flex items-start">
-                  <CheckCircle className="h-6 w-6 mr-3 flex-shrink-0 mt-1" />
-                  <div>
-                    <strong className="block">Visual Order Board</strong>
-                    <span className="text-blue-100">Drag and drop orders through stages - from &quot;New&quot; to &quot;Delivered&quot;</span>
+            {/* Interactive CRM Demo */}
+            <div className="bg-white rounded-2xl shadow-2xl p-6 border-2 border-gray-200 animate-in fade-in duration-500">
+              <div className="flex items-center justify-between mb-4 pb-3 border-b">
+                <h3 className="text-lg font-bold text-gray-900">Betsy CRM - Demo Interactivo</h3>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                   </div>
-                </li>
-                <li className="flex items-start">
-                  <CheckCircle className="h-6 w-6 mr-3 flex-shrink-0 mt-1" />
-                  <div>
-                    <strong className="block">Customer History</strong>
-                    <span className="text-blue-100">See every order, note, and interaction with each customer</span>
+                  <Badge variant="secondary" className="bg-green-100 text-green-700">En Vivo</Badge>
+                </div>
+              </div>
+              
+              {/* Mini Order Board */}
+              <div className="space-y-3">
+                <div className="text-sm font-medium text-gray-500 mb-2">
+                  Panel de Pedidos
+                  <span className="text-xs text-gray-400 ml-2">(Haz clic en cualquier pedido)</span>
+                </div>
+                
+                {/* New Orders */}
+                <div className="bg-yellow-50 rounded-lg p-3 border-l-4 border-yellow-400 transition-all hover:bg-yellow-100">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-yellow-700">🟡 NUEVO</span>
+                    <span className="text-xs text-gray-500 bg-yellow-200 px-2 py-1 rounded-full">3 pedidos</span>
                   </div>
-                </li>
-                <li className="flex items-start">
-                  <CheckCircle className="h-6 w-6 mr-3 flex-shrink-0 mt-1" />
-                  <div>
-                    <strong className="block">Sales Reports</strong>
-                    <span className="text-blue-100">Know your numbers: revenue, best products, busiest days</span>
+                  <div className="space-y-2">
+                    <div 
+                      className={`bg-white rounded p-2 shadow-sm hover:shadow-lg transition-all cursor-pointer border-2 ${
+                        selectedOrder === 'maria' ? 'border-blue-500 scale-105' : 'border-transparent'
+                      }`}
+                      onClick={() => setSelectedOrder(selectedOrder === 'maria' ? null : 'maria')}
+                    >
+                      <div className="text-sm font-medium text-gray-900">👤 María González</div>
+                      <div className="text-xs text-gray-500">Taza Personalizada - ₡15,000</div>
+                      {selectedOrder === 'maria' && (
+                        <div className="mt-2 pt-2 border-t text-xs text-blue-600 animate-in fade-in">
+                          ✓ Click para ver detalles completos
+                        </div>
+                      )}
+                    </div>
+                    <div 
+                      className={`bg-white rounded p-2 shadow-sm hover:shadow-lg transition-all cursor-pointer border-2 ${
+                        selectedOrder === 'carlos' ? 'border-blue-500 scale-105' : 'border-transparent'
+                      }`}
+                      onClick={() => setSelectedOrder(selectedOrder === 'carlos' ? null : 'carlos')}
+                    >
+                      <div className="text-sm font-medium text-gray-900">👤 Carlos Ramírez</div>
+                      <div className="text-xs text-gray-500">Camiseta - ₡12,500</div>
+                      {selectedOrder === 'carlos' && (
+                        <div className="mt-2 pt-2 border-t text-xs text-blue-600 animate-in fade-in">
+                          ✓ Click para ver detalles completos
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </li>
-                <li className="flex items-start">
-                  <CheckCircle className="h-6 w-6 mr-3 flex-shrink-0 mt-1" />
-                  <div>
-                    <strong className="block">Team Collaboration</strong>
-                    <span className="text-blue-100">Your whole team sees the same information, no confusion</span>
+                </div>
+
+                {/* In Process */}
+                <div className="bg-blue-50 rounded-lg p-3 border-l-4 border-blue-400 transition-all hover:bg-blue-100">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-blue-700">🔵 EN PROCESO</span>
+                    <span className="text-xs text-gray-500 bg-blue-200 px-2 py-1 rounded-full">5 pedidos</span>
                   </div>
-                </li>
-                <li className="flex items-start">
-                  <CheckCircle className="h-6 w-6 mr-3 flex-shrink-0 mt-1" />
-                  <div>
-                    <strong className="block">Automatic Reminders</strong>
-                    <span className="text-blue-100">Never forget to follow up with a customer again</span>
+                  <div className="space-y-2">
+                    <div 
+                      className={`bg-white rounded p-2 shadow-sm hover:shadow-lg transition-all cursor-pointer border-2 ${
+                        selectedOrder === 'ana' ? 'border-blue-500 scale-105' : 'border-transparent'
+                      }`}
+                      onClick={() => setSelectedOrder(selectedOrder === 'ana' ? null : 'ana')}
+                    >
+                      <div className="text-sm font-medium text-gray-900">👤 Ana López</div>
+                      <div className="text-xs text-gray-500">Agenda - ₡8,000</div>
+                      {selectedOrder === 'ana' && (
+                        <div className="mt-2 pt-2 border-t text-xs text-blue-600 animate-in fade-in">
+                          ✓ Click para ver detalles completos
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </li>
-              </ul>
+                </div>
+
+                {/* Ready to Ship */}
+                <div className="bg-green-50 rounded-lg p-3 border-l-4 border-green-400 transition-all hover:bg-green-100">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-green-700">🟢 LISTO</span>
+                    <span className="text-xs text-gray-500 bg-green-200 px-2 py-1 rounded-full">2 pedidos</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div 
+                      className={`bg-white rounded p-2 shadow-sm hover:shadow-lg transition-all cursor-pointer border-2 ${
+                        selectedOrder === 'luis' ? 'border-blue-500 scale-105' : 'border-transparent'
+                      }`}
+                      onClick={() => setSelectedOrder(selectedOrder === 'luis' ? null : 'luis')}
+                    >
+                      <div className="text-sm font-medium text-gray-900">👤 Luis Mora</div>
+                      <div className="text-xs text-gray-500">Bolso - ₡25,000</div>
+                      {selectedOrder === 'luis' && (
+                        <div className="mt-2 pt-2 border-t text-xs text-blue-600 animate-in fade-in">
+                          ✓ Click para ver detalles completos
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Stats */}
+              <div className="mt-4 pt-4 border-t grid grid-cols-3 gap-2 text-center">
+                <div className="hover:scale-110 transition-transform cursor-pointer">
+                  <div className="text-lg font-bold text-blue-600">10</div>
+                  <div className="text-xs text-gray-500">Pedidos Hoy</div>
+                </div>
+                <div className="hover:scale-110 transition-transform cursor-pointer">
+                  <div className="text-lg font-bold text-green-600">₡180K</div>
+                  <div className="text-xs text-gray-500">Ventas</div>
+                </div>
+                <div className="hover:scale-110 transition-transform cursor-pointer">
+                  <div className="text-lg font-bold text-purple-600">45</div>
+                  <div className="text-xs text-gray-500">Clientes</div>
+                </div>
+              </div>
+
+              {/* Demo Note */}
+              <div className="mt-4 text-center bg-blue-50 rounded-lg p-3">
+                <p className="text-xs text-blue-700 font-medium">
+                  💡 Así se ve tu panel en tiempo real • Arrastra pedidos • Haz seguimiento • Vende más
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* What You Get - Features List */}
+      <section className="py-12 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-blue-500 to-purple-600">
+        <div className="max-w-4xl mx-auto">
+          <h3 className="text-2xl md:text-3xl font-bold text-white text-center mb-8">
+            Todo lo que necesitas en un solo lugar
+          </h3>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="bg-white/10 backdrop-blur rounded-lg p-6 text-white">
+              <div className="flex items-start">
+                <CheckCircle className="h-6 w-6 mr-3 flex-shrink-0 mt-1" />
+                <div>
+                  <strong className="block text-lg mb-1">Visual Order Board</strong>
+                  <span className="text-blue-100">Drag and drop orders through stages - from &quot;New&quot; to &quot;Delivered&quot;</span>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white/10 backdrop-blur rounded-lg p-6 text-white">
+              <div className="flex items-start">
+                <CheckCircle className="h-6 w-6 mr-3 flex-shrink-0 mt-1" />
+                <div>
+                  <strong className="block text-lg mb-1">Customer History</strong>
+                  <span className="text-blue-100">See every order, note, and interaction with each customer</span>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white/10 backdrop-blur rounded-lg p-6 text-white">
+              <div className="flex items-start">
+                <CheckCircle className="h-6 w-6 mr-3 flex-shrink-0 mt-1" />
+                <div>
+                  <strong className="block text-lg mb-1">Smart Reminders</strong>
+                  <span className="text-blue-100">Get notified when orders need attention or follow-up</span>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white/10 backdrop-blur rounded-lg p-6 text-white">
+              <div className="flex items-start">
+                <CheckCircle className="h-6 w-6 mr-3 flex-shrink-0 mt-1" />
+                <div>
+                  <strong className="block text-lg mb-1">Real-Time Updates</strong>
+                  <span className="text-blue-100">Your whole team sees changes instantly - no more confusion</span>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white/10 backdrop-blur rounded-lg p-6 text-white">
+              <div className="flex items-start">
+                <CheckCircle className="h-6 w-6 mr-3 flex-shrink-0 mt-1" />
+                <div>
+                  <strong className="block text-lg mb-1">Sales Analytics</strong>
+                  <span className="text-blue-100">Understand which products sell best and when</span>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white/10 backdrop-blur rounded-lg p-6 text-white">
+              <div className="flex items-start">
+                <CheckCircle className="h-6 w-6 mr-3 flex-shrink-0 mt-1" />
+                <div>
+                  <strong className="block text-lg mb-1">Bulk Operations</strong>
+                  <span className="text-blue-100">Update multiple orders at once and save hours</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

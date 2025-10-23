@@ -91,7 +91,7 @@ Make sure you have these scopes (and ONLY these):
 **Result:**
 - ✅ **Status changes to:** "In production"
 - ✅ **Anyone** can now sign in with Google
-- ✅ No verification needed (for basic scopes)
+- ✅ No verification needed (for basic scopes)..
 
 ### **Step 5: Test**
 - Try signing in with any Google account

@@ -344,7 +344,7 @@ export default function LandingPage() {
                 </h3>
                 <p className="text-lg text-gray-600 mb-6">
                   Customer messaged you on WhatsApp? Add them to Betsy in seconds. See their complete 
-                  history: what they ordered, when they last bought, and what they're interested in.
+                  history: what they ordered, when they last bought, and what they&apos;re interested in.
                 </p>
                 <ul className="space-y-3">
                   <li className="flex items-start">
@@ -399,13 +399,13 @@ export default function LandingPage() {
                   See Exactly Where Every Order Stands
                 </h3>
                 <p className="text-lg text-gray-600 mb-6">
-                  No more digging through messages trying to remember order status. With Betsy's visual board, 
-                  you can see and update every order's status with a simple drag and drop.
+                  No more digging through messages trying to remember order status. With Betsy&apos;s visual board, 
+                  you can see and update every order&apos;s status with a simple drag and drop.
                 </p>
                 <ul className="space-y-3">
                   <li className="flex items-start">
                     <CheckCircle className="h-6 w-6 text-green-600 mr-3 flex-shrink-0 mt-1" />
-                    <span className="text-gray-700">Drag orders from "New" to "Processing" to "Shipped" to "Delivered"</span>
+                    <span className="text-gray-700">Drag orders from &quot;New&quot; to &quot;Processing&quot; to &quot;Shipped&quot; to &quot;Delivered&quot;</span>
                   </li>
                   <li className="flex items-start">
                     <CheckCircle className="h-6 w-6 text-green-600 mr-3 flex-shrink-0 mt-1" />
@@ -469,7 +469,7 @@ export default function LandingPage() {
               <div>
                 <Badge variant="secondary" className="mb-4">💰 Understand Your Business</Badge>
                 <h3 className="text-2xl font-bold text-gray-900 mb-4">
-                  Know What's Working (And What's Not)
+                  Know What&apos;s Working (And What&apos;s Not)
                 </h3>
                 <p className="text-lg text-gray-600 mb-6">
                   Finally see your numbers clearly. Which products sell best? Which days are busiest? 
@@ -605,7 +605,7 @@ export default function LandingPage() {
                   <CheckCircle className="h-6 w-6 mr-3 flex-shrink-0 mt-1" />
                   <div>
                     <strong className="block">Visual Order Board</strong>
-                    <span className="text-blue-100">Drag and drop orders through stages - from "New" to "Delivered"</span>
+                    <span className="text-blue-100">Drag and drop orders through stages - from &quot;New&quot; to &quot;Delivered&quot;</span>
                   </div>
                 </li>
                 <li className="flex items-start">
@@ -650,7 +650,7 @@ export default function LandingPage() {
               Real People. Real Results.
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Here's what happens when you stop losing orders and start staying organized
+              Here&apos;s what happens when you stop losing orders and start staying organized
             </p>
           </div>
           

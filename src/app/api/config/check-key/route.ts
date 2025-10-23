@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     let suggestions: string[] = []
     
     if (type === 'optionSet') {
-      const existing = await prisma.productOptionSet.findUnique({
+      const existing = await prisma.productOptionSet.findFirst({
         where: { key }
       })
       exists = !!existing
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
         ]
       }
     } else if (type === 'field') {
-      const existing = await prisma.productField.findUnique({
+      const existing = await prisma.productField.findFirst({
         where: { key }
       })
       exists = !!existing

@@ -9,8 +9,7 @@
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push --accept-data-loss",
-    "db:studio": "prisma studio",
-    "postbuild": "node scripts/setup-master-user.js"
+    "db:studio": "prisma studio"
   },
   "dependencies": {
     "@auth/core": "0.37.4",

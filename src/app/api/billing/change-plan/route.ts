@@ -1,18 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
-import Stripe from 'stripe';
-
-const stripe = process.env.STRIPE_SECRET_KEY 
-  ? new Stripe(process.env.STRIPE_SECRET_KEY, {
-      apiVersion: '2025-09-30.clover',
-    })
-  : null;
+// Stripe removed; using Tilopay exclusively
+import { NextResponse as _NR } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    // If Stripe is not configured, update plan directly and mark status as 'pending' for paid plans
-    
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     
     if (!token || !token.tenantId) {
@@ -67,47 +60,50 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // If Stripe is missing, set plan and mark status pending for manual activation later
-    if (!stripe || !selectedPlan.stripePriceId) {
-      await prisma.tenant.update({
-        where: { id: tenantId },
-        data: {
-          plan: selectedPlan.name as any,
-          subscriptionStatus: 'pending'
+    // Use Tilopay exclusively
+    if (selectedPlan.price > 0) {
+      console.log('🔄 Creating Tilopay checkout for plan:', planId);
+      console.log('📍 Tilopay endpoint:', `${process.env.NEXTAUTH_URL}/api/tilopay/checkout`);
+      
+      try {
+        const resp = await fetch(`${process.env.NEXTAUTH_URL}/api/tilopay/checkout`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json', 
+            cookie: request.headers.get('cookie') || '' 
+          },
+          body: JSON.stringify({ planId })
+        });
+        
+        const data = await resp.json();
+        console.log('📦 Tilopay response status:', resp.status);
+        console.log('📦 Tilopay response data:', data);
+        
+        if (!resp.ok) {
+          console.error('❌ Tilopay checkout failed:', data);
+          return NextResponse.json({ 
+            error: data.error || 'Tilopay checkout failed', 
+            details: data 
+          }, { status: 500 });
         }
-      })
-      return NextResponse.json({ status: 'success', data: { plan: selectedPlan.name, status: 'pending' } })
-    }
-
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: selectedPlan.stripePriceId,
-          quantity: 1,
-        },
-      ],
-      success_url: `${process.env.NEXTAUTH_URL}/config?tab=billing&success=true`,
-      cancel_url: `${process.env.NEXTAUTH_URL}/config?tab=billing&canceled=true`,
-      customer_email: token.email as string,
-      metadata: {
-        tenantId: tenantId,
-        planId: planId,
-      },
-      subscription_data: {
-        metadata: {
-          tenantId: tenantId,
-        },
-      },
-    });
-
-    return NextResponse.json({
-      status: 'success',
-      data: {
-        checkoutUrl: session.url
+        
+        if (data.data?.checkoutUrl) {
+          console.log('✅ Checkout URL created:', data.data.checkoutUrl);
+          return NextResponse.json({ status: 'success', data: { checkoutUrl: data.data.checkoutUrl } });
+        }
+        
+        return NextResponse.json({ status: 'success', data: { plan: selectedPlan.name, status: 'pending' } });
+      } catch (fetchError: any) {
+        console.error('❌ Fetch error calling Tilopay:', fetchError);
+        return NextResponse.json({ 
+          error: 'Failed to connect to Tilopay service', 
+          details: fetchError.message 
+        }, { status: 500 });
       }
-    });
+    }
+    // Paid price 0 (enterprise handled offline)
+    await prisma.tenant.update({ where: { id: tenantId }, data: { plan: selectedPlan.name as any, subscriptionStatus: 'pending' } });
+    return NextResponse.json({ status: 'success', data: { plan: selectedPlan.name, status: 'pending' } });
   } catch (error) {
     console.error('Error changing plan:', error);
     return NextResponse.json(

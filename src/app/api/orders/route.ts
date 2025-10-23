@@ -4,6 +4,7 @@ import { getTenantPrisma } from '@/lib/prisma-tenant'
 import { authenticateAPI } from '@/lib/auth-helpers'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { logCreate } from '@/lib/auditLogger'
+import { checkOrderLimit } from '@/lib/plan-enforcement'
 
 // Function to update inventory when an order is created
 async function updateInventoryForOrder(order: any, tenantPrisma: any) {
@@ -185,16 +186,17 @@ export async function POST(request: NextRequest) {
     
     const body = await request.json()
 
-    // Enforce plan monthly order limit
-    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { plan: true } })
-    const planLimits: Record<string, number> = { FREE: 100, BASIC: 1000, PRO: 999999, ENTERPRISE: 999999 }
-    if (tenant) {
-      const now = new Date()
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-      const currentOrders = await prisma.order.count({ where: { tenantId, timestamp: { gte: startOfMonth } } })
-      if (currentOrders >= (planLimits[tenant.plan] ?? 100)) {
-        return createErrorResponse('Límite mensual de órdenes alcanzado para tu plan. Actualiza tu plan para continuar.', 403)
-      }
+    // Check plan limits (soft enforcement with clear messaging)
+    const limitCheck = await checkOrderLimit(tenantId)
+    if (!limitCheck.allowed) {
+      return NextResponse.json({
+        status: 'error',
+        error: limitCheck.message,
+        needsUpgrade: true,
+        currentPlan: limitCheck.currentPlan,
+        currentCount: limitCheck.currentCount,
+        limit: limitCheck.limit
+      }, { status: 402 }) // 402 Payment Required
     }
     
     // Create a new order (tenantId auto-injected!)

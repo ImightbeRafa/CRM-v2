@@ -69,21 +69,21 @@ export default function SimplePricingSection() {
 
   const handlePlanSelect = async (plan: typeof pricingPlans[0]) => {
     if (plan.priceId === null) {
-      // Free plan - redirect to sign up
-      window.location.href = '/auth/signin';
+      // Free plan - redirect to sign up with plan param
+      window.location.href = '/auth/signin?plan=free';
       return;
     }
 
     if (plan.priceId === 'enterprise') {
       // Enterprise plan - redirect to contact
-      window.location.href = '/contact';
+      window.location.href = '/contact?plan=enterprise';
       return;
     }
 
-    // For Pro plan, show loading and redirect to auth
+    // For paid plans, show loading and redirect to auth with plan param
     setLoading(plan.priceId);
     setTimeout(() => {
-      window.location.href = '/auth/signin';
+      window.location.href = `/auth/signin?plan=${encodeURIComponent(plan.priceId || '')}`;
     }, 1000);
   };
 

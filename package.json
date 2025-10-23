@@ -9,7 +9,15 @@
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push --accept-data-loss",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "setup": "node scripts/create-env.js",
+    "verify": "node scripts/verify-environment.js",
+    "test:flow": "node scripts/test-full-flow.js",
+    "test:registration": "node scripts/test-full-flow.js --email=test@example.com",
+    "test:tilopay": "node scripts/test-tilopay-auth.js",
+    "upgrade:plan": "node scripts/upgrade-plan-direct.js",
+    "check:trials": "node scripts/check-trial-expirations.js",
+    "create:test-user": "node scripts/create-test-user.js"
   },
   "dependencies": {
     "@auth/core": "0.37.4",

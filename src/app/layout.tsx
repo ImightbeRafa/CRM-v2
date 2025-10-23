@@ -3,6 +3,7 @@ import '@/app/globals-mobile.css'
 import SessionProvider from "./components/Sessionprovider"
 import { ErrorBoundary } from "./components/ErrorBoundary"
 import { TenantSettingsProvider } from "./contexts/TenantSettingsContext"
+import SubscriptionBanner from "./components/SubscriptionBanner"
 
 export default async function RootLayout({
   children,
@@ -15,6 +16,7 @@ export default async function RootLayout({
         <ErrorBoundary>
           <SessionProvider>
             <TenantSettingsProvider>
+              <SubscriptionBanner />
               {children}
             </TenantSettingsProvider>
           </SessionProvider>

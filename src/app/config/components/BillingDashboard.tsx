@@ -76,6 +76,8 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
   
   const [loading, setLoading] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<{id: string, amount: number} | null>(null);
 
   const plans: Plan[] = [
     {
@@ -163,6 +165,29 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
 
   useEffect(() => {
     loadBillingData();
+    
+    // Check for payment status in URL (from Tilopay redirect)
+    const urlParams = new URLSearchParams(window.location.search);
+    const paymentStatus = urlParams.get('payment');
+    
+    if (paymentStatus) {
+      // Show message based on status
+      if (paymentStatus === 'success') {
+        alert('✅ ¡Pago procesado exitosamente! Tu plan se actualizará en unos momentos.');
+        // Reload billing data after short delay to allow webhook to process
+        setTimeout(() => {
+          loadBillingData();
+        }, 3000); // Wait 3 seconds for webhook
+      } else if (paymentStatus === 'error') {
+        alert('❌ Hubo un error al procesar el pago. Por favor intenta nuevamente.');
+      } else if (paymentStatus === 'cancelled') {
+        alert('ℹ️ Pago cancelado. Puedes intentar nuevamente cuando lo desees.');
+      }
+      
+      // Clean URL (remove payment parameter)
+      const cleanUrl = window.location.pathname + '?tab=billing';
+      window.history.replaceState({}, '', cleanUrl);
+    }
   }, []);
 
   const loadBillingData = async () => {
@@ -208,34 +233,45 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       if (!confirm('¿Deseas cambiar al plan gratuito? Perderás acceso a funcionalidades premium.')) {
         return;
       }
+      
+      // Handle free plan downgrade directly
+      setLoading(true);
+      try {
+        const response = await fetch('/api/billing/change-plan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ planId: 'free' })
+        });
+
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+          alert('✅ Plan cambiado a FREE exitosamente');
+          await loadBillingData();
+        } else {
+          alert(`❌ Error: ${result.error}`);
+        }
+      } catch (error) {
+        console.error('Error changing plan:', error);
+        alert('❌ Error al cambiar el plan');
+      } finally {
+        setLoading(false);
+      }
+      return;
     }
 
-    setLoading(true);
-    try {
-      const response = await fetch('/api/billing/change-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId })
-      });
-
-      const result = await response.json();
-      
-      if (result.status === 'success') {
-        if (result.data.checkoutUrl) {
-          // Redirect to Stripe checkout
-          window.location.href = result.data.checkoutUrl;
-        } else {
-          alert('✅ Plan cambiado exitosamente');
-          await loadBillingData();
-        }
-      } else {
-        alert(`❌ Error: ${result.error}`);
-      }
-    } catch (error) {
-      console.error('Error changing plan:', error);
-      alert('❌ Error al cambiar el plan');
-    } finally {
-      setLoading(false);
+    // For BASIC and PRO plans, redirect to Tilopay Repeat subscription pages
+    const tilopaySubscriptionLinks: Record<string, string> = {
+      basic: 'https://tp.cr/l/TkRFME9RPT18MQ==',  // Basic Plan - ₡15,000/month
+      pro: 'https://tp.cr/l/TkRFMU1BPT18MQ=='     // Pro Plan - ₡45,000/month
+    };
+    
+    const subscriptionUrl = tilopaySubscriptionLinks[planId];
+    if (subscriptionUrl) {
+      console.log(`🔗 Redirecting to Tilopay subscription page for ${planId}...`);
+      window.location.href = subscriptionUrl;
+    } else {
+      alert('Plan no disponible');
     }
   };
 
@@ -658,6 +694,9 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
           </Card>
         </div>
       )}
+
+      {/* Note: Tilopay checkout now uses direct subscription links */}
+      {/* Users are redirected to Tilopay Repeat hosted pages */}
     </div>
   );
 }

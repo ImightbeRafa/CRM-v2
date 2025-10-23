@@ -27,10 +27,12 @@ model Tenant {
   // Billing fields
   stripeCustomerId      String?
   stripeSubscriptionId  String?
-  subscriptionStatus    String?  // active, canceled, past_due, trialing
+  tilopaySubscriptionId String?  // Tilopay Repeat subscription ID
+  subscriptionStatus    String?  // active, canceled, past_due, trialing, trial_expired
   currentPeriodStart    DateTime?
   currentPeriodEnd      DateTime?
   cancelAtPeriodEnd     Boolean  @default(false)
+  trialEndsAt           DateTime? // 15-day trial end date
   
   // Relations
   memberships    Membership[]

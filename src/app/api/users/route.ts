@@ -71,6 +71,14 @@ export async function POST(request: NextRequest) {
       return createErrorResponse(missingField, 400)
     }
     
+    // Enforce plan user limit
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { plan: true } })
+    const planLimits: Record<string, number> = { FREE: 1, BASIC: 5, PRO: 25, ENTERPRISE: 999999 }
+    const userCount = await prisma.membership.count({ where: { tenantId, isActive: true } })
+    if (tenant && userCount >= (planLimits[tenant.plan] ?? 1)) {
+      return createErrorResponse('Límite de usuarios alcanzado para tu plan. Actualiza tu plan para agregar más usuarios.', 403)
+    }
+
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
       where: { email }

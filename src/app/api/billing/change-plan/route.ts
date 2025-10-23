@@ -11,9 +11,7 @@ const stripe = process.env.STRIPE_SECRET_KEY
 
 export async function POST(request: NextRequest) {
   try {
-    if (!stripe) {
-      return NextResponse.json({ error: 'Stripe not configured' }, { status: 503 });
-    }
+    // If Stripe is not configured, update plan directly and mark status as 'pending' for paid plans
     
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     
@@ -69,12 +67,16 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // For paid plans, create Stripe checkout session
-    if (!selectedPlan.stripePriceId) {
-      return NextResponse.json(
-        { error: 'Stripe configuration missing for this plan' },
-        { status: 500 }
-      );
+    // If Stripe is missing, set plan and mark status pending for manual activation later
+    if (!stripe || !selectedPlan.stripePriceId) {
+      await prisma.tenant.update({
+        where: { id: tenantId },
+        data: {
+          plan: selectedPlan.name as any,
+          subscriptionStatus: 'pending'
+        }
+      })
+      return NextResponse.json({ status: 'success', data: { plan: selectedPlan.name, status: 'pending' } })
     }
 
     const session = await stripe.checkout.sessions.create({

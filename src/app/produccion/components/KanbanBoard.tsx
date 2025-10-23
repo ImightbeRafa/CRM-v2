@@ -49,9 +49,9 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 5, // Reduced from 8 for quicker activation
+        distance: 10, // Must move 10px before drag starts (prevents accidental clicks)
         tolerance: 5,
-        delay: 0,
+        delay: 100, // 100ms delay to distinguish between click and drag
       },
     }),
     useSensor(KeyboardSensor, {
@@ -103,7 +103,7 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
     loadStatuses();
   }, []);
 
-  // Group orders by status
+  // Group orders by status and sort by timestamp (oldest first)
   const ordersByStatus = useMemo(() => {
     const grouped: Record<string, Sale[]> = {};
     
@@ -133,6 +133,15 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
       }
     });
     
+    // Sort each column by timestamp (oldest first - at the top)
+    Object.keys(grouped).forEach(status => {
+      grouped[status].sort((a, b) => {
+        const dateA = new Date(a.timestamp).getTime();
+        const dateB = new Date(b.timestamp).getTime();
+        return dateA - dateB; // Oldest first
+      });
+    });
+    
     // Log grouping results for debugging
     console.log('Kanban Board Debug:', {
       totalOrders: orders.length,
@@ -146,24 +155,46 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
     return grouped;
   }, [orders, statuses]);
 
+  const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
+
   const handleDragStart = (event: DragStartEvent) => {
     const orderId = event.active.id as string;
     setActiveId(orderId);
+    // Record starting position
+    if (event.activatorEvent instanceof MouseEvent || event.activatorEvent instanceof TouchEvent) {
+      const clientX = 'clientX' in event.activatorEvent ? event.activatorEvent.clientX : event.activatorEvent.touches[0].clientX;
+      const clientY = 'clientY' in event.activatorEvent ? event.activatorEvent.clientY : event.activatorEvent.touches[0].clientY;
+      setDragStartPos({ x: clientX, y: clientY });
+    }
     console.log('Drag started:', orderId);
   };
 
   const handleDragCancel = () => {
     setActiveId(null);
+    setDragStartPos(null);
     console.log('Drag cancelled');
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
+    const { active, over, delta } = event;
+
+    // Check if there was actual movement (more than 15px in any direction)
+    const actualMovement = Math.abs(delta.x) > 15 || Math.abs(delta.y) > 15;
 
     // Always clear active state first
     setActiveId(null);
+    setDragStartPos(null);
+
+    console.log('Drag end event:', { active: active.id, over: over?.id, delta, actualMovement });
+
+    // If no actual movement, treat as a click and ignore
+    if (!actualMovement) {
+      console.log('No significant movement - treating as click, ignoring drag');
+      return;
+    }
 
     if (!over) {
+      console.log('No drop target - drag cancelled');
       return;
     }
 
@@ -178,7 +209,10 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
     const targetStatus = over.id as string;
     const currentStatus = draggedOrder.status;
 
+    console.log('Drag status check:', { currentStatus, targetStatus });
+
     if (currentStatus === targetStatus) {
+      console.log('Same status - no update needed');
       return;
     }
 

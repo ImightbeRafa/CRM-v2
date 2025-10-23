@@ -1,7 +1,8 @@
 'use client'
 
 import { signIn } from "next-auth/react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { Button } from "@/app/components/ui/button"
 
 export default function SignInPage() {
@@ -9,6 +10,33 @@ export default function SignInPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const searchParams = useSearchParams()
+  const intendedPlan = (searchParams?.get('plan') || '').toLowerCase()
+
+  // If user lands here with a plan param and later signs in, attempt to apply it
+  const applyPlanIfRequested = async () => {
+    if (!intendedPlan) return
+    try {
+      const res = await fetch('/api/billing/change-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: intendedPlan })
+      })
+      const json = await res.json()
+      // Non-blocking; continue regardless
+      if (res.ok && json.status === 'success') {
+        // If there is a checkout URL, redirect there; otherwise proceed to billing
+        if (json.data?.checkoutUrl) {
+          window.location.href = json.data.checkoutUrl
+          return
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    // Default redirect
+    window.location.href = '/config?tab=billing'
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,6 +53,10 @@ export default function SignInPage() {
       setError('Credenciales inválidas')
       return
     }
+    if (intendedPlan) {
+      await applyPlanIfRequested()
+      return
+    }
     window.location.href = '/home'
   }
 
@@ -32,7 +64,9 @@ export default function SignInPage() {
     setLoading(true)
     setError(null)
     try {
-      await signIn('google', { callbackUrl: '/home' })
+      // After Google, NextAuth will redirect to /home; we intercept via middleware or plan param on URL
+      const callbackUrl = intendedPlan ? `/home?plan=${encodeURIComponent(intendedPlan)}` : '/home'
+      await signIn('google', { callbackUrl })
     } catch (error) {
       setError('Error al iniciar sesión con Google')
       setLoading(false)

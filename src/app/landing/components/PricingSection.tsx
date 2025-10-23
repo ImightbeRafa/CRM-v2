@@ -70,55 +70,43 @@ export default function PricingSection() {
   const [loading, setLoading] = useState<string | null>(null);
 
   const handlePlanSelect = async (plan: typeof pricingPlans[0]) => {
+    // Free or enterprise flows
     if (plan.priceId === null) {
-      // Free plan - redirect to sign up
-      window.location.href = '/auth/signin';
+      window.location.href = '/auth/signin?plan=free';
       return;
     }
-
     if (plan.priceId === 'enterprise') {
-      // Enterprise plan - redirect to contact
-      window.location.href = '/contact';
+      window.location.href = '/contact?plan=enterprise';
       return;
     }
 
+    // If not logged in, go to signin carrying intended plan
     if (!session) {
-      // Not logged in - redirect to sign up
-      window.location.href = '/auth/signin';
+      window.location.href = `/auth/signin?plan=${encodeURIComponent(plan.priceId || '')}`;
       return;
     }
 
-    if (!plan.stripePriceId) {
-      console.error('Stripe price ID not configured for this plan');
-      return;
-    }
-
+    // Logged in: call our change-plan API (handles Stripe or pending status)
     setLoading(plan.priceId);
-
     try {
-      const response = await fetch('/api/stripe/create-checkout', {
+      const res = await fetch('/api/billing/change-plan', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          priceId: plan.stripePriceId,
-          userId: session.user?.id,
-          userEmail: session.user?.email,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: plan.priceId })
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to create checkout session');
+      const json = await res.json();
+      if (!res.ok || json.status !== 'success') {
+        throw new Error(json.error || 'No se pudo cambiar el plan');
       }
-
-      const { sessionId } = await response.json();
-      
-      // Redirect to Stripe checkout
-      window.location.href = `https://checkout.stripe.com/c/pay/${sessionId}`;
-    } catch (error) {
-      console.error('Error creating checkout session:', error);
-      alert('Failed to start checkout. Please try again.');
+      if (json.data?.checkoutUrl) {
+        window.location.href = json.data.checkoutUrl;
+        return;
+      }
+      // Fallback: go to billing tab to confirm status
+      window.location.href = '/config?tab=billing';
+    } catch (e) {
+      console.error(e);
+      alert('No se pudo cambiar el plan. Intenta de nuevo.');
     } finally {
       setLoading(null);
     }

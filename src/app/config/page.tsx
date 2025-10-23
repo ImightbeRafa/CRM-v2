@@ -599,7 +599,104 @@ export default function ConfigPage() {
 
           {/* Users Tab */}
           {activeTab === 'users' && (
-            <div>Users management coming soon...</div>
+            <div className="space-y-6">
+              {/* Users Table */}
+              <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+                <div className="bg-gradient-to-r from-purple-500 to-indigo-600 p-6 text-white">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-white bg-opacity-20 rounded-xl">
+                        <Users className="w-8 h-8" />
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-bold">Gestión de Usuarios</h2>
+                        <p className="text-purple-100">Administra usuarios y permisos del sistema</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setEditingUser(null)
+                        setShowUserForm(true)
+                      }}
+                      className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
+                    >
+                      + Agregar Usuario
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="p-6">
+                  {loading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+                      <span className="ml-3 text-gray-600">Cargando usuarios...</span>
+                    </div>
+                  ) : users.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-gray-500">No hay usuarios configurados</p>
+                      <button 
+                        onClick={() => {
+                          setEditingUser(null)
+                          setShowUserForm(true)
+                        }}
+                        className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                      >
+                        Crear Primer Usuario
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4">
+                      {users.map((user) => (
+                        <div key={user.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                          <div className="flex items-center gap-4">
+                            <div className="p-2 bg-purple-100 rounded-lg">
+                              <Users className="w-5 h-5 text-purple-600" />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3">
+                                <div className="font-medium text-gray-900">{user.username}</div>
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                  user.role === 'MASTER' 
+                                    ? 'bg-purple-100 text-purple-800' 
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {user.role}
+                                </span>
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                  user.active 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : 'bg-red-100 text-red-800'
+                                }`}>
+                                  {user.active ? 'Activo' : 'Inactivo'}
+                                </span>
+                              </div>
+                              <div className="text-sm text-gray-500 mt-1">
+                                Última actividad: {new Date().toLocaleDateString()}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => handleEditUser(user)}
+                              className="text-blue-600 hover:text-blue-800 text-sm font-medium px-3 py-1 rounded-md hover:bg-blue-50"
+                            >
+                              Editar
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteUser(user.id)}
+                              className="text-red-600 hover:text-red-800 text-sm font-medium px-3 py-1 rounded-md hover:bg-red-50"
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Import Tab */}
@@ -946,100 +1043,6 @@ export default function ConfigPage() {
               </div>
             </div>
           </div>
-          )}
-
-
-          {/* Master Config Tab */}
-          {activeTab === 'master' && (
-            <div className="space-y-6">
-              <MasterConfigDashboard />
-            </div>
-          )}
-
-          {/* Excel Import Tab */}
-          {activeTab === 'import' && (
-            <div className="space-y-6">
-              <ExcelImporter />
-            </div>
-          )}
-
-          {/* Billing Tab */}
-          {activeTab === 'billing' && (
-            <div className="space-y-6">
-              <BillingDashboard />
-            </div>
-          )}
-
-          {/* Audit Tab */}
-          {activeTab === 'audit' && (
-            <div className="space-y-6">
-              {/* Bulk Operations for Business Data */}
-              <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-                <div className="bg-gradient-to-r from-red-500 to-pink-600 p-6 text-white">
-                  <div className="flex items-center gap-4">
-                    <div className="p-3 bg-white bg-opacity-20 rounded-xl">
-                      <Shield className="w-8 h-8" />
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-bold">Operaciones Masivas</h2>
-                      <p className="text-red-100">Elimina múltiples órdenes y datos de ventas de forma segura</p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="p-6 space-y-6">
-                  {/* Orders Bulk Operations */}
-                  <div className="border border-gray-200 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                      <BarChart3 className="w-5 h-5 text-blue-600" />
-                      Órdenes de Venta
-                    </h3>
-                    <BulkOperations
-                      selectedItems={selectedOrders}
-                      onSelectionChange={setSelectedOrders}
-                      onBulkDelete={handleBulkDeleteOrders}
-                      totalItems={orders.length}
-                      itemType="órdenes"
-                      showUpdate={true}
-                      showToggle={true}
-                      allItemIds={orders.map(order => order.id)}
-                    />
-                    {orders.length > 0 && (
-                      <div className="mt-4 space-y-2">
-                        {orders.map((order) => (
-                          <div key={order.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                            <div className="flex items-center gap-3">
-                              <input
-                                type="checkbox"
-                                checked={selectedOrders.includes(order.id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedOrders(prev => [...prev, order.id])
-                                  } else {
-                                    setSelectedOrders(prev => prev.filter(id => id !== order.id))
-                                  }
-                                }}
-                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                              />
-                              <div>
-                                <div className="font-medium text-gray-900">Orden #{order.orderId}</div>
-                                <div className="text-sm text-gray-500">
-                                  {order.customerName} • ${order.total} • {order.status} • {new Date(order.timestamp).toLocaleDateString()}
-                      </div>
-                      </div>
-                  </div>
-                </div>
-                        ))}
-            </div>
-          )}
-      </div>
-
-                </div>
-              </div>
-
-              {/* Audit Dashboard */}
-              <SimpleAuditDashboard isMaster={isMasterUser} />
-            </div>
           )}
         </div>
       </div>

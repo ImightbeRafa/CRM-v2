@@ -348,9 +348,9 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
           
           <p className="text-xs text-gray-500 text-center mt-4">
             By signing up, you agree to our{' '}
-            <a href="#" className="text-blue-600 hover:underline">Terms of Service</a>
+            <a href="/terms" target="_blank" className="text-blue-600 hover:underline">Terms of Service</a>
             {' '}and{' '}
-            <a href="#" className="text-blue-600 hover:underline">Privacy Policy</a>
+            <a href="/privacy" target="_blank" className="text-blue-600 hover:underline">Privacy Policy</a>
           </p>
         </CardContent>
       </Card>

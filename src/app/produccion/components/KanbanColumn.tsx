@@ -24,6 +24,17 @@ export function KanbanColumn({ status, orders, onOrderClick, isUpdating }: Kanba
     id: status.label,
   });
 
+  // Check if color is hex code
+  const isHexColor = status.color.startsWith('#');
+
+  // Helper to convert hex to rgba
+  const hexToRgba = (hex: string, opacity: number) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  };
+
   const colorClasses: Record<string, { bg: string; border: string; text: string; badge: string }> = {
     yellow: {
       bg: 'bg-yellow-50',
@@ -83,15 +94,34 @@ export function KanbanColumn({ status, orders, onOrderClick, isUpdating }: Kanba
 
   const colors = colorClasses[status.color] || colorClasses.gray;
 
+  // If hex color, use inline styles
+  const headerStyle = isHexColor ? {
+    backgroundColor: hexToRgba(status.color, 0.1),
+    borderColor: status.color,
+  } : {};
+
+  const borderStyle = isHexColor ? {
+    borderColor: status.color,
+  } : {};
+
   return (
     <div className="flex-shrink-0 w-80">
-      <Card className={`${colors.border} border-2 ${isOver ? 'ring-2 ring-blue-400 ring-offset-2' : ''}`}>
-        <CardHeader className={`${colors.bg} border-b ${colors.border}`}>
+      <Card 
+        className={`border-2 ${isOver ? 'ring-2 ring-blue-400 ring-offset-2' : ''} ${!isHexColor ? colors.border : ''}`}
+        style={isHexColor ? borderStyle : {}}
+      >
+        <CardHeader 
+          className={`border-b border-2 ${!isHexColor ? `${colors.bg} ${colors.border}` : ''}`}
+          style={isHexColor ? headerStyle : {}}
+        >
           <div className="flex items-center justify-between">
-            <CardTitle className={`text-lg font-semibold ${colors.text}`}>
+            <CardTitle 
+              className={`text-lg font-semibold ${!isHexColor ? colors.text : ''}`}
+              style={isHexColor ? { color: status.color } : {}}
+            >
               {status.label}
             </CardTitle>
-            <Badge variant="secondary" className={colors.badge}>
+            <Badge variant="secondary" className={!isHexColor ? colors.badge : ''}>
               {orders.length}
             </Badge>
           </div>

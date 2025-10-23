@@ -16,8 +16,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
     const configs = await prisma.shippingConfig.findMany({
-      where: { isActive: true },
+      where: { isActive: true, tenantId },
       orderBy: { name: 'asc' }
     });
 
@@ -73,10 +78,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // If this is set as default, unset other defaults
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
+    // If this is set as default, unset other defaults in same tenant
     if (isDefault) {
       await prisma.shippingConfig.updateMany({
-        where: { isDefault: true },
+        where: { isDefault: true, tenantId },
         data: { isDefault: false }
       });
     }
@@ -96,7 +106,8 @@ export async function POST(request: NextRequest) {
         apiKey,
         baseUrl,
         isDefault,
-        settings: settings || null
+        settings: settings || null,
+        tenant: { connect: { id: tenantId } }
       }
     });
 
@@ -149,11 +160,17 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // If this is set as default, unset other defaults
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
+    // If this is set as default, unset other defaults in same tenant
     if (isDefault) {
       await prisma.shippingConfig.updateMany({
         where: { 
           isDefault: true,
+          tenantId,
           id: { not: id }
         },
         data: { isDefault: false }
@@ -216,6 +233,11 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
@@ -224,6 +246,15 @@ export async function DELETE(request: NextRequest) {
         { error: 'ID is required' },
         { status: 400 }
       );
+    }
+
+    // Verify ownership before deleting
+    const config = await prisma.shippingConfig.findFirst({
+      where: { id, tenantId }
+    });
+
+    if (!config) {
+      return NextResponse.json({ error: 'Config not found' }, { status: 404 });
     }
 
     // Soft delete by setting isActive to false

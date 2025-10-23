@@ -45,17 +45,27 @@ export async function POST(request: NextRequest) {
     })
 
     if (existing) {
+      const updateData: any = {
+        label: body.label ?? existing.label,
+        type: body.type ?? existing.type,
+        required: body.required !== undefined ? Boolean(body.required) : existing.required,
+        order: body.order !== undefined ? Number(body.order) : existing.order,
+        multiSelect: body.multiSelect !== undefined ? Boolean(body.multiSelect) : existing.multiSelect,
+        active: true,
+      };
+      
+      // Handle optionSet relation properly
+      if (body.optionSetId !== undefined) {
+        if (body.optionSetId === null) {
+          updateData.optionSet = { disconnect: true };
+        } else {
+          updateData.optionSet = { connect: { id: body.optionSetId } };
+        }
+      }
+      
       const updated = await prisma.productField.update({
         where: { id: existing.id },
-        data: {
-          label: body.label ?? existing.label,
-          type: body.type ?? existing.type,
-          required: body.required !== undefined ? Boolean(body.required) : existing.required,
-          order: body.order !== undefined ? Number(body.order) : existing.order,
-          optionSetId: body.optionSetId !== undefined ? body.optionSetId : existing.optionSetId,
-          multiSelect: body.multiSelect !== undefined ? Boolean(body.multiSelect) : existing.multiSelect,
-          active: true,
-        },
+        data: updateData,
       })
       return NextResponse.json({ status: 'success', data: updated })
     }
@@ -67,19 +77,21 @@ export async function POST(request: NextRequest) {
         type: body.type,
         required: Boolean(body.required),
         order: Number(body.order) || 0,
-        optionSetId: body.optionSetId || null,
+        ...(body.optionSetId ? { optionSet: { connect: { id: body.optionSetId } } } : {}),
         multiSelect: Boolean(body.multiSelect),
         active: true,
-        // tenantId auto-injected by prisma-tenant
+        tenant: { connect: { id: tenantId } }
       },
     })
     return NextResponse.json({ status: 'success', data: created })
   } catch (e) {
     console.error('Error creating field:', e)
+    console.error('Error stack:', e instanceof Error ? e.stack : 'No stack trace')
     return NextResponse.json({ 
       status: 'error', 
       error: 'Failed to create or enable field',
-      details: e instanceof Error ? e.message : 'Unknown error'
+      details: e instanceof Error ? e.message : 'Unknown error',
+      stack: e instanceof Error ? e.stack : undefined
     }, { status: 500 })
   }
 }
@@ -94,17 +106,28 @@ export async function PUT(request: NextRequest) {
     const prisma = getTenantPrisma(tenantId)
     
     const body = await request.json()
+    
+    const updateData: any = {
+      label: body.label,
+      type: body.type,
+      required: body.required,
+      order: Number(body.order),
+      multiSelect: Boolean(body.multiSelect),
+      active: body.active ?? true,
+    };
+    
+    // Handle optionSet relation properly
+    if (body.optionSetId !== undefined) {
+      if (body.optionSetId === null) {
+        updateData.optionSet = { disconnect: true };
+      } else {
+        updateData.optionSet = { connect: { id: body.optionSetId } };
+      }
+    }
+    
     const updated = await prisma.productField.update({
       where: { id: body.id },
-      data: {
-        label: body.label,
-        type: body.type,
-        required: body.required,
-        order: Number(body.order),
-        optionSetId: body.optionSetId || null,
-        multiSelect: Boolean(body.multiSelect),
-        active: body.active ?? true,
-      },
+      data: updateData,
     })
     return NextResponse.json({ status: 'success', data: updated })
   } catch (e) {

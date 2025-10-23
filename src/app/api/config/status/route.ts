@@ -1,10 +1,22 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { requireAdmin } from '@/lib/apiAuth'
+import { NextResponse, NextRequest } from 'next/server'
+import { getTenantPrisma } from '@/lib/prisma-tenant'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const statuses = await prisma.orderStatus.findMany({ where: { isActive: true }, orderBy: { order: 'asc' } })
+    const auth = await authenticateAPIWithPermission(request, 'view_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
+    const statuses = await prisma.orderStatus.findMany({ 
+      where: { 
+        tenantId,
+        isActive: true 
+      }, 
+      orderBy: { order: 'asc' } 
+    })
     return NextResponse.json({ status: 'success', data: statuses })
   } catch (e: any) {
     const msg = typeof e?.message === 'string' ? e.message : ''
@@ -15,13 +27,22 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
-  const { authorized } = await requireAdmin(request)
-  if (!authorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+export async function POST(request: NextRequest) {
   try {
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
     const body = await request.json()
-    // Idempotent: if key exists (even inactive), update/reactivate; else create
-    const existing = await prisma.orderStatus.findUnique({ where: { key: body.key } })
+    // Idempotent: if key exists for this tenant (even inactive), update/reactivate; else create
+    const existing = await prisma.orderStatus.findFirst({ 
+      where: { 
+        key: body.key,
+        tenantId 
+      } 
+    })
     if (existing) {
       const updated = await prisma.orderStatus.update({
         where: { id: existing.id },
@@ -34,32 +55,59 @@ export async function POST(request: Request) {
       })
       return NextResponse.json({ status: 'success', data: updated })
     }
-    const created = await prisma.orderStatus.create({ data: { key: body.key, label: body.label, color: body.color || null, order: Number(body.order) || 0, isActive: true } })
+    const created = await prisma.orderStatus.create({ 
+      data: { 
+        key: body.key, 
+        label: body.label, 
+        color: body.color || null, 
+        order: Number(body.order) || 0, 
+        isActive: true,
+        tenantId 
+      } 
+    })
     return NextResponse.json({ status: 'success', data: created })
   } catch (e) {
     return NextResponse.json({ status: 'error', error: 'Failed to create status' }, { status: 500 })
   }
 }
 
-export async function PUT(request: Request) {
-  const { authorized } = await requireAdmin(request)
-  if (!authorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+export async function PUT(request: NextRequest) {
   try {
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
     const body = await request.json()
-    const updated = await prisma.orderStatus.update({ where: { id: body.id }, data: { key: body.key, label: body.label, color: body.color || null, order: Number(body.order) || 0, isActive: body.isActive ?? true } })
+    const updated = await prisma.orderStatus.update({ 
+      where: { id: body.id },
+      data: { 
+        key: body.key, 
+        label: body.label, 
+        color: body.color || null, 
+        order: Number(body.order) || 0, 
+        isActive: body.isActive ?? true 
+      } 
+    })
     return NextResponse.json({ status: 'success', data: updated })
   } catch (e) {
     return NextResponse.json({ status: 'error', error: 'Failed to update status' }, { status: 500 })
   }
 }
 
-export async function DELETE(request: Request) {
-  const { authorized } = await requireAdmin(request)
-  if (!authorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { searchParams } = new URL((request as any).url)
-  const id = searchParams.get('id')
-  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
+export async function DELETE(request: NextRequest) {
   try {
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
+    
     const updated = await prisma.orderStatus.update({ where: { id }, data: { isActive: false } })
     return NextResponse.json({ status: 'success', data: updated })
   } catch (e) {

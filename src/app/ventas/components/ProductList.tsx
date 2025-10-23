@@ -5,7 +5,9 @@ import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import ProductForm from './productForm';
+import { ShippingMethodSelector } from './ShippingMethodSelector';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 
 interface ProductListProps {
   orderInfo: OrderInfo;
@@ -25,6 +27,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
   const [configFields, setConfigFields] = useState<any[]>([]);
   const [shippingMethods, setShippingMethods] = useState<Array<{id: string; name: string; basePrice: number}>>([]);
   const { user } = useCurrentUser();
+  const { formatCurrency } = useTenantSettings();
 
   // Fetch configuration fields
   useEffect(() => {
@@ -80,20 +83,16 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
       sum + (product.productCost * product.cantidad) + (product.optionDeltas || 0), 0
     );
     
-    // Calculate shipping based on order-level shipping method from configuration
+    // Use the shipping cost set by ShippingMethodSelector (already includes the priceDelta)
     // Only for EA (shipping) orders, RA (local pickup) has no shipping cost
-    let shipping = 0;
-    if (orderType === 'EA' && orderInfo.orderShippingMethod) {
-      const selectedMethod = shippingMethods.find(m => m.name === orderInfo.orderShippingMethod);
-      shipping = selectedMethod?.basePrice || 0;
-    }
+    const shipping = orderType === 'EA' ? (orderInfo.orderShipping || 0) : 0;
     
     // Calculate IVA based on order-level setting
     const iva = orderInfo.applyOrderIVA ? subtotal * 0.13 : 0;
     const total = subtotal + shipping + iva;
 
     return { subtotal, shipping, iva, total };
-  }, [orderInfo.products, orderInfo.orderShippingMethod, orderInfo.applyOrderIVA, shippingMethods, orderType]);
+  }, [orderInfo.products, orderInfo.orderShipping, orderInfo.applyOrderIVA, orderType]);
 
   // Update order totals when products change
   useEffect(() => {
@@ -379,29 +378,6 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
           <CardContent className="space-y-4">
             {/* Order Configuration */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Shipping method - only for EA (shipping) orders */}
-              {orderType === 'EA' && (
-                <div className="flex flex-col space-y-2">
-                  <label className="text-sm font-medium text-gray-700">Mensajería</label>
-                  <select
-                    className="w-full p-2 border rounded text-sm"
-                    value={orderInfo.orderShippingMethod || ''}
-                    onChange={(e) => {
-                      onOrderInfoChange({
-                        ...orderInfo,
-                        orderShippingMethod: e.target.value
-                      });
-                    }}
-                  >
-                    <option value="">Seleccionar mensajería...</option>
-                    {shippingMethods.map((method) => (
-                      <option key={method.id} value={method.name}>
-                        {method.name} (₡{method.basePrice})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
               {/* IVA checkbox */}
               <div className="flex flex-col space-y-2">
                 <div className="flex items-center gap-2">
@@ -422,28 +398,42 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                   </label>
                 </div>
               </div>
+
+              {/* Shipping Method Selector - Only for EA orders */}
+              {orderType === 'EA' && (
+                <ShippingMethodSelector 
+                  selectedMethod={orderInfo.orderShippingMethod}
+                  onMethodChange={(method, cost) => {
+                    onOrderInfoChange({
+                      ...orderInfo,
+                      orderShippingMethod: method,
+                      orderShipping: cost
+                    });
+                  }}
+                />
+              )}
             </div>
 
             {/* Order Totals */}
             <div className={`grid gap-4 ${orderType === 'EA' ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-2 lg:grid-cols-3'}`}>
               <div className="flex flex-col space-y-1">
                 <span className="text-sm text-gray-600">Subtotal:</span>
-                <p className="text-lg font-semibold">₡{orderTotals.subtotal.toFixed(2)}</p>
+                <p className="text-lg font-semibold">{formatCurrency(orderTotals.subtotal)}</p>
               </div>
               {/* Show shipping only for EA orders */}
               {orderType === 'EA' && (
                 <div className="flex flex-col space-y-1">
                   <span className="text-sm text-gray-600">Envío:</span>
-                  <p className="text-lg font-semibold">₡{orderTotals.shipping.toFixed(2)}</p>
+                  <p className="text-lg font-semibold">{formatCurrency(orderTotals.shipping)}</p>
                 </div>
               )}
               <div className="flex flex-col space-y-1">
                 <span className="text-sm text-gray-600">IVA:</span>
-                <p className="text-lg font-semibold">₡{orderTotals.iva.toFixed(2)}</p>
+                <p className="text-lg font-semibold">{formatCurrency(orderTotals.iva)}</p>
               </div>
               <div className="flex flex-col space-y-1">
                 <span className="text-sm text-gray-600">Total:</span>
-                <p className="text-xl font-bold text-green-600">₡{orderTotals.total.toFixed(2)}</p>
+                <p className="text-xl font-bold text-green-600">{formatCurrency(orderTotals.total)}</p>
               </div>
             </div>
           </CardContent>

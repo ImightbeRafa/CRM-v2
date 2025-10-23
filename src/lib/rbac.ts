@@ -76,6 +76,7 @@ export const rolePermissions: Record<Role, Permission[]> = {
     'update_production',
     'view_statistics',
     'export_statistics',
+    'view_config', // allow read-only access to config for sales UI
   ],
   SALES: [
     // Sales module only
@@ -83,6 +84,7 @@ export const rolePermissions: Record<Role, Permission[]> = {
     'view_sales',
     'create_sales',
     'update_sales',
+    'view_config', // allow reading product fields/options
   ],
   PRODUCTION: [
     // Production module only

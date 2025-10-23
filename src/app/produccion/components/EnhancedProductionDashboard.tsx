@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/app/components/ui/button";
 import { Badge } from "@/app/components/ui/badge";
 import { useSalesStream } from '@/app/hooks/useSalesStream';
+import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 import { Sale } from '../types/sales';
 import { Loader2, Search, Filter, Download, Printer, Eye, Edit, CheckCircle, Clock, AlertCircle, Truck, Package, Users, TrendingUp, LayoutGrid, List, Kanban, FileText } from 'lucide-react';
 import { useToast } from "@/app/hooks/use-toast";
@@ -334,7 +335,13 @@ export function EnhancedProductionDashboard({
 }: EnhancedProductionDashboardProps) {
   const [selectedOrder, setSelectedOrder] = useState<Sale | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'EA' | 'RA' | 'urgent'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Define handleStatsFilter callback at the top level
+  const handleStatsFilter = React.useCallback((filter: 'all' | 'EA' | 'RA' | 'urgent') => {
+    setOrderTypeFilter(filter);
+  }, []);
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [courierFilter, setCourierFilter] = useState('all');
@@ -358,10 +365,23 @@ export function EnhancedProductionDashboard({
     }
   });
 
-  const filteredOrders = useMemo(() => 
-    filterOrders(orders, statusFilter, searchTerm, dateRange, priorityFilter, courierFilter),
-    [orders, statusFilter, searchTerm, dateRange, priorityFilter, courierFilter]
-  );
+  const filteredOrders = useMemo(() => {
+    let filtered = filterOrders(orders, statusFilter, searchTerm, dateRange, priorityFilter, courierFilter);
+    
+    // Apply order type filter from stat cards
+    if (orderTypeFilter === 'EA') {
+      filtered = filtered.filter(o => o.orderType === 'EA');
+    } else if (orderTypeFilter === 'RA') {
+      filtered = filtered.filter(o => o.orderType === 'RA');
+    } else if (orderTypeFilter === 'urgent') {
+      filtered = filtered.filter(o => {
+        const orderAge = Date.now() - new Date(o.timestamp).getTime();
+        return orderAge > 24 * 60 * 60 * 1000 && o.status === 'Pendiente';
+      });
+    }
+    
+    return filtered;
+  }, [orders, statusFilter, searchTerm, dateRange, priorityFilter, courierFilter, orderTypeFilter]);
 
   const groupedOrders = useMemo(() => ({
     EA: filteredOrders.filter(order => order.orderType === 'EA'),
@@ -515,7 +535,10 @@ export function EnhancedProductionDashboard({
   return (
     <div className="container mx-auto px-4 py-6 space-y-6">
       {/* Stats Overview */}
-      <ProductionStats orders={orders} />
+      <ProductionStats 
+        orders={orders} 
+        onFilterChange={handleStatsFilter}
+      />
       
       {/* Main Dashboard */}
       <Card>

@@ -91,6 +91,7 @@ export function useSalesStream({
         headers: {
           'Cache-Control': 'no-cache',
         },
+        credentials: 'include',
       });
       
       if (!response.ok) {

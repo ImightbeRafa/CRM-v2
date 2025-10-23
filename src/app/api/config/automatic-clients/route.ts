@@ -10,8 +10,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
     const clients = await prisma.client.findMany({
-      where: { isActive: true },
+      where: { isActive: true, tenantId },
       orderBy: [
         { isFavorite: 'desc' },
         { totalSpent: 'desc' },
@@ -60,9 +65,15 @@ export async function POST(request: NextRequest) {
       isFavorite
     } = body;
 
-    // Check if client already exists by phone
+    // Get tenant ID from token
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
+    // Check if client already exists by phone in this tenant
     const existingClient = await prisma.client.findFirst({
-      where: { phone, isActive: true }
+      where: { phone, isActive: true, tenantId }
     });
 
     if (existingClient) {
@@ -70,12 +81,6 @@ export async function POST(request: NextRequest) {
         { error: 'Client with this phone number already exists' },
         { status: 400 }
       );
-    }
-
-    // Get tenant ID from token
-    const tenantId = (token as any).tenantId;
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
     }
 
     const client = await prisma.client.create({
@@ -128,6 +133,11 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
     const body = await request.json();
     const {
       id,
@@ -144,11 +154,12 @@ export async function PUT(request: NextRequest) {
       isFavorite
     } = body;
 
-    // Check if phone already exists for different client
+    // Check if phone already exists for different client in same tenant
     const existingClient = await prisma.client.findFirst({
       where: { 
         phone, 
         isActive: true,
+        tenantId,
         id: { not: id }
       }
     });
@@ -204,11 +215,25 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
     if (!id) {
       return NextResponse.json({ error: 'Client ID is required' }, { status: 400 });
+    }
+
+    // Verify ownership
+    const client = await prisma.client.findFirst({
+      where: { id, tenantId }
+    });
+
+    if (!client) {
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 });
     }
 
     await prisma.client.update({

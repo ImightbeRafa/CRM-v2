@@ -10,6 +10,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Get tenant ID from session
+    const tenantId = (session as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
@@ -25,9 +31,10 @@ export async function GET(req: NextRequest) {
       dateFilter.lte = end;
     }
 
-    const whereClause = Object.keys(dateFilter).length > 0
-      ? { timestamp: dateFilter }
-      : {};
+    const whereClause: any = { tenantId };
+    if (Object.keys(dateFilter).length > 0) {
+      whereClause.timestamp = dateFilter;
+    }
 
     // Get EA orders
     const eaOrders = await prisma.order.aggregate({

@@ -10,6 +10,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Get tenant ID from session
+    const tenantId = (session as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
@@ -25,9 +31,10 @@ export async function GET(req: NextRequest) {
       dateFilter.lte = end;
     }
 
-    const whereClause = Object.keys(dateFilter).length > 0
-      ? { timestamp: dateFilter }
-      : {};
+    const whereClause: any = { tenantId };
+    if (Object.keys(dateFilter).length > 0) {
+      whereClause.timestamp = dateFilter;
+    }
 
     // Group orders by status
     const statusGroups = await prisma.order.groupBy({
@@ -38,9 +45,12 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Get status colors from OrderStatus table
+    // Get status colors from OrderStatus table (with tenant isolation)
     const statuses = await prisma.orderStatus.findMany({
-      where: { isActive: true },
+      where: { 
+        isActive: true,
+        tenantId 
+      },
       select: {
         label: true,
         color: true,

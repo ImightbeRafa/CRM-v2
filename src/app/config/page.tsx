@@ -5,10 +5,14 @@ import { useSearchParams } from 'next/navigation'
 import { BulkOperations } from '../components/ui/bulk-operations'
 import { SimpleAuditDashboard } from '../components/SimpleAuditDashboard'
 import { MasterConfigDashboard } from './components/MasterConfigDashboard'
-import { UnifiedFieldsManager } from './components/UnifiedFieldsManager'
+import { SimpleFieldsManager } from './components/SimpleFieldsManager'
+import { OptionSetsManager } from './components/OptionSetsManager'
 import { BillingDashboard } from './components/BillingDashboard'
 import { ExcelImporter } from './components/ExcelImporter'
-import { Settings, Users, Shield, Database, BarChart3, Zap, FileSpreadsheet } from 'lucide-react'
+import { StatusManager } from './components/StatusManager'
+import { TenantSettingsPanel } from '../components/TenantSettingsPanel'
+import { SettingsTestDisplay } from './components/SettingsTestDisplay'
+import { Settings, Users, Shield, Database, BarChart3, Zap, FileSpreadsheet, List } from 'lucide-react'
 
 export default function ConfigPage() {
   const [activeTab, setActiveTab] = useState('fields')
@@ -478,6 +482,7 @@ export default function ConfigPage() {
 
   const tabs = [
     { id: 'fields', label: 'Configuración de Campos', icon: Database },
+    { id: 'statuses', label: 'Estados de Órdenes', icon: Settings },
     { id: 'users', label: 'Usuarios', icon: Users },
     { id: 'master', label: 'Productos y Clientes Recurrentes', icon: Zap },
     { id: 'import', label: 'Importar Excel', icon: FileSpreadsheet },
@@ -574,7 +579,12 @@ export default function ConfigPage() {
         <div className="space-y-6">
           {/* Fields Tab */}
           {activeTab === 'fields' && (
-            <UnifiedFieldsManager />
+            <SimpleFieldsManager />
+          )}
+
+          {/* Statuses Tab */}
+          {activeTab === 'statuses' && (
+            <StatusManager />
           )}
 
           {/* Legacy Fields Tab - keeping for reference */}
@@ -1634,6 +1644,12 @@ export default function ConfigPage() {
           </div>
         </div>
       )}
+      
+      {/* Tenant Settings Gear (only visible on config page) */}
+      <TenantSettingsPanel />
+      
+      {/* Debug: Show current settings */}
+      <SettingsTestDisplay />
     </div>
   )
 }

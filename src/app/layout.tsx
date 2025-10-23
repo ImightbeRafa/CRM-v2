@@ -2,6 +2,7 @@ import '@/app/components/globals.css'
 import '@/app/globals-mobile.css'
 import SessionProvider from "./components/Sessionprovider"
 import { ErrorBoundary } from "./components/ErrorBoundary"
+import { TenantSettingsProvider } from "./contexts/TenantSettingsContext"
 
 export default async function RootLayout({
   children,
@@ -13,7 +14,9 @@ export default async function RootLayout({
       <body className="min-h-screen bg-background">
         <ErrorBoundary>
           <SessionProvider>
-            {children}
+            <TenantSettingsProvider>
+              {children}
+            </TenantSettingsProvider>
           </SessionProvider>
         </ErrorBoundary>
       </body>

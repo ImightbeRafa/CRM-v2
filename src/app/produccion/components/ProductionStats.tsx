@@ -3,6 +3,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
+import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 import { Sale } from '../types/sales';
 import { 
   TrendingUp, 
@@ -21,9 +22,12 @@ interface ProductionStatsProps {
   orders: Sale[];
   onClose?: () => void;
   detailed?: boolean;
+  onFilterChange?: (filter: 'all' | 'EA' | 'RA' | 'urgent') => void;
 }
 
-export function ProductionStats({ orders, onClose, detailed = false }: ProductionStatsProps) {
+export const ProductionStats = React.memo(function ProductionStats({ orders, onClose, detailed = false, onFilterChange }: ProductionStatsProps) {
+  const { formatCurrency } = useTenantSettings();
+  
   const stats = React.useMemo(() => {
     const total = orders.length;
     const eaOrders = orders.filter(o => o.orderType === 'EA');
@@ -109,13 +113,15 @@ export function ProductionStats({ orders, onClose, detailed = false }: Productio
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
 
-  const StatCard = ({ 
+  const StatCard = React.memo(({ 
     title, 
     value, 
     icon, 
     color = "text-gray-600",
     subtitle,
-    trend
+    trend,
+    onClick,
+    clickable = false
   }: {
     title: string;
     value: string | number;
@@ -123,32 +129,48 @@ export function ProductionStats({ orders, onClose, detailed = false }: Productio
     color?: string;
     subtitle?: string;
     trend?: { value: number; isPositive: boolean };
-  }) => (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600">{title}</p>
-            <p className={`text-2xl font-bold ${color}`}>{value}</p>
-            {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
-            {trend && (
-              <div className={`flex items-center text-xs ${
-                trend.isPositive ? 'text-green-600' : 'text-red-600'
-              }`}>
-                <TrendingUp className={`h-3 w-3 mr-1 ${
-                  trend.isPositive ? '' : 'rotate-180'
-                }`} />
-                {Math.abs(trend.value)}%
-              </div>
-            )}
+    onClick?: () => void;
+    clickable?: boolean;
+  }) => {
+    const handleClick = React.useCallback((e: React.MouseEvent) => {
+      if (onClick && clickable) {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick();
+      }
+    }, [onClick, clickable]);
+
+    return (
+      <Card 
+        className={`transition-shadow duration-200 ${clickable ? 'hover:shadow-lg cursor-pointer hover:border-blue-400' : 'hover:shadow-md'}`}
+        onClick={handleClick}
+      >
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">{title}</p>
+              <p className={`text-2xl font-bold ${color}`}>{value}</p>
+              {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
+              {trend && (
+                <div className={`flex items-center text-xs ${
+                  trend.isPositive ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  <TrendingUp className={`h-3 w-3 mr-1 ${
+                    trend.isPositive ? '' : 'rotate-180'
+                  }`} />
+                  {Math.abs(trend.value)}%
+                </div>
+              )}
+              {clickable && <p className="text-xs text-blue-500 mt-1">👆 Click para filtrar</p>}
+            </div>
+            <div className={`p-2 rounded-full ${color.replace('text-', 'bg-').replace('-600', '-100')}`}>
+              {icon}
+            </div>
           </div>
-          <div className={`p-2 rounded-full ${color.replace('text-', 'bg-').replace('-600', '-100')}`}>
-            {icon}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+        </CardContent>
+      </Card>
+    );
+  });
 
   if (detailed) {
     return (
@@ -309,6 +331,22 @@ export function ProductionStats({ orders, onClose, detailed = false }: Productio
     );
   }
 
+  const handleTotalClick = React.useCallback(() => {
+    onFilterChange?.('all');
+  }, [onFilterChange]);
+
+  const handleEAClick = React.useCallback(() => {
+    onFilterChange?.('EA');
+  }, [onFilterChange]);
+
+  const handleRAClick = React.useCallback(() => {
+    onFilterChange?.('RA');
+  }, [onFilterChange]);
+
+  const handleUrgentClick = React.useCallback(() => {
+    onFilterChange?.('urgent');
+  }, [onFilterChange]);
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <StatCard
@@ -316,18 +354,24 @@ export function ProductionStats({ orders, onClose, detailed = false }: Productio
         value={stats.total}
         icon={<Package className="h-5 w-5" />}
         color="text-blue-600"
+        onClick={handleTotalClick}
+        clickable={!!onFilterChange}
       />
       <StatCard
         title="Envíos (EA)"
         value={stats.eaOrders}
         icon={<Truck className="h-5 w-5" />}
         color="text-green-600"
+        onClick={handleEAClick}
+        clickable={!!onFilterChange}
       />
       <StatCard
         title="Retiros (RA)"
         value={stats.raOrders}
         icon={<Package className="h-5 w-5" />}
         color="text-purple-600"
+        onClick={handleRAClick}
+        clickable={!!onFilterChange}
       />
       <StatCard
         title="Urgentes"
@@ -335,7 +379,9 @@ export function ProductionStats({ orders, onClose, detailed = false }: Productio
         icon={<AlertCircle className="h-5 w-5" />}
         color="text-red-600"
         subtitle="Estado urgente/+24h pendientes"
+        onClick={handleUrgentClick}
+        clickable={!!onFilterChange}
       />
     </div>
   );
-}
+});

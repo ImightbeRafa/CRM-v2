@@ -1,40 +1,74 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { requireAdmin } from '@/lib/apiAuth'
+import { NextRequest, NextResponse } from 'next/server'
+import { getTenantPrisma } from '@/lib/prisma-tenant'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { createSuccessResponse, createErrorResponse, handleApiError, validateRequiredFields } from '@/lib/apiUtils'
 
-export async function POST(request: Request) {
-  const { authorized } = await requireAdmin(request)
-  if (!authorized) return createErrorResponse('Unauthorized', 401)
-  
+export async function GET(request: NextRequest) {
   try {
+    const auth = await authenticateAPIWithPermission(request, 'view_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
+    const { searchParams } = new URL(request.url)
+    const setId = searchParams.get('setId')
+    
+    if (setId) {
+      // Get options for a specific set
+      const options = await prisma.productOption.findMany({
+        where: { 
+          setId,
+          active: true 
+        },
+        orderBy: { label: 'asc' }
+      })
+      return createSuccessResponse(options)
+    } else {
+      // Get all options (with tenant check via option set)
+      const options = await prisma.productOption.findMany({
+        where: { 
+          active: true,
+          set: { tenantId }
+        },
+        include: { set: true },
+        orderBy: { label: 'asc' }
+      })
+      return createSuccessResponse(options)
+    }
+  } catch (error) {
+    return handleApiError(error)
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
     const body = await request.json()
     
-    // Validate required fields
     const missingField = validateRequiredFields(body, ['setId', 'label', 'value'])
     if (missingField) {
       return createErrorResponse(missingField, 400)
     }
-
-    // Idempotent option creation: if an option with same setId+value exists, reactivate/update
-    const existing = await prisma.productOption.findFirst({
-      where: { setId: body.setId, value: body.value },
+    
+    // Verify the option set belongs to this tenant
+    const optionSet = await prisma.productOptionSet.findFirst({
+      where: { 
+        id: body.setId,
+        tenantId 
+      }
     })
-
-    if (existing) {
-      const updated = await prisma.productOption.update({
-        where: { id: existing.id },
-        data: {
-          label: body.label ?? existing.label,
-          value: body.value,
-          priceDelta: Number(body.priceDelta) || existing.priceDelta,
-          metadata: body.metadata ?? existing.metadata,
-          active: true,
-        },
-      })
-      return createSuccessResponse(updated, 'Option already existed and was reactivated')
+    
+    if (!optionSet) {
+      return createErrorResponse('Option set not found or access denied', 404)
     }
-
+    
+    // Create the option
     const created = await prisma.productOption.create({
       data: {
         setId: body.setId,
@@ -45,61 +79,93 @@ export async function POST(request: Request) {
         active: true,
       },
     })
+    
     return createSuccessResponse(created, 'Option created successfully')
   } catch (error) {
     return handleApiError(error)
   }
 }
 
-export async function PUT(request: Request) {
-  const { authorized } = await requireAdmin(request)
-  if (!authorized) return createErrorResponse('Unauthorized', 401)
-  
+export async function PUT(request: NextRequest) {
   try {
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
     const body = await request.json()
     
-    // Validate required fields
-    const missingField = validateRequiredFields(body, ['id', 'label', 'value'])
+    const missingField = validateRequiredFields(body, ['id'])
     if (missingField) {
       return createErrorResponse(missingField, 400)
     }
     
+    // Verify the option belongs to this tenant (via option set)
+    const existingOption = await prisma.productOption.findFirst({
+      where: {
+        id: body.id,
+        set: { tenantId }
+      }
+    })
+    
+    if (!existingOption) {
+      return createErrorResponse('Option not found or access denied', 404)
+    }
+    
+    // Update the option
     const updated = await prisma.productOption.update({
       where: { id: body.id },
       data: {
-        label: body.label,
-        value: body.value,
-        priceDelta: Number(body.priceDelta) || 0,
-        metadata: body.metadata || null,
-        active: body.active ?? true,
+        label: body.label ?? existingOption.label,
+        value: body.value ?? existingOption.value,
+        priceDelta: body.priceDelta !== undefined ? Number(body.priceDelta) : existingOption.priceDelta,
+        metadata: body.metadata !== undefined ? body.metadata : existingOption.metadata,
+        active: body.active ?? existingOption.active,
       },
     })
+    
     return createSuccessResponse(updated, 'Option updated successfully')
   } catch (error) {
     return handleApiError(error)
   }
 }
 
-export async function DELETE(request: Request) {
-  const { authorized } = await requireAdmin(request)
-  if (!authorized) return createErrorResponse('Unauthorized', 401)
-  
+export async function DELETE(request: NextRequest) {
   try {
-    const { searchParams } = new URL((request as any).url)
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
+    const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     
     if (!id) {
       return createErrorResponse('Missing id parameter', 400)
     }
     
-    const updated = await prisma.productOption.update({ 
-      where: { id }, 
-      data: { active: false } 
+    // Verify the option belongs to this tenant (via option set)
+    const existingOption = await prisma.productOption.findFirst({
+      where: {
+        id,
+        set: { tenantId }
+      }
     })
+    
+    if (!existingOption) {
+      return createErrorResponse('Option not found or access denied', 404)
+    }
+    
+    // Soft delete
+    const updated = await prisma.productOption.update({
+      where: { id },
+      data: { active: false },
+    })
+    
     return createSuccessResponse(updated, 'Option deleted successfully')
   } catch (error) {
     return handleApiError(error)
   }
 }
-
-

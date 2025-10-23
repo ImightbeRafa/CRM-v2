@@ -45,7 +45,7 @@ export function createTenantPrisma(tenantId: string) {
             return query(args);
           }
 
-          // Inject tenantId based on operation type
+          // Inject tenantId based on operation type (guard against undefined args.where/data)
           switch (operation) {
             case 'findUnique':
             case 'findFirst':
@@ -55,29 +55,30 @@ export function createTenantPrisma(tenantId: string) {
             case 'groupBy':
               // Add tenantId to where clause
               args.where = {
-                ...args.where,
+                ...(args?.where || {}),
                 tenantId,
-              };
+              } as any;
               break;
 
             case 'create':
               // Add tenantId to data
-              if (!args.data.tenantId) {
-                args.data.tenantId = tenantId;
-              }
+              args.data = {
+                ...(args?.data || {}),
+                tenantId: (args as any)?.data?.tenantId ?? tenantId,
+              } as any;
               break;
 
             case 'createMany':
               // Add tenantId to all data items
-              if (Array.isArray(args.data)) {
-                args.data = args.data.map((item: any) => ({
+              if (Array.isArray((args as any).data)) {
+                (args as any).data = (args as any).data.map((item: any) => ({
                   ...item,
-                  tenantId: item.tenantId || tenantId,
+                  tenantId: item?.tenantId ?? tenantId,
                 }));
               } else {
-                args.data = {
-                  ...args.data,
-                  tenantId: args.data.tenantId || tenantId,
+                (args as any).data = {
+                  ...((args as any).data || {}),
+                  tenantId: (args as any)?.data?.tenantId ?? tenantId,
                 };
               }
               break;
@@ -88,23 +89,24 @@ export function createTenantPrisma(tenantId: string) {
             case 'deleteMany':
               // Add tenantId to where clause
               args.where = {
-                ...args.where,
+                ...(args?.where || {}),
                 tenantId,
-              };
+              } as any;
               break;
 
             case 'upsert':
               // Add tenantId to where and create data
               args.where = {
-                ...args.where,
+                ...(args?.where || {}),
                 tenantId,
-              };
-              if (args.create && !args.create.tenantId) {
-                args.create.tenantId = tenantId;
+              } as any;
+              if ((args as any).create) {
+                (args as any).create = {
+                  ...((args as any).create || {}),
+                  tenantId: (args as any).create?.tenantId ?? tenantId,
+                };
               }
-              if (args.update && typeof args.update === 'object' && !('tenantId' in args.update)) {
-                // Don't add tenantId to update (it should already exist)
-              }
+              // Do not force tenantId on update (it already exists on the record)
               break;
           }
 

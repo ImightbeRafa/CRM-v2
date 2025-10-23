@@ -15,8 +15,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Get all orders to extract unique clients
+    // Get tenant ID from token
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
+    // Get all orders to extract unique clients (filtered by tenant)
     const allOrders = await prisma.order.findMany({
+      where: { tenantId },
       select: {
         customerName: true,
         phone: true,
@@ -81,17 +88,17 @@ export async function POST(request: NextRequest) {
         new Date(order.timestamp) > new Date(latest.timestamp) ? order : latest
       );
 
-      // Check if client already exists
+      // Check if client already exists in this tenant
       const existingClient = await prisma.client.findFirst({
-        where: { phone, isActive: true }
+        where: { phone, isActive: true, tenantId }
       });
 
       if (existingClient) {
-        // Update existing client
+        // Update existing client - ONLY update statistics, NOT personal info
+        // This prevents overwriting manually edited customer data
         await prisma.client.update({
           where: { id: existingClient.id },
           data: {
-            ...clientInfo,
             totalOrders,
             totalSpent,
             averageOrderValue,
@@ -113,7 +120,8 @@ export async function POST(request: NextRequest) {
             lastOrder: lastOrder.timestamp,
             isActive: true,
             isFavorite: false,
-            createdBy: token.sub as string
+            createdBy: token.sub as string,
+            tenant: { connect: { id: tenantId } }
           }
         });
         syncedCount++;

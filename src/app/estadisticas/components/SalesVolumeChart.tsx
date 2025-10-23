@@ -8,9 +8,11 @@ interface SalesVolumeChartProps {
     RA: { count: number; revenue: number };
   };
   height?: number;
+  currencySymbol?: string;
+  locale?: string;
 }
 
-export default function SalesVolumeChart({ data, height = 300 }: SalesVolumeChartProps) {
+export default function SalesVolumeChart({ data, height = 300, currencySymbol = '₡', locale = 'es-CR' }: SalesVolumeChartProps) {
   const chartData = [
     {
       name: 'Envíos (EA)',
@@ -25,7 +27,7 @@ export default function SalesVolumeChart({ data, height = 300 }: SalesVolumeChar
   ];
 
   const formatCurrency = (value: number) => {
-    return `₡${value.toLocaleString('es-CR', { maximumFractionDigits: 0 })}`;
+    return `${currencySymbol}${value.toLocaleString(locale, { maximumFractionDigits: 0 })}`;
   };
 
   return (

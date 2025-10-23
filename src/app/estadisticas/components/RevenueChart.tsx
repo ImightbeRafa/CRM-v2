@@ -10,9 +10,11 @@ interface RevenueChartProps {
     orderCount: number;
   }>;
   height?: number;
+  currencySymbol?: string;
+  locale?: string;
 }
 
-export default function RevenueChart({ data, height = 300 }: RevenueChartProps) {
+export default function RevenueChart({ data, height = 300, currencySymbol = '₡', locale = 'es-CR' }: RevenueChartProps) {
   // Format data for display
   const formattedData = data.map((item) => ({
     ...item,
@@ -20,7 +22,7 @@ export default function RevenueChart({ data, height = 300 }: RevenueChartProps) 
   }));
 
   const formatCurrency = (value: number) => {
-    return `₡${value.toLocaleString('es-CR', { maximumFractionDigits: 0 })}`;
+    return `${currencySymbol}${value.toLocaleString(locale, { maximumFractionDigits: 0 })}`;
   };
 
   return (

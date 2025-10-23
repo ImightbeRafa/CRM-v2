@@ -49,7 +49,9 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 5, // Reduced from 8 for quicker activation
+        tolerance: 5,
+        delay: 0,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -68,28 +70,30 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
           const statusesData = data.data.map((status: any) => ({
             key: status.key,
             label: status.label,
-            color: getStatusColor(status.label),
+            color: status.color || getStatusColor(status.label), // Use hex color directly or fallback
           }));
           setStatuses(statusesData);
         } else {
           // Fallback to default statuses if API fails
           setStatuses([
-            { key: 'pendiente', label: 'Pendiente', color: 'yellow' },
-            { key: 'en-proceso', label: 'En Proceso', color: 'blue' },
-            { key: 'completado', label: 'Completado', color: 'green' },
-            { key: 'enviado', label: 'Enviado', color: 'purple' },
-            { key: 'entregado', label: 'Entregado', color: 'emerald' },
+            { key: 'pendiente', label: 'Pendiente', color: '#FCD34D' },
+            { key: 'en-proceso', label: 'En Proceso', color: '#60A5FA' },
+            { key: 'urgente', label: 'Urgente', color: '#EF4444' },
+            { key: 'completado', label: 'Completado', color: '#10B981' },
+            { key: 'enviado', label: 'Enviado', color: '#A855F7' },
+            { key: 'entregado', label: 'Entregado', color: '#059669' },
           ]);
         }
       } catch (error) {
         console.error('Error loading statuses:', error);
         // Use fallback statuses
         setStatuses([
-          { key: 'pendiente', label: 'Pendiente', color: 'yellow' },
-          { key: 'en-proceso', label: 'En Proceso', color: 'blue' },
-          { key: 'completado', label: 'Completado', color: 'green' },
-          { key: 'enviado', label: 'Enviado', color: 'purple' },
-          { key: 'entregado', label: 'Entregado', color: 'emerald' },
+          { key: 'pendiente', label: 'Pendiente', color: '#FCD34D' },
+          { key: 'en-proceso', label: 'En Proceso', color: '#60A5FA' },
+          { key: 'urgente', label: 'Urgente', color: '#EF4444' },
+          { key: 'completado', label: 'Completado', color: '#10B981' },
+          { key: 'enviado', label: 'Enviado', color: '#A855F7' },
+          { key: 'entregado', label: 'Entregado', color: '#059669' },
         ]);
       } finally {
         setLoading(false);
@@ -103,31 +107,70 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
   const ordersByStatus = useMemo(() => {
     const grouped: Record<string, Sale[]> = {};
     
+    // Initialize all status columns
     statuses.forEach(status => {
-      grouped[status.label] = orders.filter(
-        order => order.status.toLowerCase() === status.label.toLowerCase()
+      grouped[status.label] = [];
+    });
+
+    // Group orders by status with case-insensitive matching
+    orders.forEach(order => {
+      // Find matching status (case-insensitive)
+      const matchingStatus = statuses.find(
+        status => status.label.toLowerCase() === order.status.toLowerCase()
       );
+      
+      if (matchingStatus) {
+        grouped[matchingStatus.label].push(order);
+      } else {
+        // If no matching status found, log it for debugging
+        console.warn(`Order ${order.orderId} has unmapped status: "${order.status}"`);
+        
+        // Try to find a close match or add to first column
+        const firstStatus = statuses[0];
+        if (firstStatus) {
+          grouped[firstStatus.label].push(order);
+        }
+      }
+    });
+    
+    // Log grouping results for debugging
+    console.log('Kanban Board Debug:', {
+      totalOrders: orders.length,
+      statuses: statuses.map(s => s.label),
+      ordersByStatus: Object.entries(grouped).map(([status, orders]) => ({
+        status,
+        count: orders.length
+      }))
     });
     
     return grouped;
   }, [orders, statuses]);
 
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
+    const orderId = event.active.id as string;
+    setActiveId(orderId);
+    console.log('Drag started:', orderId);
+  };
+
+  const handleDragCancel = () => {
+    setActiveId(null);
+    console.log('Drag cancelled');
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
 
+    // Always clear active state first
+    setActiveId(null);
+
     if (!over) {
-      setActiveId(null);
       return;
     }
 
     // Find the order being dragged
     const draggedOrder = orders.find(o => o.orderId === active.id);
     if (!draggedOrder) {
-      setActiveId(null);
+      console.warn('Dragged order not found:', active.id);
       return;
     }
 
@@ -136,14 +179,18 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
     const currentStatus = draggedOrder.status;
 
     if (currentStatus === targetStatus) {
-      setActiveId(null);
       return;
     }
 
-    // Update the order status
+    // Optimistic update: Update UI immediately
+    const originalOrder = { ...draggedOrder };
+    draggedOrder.status = targetStatus;
+
+    // Mark as updating
     setUpdatingOrder(draggedOrder.orderId);
     
     try {
+      // Perform the actual update
       await onOrderUpdate(draggedOrder.orderId, { status: targetStatus });
       
       toast({
@@ -152,14 +199,25 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
       });
     } catch (error) {
       console.error('Error updating order status:', error);
+      
+      // Revert optimistic update on error
+      draggedOrder.status = originalOrder.status;
+      
       toast({
         title: 'Error',
-        description: 'No se pudo actualizar el estado del pedido',
+        description: 'No se pudo actualizar el estado. Reintentando...',
         variant: 'destructive',
       });
+      
+      // Retry once
+      try {
+        await onOrderUpdate(draggedOrder.orderId, { status: targetStatus });
+        draggedOrder.status = targetStatus;
+      } catch (retryError) {
+        console.error('Retry failed:', retryError);
+      }
     } finally {
       setUpdatingOrder(null);
-      setActiveId(null);
     }
   };
 
@@ -174,12 +232,20 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
     );
   }
 
+  // Debug: Log when rendering
+  console.log('KanbanBoard Rendering:', {
+    ordersCount: orders.length,
+    statusesCount: statuses.length,
+    statuses: statuses.map(s => s.label)
+  });
+
   return (
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
     >
       <div className="flex gap-4 overflow-x-auto pb-4 px-2">
         {statuses.map(status => (

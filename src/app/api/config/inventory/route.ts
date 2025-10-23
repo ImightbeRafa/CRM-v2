@@ -10,8 +10,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Get tenant ID from token
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
     const inventory = await prisma.inventoryItem.findMany({
-      where: { isActive: true },
+      where: { 
+        isActive: true,
+        tenantId 
+      },
       orderBy: [
         { isFavorite: 'desc' },
         { name: 'asc' }
@@ -44,6 +53,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    // Get tenant ID from token
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
     const body = await request.json();
     const {
       name,
@@ -64,7 +79,11 @@ export async function POST(request: NextRequest) {
 
     // Check if SKU already exists
     const existingItem = await prisma.inventoryItem.findFirst({
-      where: { sku, isActive: true }
+      where: { 
+        sku, 
+        isActive: true,
+        tenantId 
+      }
     });
 
     if (existingItem) {
@@ -91,7 +110,8 @@ export async function POST(request: NextRequest) {
         reorderQuantity,
         isFavorite: isFavorite || false,
         isActive: true,
-        createdBy: token.sub as string
+        createdBy: token.sub as string,
+        tenant: { connect: { id: tenantId } }
       }
     });
 
@@ -121,6 +141,12 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    // Get tenant ID from token
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
     const body = await request.json();
     const {
       id,
@@ -140,11 +166,12 @@ export async function PUT(request: NextRequest) {
       isFavorite
     } = body;
 
-    // Check if SKU already exists for different item
+    // Check if SKU already exists for different item in same tenant
     const existingItem = await prisma.inventoryItem.findFirst({
       where: { 
         sku, 
         isActive: true,
+        tenantId,
         id: { not: id }
       }
     });
@@ -203,11 +230,26 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    // Get tenant ID from token
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
     if (!id) {
       return NextResponse.json({ error: 'Item ID is required' }, { status: 400 });
+    }
+
+    // Verify item belongs to tenant before deleting
+    const item = await prisma.inventoryItem.findFirst({
+      where: { id, tenantId }
+    });
+
+    if (!item) {
+      return NextResponse.json({ error: 'Item not found' }, { status: 404 });
     }
 
     await prisma.inventoryItem.update({

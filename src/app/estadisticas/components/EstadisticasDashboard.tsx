@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { format, subDays } from 'date-fns';
 import { Package, DollarSign, TrendingUp, Users, Download, RefreshCw } from 'lucide-react';
+import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 import KPICard from './KPICard';
 import ChartContainer from './ChartContainer';
 import DateRangePicker from './DateRangePicker';
@@ -42,6 +43,8 @@ interface StatusBreakdown {
 }
 
 export default function EstadisticasDashboard() {
+  const { settings } = useTenantSettings();
+  
   // State
   const [startDate, setStartDate] = useState(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -219,7 +222,7 @@ export default function EstadisticasDashboard() {
           icon={<DollarSign className="w-6 h-6" />}
           color="green"
           loading={loadingSummary}
-          prefix="₡"
+          prefix={settings.currencySymbol}
           decimals={0}
         />
         <KPICard
@@ -238,7 +241,7 @@ export default function EstadisticasDashboard() {
           icon={<TrendingUp className="w-6 h-6" />}
           color="purple"
           loading={loadingSummary}
-          prefix="₡"
+          prefix={settings.currencySymbol}
           decimals={0}
         />
         <KPICard
@@ -271,7 +274,7 @@ export default function EstadisticasDashboard() {
             </select>
           }
         >
-          <RevenueChart data={revenueData} height={300} />
+          <RevenueChart data={revenueData} height={300} currencySymbol={settings.currencySymbol} locale={settings.locale} />
         </ChartContainer>
 
         {/* Sales Volume Chart */}
@@ -281,7 +284,7 @@ export default function EstadisticasDashboard() {
           loading={loadingType}
           error={errorType}
         >
-          {typeBreakdown && <SalesVolumeChart data={typeBreakdown} height={300} />}
+          {typeBreakdown && <SalesVolumeChart data={typeBreakdown} height={300} currencySymbol={settings.currencySymbol} locale={settings.locale} />}
         </ChartContainer>
       </div>
 

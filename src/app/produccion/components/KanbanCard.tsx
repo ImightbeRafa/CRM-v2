@@ -50,31 +50,29 @@ export function KanbanCard({ order, onClick, isDragging }: KanbanCardProps) {
       className="touch-none"
     >
       <Card 
-        className={`cursor-pointer hover:shadow-md transition-shadow ${
-          isDragging || isSortableDragging ? 'shadow-xl' : ''
+        className={`cursor-grab active:cursor-grabbing hover:shadow-md transition-all ${
+          isDragging || isSortableDragging ? 'shadow-xl scale-105 rotate-2' : ''
         } ${isHighPriority() ? 'border-red-300 border-2' : 'border-gray-200'}`}
-        onClick={onClick}
+        {...attributes}
+        {...listeners}
       >
-        <CardContent className="p-3 space-y-2">
-          {/* Drag Handle and Order ID */}
+        <CardContent className="p-3 space-y-2" onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}>
+          {/* Order ID and Priority */}
           <div className="flex items-start justify-between">
-            <div 
-              className="cursor-grab active:cursor-grabbing p-1 hover:bg-gray-100 rounded"
-              {...attributes}
-              {...listeners}
-            >
+            <div className="flex items-center gap-2">
               <GripVertical className="h-4 w-4 text-gray-400" />
-            </div>
-            <div className="flex-1 ml-2">
               <p className="font-semibold text-sm text-gray-900">
                 #{order.orderId}
               </p>
-              {isHighPriority() && (
-                <Badge variant="destructive" className="text-xs mt-1">
-                  Urgente
-                </Badge>
-              )}
             </div>
+            {isHighPriority() && (
+              <Badge variant="destructive" className="text-xs">
+                Urgente
+              </Badge>
+            )}
           </div>
 
           {/* Customer Info */}

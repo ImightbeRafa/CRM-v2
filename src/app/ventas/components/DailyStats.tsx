@@ -6,6 +6,7 @@ import {
   CardTitle,
 } from "@/app/components/ui/card";
 import { useSalesStream } from '@/app/hooks/useSalesStream';
+import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 import { ArrowUpIcon, ArrowDownIcon } from 'lucide-react';
 
 interface DailyStats {
@@ -28,6 +29,7 @@ function isToday(dateString: string): boolean {
 
 export default function DailyStats() {
   const { sales, isLoading, error } = useSalesStream();
+  const { formatCurrency } = useTenantSettings();
 
   // Calculate daily stats from filtered sales
   const stats = React.useMemo(() => {
@@ -119,7 +121,7 @@ export default function DailyStats() {
               Total del Día
               {stats.totalAmount > 0 && <ArrowUpIcon className="w-4 h-4 text-green-500" />}
             </p>
-            <p className="text-2xl font-bold">₡{stats.totalAmount.toLocaleString()}</p>
+            <p className="text-2xl font-bold">{formatCurrency(stats.totalAmount)}</p>
             <p className="text-xs text-muted-foreground">
               {stats.totalSales} {stats.totalSales === 1 ? 'orden' : 'órdenes'}
             </p>
@@ -129,7 +131,7 @@ export default function DailyStats() {
               Envíos (EA)
               {stats.eaSales > 0 && <ArrowUpIcon className="w-4 h-4 text-green-500" />}
             </p>
-            <p className="text-2xl font-bold">₡{stats.eaAmount.toLocaleString()}</p>
+            <p className="text-2xl font-bold">{formatCurrency(stats.eaAmount)}</p>
             <p className="text-xs text-muted-foreground">
               {stats.eaSales} {stats.eaSales === 1 ? 'envío' : 'envíos'}
             </p>
@@ -139,7 +141,7 @@ export default function DailyStats() {
               Retiros (RA)
               {stats.raSales > 0 && <ArrowUpIcon className="w-4 h-4 text-green-500" />}
             </p>
-            <p className="text-2xl font-bold">₡{stats.raAmount.toLocaleString()}</p>
+            <p className="text-2xl font-bold">{formatCurrency(stats.raAmount)}</p>
             <p className="text-xs text-muted-foreground">
               {stats.raSales} {stats.raSales === 1 ? 'retiro' : 'retiros'}
             </p>

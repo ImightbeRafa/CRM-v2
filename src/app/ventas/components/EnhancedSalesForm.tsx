@@ -9,28 +9,34 @@ import CustomerForm from './customerForm';
 import ProductList from './ProductList';
 import SmartSuggestions from './SmartSuggestions';
 import EnhancedSmartSuggestions from './EnhancedSmartSuggestions';
+import RecurringCustomers from './RecurringCustomers';
 import { CustomerInfo, ProductInfo, OrderInfo, SubmitStatus, ProductTemplate, CustomerSuggestion } from './types';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 
-const EnhancedSalesForm = () => {
+interface EnhancedSalesFormProps {
+  showOrderForm: boolean;
+  onToggleForm: (show: boolean) => void;
+}
+
+const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, onToggleForm }) => {
   const { user } = useCurrentUser();
   const [orderInfo, setOrderInfo] = useState<OrderInfo>({
-      customerInfo: {
-        name: '',
-        phone: '',
-        province: '',
-        canton: '',
-        district: '',
-        email: '',
-        username: '',
-        address: '',
-        business: '',
-        funnel: '',
-        fechaEsperada: '',
-        fechaRetiro: '',
-        diaVenta: '',
-        orderType: 'EA',
-      },
+    customerInfo: {
+      name: '',
+      phone: '',
+      province: '',
+      canton: '',
+      district: '',
+      email: '',
+      username: '',
+      address: '',
+      business: '',
+      funnel: '',
+      fechaEsperada: '',
+      fechaRetiro: '',
+      diaVenta: '',
+      orderType: 'EA',
+    },
     products: [],
     orderTotal: 0,
     orderIVA: 0,
@@ -45,6 +51,7 @@ const EnhancedSalesForm = () => {
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   // Resolve expected date from either the canonical field (fechaEsperada)
   // or from any business info date field (prefer one whose name/label mentions "esperada" or "expected")
   const resolveExpectedDate = (): string => {
@@ -310,6 +317,29 @@ const EnhancedSalesForm = () => {
 
       const result = await response.json();
 
+      // Update or create customer record with current info
+      try {
+        await fetch('/api/config/automatic-clients/update-from-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            customerId: selectedCustomerId, // If a customer was selected, update that specific one
+            name: orderInfo.customerInfo.name,
+            phone: orderInfo.customerInfo.phone,
+            email: orderInfo.customerInfo.email,
+            province: orderInfo.customerInfo.province,
+            canton: orderInfo.customerInfo.canton,
+            district: orderInfo.customerInfo.district,
+            address: orderInfo.customerInfo.address,
+            business: orderInfo.customerInfo.business,
+            username: orderInfo.customerInfo.username
+          })
+        });
+      } catch (clientUpdateError) {
+        console.error('Failed to update client record:', clientUpdateError);
+      }
+
       // Trigger automatic client sync after successful order creation
       try {
         const syncResponse = await fetch('/api/config/automatic-clients/sync', {
@@ -384,6 +414,7 @@ const EnhancedSalesForm = () => {
     setRawCustomerText('');
     setAutoSaveStatus('saved');
     setLastAutoSave(null);
+    setSelectedCustomerId(null);
     
     // Clear localStorage
     if (typeof window !== 'undefined') {
@@ -426,27 +457,35 @@ const EnhancedSalesForm = () => {
   };
 
   const handleCustomerSelect = (customerSuggestion: CustomerSuggestion) => {
+    // Store the selected customer ID so we can update the right record
+    setSelectedCustomerId(customerSuggestion.id);
+    
     setOrderInfo(prev => ({
       ...prev,
       customerInfo: {
         ...prev.customerInfo,
         name: customerSuggestion.name,
         phone: customerSuggestion.phone,
+        email: customerSuggestion.email || prev.customerInfo.email,
         province: customerSuggestion.province,
         canton: customerSuggestion.canton,
-        district: customerSuggestion.district
+        district: customerSuggestion.district,
+        address: customerSuggestion.address || prev.customerInfo.address,
+        business: customerSuggestion.business || prev.customerInfo.business,
+        username: customerSuggestion.username || prev.customerInfo.username
       }
     }));
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto p-2 sm:p-4">
-      <Card role="main" aria-label="Formulario de Ventas Optimizado">
+    <>
+        <Card role="main" aria-label="Formulario de Ventas Optimizado">
         <CardHeader>
           <div className="flex justify-between items-start">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                Betsy - Sistema de Ventas Optimizado
+            <div className="flex-1">
+              <div className="flex items-center gap-3">
+                <CardTitle className="flex items-center gap-2">
+                  Betsy - Sistema de Ventas Optimizado
                 {autoSaveStatus === 'saving' && (
                   <Clock className="h-4 w-4 text-blue-500 animate-spin" />
                 )}
@@ -456,7 +495,16 @@ const EnhancedSalesForm = () => {
                 {autoSaveStatus === 'unsaved' && (
                   <AlertCircle className="h-4 w-4 text-orange-500" />
                 )}
-              </CardTitle>
+                </CardTitle>
+                <Button
+                  onClick={() => onToggleForm(false)}
+                  variant="outline"
+                  size="sm"
+                  className="ml-2"
+                >
+                  Cerrar
+                </Button>
+              </div>
               <p className="text-sm text-gray-600 mt-1">
                 {autoSaveStatus === 'saved' && lastAutoSave && 
                   `Guardado automáticamente: ${lastAutoSave.toLocaleTimeString()}`
@@ -499,6 +547,13 @@ const EnhancedSalesForm = () => {
               <h3 className="text-lg font-semibold text-blue-800 mb-4">
                 👤 Información del Cliente
               </h3>
+              
+              {/* Recurring Customers - At top of customer form */}
+              <RecurringCustomers
+                onCustomerSelect={handleCustomerSelect}
+                currentCustomerName={orderInfo.customerInfo.name}
+              />
+              
               <CustomerForm
                 customerInfo={orderInfo.customerInfo}
                 onCustomerInfoChange={handleCustomerInfoChange}
@@ -581,12 +636,13 @@ const EnhancedSalesForm = () => {
               </div>
             )}
             
-            {/* Enhanced Smart Suggestions */}
-            <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg">
+            {/* Product Selection - Quick Pick */}
+            <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-4 rounded-lg">
+              <h3 className="text-lg font-semibold text-indigo-800 mb-4 flex items-center gap-2">
+                📦 Selección Rápida de Productos
+              </h3>
               <EnhancedSmartSuggestions
                 onProductSelect={handleProductSelect}
-                onCustomerSelect={handleCustomerSelect}
-                currentCustomerName={orderInfo.customerInfo.name}
               />
             </div>
 
@@ -641,7 +697,7 @@ const EnhancedSalesForm = () => {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </>
   );
 };
 

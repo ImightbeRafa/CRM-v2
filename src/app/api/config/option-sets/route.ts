@@ -1,10 +1,17 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { requireAdmin } from '@/lib/apiAuth'
+import { NextRequest, NextResponse } from 'next/server'
+import { getTenantPrisma } from '@/lib/prisma-tenant'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { createSuccessResponse, createErrorResponse, handleApiError, validateRequiredFields } from '@/lib/apiUtils'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    // Require 'view_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'view_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
     const sets = await prisma.productOptionSet.findMany({
       where: { active: true },
       orderBy: { name: 'asc' },
@@ -16,11 +23,15 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
-  const { authorized } = await requireAdmin(request)
-  if (!authorized) return createErrorResponse('Unauthorized', 401)
-  
+export async function POST(request: NextRequest) {
   try {
+    // Require 'update_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
     const body = await request.json()
     
     // Validate required fields
@@ -34,8 +45,8 @@ export async function POST(request: Request) {
       return createErrorResponse('Key must contain only letters, numbers, and underscores', 400)
     }
     
-    // Check if key already exists (active or inactive)
-    const existingSet = await prisma.productOptionSet.findUnique({
+    // Check if key already exists (active or inactive) - use findFirst for tenant isolation
+    const existingSet = await prisma.productOptionSet.findFirst({
       where: { key: body.key }
     })
     
@@ -57,7 +68,8 @@ export async function POST(request: Request) {
           data: { 
             key: body.key, 
             name: body.name, 
-            active: true 
+            active: true,
+            tenant: { connect: { id: tenantId } }
           } 
         })
     return createSuccessResponse(result, 'Option set created successfully')
@@ -66,11 +78,15 @@ export async function POST(request: Request) {
   }
 }
 
-export async function PUT(request: Request) {
-  const { authorized } = await requireAdmin(request)
-  if (!authorized) return createErrorResponse('Unauthorized', 401)
-  
+export async function PUT(request: NextRequest) {
   try {
+    // Require 'update_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
     const body = await request.json()
     
     // Validate required fields
@@ -92,11 +108,15 @@ export async function PUT(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
-  const { authorized } = await requireAdmin(request)
-  if (!authorized) return createErrorResponse('Unauthorized', 401)
-  
+export async function DELETE(request: NextRequest) {
   try {
+    // Require 'update_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
     const { searchParams } = new URL((request as any).url)
     const id = searchParams.get('id')
     

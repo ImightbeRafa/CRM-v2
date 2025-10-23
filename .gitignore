@@ -6,7 +6,17 @@ node_modules/
 
 # Testing
 coverage/
+scripts/
 
+# Documentation and Notes (local only)
+*.md
+!README.md
+migrate.ps1
+orders.xlsx
+*.xlsx
+*.xls
+*.pdf
+downloads/
 # Next.js
 .next/
 out/
@@ -41,11 +51,27 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Database files (local only)
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+database/
+prisma/dev.db*
+prisma/schema-backup-*.prisma
+prisma/migrations/
+
 # Vercel
 .vercel
 test-vercel-api.sh
 test-vercel-api.ps1
 debug-vercel-api.ps1
+*.sh
+*.ps1
+
+# Cursor/AI artifacts
+.cursor/
+.cursorrules
 
 # PWA files
 **/public/sw.js

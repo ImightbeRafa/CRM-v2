@@ -17,7 +17,7 @@ export function ProductionPageClient() {
         </div>
       </nav>
       
-      <main className="container mx-auto py-6 space-y-8">
+      <main className="container mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-6 space-y-6 md:space-y-8">
         <EnhancedProductionDashboard 
           onGenerateGuias={() => setIsGuiaGeneratorOpen(true)}
           isGuiaGeneratorOpen={isGuiaGeneratorOpen}
@@ -27,7 +27,7 @@ export function ProductionPageClient() {
           onInvoiceGeneratorClose={() => setIsInvoiceGeneratorOpen(false)}
         />
         
-        <div className="relative">
+        <div className="relative hidden md:block">
           <div className="absolute inset-0 flex items-center" aria-hidden="true">
             <div className="w-full border-t border-gray-200" />
           </div>
@@ -36,7 +36,7 @@ export function ProductionPageClient() {
         <BackupPage />
       </main>
       
-      <div className="h-16" />
+      <div className="h-16 md:h-20" />
     </div>
   );
 }

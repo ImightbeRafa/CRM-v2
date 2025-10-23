@@ -46,27 +46,28 @@ export default function HomeContent() {
   // Main content for authenticated users
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
-      <main className="container mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-4xl font-bold text-gray-800 mb-2">Betsy CRM</h1>
-            <p className="text-gray-600">Sistema de Gestión</p>
+      <main className="container mx-auto px-4 md:px-6 py-6 md:py-8">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6 md:mb-8">
+          <div className="flex-1">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-800 mb-1 md:mb-2">Betsy CRM</h1>
+            <p className="text-sm md:text-base text-gray-600">Sistema de Gestión</p>
             <div className="flex items-center gap-2 mt-2">
-              <p className="text-sm text-gray-500">Bienvenido, {session.user?.email}</p>
+              <p className="text-xs md:text-sm text-gray-500 truncate max-w-[200px] sm:max-w-none">Bienvenido, {session.user?.email}</p>
               {session.user?.role === 'MASTER' && (
-                <span className="bg-red-600 text-white text-xs px-2 py-1 rounded-full font-bold">
+                <span className="bg-red-600 text-white text-xs px-2 py-1 rounded-full font-bold flex-shrink-0">
                   M
                 </span>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 md:gap-4">
             {session.user?.role === 'MASTER' && (
               <Link
                 href="/config"
-                className="inline-block bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-900 transition-colors"
+                className="inline-flex items-center justify-center bg-gray-800 text-white px-3 md:px-4 py-2.5 md:py-2 rounded-md hover:bg-gray-900 transition-colors text-sm md:text-base min-h-[44px]"
               >
-                Configuración
+                <Settings className="w-4 h-4 md:mr-2" />
+                <span className="hidden md:inline">Configuración</span>
               </Link>
             )}
             <LogoutButton />
@@ -74,7 +75,7 @@ export default function HomeContent() {
         </div>
 
         {/* Main Navigation Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl mx-auto">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 max-w-4xl mx-auto">
           {/* Ventas Card */}
           <Link
             href="/ventas"

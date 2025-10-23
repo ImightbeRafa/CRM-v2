@@ -156,22 +156,23 @@ export default function EstadisticasDashboard() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Panel de Estadísticas</h1>
-          <p className="text-gray-600 mt-1">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
+        <div className="flex-1">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Panel de Estadísticas</h1>
+          <p className="text-sm md:text-base text-gray-600 mt-1">
             Vista general del rendimiento de ventas
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={fetchAllData}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 md:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm md:text-base min-h-[44px]"
           >
             <RefreshCw className="w-4 h-4" />
-            Actualizar
+            <span className="hidden sm:inline">Actualizar</span>
+            <span className="sm:hidden">Sync</span>
           </button>
         </div>
       </div>
@@ -184,7 +185,7 @@ export default function EstadisticasDashboard() {
       />
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <KPICard
           title="Total de Ventas"
           value={summary?.totalSales || 0}

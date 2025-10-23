@@ -154,39 +154,39 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="pt-20 pb-16 px-4 sm:px-6 lg:px-8">
+      <section className="pt-20 pb-12 md:pb-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="text-center">
-            <Badge variant="secondary" className="mb-4">
+            <Badge variant="secondary" className="mb-4 text-xs md:text-sm">
               📈 Join hundreds of businesses growing with Betsy
             </Badge>
-            <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-4 md:mb-6 px-2">
               Sell More. Stay Organized.
               <span className="text-blue-600"> Grow Faster.</span>
             </h1>
-            <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
+            <p className="text-base sm:text-lg md:text-xl text-gray-600 mb-6 md:mb-8 max-w-3xl mx-auto px-4">
               The simple order management system that helps you keep track of every sale, 
               follow up with customers, and never miss an opportunity.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="lg" className="text-lg px-8 py-3" onClick={() => setIsAuthModalOpen(true)}>
+            <div className="flex flex-col sm:flex-row gap-3 md:gap-4 justify-center px-4">
+              <Button size="lg" className="text-base md:text-lg px-6 md:px-8 py-3 w-full sm:w-auto" onClick={() => setIsAuthModalOpen(true)}>
                 Start Free Trial
-                <ArrowRight className="ml-2 h-5 w-5" />
+                <ArrowRight className="ml-2 h-4 md:h-5 w-4 md:w-5" />
               </Button>
               <Button 
                 variant="outline" 
                 size="lg" 
-                className="text-lg px-8 py-3"
+                className="text-base md:text-lg px-6 md:px-8 py-3 w-full sm:w-auto"
                 onClick={() => {
                   const aboutSection = document.getElementById('about');
                   aboutSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }}
               >
                 See How It Works
-                <Eye className="ml-2 h-5 w-5" />
+                <Eye className="ml-2 h-4 md:h-5 w-4 md:w-5" />
               </Button>
             </div>
-            <p className="text-sm text-gray-500 mt-4">
+            <p className="text-xs md:text-sm text-gray-500 mt-3 md:mt-4 px-4">
               No credit card required • Setup in 5 minutes • Cancel anytime
             </p>
           </div>

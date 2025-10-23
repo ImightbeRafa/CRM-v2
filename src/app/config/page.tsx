@@ -487,60 +487,87 @@ export default function ConfigPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      <div className="max-w-7xl mx-auto p-6">
+      <div className="max-w-7xl mx-auto p-4 md:p-6">
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-4 mb-2">
+        <div className="mb-6 md:mb-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="w-full md:w-auto">
+              <div className="flex items-center gap-2 md:gap-4 mb-2">
             <a
               href="/home"
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
+                  className="inline-flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm md:text-base"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
-              Volver al Inicio
+              <span className="hidden sm:inline">Volver al Inicio</span>
+              <span className="sm:hidden">Inicio</span>
             </a>
           </div>
-              <h1 className="text-4xl font-bold text-gray-900 mb-2">Panel de Configuración</h1>
-              <p className="text-gray-600 text-lg">Gestiona usuarios, configuración y auditoría del sistema</p>
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-1 md:mb-2">Panel de Configuración</h1>
+              <p className="text-gray-600 text-sm md:text-base lg:text-lg">Gestiona usuarios, configuración y auditoría del sistema</p>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-blue-100 rounded-xl">
-                <Database className="w-6 h-6 text-blue-600" />
+            <div className="flex items-center gap-3 justify-between md:justify-end">
+              <div className="p-2 md:p-3 bg-blue-100 rounded-xl">
+                <Database className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
               </div>
-              <div className="text-right">
-                <div className="text-sm text-gray-500">Sistema</div>
-                <div className="font-semibold text-gray-900">Betsy CRM</div>
+              <div className="text-left md:text-right">
+                <div className="text-xs md:text-sm text-gray-500">Sistema</div>
+                <div className="text-sm md:text-base font-semibold text-gray-900">Betsy CRM</div>
               </div>
             </div>
           </div>
           </div>
 
           {/* Tab Navigation */}
-        <div className="mb-8">
-          <div className="flex space-x-1 bg-white p-1 rounded-xl shadow-lg border border-gray-200">
-            {tabs.map((tab) => {
-              const Icon = tab.icon
-              return (
-              <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 py-3 px-6 rounded-lg text-sm font-medium transition-all duration-200 ${
-                    activeTab === tab.id
-                      ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg transform scale-105'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center justify-center gap-2">
-                    <Icon className="w-5 h-5" />
-                    {tab.label}
-                </div>
-              </button>
-              )
-            })}
+        <div className="mb-6 md:mb-8">
+          {/* Desktop: Grid layout, Mobile: Scrollable */}
+          <div className="hidden md:block">
+            <div className="flex space-x-1 bg-white p-1 rounded-xl shadow-lg border border-gray-200">
+              {tabs.map((tab) => {
+                const Icon = tab.icon
+                return (
+                <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex-1 py-3 px-6 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      activeTab === tab.id
+                        ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg transform scale-105'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                      <Icon className="w-5 h-5" />
+                      {tab.label}
+                  </div>
+                </button>
+                )
+              })}
             </div>
+          </div>
+          
+          {/* Mobile: Scrollable tabs */}
+          <div className="md:hidden -mx-4 px-4 overflow-x-auto">
+            <div className="flex gap-2 pb-2 min-w-max">
+              {tabs.map((tab) => {
+                const Icon = tab.icon
+                return (
+                <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+                      activeTab === tab.id
+                        ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg'
+                        : 'bg-white text-gray-600 hover:text-gray-900 shadow border border-gray-200'
+                  }`}
+                >
+                    <Icon className="w-4 h-4 flex-shrink-0" />
+                    <span>{tab.label}</span>
+                </button>
+                )
+              })}
+            </div>
+          </div>
           </div>
 
           {/* Tab Content */}

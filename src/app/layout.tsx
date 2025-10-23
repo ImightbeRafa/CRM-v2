@@ -1,4 +1,5 @@
-import '@/app/components/globals.css' 
+import '@/app/components/globals.css'
+import '@/app/globals-mobile.css'
 import SessionProvider from "./components/Sessionprovider"
 import { ErrorBoundary } from "./components/ErrorBoundary"
 

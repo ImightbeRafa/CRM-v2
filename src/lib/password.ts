@@ -5,7 +5,7 @@
  * This replaces the previous plain-text password storage.
  */
 
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 /**
  * Number of salt rounds for bcrypt hashing.

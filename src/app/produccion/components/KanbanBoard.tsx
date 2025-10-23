@@ -142,16 +142,6 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
       });
     });
     
-    // Log grouping results for debugging
-    console.log('Kanban Board Debug:', {
-      totalOrders: orders.length,
-      statuses: statuses.map(s => s.label),
-      ordersByStatus: Object.entries(grouped).map(([status, orders]) => ({
-        status,
-        count: orders.length
-      }))
-    });
-    
     return grouped;
   }, [orders, statuses]);
 
@@ -166,13 +156,11 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
       const clientY = 'clientY' in event.activatorEvent ? event.activatorEvent.clientY : event.activatorEvent.touches[0].clientY;
       setDragStartPos({ x: clientX, y: clientY });
     }
-    console.log('Drag started:', orderId);
   };
 
   const handleDragCancel = () => {
     setActiveId(null);
     setDragStartPos(null);
-    console.log('Drag cancelled');
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -185,23 +173,18 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
     setActiveId(null);
     setDragStartPos(null);
 
-    console.log('Drag end event:', { active: active.id, over: over?.id, delta, actualMovement });
-
     // If no actual movement, treat as a click and ignore
     if (!actualMovement) {
-      console.log('No significant movement - treating as click, ignoring drag');
       return;
     }
 
     if (!over) {
-      console.log('No drop target - drag cancelled');
       return;
     }
 
     // Find the order being dragged
     const draggedOrder = orders.find(o => o.orderId === active.id);
     if (!draggedOrder) {
-      console.warn('Dragged order not found:', active.id);
       return;
     }
 
@@ -209,10 +192,7 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
     const targetStatus = over.id as string;
     const currentStatus = draggedOrder.status;
 
-    console.log('Drag status check:', { currentStatus, targetStatus });
-
     if (currentStatus === targetStatus) {
-      console.log('Same status - no update needed');
       return;
     }
 
@@ -265,13 +245,6 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick }: KanbanBoard
       </div>
     );
   }
-
-  // Debug: Log when rendering
-  console.log('KanbanBoard Rendering:', {
-    ordersCount: orders.length,
-    statusesCount: statuses.length,
-    statuses: statuses.map(s => s.label)
-  });
 
   return (
     <DndContext

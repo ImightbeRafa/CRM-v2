@@ -5,14 +5,11 @@ import { createSuccessResponse, createErrorResponse, handleApiError } from '@/li
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('🔍 Audit logs endpoint called')
-    
     // Get tenant from authenticated user
     const { getToken } = await import('next-auth/jwt')
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
     
     if (!token) {
-      console.log('❌ No token found - unauthorized')
       return createErrorResponse('Unauthorized', 401)
     }
 
@@ -30,12 +27,10 @@ export async function GET(request: NextRequest) {
     })
 
     if (!user || !user.memberships || user.memberships.length === 0) {
-      console.log('❌ User not found or no active memberships')
       return createErrorResponse('Unauthorized', 401)
     }
 
     const tenantId = user.memberships[0].tenantId || user.defaultTenantId
-    console.log(`✅ Authenticated user tenant: ${tenantId}`)
 
     const { searchParams } = new URL(request.url)
     const action = searchParams.get('action')
@@ -75,8 +70,6 @@ export async function GET(request: NextRequest) {
     })
 
     const total = await prisma.auditLog.count({ where })
-    
-    console.log(`✅ Found ${auditLogs.length} audit logs (Total: ${total}) for tenant ${tenantId}`)
 
     return createSuccessResponse({
       logs: auditLogs,
@@ -85,7 +78,7 @@ export async function GET(request: NextRequest) {
       offset
     })
   } catch (error) {
-    console.error('❌ Audit logs query error:', error)
+    console.error('Error fetching audit logs:', error)
     return handleApiError(error)
   }
 }

@@ -31,133 +31,125 @@ export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperat
     errors: []
   }
 
+  console.log(`🗑️ Starting bulk delete: ${ids.length} ${type}`);
+
   // Get entity names for audit logging
-  let entityNames: string[] = []
+  const entityMap = new Map<string, string>(); // id -> name
+  
   try {
     switch (type) {
       case 'users':
         const users = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, username: true } })
-        entityNames = users.map(u => u.username)
+        users.forEach(u => entityMap.set(u.id, u.username));
         break
       case 'orders':
         const orders = await prisma.order.findMany({ where: { id: { in: ids } }, select: { id: true, orderId: true } })
-        entityNames = orders.map(o => o.orderId)
+        orders.forEach(o => entityMap.set(o.id, o.orderId));
         break
       case 'fields':
         const fields = await prisma.productField.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
-        entityNames = fields.map(f => f.label)
+        fields.forEach(f => entityMap.set(f.id, f.label));
         break
       case 'optionSets':
         const optionSets = await prisma.productOptionSet.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
-        entityNames = optionSets.map(os => os.name)
+        optionSets.forEach(os => entityMap.set(os.id, os.name));
         break
       case 'options':
         const options = await prisma.productOption.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
-        entityNames = options.map(o => o.label)
+        options.forEach(o => entityMap.set(o.id, o.label));
         break
       case 'shipping':
         const shipping = await prisma.shippingMethod.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
-        entityNames = shipping.map(s => s.name)
+        shipping.forEach(s => entityMap.set(s.id, s.name));
         break
       case 'sellers':
         const sellers = await prisma.seller.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
-        entityNames = sellers.map(s => s.name)
+        sellers.forEach(s => entityMap.set(s.id, s.name));
         break
     }
   } catch (error) {
-    console.error('Failed to get entity names for audit:', error)
+    console.error('❌ Failed to get entity names for audit:', error)
   }
 
-  try {
-    switch (type) {
-      case 'users':
-        // Don't allow deleting master users
-        const masterUsers = await prisma.user.findMany({
-          where: { id: { in: ids }, role: 'MASTER' }
-        })
+  // Process deletions one by one for better error handling
+  const successfulIds: string[] = [];
+  const successfulNames: string[] = [];
+  
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
+    const name = entityMap.get(id) || id;
+    
+    try {
+      // Special handling for users
+      if (type === 'users') {
+        const user = await prisma.user.findUnique({
+          where: { id },
+          select: { memberships: { select: { role: true } } }
+        });
         
-        if (masterUsers.length > 0) {
-          result.errors.push('Cannot delete master users')
-          result.failed += masterUsers.length
+        if (user?.memberships?.some(m => m.role === 'OWNER' || m.role === 'ADMIN')) {
+          result.failed++;
+          result.errors.push(`Cannot delete admin/owner user: ${name}`);
+          continue;
         }
-        
-        const regularUserIds = ids.filter(id => !masterUsers.some(u => u.id === id))
-        if (regularUserIds.length > 0) {
-          await prisma.user.deleteMany({
-            where: { id: { in: regularUserIds } }
-          })
-          result.success += regularUserIds.length
-        }
-        break
-
-      case 'orders':
-        await prisma.order.deleteMany({
-          where: { id: { in: ids } }
-        })
-        result.success = ids.length
-        break
-
-      case 'fields':
-        await prisma.productField.deleteMany({
-          where: { id: { in: ids } }
-        })
-        result.success = ids.length
-        break
-
-      case 'optionSets':
-        await prisma.productOptionSet.deleteMany({
-          where: { id: { in: ids } }
-        })
-        result.success = ids.length
-        break
-
-      case 'options':
-        await prisma.productOption.deleteMany({
-          where: { id: { in: ids } }
-        })
-        result.success = ids.length
-        break
-
-      case 'shipping':
-        await prisma.shippingMethod.deleteMany({
-          where: { id: { in: ids } }
-        })
-        result.success = ids.length
-        break
-
-      case 'sellers':
-        await prisma.seller.deleteMany({
-          where: { id: { in: ids } }
-        })
-        result.success = ids.length
-        break
-
-      default:
-        throw new Error(`Unsupported bulk delete type: ${type}`)
-    }
-
-    // Log audit trail
-    if (httpRequest && result.success > 0) {
-      try {
-        console.log('Logging bulk delete:', {
-          type,
-          count: result.success,
-          entityNames: entityNames.slice(0, result.success),
-          reason
-        })
-        await logBulkDelete(httpRequest, type, ids.slice(0, result.success), entityNames.slice(0, result.success), reason)
-      } catch (auditError) {
-        console.error('Failed to log bulk delete audit:', auditError)
       }
+      
+      // Delete based on type
+      switch (type) {
+        case 'users':
+          await prisma.user.delete({ where: { id } });
+          break;
+        case 'orders':
+          await prisma.order.delete({ where: { id } });
+          break;
+        case 'fields':
+          await prisma.productField.delete({ where: { id } });
+          break;
+        case 'optionSets':
+          await prisma.productOptionSet.delete({ where: { id } });
+          break;
+        case 'options':
+          await prisma.productOption.delete({ where: { id } });
+          break;
+        case 'shipping':
+          await prisma.shippingMethod.delete({ where: { id } });
+          break;
+        case 'sellers':
+          await prisma.seller.delete({ where: { id } });
+          break;
+        default:
+          throw new Error(`Unsupported bulk delete type: ${type}`);
+      }
+      
+      result.success++;
+      successfulIds.push(id);
+      successfulNames.push(name);
+      
+      // Progress logging
+      if ((i + 1) % 10 === 0 || i === ids.length - 1) {
+        console.log(`Progress: ${i + 1}/${ids.length} deleted`);
+      }
+      
+    } catch (error) {
+      result.failed++;
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      result.errors.push(`Failed to delete ${name}: ${errorMsg}`);
+      console.error(`❌ Failed to delete ${name}:`, errorMsg);
     }
-
-    return result
-  } catch (error) {
-    console.error('Bulk delete error:', error)
-    result.failed = ids.length
-    result.errors.push(error instanceof Error ? error.message : 'Unknown error')
-    return result
   }
+
+  // Log audit trail for successful deletions
+  if (httpRequest && successfulIds.length > 0) {
+    try {
+      console.log(`✅ Logging ${successfulIds.length} successful deletions`);
+      await logBulkDelete(httpRequest, type, successfulIds, successfulNames, reason);
+    } catch (auditError) {
+      console.error('❌ Failed to log bulk delete audit:', auditError);
+    }
+  }
+
+  console.log(`✅ Bulk delete complete: ${result.success} success, ${result.failed} failed`);
+  return result;
 }
 
 export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperationResult> {

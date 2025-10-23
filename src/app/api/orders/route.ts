@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { getTenantPrisma } from '@/lib/prisma-tenant'
+import { authenticateAPI } from '@/lib/auth-helpers'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { logCreate } from '@/lib/auditLogger'
 
 // Function to update inventory when an order is created
-async function updateInventoryForOrder(order: any) {
+async function updateInventoryForOrder(order: any, tenantPrisma: any) {
   console.log('Updating inventory for order:', {
     orderId: order.orderId,
     product: order.product,
@@ -19,7 +21,7 @@ async function updateInventoryForOrder(order: any) {
       console.log('Parsed product details:', productDetails)
       
       for (const product of productDetails) {
-        await updateInventoryForProduct(product)
+        await updateInventoryForProduct(product, tenantPrisma)
       }
       return
     } catch (error) {
@@ -46,17 +48,17 @@ async function updateInventoryForOrder(order: any) {
       color: '',
       tamano: '',
       productCost: 0
-    })
+    }, tenantPrisma)
   }
 }
 
 // Helper function to update inventory for a single product
-async function updateInventoryForProduct(product: any) {
+async function updateInventoryForProduct(product: any, tenantPrisma: any) {
   const { type, cantidad, color, tamano } = product
   
   try {
-    // Find inventory items that match this product type
-    const inventoryItems = await prisma.inventoryItem.findMany({
+    // Find inventory items that match this product type (tenant-filtered automatically!)
+    const inventoryItems = await tenantPrisma.inventoryItem.findMany({
       where: {
         isActive: true
       }
@@ -127,7 +129,7 @@ async function updateInventoryForProduct(product: any) {
       const quantityToDeduct = cantidad || 1
       const newStock = Math.max(0, item.currentStock - quantityToDeduct)
       
-      await prisma.inventoryItem.update({
+      await tenantPrisma.inventoryItem.update({
         where: { id: item.id },
         data: {
           currentStock: newStock,
@@ -153,7 +155,15 @@ async function updateInventoryForProduct(product: any) {
 
 export async function GET(request: NextRequest) {
   try {
-    const orders = await prisma.order.findMany({
+    // Authenticate and get tenant context
+    const auth = await authenticateAPI(request)
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const tenantPrisma = getTenantPrisma(tenantId)
+    
+    // Get orders (automatically filtered by tenantId!)
+    const orders = await tenantPrisma.order.findMany({
       orderBy: { timestamp: 'desc' },
       take: 100 // Limit to last 100 orders
     })
@@ -166,10 +176,17 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Authenticate and get tenant context
+    const auth = await authenticateAPI(request)
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const tenantPrisma = getTenantPrisma(tenantId)
+    
     const body = await request.json()
     
-    // Create a new order
-    const order = await prisma.order.create({
+    // Create a new order (tenantId auto-injected!)
+    const order = await tenantPrisma.order.create({
       data: {
         orderId: body.orderId || `ORDER-${Date.now()}`,
         orderType: body.orderType || 'EA',
@@ -209,7 +226,7 @@ export async function POST(request: NextRequest) {
 
     // Update inventory stock for products in the order
     try {
-      await updateInventoryForOrder(order)
+      await updateInventoryForOrder(order, tenantPrisma)
     } catch (inventoryError) {
       console.error('Failed to update inventory:', inventoryError)
       // Don't fail the order creation if inventory update fails

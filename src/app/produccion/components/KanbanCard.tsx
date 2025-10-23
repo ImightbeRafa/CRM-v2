@@ -1,0 +1,138 @@
+'use client';
+
+import React from 'react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Sale } from '../types/sales';
+import { Card, CardContent } from '@/app/components/ui/card';
+import { Badge } from '@/app/components/ui/badge';
+import { 
+  Package, 
+  User, 
+  Phone, 
+  MapPin, 
+  Calendar,
+  DollarSign,
+  GripVertical
+} from 'lucide-react';
+interface KanbanCardProps {
+  order: Sale;
+  onClick: () => void;
+  isDragging: boolean;
+}
+
+export function KanbanCard({ order, onClick, isDragging }: KanbanCardProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging: isSortableDragging,
+  } = useSortable({ id: order.orderId });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isSortableDragging ? 0.5 : 1,
+  };
+
+  const isHighPriority = () => {
+    const orderAge = Date.now() - new Date(order.timestamp).getTime();
+    const daysOld = orderAge / (1000 * 60 * 60 * 24);
+    return daysOld > 3 && order.status.toLowerCase() === 'pendiente';
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="touch-none"
+    >
+      <Card 
+        className={`cursor-pointer hover:shadow-md transition-shadow ${
+          isDragging || isSortableDragging ? 'shadow-xl' : ''
+        } ${isHighPriority() ? 'border-red-300 border-2' : 'border-gray-200'}`}
+        onClick={onClick}
+      >
+        <CardContent className="p-3 space-y-2">
+          {/* Drag Handle and Order ID */}
+          <div className="flex items-start justify-between">
+            <div 
+              className="cursor-grab active:cursor-grabbing p-1 hover:bg-gray-100 rounded"
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="h-4 w-4 text-gray-400" />
+            </div>
+            <div className="flex-1 ml-2">
+              <p className="font-semibold text-sm text-gray-900">
+                #{order.orderId}
+              </p>
+              {isHighPriority() && (
+                <Badge variant="destructive" className="text-xs mt-1">
+                  Urgente
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          {/* Customer Info */}
+          <div className="space-y-1">
+            <div className="flex items-center text-xs text-gray-700">
+              <User className="h-3 w-3 mr-1 text-gray-400" />
+              <span className="truncate">{order.customerName}</span>
+            </div>
+            
+            {order.phone && (
+              <div className="flex items-center text-xs text-gray-600">
+                <Phone className="h-3 w-3 mr-1 text-gray-400" />
+                <span>{order.phone}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Product Info */}
+          <div className="flex items-start text-xs text-gray-700">
+            <Package className="h-3 w-3 mr-1 mt-0.5 text-gray-400 flex-shrink-0" />
+            <span className="line-clamp-2">{order.product}</span>
+          </div>
+
+          {/* Location */}
+          {order.orderType === 'EA' && order.district && (
+            <div className="flex items-center text-xs text-gray-600">
+              <MapPin className="h-3 w-3 mr-1 text-gray-400" />
+              <span className="truncate">{order.district}</span>
+            </div>
+          )}
+
+          {/* Order Type & Total */}
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <Badge variant="outline" className="text-xs">
+              {order.orderType}
+            </Badge>
+            <div className="flex items-center text-sm font-semibold text-gray-900">
+              <DollarSign className="h-3 w-3 mr-0.5" />
+              {formatCurrency(order.total)}
+            </div>
+          </div>
+
+          {/* Date */}
+          <div className="flex items-center text-xs text-gray-500">
+            <Calendar className="h-3 w-3 mr-1" />
+            {new Date(order.timestamp).toLocaleDateString('es-ES', {
+              day: '2-digit',
+              month: 'short',
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Helper function for currency formatting
+function formatCurrency(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '₡0';
+  return `₡${value.toLocaleString('es-CR')}`;
+}

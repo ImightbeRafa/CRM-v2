@@ -6,7 +6,7 @@ import { config as appConfig } from "@/lib/config"
 export default async function middleware(request: Request & { nextUrl: URL }) {
   // Skip auth for public routes
   const { pathname } = (request as any).nextUrl
-  const isPublic = ["/auth/signin", "/auth/error", "/api/auth"].some((p) => pathname.startsWith(p))
+  const isPublic = ["/auth/signin", "/auth/error", "/api/auth", "/landing"].some((p) => pathname.startsWith(p))
   if (isPublic) return NextResponse.next()
 
   // In demo mode, allow everything but ensure a token for app routes

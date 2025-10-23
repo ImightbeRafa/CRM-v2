@@ -1,9 +1,16 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { requireAdmin } from '@/lib/apiAuth'
+import { NextRequest, NextResponse } from 'next/server'
+import { getTenantPrisma } from '@/lib/prisma-tenant'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    // Require 'view_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'view_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
     const fields = await prisma.productField.findMany({
       where: { active: true },
       orderBy: { order: 'asc' },
@@ -19,17 +26,23 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const { authorized } = await requireAdmin(request)
-    if (!authorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Require 'update_config' permission to create/modify fields
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
     
     const body = await request.json()
     // Idempotent enable/create behavior:
     // - If a field with the same key exists and is inactive, reactivate and update
     // - If it exists and is active, return existing as success
     // - Otherwise, create a new one
-    const existing = await prisma.productField.findUnique({ where: { key: body.key } })
+    const existing = await prisma.productField.findFirst({ 
+      where: { key: body.key } // findFirst for tenant-aware query
+    })
 
     if (existing) {
       const updated = await prisma.productField.update({
@@ -57,6 +70,7 @@ export async function POST(request: Request) {
         optionSetId: body.optionSetId || null,
         multiSelect: Boolean(body.multiSelect),
         active: true,
+        // tenantId auto-injected by prisma-tenant
       },
     })
     return NextResponse.json({ status: 'success', data: created })
@@ -70,10 +84,15 @@ export async function POST(request: Request) {
   }
 }
 
-export async function PUT(request: Request) {
-  const { authorized } = await requireAdmin(request)
-  if (!authorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+export async function PUT(request: NextRequest) {
   try {
+    // Require 'update_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
     const body = await request.json()
     const updated = await prisma.productField.update({
       where: { id: body.id },
@@ -93,13 +112,19 @@ export async function PUT(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
-  const { authorized } = await requireAdmin(request)
-  if (!authorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { searchParams } = new URL((request as any).url)
-  const id = searchParams.get('id')
-  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
+export async function DELETE(request: NextRequest) {
   try {
+    // Require 'update_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const prisma = getTenantPrisma(tenantId)
+    
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
+    
     const updated = await prisma.productField.update({ where: { id }, data: { active: false } })
     return NextResponse.json({ status: 'success', data: updated })
   } catch (e) {

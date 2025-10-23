@@ -1,0 +1,475 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================================
+// MULTI-TENANCY MODELS (NEW!)
+// ============================================================================
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique  // For subdomain: mybiz.betsycrm.com
+  plan      SubscriptionTier @default(FREE)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Settings
+  settings  Json?    // Tenant-specific configuration
+  
+  // Relations
+  memberships    Membership[]
+  users          User[]
+  orders         Order[]
+  clients        Client[]
+  inventoryItems InventoryItem[]
+  sellers        Seller[]
+  shippingMethods ShippingMethod[]
+  productFields  ProductField[]
+  productOptionSets ProductOptionSet[]
+  businessInfo   BusinessInfo[]
+  orderStatuses  OrderStatus[]
+  shippingConfigs ShippingConfig[]
+  shippingGuias  ShippingGuia[]
+  auditLogs      AuditLog[]
+  
+  @@index([slug])
+  @@index([isActive])
+}
+
+model Membership {
+  id       String   @id @default(cuid())
+  role     MemberRole @default(VIEWER)
+  userId   String
+  tenantId String
+  isActive Boolean  @default(true)
+  invitedBy String? // User ID who sent invitation
+  invitedAt DateTime?
+  joinedAt  DateTime @default(now())
+  
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+  @@index([userId])
+}
+
+enum MemberRole {
+  OWNER      // Full access, billing, delete tenant
+  ADMIN      // Full access except billing
+  MANAGER    // Sales + Production + Stats
+  SALES      // /ventas only
+  PRODUCTION // /produccion only
+  VIEWER     // Read-only access
+}
+
+enum SubscriptionTier {
+  FREE       // 1 user, 100 orders/month, basic features
+  BASIC      // 5 users, 1000 orders/month, reports
+  PRO        // 25 users, unlimited orders, API access
+  ENTERPRISE // Unlimited everything, custom domains
+}
+
+// ============================================================================
+// CORE BUSINESS MODELS (Updated with tenantId)
+// ============================================================================
+
+model Order {
+  id            String   @id @default(cuid())
+  tenantId      String   // NEW: Tenant isolation
+  orderId       String   // No longer @unique globally - unique per tenant
+  orderType     String   // EA or RA
+  status        String   @default("Pendiente")
+  timestamp     DateTime @default(now())
+  customerName  String
+  
+  // User identification for the order creator/owner
+  username      String?
+  phone         String?
+  email         String?
+  business      String?
+  product       String?
+  quantity      Int      @default(0)
+  size          String?
+  color         String?
+  packaging     String?
+  
+  // Additional customization details and funnel/source
+  customization String?
+  comments      String?
+  total         Float    @default(0)
+  iva           Float?
+  shippingCost  Float?
+  productCost   Float?
+  address       String?
+  province      String?
+  canton        String?
+  district      String?
+  courier       String?
+  expectedDate  String?
+  
+  // Sales/marketing funnel
+  funnel        String?
+  agreedDate    String?
+  pickupDate    String?
+  saleDate      String?
+  seller        String?
+  
+  // Delivery status or method
+  delivery      String?
+  
+  // Detailed product information for inventory updates
+  productDetails String?
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@unique([tenantId, orderId]) // Unique within tenant
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, orderType])
+  @@index([tenantId, timestamp])
+  @@index([tenantId, customerName])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique  // Changed from username to email
+  username  String?  // Optional display name
+  password  String?  // Optional for OAuth users
+  
+  // Profile
+  name      String?
+  image     String?  // Profile picture URL
+  emailVerified DateTime?
+  
+  // OAuth
+  provider  String?  // "google", "credentials", etc.
+  providerId String? // OAuth provider user ID
+  
+  // Settings
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastActive DateTime?
+  
+  // Default tenant (for quick access)
+  defaultTenantId String?
+  
+  // Relations
+  memberships Membership[]
+  tenants     Tenant[]  // Direct relation for owned tenants
+  auditLogs   AuditLog[]
+  
+  @@index([email])
+  @@index([active])
+}
+
+model Client {
+  id                String   @id @default(cuid())
+  tenantId          String   // NEW: Tenant isolation
+  name              String
+  phone             String
+  email             String?
+  province          String
+  canton            String
+  district          String
+  address           String?
+  business          String?
+  username          String?
+  notes             String?
+  totalOrders       Int      @default(0)
+  totalSpent        Float    @default(0)
+  averageOrderValue Float    @default(0)
+  firstOrder        DateTime
+  lastOrder         DateTime
+  isActive          Boolean  @default(true)
+  isFavorite        Boolean  @default(false)
+  isAutoGenerated   Boolean  @default(false)
+  lastUpdated       DateTime @default(now())
+  createdBy         String
+  createdAt         DateTime @default(now())
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@index([tenantId, phone])
+  @@index([tenantId, isFavorite])
+  @@index([tenantId, totalSpent])
+  @@index([tenantId, totalOrders])
+}
+
+model InventoryItem {
+  id              String   @id @default(cuid())
+  tenantId        String   // NEW: Tenant isolation
+  name            String
+  description     String?
+  category        String
+  sku             String
+  currentStock    Int      @default(0)
+  minStock        Int      @default(0)
+  maxStock        Int?
+  unitCost        Float
+  sellingPrice    Float
+  supplier        String?
+  location        String?
+  reorderPoint    Int      @default(0)
+  reorderQuantity Int      @default(0)
+  isActive        Boolean  @default(true)
+  isFavorite      Boolean  @default(false)
+  totalSold       Int      @default(0)
+  lastSold        DateTime?
+  lastUpdated     DateTime @default(now())
+  createdBy       String
+  createdAt       DateTime @default(now())
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@unique([tenantId, sku]) // SKU unique within tenant
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@index([tenantId, category])
+  @@index([tenantId, isFavorite])
+  @@index([tenantId, currentStock])
+}
+
+model Seller {
+  id       String  @id @default(cuid())
+  tenantId String  // NEW: Tenant isolation
+  name     String
+  active   Boolean @default(true)
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([tenantId, active])
+}
+
+model ShippingMethod {
+  id        String  @id @default(cuid())
+  tenantId  String  // NEW: Tenant isolation
+  name      String
+  carrier   String?
+  basePrice Float   @default(0)
+  active    Boolean @default(true)
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([tenantId, active])
+  @@index([tenantId, name])
+}
+
+// ============================================================================
+// PRODUCT CONFIGURATION MODELS (Updated with tenantId)
+// ============================================================================
+
+model ProductOptionSet {
+  id      String          @id @default(cuid())
+  tenantId String         // NEW: Tenant isolation
+  key     String
+  name    String
+  active  Boolean         @default(true)
+  options ProductOption[]
+  productFields ProductField[]
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@unique([tenantId, key]) // Key unique within tenant
+  @@index([tenantId])
+  @@index([tenantId, active])
+}
+
+model ProductOption {
+  id         String            @id @default(cuid())
+  setId      String
+  set        ProductOptionSet  @relation(fields: [setId], references: [id], onDelete: Cascade)
+  label      String
+  value      String
+  priceDelta Float             @default(0)
+  metadata   Json?
+  active     Boolean           @default(true)
+  
+  @@index([setId])
+  @@index([active])
+}
+
+model ProductField {
+  id          String            @id @default(cuid())
+  tenantId    String            // NEW: Tenant isolation
+  key         String
+  label       String
+  type        String
+  required    Boolean           @default(false)
+  order       Int               @default(0)
+  optionSetId String?
+  optionSet   ProductOptionSet? @relation(fields: [optionSetId], references: [id])
+  multiSelect Boolean           @default(false)
+  active      Boolean           @default(true)
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@unique([tenantId, key]) // Key unique within tenant
+  @@index([tenantId])
+  @@index([tenantId, active])
+  @@index([tenantId, order])
+}
+
+model BusinessInfo {
+  id          String   @id @default(cuid())
+  tenantId    String   // NEW: Tenant isolation
+  name        String
+  type        String
+  label       String
+  placeholder String?
+  options     String?
+  required    Boolean  @default(false)
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@index([tenantId, order])
+}
+
+model OrderStatus {
+  id       String   @id @default(cuid())
+  tenantId String   // NEW: Tenant isolation
+  key      String
+  label    String
+  color    String?
+  order    Int      @default(0)
+  isActive Boolean  @default(true)
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@unique([tenantId, key]) // Key unique within tenant
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@index([tenantId, order])
+}
+
+// ============================================================================
+// SHIPPING MODELS (Updated with tenantId)
+// ============================================================================
+
+model ShippingConfig {
+  id          String   @id @default(cuid())
+  tenantId    String   // NEW: Tenant isolation
+  carrier     String
+  name        String
+  email       String?
+  password    String?
+  apiKey      String?
+  baseUrl     String?
+  isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  settings    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([tenantId, carrier])
+  @@index([tenantId, isActive])
+}
+
+model ShippingGuia {
+  id            String   @id @default(cuid())
+  tenantId      String   // NEW: Tenant isolation
+  orderId       String
+  carrier       String
+  guiaNumber    String
+  trackingNumber String?
+  status        String   @default("created")
+  cost          Float?
+  weight        Float?
+  dimensions    String?
+  serviceType   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([tenantId, orderId])
+  @@index([tenantId, carrier])
+  @@index([tenantId, status])
+}
+
+// ============================================================================
+// AUDIT LOG (Updated with tenantId)
+// ============================================================================
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  tenantId   String      // NEW: Tenant isolation
+  action     AuditAction
+  entityType String
+  entityId   String
+  entityName String?
+  oldValues  Json?
+  newValues  Json?
+  reason     String?
+  userId     String
+  userName   String
+  userRole   String      // Changed from enum to string for flexibility
+  timestamp  DateTime    @default(now())
+  ipAddress  String?
+  userAgent  String?
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+  
+  @@index([tenantId])
+  @@index([tenantId, action])
+  @@index([tenantId, entityType])
+  @@index([tenantId, userId])
+  @@index([tenantId, timestamp])
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  BULK_DELETE
+  BULK_UPDATE
+  BULK_TOGGLE
+  LOGIN
+  LOGOUT
+  EXPORT
+  IMPORT
+}
+
+// Note: UserRole enum removed - now using MemberRole in Membership model
+

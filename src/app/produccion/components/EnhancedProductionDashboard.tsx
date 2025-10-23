@@ -13,7 +13,7 @@ import { Button } from "@/app/components/ui/button";
 import { Badge } from "@/app/components/ui/badge";
 import { useSalesStream } from '@/app/hooks/useSalesStream';
 import { Sale } from '../types/sales';
-import { Loader2, Search, Filter, Download, Printer, Eye, Edit, CheckCircle, Clock, AlertCircle, Truck, Package, Users, TrendingUp } from 'lucide-react';
+import { Loader2, Search, Filter, Download, Printer, Eye, Edit, CheckCircle, Clock, AlertCircle, Truck, Package, Users, TrendingUp, LayoutGrid, List, Kanban, FileText } from 'lucide-react';
 import { useToast } from "@/app/hooks/use-toast";
 import { EnhancedOrderCard } from './EnhancedOrderCard';
 import { ProductionStats } from './ProductionStats';
@@ -24,6 +24,8 @@ import { OrderDetails } from './OrderDetail';
 import { MobileProductionWorkflow } from './MobileProductionWorkflow';
 import { ProductionWorkflowGuide } from './ProductionWorkflowGuide';
 import { GuiaGenerator } from './GuiaGenerator';
+import { InvoiceGenerator } from '@/app/config/components/InvoiceGenerator';
+import { KanbanBoard } from './KanbanBoard';
 
 // Dynamic Status Filter Component
 const StatusFilterSelect = ({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) => {
@@ -178,12 +180,13 @@ const EnhancedHeader = React.memo(({
   statusFilter, 
   onStatusChange,
   onGenerateGuias,
+  onGenerateInvoices,
   onExport,
   onBulkOperations,
   onShowStats,
   onShowGuide,
-  onToggleMobileView,
-  showMobileView,
+  viewMode,
+  onViewModeChange,
   totalOrders,
   filteredCount
 }: {
@@ -193,12 +196,13 @@ const EnhancedHeader = React.memo(({
   statusFilter: string;
   onStatusChange: (value: string) => void;
   onGenerateGuias: () => void;
+  onGenerateInvoices: () => void;
   onExport: () => void;
   onBulkOperations: () => void;
   onShowStats: () => void;
   onShowGuide: () => void;
-  onToggleMobileView: () => void;
-  showMobileView: boolean;
+  viewMode: 'table' | 'mobile' | 'kanban';
+  onViewModeChange: (mode: 'table' | 'mobile' | 'kanban') => void;
   totalOrders: number;
   filteredCount: number;
 }) => (
@@ -224,6 +228,10 @@ const EnhancedHeader = React.memo(({
         <Button onClick={onGenerateGuias} variant="outline" size="sm">
           <Truck className="h-4 w-4 mr-2" />
           Generar Guías
+        </Button>
+        <Button onClick={onGenerateInvoices} variant="outline" size="sm" className="bg-purple-50 border-purple-200 hover:bg-purple-100">
+          <FileText className="h-4 w-4 mr-2" />
+          Generar Facturas
         </Button>
         <Button onClick={onExport} variant="outline" size="sm">
           <Download className="h-4 w-4 mr-2" />
@@ -271,15 +279,36 @@ const EnhancedHeader = React.memo(({
         Guía de Uso
       </Button>
       
-      <Button 
-        variant="outline" 
-        size="sm" 
-        className="justify-start"
-        onClick={onToggleMobileView}
-      >
-        <Package className="h-4 w-4 mr-2" />
-        {showMobileView ? 'Vista Escritorio' : 'Vista Móvil'}
-      </Button>
+      {/* View Mode Toggle */}
+      <div className="flex gap-1 border rounded-md p-1">
+        <Button 
+          variant={viewMode === 'table' ? 'default' : 'ghost'}
+          size="sm"
+          className="px-3"
+          onClick={() => onViewModeChange('table')}
+          title="Vista de Tabla"
+        >
+          <LayoutGrid className="h-4 w-4" />
+        </Button>
+        <Button 
+          variant={viewMode === 'kanban' ? 'default' : 'ghost'}
+          size="sm"
+          className="px-3"
+          onClick={() => onViewModeChange('kanban')}
+          title="Vista Kanban"
+        >
+          <Kanban className="h-4 w-4" />
+        </Button>
+        <Button 
+          variant={viewMode === 'mobile' ? 'default' : 'ghost'}
+          size="sm"
+          className="px-3"
+          onClick={() => onViewModeChange('mobile')}
+          title="Vista Móvil"
+        >
+          <List className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   </div>
 ));
@@ -290,12 +319,18 @@ export interface EnhancedProductionDashboardProps {
   onGenerateGuias: () => void;
   isGuiaGeneratorOpen: boolean;
   onGuiaGeneratorClose: () => void;
+  onGenerateInvoices?: () => void;
+  isInvoiceGeneratorOpen?: boolean;
+  onInvoiceGeneratorClose?: () => void;
 }
 
 export function EnhancedProductionDashboard({ 
   onGenerateGuias, 
   isGuiaGeneratorOpen, 
-  onGuiaGeneratorClose 
+  onGuiaGeneratorClose,
+  onGenerateInvoices,
+  isInvoiceGeneratorOpen = false,
+  onInvoiceGeneratorClose
 }: EnhancedProductionDashboardProps) {
   const [selectedOrder, setSelectedOrder] = useState<Sale | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -308,7 +343,7 @@ export function EnhancedProductionDashboard({
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
-  const [showMobileView, setShowMobileView] = useState(false);
+  const [viewMode, setViewMode] = useState<'table' | 'mobile' | 'kanban'>('table');
   const [showGuide, setShowGuide] = useState(false);
   const { toast } = useToast();
 
@@ -384,10 +419,15 @@ export function EnhancedProductionDashboard({
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update order');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Server error:', errorData);
+        throw new Error(errorData.error || `Failed to update order: ${response.status}`);
       }
 
-      const updatedOrder: Sale = await response.json();
+      const responseData = await response.json();
+      // API returns { status: 'success', data: order, message: '...' }
+      const updatedOrder: Sale = responseData.data || responseData;
+      
       refresh();
       toast({
         title: "Orden actualizada",
@@ -396,31 +436,63 @@ export function EnhancedProductionDashboard({
       return updatedOrder;
     } catch (error) {
       console.error('Error updating order:', error);
+      const errorMessage = error instanceof Error ? error.message : 'No se pudo actualizar la información de la orden.';
       toast({
         variant: "destructive",
         title: "Error",
-        description: "No se pudo actualizar la información de la orden.",
+        description: errorMessage,
       });
       throw error;
     }
   };
 
   const handleBulkStatusUpdate = async (orderIds: string[], newStatus: string) => {
+    let successCount = 0;
+    let failCount = 0;
+    
     try {
-      const promises = orderIds.map(orderId => updateOrderStatus(orderId, newStatus));
-      await Promise.all(promises);
-      
       toast({
-        title: "Estados actualizados",
-        description: `${orderIds.length} órdenes actualizadas exitosamente.`,
+        title: "Procesando...",
+        description: `Actualizando ${orderIds.length} órdenes...`,
       });
+
+      // Process one at a time with progress
+      for (let i = 0; i < orderIds.length; i++) {
+        try {
+          await updateOrderStatus(orderIds[i], newStatus);
+          successCount++;
+          
+          // Show progress every 10 orders
+          if ((i + 1) % 10 === 0 || i === orderIds.length - 1) {
+            console.log(`Progress: ${i + 1}/${orderIds.length} orders updated`);
+          }
+        } catch (error) {
+          console.error(`Failed to update order ${orderIds[i]}:`, error);
+          failCount++;
+        }
+      }
+      
+      // Show final result
+      if (failCount === 0) {
+        toast({
+          title: "✅ Completado",
+          description: `${successCount} órdenes actualizadas exitosamente.`,
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "⚠️ Completado con errores",
+          description: `${successCount} exitosos, ${failCount} fallidos.`,
+        });
+      }
       
       setSelectedOrders([]);
+      refresh(); // Refresh data
     } catch (error) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "No se pudieron actualizar todas las órdenes.",
+        description: `Error en operación masiva: ${successCount} exitosos, ${failCount} fallidos.`,
       });
     }
   };
@@ -455,22 +527,31 @@ export function EnhancedProductionDashboard({
             statusFilter={statusFilter}
             onStatusChange={setStatusFilter}
             onGenerateGuias={onGenerateGuias}
+            onGenerateInvoices={onGenerateInvoices || (() => {})}
             onExport={() => setShowExport(true)}
             onBulkOperations={() => setShowBulkOperations(true)}
             onShowStats={() => setShowStats(true)}
             onShowGuide={() => setShowGuide(true)}
-            onToggleMobileView={() => setShowMobileView(!showMobileView)}
-            showMobileView={showMobileView}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
             totalOrders={orders.length}
             filteredCount={filteredOrders.length}
           />
         </CardHeader>
         <CardContent>
-          {showMobileView ? (
+          {viewMode === 'mobile' ? (
             <MobileProductionWorkflow
               orders={filteredOrders}
               onOrderSelect={setSelectedOrder}
               onStatusUpdate={handleStatusUpdate}
+            />
+          ) : viewMode === 'kanban' ? (
+            <KanbanBoard
+              orders={filteredOrders}
+              onOrderUpdate={async (orderId, updates) => {
+                await handleOrderUpdate(orderId, updates);
+              }}
+              onOrderClick={setSelectedOrder}
             />
           ) : (
             <Tabs defaultValue="EA" className="w-full">
@@ -581,6 +662,32 @@ export function EnhancedProductionDashboard({
         onClose={onGuiaGeneratorClose}
         onUpdateOrder={handleOrderUpdate}
       />
+
+      {onInvoiceGeneratorClose && (
+        <InvoiceGenerator
+          orders={filteredOrders.map(order => ({
+            id: order.orderId,
+            orderId: order.orderId,
+            customerName: order.customerName,
+            email: order.email,
+            phone: order.phone,
+            address: order.address,
+            product: order.product,
+            quantity: order.quantity,
+            total: order.total,
+            timestamp: order.timestamp
+          }))}
+          isOpen={isInvoiceGeneratorOpen}
+          onClose={onInvoiceGeneratorClose}
+          onInvoiceGenerated={(invoiceIds) => {
+            console.log('Invoices generated:', invoiceIds);
+            toast({
+              title: "Facturas generadas",
+              description: `${invoiceIds.length} factura(s) creadas exitosamente.`,
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

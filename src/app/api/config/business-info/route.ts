@@ -10,8 +10,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Get tenant ID from token
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
     const businessInfo = await prisma.businessInfo.findMany({
-      where: { isActive: true },
+      where: { 
+        tenantId,
+        isActive: true 
+      },
       orderBy: { order: 'asc' }
     });
 
@@ -36,8 +45,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check if user is MASTER
-    if ((token as any).role !== 'MASTER') {
+    // Get tenant ID from token
+    const tenantId = (token as any).tenantId;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
+    // Check if user is OWNER or ADMIN
+    const userRole = (token as any).membershipRole;
+    if (userRole !== 'OWNER' && userRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -46,6 +62,7 @@ export async function POST(request: NextRequest) {
 
     const businessInfo = await prisma.businessInfo.create({
       data: {
+        tenantId,
         name,
         type,
         label,
@@ -80,7 +97,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Check if user is MASTER
-    if ((token as any).role !== 'MASTER') {
+    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -124,7 +141,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Check if user is MASTER
-    if ((token as any).role !== 'MASTER') {
+    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

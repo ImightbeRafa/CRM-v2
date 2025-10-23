@@ -5,13 +5,37 @@ import { createSuccessResponse, createErrorResponse, handleApiError } from '@/li
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('Audit logs endpoint called')
+    console.log('🔍 Audit logs endpoint called')
     
-    // For now, let's skip the admin requirement to test
-    // const { authorized } = await requireAdmin(request)
-    // if (!authorized) {
-    //   return createErrorResponse('Unauthorized', 401)
-    // }
+    // Get tenant from authenticated user
+    const { getToken } = await import('next-auth/jwt')
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
+    
+    if (!token) {
+      console.log('❌ No token found - unauthorized')
+      return createErrorResponse('Unauthorized', 401)
+    }
+
+    // Get user's tenant
+    const user = await prisma.user.findUnique({
+      where: { id: token.sub },
+      select: {
+        defaultTenantId: true,
+        memberships: {
+          where: { isActive: true },
+          select: { tenantId: true, role: true },
+          take: 1
+        }
+      }
+    })
+
+    if (!user || !user.memberships || user.memberships.length === 0) {
+      console.log('❌ User not found or no active memberships')
+      return createErrorResponse('Unauthorized', 401)
+    }
+
+    const tenantId = user.memberships[0].tenantId || user.defaultTenantId
+    console.log(`✅ Authenticated user tenant: ${tenantId}`)
 
     const { searchParams } = new URL(request.url)
     const action = searchParams.get('action')
@@ -22,8 +46,10 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '100')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    // Build where clause
-    const where: any = {}
+    // Build where clause with TENANT ISOLATION
+    const where: any = {
+      tenantId: tenantId  // ← CRITICAL: Only show logs for this tenant
+    }
     
     if (action) where.action = action
     if (entityType) where.entityType = entityType
@@ -39,7 +65,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    console.log('Querying audit logs with where clause:', where)
+    console.log('🔍 Querying audit logs with where clause:', where)
     
     const auditLogs = await prisma.auditLog.findMany({
       where,
@@ -50,7 +76,7 @@ export async function GET(request: NextRequest) {
 
     const total = await prisma.auditLog.count({ where })
     
-    console.log('Found audit logs:', auditLogs.length, 'Total:', total)
+    console.log(`✅ Found ${auditLogs.length} audit logs (Total: ${total}) for tenant ${tenantId}`)
 
     return createSuccessResponse({
       logs: auditLogs,
@@ -59,6 +85,7 @@ export async function GET(request: NextRequest) {
       offset
     })
   } catch (error) {
+    console.error('❌ Audit logs query error:', error)
     return handleApiError(error)
   }
 }

@@ -6,7 +6,9 @@ import { BulkOperations } from '../components/ui/bulk-operations'
 import { SimpleAuditDashboard } from '../components/SimpleAuditDashboard'
 import { MasterConfigDashboard } from './components/MasterConfigDashboard'
 import { UnifiedFieldsManager } from './components/UnifiedFieldsManager'
-import { Settings, Users, Shield, Database, BarChart3, Zap } from 'lucide-react'
+import { BillingDashboard } from './components/BillingDashboard'
+import { ExcelImporter } from './components/ExcelImporter'
+import { Settings, Users, Shield, Database, BarChart3, Zap, FileSpreadsheet } from 'lucide-react'
 
 export default function ConfigPage() {
   const [activeTab, setActiveTab] = useState('fields')
@@ -303,6 +305,7 @@ export default function ConfigPage() {
     e.preventDefault()
     const formData = new FormData(e.target as HTMLFormElement)
     const userData = {
+      email: formData.get('email'),
       username: formData.get('username'),
       role: formData.get('role'),
       active: formData.get('active') === 'on',
@@ -311,18 +314,20 @@ export default function ConfigPage() {
 
     try {
       const isEditing = Boolean(editingUser)
-      const url = isEditing ? `/api/users/${editingUser.id}` : '/api/users'
+      const url = '/api/users'
       const method = isEditing ? 'PUT' : 'POST'
-      // For edits, send to /api/users/[id] where password is supported; omit empty password
       const body = isEditing
         ? {
+            id: editingUser.id,
+            email: userData.email,
             username: userData.username,
             role: userData.role,
             active: userData.active,
             ...(userData.password && userData.password.length > 0 ? { password: userData.password } : {})
           }
         : {
-            username: userData.username,
+            email: userData.email,
+            username: userData.username, // Required field for tracking
             role: userData.role,
             active: userData.active
           }
@@ -352,68 +357,98 @@ export default function ConfigPage() {
 
   // Bulk operations for configuration items
   const handleBulkDeleteFields = async (ids: string[], reason?: string) => {
+    if (!confirm(`¿Eliminar ${ids.length} campos? Esta acción no se puede deshacer.`)) return;
+    
     try {
+      console.log(`🗑️ Deleting ${ids.length} fields...`);
+      
       const response = await fetch('/api/bulk/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids, type: 'fields', reason })
-      })
-      const result = await response.json()
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      console.log('Bulk delete result:', result);
       
       if (result.status === 'success') {
-        setFields(prev => prev.filter(f => !ids.includes(f.id)))
-        setSelectedFields([])
-        alert(`Eliminación masiva completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`)
-        } else {
-        alert(`Error: ${result.error || result.message}`)
-        }
-      } catch (error) {
-      console.error('Bulk delete fields error:', error)
-      alert('Error al eliminar campos')
+        await loadData(); // Reload data
+        setSelectedFields([]);
+        alert(`✅ Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
+      } else {
+        alert(`❌ Error: ${result.error || result.message}`);
+      }
+    } catch (error) {
+      console.error('Bulk delete fields error:', error);
+      alert('❌ Error al eliminar campos. Por favor intente de nuevo.');
     }
   }
 
   const handleBulkDeleteOptionSets = async (ids: string[], reason?: string) => {
-      try {
+    if (!confirm(`¿Eliminar ${ids.length} conjuntos de opciones? Esta acción no se puede deshacer.`)) return;
+    
+    try {
+      console.log(`🗑️ Deleting ${ids.length} option sets...`);
+      
       const response = await fetch('/api/bulk/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids, type: 'optionSets', reason })
-      })
-      const result = await response.json()
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      console.log('Bulk delete result:', result);
       
       if (result.status === 'success') {
-        setOptionSets(prev => prev.filter(s => !ids.includes(s.id)))
-        setSelectedOptionSets([])
-        alert(`Eliminación masiva completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`)
-        } else {
-        alert(`Error: ${result.error || result.message}`)
-        }
-      } catch (error) {
-      console.error('Bulk delete option sets error:', error)
-      alert('Error al eliminar conjuntos de opciones')
+        await loadData(); // Reload data
+        setSelectedOptionSets([]);
+        alert(`✅ Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
+      } else {
+        alert(`❌ Error: ${result.error || result.message}`);
+      }
+    } catch (error) {
+      console.error('Bulk delete option sets error:', error);
+      alert('❌ Error al eliminar conjuntos de opciones. Por favor intente de nuevo.');
     }
   }
 
   const handleBulkDeleteShipping = async (ids: string[], reason?: string) => {
+    if (!confirm(`¿Eliminar ${ids.length} métodos de envío? Esta acción no se puede deshacer.`)) return;
+    
     try {
+      console.log(`🗑️ Deleting ${ids.length} shipping methods...`);
+      
       const response = await fetch('/api/bulk/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids, type: 'shipping', reason })
-      })
-      const result = await response.json()
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      console.log('Bulk delete result:', result);
       
       if (result.status === 'success') {
-        setShipping(prev => prev.filter(s => !ids.includes(s.id)))
-        setSelectedShipping([])
-        alert(`Eliminación masiva completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`)
+        await loadData(); // Reload data
+        setSelectedShipping([]);
+        alert(`✅ Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
       } else {
-        alert(`Error: ${result.error || result.message}`)
+        alert(`❌ Error: ${result.error || result.message}`);
       }
     } catch (error) {
-      console.error('Bulk delete shipping error:', error)
-      alert('Error al eliminar métodos de envío')
+      console.error('Bulk delete shipping error:', error);
+      alert('❌ Error al eliminar métodos de envío. Por favor intente de nuevo.');
     }
   }
 
@@ -445,6 +480,8 @@ export default function ConfigPage() {
     { id: 'fields', label: 'Configuración de Campos', icon: Database },
     { id: 'users', label: 'Usuarios', icon: Users },
     { id: 'master', label: 'Productos y Clientes Recurrentes', icon: Zap },
+    { id: 'import', label: 'Importar Excel', icon: FileSpreadsheet },
+    { id: 'billing', label: 'Facturación', icon: BarChart3 },
     { id: 'audit', label: 'Auditoría', icon: Shield }
   ]
 
@@ -953,6 +990,20 @@ export default function ConfigPage() {
             </div>
           )}
 
+          {/* Excel Import Tab */}
+          {activeTab === 'import' && (
+            <div className="space-y-6">
+              <ExcelImporter />
+            </div>
+          )}
+
+          {/* Billing Tab */}
+          {activeTab === 'billing' && (
+            <div className="space-y-6">
+              <BillingDashboard />
+            </div>
+          )}
+
           {/* Audit Tab */}
           {activeTab === 'audit' && (
             <div className="space-y-6">
@@ -1449,19 +1500,40 @@ export default function ConfigPage() {
                 <p className="text-sm text-blue-700">
                   <strong>Nota:</strong> Los nuevos usuarios tendrán la contraseña por defecto: <code className="bg-blue-100 px-1 rounded">password123</code>
                 </p>
+                <p className="text-sm text-blue-600 mt-1">
+                  El usuario podrá cambiar su contraseña después de iniciar sesión.
+                </p>
               </div>
             )}
             <form onSubmit={handleUserSubmit}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de Usuario</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    defaultValue={editingUser?.email || ''}
+                    placeholder="usuario@ejemplo.com"
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Email único para iniciar sesión</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nombre de Usuario <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
                     name="username"
                     defaultValue={editingUser?.username || ''}
+                    placeholder="Ej: PedroPascal02"
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                     required
                   />
+                  <p className="text-xs text-gray-500 mt-1">Usado para identificar quién realiza acciones (ventas, órdenes, etc.)</p>
                 </div>
                 {editingUser && (
                   <div>
@@ -1485,16 +1557,23 @@ export default function ConfigPage() {
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Rol <span className="text-red-500">*</span>
+                  </label>
                   <select
                     name="role"
-                    defaultValue={editingUser?.role || 'REGULAR'}
+                    defaultValue={editingUser?.role || 'VIEWER'}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                     required
                   >
-                    <option value="REGULAR">REGULAR</option>
-                    <option value="MASTER">MASTER</option>
+                    <option value="OWNER">OWNER - Propietario (Acceso completo + facturación)</option>
+                    <option value="ADMIN">ADMIN - Administrador (Acceso completo)</option>
+                    <option value="MANAGER">MANAGER - Gerente (Ventas + Producción + Estadísticas)</option>
+                    <option value="SALES">SALES - Ventas (Solo módulo de ventas)</option>
+                    <option value="PRODUCTION">PRODUCTION - Producción (Solo módulo de producción)</option>
+                    <option value="VIEWER">VIEWER - Visualizador (Solo lectura)</option>
                   </select>
+                  <p className="text-xs text-gray-500 mt-1">Define los permisos y accesos del usuario</p>
                 </div>
                 <div className="flex items-center">
                   <input

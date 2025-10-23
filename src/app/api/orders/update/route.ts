@@ -1,8 +1,9 @@
 // src/app/api/orders/update/route.ts
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createSuccessResponse, createErrorResponse, handleApiError, validateRequiredFields, sanitizeInput } from '@/lib/apiUtils'
 import { logCreate, logUpdate } from '@/lib/auditLogger'
+import { getToken } from 'next-auth/jwt'
 
 // Function to detect meaningful changes between old and new order data
 function detectChanges(oldData: any, newData: any): string[] {
@@ -74,8 +75,23 @@ function detectChanges(oldData: any, newData: any): string[] {
   return changes
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
+    
+    if (!token) {
+      return createErrorResponse('Unauthorized', 401)
+    }
+
+    // Get tenant ID from token
+    const tenantId = (token as any).tenantId as string
+    if (!tenantId) {
+      return createErrorResponse('Tenant not found', 400)
+    }
+
+    const userId = (token as any).sub as string
+
     const body = await request.json()
     
     // Validate required fields
@@ -92,7 +108,13 @@ export async function POST(request: Request) {
       ])
     )
 
-    const existing = await prisma.order.findUnique({ where: { orderId: cleanData.orderId } })
+    // Find order with tenant isolation
+    const existing = await prisma.order.findFirst({ 
+      where: { 
+        orderId: cleanData.orderId,
+        tenantId: tenantId
+      } as any
+    })
     
     if (!existing) {
       return createErrorResponse('Order not found', 404)
@@ -134,7 +156,11 @@ export async function POST(request: Request) {
     if (cleanData.agreedDate !== undefined) updateData.agreedDate = cleanData.agreedDate
     if (cleanData.pickupDate !== undefined) updateData.pickupDate = cleanData.pickupDate
 
-    const result = await prisma.order.update({ where: { orderId: cleanData.orderId }, data: updateData })
+    // Update order with tenant isolation (using the internal id, not orderId)
+    const result = await prisma.order.update({ 
+      where: { id: existing.id }, 
+      data: updateData 
+    })
 
     // Log audit trail with smart change detection
     if (Object.keys(updateData).length > 0) {

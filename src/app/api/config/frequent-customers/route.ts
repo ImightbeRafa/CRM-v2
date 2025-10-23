@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getToken } from 'next-auth/jwt';
+import { logCreate, logUpdate, logDelete } from '@/lib/auditLogger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user is MASTER
-    if ((token as any).role !== 'MASTER') {
+    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -70,6 +71,15 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    // Log audit trail
+    try {
+      await logCreate(request, 'frequent_customer', frequentCustomer.id, name, {
+        name, phone, email, province, canton, district
+      });
+    } catch (auditError) {
+      console.error('Failed to log customer creation audit:', auditError);
+    }
+
     return NextResponse.json({
       status: 'success',
       data: frequentCustomer
@@ -92,12 +102,15 @@ export async function PUT(request: NextRequest) {
     }
 
     // Check if user is MASTER
-    if ((token as any).role !== 'MASTER') {
+    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const body = await request.json();
     const { id, name, phone, province, canton, district, email, username, address, business, active } = body;
+
+    // Get old values for audit
+    const oldCustomer = await prisma.client.findUnique({ where: { id } });
 
     const frequentCustomer = await prisma.client.update({
       where: { id },
@@ -115,6 +128,16 @@ export async function PUT(request: NextRequest) {
         lastUpdated: new Date()
       }
     });
+
+    // Log audit trail
+    try {
+      await logUpdate(request, 'frequent_customer', id, name, 
+        { name: oldCustomer?.name, phone: oldCustomer?.phone, email: oldCustomer?.email },
+        { name, phone, email }
+      );
+    } catch (auditError) {
+      console.error('Failed to log customer update audit:', auditError);
+    }
 
     return NextResponse.json({
       status: 'success',
@@ -138,7 +161,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Check if user is MASTER
-    if ((token as any).role !== 'MASTER') {
+    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -149,10 +172,23 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Customer ID is required' }, { status: 400 });
     }
 
+    // Get customer data for audit
+    const customer = await prisma.client.findUnique({ where: { id } });
+
     await prisma.client.update({
       where: { id },
       data: { isActive: false, lastUpdated: new Date() }
     });
+
+    // Log audit trail
+    try {
+      await logDelete(request, 'frequent_customer', id, customer?.name || 'Unknown', 
+        { name: customer?.name, phone: customer?.phone, email: customer?.email },
+        'Cliente frecuente desactivado'
+      );
+    } catch (auditError) {
+      console.error('Failed to log customer deletion audit:', auditError);
+    }
 
     return NextResponse.json({
       status: 'success',

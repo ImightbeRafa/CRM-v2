@@ -1,0 +1,310 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// Core business models
+model Order {
+  id            String   @id @default(cuid())
+  orderId       String   @unique
+  orderType     String   // EA or RA
+  status        String   @default("Pendiente")
+  timestamp     DateTime @default(now())
+  customerName  String
+  // User identification for the order creator/owner
+  username      String?
+  phone         String?
+  email         String?
+  business      String?
+  product       String?
+  quantity      Int      @default(0)
+  size          String?
+  color         String?
+  packaging     String?
+  // Additional customization details and funnel/source
+  customization String?
+  comments      String?
+  total         Float    @default(0)
+  iva           Float?
+  shippingCost  Float?
+  productCost   Float?
+  address       String?
+  province      String?
+  canton        String?
+  district      String?
+  courier       String?
+  expectedDate  String?
+  // Sales/marketing funnel
+  funnel        String?
+  agreedDate    String?
+  pickupDate    String?
+  saleDate      String?
+  seller        String?
+  // Delivery status or method
+  delivery      String?
+  // Detailed product information for inventory updates
+  productDetails String?
+
+  @@index([status])
+  @@index([orderType])
+  @@index([timestamp])
+  @@index([customerName])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  role      UserRole @default(REGULAR)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+  @@index([role])
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  action     AuditAction
+  entityType String
+  entityId   String
+  entityName String?
+  oldValues  Json?
+  newValues  Json?
+  reason     String?
+  userId     String
+  userName   String
+  userRole   UserRole
+  timestamp  DateTime    @default(now())
+  // Request context details
+  ipAddress  String?
+  userAgent  String?
+
+  @@index([action])
+  @@index([entityType])
+  @@index([userId])
+  @@index([timestamp])
+}
+
+// ----------------------------------------------------------------------------
+// Product configuration models (used by /api/config/* endpoints)
+// ----------------------------------------------------------------------------
+
+model ProductOptionSet {
+  id      String          @id @default(cuid())
+  key     String          @unique
+  name    String
+  active  Boolean         @default(true)
+  options ProductOption[]
+  productFields ProductField[]
+
+  @@index([active])
+}
+
+model ProductOption {
+  id         String            @id @default(cuid())
+  setId      String
+  set        ProductOptionSet  @relation(fields: [setId], references: [id], onDelete: Cascade)
+  label      String
+  value      String
+  priceDelta Float             @default(0)
+  metadata   Json?
+  active     Boolean           @default(true)
+
+  @@index([setId])
+  @@index([active])
+}
+
+model ProductField {
+  id          String            @id @default(cuid())
+  key         String            @unique
+  label       String
+  type        String
+  required    Boolean           @default(false)
+  order       Int               @default(0)
+  optionSetId String?
+  optionSet   ProductOptionSet? @relation(fields: [optionSetId], references: [id])
+  multiSelect Boolean           @default(false)
+  active      Boolean           @default(true)
+
+  @@index([active])
+  @@index([order])
+}
+
+model Seller {
+  id     String  @id @default(cuid())
+  name   String
+  active Boolean @default(true)
+
+  @@index([active])
+}
+
+model ShippingMethod {
+  id        String  @id @default(cuid())
+  name      String
+  carrier   String?
+  basePrice Float   @default(0)
+  active    Boolean @default(true)
+
+  @@index([active])
+  @@index([name])
+}
+
+// Legacy models removed - data migrated to unified models
+
+// Enhanced inventory management
+model InventoryItem {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  category        String
+  sku             String   @unique
+  currentStock    Int      @default(0)
+  minStock        Int      @default(0)
+  maxStock        Int?
+  unitCost        Float
+  sellingPrice    Float
+  supplier        String?
+  location        String?
+  reorderPoint    Int      @default(0)
+  reorderQuantity Int      @default(0)
+  isActive        Boolean  @default(true)
+  isFavorite      Boolean  @default(false)
+  totalSold       Int      @default(0)
+  lastSold        DateTime?
+  lastUpdated     DateTime @default(now())
+  createdBy       String
+  createdAt       DateTime @default(now())
+
+  @@index([isActive])
+  @@index([category])
+  @@index([isFavorite])
+  @@index([currentStock])
+  @@index([sku])
+}
+
+// Unified client management (replaces FrequentCustomer and AutomaticClient)
+model Client {
+  id                String   @id @default(cuid())
+  name              String
+  phone             String
+  email             String?
+  province          String
+  canton            String
+  district          String
+  address           String?
+  business          String?
+  username          String?
+  notes             String?
+  totalOrders       Int      @default(0)
+  totalSpent        Float    @default(0)
+  averageOrderValue Float    @default(0)
+  firstOrder        DateTime
+  lastOrder         DateTime
+  isActive          Boolean  @default(true)
+  isFavorite        Boolean  @default(false)
+  isAutoGenerated   Boolean  @default(false) // true if auto-generated from sales
+  lastUpdated       DateTime @default(now())
+  createdBy         String
+  createdAt         DateTime @default(now())
+
+  @@index([isActive])
+  @@index([phone])
+  @@index([isFavorite])
+  @@index([totalSpent])
+  @@index([totalOrders])
+  @@index([isAutoGenerated])
+}
+
+enum UserRole {
+  MASTER
+  REGULAR
+}
+
+// Shipping configuration models
+model ShippingConfig {
+  id          String   @id @default(cuid())
+  carrier     String   // "correos_cr", "dhl", "fedex", etc.
+  name        String   // Display name
+  email       String?  // Login email for carrier website
+  password    String?  // Encrypted password for carrier website
+  apiKey      String?  // API key if available
+  baseUrl     String?  // Base URL for carrier website
+  isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  settings    Json?    // Additional carrier-specific settings
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([carrier])
+  @@index([isActive])
+}
+
+model ShippingGuia {
+  id            String   @id @default(cuid())
+  orderId        String   // Reference to Order
+  carrier        String   // Carrier used
+  guiaNumber     String   // Generated guía number
+  trackingNumber String?  // Tracking number if different
+  status         String   @default("created") // created, printed, shipped, delivered
+  cost           Float?   // Shipping cost
+  weight         Float?   // Package weight
+  dimensions     String?  // Package dimensions
+  serviceType    String?  // Service type (express, standard, etc.)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([carrier])
+  @@index([status])
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  BULK_DELETE
+  BULK_UPDATE
+  BULK_TOGGLE
+  LOGIN
+  LOGOUT
+  EXPORT
+  IMPORT
+}
+
+// Business configuration for sales forms
+model BusinessInfo {
+  id          String   @id @default(cuid())
+  name        String   // Field name (e.g., "Negocio", "Canal de ventas")
+  type        String   // Field type: "dropdown", "date", "text", "textarea"
+  label       String   // Display label
+  placeholder String?   // Placeholder text
+  options     String?  // JSON string of options for dropdowns
+  required    Boolean  @default(false)
+  order       Int      @default(0) // Display order
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String   // User who created this field
+
+  @@index([isActive])
+  @@index([order])
+}
+
+// Configurable order statuses used across production components
+model OrderStatus {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  label       String
+  color       String?  // Tailwind classes or hex
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+
+  @@index([isActive])
+  @@index([order])
+}

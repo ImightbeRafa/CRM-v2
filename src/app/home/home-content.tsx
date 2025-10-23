@@ -1,12 +1,17 @@
 'use client';
+import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import LogoutButton from "@/app/components/LogoutButton";
+import { Button } from "@/app/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/app/components/ui/dialog";
+import { Sparkles, Zap, Settings } from "lucide-react";
 
 export default function HomeContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const [showWizardModal, setShowWizardModal] = useState(false);
 
   // Show loading state while checking authentication
   if (status === "loading") {
@@ -124,7 +129,7 @@ export default function HomeContent() {
 
           {/* Statistics Card */}
           <Link
-            href="/home"
+            href="/estadisticas"
             className="group bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 border border-gray-200"
           >
             <div className="flex flex-col items-center">
@@ -144,7 +149,7 @@ export default function HomeContent() {
                 </svg>
               </div>
               <h2 className="text-xl font-semibold text-gray-600 mb-2">Estadísticas</h2>
-              <p className="text-gray-500 text-center text-sm">Working on it...</p>
+              <p className="text-gray-500 text-center text-sm">Las mejores estadisticas!</p>
             </div>
           </Link>
         </div>
@@ -156,6 +161,105 @@ export default function HomeContent() {
           <p>v1.1.1 </p>
         </footer>
       </main>
+
+      {/* Setup Wizard Floating Button */}
+      <button
+        onClick={() => setShowWizardModal(true)}
+        className="fixed bottom-6 right-6 p-4 bg-gradient-to-br from-purple-600 to-blue-600 text-white rounded-full shadow-lg hover:shadow-xl transform hover:scale-110 transition-all duration-200 group z-50"
+        title="Asistente de Configuración"
+      >
+        <Sparkles className="h-6 w-6 animate-pulse" />
+        <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 bg-gray-900 text-white px-3 py-2 rounded-lg text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+          Asistente de Configuración
+        </span>
+      </button>
+
+      {/* Setup Wizard Modal */}
+      <Dialog open={showWizardModal} onOpenChange={setShowWizardModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-2xl">
+              <Sparkles className="h-6 w-6 text-purple-600" />
+              Asistente de Configuración
+            </DialogTitle>
+            <DialogDescription className="text-base">
+              Te guiaremos paso a paso para configurar todo tu CRM
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Quick Info */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-lg">
+                <div className="p-2 bg-blue-600 rounded-lg">
+                  <Zap className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h4 className="font-semibold text-blue-900">Rápido</h4>
+                  <p className="text-sm text-blue-700">Solo 15-20 minutos</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 p-4 bg-purple-50 rounded-lg">
+                <div className="p-2 bg-purple-600 rounded-lg">
+                  <Settings className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h4 className="font-semibold text-purple-900">Completo</h4>
+                  <p className="text-sm text-purple-700">Configura todo tu sistema</p>
+                </div>
+              </div>
+            </div>
+
+            {/* What will be configured */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="font-semibold text-gray-900 mb-3">Lo que configuraremos:</h4>
+              <ul className="space-y-2 text-sm text-gray-700">
+                <li className="flex items-center gap-2">
+                  <div className="h-1.5 w-1.5 bg-blue-600 rounded-full"></div>
+                  Información del Negocio
+                </li>
+                <li className="flex items-center gap-2">
+                  <div className="h-1.5 w-1.5 bg-blue-600 rounded-full"></div>
+                  Campos Personalizados de Productos
+                </li>
+                <li className="flex items-center gap-2">
+                  <div className="h-1.5 w-1.5 bg-blue-600 rounded-full"></div>
+                  Estados de Pedidos (Flujo de Trabajo)
+                </li>
+                <li className="flex items-center gap-2">
+                  <div className="h-1.5 w-1.5 bg-blue-600 rounded-full"></div>
+                  Inventario, Clientes y Productos Frecuentes
+                </li>
+                <li className="flex items-center gap-2">
+                  <div className="h-1.5 w-1.5 bg-blue-600 rounded-full"></div>
+                  Vendedores y Métodos de Envío
+                </li>
+              </ul>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowWizardModal(false)}
+                className="flex-1"
+              >
+                Más Tarde
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowWizardModal(false);
+                  router.push('/setup-wizard');
+                }}
+                className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                Comenzar Ahora
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import HomeButton from '@/app/components/ui/HomeButtom';
 
 export function ProductionPageClient() {
   const [isGuiaGeneratorOpen, setIsGuiaGeneratorOpen] = useState(false);
+  const [isInvoiceGeneratorOpen, setIsInvoiceGeneratorOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -21,6 +22,9 @@ export function ProductionPageClient() {
           onGenerateGuias={() => setIsGuiaGeneratorOpen(true)}
           isGuiaGeneratorOpen={isGuiaGeneratorOpen}
           onGuiaGeneratorClose={() => setIsGuiaGeneratorOpen(false)}
+          onGenerateInvoices={() => setIsInvoiceGeneratorOpen(true)}
+          isInvoiceGeneratorOpen={isInvoiceGeneratorOpen}
+          onInvoiceGeneratorClose={() => setIsInvoiceGeneratorOpen(false)}
         />
         
         <div className="relative">

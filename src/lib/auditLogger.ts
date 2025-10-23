@@ -17,26 +17,35 @@ export interface AuditLogData {
   userAgent?: string
 }
 
-export async function logAuditEvent(data: AuditLogData) {
+export async function logAuditEvent(data: AuditLogData & { tenantId?: string }) {
   try {
+    const logData: any = {
+      action: data.action,
+      entityType: data.entityType,
+      entityId: data.entityId,
+      entityName: data.entityName,
+      oldValues: data.oldValues,
+      newValues: data.newValues,
+      reason: data.reason,
+      userId: data.userId,
+      userName: data.userName,
+      userRole: data.userRole,
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
+    };
+    
+    // Add tenantId if provided (for multi-tenant isolation)
+    if (data.tenantId) {
+      logData.tenantId = data.tenantId;
+    }
+    
     await prisma.auditLog.create({
-      data: {
-        action: data.action,
-        entityType: data.entityType,
-        entityId: data.entityId,
-        entityName: data.entityName,
-        oldValues: data.oldValues,
-        newValues: data.newValues,
-        reason: data.reason,
-        userId: data.userId,
-        userName: data.userName,
-        userRole: data.userRole,
-        ipAddress: data.ipAddress,
-        userAgent: data.userAgent,
-      }
-    })
+      data: logData
+    });
+    
+    console.log(`✅ Audit log created: ${data.action} on ${data.entityType} by ${data.userName}`);
   } catch (error) {
-    console.error('Failed to log audit event:', error)
+    console.error('❌ Failed to log audit event:', error);
     // Don't throw error to avoid breaking the main operation
   }
 }
@@ -46,28 +55,48 @@ export async function getAuditContext(request: NextRequest) {
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
     
     if (!token) {
+      console.warn('⚠️ No token found for audit context');
       return null
     }
 
     // Get user details from database using the token's sub (user ID)
     const user = await prisma.user.findUnique({
       where: { id: token.sub },
-      select: { id: true, username: true, role: true }
+      select: { 
+        id: true, 
+        username: true,
+        defaultTenantId: true,
+        memberships: {
+          where: { isActive: true },
+          select: {
+            role: true,
+            tenantId: true
+          },
+          take: 1
+        }
+      }
     })
 
-    if (!user) {
+    if (!user || !user.memberships || user.memberships.length === 0) {
+      console.warn('⚠️ User not found or no active memberships for audit context');
       return null
     }
 
+    // Map the new role system to audit log format
+    const role = user.memberships[0].role
+    const userRole = (role === 'OWNER' || role === 'ADMIN') ? 'MASTER' : 'REGULAR'
+    const tenantId = user.memberships[0].tenantId || user.defaultTenantId
+
     return {
       userId: user.id,
-      userName: user.username,
-      userRole: user.role as 'MASTER' | 'REGULAR',
+      userName: user.username || 'Unknown',
+      userRole: userRole as 'MASTER' | 'REGULAR',
+      tenantId: tenantId,
       ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
       userAgent: request.headers.get('user-agent') || 'unknown'
     }
   } catch (error) {
-    console.error('Failed to get audit context:', error)
+    console.error('❌ Failed to get audit context:', error)
     return null
   }
 }
@@ -86,6 +115,7 @@ export async function logApiAction(
   
   // Only log if we have a valid user context
   if (!context) {
+    console.warn(`⚠️ Skipping audit log for ${action} on ${entityType} - no context`);
     return
   }
 
@@ -100,9 +130,10 @@ export async function logApiAction(
     userId: context.userId,
     userName: context.userName,
     userRole: context.userRole,
+    tenantId: context.tenantId,
     ipAddress: context.ipAddress,
     userAgent: context.userAgent
-  })
+  } as any)
 }
 
 // Helper functions for common audit scenarios

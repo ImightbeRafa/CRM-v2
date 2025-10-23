@@ -74,9 +74,12 @@ const nextConfig = {
           cacheGroups: {
             vendor: {
               name: (module) => {
-                const packageName = module.context.match(
+                if (!module.context) return 'vendor.unknown';
+                const match = module.context.match(
                   /[\\/]node_modules[\\/](.*?)([\\/]|$)/
-                )[1];
+                );
+                if (!match || !match[1]) return 'vendor.unknown';
+                const packageName = match[1];
                 return `vendor.${packageName.replace('@', '')}`;
               },
               test: /[\\/]node_modules[\\/]/,

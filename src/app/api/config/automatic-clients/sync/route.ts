@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user is MASTER
-    if ((token as any).role !== 'MASTER') {
+    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

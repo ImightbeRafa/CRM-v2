@@ -1,130 +1,215 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import bcrypt from 'bcryptjs'
+import { hashPassword } from '@/lib/password'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { createSuccessResponse, createErrorResponse, handleApiError, validateRequiredFields, validatePassword } from '@/lib/apiUtils'
+import { logCreate, logDelete } from '@/lib/auditLogger'
 
-// GET /api/users - List all users (master only)
+// GET /api/users - List users belonging to current tenant only
 export async function GET(request: NextRequest) {
   try {
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        username: true,
-        role: true,
-        active: true,
-        createdAt: true,
-        updatedAt: true
+    // Require 'manage_users' permission
+    const auth = await authenticateAPIWithPermission(request, 'manage_users')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    
+    // Get only users that have a membership to the current tenant
+    const memberships = await prisma.membership.findMany({
+      where: {
+        tenantId: tenantId,
+        isActive: true
       },
-      orderBy: { createdAt: 'desc' }
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            active: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        }
+      },
+      orderBy: {
+        user: { createdAt: 'desc' }
+      }
     })
     
-    return createSuccessResponse(users)
+    // Map to user format with role from membership
+    const usersWithRoles = memberships.map(membership => ({
+      id: membership.user.id,
+      username: membership.user.username || membership.user.email,
+      email: membership.user.email,
+      role: membership.role,
+      active: membership.user.active,
+      createdAt: membership.user.createdAt,
+      updatedAt: membership.user.updatedAt,
+      membershipId: membership.id // Include membership ID for deletion
+    }))
+    
+    return createSuccessResponse(usersWithRoles)
   } catch (error) {
     return handleApiError(error)
   }
 }
 
-// POST /api/users - Create new user (master only)
+// POST /api/users - Create new user and add to current tenant
 export async function POST(request: NextRequest) {
   try {
-    const { username, role = 'REGULAR', active = true } = await request.json()
+    // Require 'invite_users' permission
+    const auth = await authenticateAPIWithPermission(request, 'invite_users')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const { email, username, role = 'VIEWER', active = true } = await request.json()
     
     // Validate required fields
-    const missingField = validateRequiredFields({ username }, ['username'])
+    const missingField = validateRequiredFields({ email }, ['email'])
     if (missingField) {
       return createErrorResponse(missingField, 400)
     }
     
-    // Check if username already exists
+    // Check if user already exists
     const existingUser = await prisma.user.findUnique({
-      where: { username }
+      where: { email }
     })
     
+    let userId: string
+    
     if (existingUser) {
-      return createErrorResponse('El usuario ya existe', 409)
+      // User exists - check if they already have a membership to this tenant
+      const existingMembership = await prisma.membership.findFirst({
+        where: {
+          userId: existingUser.id,
+          tenantId: tenantId
+        }
+      })
+      
+      if (existingMembership) {
+        return createErrorResponse('El usuario ya pertenece a este tenant', 409)
+      }
+      
+      // Add existing user to this tenant
+      userId = existingUser.id
+    } else {
+      // Create new user
+      const defaultPassword = 'password123' // Default password for new users
+      const hashedPassword = await hashPassword(defaultPassword) // Hash password with bcrypt
+      
+      const newUser = await prisma.user.create({
+        data: {
+          email,
+          username: username || email,
+          password: hashedPassword,
+          active,
+          defaultTenantId: tenantId
+        },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          active: true,
+          createdAt: true
+        }
+      })
+      userId = newUser.id
     }
     
-    // Create user with default password
-    const defaultPassword = 'password123' // Default password for new users
-    const hashedPassword = await bcrypt.hash(defaultPassword, 12)
-    
-    const user = await prisma.user.create({
+    // Create membership for current tenant
+    const membership = await prisma.membership.create({
       data: {
-        username,
-        password: hashedPassword,
-        role: role as 'MASTER' | 'REGULAR',
-        active
-      },
-      select: {
-        id: true,
-        username: true,
-        role: true,
-        active: true,
-        createdAt: true
+        userId: userId,
+        tenantId: tenantId,
+        role: role as any,
+        isActive: true,
+        joinedAt: new Date().toISOString()
       }
     })
     
-    return createSuccessResponse(user, 'Usuario creado exitosamente')
+    // Log audit trail
+    try {
+      await logCreate(request, 'user', userId, username || email, {
+        email,
+        username: username || email,
+        role: role || 'VIEWER',
+        tenantId
+      })
+    } catch (auditError) {
+      console.error('Failed to log user creation audit:', auditError)
+    }
+    
+    return createSuccessResponse(
+      { userId, email, role, membershipId: membership.id }, 
+      existingUser ? 'Usuario agregado al tenant' : 'Usuario creado exitosamente'
+    )
   } catch (error) {
     return handleApiError(error)
   }
 }
 
-// PUT /api/users - Update user (master only)
+// PUT /api/users - Update user role in current tenant
 export async function PUT(request: NextRequest) {
   try {
-    const { id, username, role, active } = await request.json()
+    // Require 'manage_users' permission
+    const auth = await authenticateAPIWithPermission(request, 'manage_users')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const { id, username, email, role, active } = await request.json()
     
     if (!id) {
       return createErrorResponse('ID de usuario requerido', 400)
     }
     
-    // Check if user exists
-    const existingUser = await prisma.user.findUnique({
-      where: { id }
-    })
-    
-    if (!existingUser) {
-      return createErrorResponse('Usuario no encontrado', 404)
-    }
-    
-    // Check if username is being changed and if it already exists
-    if (username && username !== existingUser.username) {
-      const usernameExists = await prisma.user.findUnique({
-        where: { username }
-      })
-      
-      if (usernameExists) {
-        return createErrorResponse('El nombre de usuario ya existe', 409)
-      }
-    }
-    
-    // Update user
-    const updatedUser = await prisma.user.update({
-      where: { id },
-      data: {
-        ...(username && { username }),
-        ...(role && { role: role as 'MASTER' | 'REGULAR' }),
-        ...(active !== undefined && { active })
+    // Find the membership for this user in the current tenant
+    const membership = await prisma.membership.findFirst({
+      where: {
+        userId: id,
+        tenantId: tenantId
       },
-      select: {
-        id: true,
-        username: true,
-        role: true,
-        active: true,
-        updatedAt: true
+      include: {
+        user: true
       }
     })
     
-    return createSuccessResponse(updatedUser, 'Usuario actualizado exitosamente')
+    if (!membership) {
+      return createErrorResponse('Usuario no encontrado en este tenant', 404)
+    }
+    
+    // Update membership role only (not the user itself)
+    const updatedMembership = await prisma.membership.update({
+      where: { id: membership.id },
+      data: {
+        ...(role && { role: role as any }),
+        ...(active !== undefined && { isActive: active })
+      }
+    })
+    
+    return createSuccessResponse(
+      { 
+        id: membership.user.id,
+        username: membership.user.username || membership.user.email,
+        email: membership.user.email,
+        role: updatedMembership.role,
+        active: updatedMembership.isActive
+      }, 
+      'Usuario actualizado exitosamente'
+    )
   } catch (error) {
     return handleApiError(error)
   }
 }
 
-// DELETE /api/users - Delete user (master only)
+// DELETE /api/users - Remove user from current tenant (deactivate membership)
 export async function DELETE(request: NextRequest) {
   try {
+    // Require 'manage_users' permission
+    const auth = await authenticateAPIWithPermission(request, 'manage_users')
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     
@@ -132,21 +217,50 @@ export async function DELETE(request: NextRequest) {
       return createErrorResponse('ID de usuario requerido', 400)
     }
     
-    // Check if user exists
-    const existingUser = await prisma.user.findUnique({
-      where: { id }
+    // Find the membership for this user in the current tenant
+    const membership = await prisma.membership.findFirst({
+      where: {
+        userId: id,
+        tenantId: tenantId
+      },
+      include: {
+        user: {
+          select: {
+            email: true,
+            username: true
+          }
+        }
+      }
     })
     
-    if (!existingUser) {
-      return createErrorResponse('Usuario no encontrado', 404)
+    if (!membership) {
+      return createErrorResponse('Usuario no encontrado en este tenant', 404)
     }
     
-    // Delete user
-    await prisma.user.delete({
-      where: { id }
+    // CRITICAL: Remove membership only, NOT the user
+    // This allows the user to exist in other tenants
+    await prisma.membership.update({
+      where: { id: membership.id },
+      data: {
+        isActive: false
+      }
     })
     
-    return createSuccessResponse(null, 'Usuario eliminado exitosamente')
+    // Log audit trail
+    try {
+      await logDelete(request, 'user', id, membership.user.username || membership.user.email, {
+        email: membership.user.email,
+        username: membership.user.username,
+        tenantId
+      }, 'Usuario removido del tenant')
+    } catch (auditError) {
+      console.error('Failed to log user deletion audit:', auditError)
+    }
+    
+    return createSuccessResponse(
+      null, 
+      `Usuario ${membership.user.username || membership.user.email} removido de este tenant`
+    )
   } catch (error) {
     return handleApiError(error)
   }

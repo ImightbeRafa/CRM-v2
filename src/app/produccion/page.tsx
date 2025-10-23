@@ -1,14 +1,9 @@
 import { ProductionPageClient } from './components/productionpageClient';
-import { getServerSession } from "next-auth/next"
-import { redirect } from "next/navigation"
-import { authOptions } from "@/lib/auth-options"
+import { requirePermission } from "@/lib/auth-helpers"
 
 export default async function ProductionPage() {
-  const session = await getServerSession(authOptions)
-  
-  if (!session) {
-    redirect('/auth/signin')
-  }
+  // Require 'view_production' permission (SALES users will be redirected!)
+  await requirePermission('view_production')
 
   return <ProductionPageClient />
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getToken } from 'next-auth/jwt';
+import { logCreate, logUpdate, logDelete } from '@/lib/auditLogger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -41,12 +42,31 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user is MASTER
-    if ((token as any).role !== 'MASTER') {
+    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const body = await request.json();
     const { name, type, color, tamano, baseCost, isFavorite } = body;
+
+    // Get user's tenant
+    const user = await prisma.user.findUnique({
+      where: { id: token.sub },
+      select: {
+        defaultTenantId: true,
+        memberships: {
+          where: { isActive: true },
+          select: { tenantId: true },
+          take: 1
+        }
+      }
+    });
+
+    const tenantId = user?.memberships[0]?.tenantId || user?.defaultTenantId;
+
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
 
     const frequentProduct = await prisma.inventoryItem.create({
       data: {
@@ -61,9 +81,19 @@ export async function POST(request: NextRequest) {
         isActive: true,
         isFavorite: isFavorite || false,
         totalSold: 0,
-        createdBy: token.sub as string
+        createdBy: token.sub as string,
+        tenant: { connect: { id: tenantId } }
       }
     });
+
+    // Log audit trail
+    try {
+      await logCreate(request, 'inventory_product', frequentProduct.id, name, {
+        name, type, baseCost, isFavorite
+      });
+    } catch (auditError) {
+      console.error('Failed to log product creation audit:', auditError);
+    }
 
     return NextResponse.json({
       status: 'success',
@@ -87,12 +117,15 @@ export async function PUT(request: NextRequest) {
     }
 
     // Check if user is MASTER
-    if ((token as any).role !== 'MASTER') {
+    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const body = await request.json();
     const { id, name, type, color, tamano, baseCost, isFavorite, active } = body;
+
+    // Get old values for audit
+    const oldProduct = await prisma.inventoryItem.findUnique({ where: { id } });
 
     const frequentProduct = await prisma.inventoryItem.update({
       where: { id },
@@ -106,6 +139,16 @@ export async function PUT(request: NextRequest) {
         lastUpdated: new Date()
       }
     });
+
+    // Log audit trail
+    try {
+      await logUpdate(request, 'inventory_product', id, name,
+        { name: oldProduct?.name, unitCost: oldProduct?.unitCost, isFavorite: oldProduct?.isFavorite },
+        { name, unitCost: baseCost, isFavorite }
+      );
+    } catch (auditError) {
+      console.error('Failed to log product update audit:', auditError);
+    }
 
     return NextResponse.json({
       status: 'success',
@@ -129,7 +172,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Check if user is MASTER
-    if ((token as any).role !== 'MASTER') {
+    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -140,10 +183,23 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Product ID is required' }, { status: 400 });
     }
 
+    // Get product data for audit
+    const product = await prisma.inventoryItem.findUnique({ where: { id } });
+
     await prisma.inventoryItem.update({
       where: { id },
       data: { isActive: false, lastUpdated: new Date() }
     });
+
+    // Log audit trail
+    try {
+      await logDelete(request, 'inventory_product', id, product?.name || 'Unknown',
+        { name: product?.name, unitCost: product?.unitCost },
+        'Producto frecuente desactivado'
+      );
+    } catch (auditError) {
+      console.error('Failed to log product deletion audit:', auditError);
+    }
 
     return NextResponse.json({
       status: 'success',

@@ -3,6 +3,9 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// Force dynamic rendering for webhooks
+export const dynamic = 'force-dynamic';
+
 /**
  * Tilopay Repeat Webhook Handler
  * 
@@ -134,24 +137,49 @@ export async function POST(request: NextRequest) {
       console.log('✅ Payment successful - checking for duplicates...');
       
       // Check for duplicate transaction (idempotency)
-      const existingTransaction = await prisma.billingTransaction.findFirst({
-        where: {
-          tenantId: tenantId,
-          OR: [
-            { description: { contains: orderNumber || '' } },
-            { description: { contains: paymentId?.toString() || '' } }
-          ]
-        }
-      });
-
-      if (existingTransaction) {
-        console.log(`⚠️ Duplicate webhook detected - transaction already processed: ${orderNumber || paymentId}`);
-        return NextResponse.json({ 
-          status: 'success',
-          message: 'Duplicate webhook - already processed',
-          alreadyProcessed: true,
-          transactionId: existingTransaction.id
+      // Check both billing transactions AND audit logs to catch duplicates more reliably
+      const uniqueIdentifier = orderNumber || paymentId?.toString();
+      
+      if (!uniqueIdentifier) {
+        console.error('⚠️ No unique identifier (orderNumber or paymentId) - cannot check for duplicates');
+      } else {
+        // Check billing transactions
+        const existingTransaction = await prisma.billingTransaction.findFirst({
+          where: {
+            tenantId: tenantId,
+            description: { contains: uniqueIdentifier }
+          }
         });
+
+        if (existingTransaction) {
+          console.log(`⚠️ Duplicate webhook detected - transaction already processed: ${uniqueIdentifier}`);
+          return NextResponse.json({ 
+            status: 'success',
+            message: 'Duplicate webhook - already processed',
+            alreadyProcessed: true,
+            transactionId: existingTransaction.id
+          });
+        }
+
+        // Also check audit logs as a backup check
+        const existingAuditLog = await prisma.auditLog.findFirst({
+          where: {
+            tenantId: tenantId,
+            entityType: 'subscription',
+            entityId: uniqueIdentifier,
+            action: 'UPDATE'
+          }
+        });
+
+        if (existingAuditLog) {
+          console.log(`⚠️ Duplicate webhook detected via audit log - already processed: ${uniqueIdentifier}`);
+          return NextResponse.json({ 
+            status: 'success',
+            message: 'Duplicate webhook - already processed (found in audit log)',
+            alreadyProcessed: true,
+            auditLogId: existingAuditLog.id
+          });
+        }
       }
 
       console.log('✅ No duplicate found - processing payment');
@@ -193,7 +221,7 @@ export async function POST(request: NextRequest) {
             amount: transactionAmount,
             currency: 'CRC',
             status: 'success',
-            description: `Suscripción ${newPlan} - Pago mensual`,
+            description: `Suscripción ${newPlan} - Pago mensual [${orderNumber || paymentId}]`,
             paymentMethod: 'tilopay',
             periodStart: now,
             periodEnd: nextBillingDate
@@ -332,7 +360,4 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
-
-// Allow webhook to be called without authentication
-export const dynamic = 'force-dynamic';
 

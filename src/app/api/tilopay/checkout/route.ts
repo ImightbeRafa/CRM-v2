@@ -11,8 +11,21 @@ export async function POST(request: NextRequest) {
       console.error('❌ No authentication token found');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Get user with memberships to find tenant ID
+    const { prisma } = await import('@/lib/db');
+    const user = await prisma.user.findUnique({
+      where: { id: token.sub as string },
+      include: { memberships: true }
+    });
+
+    if (!user || !user.memberships.length) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
+    const tenantId = user.memberships[0].tenantId;
     
-    console.log('✅ Token found for:', token.email);
+    console.log('✅ Token found for:', user.email);
 
     const { planId } = await request.json();
     console.log('📦 Plan requested:', planId);
@@ -41,12 +54,12 @@ export async function POST(request: NextRequest) {
     const link = await createPaymentLink({
       amountMinor: selected.priceMinor,
       currency: selected.currency,
-      description: `Plan ${selected.name} - Tenant ${token.tenantId}`,
-      orderId: `${token.tenantId}-${selected.name}-${Date.now()}`,
+      description: `Plan ${selected.name} - Tenant ${tenantId}`,
+      orderId: `${tenantId}-${selected.name}-${Date.now()}`,
       successUrl,
       cancelUrl,
       callbackUrl,
-      customerEmail: token.email as string
+      customerEmail: user.email as string
     });
 
     console.log('✅ Payment link created:', link.url);

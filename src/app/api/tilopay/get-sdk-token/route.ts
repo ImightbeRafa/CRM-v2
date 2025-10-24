@@ -11,11 +11,22 @@ export async function POST(request: NextRequest) {
     console.log('🔐 Generating Tilopay SDK token...');
     
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-    if (!token || !token.tenantId) {
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('✅ User authenticated:', token.email);
+    // Get user with memberships to find tenant ID
+    const { prisma } = await import('@/lib/db');
+    const user = await prisma.user.findUnique({
+      where: { id: token.sub as string },
+      include: { memberships: true }
+    });
+
+    if (!user || !user.memberships.length) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
+    console.log('✅ User authenticated:', user.email);
 
     const { planId, amount } = await request.json();
     

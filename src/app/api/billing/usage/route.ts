@@ -9,11 +9,21 @@ export async function GET(request: NextRequest) {
   try {
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     
-    if (!token || !token.tenantId) {
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const tenantId = token.tenantId as string;
+    // Get user with memberships to find tenant ID
+    const user = await prisma.user.findUnique({
+      where: { id: token.sub as string },
+      include: { memberships: true }
+    });
+
+    if (!user || !user.memberships.length) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
+    const tenantId = user.memberships[0].tenantId;
 
     // Get tenant plan to know limits
     const tenant = await prisma.tenant.findUnique({

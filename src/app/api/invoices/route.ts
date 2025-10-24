@@ -6,9 +6,21 @@ export async function GET(request: NextRequest) {
   try {
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     
-    if (!token || !token.tenantId) {
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Get user with memberships to find tenant ID
+    const user = await prisma.user.findUnique({
+      where: { id: token.sub as string },
+      include: { memberships: true }
+    });
+
+    if (!user || !user.memberships.length) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    }
+
+    const tenantId = user.memberships[0].tenantId;
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
@@ -16,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     // Build where clause
     const where: any = {
-      tenantId: token.tenantId as string
+      tenantId: tenantId
     };
 
     if (status) {

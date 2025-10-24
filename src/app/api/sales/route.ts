@@ -3,6 +3,9 @@ import { prisma } from '@/lib/db'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { logCreate, logUpdate, logDelete } from '@/lib/auditLogger'
 
+// Force dynamic rendering for authentication
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     const sales = await prisma.order.findMany({

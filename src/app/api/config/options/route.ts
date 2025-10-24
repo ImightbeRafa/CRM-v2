@@ -1,75 +1,104 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getToken } from 'next-auth/jwt'
 import { getTenantPrisma } from '@/lib/prisma-tenant'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
-import { createSuccessResponse, createErrorResponse, handleApiError, validateRequiredFields } from '@/lib/apiUtils'
+import { prisma } from '@/lib/db'
+
+// Force dynamic rendering for authentication
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'view_config')
-    if (!auth.ok) return auth.response
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
     
-    const { tenantId } = auth
-    const prisma = getTenantPrisma(tenantId)
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Get user with memberships to find tenant ID
+    const user = await prisma.user.findUnique({
+      where: { id: token.sub as string },
+      include: { memberships: true }
+    })
+
+    if (!user || !user.memberships.length) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
+    }
+
+    const tenantId = user.memberships[0].tenantId
+    const tenantPrisma = getTenantPrisma(tenantId)
     
     const { searchParams } = new URL(request.url)
     const setId = searchParams.get('setId')
     
     if (setId) {
       // Get options for a specific set
-      const options = await prisma.productOption.findMany({
+      const options = await tenantPrisma.productOption.findMany({
         where: { 
           setId,
           active: true 
         },
         orderBy: { label: 'asc' }
       })
-      return createSuccessResponse(options)
+      
+      return NextResponse.json({ status: 'success', data: options })
     } else {
-      // Get all options (with tenant check via option set)
-      const options = await prisma.productOption.findMany({
+      // Get all options for this tenant
+      const options = await tenantPrisma.productOption.findMany({
         where: { 
-          active: true,
-          set: { tenantId }
+          active: true
         },
         include: { set: true },
         orderBy: { label: 'asc' }
       })
-      return createSuccessResponse(options)
+      
+      return NextResponse.json({ status: 'success', data: options })
     }
   } catch (error) {
-    return handleApiError(error)
+    console.error('Options GET error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
-    if (!auth.ok) return auth.response
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
     
-    const { tenantId } = auth
-    const prisma = getTenantPrisma(tenantId)
-    
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Get user with memberships to find tenant ID
+    const user = await prisma.user.findUnique({
+      where: { id: token.sub as string },
+      include: { memberships: true }
+    })
+
+    if (!user || !user.memberships.length) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
+    }
+
+    const tenantId = user.memberships[0].tenantId
+    const tenantPrisma = getTenantPrisma(tenantId)
     const body = await request.json()
     
-    const missingField = validateRequiredFields(body, ['setId', 'label', 'value'])
-    if (missingField) {
-      return createErrorResponse(missingField, 400)
+    // Validate required fields
+    if (!body.setId || !body.label || !body.value) {
+      return NextResponse.json({ error: 'Missing required fields: setId, label, value' }, { status: 400 })
     }
     
     // Verify the option set belongs to this tenant
-    const optionSet = await prisma.productOptionSet.findFirst({
+    const optionSet = await tenantPrisma.productOptionSet.findFirst({
       where: { 
-        id: body.setId,
-        tenantId 
+        id: body.setId
       }
     })
     
     if (!optionSet) {
-      return createErrorResponse('Option set not found or access denied', 404)
+      return NextResponse.json({ error: 'Option set not found or access denied' }, { status: 404 })
     }
     
     // Create the option
-    const created = await prisma.productOption.create({
+    const created = await tenantPrisma.productOption.create({
       data: {
         setId: body.setId,
         label: body.label,
@@ -80,41 +109,52 @@ export async function POST(request: NextRequest) {
       },
     })
     
-    return createSuccessResponse(created, 'Option created successfully')
+    return NextResponse.json({ status: 'success', data: created, message: 'Option created successfully' })
   } catch (error) {
-    return handleApiError(error)
+    console.error('Options POST error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
 export async function PUT(request: NextRequest) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
-    if (!auth.ok) return auth.response
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
     
-    const { tenantId } = auth
-    const prisma = getTenantPrisma(tenantId)
-    
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Get user with memberships to find tenant ID
+    const user = await prisma.user.findUnique({
+      where: { id: token.sub as string },
+      include: { memberships: true }
+    })
+
+    if (!user || !user.memberships.length) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
+    }
+
+    const tenantId = user.memberships[0].tenantId
+    const tenantPrisma = getTenantPrisma(tenantId)
     const body = await request.json()
     
-    const missingField = validateRequiredFields(body, ['id'])
-    if (missingField) {
-      return createErrorResponse(missingField, 400)
+    if (!body.id) {
+      return NextResponse.json({ error: 'Missing required field: id' }, { status: 400 })
     }
     
     // Verify the option belongs to this tenant (via option set)
-    const existingOption = await prisma.productOption.findFirst({
+    const existingOption = await tenantPrisma.productOption.findFirst({
       where: {
-        id: body.id,
-        set: { tenantId }
+        id: body.id
       }
     })
     
     if (!existingOption) {
-      return createErrorResponse('Option not found or access denied', 404)
+      return NextResponse.json({ error: 'Option not found or access denied' }, { status: 404 })
     }
     
     // Update the option
-    const updated = await prisma.productOption.update({
+    const updated = await tenantPrisma.productOption.update({
       where: { id: body.id },
       data: {
         label: body.label ?? existingOption.label,
@@ -125,47 +165,61 @@ export async function PUT(request: NextRequest) {
       },
     })
     
-    return createSuccessResponse(updated, 'Option updated successfully')
+    return NextResponse.json({ status: 'success', data: updated, message: 'Option updated successfully' })
   } catch (error) {
-    return handleApiError(error)
+    console.error('Options PUT error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
 export async function DELETE(request: NextRequest) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
-    if (!auth.ok) return auth.response
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
     
-    const { tenantId } = auth
-    const prisma = getTenantPrisma(tenantId)
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Get user with memberships to find tenant ID
+    const user = await prisma.user.findUnique({
+      where: { id: token.sub as string },
+      include: { memberships: true }
+    })
+
+    if (!user || !user.memberships.length) {
+      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
+    }
+
+    const tenantId = user.memberships[0].tenantId
+    const tenantPrisma = getTenantPrisma(tenantId)
     
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     
     if (!id) {
-      return createErrorResponse('Missing id parameter', 400)
+      return NextResponse.json({ error: 'Missing id parameter' }, { status: 400 })
     }
     
     // Verify the option belongs to this tenant (via option set)
-    const existingOption = await prisma.productOption.findFirst({
+    const existingOption = await tenantPrisma.productOption.findFirst({
       where: {
-        id,
-        set: { tenantId }
+        id
       }
     })
     
     if (!existingOption) {
-      return createErrorResponse('Option not found or access denied', 404)
+      return NextResponse.json({ error: 'Option not found or access denied' }, { status: 404 })
     }
     
-    // Soft delete
-    const updated = await prisma.productOption.update({
+    // Soft delete the option
+    const updated = await tenantPrisma.productOption.update({
       where: { id },
       data: { active: false },
     })
     
-    return createSuccessResponse(updated, 'Option deleted successfully')
+    return NextResponse.json({ status: 'success', data: updated, message: 'Option deleted successfully' })
   } catch (error) {
-    return handleApiError(error)
+    console.error('Options DELETE error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

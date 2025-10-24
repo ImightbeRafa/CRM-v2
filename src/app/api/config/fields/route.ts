@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getTenantPrisma } from '@/lib/prisma-tenant'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 
+// Force dynamic rendering for authentication
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     // Require 'view_config' permission

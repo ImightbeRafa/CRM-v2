@@ -6,6 +6,9 @@ import { createSuccessResponse, createErrorResponse, handleApiError, validateReq
 import { logCreate, logDelete } from '@/lib/auditLogger'
 import { checkUserLimit } from '@/lib/plan-enforcement'
 
+// Force dynamic rendering for authentication
+export const dynamic = 'force-dynamic'
+
 // GET /api/users - List users belonging to current tenant only
 export async function GET(request: NextRequest) {
   try {

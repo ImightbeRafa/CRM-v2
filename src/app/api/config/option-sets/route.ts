@@ -3,6 +3,9 @@ import { getTenantPrisma } from '@/lib/prisma-tenant'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { createSuccessResponse, createErrorResponse, handleApiError, validateRequiredFields } from '@/lib/apiUtils'
 
+// Force dynamic rendering for authentication
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     // Require 'view_config' permission

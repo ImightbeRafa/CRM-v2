@@ -6,6 +6,9 @@ import { createSuccessResponse, createErrorResponse, handleApiError } from '@/li
 import { logCreate } from '@/lib/auditLogger'
 import { checkOrderLimit } from '@/lib/plan-enforcement'
 
+// Force dynamic rendering for authentication
+export const dynamic = 'force-dynamic'
+
 // Function to update inventory when an order is created
 async function updateInventoryForOrder(order: any, tenantPrisma: any) {
   console.log('Updating inventory for order:', {

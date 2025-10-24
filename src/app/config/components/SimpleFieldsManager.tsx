@@ -86,12 +86,21 @@ export function SimpleFieldsManager() {
     setLoading(true);
     try {
       const [fieldsRes, optionSetsRes] = await Promise.all([
-        fetch('/api/config/fields').then(r => r.json()),
-        fetch('/api/config/option-sets').then(r => r.json()),
+        fetch('/api/config/fields', { cache: 'no-cache' }).then(r => r.json()),
+        fetch('/api/config/option-sets', { cache: 'no-cache' }).then(r => r.json()),
       ]);
 
-      if (fieldsRes.status === 'success') setFields(fieldsRes.data || []);
-      if (optionSetsRes.status === 'success') setOptionSets(optionSetsRes.data || []);
+      console.log('🔍 Loaded fields response:', fieldsRes);
+      console.log('🔍 Loaded option sets response:', optionSetsRes);
+
+      if (fieldsRes.status === 'success') {
+        console.log('📋 Fields data:', fieldsRes.data);
+        setFields(fieldsRes.data || []);
+      }
+      if (optionSetsRes.status === 'success') {
+        console.log('📋 Option sets data:', optionSetsRes.data);
+        setOptionSets(optionSetsRes.data || []);
+      }
     } catch (error) {
       console.error('Error loading data:', error);
       toast({
@@ -137,15 +146,21 @@ export function SimpleFieldsManager() {
           name: presetField.label,
         };
 
+        console.log('🔍 Creating option set with payload:', optionSetPayload);
+        
         const optionSetRes = await fetch('/api/config/option-sets', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(optionSetPayload)
         });
 
+        console.log('📥 Option set response status:', optionSetRes.status);
         const optionSetJson = await optionSetRes.json();
+        console.log('📥 Option set response JSON:', optionSetJson);
+        
         if (optionSetJson.status === 'success') {
           optionSetId = optionSetJson.data.id;
+          console.log('✅ Option set created with ID:', optionSetId);
 
           // Check if options already exist for this option set
           const existingOptionsRes = await fetch(`/api/config/options?setId=${optionSetId}`);
@@ -189,14 +204,17 @@ export function SimpleFieldsManager() {
         multiSelect: false,
       };
 
+      console.log('🔍 Creating field with payload:', fieldPayload);
+
       const fieldRes = await fetch('/api/config/fields', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(fieldPayload)
       });
 
+      console.log('📥 Field response status:', fieldRes.status);
       const fieldJson = await fieldRes.json();
-      console.log('Field creation response:', fieldJson);
+      console.log('📥 Field creation response:', fieldJson);
       if (fieldJson.status === 'success') {
         toast({
           title: "✅ Campo agregado",
@@ -256,7 +274,24 @@ export function SimpleFieldsManager() {
   };
 
   const handleAddOption = async () => {
-    if (!editingField?.optionSetId || !newOptionLabel) return;
+    console.log('🔍 Debug handleAddOption:', {
+      editingField,
+      optionSetId: editingField?.optionSetId,
+      newOptionLabel,
+      hasOptionSetId: !!editingField?.optionSetId,
+      fieldType: editingField?.type,
+      fieldKey: editingField?.key,
+      fieldLabel: editingField?.label
+    });
+    
+    if (!editingField?.optionSetId || !newOptionLabel) {
+      console.log('❌ Missing required data:', {
+        hasEditingField: !!editingField,
+        hasOptionSetId: !!editingField?.optionSetId,
+        hasNewOptionLabel: !!newOptionLabel
+      });
+      return;
+    }
     
     // Auto-generate value from label (lowercase, no spaces, no special chars)
     const autoValue = newOptionLabel
@@ -266,26 +301,65 @@ export function SimpleFieldsManager() {
       .replace(/[^a-z0-9]+/g, '-')       // Replace non-alphanumeric with hyphens
       .replace(/^-+|-+$/g, '');          // Remove leading/trailing hyphens
     
+    const requestBody = {
+      setId: editingField.optionSetId,
+      label: newOptionLabel,
+      value: autoValue,
+      priceDelta: newOptionPrice || 0
+    };
+    
+    console.log('📤 Making request to /api/config/options with body:', requestBody);
+    
+    // First, let's verify the option set exists
+    try {
+      console.log('🔍 Verifying option set exists...');
+      const verifyRes = await fetch(`/api/config/option-sets`, { cache: 'no-cache' });
+      const verifyJson = await verifyRes.json();
+      console.log('📥 Available option sets:', verifyJson);
+      
+      const targetOptionSet = verifyJson.data?.find((set: any) => set.id === editingField.optionSetId);
+      if (!targetOptionSet) {
+        console.error('❌ Option set not found in available sets:', editingField.optionSetId);
+        toast({ 
+          variant: "destructive", 
+          title: "Error", 
+          description: "El conjunto de opciones no existe. Por favor, recarga la página e intenta de nuevo." 
+        });
+        return;
+      }
+      console.log('✅ Option set found:', targetOptionSet);
+    } catch (verifyError) {
+      console.error('❌ Error verifying option set:', verifyError);
+    }
+    
     try {
       const res = await fetch('/api/config/options', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          setId: editingField.optionSetId,
-          label: newOptionLabel,
-          value: autoValue,
-          priceDelta: newOptionPrice || 0
-        })
+        body: JSON.stringify(requestBody)
       });
       
+      console.log('📥 Response status:', res.status);
+      console.log('📥 Response headers:', Object.fromEntries(res.headers.entries()));
+      
       const json = await res.json();
+      console.log('📥 Response JSON:', json);
+      
       if (json.status === 'success') {
         toast({ title: "✅ Opción agregada" });
         setNewOptionLabel('');
         setNewOptionPrice(0);
         await loadFieldOptions(editingField.optionSetId);
+      } else {
+        console.error('❌ API returned error:', json);
+        toast({ 
+          variant: "destructive", 
+          title: "Error", 
+          description: `Error del servidor: ${json.error || 'Error desconocido'}` 
+        });
       }
     } catch (error) {
+      console.error('❌ Fetch error:', error);
       toast({ variant: "destructive", title: "Error", description: "No se pudo agregar la opción" });
     }
   };
@@ -315,7 +389,9 @@ export function SimpleFieldsManager() {
     if (!confirm('¿Eliminar esta opción?')) return;
     
     try {
-      const res = await fetch(`/api/config/options?id=${optionId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/config/options?id=${optionId}`, { 
+        method: 'DELETE'
+      });
       const json = await res.json();
       
       if (json.status === 'success') {
@@ -490,7 +566,10 @@ export function SimpleFieldsManager() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setEditingField(field)}
+                        onClick={() => {
+                          console.log('🔍 Setting editing field:', field);
+                          setEditingField(field);
+                        }}
                         className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
                       >
                         <Edit className="w-4 h-4 mr-1" />

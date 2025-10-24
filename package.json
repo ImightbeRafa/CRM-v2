@@ -22,6 +22,8 @@
     "check:billing": "node scripts/check-billing-transactions.js",
     "create:test-user": "node scripts/create-test-user.js",
     "reset:user": "node scripts/reset-user-for-testing.js",
+    "reset:test-users": "node scripts/reset-users-for-testing.js",
+    "delete:test-users": "node scripts/delete-test-users.js",
     "seed:statuses": "node scripts/seed-default-statuses-for-tenant.js",
     "ensure:defaults": "node scripts/ensure-default-features.js",
     "cleanup:tests": "node scripts/cleanup-test-accounts.js"

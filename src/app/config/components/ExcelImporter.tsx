@@ -45,20 +45,20 @@ export function ExcelImporter() {
       description: 'Importa pedidos EA (envío) y RA (retiro). Flexible con nombres de columnas.',
       color: 'blue'
     },
-    // Coming soon: Customers and Products
+    {
+      id: 'products' as ImportType,
+      name: 'Inventario / Productos',
+      icon: Package,
+      description: 'Importa productos al inventario. Columnas: Código, Tipo, Color, Capacidad, Cantidad, Precio, Ubicación.',
+      color: 'purple'
+    }
+    // Coming soon: Customers
     // {
     //   id: 'customers' as ImportType,
     //   name: 'Clientes',
     //   icon: Users,
     //   description: 'Importa información de clientes frecuentes',
     //   color: 'green'
-    // },
-    // {
-    //   id: 'products' as ImportType,
-    //   name: 'Productos',
-    //   icon: Package,
-    //   description: 'Importa catálogo de productos e inventario',
-    //   color: 'purple'
     // }
   ];
 

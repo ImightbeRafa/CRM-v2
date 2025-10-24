@@ -8,10 +8,19 @@ import { Button } from "@/app/components/ui/button"
 export default function SignInPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [name, setName] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [isRegistering, setIsRegistering] = useState(false)
   const searchParams = useSearchParams()
   const intendedPlan = (searchParams?.get('plan') || '').toLowerCase()
+  const signupMode = searchParams?.get('signup') === 'true'
+  
+  useEffect(() => {
+    if (signupMode) {
+      setIsRegistering(true)
+    }
+  }, [signupMode])
 
   // If user lands here with a plan param and later signs in, attempt to apply it
   const applyPlanIfRequested = async () => {
@@ -38,8 +47,71 @@ export default function SignInPage() {
     window.location.href = '/config?tab=billing'
   }
 
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name: name || email.split('@')[0] })
+      })
+      
+      const data = await res.json()
+      
+      if (!res.ok) {
+        setError(data.error || 'Error al registrarse')
+        setLoading(false)
+        return
+      }
+      
+      // Auto sign in after registration
+      const signInRes = await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
+        callbackUrl: '/home'
+      })
+      
+      if (!signInRes || signInRes.error) {
+        setError('Registro exitoso. Por favor inicia sesión.')
+        setLoading(false)
+        setIsRegistering(false)
+        return
+      }
+      
+      // If user selected a paid plan, redirect to payment or billing
+      if (intendedPlan && intendedPlan !== 'free') {
+        // Get the Tilopay link based on plan
+        const tilopayLinks: { [key: string]: string } = {
+          'basic': 'https://tp.cr/l/TkRFME9RPT18MQ==',
+          'pro': 'https://tp.cr/l/TkRFMU1BPT18MQ=='
+        }
+        
+        if (tilopayLinks[intendedPlan]) {
+          window.location.href = tilopayLinks[intendedPlan]
+          return
+        }
+      }
+      
+      // Otherwise, go to home
+      window.location.href = '/home'
+    } catch (err) {
+      setError('Error al conectar con el servidor')
+      setLoading(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    if (isRegistering) {
+      await handleRegister(e)
+      return
+    }
+    
     setLoading(true)
     setError(null)
     const res = await signIn('credentials', {
@@ -78,20 +150,42 @@ export default function SignInPage() {
       <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-6 shadow-md">
         <div className="text-center">
           <h2 className="mt-6 text-3xl font-bold text-gray-900">
-            Iniciar Sesión
+            {isRegistering ? 'Crear Cuenta' : 'Iniciar Sesión'}
           </h2>
           <p className="mt-2 text-gray-600">
-            Usa tu correo electrónico y contraseña
+            {isRegistering 
+              ? `Regístrate ${intendedPlan && intendedPlan !== 'free' ? `para el plan ${intendedPlan.toUpperCase()}` : 'gratis'}` 
+              : 'Usa tu correo electrónico y contraseña'
+            }
           </p>
+          {intendedPlan && intendedPlan !== 'free' && isRegistering && (
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                ✨ Después del registro, serás redirigido al pago seguro de Tilopay
+              </p>
+            </div>
+          )}
         </div>
         <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
+          {isRegistering && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Nombre (opcional)</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                placeholder="Tu nombre"
+              />
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700">Correo Electrónico</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500"
               placeholder="tu@email.com"
               required
             />
@@ -102,7 +196,9 @@ export default function SignInPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              placeholder={isRegistering ? "Mínimo 6 caracteres" : ""}
+              minLength={isRegistering ? 6 : undefined}
               required
             />
           </div>
@@ -112,8 +208,24 @@ export default function SignInPage() {
             disabled={loading}
             className="w-full flex items-center justify-center gap-3 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
           >
-            {loading ? 'Ingresando…' : 'Ingresar'}
+            {loading 
+              ? (isRegistering ? 'Registrando…' : 'Ingresando…')
+              : (isRegistering ? 'Crear Cuenta' : 'Ingresar')
+            }
           </button>
+          
+          <div className="text-center mt-4">
+            <button
+              type="button"
+              onClick={() => setIsRegistering(!isRegistering)}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              {isRegistering 
+                ? '¿Ya tienes cuenta? Inicia sesión' 
+                : '¿No tienes cuenta? Regístrate'
+              }
+            </button>
+          </div>
 
           {/* Divider */}
           <div className="relative my-4">

@@ -11,56 +11,60 @@ const pricingPlans = [
     name: "Free",
     price: "$0",
     period: "/month",
-    description: "Perfect for small teams getting started",
+    description: "Perfect to get started with 15-day trial",
     features: [
-      "Up to 5 users",
-      "Basic CRM features",
-      "Email support",
-      "1GB storage",
-      "Basic reporting"
+      "15-day free trial",
+      "Complete order management",
+      "Visual kanban board",
+      "Customer tracking",
+      "Basic reporting",
+      "Email support"
     ],
-    cta: "Get Started Free",
+    cta: "Start Free Trial",
     popular: false,
     priceId: null, // Free plan
-    stripePriceId: null
+    tilopayLink: null
+  },
+  {
+    name: "Basic",
+    price: "$15",
+    period: "/month",
+    originalPrice: "₡15,000 CRC",
+    description: "Essential features for growing businesses",
+    features: [
+      "Everything in Free",
+      "Unlimited orders",
+      "Advanced analytics",
+      "Custom fields",
+      "Priority support",
+      "Export to Excel",
+      "Audit logs"
+    ],
+    cta: "Start Basic Plan",
+    popular: true,
+    priceId: "basic",
+    tilopayLink: "https://tp.cr/l/TkRFME9RPT18MQ==" // Tilopay Repeat link for BASIC
   },
   {
     name: "Pro",
-    price: "$29",
+    price: "$45",
     period: "/month",
-    description: "Ideal for growing businesses",
+    originalPrice: "₡45,000 CRC",
+    description: "Complete solution for serious businesses",
     features: [
-      "Up to 50 users",
-      "Advanced CRM features",
-      "Priority support",
-      "10GB storage",
-      "Advanced analytics",
-      "API access",
-      "Custom fields"
-    ],
-    cta: "Start Pro Trial",
-    popular: true,
-    priceId: "pro",
-    stripePriceId: process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID
-  },
-  {
-    name: "Enterprise",
-    price: "$99",
-    period: "/month",
-    description: "For large organizations",
-    features: [
+      "Everything in Basic",
       "Unlimited users",
-      "All Pro features",
-      "24/7 phone support",
-      "Unlimited storage",
+      "Advanced reports",
+      "API access",
       "Custom integrations",
-      "SSO authentication",
+      "Inventory management",
+      "Priority 24/7 support",
       "Dedicated account manager"
     ],
-    cta: "Contact Sales",
+    cta: "Start Pro Plan",
     popular: false,
-    priceId: "enterprise",
-    stripePriceId: process.env.NEXT_PUBLIC_STRIPE_ENTERPRISE_PRICE_ID
+    priceId: "pro",
+    tilopayLink: "https://tp.cr/l/TkRFMU1BPT18MQ==" // Tilopay Repeat link for PRO
   }
 ];
 
@@ -69,22 +73,34 @@ export default function SimplePricingSection() {
 
   const handlePlanSelect = async (plan: typeof pricingPlans[0]) => {
     if (plan.priceId === null) {
-      // Free plan - redirect to sign up with plan param
-      window.location.href = '/auth/signin?plan=free';
+      // Free plan - redirect to sign up page
+      window.location.href = '/auth/signin?signup=true&plan=free';
       return;
     }
 
-    if (plan.priceId === 'enterprise') {
-      // Enterprise plan - redirect to contact
-      window.location.href = '/contact?plan=enterprise';
-      return;
-    }
-
-    // For paid plans, show loading and redirect to auth with plan param
+    // For paid plans (BASIC or PRO), show loading and redirect directly to Tilopay
+    // User can create account after payment or existing users can upgrade
     setLoading(plan.priceId);
-    setTimeout(() => {
-      window.location.href = `/auth/signin?plan=${encodeURIComponent(plan.priceId || '')}`;
-    }, 1000);
+    
+    // Check if user is logged in
+    fetch('/api/auth/session')
+      .then(res => res.json())
+      .then(session => {
+        if (session?.user) {
+          // User is logged in, redirect to Tilopay payment
+          if (plan.tilopayLink) {
+            window.location.href = plan.tilopayLink;
+          }
+        } else {
+          // User not logged in, redirect to sign up with plan param
+          // After sign up, they'll be directed to upgrade
+          window.location.href = `/auth/signin?signup=true&plan=${plan.priceId}`;
+        }
+      })
+      .catch(() => {
+        // If session check fails, redirect to sign up
+        window.location.href = `/auth/signin?signup=true&plan=${plan.priceId}`;
+      });
   };
 
   return (
@@ -113,6 +129,9 @@ export default function SimplePricingSection() {
                   <span className="text-4xl font-bold">{plan.price}</span>
                   <span className="text-gray-600">{plan.period}</span>
                 </div>
+                {plan.originalPrice && (
+                  <p className="text-sm text-gray-500 mt-1">{plan.originalPrice}</p>
+                )}
                 <CardDescription className="mt-2">{plan.description}</CardDescription>
               </CardHeader>
               <CardContent>
@@ -146,14 +165,17 @@ export default function SimplePricingSection() {
 
         <div className="mt-12 text-center">
           <p className="text-gray-600 mb-4">
-            All plans include 14-day free trial. No credit card required.
+            Free plan includes 15-day trial. Paid plans start immediately. Cancel anytime.
+          </p>
+          <p className="text-sm text-gray-500 mb-4">
+            💳 We accept all major credit cards via secure Tilopay payment processing
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button variant="outline">
+            <Button variant="outline" onClick={() => window.location.href = '#features'}>
               View All Features
             </Button>
-            <Button variant="outline">
-              Compare Plans
+            <Button variant="outline" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+              Contact Sales
             </Button>
           </div>
         </div>

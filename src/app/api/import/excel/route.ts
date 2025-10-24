@@ -333,9 +333,175 @@ async function importOrders(rows: any[], tenantId: string): Promise<ImportResult
 }
 
 // ============================================
-// Note: Customers and Products import coming soon
-// Will be enabled once database models are ready
+// INVENTORY/PRODUCTS IMPORT - Flexible Column Mapping
 // ============================================
+const inventoryHeaderMap: Record<string, string> = {
+  // SKU variations
+  'codigo': 'sku',
+  'sku': 'sku',
+  'code': 'sku',
+  'id': 'sku',
+  'producto_id': 'sku',
+  
+  // Name components (will be combined)
+  'tipo': 'tipo',
+  'type': 'tipo',
+  'categoria_principal': 'tipo',
+  
+  'color': 'color',
+  'colour': 'color',
+  
+  'capacidad': 'capacidad',
+  'capacidad_oz': 'capacidad',
+  'capacity': 'capacidad',
+  'size': 'capacidad',
+  'tamano': 'capacidad',
+  
+  // Stock
+  'cant': 'currentStock',
+  'cantidad': 'currentStock',
+  'stock': 'currentStock',
+  'stock_actual': 'currentStock',
+  'existencia': 'currentStock',
+  'qty': 'currentStock',
+  
+  // Category
+  'categoria': 'category',
+  'category': 'category',
+  'tipo_producto': 'category',
+  
+  // Pricing
+  'precio_de_venta': 'sellingPrice',
+  'precio_venta': 'sellingPrice',
+  'precio': 'sellingPrice',
+  'price': 'sellingPrice',
+  'venta': 'sellingPrice',
+  
+  'costo_unitario': 'unitCost',
+  'costo': 'unitCost',
+  'cost': 'unitCost',
+  'precio_costo': 'unitCost',
+  
+  // Location
+  'ubicacion': 'location',
+  'location': 'location',
+  'almacen': 'location',
+  'bodega': 'location',
+  
+  // Description
+  'descripcion': 'description',
+  'description': 'description',
+  'detalles': 'description',
+  'notas': 'description',
+  
+  // Supplier
+  'proveedor': 'supplier',
+  'supplier': 'supplier',
+  'vendor': 'supplier',
+};
+
+async function importInventory(rows: any[], tenantId: string): Promise<ImportResult> {
+  const result: ImportResult = { success: true, imported: 0, failed: 0, errors: [] };
+  
+  console.log(`📦 Starting import of ${rows.length} inventory items for tenant ${tenantId}`);
+  
+  for (let i = 0; i < rows.length; i++) {
+    // Log progress every 50 rows
+    if (i > 0 && i % 50 === 0) {
+      console.log(`⏳ Progress: ${i}/${rows.length} rows processed...`);
+    }
+    
+    try {
+      const rawRow = rows[i];
+      const mapped: any = {};
+      
+      // Map headers
+      for (const [k, v] of Object.entries(rawRow)) {
+        const norm = normalizeKey(k as string);
+        const target = inventoryHeaderMap[norm] || norm;
+        mapped[target] = v;
+      }
+      
+      // Build product name from Tipo + Color + Capacidad
+      let productName = '';
+      const nameParts: string[] = [];
+      
+      if (mapped.tipo) nameParts.push(String(mapped.tipo).trim());
+      if (mapped.color) nameParts.push(String(mapped.color).trim());
+      if (mapped.capacidad) nameParts.push(String(mapped.capacidad).trim());
+      
+      productName = nameParts.join(' ');
+      
+      // If no name parts, use description or SKU
+      if (!productName && mapped.description) {
+        productName = String(mapped.description).trim().substring(0, 100);
+      }
+      if (!productName && mapped.sku) {
+        productName = `Producto ${String(mapped.sku).trim()}`;
+      }
+      if (!productName) {
+        productName = `Producto ${i + 1}`;
+      }
+      
+      // Process numeric fields
+      const currentStock = toNumber(mapped.currentStock);
+      const minStock = 0; // Default
+      const maxStock = 100; // Default
+      const sellingPrice = toNumber(mapped.sellingPrice);
+      const unitCost = toNumber(mapped.unitCost);
+      
+      // Ensure SKU exists
+      const sku = mapped.sku ? String(mapped.sku).trim() : `SKU-${Date.now()}-${i}`;
+      
+      // Create or update inventory item
+      await prisma.inventoryItem.upsert({
+        where: {
+          sku_tenantId: {
+            sku: sku,
+            tenantId: tenantId
+          }
+        },
+        update: {
+          name: productName,
+          category: mapped.category ? String(mapped.category).trim() : '',
+          currentStock: currentStock,
+          minStock: minStock,
+          maxStock: maxStock,
+          unitCost: unitCost,
+          sellingPrice: sellingPrice,
+          location: mapped.location ? String(mapped.location).trim() : '',
+          supplier: mapped.supplier ? String(mapped.supplier).trim() : '',
+          description: mapped.description ? String(mapped.description).trim() : '',
+        },
+        create: {
+          sku: sku,
+          name: productName,
+          category: mapped.category ? String(mapped.category).trim() : '',
+          currentStock: currentStock,
+          minStock: minStock,
+          maxStock: maxStock,
+          reorderPoint: 5, // Default
+          reorderQuantity: 20, // Default
+          unitCost: unitCost,
+          sellingPrice: sellingPrice,
+          location: mapped.location ? String(mapped.location).trim() : '',
+          supplier: mapped.supplier ? String(mapped.supplier).trim() : '',
+          description: mapped.description ? String(mapped.description).trim() : '',
+          tenantId: tenantId,
+        }
+      });
+      
+      result.imported++;
+    } catch (error: any) {
+      console.error(`❌ Row ${i + 2} failed:`, error.message);
+      result.failed++;
+      result.errors.push({ row: i + 2, message: error.message });
+    }
+  }
+  
+  console.log(`✅ Inventory import complete: ${result.imported} imported, ${result.failed} failed`);
+  return result;
+}
 
 // ============================================
 // MAIN HANDLER
@@ -370,10 +536,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // Currently only orders import is supported
-    if (importType !== 'orders') {
+    // Validate import type
+    if (importType !== 'orders' && importType !== 'inventory' && importType !== 'products') {
       return NextResponse.json({ 
-        error: 'Por ahora solo se soporta importación de pedidos. Clientes y productos próximamente.' 
+        error: 'Tipo de importación no válido. Use: orders, inventory, o products' 
       }, { status: 400 });
     }
 
@@ -400,10 +566,23 @@ export async function POST(request: NextRequest) {
       console.warn(`⚠️ Large import: ${rows.length} rows. This may take a few minutes...`);
     }
 
-    // Import orders
-    console.log('🔄 Starting import process...');
+    // Import based on type
+    console.log(`🔄 Starting ${importType} import process...`);
     const startTime = Date.now();
-    const result = await importOrders(rows, tenantId);
+    
+    let result: ImportResult;
+    let itemType: string;
+    
+    if (importType === 'orders') {
+      result = await importOrders(rows, tenantId);
+      itemType = 'pedidos';
+    } else if (importType === 'inventory' || importType === 'products') {
+      result = await importInventory(rows, tenantId);
+      itemType = 'productos';
+    } else {
+      throw new Error('Invalid import type');
+    }
+    
     const endTime = Date.now();
     const durationSeconds = ((endTime - startTime) / 1000).toFixed(2);
 
@@ -411,7 +590,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: result.success,
-      message: `Importación completada en ${durationSeconds}s: ${result.imported} pedidos importados, ${result.failed} fallidos`,
+      message: `Importación completada en ${durationSeconds}s: ${result.imported} ${itemType} importados, ${result.failed} fallidos`,
       imported: result.imported,
       failed: result.failed,
       errors: result.errors,

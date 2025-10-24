@@ -30,12 +30,12 @@ const templates = {
     ]
   },
   products: {
-    filename: 'plantilla_productos.xlsx',
+    filename: 'plantilla_inventario.xlsx',
     headers: [
-      'Nombre', 'Descripción', 'Precio', 'Costo', 'SKU', 'Categoría', 'Stock'
+      'Código', 'Tipo', 'Color', 'Capacidad (oz)', 'cant', 'Categoria', 'precio de venta', 'Ubicacion', 'costo unitario', 'descripcion'
     ],
     example: [
-      'Camiseta Básica', 'Camiseta 100% algodón', '8500', '4000', 'CAM-001', 'Ropa', '50'
+      'TAZA-001', 'Taza', 'Rojo', '12', '50', 'Vajilla', '5000', 'Estante A-3', '2500', 'Taza de cerámica roja con capacidad de 12 oz'
     ]
   }
 };
@@ -224,11 +224,70 @@ export async function GET(request: NextRequest) {
       );
     } else if (type === 'products') {
       instructions.push(
-        ['- Nombre: Nombre del producto'],
+        ['═══════════════════════════════════════════════════════════'],
+        ['CAMPOS PARA INVENTARIO/PRODUCTOS'],
+        ['═══════════════════════════════════════════════════════════'],
         [''],
-        ['CAMPOS OPCIONALES:'],
-        ['- Precio y Costo: Solo números, sin símbolos'],
-        ['- Stock: Número entero de unidades disponibles']
+        ['OBLIGATORIOS:'],
+        ['✅ Código: Código único del producto (SKU)'],
+        [''],
+        ['NOMBRE DEL PRODUCTO (se construye automáticamente):'],
+        ['El sistema combina: Tipo + Color + Capacidad'],
+        ['Ejemplo: "Taza" + "Rojo" + "12 oz" = "Taza Rojo 12 oz"'],
+        [''],
+        ['  - Tipo: Tipo de producto (Taza, Vaso, Plato, etc.)'],
+        ['  - Color: Color del producto'],
+        ['  - Capacidad (oz): Tamaño o capacidad'],
+        [''],
+        ['STOCK Y PRECIOS:'],
+        ['  - cant: Cantidad en stock actual'],
+        ['  - precio de venta: Precio de venta (sin símbolos ₡,$)'],
+        ['  - costo unitario: Costo de compra/producción'],
+        [''],
+        ['ORGANIZACIÓN:'],
+        ['  - Categoria: Categoría del producto'],
+        ['  - Ubicacion: Dónde está almacenado'],
+        [''],
+        ['OPCIONAL:'],
+        ['  - descripcion: Descripción detallada del producto'],
+        [''],
+        ['═══════════════════════════════════════════════════════════'],
+        ['CONFIGURACIÓN AUTOMÁTICA'],
+        ['═══════════════════════════════════════════════════════════'],
+        [''],
+        ['Al importar, el sistema configura automáticamente:'],
+        ['  - Stock mínimo: 0'],
+        ['  - Stock máximo: 100'],
+        ['  - Punto de reorden: 5 unidades'],
+        ['  - Cantidad de reorden: 20 unidades'],
+        [''],
+        ['═══════════════════════════════════════════════════════════'],
+        ['EJEMPLO DE IMPORTACIÓN'],
+        ['═══════════════════════════════════════════════════════════'],
+        [''],
+        ['Código: TAZA-ROJA-12'],
+        ['Tipo: Taza'],
+        ['Color: Rojo'],
+        ['Capacidad (oz): 12'],
+        ['cant: 50'],
+        ['Categoria: Vajilla'],
+        ['precio de venta: 5000'],
+        ['Ubicacion: Estante A-3'],
+        ['costo unitario: 2500'],
+        ['descripcion: Taza de cerámica roja'],
+        [''],
+        ['Resultado: El producto se llamará "Taza Rojo 12"'],
+        [''],
+        ['═══════════════════════════════════════════════════════════'],
+        ['CONSEJOS'],
+        ['═══════════════════════════════════════════════════════════'],
+        [''],
+        ['✓ El Código debe ser único para cada producto'],
+        ['✓ Los precios y cantidades son solo números'],
+        ['✓ Puede importar cientos de productos a la vez'],
+        ['✓ Si el Código ya existe, se actualizará el producto'],
+        ['✓ Use nombres claros en Tipo, Color y Capacidad'],
+        ['']
       );
     }
 

@@ -3,6 +3,9 @@ import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
 import Stripe from 'stripe';
 
+// Force dynamic rendering for authentication
+export const dynamic = 'force-dynamic';
+
 const stripe = process.env.STRIPE_SECRET_KEY 
   ? new Stripe(process.env.STRIPE_SECRET_KEY, {
       apiVersion: '2025-09-30.clover',

@@ -4,6 +4,9 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// Force dynamic rendering for authentication
+export const dynamic = 'force-dynamic';
+
 /**
  * Get Trial Status for Current User
  * Checks if user is in trial period and days remaining

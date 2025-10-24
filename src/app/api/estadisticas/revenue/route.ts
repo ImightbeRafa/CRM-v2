@@ -3,6 +3,9 @@ import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
 import { startOfDay, startOfWeek, startOfMonth, format } from 'date-fns';
 
+// Force dynamic rendering for authentication
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });

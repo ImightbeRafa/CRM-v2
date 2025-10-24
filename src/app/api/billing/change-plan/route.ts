@@ -4,6 +4,9 @@ import { prisma } from '@/lib/db';
 // Stripe removed; using Tilopay exclusively
 import { NextResponse as _NR } from 'next/server';
 
+// Force dynamic rendering for authentication
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });

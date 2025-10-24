@@ -173,11 +173,20 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
     if (paymentStatus) {
       // Show message based on status
       if (paymentStatus === 'success') {
-        alert('✅ ¡Pago procesado exitosamente! Tu plan se actualizará en unos momentos.');
-        // Reload billing data after short delay to allow webhook to process
+        alert('✅ ¡Pago procesado exitosamente! Tu plan se está actualizando...');
+        // Reload billing data multiple times to ensure it catches the update
         setTimeout(() => {
+          console.log('⏱️ First reload after payment...');
           loadBillingData();
-        }, 3000); // Wait 3 seconds for webhook
+        }, 2000); // 2 seconds
+        setTimeout(() => {
+          console.log('⏱️ Second reload after payment...');
+          loadBillingData();
+        }, 5000); // 5 seconds
+        setTimeout(() => {
+          console.log('⏱️ Third reload after payment...');
+          loadBillingData();
+        }, 8000); // 8 seconds
       } else if (paymentStatus === 'error') {
         alert('❌ Hubo un error al procesar el pago. Por favor intenta nuevamente.');
       } else if (paymentStatus === 'cancelled') {
@@ -260,6 +269,38 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       return;
     }
 
+    // Check if user already has this plan or a higher plan
+    const currentPlanId = currentPlan.name.toLowerCase();
+    const planHierarchy: Record<string, number> = {
+      'free': 0,
+      'basic': 1,
+      'pro': 2,
+      'enterprise': 3
+    };
+
+    const currentLevel = planHierarchy[currentPlanId] || 0;
+    const targetLevel = planHierarchy[planId] || 0;
+
+    // Prevent duplicate subscriptions to the same plan
+    if (currentPlanId === planId && currentPlan.status === 'active') {
+      alert('Ya tienes este plan activo. No es necesario suscribirte nuevamente.');
+      return;
+    }
+
+    // Prevent downgrade through payment link (should use cancel instead)
+    if (targetLevel < currentLevel && currentPlan.status === 'active') {
+      alert('Para cambiar a un plan menor, primero cancela tu suscripción actual desde la sección de facturación.');
+      return;
+    }
+
+    // Confirm upgrade from current plan
+    if (currentLevel > 0 && targetLevel > currentLevel) {
+      const confirmUpgrade = confirm(`¿Deseas actualizar de ${currentPlan.name} a ${planId.toUpperCase()}? Tu suscripción actual se cancelará y se iniciará la nueva.`);
+      if (!confirmUpgrade) {
+        return;
+      }
+    }
+
     // For BASIC and PRO plans, redirect to Tilopay Repeat subscription pages
     const tilopaySubscriptionLinks: Record<string, string> = {
       basic: 'https://tp.cr/l/TkRFME9RPT18MQ==',  // Basic Plan - ₡15,000/month
@@ -289,7 +330,11 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       const result = await response.json();
       
       if (result.status === 'success') {
-        alert('✅ Suscripción cancelada. Mantendrás acceso hasta el fin del período actual.');
+        let message = '✅ Suscripción cancelada. Mantendrás acceso hasta el fin del período actual.';
+        if (result.data?.note) {
+          message += '\n\n⚠️ ' + result.data.note;
+        }
+        alert(message);
         await loadBillingData();
         setShowCancelDialog(false);
       } else {
@@ -349,8 +394,18 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                 Gestiona tu suscripción y facturación
               </CardDescription>
             </div>
-            <div className="p-3 bg-white bg-opacity-20 rounded-lg">
-              <CreditCard className="w-8 h-8" />
+            <div className="flex items-center gap-3">
+              <Button 
+                onClick={loadBillingData}
+                variant="secondary"
+                size="sm"
+                className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-white/30"
+              >
+                🔄 Actualizar
+              </Button>
+              <div className="p-3 bg-white bg-opacity-20 rounded-lg">
+                <CreditCard className="w-8 h-8" />
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -377,8 +432,15 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                       <Calendar className="inline w-4 h-4 mr-1" />
                       {currentPlan.cancelAtPeriodEnd 
                         ? `Termina el ${formatDate(currentPlan.currentPeriodEnd)}`
-                        : `Próxima facturación: ${formatDate(currentPlan.currentPeriodEnd)}`
+                        : `Próxima renovación: ${formatDate(currentPlan.currentPeriodEnd)}`
                       }
+                    </p>
+                  )}
+                  
+                  {!currentPlan.currentPeriodEnd && currentPlan.name !== 'FREE' && (
+                    <p className="text-sm text-gray-600">
+                      <Calendar className="inline w-4 h-4 mr-1" />
+                      Próxima renovación: Calculando...
                     </p>
                   )}
                   
@@ -490,20 +552,20 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                 plan.id === currentPlan.name.toLowerCase() ? 'ring-2 ring-green-500' : ''
               }`}
             >
-              {plan.popular && (
+              {plan.id === currentPlan.name.toLowerCase() ? (
                 <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
-                  <Badge className="bg-blue-500">Más Popular</Badge>
-                </div>
-              )}
-              
-              {plan.id === currentPlan.name.toLowerCase() && (
-                <div className="absolute -top-3 right-4">
-                  <Badge className="bg-green-500">
+                  <Badge className="bg-green-500 text-white shadow-lg">
                     <Check className="w-3 h-3 mr-1" />
                     Plan Actual
                   </Badge>
                 </div>
-              )}
+              ) : plan.popular ? (
+                <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                  <Badge className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg">
+                    ✨ Todo lo que Necesitas
+                  </Badge>
+                </div>
+              ) : null}
 
               <CardHeader>
                 <CardTitle className="text-2xl">{plan.name}</CardTitle>

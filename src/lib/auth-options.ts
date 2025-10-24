@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import GoogleProvider from "next-auth/providers/google"
 import { prisma } from './db'
 import { verifyPassword, isBcryptHash } from './password'
+import { createDefaultOrderStatuses } from './default-statuses'
 
 type UserRole = "MASTER" | "REGULAR"
 
@@ -136,9 +137,14 @@ export const authOptions: NextAuthOptions = {
             const newTenant = await prisma.tenant.create({
               data: {
                 name: `${profile.name || profile.email}'s Workspace`,
+                slug: profile.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-'),
                 plan: 'FREE',
+                isActive: true,
               }
             });
+
+            // Create default order statuses for the new tenant
+            await createDefaultOrderStatuses(newTenant.id, newTenant.name);
 
             // Create user with membership
             dbUser = await prisma.user.create({

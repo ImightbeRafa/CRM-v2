@@ -15,6 +15,7 @@ import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileS
 
 export default function ConfigPage() {
   const [activeTab, setActiveTab] = useState('fields')
+  const [newFieldType, setNewFieldType] = useState('text') // Track type for validation
   const [isMasterUser, setIsMasterUser] = useState(true) // Simplified for demo
   
   // Data states
@@ -1120,7 +1121,10 @@ export default function ConfigPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
               <select
                     name="type"
-                    defaultValue={editingField?.type || 'text'}
+                    value={editingField ? editingField.type : newFieldType}
+                    onChange={(e) => {
+                      if (!editingField) setNewFieldType(e.target.value);
+                    }}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
               >
                 <option value="text">Texto</option>
@@ -1131,20 +1135,33 @@ export default function ConfigPage() {
                 <option value="select">Selección</option>
                     <option value="checkbox">Casilla de verificación</option>
               </select>
+                  {(editingField?.type === 'select' || newFieldType === 'select') && (
+                    <p className="text-xs text-green-600 mt-1">
+                      ℹ️ Los campos de selección requieren un conjunto de opciones
+                    </p>
+                  )}
             </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Conjunto de opciones (opcional)</label>
-                  <select
-                    name="optionSetId"
-                    defaultValue={editingField?.optionSetId || ''}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                  >
-                    <option value="">Sin conjunto</option>
-                    {optionSets.map((set) => (
-                      <option key={set.id} value={set.id}>{set.name} ({set.key})</option>
-                    ))}
-                  </select>
-                </div>
+                {(editingField?.type === 'select' || newFieldType === 'select') && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Conjunto de opciones *
+                    </label>
+                    <select
+                      name="optionSetId"
+                      defaultValue={editingField?.optionSetId || ''}
+                      className="w-full p-2 border border-green-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
+                      required
+                    >
+                      <option value="">-- Seleccionar conjunto --</option>
+                      {optionSets.map((set) => (
+                        <option key={set.id} value={set.id}>{set.name} ({set.key})</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Gestiona conjuntos de opciones en la pestaña &quot;Conjuntos de Opciones&quot;
+                    </p>
+                  </div>
+                )}
             <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Orden</label>
               <input

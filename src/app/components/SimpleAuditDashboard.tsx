@@ -11,6 +11,8 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
   const [showFilters, setShowFilters] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(20)
+  const [selectedLogs, setSelectedLogs] = useState<Set<string>>(new Set())
+  const [isDeleting, setIsDeleting] = useState(false)
   const [dateRange, setDateRange] = useState({
     startDate: '',
     endDate: ''
@@ -100,6 +102,58 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
     window.location.reload()
   }
 
+  const toggleSelectLog = (logId: string) => {
+    const newSelected = new Set(selectedLogs)
+    if (newSelected.has(logId)) {
+      newSelected.delete(logId)
+    } else {
+      newSelected.add(logId)
+    }
+    setSelectedLogs(newSelected)
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedLogs.size === paginatedLogs.length) {
+      setSelectedLogs(new Set())
+    } else {
+      setSelectedLogs(new Set(paginatedLogs.map(log => log.id)))
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedLogs.size === 0) {
+      alert('Selecciona al menos un registro para eliminar')
+      return
+    }
+
+    if (!confirm(`¿Estás seguro de que quieres eliminar ${selectedLogs.size} registros de auditoría? Esta acción no se puede deshacer.`)) {
+      return
+    }
+
+    setIsDeleting(true)
+    try {
+      const response = await fetch('/api/audit/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedLogs) })
+      })
+
+      if (!response.ok) {
+        throw new Error('Error al eliminar registros')
+      }
+
+      // Remove deleted logs from state
+      setAuditLogs(auditLogs.filter(log => !selectedLogs.has(log.id)))
+      setSelectedLogs(new Set())
+      alert(`${selectedLogs.size} registros eliminados exitosamente`)
+    } catch (error) {
+      console.error('Error deleting logs:', error)
+      alert('Error al eliminar registros. Por favor intenta de nuevo.')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setFilters({ ...filters, [e.target.name]: e.target.value })
   }
@@ -171,6 +225,11 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
               <p className="text-purple-100 mt-1 text-lg">
                 Registro completo de todos los cambios realizados en el sistema
               </p>
+              {selectedLogs.size > 0 && (
+                <p className="text-yellow-300 mt-1 text-sm font-semibold">
+                  {selectedLogs.size} registros seleccionados
+                </p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -182,6 +241,16 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
               </div>
             </div>
             <div className="flex gap-2">
+              {selectedLogs.size > 0 && (
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={isDeleting}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all duration-200 disabled:opacity-50"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {isDeleting ? 'Eliminando...' : `Eliminar (${selectedLogs.size})`}
+                </button>
+              )}
               <button
                 onClick={() => setShowFilters(!showFilters)}
                 className="flex items-center gap-2 px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-all duration-200"
@@ -336,11 +405,32 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
           </div>
         ) : (
           <div>
+            {/* Select All Bar */}
+            <div className="bg-gray-50 border-b border-gray-200 px-6 py-3 flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={paginatedLogs.length > 0 && selectedLogs.size === paginatedLogs.length}
+                onChange={toggleSelectAll}
+                className="w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-500 cursor-pointer"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                {selectedLogs.size > 0 
+                  ? `${selectedLogs.size} de ${paginatedLogs.length} seleccionados`
+                  : 'Seleccionar todos'}
+              </span>
+            </div>
+            
             <div className="divide-y divide-gray-100">
               {paginatedLogs.map((log, index) => (
               <div key={log.id} className="p-6 hover:bg-gradient-to-r hover:from-gray-50 hover:to-blue-50 transition-all duration-200 group">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-4">
+                    <input
+                      type="checkbox"
+                      checked={selectedLogs.has(log.id)}
+                      onChange={() => toggleSelectLog(log.id)}
+                      className="mt-1 w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                    />
                     <div className="p-2 bg-gray-100 group-hover:bg-white rounded-lg transition-colors">
                       {getActionIcon(log.action)}
                     </div>

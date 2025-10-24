@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
 import { Input } from '@/app/components/ui/input';
+import { Label } from '@/app/components/ui/label';
 import { useToast } from '@/app/hooks/use-toast';
 import { SmartFieldWizard } from './SmartFieldWizard';
 import { 
@@ -73,6 +74,12 @@ export function SimpleFieldsManager() {
   const [newOptionValue, setNewOptionValue] = useState('');
   const [newOptionPrice, setNewOptionPrice] = useState(0);
   const [editingOptionId, setEditingOptionId] = useState<string | null>(null);
+  const [newFieldType, setNewFieldType] = useState('text'); // Track selected type for new field
+  const [newFieldOptionSetId, setNewFieldOptionSetId] = useState(''); // Track option set for new field
+  const [showQuickOptionSetCreator, setShowQuickOptionSetCreator] = useState(false); // Quick creator
+  const [quickOptionSetName, setQuickOptionSetName] = useState('');
+  const [quickOptionSetKey, setQuickOptionSetKey] = useState('');
+  const [quickOptions, setQuickOptions] = useState<{label: string, value: string}[]>([{label: '', value: ''}]);
   const { toast } = useToast();
 
   const loadData = async () => {
@@ -530,16 +537,27 @@ export function SimpleFieldsManager() {
               onSubmit={async (e) => {
                 e.preventDefault();
                 const formData = new FormData(e.target as HTMLFormElement);
-                const payload = {
+                const payload: any = {
                   key: formData.get('key'),
                   label: formData.get('label'),
-                  type: formData.get('type'),
+                  type: newFieldType,
                   required: formData.get('required') === 'on',
                   order: fields.length,
                   multiSelect: false,
+                  optionSetId: newFieldType === 'select' ? newFieldOptionSetId || null : null,
                 };
 
                 try {
+                  // Validate that select fields have an option set
+                  if (payload.type === 'select' && !payload.optionSetId) {
+                    toast({
+                      variant: "destructive",
+                      title: "Falta conjunto de opciones",
+                      description: "Los campos de tipo 'Selección' requieren un conjunto de opciones"
+                    });
+                    return;
+                  }
+
                   const res = await fetch('/api/config/fields', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -553,6 +571,8 @@ export function SimpleFieldsManager() {
                       description: "El campo personalizado se creó correctamente"
                     });
                     setShowCustomFieldForm(false);
+                    setNewFieldType('text'); // Reset
+                    setNewFieldOptionSetId(''); // Reset
                     await loadData();
                   } else {
                     throw new Error(json.error || 'Error al crear campo');
@@ -600,6 +620,8 @@ export function SimpleFieldsManager() {
                   <select
                     name="type"
                     required
+                    value={newFieldType}
+                    onChange={(e) => setNewFieldType(e.target.value)}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                   >
                     <option value="text">Texto</option>
@@ -609,7 +631,249 @@ export function SimpleFieldsManager() {
                     <option value="textarea">Área de texto</option>
                     <option value="select">Selección</option>
                   </select>
+                  {newFieldType === 'select' && (
+                    <p className="text-xs text-purple-600 mt-1">
+                      ℹ️ Los campos de selección requieren un conjunto de opciones
+                    </p>
+                  )}
                 </div>
+
+                {/* Show option set selector when type is 'select' */}
+                {newFieldType === 'select' && (
+                  <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-xl p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-800 mb-1">
+                          Conjunto de opciones *
+                        </label>
+                        <p className="text-xs text-gray-600">
+                          Define las opciones disponibles para este campo desplegable
+                        </p>
+                      </div>
+                    </div>
+
+                    {!showQuickOptionSetCreator ? (
+                      <>
+                        <div className="flex gap-2">
+                          <select
+                            value={newFieldOptionSetId}
+                            onChange={(e) => setNewFieldOptionSetId(e.target.value)}
+                            className="flex-1 p-2.5 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white shadow-sm font-medium"
+                            required
+                          >
+                            <option value="">-- Seleccionar conjunto existente --</option>
+                            {optionSets.map((set) => (
+                              <option key={set.id} value={set.id}>
+                                {set.name} {set.options?.length ? `(${set.options.length} opciones)` : '(vacío)'}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowQuickOptionSetCreator(true)}
+                            className="flex-1 border-2 border-purple-400 text-purple-700 hover:bg-purple-100 font-semibold"
+                          >
+                            + Crear conjunto nuevo
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const optionsTab = document.querySelector('[data-section="options"]');
+                              if (optionsTab) (optionsTab as HTMLElement).click();
+                            }}
+                            className="flex-1 border-2 border-indigo-400 text-indigo-700 hover:bg-indigo-100"
+                          >
+                            📋 Ver todos los conjuntos
+                          </Button>
+                        </div>
+
+                        {!newFieldOptionSetId && (
+                          <div className="bg-amber-50 border-l-4 border-amber-400 p-3 rounded">
+                            <p className="text-xs text-amber-800 font-medium flex items-center gap-2">
+                              <span className="text-lg">⚠️</span>
+                              Debes seleccionar o crear un conjunto de opciones antes de guardar
+                            </p>
+                          </div>
+                        )}
+                        {newFieldOptionSetId && (
+                          <div className="bg-green-50 border-l-4 border-green-400 p-3 rounded">
+                            <p className="text-xs text-green-800 font-medium flex items-center gap-2">
+                              <span className="text-lg">✓</span>
+                              Conjunto &quot;{optionSets.find(s => s.id === newFieldOptionSetId)?.name}&quot; seleccionado
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="bg-white rounded-lg p-4 border-2 border-purple-400 space-y-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-semibold text-gray-800">Crear nuevo conjunto de opciones</h4>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setShowQuickOptionSetCreator(false);
+                              setQuickOptionSetName('');
+                              setQuickOptionSetKey('');
+                              setQuickOptions([{label: '', value: ''}]);
+                            }}
+                            className="text-gray-500"
+                          >
+                            ✕ Cancelar
+                          </Button>
+                        </div>
+
+                        <div>
+                          <Label className="text-xs">Nombre del conjunto *</Label>
+                          <Input
+                            value={quickOptionSetName}
+                            onChange={(e) => {
+                              setQuickOptionSetName(e.target.value);
+                              // Auto-generate key from name
+                              if (!quickOptionSetKey || quickOptionSetKey === quickOptionSetName.toLowerCase().replace(/[^a-z0-9]/g, '_')) {
+                                setQuickOptionSetKey(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '_'));
+                              }
+                            }}
+                            placeholder="ej: Tallas de camisetas"
+                            className="mt-1"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="text-xs">Clave única *</Label>
+                          <Input
+                            value={quickOptionSetKey}
+                            onChange={(e) => setQuickOptionSetKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                            placeholder="ej: tallas_camisetas"
+                            className="mt-1 font-mono text-sm"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="text-xs mb-2 block">Opciones *</Label>
+                          {quickOptions.map((opt, idx) => (
+                            <div key={idx} className="flex gap-2 mb-2">
+                              <Input
+                                placeholder="Etiqueta (ej: Pequeña)"
+                                value={opt.label}
+                                onChange={(e) => {
+                                  const newOpts = [...quickOptions];
+                                  newOpts[idx].label = e.target.value;
+                                  if (!newOpts[idx].value) {
+                                    newOpts[idx].value = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                                  }
+                                  setQuickOptions(newOpts);
+                                }}
+                                className="flex-1"
+                              />
+                              <Input
+                                placeholder="Valor (ej: s)"
+                                value={opt.value}
+                                onChange={(e) => {
+                                  const newOpts = [...quickOptions];
+                                  newOpts[idx].value = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                                  setQuickOptions(newOpts);
+                                }}
+                                className="flex-1 font-mono text-sm"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setQuickOptions(quickOptions.filter((_, i) => i !== idx))}
+                                disabled={quickOptions.length === 1}
+                              >
+                                🗑️
+                              </Button>
+                            </div>
+                          ))}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setQuickOptions([...quickOptions, {label: '', value: ''}])}
+                            className="w-full mt-1"
+                          >
+                            + Agregar opción
+                          </Button>
+                        </div>
+
+                        <Button
+                          type="button"
+                          onClick={async () => {
+                            if (!quickOptionSetName || !quickOptionSetKey || quickOptions.some(o => !o.label || !o.value)) {
+                              toast({
+                                variant: "destructive",
+                                title: "Datos incompletos",
+                                description: "Completa todos los campos antes de guardar"
+                              });
+                              return;
+                            }
+
+                            try {
+                              // Create option set
+                              const setRes = await fetch('/api/config/option-sets', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  name: quickOptionSetName,
+                                  key: quickOptionSetKey
+                                })
+                              });
+                              const setData = await setRes.json();
+                              
+                              if (setData.status !== 'success') throw new Error(setData.error);
+
+                              // Create options
+                              for (const opt of quickOptions) {
+                                await fetch('/api/config/options', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    setId: setData.data.id,
+                                    label: opt.label,
+                                    value: opt.value,
+                                    priceDelta: 0
+                                  })
+                                });
+                              }
+
+                              await loadData();
+                              setNewFieldOptionSetId(setData.data.id);
+                              setShowQuickOptionSetCreator(false);
+                              setQuickOptionSetName('');
+                              setQuickOptionSetKey('');
+                              setQuickOptions([{label: '', value: ''}]);
+                              
+                              toast({
+                                title: "✅ Conjunto creado",
+                                description: `"${quickOptionSetName}" con ${quickOptions.length} opciones`
+                              });
+                            } catch (error) {
+                              toast({
+                                variant: "destructive",
+                                title: "Error",
+                                description: error instanceof Error ? error.message : "No se pudo crear el conjunto"
+                              });
+                            }
+                          }}
+                          className="w-full bg-purple-600 hover:bg-purple-700"
+                        >
+                          💾 Guardar conjunto y usar
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex items-center">
                   <input
                     type="checkbox"

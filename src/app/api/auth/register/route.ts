@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { hashPassword } from '@/lib/password';
+import { createDefaultOrderStatuses } from '@/lib/default-statuses';
 
 export async function POST(request: Request) {
   try {
@@ -56,6 +57,9 @@ export async function POST(request: Request) {
         }
       }
     });
+
+    // Create default order statuses for the new tenant
+    await createDefaultOrderStatuses(tenant.id, tenant.name);
 
     return NextResponse.json({
       success: true,

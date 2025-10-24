@@ -57,13 +57,13 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
   const [editingProduct, setEditingProduct] = useState<FrequentProduct | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<FrequentCustomer | null>(null);
 
-  // Product form state
+  // Product form state - use empty string for baseCost to allow easy clearing
   const [productForm, setProductForm] = useState({
     name: '',
     type: '',
     color: '',
     tamano: '',
-    baseCost: 0,
+    baseCost: '' as string | number,
     isFavorite: false
   });
 
@@ -347,8 +347,15 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
                       <Input
                         id="baseCost"
                         type="number"
+                        step="0.01"
                         value={productForm.baseCost}
-                        onChange={(e) => setProductForm({ ...productForm, baseCost: parseFloat(e.target.value) || 0 })}
+                        onChange={(e) => setProductForm({ ...productForm, baseCost: e.target.value })}
+                        onBlur={(e) => {
+                          if (e.target.value === '') {
+                            setProductForm({ ...productForm, baseCost: 0 });
+                          }
+                        }}
+                        placeholder="0.00"
                         required
                       />
                     </div>

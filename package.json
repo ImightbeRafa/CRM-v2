@@ -15,9 +15,14 @@
     "test:flow": "node scripts/test-full-flow.js",
     "test:registration": "node scripts/test-full-flow.js --email=test@example.com",
     "test:tilopay": "node scripts/test-tilopay-auth.js",
+    "test:webhook": "node scripts/test-webhook-locally.js",
     "upgrade:plan": "node scripts/upgrade-plan-direct.js",
     "check:trials": "node scripts/check-trial-expirations.js",
-    "create:test-user": "node scripts/create-test-user.js"
+    "check:tenant": "node scripts/check-tenant-plan.js",
+    "check:billing": "node scripts/check-billing-transactions.js",
+    "create:test-user": "node scripts/create-test-user.js",
+    "reset:user": "node scripts/reset-user-for-testing.js",
+    "seed:statuses": "node scripts/seed-default-statuses-for-tenant.js"
   },
   "dependencies": {
     "@auth/core": "0.37.4",
@@ -50,6 +55,7 @@
     "lucide-react": "0.298.0",
     "next": "14.0.4",
     "next-auth": "4.24.11",
+    "node-fetch": "2.7.0",
     "postgres": "3.4.7",
     "puppeteer": "24.25.0",
     "react": "^18.2.0",

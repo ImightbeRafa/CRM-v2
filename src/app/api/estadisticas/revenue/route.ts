@@ -1,21 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth-options';
+import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
 import { startOfDay, startOfWeek, startOfMonth, format } from 'date-fns';
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
+    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+    
+    if (!token || !token.sub) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get tenant ID from session
-    const tenantId = (session as any).tenantId;
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    // Get user's tenant through memberships
+    const user = await prisma.user.findUnique({
+      where: { id: token.sub },
+      select: {
+        memberships: {
+          where: { isActive: true },
+          select: { tenantId: true },
+          take: 1
+        }
+      }
+    });
+
+    if (!user || !user.memberships || user.memberships.length === 0) {
+      return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
     }
+
+    const tenantId = user.memberships[0].tenantId;
 
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get('startDate');

@@ -76,21 +76,21 @@ export function InventoryManagement() {
     averageStockValue: 0
   });
 
-  // Form state
+  // Form state - use empty strings for numeric fields to allow easy clearing
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     category: '',
     sku: '',
-    currentStock: 0,
-    minStock: 0,
-    maxStock: 0,
-    unitCost: 0,
-    sellingPrice: 0,
+    currentStock: '' as string | number,
+    minStock: '' as string | number,
+    maxStock: '' as string | number,
+    unitCost: '' as string | number,
+    sellingPrice: '' as string | number,
     supplier: '',
     location: '',
-    reorderPoint: 0,
-    reorderQuantity: 0,
+    reorderPoint: '' as string | number,
+    reorderQuantity: '' as string | number,
     isFavorite: false
   });
 
@@ -441,7 +441,14 @@ export function InventoryManagement() {
                     id="currentStock"
                     type="number"
                     value={formData.currentStock}
-                    onChange={(e) => setFormData({ ...formData, currentStock: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => setFormData({ ...formData, currentStock: e.target.value })}
+                    onBlur={(e) => {
+                      // Convert to number on blur if empty
+                      if (e.target.value === '') {
+                        setFormData({ ...formData, currentStock: 0 });
+                      }
+                    }}
+                    placeholder="0"
                     required
                   />
                 </div>
@@ -451,7 +458,13 @@ export function InventoryManagement() {
                     id="minStock"
                     type="number"
                     value={formData.minStock}
-                    onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => setFormData({ ...formData, minStock: e.target.value })}
+                    onBlur={(e) => {
+                      if (e.target.value === '') {
+                        setFormData({ ...formData, minStock: 0 });
+                      }
+                    }}
+                    placeholder="0"
                     required
                   />
                 </div>
@@ -461,7 +474,13 @@ export function InventoryManagement() {
                     id="maxStock"
                     type="number"
                     value={formData.maxStock}
-                    onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => setFormData({ ...formData, maxStock: e.target.value })}
+                    onBlur={(e) => {
+                      if (e.target.value === '') {
+                        setFormData({ ...formData, maxStock: 0 });
+                      }
+                    }}
+                    placeholder="0"
                   />
                 </div>
                 <div>
@@ -471,7 +490,13 @@ export function InventoryManagement() {
                     type="number"
                     step="0.01"
                     value={formData.unitCost}
-                    onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) => setFormData({ ...formData, unitCost: e.target.value })}
+                    onBlur={(e) => {
+                      if (e.target.value === '') {
+                        setFormData({ ...formData, unitCost: 0 });
+                      }
+                    }}
+                    placeholder="0.00"
                     required
                   />
                 </div>
@@ -482,7 +507,13 @@ export function InventoryManagement() {
                     type="number"
                     step="0.01"
                     value={formData.sellingPrice}
-                    onChange={(e) => setFormData({ ...formData, sellingPrice: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) => setFormData({ ...formData, sellingPrice: e.target.value })}
+                    onBlur={(e) => {
+                      if (e.target.value === '') {
+                        setFormData({ ...formData, sellingPrice: 0 });
+                      }
+                    }}
+                    placeholder="0.00"
                     required
                   />
                 </div>
@@ -508,7 +539,13 @@ export function InventoryManagement() {
                     id="reorderPoint"
                     type="number"
                     value={formData.reorderPoint}
-                    onChange={(e) => setFormData({ ...formData, reorderPoint: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => setFormData({ ...formData, reorderPoint: e.target.value })}
+                    onBlur={(e) => {
+                      if (e.target.value === '') {
+                        setFormData({ ...formData, reorderPoint: 0 });
+                      }
+                    }}
+                    placeholder="0"
                   />
                 </div>
                 <div>
@@ -517,7 +554,13 @@ export function InventoryManagement() {
                     id="reorderQuantity"
                     type="number"
                     value={formData.reorderQuantity}
-                    onChange={(e) => setFormData({ ...formData, reorderQuantity: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => setFormData({ ...formData, reorderQuantity: e.target.value })}
+                    onBlur={(e) => {
+                      if (e.target.value === '') {
+                        setFormData({ ...formData, reorderQuantity: 0 });
+                      }
+                    }}
+                    placeholder="0"
                   />
                 </div>
               </div>

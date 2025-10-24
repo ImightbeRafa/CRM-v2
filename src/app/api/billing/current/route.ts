@@ -6,26 +6,44 @@ export async function GET(request: NextRequest) {
   try {
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     
-    if (!token || !token.tenantId) {
+    if (!token || !token.sub) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get tenant information
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: token.tenantId as string },
+    // Get user and their tenant through memberships
+    const user = await prisma.user.findUnique({
+      where: { id: token.sub },
       select: {
-        plan: true,
-        subscriptionStatus: true,
-        currentPeriodEnd: true,
-        cancelAtPeriodEnd: true,
-        stripeCustomerId: true,
-        stripeSubscriptionId: true
+        defaultTenantId: true,
+        memberships: {
+          where: { isActive: true },
+          select: {
+            tenantId: true,
+            tenant: {
+              select: {
+                id: true,
+                plan: true,
+                subscriptionStatus: true,
+                currentPeriodEnd: true,
+                cancelAtPeriodEnd: true,
+                stripeCustomerId: true,
+                stripeSubscriptionId: true,
+                tilopaySubscriptionId: true
+              }
+            }
+          },
+          take: 1
+        }
       }
     });
 
-    if (!tenant) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 404 });
+    if (!user || !user.memberships || user.memberships.length === 0) {
+      return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
     }
+
+    const tenant = user.memberships[0].tenant;
+
+    console.log('📊 Billing API - Current plan:', tenant.plan, 'Status:', tenant.subscriptionStatus);
 
     return NextResponse.json({
       status: 'success',
@@ -35,7 +53,8 @@ export async function GET(request: NextRequest) {
         currentPeriodEnd: tenant.currentPeriodEnd?.toISOString() || null,
         cancelAtPeriodEnd: tenant.cancelAtPeriodEnd || false,
         stripeCustomerId: tenant.stripeCustomerId,
-        stripeSubscriptionId: tenant.stripeSubscriptionId
+        stripeSubscriptionId: tenant.stripeSubscriptionId,
+        tilopaySubscriptionId: tenant.tilopaySubscriptionId
       }
     });
   } catch (error) {

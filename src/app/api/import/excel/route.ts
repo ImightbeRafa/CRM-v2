@@ -487,6 +487,7 @@ async function importInventory(rows: any[], tenantId: string): Promise<ImportRes
           location: mapped.location ? String(mapped.location).trim() : '',
           supplier: mapped.supplier ? String(mapped.supplier).trim() : '',
           description: mapped.description ? String(mapped.description).trim() : '',
+          createdBy: 'excel-import', // System identifier for Excel imports
           tenantId: tenantId,
         }
       });

@@ -2,11 +2,14 @@
 
 import React from 'react';
 import { useDroppable } from '@dnd-kit/core';
+import { useSortable } from '@dnd-kit/sortable';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Sale } from '../types/sales';
 import { Card, CardHeader, CardTitle, CardContent } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { KanbanCard } from './KanbanCard';
+import { GripVertical } from 'lucide-react';
 
 interface KanbanColumnProps {
   status: {
@@ -17,12 +20,30 @@ interface KanbanColumnProps {
   orders: Sale[];
   onOrderClick: (order: Sale) => void;
   isUpdating: boolean;
+  isDragging?: boolean;
 }
 
-export function KanbanColumn({ status, orders, onOrderClick, isUpdating }: KanbanColumnProps) {
+export function KanbanColumn({ status, orders, onOrderClick, isUpdating, isDragging = false }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: status.label,
   });
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setSortableRef,
+    transform,
+    transition,
+    isDragging: isSortableDragging,
+  } = useSortable({
+    id: status.label,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isSortableDragging ? 0.5 : 1,
+  };
 
   // Check if color is hex code
   const isHexColor = status.color.startsWith('#');
@@ -105,9 +126,15 @@ export function KanbanColumn({ status, orders, onOrderClick, isUpdating }: Kanba
   } : {};
 
   return (
-    <div className="flex-shrink-0 w-80">
+    <div 
+      ref={setSortableRef}
+      style={style}
+      className="kanban-column flex-shrink-0 w-80"
+    >
       <Card 
-        className={`border-2 ${isOver ? 'ring-2 ring-blue-400 ring-offset-2' : ''} ${!isHexColor ? colors.border : ''}`}
+        className={`border-2 ${isOver ? 'ring-2 ring-blue-400 ring-offset-2' : ''} ${!isHexColor ? colors.border : ''} ${
+          isSortableDragging ? 'shadow-xl scale-105 rotate-1' : ''
+        }`}
         style={isHexColor ? borderStyle : {}}
       >
         <CardHeader 
@@ -115,12 +142,22 @@ export function KanbanColumn({ status, orders, onOrderClick, isUpdating }: Kanba
           style={isHexColor ? headerStyle : {}}
         >
           <div className="flex items-center justify-between">
-            <CardTitle 
-              className={`text-lg font-semibold ${!isHexColor ? colors.text : ''}`}
-              style={isHexColor ? { color: status.color } : {}}
-            >
-              {status.label}
-            </CardTitle>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="cursor-grab active:cursor-grabbing p-1 hover:bg-white/20 rounded transition-colors"
+                {...attributes}
+                {...listeners}
+              >
+                <GripVertical className="h-4 w-4 text-gray-500" />
+              </button>
+              <CardTitle 
+                className={`text-lg font-semibold ${!isHexColor ? colors.text : ''}`}
+                style={isHexColor ? { color: status.color } : {}}
+              >
+                {status.label}
+              </CardTitle>
+            </div>
             <Badge variant="secondary" className={!isHexColor ? colors.badge : ''}>
               {orders.length}
             </Badge>
@@ -128,8 +165,8 @@ export function KanbanColumn({ status, orders, onOrderClick, isUpdating }: Kanba
         </CardHeader>
         <CardContent 
           ref={setNodeRef}
-          className={`p-4 space-y-3 min-h-[500px] max-h-[70vh] overflow-y-auto ${
-            isOver ? 'bg-blue-50' : ''
+          className={`p-4 space-y-3 min-h-[500px] max-h-[70vh] overflow-y-auto transition-colors duration-200 ${
+            isOver ? 'bg-blue-50 border-blue-300' : ''
           }`}
         >
           <SortableContext
@@ -137,9 +174,13 @@ export function KanbanColumn({ status, orders, onOrderClick, isUpdating }: Kanba
             strategy={verticalListSortingStrategy}
           >
             {orders.length === 0 ? (
-              <div className="text-center text-gray-400 py-8">
+              <div className={`text-center py-8 transition-colors duration-200 ${
+                isOver ? 'text-blue-600' : 'text-gray-400'
+              }`}>
                 <p className="text-sm">No hay pedidos</p>
-                <p className="text-xs mt-1">Arrastra pedidos aquí</p>
+                <p className="text-xs mt-1">
+                  {isOver ? 'Suelta aquí' : 'Arrastra pedidos aquí'}
+                </p>
               </div>
             ) : (
               orders.map(order => (

@@ -54,16 +54,26 @@ export function KanbanCard({ order, onClick, isDragging }: KanbanCardProps) {
     onClick();
   };
 
+  // Handle card click - only if not clicking on grip icon
+  const handleCardClick = (e: React.MouseEvent) => {
+    // Don't open modal if clicking on grip icon
+    if ((e.target as HTMLElement).closest('.grip-handle')) {
+      return;
+    }
+    onClick();
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="touch-none"
+      className="kanban-card touch-none"
     >
       <Card 
         className={`hover:shadow-md transition-all ${
           isDragging || isSortableDragging ? 'shadow-xl scale-105 rotate-2' : ''
         } ${isHighPriority() ? 'border-red-300 border-2' : 'border-gray-200'}`}
+        onClick={handleCardClick}
       >
         <CardContent className="p-3 space-y-2">
           {/* Order ID and Priority */}
@@ -71,7 +81,7 @@ export function KanbanCard({ order, onClick, isDragging }: KanbanCardProps) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="cursor-pointer p-1 hover:bg-blue-50 rounded transition-colors z-10"
+                className="grip-handle cursor-pointer p-1 hover:bg-blue-50 rounded transition-colors z-10"
                 onClick={handleGripClick}
               >
                 <GripVertical className="h-4 w-4 text-blue-500 hover:text-blue-700" />

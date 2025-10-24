@@ -224,6 +224,13 @@ const ProductForm: React.FC<ProductFormProps> = ({
             {fields.map((field) => {
               // Avoid duplicating comments if a dynamic field is configured with key 'comments'
               if (field.key === 'comments') return null
+              // Exclude shipping method field as it's handled separately in order summary
+              if (field.key === 'metodoEnvio' || field.key === 'metodo_envio' || field.key === 'shipping_method' || 
+                  field.key === 'metodoEnvio' || field.key === 'metodo_envio' || field.key === 'shipping_method' ||
+                  field.label?.toLowerCase().includes('método de envío') || 
+                  field.label?.toLowerCase().includes('metodo de envio') ||
+                  field.label?.toLowerCase().includes('shipping') ||
+                  field.key?.toLowerCase().includes('envio') && field.key?.toLowerCase().includes('metodo')) return null
               const name = field.key as keyof ProductInfo
               if (field.type === 'text' || field.type === 'number') {
                 return (

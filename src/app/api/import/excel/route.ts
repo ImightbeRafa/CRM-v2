@@ -456,7 +456,7 @@ async function importInventory(rows: any[], tenantId: string): Promise<ImportRes
       // Create or update inventory item
       await prisma.inventoryItem.upsert({
         where: {
-          sku_tenantId: {
+          tenantId_sku: {
             sku: sku,
             tenantId: tenantId
           }

@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -43,7 +43,24 @@ export function BulkOperations({
   const [newStatus, setNewStatus] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [statuses, setStatuses] = useState<Array<{key: string; label: string; color: string}>>([]);
   const { toast } = useToast();
+
+  // Load statuses from API
+  useEffect(() => {
+    const loadStatuses = async () => {
+      try {
+        const response = await fetch('/api/config/status', { credentials: 'include' });
+        const data = await response.json();
+        if (data.status === 'success' && data.data.length > 0) {
+          setStatuses(data.data);
+        }
+      } catch (error) {
+        console.error('Error loading statuses:', error);
+      }
+    };
+    loadStatuses();
+  }, []);
 
   const selectedOrdersData = allOrders.filter(order => selectedOrders.includes(order.orderId));
   
@@ -163,11 +180,11 @@ export function BulkOperations({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="pendiente">Pendiente</SelectItem>
-                  <SelectItem value="en proceso">En Proceso</SelectItem>
-                  <SelectItem value="completado">Completado</SelectItem>
-                  <SelectItem value="enviado">Enviado</SelectItem>
-                  <SelectItem value="entregado">Entregado</SelectItem>
+                  {statuses.map((status) => (
+                    <SelectItem key={status.key} value={status.label.toLowerCase()}>
+                      {status.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -228,14 +245,11 @@ export function BulkOperations({
                   <SelectValue placeholder="Seleccionar nuevo estado" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Pendiente">Pendiente</SelectItem>
-                  <SelectItem value="En Proceso">En Proceso</SelectItem>
-                  <SelectItem value="Completado">Completado</SelectItem>
-                  <SelectItem value="Enviado">Enviado</SelectItem>
-                  <SelectItem value="Entregado">Entregado</SelectItem>
-                  <SelectItem value="Drive">Drive</SelectItem>
-                  <SelectItem value="Impreso">Impreso</SelectItem>
-                  <SelectItem value="PendienteDiseño">Pendiente Diseño</SelectItem>
+                  {statuses.map((status) => (
+                    <SelectItem key={status.key} value={status.label}>
+                      {status.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

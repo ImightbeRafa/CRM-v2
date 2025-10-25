@@ -7,22 +7,31 @@ interface SalesStreamOptions {
   onData?: (data: Sale[]) => void;
   onError?: (error: string) => void;
   pollingInterval?: number;
+  enablePolling?: boolean;
+  filters?: {
+    status?: string;
+    orderType?: string;
+    search?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  };
 }
 
 export function useSalesStream({
   onData,
   onError,
-  pollingInterval = 30000
+  pollingInterval = 60000, // Increased to 60s (was 30s)
+  enablePolling = true,
+  filters = {}
 }: SalesStreamOptions = {}) {
   const [sales, setSales] = useState<Sale[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastFetch, setLastFetch] = useState<number>(0);
   const { toast } = useToast();
 
-  // Clear cache on component mount
-  useEffect(() => {
-    localStorage.removeItem('salesCache');
-  }, []);
+  // Don't clear cache on mount - use smart caching instead
+  // Cache is valid for 30 seconds
 
   const parseOrder = useCallback((data: any): Sale | null => {
     // Validate required fields and format
@@ -31,7 +40,6 @@ export function useSalesStream({
       return null;
     }
 
-    
     const commonFields = {
       orderId: data.orderId || '',
       status: data.status || 'Pendiente',
@@ -84,16 +92,47 @@ export function useSalesStream({
     
     return null;
   }, []);
-  
-  const fetchSales = useCallback(async () => {
+
+  const fetchSales = useCallback(async (force = false) => {
+    // Check cache first (5 second TTL for faster updates)
+    const now = Date.now();
+    if (!force && now - lastFetch < 5000) {
+      const cached = localStorage.getItem('salesCache');
+      if (cached) {
+        try {
+          const { data, timestamp } = JSON.parse(cached);
+          if (now - timestamp < 5000) {
+            console.log('[useSalesStream] Using cached sales data');
+            setSales(data);
+            setIsLoading(false);
+            return;
+          }
+        } catch (e) {
+          console.warn('Failed to parse cache:', e);
+          localStorage.removeItem('salesCache');
+        }
+      }
+    }
+    
+    console.log('[useSalesStream] Fetching fresh data from API');
+
     try {
-      const response = await fetch('/api/orders', {
-        headers: {
-          'Cache-Control': 'no-cache',
-        },
+      // Build query params with filters
+      const params = new URLSearchParams({
+        limit: '500', // Fetch more at once to reduce requests
+        page: '1'
+      });
+
+      if (filters.status && filters.status !== 'all') params.set('status', filters.status);
+      if (filters.orderType && filters.orderType !== 'all') params.set('orderType', filters.orderType);
+      if (filters.search) params.set('search', filters.search);
+      if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
+      if (filters.dateTo) params.set('dateTo', filters.dateTo);
+
+      const response = await fetch(`/api/orders?${params.toString()}`, {
         credentials: 'include',
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -109,30 +148,29 @@ export function useSalesStream({
         .map(parseOrder)
         .filter((sale: Sale | null): sale is Sale => sale !== null);
 
-
       // Deduplicate sales by orderId
       const uniqueSales: Sale[] = Array.from(
         new Map(parsedSales.map((sale: Sale) => [sale.orderId, sale])).values()
       );
 
-      // Clear existing cache
-      localStorage.removeItem('salesCache');
-      
-      localStorage.setItem('salesCache', JSON.stringify({
+      // Update cache with new data
+      const cacheData = {
         data: uniqueSales,
-        timestamp: Date.now()
-      }));
+        timestamp: now
+      };
+      localStorage.setItem('salesCache', JSON.stringify(cacheData));
+      setLastFetch(now);
 
       setSales(uniqueSales);
       onData?.(uniqueSales);
       setError(null);
-      
+
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch sales data';
       console.error('Error fetching sales:', errorMessage);
       setError(errorMessage);
       onError?.(errorMessage);
-      
+
       toast({
         variant: "destructive",
         title: "Error",
@@ -141,16 +179,29 @@ export function useSalesStream({
     } finally {
       setIsLoading(false);
     }
-  }, [onData, onError, toast, parseOrder]);
+  }, [onData, onError, toast, parseOrder, filters, lastFetch]);
 
   useEffect(() => {
-    fetchSales();
-  }, [fetchSales]);
+    // Clear cache on mount to ensure fresh data
+    localStorage.removeItem('salesCache');
+    setLastFetch(0);
+    fetchSales(true); // Force fetch on mount
+  }, []); // Only on mount
 
+  // Refetch when filters change
   useEffect(() => {
-    const intervalId = setInterval(fetchSales, pollingInterval);
+    if (lastFetch > 0) { // Skip initial mount
+      fetchSales(true);
+    }
+  }, [filters.status, filters.orderType, filters.search, filters.dateFrom, filters.dateTo]);
+
+  // Optional polling (disabled by default for better performance)
+  useEffect(() => {
+    if (!enablePolling) return;
+
+    const intervalId = setInterval(() => fetchSales(false), pollingInterval);
     return () => clearInterval(intervalId);
-  }, [fetchSales, pollingInterval]);
+  }, [enablePolling, pollingInterval]);
 
   const stats = useMemo(() => ({
     total: sales.length,
@@ -159,11 +210,19 @@ export function useSalesStream({
     totalAmount: sales.reduce((sum, sale) => sum + sale.total, 0),
   }), [sales]);
 
+  // Invalidate cache and force refresh
+  const invalidateAndRefresh = useCallback(() => {
+    console.log('[useSalesStream] Invalidating cache and refreshing');
+    localStorage.removeItem('salesCache');
+    setLastFetch(0);
+    return fetchSales(true);
+  }, [fetchSales]);
+
   return {
     sales,
     isLoading,
     error,
-    refresh: fetchSales,
+    refresh: invalidateAndRefresh, // Invalidate cache and force refresh
     stats
   };
 }

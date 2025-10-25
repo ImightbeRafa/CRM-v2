@@ -4,6 +4,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   DndContext,
   closestCenter,
+  closestCorners,
+  pointerWithin,
+  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -12,6 +15,7 @@ import {
   DragOverlay,
   DragStartEvent,
   DragOverEvent,
+  CollisionDetection,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -52,14 +56,54 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
   const [panStartX, setPanStartX] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [boardRef, setBoardRef] = useState<HTMLDivElement | null>(null);
+  
+  // Local state for optimistic updates
+  const [localOrders, setLocalOrders] = useState<Sale[]>(orders);
+  // Track pending updates to avoid race conditions
+  const [pendingUpdates, setPendingUpdates] = useState<Map<string, string>>(new Map());
+  
   const { toast } = useToast();
+
+  // Sync local orders with prop changes, but preserve pending updates
+  useEffect(() => {
+    // Only sync if we're not currently updating
+    if (updatingOrder) {
+      return; // Skip sync while update is in progress
+    }
+    
+    if (pendingUpdates.size === 0) {
+      // No pending updates, safe to sync
+      setLocalOrders(orders);
+    } else {
+      // Check if parent data has caught up with pending updates
+      const updatedOrders = orders.map(order => {
+        const pendingStatus = pendingUpdates.get(order.orderId);
+        if (pendingStatus) {
+          // If parent data matches pending status, clear the pending update
+          if (order.status === pendingStatus) {
+            setPendingUpdates(prev => {
+              const newMap = new Map(prev);
+              newMap.delete(order.orderId);
+              return newMap;
+            });
+            return order; // Use parent data
+          } else {
+            // Parent still has stale data, preserve pending
+            return { ...order, status: pendingStatus };
+          }
+        }
+        return order;
+      });
+      setLocalOrders(updatedOrders);
+    }
+  }, [orders, pendingUpdates, updatingOrder]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8, // Must move 8px before drag starts (prevents accidental clicks)
-        tolerance: 5,
-        delay: 50, // 50ms delay to distinguish between click and drag
+        distance: 5, // Reduced from 8px for faster response
+        tolerance: 3,
+        delay: 0, // Removed delay for instant drag
       },
     }),
     useSensor(KeyboardSensor, {
@@ -67,8 +111,39 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
     })
   );
 
-  // Load statuses from API
+  // Custom collision detection that prioritizes columns over cards
+  const customCollisionDetection: CollisionDetection = (args) => {
+    // First, try to find column collisions (status labels)
+    const pointerCollisions = pointerWithin(args);
+    const columnCollisions = pointerCollisions.filter(collision => 
+      statuses.some(status => status.label === collision.id)
+    );
+    
+    if (columnCollisions.length > 0) {
+      console.log('[KanbanBoard] Column collision detected:', columnCollisions[0].id);
+      return columnCollisions;
+    }
+    
+    // If no column collision, use closest center
+    return closestCenter(args);
+  };
+
+  // Load statuses from API with immediate fallback for fast initial render
   useEffect(() => {
+    // Set fallback statuses immediately for instant render
+    const fallbackStatuses = [
+      { key: 'pendiente', label: 'Pendiente', color: '#FCD34D' },
+      { key: 'en-proceso', label: 'En Proceso', color: '#60A5FA' },
+      { key: 'urgente', label: 'Urgente', color: '#EF4444' },
+      { key: 'completado', label: 'Completado', color: '#10B981' },
+      { key: 'enviado', label: 'Enviado', color: '#A855F7' },
+      { key: 'entregado', label: 'Entregado', color: '#059669' },
+    ];
+    
+    setStatuses(fallbackStatuses);
+    setLoading(false); // Show board immediately
+    
+    // Load actual statuses in background
     const loadStatuses = async () => {
       try {
         const response = await fetch('/api/config/status');
@@ -78,33 +153,13 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
           const statusesData = data.data.map((status: any) => ({
             key: status.key,
             label: status.label,
-            color: status.color || getStatusColor(status.label), // Use hex color directly or fallback
+            color: status.color || getStatusColor(status.label),
           }));
           setStatuses(statusesData);
-        } else {
-          // Fallback to default statuses if API fails
-          setStatuses([
-            { key: 'pendiente', label: 'Pendiente', color: '#FCD34D' },
-            { key: 'en-proceso', label: 'En Proceso', color: '#60A5FA' },
-            { key: 'urgente', label: 'Urgente', color: '#EF4444' },
-            { key: 'completado', label: 'Completado', color: '#10B981' },
-            { key: 'enviado', label: 'Enviado', color: '#A855F7' },
-            { key: 'entregado', label: 'Entregado', color: '#059669' },
-          ]);
         }
       } catch (error) {
         console.error('Error loading statuses:', error);
-        // Use fallback statuses
-        setStatuses([
-          { key: 'pendiente', label: 'Pendiente', color: '#FCD34D' },
-          { key: 'en-proceso', label: 'En Proceso', color: '#60A5FA' },
-          { key: 'urgente', label: 'Urgente', color: '#EF4444' },
-          { key: 'completado', label: 'Completado', color: '#10B981' },
-          { key: 'enviado', label: 'Enviado', color: '#A855F7' },
-          { key: 'entregado', label: 'Entregado', color: '#059669' },
-        ]);
-      } finally {
-        setLoading(false);
+        // Keep fallback statuses
       }
     };
 
@@ -112,6 +167,7 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
   }, []);
 
   // Group orders by status and sort by timestamp (oldest first)
+  // Use localOrders for instant UI updates
   const ordersByStatus = useMemo(() => {
     const grouped: Record<string, Sale[]> = {};
     
@@ -121,7 +177,7 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
     });
 
     // Group orders by status with case-insensitive matching
-    orders.forEach(order => {
+    localOrders.forEach(order => {
       // Find matching status (case-insensitive)
       const matchingStatus = statuses.find(
         status => status.label.toLowerCase() === order.status.toLowerCase()
@@ -151,7 +207,7 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
     });
     
     return grouped;
-  }, [orders, statuses]);
+  }, [localOrders, statuses]);
 
   const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -302,8 +358,8 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
       return;
     }
 
-    // Handle card dragging (existing logic)
-    const draggedOrder = orders.find(o => o.orderId === active.id);
+    // Handle card dragging
+    const draggedOrder = localOrders.find(o => o.orderId === active.id);
     if (!draggedOrder) {
       return;
     }
@@ -312,47 +368,101 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
     const targetStatus = over.id as string;
     const currentStatus = draggedOrder.status;
 
+    // SAFETY CHECK: If target is an orderId instead of a status, abort
+    if (targetStatus.startsWith('ORDER-')) {
+      console.error('[KanbanBoard] ERROR: Dropped on an order instead of a column!');
+      return;
+    }
+
     if (currentStatus === targetStatus) {
       return;
     }
 
-    // Optimistic update: Update UI immediately
-    const originalOrder = { ...draggedOrder };
-    draggedOrder.status = targetStatus;
+    // OPTIMISTIC UPDATE: Track pending update to prevent race conditions
+    setPendingUpdates(prev => new Map(prev).set(draggedOrder.orderId, targetStatus));
+    
+    const updatedOrders = localOrders.map(order => 
+      order.orderId === draggedOrder.orderId 
+        ? { ...order, status: targetStatus }
+        : order
+    );
+    setLocalOrders(updatedOrders);
 
     // Mark as updating
     setUpdatingOrder(draggedOrder.orderId);
     
-    try {
-      // Perform the actual update
-      await onOrderUpdate(draggedOrder.orderId, { status: targetStatus });
-      
-      toast({
-        title: 'Estado actualizado',
-        description: `Pedido ${draggedOrder.orderId} movido a ${targetStatus}`,
-      });
-    } catch (error) {
-      console.error('Error updating order status:', error);
-      
-      // Revert optimistic update on error
-      draggedOrder.status = originalOrder.status;
-      
-      toast({
-        title: 'Error',
-        description: 'No se pudo actualizar el estado. Reintentando...',
-        variant: 'destructive',
-      });
-      
-      // Retry once
+    // Perform server update in background (non-blocking)
+    (async () => {
       try {
-        await onOrderUpdate(draggedOrder.orderId, { status: targetStatus });
-        draggedOrder.status = targetStatus;
-      } catch (retryError) {
-        console.error('Retry failed:', retryError);
+        const response = await fetch('/api/orders/status', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            orderId: draggedOrder.orderId,
+            status: targetStatus
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to update status');
+        }
+        
+        const result = await response.json();
+        
+        // Update local state with server response FIRST
+        if (result.data) {
+          setLocalOrders(prev => prev.map(order => 
+            order.orderId === draggedOrder.orderId 
+              ? { ...order, ...result.data }
+              : order
+          ));
+        }
+        
+        // Notify parent to refresh ONCE (debounced via timeout)
+        // This prevents multiple rapid refreshes
+        setTimeout(() => {
+          onOrderUpdate(draggedOrder.orderId, { status: targetStatus }).catch(err => {
+            console.error('[KanbanBoard] Parent update failed (non-fatal):', err);
+          });
+        }, 100);
+        
+        // Success - show subtle confirmation
+        toast({
+          title: '✓ Actualizado',
+          description: `${draggedOrder.orderId} → ${targetStatus}`,
+          duration: 2000,
+        });
+      } catch (error) {
+        console.error('Error updating order status:', error);
+        
+        // Clear pending update and revert
+        setPendingUpdates(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(draggedOrder.orderId);
+          return newMap;
+        });
+        
+        // Revert to original status
+        const revertedOrders = localOrders.map(order => 
+          order.orderId === draggedOrder.orderId 
+            ? { ...order, status: currentStatus }
+            : order
+        );
+        setLocalOrders(revertedOrders);
+        
+        toast({
+          title: 'Error al actualizar',
+          description: 'El cambio fue revertido. Intenta nuevamente.',
+          variant: 'destructive',
+          duration: 4000,
+        });
+      } finally {
+        setUpdatingOrder(null);
       }
-    } finally {
-      setUpdatingOrder(null);
-    }
+    })();
   };
 
   const activeOrder = activeId ? orders.find(o => o.orderId === activeId) : null;
@@ -384,7 +494,7 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
       
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={customCollisionDetection}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}

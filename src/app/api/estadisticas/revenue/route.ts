@@ -44,34 +44,49 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
+    // Handle timezone properly by treating dates as local
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T23:59:59.999');
 
     // Get all orders in the date range (with tenant isolation)
+    // Use saleDate when available for more accurate sales reporting
     const orders = await prisma.order.findMany({
       where: {
         tenantId,
-        timestamp: {
-          gte: start,
-          lte: end,
-        },
+        OR: [
+          {
+            saleDate: {
+              gte: start.toISOString(),
+              lte: end.toISOString(),
+            },
+          },
+          {
+            saleDate: null,
+            timestamp: {
+              gte: start,
+              lte: end,
+            },
+          },
+        ],
       },
       select: {
         timestamp: true,
+        saleDate: true,
         total: true,
       },
-      orderBy: {
-        timestamp: 'asc',
-      },
+      orderBy: [
+        { saleDate: 'asc' },
+        { timestamp: 'asc' },
+      ],
     });
 
     // Group by specified period
     const grouped = new Map<string, { revenue: number; orderCount: number }>();
 
-    orders.forEach((order: { timestamp: Date; total: number | null }) => {
+    orders.forEach((order: { timestamp: Date; saleDate: string | null; total: number | null }) => {
       let key: string;
-      const orderDate = new Date(order.timestamp);
+      // Use saleDate if available, otherwise use timestamp
+      const orderDate = order.saleDate ? new Date(order.saleDate) : new Date(order.timestamp);
 
       if (groupBy === 'week') {
         key = format(startOfWeek(orderDate), 'yyyy-MM-dd');

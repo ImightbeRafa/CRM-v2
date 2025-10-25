@@ -14,7 +14,7 @@ import { Badge } from "@/app/components/ui/badge";
 import { useSalesStream } from '@/app/hooks/useSalesStream';
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 import { Sale } from '../types/sales';
-import { Loader2, Search, Filter, Download, Printer, Eye, Edit, CheckCircle, Clock, AlertCircle, Truck, Package, Users, TrendingUp, LayoutGrid, List, Kanban, FileText } from 'lucide-react';
+import { Loader2, Search, Filter, Download, Printer, Eye, Edit, CheckCircle, Clock, AlertCircle, Truck, Package, Users, TrendingUp, LayoutGrid, List, Kanban, FileText, RefreshCw } from 'lucide-react';
 import { useToast } from "@/app/hooks/use-toast";
 import { EnhancedOrderCard } from './EnhancedOrderCard';
 import { ProductionStats } from './ProductionStats';
@@ -352,6 +352,7 @@ export function EnhancedProductionDashboard({
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'mobile' | 'kanban'>('table');
   const [showGuide, setShowGuide] = useState(false);
+  const [lastSync, setLastSync] = useState<Date>(new Date());
   const { toast } = useToast();
 
   const { sales: orders, isLoading: loading, error, refresh } = useSalesStream({
@@ -365,6 +366,13 @@ export function EnhancedProductionDashboard({
     }
   });
 
+  // Update last sync time when orders change
+  useEffect(() => {
+    if (!loading && orders.length > 0) {
+      setLastSync(new Date());
+    }
+  }, [orders, loading]);
+
   const filteredOrders = useMemo(() => {
     let filtered = filterOrders(orders, statusFilter, searchTerm, dateRange, priorityFilter, courierFilter);
     
@@ -375,8 +383,14 @@ export function EnhancedProductionDashboard({
       filtered = filtered.filter(o => o.orderType === 'RA');
     } else if (orderTypeFilter === 'urgent') {
       filtered = filtered.filter(o => {
+        // Check if status is manually set to "Urgente" (case-insensitive)
+        const isMarkedUrgent = o.status.toLowerCase() === 'urgente' || o.status.toLowerCase() === 'urgent';
+        
+        // Check if order is old and pending
         const orderAge = Date.now() - new Date(o.timestamp).getTime();
-        return orderAge > 24 * 60 * 60 * 1000 && o.status === 'Pendiente';
+        const isOldAndPending = orderAge > 24 * 60 * 60 * 1000 && o.status === 'Pendiente';
+        
+        return isMarkedUrgent || isOldAndPending;
       });
     }
     
@@ -536,6 +550,44 @@ export function EnhancedProductionDashboard({
 
   return (
     <div className="container mx-auto px-4 py-6 space-y-6">
+      {/* Manual Refresh Button - Temporary for debugging */}
+      <div className="flex justify-between items-center bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-center gap-2 text-sm text-gray-600">
+          <Clock className="h-4 w-4" />
+          <span>
+            Última sincronización: {lastSync.toLocaleTimeString('es-CR', { 
+              hour: '2-digit', 
+              minute: '2-digit',
+              second: '2-digit'
+            })}
+          </span>
+          <Badge variant="secondary" className="ml-2">
+            {orders.length} órdenes
+          </Badge>
+        </div>
+        <Button
+          onClick={() => {
+            console.log('[Dashboard] Manual refresh triggered');
+            refresh();
+          }}
+          variant="outline"
+          className="gap-2 bg-white"
+          disabled={loading}
+        >
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Sincronizando...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="h-4 w-4" />
+              Sincronizar Ahora
+            </>
+          )}
+        </Button>
+      </div>
+
       {/* Stats Overview */}
       <ProductionStats 
         orders={orders} 

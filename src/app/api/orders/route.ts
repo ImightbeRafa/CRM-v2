@@ -167,31 +167,47 @@ export async function GET(request: NextRequest) {
     if (!auth.ok) return auth.response
     
     const { tenantId } = auth
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
-    const userId = (token as any)?.sub || (auth as any).userId
-    const userName = (token as any)?.name || (token as any)?.email || 'System'
 
     // Get query parameters for pagination and filtering
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')
-    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100) // Default 50, max 100 items per request
+    const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 500) // Default 100, max 500 items per request
     const skip = (page - 1) * limit
     const status = searchParams.get('status')
     const orderType = searchParams.get('orderType')
+    const search = searchParams.get('search')
+    const dateFrom = searchParams.get('dateFrom')
+    const dateTo = searchParams.get('dateTo')
 
-    return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName }, async () => {
-      const tenantPrisma = getTenantPrisma(tenantId)
-      
-      // Build where clause for filtering
-      const whereClause: any = { tenantId }
-      if (status) whereClause.status = status
-      if (orderType) whereClause.orderType = orderType
-      
-      // Get total count for pagination
-      const totalCount = await tenantPrisma.order.count({ where: whereClause })
-      
-      // Fetch only essential fields to reduce payload
-      const orders = await tenantPrisma.order.findMany({
+    console.log('[GET /api/orders] Fetching orders for tenant:', tenantId, { status, orderType, search })
+    
+    // Build where clause for filtering
+    const whereClause: any = { tenantId }
+    if (status && status !== 'all') whereClause.status = status
+    if (orderType && orderType !== 'all') whereClause.orderType = orderType
+    
+    // Add search filter
+    if (search) {
+      whereClause.OR = [
+        { customerName: { contains: search, mode: 'insensitive' } },
+        { orderId: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search, mode: 'insensitive' } },
+        { product: { contains: search, mode: 'insensitive' } },
+      ]
+    }
+    
+    // Add date range filter
+    if (dateFrom || dateTo) {
+      whereClause.timestamp = {}
+      if (dateFrom) whereClause.timestamp.gte = new Date(dateFrom)
+      if (dateTo) whereClause.timestamp.lte = new Date(dateTo)
+    }
+    
+    // Get total count for pagination
+    const totalCount = await prisma.order.count({ where: whereClause })
+    
+    // Fetch only essential fields to reduce payload
+    const orders = await prisma.order.findMany({
         where: whereClause,
         orderBy: { timestamp: 'desc' },
         skip,
@@ -231,18 +247,31 @@ export async function GET(request: NextRequest) {
           delivery: true,
           // Exclude only the heaviest field: productDetails (can be loaded separately if needed)
         }
-      })
-      
-      // Return orders in the original format for backward compatibility
-      const response = createSuccessResponse(orders)
-      
-      // Add compression headers to reduce network traffic
-      response.headers.set('Cache-Control', 'public, max-age=60') // Cache for 1 minute
-      response.headers.set('Vary', 'Accept-Encoding')
-      
-      return response
     })
+    
+    console.log(`[GET /api/orders] Returning ${orders.length} orders for tenant ${tenantId}`)
+    
+    // Return orders with pagination metadata - NO CACHE HEADERS
+    const response = NextResponse.json({
+      status: 'success',
+      data: orders,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+        hasMore: skip + orders.length < totalCount
+      }
+    })
+    
+    // DISABLE caching to ensure fresh data
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+    response.headers.set('Pragma', 'no-cache')
+    response.headers.set('Expires', '0')
+    
+    return response
   } catch (error) {
+    console.error('[GET /api/orders] Error:', error)
     return handleApiError(error)
   }
 }

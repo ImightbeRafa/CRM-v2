@@ -35,20 +35,27 @@ export async function GET(req: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    // Build date filter
+    // Build date filter - use saleDate when available, fallback to timestamp
     const dateFilter: any = {};
     if (startDate) {
-      dateFilter.gte = new Date(startDate);
+      const start = new Date(startDate + 'T00:00:00');
+      dateFilter.gte = start;
     }
     if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
+      const end = new Date(endDate + 'T23:59:59.999');
       dateFilter.lte = end;
     }
 
     const whereClause: any = { tenantId };
     if (Object.keys(dateFilter).length > 0) {
-      whereClause.timestamp = dateFilter;
+      const saleDateFilter = {
+        gte: dateFilter.gte?.toISOString(),
+        lte: dateFilter.lte?.toISOString()
+      };
+      whereClause.OR = [
+        { saleDate: saleDateFilter },
+        { saleDate: null, timestamp: dateFilter }
+      ];
     }
 
     // Group orders by status

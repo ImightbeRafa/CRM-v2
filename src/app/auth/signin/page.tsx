@@ -267,7 +267,7 @@ export default function SignInPage() {
         </form>
       </div>
       <footer className="mt-8 text-center text-gray-500 text-sm">
-        © {new Date().getFullYear()} Rafael Garcia Montoya. Todos los derechos reservados.
+        © {new Date().getFullYear()}BetsyCRM los derechos reservados.
       </footer>
     </div>
   )

@@ -141,6 +141,9 @@ model Order {
   // Detailed product information for inventory updates
   productDetails String?
   
+  // Tenant-defined dynamic custom fields
+  customFields  Json?
+  
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   invoices Invoice[]  // Orders can have invoices
@@ -577,4 +580,3 @@ model UsageLog {
   @@index([tenantId])
   @@index([period])
 }
-

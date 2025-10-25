@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getTenantPrisma } from '@/lib/prisma-tenant'
+import { withTenantContext } from '@/lib/tenantContext'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 
 // Force dynamic rendering for authentication
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
     const prisma = getTenantPrisma(tenantId)
     
     const fields = await prisma.productField.findMany({
-      where: { active: true },
+      where: { active: true, tenantId },
       orderBy: { order: 'asc' },
       include: { optionSet: { include: { options: { where: { active: true } } } } },
     })
@@ -80,10 +81,10 @@ export async function POST(request: NextRequest) {
         type: body.type,
         required: Boolean(body.required),
         order: Number(body.order) || 0,
-        ...(body.optionSetId ? { optionSet: { connect: { id: body.optionSetId } } } : {}),
+        optionSetId: body.optionSetId ?? null,
         multiSelect: Boolean(body.multiSelect),
         active: true,
-        tenant: { connect: { id: tenantId } }
+        tenantId
       },
     })
     return NextResponse.json({ status: 'success', data: created })
@@ -145,16 +146,31 @@ export async function DELETE(request: NextRequest) {
     if (!auth.ok) return auth.response
     
     const { tenantId } = auth
-    const prisma = getTenantPrisma(tenantId)
     
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
-    
-    const updated = await prisma.productField.update({ where: { id }, data: { active: false } })
-    return NextResponse.json({ status: 'success', data: updated })
+    const userId = (auth as any)?.userId || 'system'
+    const userRole = (auth as any)?.userRole
+    const userName = (auth as any)?.session?.user?.name || (auth as any)?.session?.user?.email || 'System'
+
+    return await withTenantContext({ tenantId, userId, role: userRole, userRole, userName }, async () => {
+      const prisma = getTenantPrisma(tenantId)
+      // Use updateMany with tenant filter to avoid cross-tenant or P2025 throws
+      const result = await prisma.productField.updateMany({
+        where: { id, tenantId, active: true },
+        data: { active: false }
+      })
+      // eslint-disable-next-line no-console
+      console.log('[config/fields DELETE] updateMany count:', result.count)
+      if (result.count === 0) {
+        return NextResponse.json({ status: 'error', error: 'Field not found' }, { status: 404 })
+      }
+      return NextResponse.json({ status: 'success' })
+    })
   } catch (e) {
-    return NextResponse.json({ status: 'error', error: 'Failed to delete field' }, { status: 500 })
+    console.error('[config/fields DELETE] Unexpected error:', e)
+    return NextResponse.json({ status: 'error', error: 'Failed to delete field (auth/context)' }, { status: 500 })
   }
 }
 

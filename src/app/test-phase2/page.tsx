@@ -200,7 +200,7 @@ export default async function TestPhase2Page() {
             <h2 className="text-xl font-semibold mb-4">🚀 Next Steps</h2>
             <div className="flex flex-wrap gap-4">
               <Link 
-                href="/home"
+                href="/dashboard"
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 Go to Dashboard

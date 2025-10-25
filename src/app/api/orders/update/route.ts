@@ -1,9 +1,12 @@
 // src/app/api/orders/update/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { getTenantPrisma } from '@/lib/prisma-tenant'
 import { createSuccessResponse, createErrorResponse, handleApiError, validateRequiredFields, sanitizeInput } from '@/lib/apiUtils'
 import { logCreate, logUpdate } from '@/lib/auditLogger'
 import { getToken } from 'next-auth/jwt'
+import { withTenantContext } from '@/lib/tenantContext'
+
+export const runtime = 'nodejs'
 
 // Function to detect meaningful changes between old and new order data
 function detectChanges(oldData: any, newData: any): string[] {
@@ -108,17 +111,19 @@ export async function POST(request: NextRequest) {
       ])
     )
 
-    // Find order with tenant isolation
-    const existing = await prisma.order.findFirst({ 
-      where: { 
-        orderId: cleanData.orderId,
-        tenantId: tenantId
-      } as any
-    })
+    return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName: (token as any)?.name || (token as any)?.email || 'System' }, async () => {
+      const prisma = getTenantPrisma(tenantId)
+      // Find order with tenant isolation
+      const existing = await prisma.order.findFirst({ 
+        where: { 
+          orderId: cleanData.orderId,
+          tenantId: tenantId
+        }
+      })
     
-    if (!existing) {
-      return createErrorResponse('Order not found', 404)
-    }
+      if (!existing) {
+        return createErrorResponse('Order not found', 404)
+      }
 
     // Only update fields that are provided in the request
     const updateData: any = {}
@@ -156,30 +161,63 @@ export async function POST(request: NextRequest) {
     if (cleanData.agreedDate !== undefined) updateData.agreedDate = cleanData.agreedDate
     if (cleanData.pickupDate !== undefined) updateData.pickupDate = cleanData.pickupDate
 
-    // Update order with tenant isolation (using the internal id, not orderId)
-    const result = await prisma.order.update({ 
-      where: { id: existing.id }, 
-      data: updateData 
-    })
-
-    // Log audit trail with smart change detection
-    if (Object.keys(updateData).length > 0) {
-      // Only log if there are actual changes
-      const changes = detectChanges(existing, updateData)
-      if (changes.length > 0) {
-        console.log('Logging order update with changes:', {
-          orderId: result.orderId,
-          changes: changes,
-          userId: 'will-be-determined-by-audit-logger'
-        })
-        await logUpdate(request as any, 'order', result.id, `Order #${result.orderId}`, 
-          { changes: changes }, 
-          { changes: changes })
-      }
+    // Merge unknown keys into customFields
+    const knownKeys = new Set([
+      'orderId','orderType','status','delivery','timestamp','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails'
+    ])
+    const additions: Record<string, any> = {}
+    for (const [k,v] of Object.entries(cleanData)) {
+      if (!knownKeys.has(k)) additions[k] = v
+    }
+    if (Object.keys(additions).length > 0) {
+      const currentCustom = (existing as any).customFields || {}
+      updateData.customFields = { ...currentCustom, ...additions }
     }
 
-    return createSuccessResponse(result, 'Order updated successfully')
+      // Update order with tenant isolation and explicit tenant filter
+      const updateRes = await prisma.order.updateMany({ 
+        where: { id: existing.id, tenantId }, 
+        data: updateData 
+      })
+      if (updateRes.count === 0) {
+        return createErrorResponse('Order not found in this tenant', 404)
+      }
+      // Re-fetch the updated record
+      const result = await prisma.order.findUnique({ where: { id: existing.id } })
+
+    // Log audit trail with smart change detection
+      if (Object.keys(updateData).length > 0) {
+        // Only log if there are actual changes
+        const changes = detectChanges(existing, updateData)
+        if (changes.length > 0) {
+          console.log('Logging order update with changes:', {
+            orderId: result?.orderId,
+            changes: changes,
+            userId: 'will-be-determined-by-audit-logger'
+          })
+          try {
+            await logUpdate(request as any, 'order', result!.id, `Order #${result!.orderId}`, 
+              { changes: changes }, 
+              { changes: changes })
+          } catch (auditErr) {
+            console.error('Audit log failed (non-fatal):', auditErr)
+          }
+        }
+      }
+
+      return createSuccessResponse(result, 'Order updated successfully')
+    })
   } catch (error) {
-    return handleApiError(error)
+    const details = error instanceof Error ? error.message : String(error)
+    const stack = error instanceof Error ? error.stack : undefined
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Order update error:', error)
+    }
+    return NextResponse.json(
+      process.env.NODE_ENV === 'production'
+        ? { status: 'error', error: 'Internal server error' }
+        : { status: 'error', error: details, stack },
+      { status: 500 }
+    )
   }
 }

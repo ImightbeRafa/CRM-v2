@@ -1,24 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
-import { getToken } from 'next-auth/jwt';
+import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 
 export async function GET(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    // Require 'view_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'view_config');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { tenantId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
-    // Get tenant ID from token
-    const tenantId = (token as any).tenantId;
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
-
+    // CRITICAL: Only show business info for this tenant (auto-filtered by tenantPrisma)
     const businessInfo = await prisma.businessInfo.findMany({
       where: { 
-        tenantId,
         isActive: true 
       },
       orderBy: { order: 'asc' }
@@ -39,30 +34,19 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    // Require 'update_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Get tenant ID from token
-    const tenantId = (token as any).tenantId;
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
-
-    // Check if user is OWNER or ADMIN
-    const userRole = (token as any).membershipRole;
-    if (userRole !== 'OWNER' && userRole !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const { tenantId, userId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
     const body = await request.json();
     const { name, type, label, placeholder, options, required, order } = body;
 
+    // CRITICAL: Create business info with tenant isolation (auto-injected by tenantPrisma)
     const businessInfo = await prisma.businessInfo.create({
       data: {
-        tenantId,
         name,
         type,
         label,
@@ -71,7 +55,8 @@ export async function POST(request: NextRequest) {
         required: required || false,
         order: order || 0,
         isActive: true,
-        createdBy: token.sub as string
+        createdBy: userId,
+        tenant: { connect: { id: tenantId } }
       }
     });
 
@@ -90,20 +75,17 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    // Require 'update_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Check if user is MASTER
-    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const { tenantId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
     const body = await request.json();
     const { id, name, type, label, placeholder, options, required, order, active } = body;
 
+    // CRITICAL: Update with tenant isolation (auto-verified by tenantPrisma)
     const businessInfo = await prisma.businessInfo.update({
       where: { id },
       data: {
@@ -134,16 +116,12 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    // Require 'update_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Check if user is MASTER
-    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const { tenantId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -152,6 +130,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Business info ID is required' }, { status: 400 });
     }
 
+    // CRITICAL: Soft delete with tenant isolation (auto-verified by tenantPrisma)
     await prisma.businessInfo.update({
       where: { id },
       data: { isActive: false, updatedAt: new Date() }

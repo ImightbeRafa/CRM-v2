@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     const prisma = getTenantPrisma(tenantId)
     
     const sets = await prisma.productOptionSet.findMany({
-      where: { active: true },
+      where: { active: true, tenantId },
       orderBy: { name: 'asc' },
       include: { options: { where: { active: true }, orderBy: { label: 'asc' } } }
     })
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
             key: body.key, 
             name: body.name, 
             active: true,
-            tenant: { connect: { id: tenantId } }
+            tenantId
           } 
         })
     return createSuccessResponse(result, 'Option set created successfully')

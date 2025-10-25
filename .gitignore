@@ -6,7 +6,7 @@ node_modules/
 
 # Testing
 coverage/
-scripts/
+scripts
 
 # Documentation and Notes (local only)
 *.md

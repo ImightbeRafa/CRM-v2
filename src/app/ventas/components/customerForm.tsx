@@ -220,6 +220,19 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
         )}
       </div>
 
+      {/* Seller Comments (Order-level) */}
+      <div className="mt-4 space-y-2">
+        <label className="block font-medium">Comentarios del vendedor</label>
+        <textarea
+          name="comentarios"
+          className="w-full p-2 border rounded"
+          value={(customerInfo as any).comentarios || ''}
+          onChange={handleInputChange}
+          placeholder="Anota detalles importantes del pedido (colores, personalización, observaciones, etc.)"
+          rows={3}
+        />
+      </div>
+
     </div>
   );
 };

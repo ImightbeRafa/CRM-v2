@@ -2,13 +2,40 @@
  * Tenant-Aware Prisma Client
  * 
  * Provides a Prisma client that automatically filters queries by tenantId
- * Use getPrismaWithTenant() in API routes for automatic tenant isolation
+ * Use getTenantPrisma() in API routes for automatic tenant isolation
  */
 
-import { PrismaClient, Prisma } from '@prisma/client';
-import { prisma } from './db';
+import { prisma as prismaGlobal } from './db';
+import { getTenantContext } from './tenantContext';
+import { logAudit } from './auditLogger';
+import { TenantError } from './errors';
+import { AuditAction as PrismaAuditAction } from '@prisma/client';
 
-// Models that have tenantId field
+// Extend the Prisma AuditAction type to include our custom actions
+type AuditAction = PrismaAuditAction | 'SECURITY_WARNING' | 'TENANT_ERROR';
+
+// Enable debug logging
+const DEBUG = false;
+
+// Helper type for Prisma middleware params
+type PrismaMiddlewareParams = {
+  model?: string;
+  action: string;
+  args: any;
+  dataPath: string[];
+  runInTransaction: boolean;
+  data?: any;
+};
+
+type PrismaNextFunction = (params: PrismaMiddlewareParams) => Promise<any>;
+
+// Type guard to check if model is a tenant model (case-insensitive)
+function isTenantModel(model: string | undefined): model is string {
+  return model ? TENANT_MODELS_LOWER.includes(model.toLowerCase()) : false;
+}
+
+// Models that have tenantId field and require tenant isolation
+// IMPORTANT: Keep this list in sync with your Prisma schema
 const TENANT_MODELS = [
   'order',
   'client',
@@ -20,100 +47,312 @@ const TENANT_MODELS = [
   'shippingConfig',
   'shippingGuia',
   'inventoryItem',
+  'inventoryTransaction',
   'auditLog',
   'businessInfo',
+  'product',
+  'productVariant',
+  'category',
+  // Do not include models without tenantId (e.g., User) in isolation list
+  'membership',
+  // 'tenant' has special handling below
+  'warehouse',
+  'supplier',
+  'purchaseOrder',
+  'sale',
+  'customer',
+  'taxRate',
+  'discount',
+  'priceList',
+  'barcode',
+  'stockMovement',
+  'stockAdjustment',
+  'inventoryCount',
+  'inventoryTransfer',
 ] as const;
 
-type TenantModel = typeof TENANT_MODELS[number];
+const TENANT_MODELS_LOWER: readonly string[] = TENANT_MODELS.map((m) => m.toLowerCase());
+
+/**
+ * Global Prisma query extension to enforce tenant isolation (Prisma v6+)
+ * Uses AsyncLocalStorage context to scope queries on tenant models.
+ */
+prismaGlobal.$extends({
+  name: 'globalTenantIsolation',
+  query: {
+    $allModels: {
+      async $allOperations({ operation, model, args, query }) {
+        const modelName = model?.toLowerCase();
+        if (!isTenantModel(modelName)) {
+          return query(args);
+        }
+
+        const context = getTenantContext();
+        const tenantIdFromContext = context?.tenantId;
+        // Try to infer tenantId from args when provided by an outer extension/client
+        const extractTenantId = (input: any): string | undefined => {
+          if (!input) return undefined;
+          if (input.where?.tenantId) return input.where.tenantId as string;
+          if (input.data?.tenantId) return input.data.tenantId as string;
+          if (input.create?.tenantId) return input.create.tenantId as string;
+          return undefined;
+        };
+        const tenantIdFromArgs = extractTenantId(args);
+        const tenantId = tenantIdFromContext || tenantIdFromArgs;
+
+        // Block tenant-model access without tenant context (except safe find returning empty)
+        if (!tenantId && modelName !== 'tenant') {
+          if (operation === 'findMany') return [];
+          if (operation === 'findFirst' || operation === 'findUnique') return null;
+          throw new TenantError('Tenant context is required for this operation');
+        }
+
+        // Clone args to avoid mutation
+        const modifiedArgs = JSON.parse(JSON.stringify(args || {}));
+
+        // Helper to add tenant to where
+        const addTenantToWhere = (where: any) => {
+          if (!tenantId) return where; // allow system ops when no tenantId
+          if (!where) return { tenantId };
+          if (where.OR) {
+            return { ...where, OR: where.OR.map((c: any) => ({ ...c, tenantId })), tenantId };
+          }
+          if (where.AND) {
+            return { ...where, AND: where.AND.map((c: any) => ({ ...c, tenantId: c.tenantId || tenantId })), tenantId };
+          }
+          return { ...where, tenantId };
+        };
+
+        switch (operation) {
+          case 'findUnique':
+          case 'findFirst':
+            modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
+            break;
+          case 'findMany':
+            if (modifiedArgs.where?.tenantId !== null) {
+              modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
+            }
+            break;
+          case 'create':
+            if (tenantId) {
+              modifiedArgs.data = { ...modifiedArgs.data, tenantId };
+            }
+            break;
+          case 'update':
+          case 'updateMany':
+          case 'delete':
+          case 'deleteMany':
+            modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
+            if (modifiedArgs.data && 'tenantId' in modifiedArgs.data) delete modifiedArgs.data.tenantId;
+            break;
+          case 'upsert':
+            modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
+            if (tenantId) modifiedArgs.create = { ...modifiedArgs.create, tenantId };
+            if (modifiedArgs.update && 'tenantId' in modifiedArgs.update) delete modifiedArgs.update.tenantId;
+            break;
+        }
+
+        return query(modifiedArgs);
+      }
+    }
+  }
+});
 
 /**
  * Create a Prisma client extension that automatically injects tenantId
  */
 export function createTenantPrisma(tenantId: string) {
-  return prisma.$extends({
+  if (!tenantId) {
+    throw new Error('Tenant ID is required for tenant-isolated queries');
+  }
+
+  // Create a single extension that handles all tenant isolation
+  return prismaGlobal.$extends({
     name: 'tenantIsolation',
     query: {
-      // Apply to all models
       $allModels: {
         async $allOperations({ operation, model, args, query }) {
-          // Check if this model has tenantId
           const modelName = model?.toLowerCase();
-          const hasTenantId = modelName && TENANT_MODELS.includes(modelName as TenantModel);
+          const isTenantModel = modelName ? TENANT_MODELS_LOWER.includes(modelName) : false;
 
-          if (!hasTenantId) {
-            // Model doesn't have tenantId, proceed normally
+          // Skip tenant isolation for non-tenant models or system operations
+          if (!isTenantModel) {
             return query(args);
           }
+          
+          // Create a deep copy of args to avoid mutating the original
+          const modifiedArgs = JSON.parse(JSON.stringify(args || {}));
+          const context = getTenantContext();
+          const contextTenantId = context?.tenantId || tenantId;
+          const userId = context?.userId || 'system';
+          
+          // Helper to add tenant ID to where clause
+          const addTenantToWhere = (where: any) => {
+            if (!where) return { tenantId: contextTenantId };
+            
+            // If where has OR conditions, we need to handle them
+            if (where.OR) {
+              return {
+                ...where,
+                OR: where.OR.map((cond: any) => ({
+                  ...cond,
+                  tenantId: contextTenantId
+                })),
+                tenantId: contextTenantId // Also add at the top level for safety
+              };
+            }
+            
+            // If where has AND conditions, we need to handle them
+            if (where.AND) {
+              return {
+                ...where,
+                AND: where.AND.map((cond: any) => ({
+                  ...cond,
+                  tenantId: cond.tenantId || contextTenantId
+                })),
+                tenantId: contextTenantId // Also add at the top level for safety
+              };
+            }
+            
+            // Simple case - just add tenantId
+            return { ...where, tenantId: contextTenantId };
+          };
 
-          // Inject tenantId based on operation type (guard against undefined args.where/data)
-          switch (operation) {
-            case 'findUnique':
-            case 'findFirst':
-            case 'findMany':
-            case 'count':
-            case 'aggregate':
-            case 'groupBy':
-              // Add tenantId to where clause
-              args.where = {
-                ...(args?.where || {}),
-                tenantId,
-              } as any;
-              break;
-
-            case 'create':
-              // Add tenantId to data
-              args.data = {
-                ...(args?.data || {}),
-                tenantId: (args as any)?.data?.tenantId ?? tenantId,
-              } as any;
-              break;
-
-            case 'createMany':
-              // Add tenantId to all data items
-              if (Array.isArray((args as any).data)) {
-                (args as any).data = (args as any).data.map((item: any) => ({
-                  ...item,
-                  tenantId: item?.tenantId ?? tenantId,
-                }));
-              } else {
-                (args as any).data = {
-                  ...((args as any).data || {}),
-                  tenantId: (args as any)?.data?.tenantId ?? tenantId,
+          // Handle different operation types with strict tenant isolation
+          try {
+            switch (operation) {
+              case 'findUnique':
+              case 'findFirst':
+                modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
+                break;
+                
+              case 'findMany':
+                // Only add tenant filter if not explicitly disabled
+                if (modifiedArgs.where?.tenantId !== null) {
+                  modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
+                }
+                break;
+                
+              case 'create':
+                modifiedArgs.data = {
+                  ...modifiedArgs.data,
+                  tenantId: contextTenantId
                 };
-              }
-              break;
-
-            case 'update':
-            case 'updateMany':
-            case 'delete':
-            case 'deleteMany':
-              // Add tenantId to where clause
-              args.where = {
-                ...(args?.where || {}),
-                tenantId,
-              } as any;
-              break;
-
-            case 'upsert':
-              // Add tenantId to where and create data
-              args.where = {
-                ...(args?.where || {}),
-                tenantId,
-              } as any;
-              if ((args as any).create) {
-                (args as any).create = {
-                  ...((args as any).create || {}),
-                  tenantId: (args as any).create?.tenantId ?? tenantId,
+                break;
+                
+              case 'update':
+              case 'updateMany':
+                modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
+                // Prevent updating tenantId
+                if (modifiedArgs.data && 'tenantId' in modifiedArgs.data) {
+                  delete modifiedArgs.data.tenantId;
+                }
+                break;
+                
+              case 'delete':
+              case 'deleteMany':
+                modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
+                break;
+                
+              case 'upsert':
+                modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
+                modifiedArgs.create = {
+                  ...modifiedArgs.create,
+                  tenantId: contextTenantId
                 };
+                if (modifiedArgs.update && 'tenantId' in modifiedArgs.update) {
+                  delete modifiedArgs.update.tenantId;
+                }
+                break;
+                
+              default:
+                // For other operations, ensure tenantId is in the where clause
+                if (modifiedArgs.where) {
+                  modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
+                }
+            }
+
+            if (DEBUG) {
+              console.log(`[${model}.${operation}] Tenant ${contextTenantId}:`, 
+                JSON.stringify(modifiedArgs, null, 2));
+            }
+            
+            // Execute the query
+            const result = await query(modifiedArgs);
+            
+            // Log only mutating operations to avoid invalid enum values for reads
+            try {
+              const mutatingOps = new Set(['create','createMany','update','updateMany','delete','deleteMany','upsert']);
+              if (mutatingOps.has(operation)) {
+                let entityId = 'unknown';
+                if (result && typeof result === 'object' && 'id' in result) {
+                  entityId = String((result as { id: unknown }).id);
+                } else if (modifiedArgs?.where?.id) {
+                  entityId = String(modifiedArgs.where.id);
+                } else if (modifiedArgs?.data?.id) {
+                  entityId = String(modifiedArgs.data.id);
+                } else if (modifiedArgs?.id) {
+                  entityId = String(modifiedArgs.id);
+                }
+
+                const actionMap: Record<string, AuditAction> = {
+                  create: 'CREATE',
+                  createMany: 'CREATE',
+                  update: 'UPDATE',
+                  updateMany: 'BULK_UPDATE',
+                  delete: 'DELETE',
+                  deleteMany: 'BULK_DELETE',
+                  upsert: 'UPDATE',
+                } as const;
+
+                await logAudit({
+                  action: actionMap[operation] || 'UPDATE',
+                  entityType: modelName || 'System',
+                  entityId,
+                  description: `Performed ${operation} on ${modelName || 'unknown'}`,
+                  userId,
+                  tenantId: contextTenantId,
+                  userRole: (context?.role as any) || 'SYSTEM',
+                  userName: context?.userName || 'System',
+                  details: {
+                    operation,
+                    model: modelName,
+                    ...(modifiedArgs?.data && { data: modifiedArgs.data })
+                  }
+                });
               }
-              // Do not force tenantId on update (it already exists on the record)
-              break;
+            } catch (auditError) {
+              console.error('Failed to log audit:', auditError);
+              // Don't fail the main operation if audit logging fails
+            }
+            
+            return result;
+            
+          } catch (error) {
+            console.error(`Error in tenant-isolated query (${model}.${operation}):`, error);
+            // Log the error for audit
+            try {
+              await logAudit({
+                action: 'ERROR' as const,
+                entityType: modelName || 'unknown',
+                entityId: 'n/a',
+                userId: userId,
+                tenantId: contextTenantId,
+                details: {
+                  operation,
+                  model: modelName,
+                  error: error instanceof Error ? error.message : String(error),
+                  args: modifiedArgs
+                }
+              });
+            } catch (auditError) {
+              console.error('Failed to log error audit:', auditError);
+            }
+            throw error;
           }
-
-          return query(args);
-        },
-      },
-    },
+        }
+      }
+    }
   });
 }
 
@@ -127,21 +366,39 @@ export function createTenantPrisma(tenantId: string) {
  */
 export function getTenantPrisma(tenantId: string) {
   if (!tenantId) {
-    throw new Error('Tenant ID is required for tenant-isolated queries');
+    throw new TenantError('Tenant ID is required for tenant-isolated queries');
   }
+  
+  // Log the creation of a tenant-scoped Prisma client
+  const context = getTenantContext();
+  if (context?.tenantId && context.tenantId !== tenantId) {
+    logAudit({
+      action: 'SECURITY_WARNING' as const, // Type assertion for custom audit action
+      entityType: 'TenantContext',
+      entityId: tenantId,
+      description: `Tenant context mismatch: ${context.tenantId} != ${tenantId}`,
+      userId: context.userId || 'unknown',
+      userRole: context.role || 'system', // Use role from context or default to 'system'
+      tenantId: context.tenantId,
+    });
+  }
+
   return createTenantPrisma(tenantId);
 }
 
 /**
  * Helper to extract tenantId from NextAuth session
+ * @throws {TenantError} If tenant ID is missing
  */
 export function getTenantIdFromSession(session: any): string {
   const tenantId = session?.user?.tenantId;
   if (!tenantId) {
-    throw new Error('Session does not contain tenantId');
+    throw new TenantError('Session does not contain tenantId');
   }
   return tenantId;
 }
+
+// Re-export TenantError from errors module
 
 /**
  * Use the global prisma client (without tenant isolation)
@@ -151,5 +408,5 @@ export function getTenantIdFromSession(session: any): string {
  * - Membership management
  * - System operations
  */
-export { prisma as prismaGlobal };
+export { prismaGlobal };
 

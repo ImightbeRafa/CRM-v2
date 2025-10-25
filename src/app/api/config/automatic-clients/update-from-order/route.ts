@@ -1,19 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
-import { getToken } from 'next-auth/jwt';
+import { withTenantContext } from '@/lib/tenantContext';
+import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
+
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const tenantId = (token as any).tenantId;
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
+    // Require 'update_sales' permission and get tenant/user context
+    const auth = await authenticateAPIWithPermission(request, 'update_sales');
+    if (!auth.ok) return auth.response as NextResponse;
+    const { tenantId, userId, userRole } = auth as any;
 
     const body = await request.json();
     const {
@@ -30,93 +27,101 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Validate required fields
-    if (!phone || !name) {
+    if (!phone || !name || typeof phone !== 'string' || typeof name !== 'string') {
       return NextResponse.json({ error: 'Name and phone are required' }, { status: 400 });
     }
 
-    let existingClient = null;
+    const userName = (auth as any)?.session?.user?.name || (auth as any)?.session?.user?.email || 'System';
+    
+    return await withTenantContext({ tenantId, userId: userId || 'system', role: userRole, userRole, userName }, async () => {
+      const prisma = getTenantPrisma(tenantId);
 
-    // If a specific customer ID was provided, use that
-    if (customerId) {
-      existingClient = await prisma.client.findFirst({
-        where: { 
-          id: customerId, 
-          isActive: true, 
-          tenantId 
-        }
-      });
-    }
+      let existingClient = null as any;
 
-    // Otherwise, check if client exists with this phone number
-    if (!existingClient) {
-      existingClient = await prisma.client.findFirst({
-        where: { 
-          phone, 
-          isActive: true, 
-          tenantId 
-        }
-      });
-    }
+      // If a specific customer ID was provided, use that
+      if (customerId) {
+        existingClient = await prisma.client.findFirst({
+          where: { 
+            id: customerId, 
+            isActive: true, 
+            tenantId 
+          }
+        });
+      }
 
-    if (existingClient) {
-      // UPDATE existing client with new information
-      const updatedClient = await prisma.client.update({
-        where: { id: existingClient.id },
-        data: {
-          name,
-          email: email || existingClient.email,
-          province,
-          canton,
-          district,
-          address: address || existingClient.address,
-          business: business || existingClient.business,
-          username: username || existingClient.username,
-          lastUpdated: new Date()
-        }
-      });
+      // Otherwise, check if client exists with this phone number
+      if (!existingClient) {
+        existingClient = await prisma.client.findFirst({
+          where: { 
+            phone, 
+            isActive: true, 
+            tenantId 
+          }
+        });
+      }
 
-      return NextResponse.json({
-        status: 'success',
-        action: 'updated',
-        data: updatedClient
-      });
-    } else {
-      // CREATE new client
-      const newClient = await prisma.client.create({
-        data: {
-          name,
-          phone,
-          email: email || '',
-          province,
-          canton,
-          district,
-          address: address || '',
-          business: business || '',
-          username: username || '',
-          totalOrders: 0,
-          totalSpent: 0,
-          averageOrderValue: 0,
-          firstOrder: new Date(),
-          lastOrder: new Date(),
-          isActive: true,
-          isFavorite: false,
-          createdBy: token.sub as string,
-          tenant: { connect: { id: tenantId } }
-        }
-      });
+      if (existingClient) {
+        // UPDATE existing client with new information
+        const updatedClient = await prisma.client.update({
+          where: { id: existingClient.id },
+          data: {
+            name,
+            email: email || existingClient.email,
+            province,
+            canton,
+            district,
+            address: address || existingClient.address,
+            business: business || existingClient.business,
+            username: username || existingClient.username,
+            lastUpdated: new Date()
+          }
+        });
 
-      return NextResponse.json({
-        status: 'success',
-        action: 'created',
-        data: newClient
-      });
-    }
+        return NextResponse.json({
+          status: 'success',
+          action: 'updated',
+          data: updatedClient
+        });
+      } else {
+        // CREATE new client with explicit tenantId
+        const newClient = await prisma.client.create({
+          data: {
+            tenantId,
+            name,
+            phone,
+            email: email || '',
+            province,
+            canton,
+            district,
+            address: address || '',
+            business: business || '',
+            username: username || '',
+            totalOrders: 0,
+            totalSpent: 0,
+            averageOrderValue: 0,
+            firstOrder: new Date(),
+            lastOrder: new Date(),
+            isActive: true,
+            isFavorite: false,
+            createdBy: (userId as string) || 'system'
+          }
+        });
+
+        return NextResponse.json({
+          status: 'success',
+          action: 'created',
+          data: newClient
+        });
+      }
+    })
   } catch (error) {
     console.error('Error updating client from order:', error);
-    return NextResponse.json(
-      { error: 'Failed to update client' },
-      { status: 500 }
-    );
+    const details = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    const payload = process.env.NODE_ENV === 'production'
+      ? { error: 'Failed to update client' }
+      : { error: 'Failed to update client', details, stack };
+    return NextResponse.json(payload, { status: 500 });
   }
 }
 

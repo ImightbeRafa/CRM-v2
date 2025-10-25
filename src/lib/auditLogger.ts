@@ -1,49 +1,77 @@
 import { prisma } from '@/lib/db'
 import { getToken } from 'next-auth/jwt'
 import { NextRequest } from 'next/server'
+import { getTenantContext } from './tenantContext'
 
-export interface AuditLogData {
-  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'BULK_DELETE' | 'BULK_UPDATE' | 'BULK_TOGGLE' | 'LOGIN' | 'LOGOUT' | 'EXPORT' | 'IMPORT'
-  entityType: string
-  entityId: string
-  entityName?: string
-  oldValues?: any
-  newValues?: any
-  reason?: string
-  userId: string
-  userName: string
-  userRole: 'MASTER' | 'REGULAR'
-  ipAddress?: string
-  userAgent?: string
+import { AuditAction as PrismaAuditAction } from '@prisma/client';
+
+// Define our extended audit action type that includes custom actions
+type ExtendedAuditAction = PrismaAuditAction | 'SECURITY_WARNING' | 'TENANT_ERROR';
+
+// Type guard to check if an action is a valid Prisma audit action
+function isPrismaAuditAction(action: string): action is PrismaAuditAction {
+  const validActions: string[] = Object.values(PrismaAuditAction);
+  return validActions.includes(action);
 }
 
-export async function logAuditEvent(data: AuditLogData & { tenantId?: string }) {
+export interface AuditLogData {
+  action: ExtendedAuditAction;
+  entityType: string;
+  entityId: string;
+  entityName?: string | null;
+  description?: string | null;
+  oldValues?: unknown;
+  newValues?: unknown;
+  details?: unknown;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  userId: string;
+  userName?: string | null;
+  userRole: string;
+  tenantId: string;
+}
+
+export async function logAuditEvent(data: AuditLogData): Promise<void> {
   try {
+    // Ensure the action is a valid Prisma audit action
+    const action: PrismaAuditAction = isPrismaAuditAction(data.action) 
+      ? data.action 
+      : 'CREATE';
+
+    // Prepare the log data
     const logData: any = {
-      action: data.action,
+      action,
       entityType: data.entityType,
       entityId: data.entityId,
-      entityName: data.entityName,
-      oldValues: data.oldValues,
-      newValues: data.newValues,
-      reason: data.reason,
+      entityName: data.entityName || null,
+      reason: data.description || null,
+      oldValues: data.oldValues ? JSON.parse(JSON.stringify(data.oldValues)) : null,
+      newValues: (() => {
+        const base = data.newValues ? JSON.parse(JSON.stringify(data.newValues)) : null;
+        if (data.details) {
+          const wrapped = typeof base === 'object' && base !== null ? base : {};
+          (wrapped as any)._meta = {
+            ...(typeof data.details === 'object' ? data.details : { details: data.details }),
+            originalAction: data.action,
+          };
+          return wrapped;
+        }
+        return base;
+      })(),
       userId: data.userId,
-      userName: data.userName,
+      userName: data.userName || 'System',
       userRole: data.userRole,
-      ipAddress: data.ipAddress,
-      userAgent: data.userAgent,
+      ipAddress: data.ipAddress || null,
+      userAgent: data.userAgent || null,
+      tenantId: data.tenantId
     };
-    
-    // Add tenantId if provided (for multi-tenant isolation)
-    if (data.tenantId) {
-      logData.tenantId = data.tenantId;
-    }
-    
+
+    // Create the audit log
     await prisma.auditLog.create({
       data: logData
     });
     
-    console.log(`✅ Audit log created: ${data.action} on ${data.entityType} by ${data.userName}`);
+    console.log(`✅ Audit log created: ${data.action} on ${data.entityType} by ${data.userName || 'System'} (tenant: ${data.tenantId})`);
   } catch (error) {
     console.error('❌ Failed to log audit event:', error);
     // Don't throw error to avoid breaking the main operation
@@ -160,12 +188,12 @@ export async function logBulkDelete(request: NextRequest, entityType: string, en
       entityType,
       entityId: entityIds[i],
       entityName: entityNames[i],
-      reason,
       userId: context.userId,
       userName: context.userName || 'Unknown',
       userRole: context.userRole,
       ipAddress: context.ipAddress,
-      userAgent: context.userAgent
+      userAgent: context.userAgent,
+      tenantId: context.tenantId || 'unknown'  // Add tenant isolation
     })
   }
 }
@@ -185,8 +213,77 @@ export async function logBulkUpdate(request: NextRequest, entityType: string, en
       userName: context.userName || 'Unknown',
       userRole: context.userRole,
       ipAddress: context.ipAddress,
-      userAgent: context.userAgent
+      userAgent: context.userAgent,
+      tenantId: context.tenantId || 'unknown'  // Add tenant isolation
     })
+  }
+}
+
+/**
+ * Log an audit event with tenant context
+ */
+export async function logAudit(data: AuditLogData): Promise<void> {
+  // Ensure required fields are present
+  if (!data.entityType || !data.entityId || !data.userId || !data.tenantId) {
+    console.error('❌ Missing required fields for audit log:', {
+      entityType: data.entityType,
+      entityId: data.entityId,
+      userId: data.userId,
+      tenantId: data.tenantId
+    });
+    return;
+  }
+  try {
+    if (!data.entityType) {
+      console.error('Missing required field: entityType in audit log', data);
+      data.entityType = 'UNKNOWN';
+    }
+
+    if (!data.tenantId) {
+      console.error('Missing required field: tenantId in audit log', data);
+      return; // Skip logging if no tenant ID
+    }
+
+    // Prepare the data with proper JSON handling
+    const safeUserRole = data.userRole || 'SYSTEM';
+    const actionFinal: PrismaAuditAction = isPrismaAuditAction(String(data.action))
+      ? (data.action as PrismaAuditAction)
+      : 'CREATE';
+    const logData: any = {
+      action: actionFinal,
+      entityType: data.entityType,
+      entityId: data.entityId,
+      entityName: data.entityName || null,
+      reason: data.description || null,
+      ipAddress: data.ipAddress?.substring(0, 100) || null,
+      userAgent: data.userAgent?.substring(0, 255) || null,
+      userId: data.userId,
+      userRole: safeUserRole,
+      userName: data.userName || 'System', // Default to 'System' if not provided
+      tenantId: data.tenantId,
+    };
+
+    // Handle JSON fields with proper typing
+    if (data.oldValues) {
+      logData.oldValues = data.oldValues;
+    }
+    
+    if (data.newValues) {
+      let newVals: any = typeof data.newValues === 'object' ? { ...data.newValues } : data.newValues;
+      if (data.details && typeof newVals === 'object') {
+        (newVals as any)._meta = {
+          ...(typeof data.details === 'object' ? data.details : { details: data.details }),
+        };
+      }
+      logData.newValues = newVals;
+    }
+
+    await prisma.auditLog.create({
+      data: logData
+    });
+  } catch (error) {
+    console.error('Failed to log audit event:', error);
+    // Consider implementing retry logic or dead-letter queue for failed audit logs
   }
 }
 
@@ -205,7 +302,8 @@ export async function logBulkToggle(request: NextRequest, entityType: string, en
       userName: context.userName || 'Unknown',
       userRole: context.userRole,
       ipAddress: context.ipAddress,
-      userAgent: context.userAgent
+      userAgent: context.userAgent,
+      tenantId: context.tenantId || 'unknown'  // Add tenant isolation
     })
   }
 }

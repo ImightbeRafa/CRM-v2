@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { BulkOperations } from '../components/ui/bulk-operations'
 import { SimpleAuditDashboard } from '../components/SimpleAuditDashboard'
+import { OrderBulkDeleteDashboard } from '../components/OrderBulkDeleteDashboard'
 import { MasterConfigDashboard } from './components/MasterConfigDashboard'
 import { SimpleFieldsManager } from './components/SimpleFieldsManager'
 import { OptionSetsManager } from './components/OptionSetsManager'
@@ -11,7 +12,7 @@ import { BillingDashboard } from './components/BillingDashboard'
 import { ExcelImporter } from './components/ExcelImporter'
 import { StatusManager } from './components/StatusManager'
 import { TenantSettingsPanel } from '../components/TenantSettingsPanel'
-import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap } from 'lucide-react'
+import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2 } from 'lucide-react'
 
 export default function ConfigPage() {
   const [activeTab, setActiveTab] = useState('fields')
@@ -488,6 +489,7 @@ export default function ConfigPage() {
     { id: 'users', label: 'Usuarios', icon: Users },
     { id: 'import', label: 'Importar Excel', icon: FileSpreadsheet },
     { id: 'billing', label: 'Facturación', icon: BarChart3 },
+    { id: 'bulk-delete', label: 'Eliminación Masiva', icon: Trash2 },
     { id: 'audit', label: 'Auditoría', icon: Shield }
   ];
 
@@ -500,7 +502,7 @@ export default function ConfigPage() {
             <div className="w-full md:w-auto">
               <div className="flex items-center gap-2 md:gap-4 mb-2">
             <a
-              href="/home"
+              href="/dashboard"
                   className="inline-flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm md:text-base"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -708,6 +710,11 @@ export default function ConfigPage() {
           {/* Billing Tab */}
           {activeTab === 'billing' && (
             <BillingDashboard />
+          )}
+
+          {/* Bulk Delete Tab */}
+          {activeTab === 'bulk-delete' && (
+            <OrderBulkDeleteDashboard isMaster={isMasterUser} />
           )}
 
           {/* Audit Tab */}

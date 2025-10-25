@@ -1,44 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
+import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
+import { withTenantContext } from '@/lib/tenantContext';
 import { getToken } from 'next-auth/jwt';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    // Require 'view_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'view_config');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { tenantId } = auth;
+    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET });
+    const userId = token?.sub || auth.userId;
+    const userName = (token as any)?.name || (token as any)?.email || 'System';
+    return await withTenantContext({ tenantId, userId, role: auth.role, userRole: auth.role, userName }, async () => {
+      const prisma = getTenantPrisma(tenantId);
+      const inventory = await prisma.inventoryItem.findMany({
+        where: {
+          tenantId,
+          isActive: true
+        },
+        orderBy: [
+          { isFavorite: 'desc' },
+          { name: 'asc' }
+        ]
+      });
 
-    // Get user with memberships to find tenant ID
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub as string },
-      include: { memberships: true }
-    });
-
-    if (!user || !user.memberships.length) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
-
-    const tenantId = user.memberships[0].tenantId;
-
-    const inventory = await prisma.inventoryItem.findMany({
-      where: { 
-        isActive: true,
-        tenantId 
-      },
-      orderBy: [
-        { isFavorite: 'desc' },
-        { name: 'asc' }
-      ]
-    });
-
-    return NextResponse.json({
-      status: 'success',
-      data: inventory
+      return NextResponse.json({
+        status: 'success',
+        data: inventory
+      });
     });
   } catch (error) {
     console.error('Error fetching inventory:', error);
@@ -51,185 +47,227 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    // Require 'update_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Get user with memberships to find tenant ID and role
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub as string },
-      include: { memberships: true }
-    });
-
-    if (!user || !user.memberships.length) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
-
-    const membership = user.memberships[0];
-    const tenantId = membership.tenantId;
-
-    // Check if user is MASTER
-    if (membership.role !== 'OWNER' && membership.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const body = await request.json();
-    const {
-      name,
-      description,
-      category,
-      sku,
-      currentStock,
-      minStock,
-      maxStock,
-      unitCost,
-      sellingPrice,
-      supplier,
-      location,
-      reorderPoint,
-      reorderQuantity,
-      isFavorite
-    } = body;
-
-    // Check if SKU already exists
-    const existingItem = await prisma.inventoryItem.findFirst({
-      where: { 
-        sku, 
-        isActive: true,
-        tenantId 
-      }
-    });
-
-    if (existingItem) {
-      return NextResponse.json(
-        { error: 'SKU already exists' },
-        { status: 400 }
-      );
-    }
-
-    const inventoryItem = await prisma.inventoryItem.create({
-      data: {
+    const { tenantId } = auth;
+    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET });
+    const userId = token?.sub || auth.userId;
+    const userName = (token as any)?.name || (token as any)?.email || 'System';
+    
+    return await withTenantContext({ 
+      tenantId, 
+      userId, 
+      role: auth.role, 
+      userRole: auth.role, 
+      userName 
+    }, async () => {
+      const prisma = getTenantPrisma(tenantId);
+      const body = await request.json();
+      
+      const {
         name,
         description,
         category,
         sku,
-        currentStock: parseInt(currentStock) || 0,
-        minStock: parseInt(minStock) || 0,
-        maxStock: maxStock ? parseInt(maxStock) : null,
-        unitCost: parseFloat(unitCost) || 0,
-        sellingPrice: parseFloat(sellingPrice) || 0,
+        currentStock,
+        minStock,
+        maxStock,
+        unitCost,
+        sellingPrice,
         supplier,
         location,
-        reorderPoint: parseInt(reorderPoint) || 0,
-        reorderQuantity: parseInt(reorderQuantity) || 0,
-        isFavorite: isFavorite || false,
-        isActive: true,
-        createdBy: token.sub as string,
-        tenant: { connect: { id: tenantId } }
-      }
-    });
+        reorderPoint,
+        reorderQuantity,
+        isFavorite
+      } = body;
 
-    return NextResponse.json({
-      status: 'success',
-      data: inventoryItem
+      // Check if SKU already exists for this tenant (active or inactive)
+      const existingItem = await prisma.inventoryItem.findFirst({
+        where: { sku }
+      });
+
+      if (existingItem) {
+        // If inactive, reactivate and update instead of creating a duplicate (preserves uniqueness)
+        if (!existingItem.isActive) {
+          const reactivated = await prisma.inventoryItem.update({
+            where: { id: existingItem.id },
+            data: {
+              name,
+              description,
+              category,
+              currentStock: parseInt(currentStock) || 0,
+              minStock: parseInt(minStock) || 0,
+              maxStock: maxStock ? parseInt(maxStock) : null,
+              unitCost: parseFloat(unitCost) || 0,
+              sellingPrice: parseFloat(sellingPrice) || 0,
+              supplier,
+              location,
+              reorderPoint: parseInt(reorderPoint) || 0,
+              reorderQuantity: parseInt(reorderQuantity) || 0,
+              isFavorite: isFavorite || false,
+              isActive: true,
+              lastUpdated: new Date(),
+            }
+          });
+
+          return NextResponse.json({ status: 'success', data: reactivated });
+        }
+
+        // If already active, block with a clear error
+        return NextResponse.json(
+          { error: 'SKU already exists' },
+          { status: 400 }
+        );
+      }
+
+      let inventoryItem;
+      try {
+        inventoryItem = await prisma.inventoryItem.create({
+          data: {
+            name,
+            description,
+            category,
+            sku,
+            currentStock: parseInt(currentStock) || 0,
+            minStock: parseInt(minStock) || 0,
+            maxStock: maxStock ? parseInt(maxStock) : null,
+            unitCost: parseFloat(unitCost) || 0,
+            sellingPrice: parseFloat(sellingPrice) || 0,
+            supplier,
+            location,
+            reorderPoint: parseInt(reorderPoint) || 0,
+            reorderQuantity: parseInt(reorderQuantity) || 0,
+            isFavorite: isFavorite || false,
+            isActive: true,
+            createdBy: userId,
+            tenantId
+          }
+        });
+      } catch (e: any) {
+        // Handle unique constraint on (tenantId, sku): fallback to update/reactivate
+        if (e?.code === 'P2002') {
+          const existing = await prisma.inventoryItem.findFirst({ where: { sku, tenantId } });
+          if (!existing) {
+            return NextResponse.json(
+              { error: 'SKU already exists but item not found for update' },
+              { status: 400 }
+            );
+          }
+          const reactivated = await prisma.inventoryItem.update({
+            where: { id: existing.id },
+            data: {
+              name,
+              description,
+              category,
+              currentStock: parseInt(currentStock) || 0,
+              minStock: parseInt(minStock) || 0,
+              maxStock: maxStock ? parseInt(maxStock) : null,
+              unitCost: parseFloat(unitCost) || 0,
+              sellingPrice: parseFloat(sellingPrice) || 0,
+              supplier,
+              location,
+              reorderPoint: parseInt(reorderPoint) || 0,
+              reorderQuantity: parseInt(reorderQuantity) || 0,
+              isFavorite: isFavorite || false,
+              isActive: true,
+              lastUpdated: new Date(),
+            }
+          });
+          inventoryItem = reactivated;
+        } else {
+          throw e;
+        }
+      }
+
+      return NextResponse.json({
+        status: 'success',
+        data: inventoryItem
+      });
     });
   } catch (error) {
     console.error('Error creating inventory item:', error);
-    return NextResponse.json(
-      { error: 'Failed to create inventory item' },
-      { status: 500 }
-    );
+    const details = error instanceof Error ? error.message : String(error);
+    const payload = process.env.NODE_ENV === 'production' 
+      ? { error: 'Failed to create inventory item' }
+      : { error: 'Failed to create inventory item', details };
+    return NextResponse.json(payload, { status: 500 });
   }
 }
 
 export async function PUT(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    // Require 'update_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Get user with memberships to find tenant ID and role
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub as string },
-      include: { memberships: true }
-    });
-
-    if (!user || !user.memberships.length) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
-
-    const membership = user.memberships[0];
-    const tenantId = membership.tenantId;
-
-    // Check if user is MASTER
-    if (membership.role !== 'OWNER' && membership.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const body = await request.json();
-    const {
-      id,
-      name,
-      description,
-      category,
-      sku,
-      currentStock,
-      minStock,
-      maxStock,
-      unitCost,
-      sellingPrice,
-      supplier,
-      location,
-      reorderPoint,
-      reorderQuantity,
-      isFavorite
-    } = body;
-
-    // Check if SKU already exists for different item in same tenant
-    const existingItem = await prisma.inventoryItem.findFirst({
-      where: { 
-        sku, 
-        isActive: true,
-        tenantId,
-        id: { not: id }
-      }
-    });
-
-    if (existingItem) {
-      return NextResponse.json(
-        { error: 'SKU already exists' },
-        { status: 400 }
-      );
-    }
-
-    const inventoryItem = await prisma.inventoryItem.update({
-      where: { id },
-      data: {
+    const { tenantId } = auth;
+    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET });
+    const userId = token?.sub || auth.userId;
+    const userName = (token as any)?.name || (token as any)?.email || 'System';
+    return await withTenantContext({ tenantId, userId, role: auth.role, userRole: auth.role, userName }, async () => {
+      const prisma = getTenantPrisma(tenantId);
+      const body = await request.json();
+      const {
+        id,
         name,
         description,
         category,
         sku,
-        currentStock: parseInt(currentStock) || 0,
-        minStock: parseInt(minStock) || 0,
-        maxStock: maxStock ? parseInt(maxStock) : null,
-        unitCost: parseFloat(unitCost) || 0,
-        sellingPrice: parseFloat(sellingPrice) || 0,
+        currentStock,
+        minStock,
+        maxStock,
+        unitCost,
+        sellingPrice,
         supplier,
         location,
-        reorderPoint: parseInt(reorderPoint) || 0,
-        reorderQuantity: parseInt(reorderQuantity) || 0,
-        isFavorite,
-        lastUpdated: new Date()
-      }
-    });
+        reorderPoint,
+        reorderQuantity,
+        isFavorite
+      } = body;
 
-    return NextResponse.json({
-      status: 'success',
-      data: inventoryItem
+      // Check if SKU already exists for different item (auto-filtered by tenantPrisma)
+      const existingItem = await prisma.inventoryItem.findFirst({
+        where: { 
+          sku, 
+          isActive: true,
+          id: { not: id }
+        }
+      });
+
+      if (existingItem) {
+        return NextResponse.json(
+          { error: 'SKU already exists' },
+          { status: 400 }
+        );
+      }
+
+      const inventoryItem = await prisma.inventoryItem.update({
+        where: { id },
+        data: {
+          name,
+          description,
+          category,
+          sku,
+          currentStock: parseInt(currentStock) || 0,
+          minStock: parseInt(minStock) || 0,
+          maxStock: maxStock ? parseInt(maxStock) : null,
+          unitCost: parseFloat(unitCost) || 0,
+          sellingPrice: parseFloat(sellingPrice) || 0,
+          supplier,
+          location,
+          reorderPoint: parseInt(reorderPoint) || 0,
+          reorderQuantity: parseInt(reorderQuantity) || 0,
+          isFavorite,
+          lastUpdated: new Date()
+        }
+      });
+
+      return NextResponse.json({
+        status: 'success',
+        data: inventoryItem
+      });
     });
   } catch (error) {
     console.error('Error updating inventory item:', error);
@@ -242,54 +280,33 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    // Require 'update_config' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { tenantId } = auth;
+    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET });
+    const userId = token?.sub || auth.userId;
+    const userName = (token as any)?.name || (token as any)?.email || 'System';
+    return await withTenantContext({ tenantId, userId, role: auth.role, userRole: auth.role, userName }, async () => {
+      const prisma = getTenantPrisma(tenantId);
+      const { searchParams } = new URL(request.url);
+      const id = searchParams.get('id');
 
-    // Get user with memberships to find tenant ID and role
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub as string },
-      include: { memberships: true }
-    });
+      if (!id) {
+        return NextResponse.json({ error: 'Item ID is required' }, { status: 400 });
+      }
 
-    if (!user || !user.memberships.length) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
+      // CRITICAL: Soft delete with tenant isolation (auto-verified by tenantPrisma)
+      await prisma.inventoryItem.update({
+        where: { id },
+        data: { isActive: false }
+      });
 
-    const membership = user.memberships[0];
-    const tenantId = membership.tenantId;
-
-    // Check if user is MASTER
-    if (membership.role !== 'OWNER' && membership.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-
-    if (!id) {
-      return NextResponse.json({ error: 'Item ID is required' }, { status: 400 });
-    }
-
-    // Verify item belongs to tenant before deleting
-    const item = await prisma.inventoryItem.findFirst({
-      where: { id, tenantId }
-    });
-
-    if (!item) {
-      return NextResponse.json({ error: 'Item not found' }, { status: 404 });
-    }
-
-    await prisma.inventoryItem.update({
-      where: { id },
-      data: { isActive: false }
-    });
-
-    return NextResponse.json({
-      status: 'success',
-      message: 'Inventory item deleted successfully'
+      return NextResponse.json({
+        status: 'success',
+        message: 'Inventory item deleted successfully'
+      });
     });
   } catch (error) {
     console.error('Error deleting inventory item:', error);

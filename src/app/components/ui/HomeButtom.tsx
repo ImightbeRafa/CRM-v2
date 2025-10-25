@@ -8,7 +8,7 @@ const NavigationMenu = () => {
   const pathname = usePathname();
 
   const menuItems = [
-    { path: '/home', label: 'Inicio', icon: Home },
+    { path: '/dashboard', label: 'Inicio', icon: Home },
     { path: '/ventas', label: 'Ventas', icon: ShoppingCart },
     { path: '/produccion', label: 'Producción', icon: Factory },
     { path: '/estadisticas', label: 'Estadísticas', icon: BarChart },

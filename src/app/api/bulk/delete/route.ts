@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { bulkDelete } from '@/lib/bulkOperations'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 
 export async function POST(request: NextRequest) {
   try {
+    // Require appropriate permission based on type
+    const auth = await authenticateAPIWithPermission(request, 'view_config');
+    if (!auth.ok) return auth.response;
+    
+    const { tenantId } = auth;
+    
     const body = await request.json()
     const { ids, type, reason } = body
 
@@ -24,7 +31,8 @@ export async function POST(request: NextRequest) {
       ids, 
       type: type as any, 
       reason,
-      request: request as any
+      request: request as any,
+      tenantId: tenantId  // Pass tenant ID for isolation
     })
     
     return createSuccessResponse(result, `Bulk delete completed: ${result.success} successful, ${result.failed} failed`)

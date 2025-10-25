@@ -1,36 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { requireAdmin } from '@/lib/apiAuth'
+import { getTenantPrisma } from '@/lib/prisma-tenant'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 
 export async function POST(request: NextRequest) {
   try {
-    // Get tenant from authenticated user
-    const { getToken } = await import('next-auth/jwt')
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
+    // Require 'view_config' permission for bulk delete
+    const auth = await authenticateAPIWithPermission(request, 'view_config');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return createErrorResponse('Unauthorized', 401)
-    }
-
-    // Get user's tenant
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub },
-      select: {
-        defaultTenantId: true,
-        memberships: {
-          where: { isActive: true },
-          select: { tenantId: true, role: true },
-          take: 1
-        }
-      }
-    })
-
-    if (!user || !user.memberships || user.memberships.length === 0) {
-      return createErrorResponse('Unauthorized', 401)
-    }
-
-    const tenantId = user.memberships[0].tenantId || user.defaultTenantId
+    const { tenantId, userId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
     // Get IDs to delete from request body
     const { ids } = await request.json()
@@ -41,11 +21,10 @@ export async function POST(request: NextRequest) {
 
     console.log(`🗑️ Bulk deleting ${ids.length} audit logs for tenant ${tenantId}`)
 
-    // Delete audit logs (with tenant isolation - CRITICAL for security)
+    // Delete audit logs (auto-filtered by tenantPrisma)
     const result = await prisma.auditLog.deleteMany({
       where: {
-        id: { in: ids },
-        tenantId: tenantId  // ← CRITICAL: Only delete logs from this tenant
+        id: { in: ids }
       }
     })
 
@@ -55,10 +34,9 @@ export async function POST(request: NextRequest) {
     try {
       await prisma.auditLog.create({
         data: {
-          tenantId: tenantId,
-          userId: token.sub!,
-          userName: token.email || 'Unknown',
-          userRole: user.memberships[0].role,
+          userId: userId,
+          userName: auth.session?.user?.email || 'Unknown',
+          userRole: auth.role,
           action: 'BULK_DELETE',
           entityType: 'audit_log',
           entityId: 'bulk',

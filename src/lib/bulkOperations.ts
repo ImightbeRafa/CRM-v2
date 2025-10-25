@@ -1,4 +1,5 @@
 import { prisma } from './db'
+import { getTenantPrisma } from './prisma-tenant'
 import { createSuccessResponse, createErrorResponse, handleApiError } from './apiUtils'
 import { logBulkDelete, logBulkUpdate, logBulkToggle } from './auditLogger'
 import { NextRequest } from 'next/server'
@@ -14,6 +15,7 @@ export interface BulkDeleteRequest {
   type: 'users' | 'orders' | 'fields' | 'optionSets' | 'options' | 'shipping' | 'sellers'
   reason?: string
   request?: NextRequest
+  tenantId?: string  // Add tenant ID for isolation
 }
 
 export interface BulkUpdateRequest {
@@ -21,17 +23,21 @@ export interface BulkUpdateRequest {
   type: 'users' | 'orders' | 'fields' | 'optionSets' | 'options' | 'shipping' | 'sellers'
   updates: Record<string, any>
   request?: NextRequest
+  tenantId?: string  // Add tenant ID for isolation
 }
 
 export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperationResult> {
-  const { ids, type, reason, request: httpRequest } = request
+  const { ids, type, reason, request: httpRequest, tenantId } = request
   const result: BulkOperationResult = {
     success: 0,
     failed: 0,
     errors: []
   }
 
-  console.log(`🗑️ Starting bulk delete: ${ids.length} ${type}`);
+  console.log(`🗑️ Starting bulk delete: ${ids.length} ${type} for tenant ${tenantId}`);
+
+  // Use tenant-aware prisma client if tenantId is provided
+  const db = tenantId ? getTenantPrisma(tenantId) : prisma;
 
   // Get entity names for audit logging
   const entityMap = new Map<string, string>(); // id -> name
@@ -39,31 +45,31 @@ export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperat
   try {
     switch (type) {
       case 'users':
-        const users = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, username: true } })
-        users.forEach(u => entityMap.set(u.id, u.username));
+        const users = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, username: true } })
+        users.forEach(u => entityMap.set(u.id, u.username || 'Unknown'));
         break
       case 'orders':
-        const orders = await prisma.order.findMany({ where: { id: { in: ids } }, select: { id: true, orderId: true } })
+        const orders = await db.order.findMany({ where: { id: { in: ids } }, select: { id: true, orderId: true } })
         orders.forEach(o => entityMap.set(o.id, o.orderId));
         break
       case 'fields':
-        const fields = await prisma.productField.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
+        const fields = await db.productField.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
         fields.forEach(f => entityMap.set(f.id, f.label));
         break
       case 'optionSets':
-        const optionSets = await prisma.productOptionSet.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+        const optionSets = await db.productOptionSet.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
         optionSets.forEach(os => entityMap.set(os.id, os.name));
         break
       case 'options':
-        const options = await prisma.productOption.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
+        const options = await db.productOption.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
         options.forEach(o => entityMap.set(o.id, o.label));
         break
       case 'shipping':
-        const shipping = await prisma.shippingMethod.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+        const shipping = await db.shippingMethod.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
         shipping.forEach(s => entityMap.set(s.id, s.name));
         break
       case 'sellers':
-        const sellers = await prisma.seller.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+        const sellers = await db.seller.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
         sellers.forEach(s => entityMap.set(s.id, s.name));
         break
     }
@@ -82,7 +88,7 @@ export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperat
     try {
       // Special handling for users
       if (type === 'users') {
-        const user = await prisma.user.findUnique({
+        const user = await db.user.findUnique({
           where: { id },
           select: { memberships: { select: { role: true } } }
         });
@@ -97,25 +103,25 @@ export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperat
       // Delete based on type
       switch (type) {
         case 'users':
-          await prisma.user.delete({ where: { id } });
+          await db.user.delete({ where: { id } });
           break;
         case 'orders':
-          await prisma.order.delete({ where: { id } });
+          await db.order.delete({ where: { id } });
           break;
         case 'fields':
-          await prisma.productField.delete({ where: { id } });
+          await db.productField.delete({ where: { id } });
           break;
         case 'optionSets':
-          await prisma.productOptionSet.delete({ where: { id } });
+          await db.productOptionSet.delete({ where: { id } });
           break;
         case 'options':
-          await prisma.productOption.delete({ where: { id } });
+          await db.productOption.delete({ where: { id } });
           break;
         case 'shipping':
-          await prisma.shippingMethod.delete({ where: { id } });
+          await db.shippingMethod.delete({ where: { id } });
           break;
         case 'sellers':
-          await prisma.seller.delete({ where: { id } });
+          await db.seller.delete({ where: { id } });
           break;
         default:
           throw new Error(`Unsupported bulk delete type: ${type}`);
@@ -141,8 +147,9 @@ export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperat
   // Log audit trail for successful deletions
   if (httpRequest && successfulIds.length > 0) {
     try {
-      console.log(`✅ Logging ${successfulIds.length} successful deletions`);
+      console.log(`✅ Logging ${successfulIds.length} successful deletions for audit trail`);
       await logBulkDelete(httpRequest, type, successfulIds, successfulNames, reason);
+      console.log(`✅ Audit trail created for ${successfulIds.length} ${type} deletions`);
     } catch (auditError) {
       console.error('❌ Failed to log bulk delete audit:', auditError);
     }
@@ -169,7 +176,7 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
         // Don't allow changing master user roles
         if (updates.role && updates.role !== 'MASTER') {
           const masterUsers = await prisma.user.findMany({
-            where: { id: { in: ids }, role: 'MASTER' }
+            where: { id: { in: ids } }
           })
           
           if (masterUsers.length > 0) {
@@ -251,7 +258,7 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
           switch (type) {
             case 'users':
               const users = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, username: true } })
-              entityNames = users.map(u => u.username)
+              entityNames = users.map(u => u.username || 'Unknown')
               break
             case 'orders':
               const orders = await prisma.order.findMany({ where: { id: { in: ids } }, select: { id: true, orderId: true } })

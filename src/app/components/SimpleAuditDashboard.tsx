@@ -241,16 +241,19 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
               </div>
             </div>
             <div className="flex gap-2">
-              {selectedLogs.size > 0 && (
-                <button
-                  onClick={handleBulkDelete}
-                  disabled={isDeleting}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all duration-200 disabled:opacity-50"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  {isDeleting ? 'Eliminando...' : `Eliminar (${selectedLogs.size})`}
-                </button>
-              )}
+              <button
+                onClick={handleBulkDelete}
+                disabled={isDeleting || selectedLogs.size === 0}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 ${
+                  selectedLogs.size > 0 
+                    ? 'bg-red-500 hover:bg-red-600 text-white' 
+                    : 'bg-white bg-opacity-20 text-white cursor-not-allowed opacity-50'
+                }`}
+                title={selectedLogs.size === 0 ? 'Selecciona registros para eliminar' : ''}
+              >
+                <Trash2 className="w-4 h-4" />
+                {isDeleting ? 'Eliminando...' : `Eliminar (${selectedLogs.size})`}
+              </button>
               <button
                 onClick={() => setShowFilters(!showFilters)}
                 className="flex items-center gap-2 px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-all duration-200"
@@ -406,18 +409,32 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
         ) : (
           <div>
             {/* Select All Bar */}
-            <div className="bg-gray-50 border-b border-gray-200 px-6 py-3 flex items-center gap-3">
-              <input
-                type="checkbox"
-                checked={paginatedLogs.length > 0 && selectedLogs.size === paginatedLogs.length}
-                onChange={toggleSelectAll}
-                className="w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-500 cursor-pointer"
-              />
-              <span className="text-sm font-medium text-gray-700">
-                {selectedLogs.size > 0 
-                  ? `${selectedLogs.size} de ${paginatedLogs.length} seleccionados`
-                  : 'Seleccionar todos'}
-              </span>
+            <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={paginatedLogs.length > 0 && selectedLogs.size === paginatedLogs.length}
+                  onChange={toggleSelectAll}
+                  className="w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  {selectedLogs.size > 0 
+                    ? `${selectedLogs.size} de ${paginatedLogs.length} seleccionados`
+                    : 'Seleccionar todos'}
+                </span>
+              </div>
+              {selectedLogs.size > 0 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleBulkDelete}
+                    disabled={isDeleting}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all duration-200 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {isDeleting ? 'Eliminando...' : `Eliminar seleccionados`}
+                  </button>
+                </div>
+              )}
             </div>
             
             <div className="divide-y divide-gray-100">

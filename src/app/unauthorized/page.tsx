@@ -34,7 +34,7 @@ export default function UnauthorizedPage() {
         
         <div className="flex flex-col gap-3">
           <Link 
-            href="/home"
+            href="/dashboard"
             className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />

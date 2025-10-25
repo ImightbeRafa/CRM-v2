@@ -194,7 +194,7 @@ export default function PrivacyPage() {
         </div>
 
         <div className="mt-8 pt-6 border-t">
-          <a href="/landing" className="text-blue-600 hover:underline">
+          <a href="/dashboard" className="text-blue-600 hover:underline">
             ← Back to Home
           </a>
         </div>

@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const prisma = getTenantPrisma(tenantId)
     
     const sellers = await prisma.seller.findMany({ 
-      where: { active: true }, 
+      where: { active: true, tenantId }, 
       orderBy: { name: 'asc' } 
     })
     return NextResponse.json({ status: 'success', data: sellers })
@@ -38,8 +38,8 @@ export async function POST(request: NextRequest) {
     const created = await prisma.seller.create({ 
       data: { 
         name: body.name, 
-        active: true 
-        // tenantId auto-injected by prisma-tenant
+        active: true,
+        tenantId
       } 
     })
     return NextResponse.json({ status: 'success', data: created })

@@ -1,9 +1,5 @@
-import { getSessionWithTenant } from "@/lib/auth-helpers"
-import HomeContent from "./home-content";
+import LandingPage from './components/LandingPage';
 
-export default async function HomePage() {
-  // Require authentication (all authenticated users can access home)
-  await getSessionWithTenant()
-  
-  return <HomeContent />;
+export default function Landing() {
+  return <LandingPage />;
 }

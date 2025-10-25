@@ -35,7 +35,7 @@ const StatusFilterSelect = ({ value, onValueChange }: { value: string; onValueCh
   useEffect(() => {
     const loadStatuses = async () => {
       try {
-        const response = await fetch('/api/config/status');
+        const response = await fetch('/api/config/status', { credentials: 'include' });
         const data = await response.json();
         if (data.status === 'success' && data.data.length > 0) {
           setStatuses(data.data);
@@ -401,6 +401,7 @@ export function EnhancedProductionDashboard({
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           orderId,
           status: newStatus
@@ -432,6 +433,7 @@ export function EnhancedProductionDashboard({
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           orderId,
           ...updatedData

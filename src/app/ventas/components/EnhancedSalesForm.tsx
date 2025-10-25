@@ -88,7 +88,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   useEffect(() => {
     const fetchBusinessInfo = async () => {
       try {
-        const response = await fetch('/api/config/business-info');
+        const response = await fetch('/api/config/business-info', { credentials: 'include' });
         const data = await response.json();
         if (data.status === 'success') {
           setBusinessInfoFields(data.data);
@@ -257,6 +257,98 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
     try {
       // Create order data for database
+      // Prefer a custom comment field from business info if defined (robust detection)
+      const commentKeywords = ['comentario','comentarios','comment','comments','observacion','observaciones','nota','notas','note','notes','descripcion','description']
+      const matchedField = businessInfoFields.find(f => {
+        const nameL = (f?.name || '').toLowerCase()
+        const labelL = (f?.label || '').toLowerCase()
+        return commentKeywords.some(k => nameL.includes(k) || labelL.includes(k))
+      })
+      let customComment = ''
+      if (matchedField?.name) {
+        const raw = (orderInfo.customerInfo as any)[matchedField.name]
+        if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
+          customComment = String(raw).trim()
+        }
+      } else {
+        const keys = Object.keys(orderInfo.customerInfo as any)
+        for (const key of keys) {
+          const keyL = key.toLowerCase()
+          if (commentKeywords.some(k => keyL.includes(k))) {
+            const raw = (orderInfo.customerInfo as any)[key]
+            if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
+              customComment = String(raw).trim()
+              break
+            }
+          }
+        }
+      }
+
+      // Final fallback: try to parse from rawCustomerText
+      if (!customComment && rawCustomerText) {
+        try {
+          const lines = rawCustomerText.split(/\r?\n/)
+          for (const line of lines) {
+            const lower = line.toLowerCase()
+            if (commentKeywords.some(k => lower.startsWith(k))) {
+              const parts = line.split(':')
+              if (parts.length > 1) {
+                const val = parts.slice(1).join(':').trim()
+                if (val) { customComment = val; break }
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // Absolute last resort: read explicit order-level field 'comentarios'
+      if (!customComment) {
+        const direct = (orderInfo.customerInfo as any)['comentarios']
+        if (direct !== undefined && direct !== null && String(direct).trim() !== '') {
+          customComment = String(direct).trim()
+        }
+      }
+
+      // Debug: show comment detection context
+      try {
+        // eslint-disable-next-line no-console
+        console.log('[SalesForm] matchedField:', matchedField?.name, 'customComment:', customComment)
+        // eslint-disable-next-line no-console
+        console.log('[SalesForm] customerInfo keys:', Object.keys(orderInfo.customerInfo as any))
+      } catch {}
+
+      // Gather dynamic custom fields from customerInfo
+      const dynamicFields = businessInfoFields.reduce((acc: any, f: any) => {
+        if (!f?.name) return acc;
+        const val = (orderInfo.customerInfo as any)[f.name];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          acc[f.name] = val;
+        }
+        return acc;
+      }, {} as Record<string, any>);
+
+      // If we detected a comment but couldn't match a Business Info field, persist it under a safe default key
+      if (customComment && !matchedField?.name) {
+        dynamicFields['comentarios'] = customComment;
+      }
+
+      // Build a customFields object mirroring Campos Personalizados for server-side mapping
+      const customFieldsToSend = { ...dynamicFields } as Record<string, any>
+      if (customComment && !Object.keys(customFieldsToSend).some(k => k.toLowerCase().includes('coment'))) {
+        customFieldsToSend['comentarios'] = customComment
+      }
+
+      try {
+        // eslint-disable-next-line no-console
+        console.log('[SalesForm] dynamicFields keys:', Object.keys(dynamicFields))
+        // eslint-disable-next-line no-console
+        console.log('[SalesForm] customFieldsToSend keys:', Object.keys(customFieldsToSend))
+        // eslint-disable-next-line no-console
+        console.log('[SalesForm] customFieldsToSend comment:', Object.entries(customFieldsToSend).find(([k]) => k.toLowerCase().includes('coment'))?.[0], '=>', Object.entries(customFieldsToSend).find(([k]) => k.toLowerCase().includes('coment'))?.[1])
+        // eslint-disable-next-line no-console
+        console.log('[SalesForm] final customComment used:', customComment)
+      } catch {}
+
       const orderData = {
         orderId: `ORDER-${Date.now()}`,
         orderType: orderInfo.customerInfo.orderType || 'EA',
@@ -268,7 +360,6 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         business: orderInfo.customerInfo.business || '',
         product: orderInfo.products.map(p => p.type).join(', '),
         quantity: orderInfo.products.reduce((sum, p) => sum + p.cantidad, 0),
-        total: orderInfo.orderTotal,
         iva: orderInfo.orderIVA,
         shippingCost: orderInfo.orderShipping,
         address: orderInfo.customerInfo.address || '',
@@ -286,10 +377,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         size: orderInfo.products.map(p => p.tamano).join(', '),
         color: orderInfo.products.map(p => p.color).join(', '),
         packaging: orderInfo.products.map(p => p.packaging).join(', '),
-        customization: orderInfo.products.map(p => p.personalizado).join(', '),
-        comments: orderInfo.products.map(p => 
-          `${p.type} (${p.cantidad}x) - ${p.color || 'N/A'} - ${p.tamano || 'N/A'}`
-        ).join('; '),
+        customization: orderInfo.products.length > 0 ? orderInfo.products[0].personalizado || '' : '',
+        comments: customComment && customComment.length > 0 ? customComment : '',
         // Store detailed product information for inventory updates
         productDetails: JSON.stringify(orderInfo.products.map(p => ({
           type: p.type,
@@ -299,14 +388,28 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
           productCost: p.productCost
         }))),
         timestamp: new Date(),
-        saleDate: new Date().toISOString()
+        saleDate: new Date().toISOString(),
+        // include dynamic custom fields
+        ...dynamicFields,
+        // also include explicit customFields object for server mapping
+        customFields: customFieldsToSend
       };
+
+      try {
+        // eslint-disable-next-line no-console
+        console.log('[SalesForm] Submitting orderData keys:', Object.keys(orderData))
+        // eslint-disable-next-line no-console
+        console.log('[SalesForm] orderData.comments:', (orderData as any).comments)
+        // eslint-disable-next-line no-console
+        console.log('[SalesForm] orderData.customFields keys:', Object.keys((orderData as any).customFields || {}))
+      } catch {}
 
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(orderData)
       });
 

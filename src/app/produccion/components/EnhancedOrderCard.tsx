@@ -45,7 +45,7 @@ export function EnhancedOrderCard({
   useEffect(() => {
     const loadStatuses = async () => {
       try {
-        const response = await fetch('/api/config/status');
+        const response = await fetch('/api/config/status', { credentials: 'include' });
         const data = await response.json();
         if (data.status === 'success' && data.data.length > 0) {
           setAvailableStatuses(data.data);
@@ -57,6 +57,23 @@ export function EnhancedOrderCard({
     loadStatuses();
   }, []);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
+
+  // Load tenant custom fields definitions
+  useEffect(() => {
+    const fetchBusinessInfo = async () => {
+      try {
+        const res = await fetch('/api/config/business-info', { credentials: 'include' });
+        const data = await res.json();
+        if (data?.status === 'success' && Array.isArray(data.data)) {
+          setBusinessInfoFields(data.data);
+        }
+      } catch (err) {
+        console.error('Error loading business info fields:', err);
+      }
+    };
+    fetchBusinessInfo();
+  }, []);
 
   const getStatusInfo = (status: string) => {
     // First, try to find the status in the configured statuses with custom colors
@@ -249,6 +266,13 @@ export function EnhancedOrderCard({
             <span>{order.phone}</span>
           </div>
           
+          {order.email && (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span className="text-xs">Email:</span>
+              <span className="text-xs">{order.email}</span>
+            </div>
+          )}
+          
           {order.business && (
             <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
               {order.business}
@@ -268,18 +292,56 @@ export function EnhancedOrderCard({
             {order.size && <span>Talla: {order.size}</span>}
             {order.color && <span>Color: {order.color}</span>}
           </div>
+          
+          {order.packaging && (
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <span>Empaque:</span>
+              <span>{order.packaging}</span>
+            </div>
+          )}
+          
+          {order.customization && (
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <span>Personalización:</span>
+              <span>{order.customization}</span>
+            </div>
+          )}
         </div>
+
+        {/* Delivery Status */}
+        {order.delivery && (
+          <div className="flex items-center gap-2 text-xs text-gray-600">
+            <span className="font-medium">Delivery:</span>
+            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+              {order.delivery}
+            </span>
+          </div>
+        )}
 
         {/* Location Info (for EA orders) */}
         {order.orderType === 'EA' && (
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <MapPin className="h-3 w-3" />
-            <span className="text-xs">
-              {(order as any).province && (order as any).canton 
-                ? `${(order as any).province}, ${(order as any).canton}`
-                : 'Ubicación no especificada'
-              }
-            </span>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <MapPin className="h-3 w-3" />
+              <span className="text-xs">
+                {(order as any).province && (order as any).canton 
+                  ? `${(order as any).province}, ${(order as any).canton}`
+                  : 'Ubicación no especificada'
+                }
+              </span>
+            </div>
+            {(order as any).address && (
+              <div className="flex items-center gap-2 text-xs text-gray-600">
+                <span>Dirección:</span>
+                <span>{(order as any).address}</span>
+              </div>
+            )}
+            {(order as any).district && (
+              <div className="flex items-center gap-2 text-xs text-gray-600">
+                <span>Distrito:</span>
+                <span>{(order as any).district}</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -301,6 +363,14 @@ export function EnhancedOrderCard({
           </div>
         )}
 
+        {/* Username */}
+        {order.username && (
+          <div className="flex items-center gap-2 text-xs text-gray-600">
+            <span className="font-medium">Usuario:</span>
+            <span>{order.username}</span>
+          </div>
+        )}
+
         {/* Dates */}
         <div className="space-y-1">
           {order.orderType === 'EA' && (order as any).expectedDate && (
@@ -316,13 +386,20 @@ export function EnhancedOrderCard({
               <span>Acordado: {(order as any).agreedDate}</span>
             </div>
           )}
+
+          {(order as any).saleDate && (
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <Calendar className="h-3 w-3" />
+              <span>Fecha de Venta: {new Date((order as any).saleDate).toLocaleDateString()}</span>
+            </div>
+          )}
         </div>
 
         {/* Courier Info (for EA orders) */}
         {order.orderType === 'EA' && (order as any).courier && (
           <div className="flex items-center gap-2 text-xs text-gray-600">
             <Truck className="h-3 w-3" />
-            <span>{(order as any).courier}</span>
+            <span>Mensajería: {(order as any).courier}</span>
           </div>
         )}
 
@@ -353,6 +430,32 @@ export function EnhancedOrderCard({
           <span>Total:</span>
           <span className="text-green-600">₡{order.total.toLocaleString()}</span>
         </div>
+
+        {/* Custom Business Fields */}
+        {businessInfoFields.length > 0 && (
+          <div className="space-y-1 text-xs border-t pt-2">
+            {businessInfoFields.map((f) => {
+              // Try flat key, then customFields, then productDetails.customFields
+              let value: any = (order as any)[f?.name];
+              if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
+                value = (order as any)?.customFields?.[f?.name];
+              }
+              if ((value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) && (order as any)?.productDetails) {
+                try {
+                  const pd = JSON.parse((order as any).productDetails);
+                  value = pd?.customFields?.[f?.name];
+                } catch {}
+              }
+              if (value === undefined || value === null || (typeof value === 'string' && String(value).trim() === '')) return null;
+              return (
+                <div key={`custom-${f?.id || f?.name}`} className="flex items-start gap-2 text-gray-600">
+                  <span className="font-medium">{f?.label || f?.name}:</span>
+                  <span className="break-words">{typeof value === 'number' ? value.toLocaleString() : String(value)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Comments */}
         {order.comments && (

@@ -298,17 +298,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
         </div>
       ) : null}
 
-      {/* Comments - single source of truth to avoid duplicates */}
-      <div>
-        <label className="block font-medium">Comentarios</label>
-        <textarea
-          name="comments"
-          className="w-full p-2 border rounded"
-          value={productInfo.comments}
-          onChange={handleInputChange}
-          rows={2}
-        />
-      </div>
+      
 
 
       {/* Vendor Information - Only show in edit mode, not in add modal */}

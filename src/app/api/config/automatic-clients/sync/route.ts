@@ -1,29 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
-import { getToken } from 'next-auth/jwt';
+import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 
 export async function POST(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    // Require 'update_sales' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_sales');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { tenantId, userId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
-    // Check if user is MASTER
-    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    // Get tenant ID from token
-    const tenantId = (token as any).tenantId;
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
-
-    // Get all orders to extract unique clients (filtered by tenant)
+    // Get all orders to extract unique clients (auto-filtered by tenantPrisma)
     const allOrders = await prisma.order.findMany({
-      where: { tenantId },
       select: {
         customerName: true,
         phone: true,
@@ -88,9 +77,9 @@ export async function POST(request: NextRequest) {
         new Date(order.timestamp) > new Date(latest.timestamp) ? order : latest
       );
 
-      // Check if client already exists in this tenant
+      // Check if client already exists (auto-filtered by tenantPrisma)
       const existingClient = await prisma.client.findFirst({
-        where: { phone, isActive: true, tenantId }
+        where: { phone, isActive: true }
       });
 
       if (existingClient) {
@@ -109,9 +98,10 @@ export async function POST(request: NextRequest) {
         });
         updatedCount++;
       } else {
-        // Create new client
+        // Create new client with explicit tenantId
         await prisma.client.create({
           data: {
+            tenantId,
             ...clientInfo,
             totalOrders,
             totalSpent,
@@ -120,8 +110,7 @@ export async function POST(request: NextRequest) {
             lastOrder: lastOrder.timestamp,
             isActive: true,
             isFavorite: false,
-            createdBy: token.sub as string,
-            tenant: { connect: { id: tenantId } }
+            createdBy: userId
           }
         });
         syncedCount++;

@@ -180,12 +180,16 @@ export function InventoryManagement() {
         body: JSON.stringify(body)
       });
 
-      if (response.ok) {
-        await loadInventory();
-        setShowForm(false);
-        setEditingItem(null);
-        resetForm();
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({} as any));
+        console.error('Save failed:', err?.error || response.statusText);
+        return;
       }
+
+      await loadInventory();
+      setShowForm(false);
+      setEditingItem(null);
+      resetForm();
     } catch (error) {
       console.error('Error saving inventory item:', error);
     }
@@ -196,12 +200,17 @@ export function InventoryManagement() {
     
     try {
       const response = await fetch(`/api/config/inventory?id=${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include'
       });
 
-      if (response.ok) {
-        await loadInventory();
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({} as any));
+        console.error('Delete failed:', err?.error || response.statusText);
+        return;
       }
+
+      await loadInventory();
     } catch (error) {
       console.error('Error deleting inventory item:', error);
     }

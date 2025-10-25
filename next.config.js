@@ -1,7 +1,9 @@
 // next.config.js
 /** @type {import('next').NextConfig} */
-const CompressionPlugin = require('compression-webpack-plugin');
-const withBundleAnalyzer = require('@next/bundle-analyzer')({
+// import CompressionPlugin from 'compression-webpack-plugin';
+import withBundleAnalyzer from '@next/bundle-analyzer';
+
+const bundleAnalyzer = withBundleAnalyzer({
   enabled: process.env.ANALYZE === 'true',
 });
 
@@ -15,6 +17,11 @@ const nextConfig = {
   },
   typescript: {
     ignoreBuildErrors: true,
+  },
+  
+  // Add global polyfills for server-side rendering
+  experimental: {
+    serverComponentsExternalPackages: [],
   },
 
   // Domain configuration
@@ -54,60 +61,77 @@ const nextConfig = {
     ];
   },
 
-  webpack: (config, { dev, isServer }) => {
+  webpack: (config, { dev, isServer, webpack }) => {
+    // Temporarily disabled webpack configuration to fix build issues
+    
     // Production optimizations only
     if (!dev) {
-      // Enable compression
-      config.plugins.push(
-        new CompressionPlugin({
-          test: /\.(js|css|html|svg)$/,
-          algorithm: 'gzip',
-          threshold: 10240,
-          minRatio: 0.8,
-        })
-      );
+      // Define a server-safe global 'self' to prevent SSR crashes from browser-only libs
+      if (isServer) {
+        // Ensure UMD wrappers use globalThis instead of self on server
+        config.output = {
+          ...config.output,
+          globalObject: 'globalThis',
+        }
+        config.plugins.push(
+          new webpack.DefinePlugin({
+            self: 'globalThis',
+          })
+        )
+      }
+      // Enable compression - temporarily disabled for build issues
+      // config.plugins.push(
+      //   new CompressionPlugin({
+      //     test: /\.(js|css|html|svg)$/,
+      //     algorithm: 'gzip',
+      //     threshold: 10240,
+      //     minRatio: 0.8,
+      //   })
+      // );
 
-      // Optimize chunks
-      config.optimization = {
-        ...config.optimization,
-        minimize: true,
-        moduleIds: 'deterministic',
-        runtimeChunk: isServer ? false : 'single',
-        splitChunks: {
-          chunks: 'all',
-          minSize: 10000,
-          maxSize: 20000000,
-          cacheGroups: {
-            vendor: {
-              name: (module) => {
-                if (!module.context) return 'vendor.unknown';
-                const match = module.context.match(
-                  /[\\/]node_modules[\\/](.*?)([\\/]|$)/
-                );
-                if (!match || !match[1]) return 'vendor.unknown';
-                const packageName = match[1];
-                return `vendor.${packageName.replace('@', '')}`;
+      // Optimize chunks only for client builds to avoid SSR runtime issues
+      if (!isServer) {
+        config.optimization = {
+          ...config.optimization,
+          minimize: true,
+          moduleIds: 'deterministic',
+          runtimeChunk: 'single',
+          splitChunks: {
+            chunks: 'all',
+            minSize: 10000,
+            maxSize: 20000000,
+            cacheGroups: {
+              vendor: {
+                name: (module) => {
+                  if (!module.context) return 'vendor.unknown';
+                  const match = module.context.match(
+                    /[\\/]node_modules[\\/](.*?)([\\/]|$)/
+                  );
+                  if (!match || !match[1]) return 'vendor.unknown';
+                  const packageName = match[1];
+                  return `vendor.${packageName.replace('@', '')}`;
+                },
+                test: /[\\/]node_modules[\\/]/,
+                chunks: 'all',
+                priority: 20,
+                reuseExistingChunk: true,
+                enforce: true,
               },
-              test: /[\\/]node_modules[\\/]/,
-              chunks: 'all',
-              priority: 20,
-              reuseExistingChunk: true,
-              enforce: true,
-            },
-            commons: {
-              name: 'commons',
-              minChunks: 2,
-              priority: 10,
-              reuseExistingChunk: true,
-              enforce: true,
+              commons: {
+                name: 'commons',
+                minChunks: 2,
+                priority: 10,
+                reuseExistingChunk: true,
+                enforce: true,
+              },
             },
           },
-        },
-      };
+        };
+      }
     }
 
     return config;
   },
 };
 
-module.exports = withBundleAnalyzer(nextConfig);
+export default bundleAnalyzer(nextConfig);

@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getTenantPrisma } from '@/lib/prisma-tenant'
 import { authenticateAPI } from '@/lib/auth-helpers'
+import { withTenantContext } from '@/lib/tenantContext'
+import { getToken } from 'next-auth/jwt'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { logCreate } from '@/lib/auditLogger'
 import { checkOrderLimit } from '@/lib/plan-enforcement'
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 // Function to update inventory when an order is created
 async function updateInventoryForOrder(order: any, tenantPrisma: any) {
@@ -146,7 +149,7 @@ async function updateInventoryForProduct(product: any, tenantPrisma: any) {
       console.log(`✅ Updated inventory for ${type}: ${item.currentStock} -> ${newStock} (deducted ${quantityToDeduct})`)
     } else {
       console.warn(`❌ No inventory item found for product type: ${type}`)
-      console.log('Available inventory items:', inventoryItems.map(item => ({ 
+      console.log('Available inventory items:', inventoryItems.map((item: any) => ({ 
         name: item.name, 
         description: item.description,
         currentStock: item.currentStock 
@@ -164,15 +167,81 @@ export async function GET(request: NextRequest) {
     if (!auth.ok) return auth.response
     
     const { tenantId } = auth
-    const tenantPrisma = getTenantPrisma(tenantId)
-    
-    // Get orders (automatically filtered by tenantId!)
-    const orders = await tenantPrisma.order.findMany({
-      orderBy: { timestamp: 'desc' },
-      take: 100 // Limit to last 100 orders
-    })
+    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
+    const userId = (token as any)?.sub || (auth as any).userId
+    const userName = (token as any)?.name || (token as any)?.email || 'System'
 
-    return createSuccessResponse(orders)
+    // Get query parameters for pagination and filtering
+    const { searchParams } = new URL(request.url)
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100) // Default 50, max 100 items per request
+    const skip = (page - 1) * limit
+    const status = searchParams.get('status')
+    const orderType = searchParams.get('orderType')
+
+    return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName }, async () => {
+      const tenantPrisma = getTenantPrisma(tenantId)
+      
+      // Build where clause for filtering
+      const whereClause: any = { tenantId }
+      if (status) whereClause.status = status
+      if (orderType) whereClause.orderType = orderType
+      
+      // Get total count for pagination
+      const totalCount = await tenantPrisma.order.count({ where: whereClause })
+      
+      // Fetch only essential fields to reduce payload
+      const orders = await tenantPrisma.order.findMany({
+        where: whereClause,
+        orderBy: { timestamp: 'desc' },
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          orderId: true,
+          orderType: true,
+          status: true,
+          timestamp: true,
+          customerName: true,
+          phone: true,
+          email: true,
+          business: true,
+          product: true,
+          quantity: true,
+          size: true,
+          color: true,
+          packaging: true,
+          customization: true,
+          comments: true,
+          total: true,
+          iva: true,
+          shippingCost: true,
+          productCost: true,
+          address: true,
+          province: true,
+          canton: true,
+          district: true,
+          courier: true,
+          expectedDate: true,
+          funnel: true,
+          agreedDate: true,
+          pickupDate: true,
+          saleDate: true,
+          seller: true,
+          delivery: true,
+          // Exclude only the heaviest field: productDetails (can be loaded separately if needed)
+        }
+      })
+      
+      // Return orders in the original format for backward compatibility
+      const response = createSuccessResponse(orders)
+      
+      // Add compression headers to reduce network traffic
+      response.headers.set('Cache-Control', 'public, max-age=60') // Cache for 1 minute
+      response.headers.set('Vary', 'Accept-Encoding')
+      
+      return response
+    })
   } catch (error) {
     return handleApiError(error)
   }
@@ -185,9 +254,90 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response
     
     const { tenantId } = auth
+    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
+    const userId = (token as any)?.sub || (auth as any).userId
+    const userName = (token as any)?.name || (token as any)?.email || 'System'
     const tenantPrisma = getTenantPrisma(tenantId)
-    
     const body = await request.json()
+
+    // Separate known order fields from dynamic custom fields
+    const knownKeys = new Set([
+      'orderId','orderType','status','delivery','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails','timestamp','customFields'
+    ])
+    const customFields: Record<string, any> = {}
+    for (const [k,v] of Object.entries(body)) {
+      if (!knownKeys.has(k)) {
+        customFields[k] = v
+      }
+    }
+
+    // If client sent a customFields object, merge it in
+    if (body?.customFields && typeof body.customFields === 'object' && !Array.isArray(body.customFields)) {
+      for (const [k, v] of Object.entries(body.customFields as any)) {
+        customFields[k] = v
+      }
+    }
+
+     // Debug: log incoming payload keys for comment visibility
+     try {
+       console.log('🔍 [Order.create] FULL PAYLOAD DEBUG:')
+       console.log('📦 [Order.create] Raw body keys:', Object.keys(body))
+       console.log('📦 [Order.create] Full body:', JSON.stringify(body, null, 2))
+       
+       const possibleCommentKeys = Object.keys(body).filter(k => /comentario|comentarios|comment|comments|observacion|observaciones|nota|notas|descripcion|description/i.test(k))
+       console.log('💬 [Order.create] Potential comment keys in body:', possibleCommentKeys)
+       console.log('💬 [Order.create] body.comments value:', body?.comments)
+       console.log('💬 [Order.create] body.comments type:', typeof body?.comments)
+       console.log('💬 [Order.create] body.comments length:', body?.comments?.length)
+       
+       if (body?.customFields) {
+         console.log('🔧 [Order.create] customFields type:', typeof body.customFields)
+         console.log('🔧 [Order.create] customFields keys:', Object.keys(body.customFields))
+         console.log('🔧 [Order.create] customFields content:', JSON.stringify(body.customFields, null, 2))
+       } else {
+         console.log('🔧 [Order.create] No customFields in payload')
+       }
+     } catch (error) {
+       console.error('❌ [Order.create] Debug logging error:', error)
+     }
+
+     // Map comments EXCLUSIVELY from dynamic custom fields (campos personalizados)
+     const commentKeywords = ['comentario','comentarios','comment','comments','observacion','observaciones','nota','notas','note','notes','descripcion','description']
+     let commentValue: string | undefined
+     
+     console.log('🔍 [Order.create] COMMENT DETECTION DEBUG:')
+     console.log('🔍 [Order.create] customFields to search:', Object.keys(customFields))
+     console.log('🔍 [Order.create] commentKeywords:', commentKeywords)
+     
+     for (const k of Object.keys(customFields)) {
+       console.log(`🔍 [Order.create] Checking key: "${k}"`)
+       const matches = commentKeywords.filter(w => k.toLowerCase().includes(w))
+       console.log(`🔍 [Order.create] Key "${k}" matches keywords:`, matches)
+       
+       if (commentKeywords.some(w => k.toLowerCase().includes(w))) {
+         const v = (customFields as any)[k]
+         console.log(`🔍 [Order.create] Found potential comment in key "${k}":`, v)
+         console.log(`🔍 [Order.create] Value type:`, typeof v)
+         console.log(`🔍 [Order.create] Value length:`, v?.length)
+         console.log(`🔍 [Order.create] Value trimmed:`, String(v).trim())
+         
+         if (v !== undefined && v !== null && String(v).trim() !== '') { 
+           commentValue = String(v).trim()
+           console.log(`✅ [Order.create] COMMENT FOUND: "${commentValue}"`)
+           break 
+         } else {
+           console.log(`❌ [Order.create] Comment value is empty or invalid`)
+         }
+       }
+     }
+
+     // Debug: show detected comment and customFields presence
+     try {
+       console.log('💬 [Order.create] Final detected commentValue:', commentValue)
+       console.log('💬 [Order.create] Final customFields keys:', Object.keys(customFields))
+     } catch (error) {
+       console.error('❌ [Order.create] Final debug error:', error)
+     }
 
     // Check plan limits (soft enforcement with clear messaging)
     const limitCheck = await checkOrderLimit(tenantId)
@@ -202,9 +352,10 @@ export async function POST(request: NextRequest) {
       }, { status: 402 }) // 402 Payment Required
     }
     
-    // Create a new order (tenantId auto-injected!)
+    // Create a new order with explicit tenantId
     const order = await tenantPrisma.order.create({
-      data: {
+      data: ({
+        tenantId,
         orderId: body.orderId || `ORDER-${Date.now()}`,
         orderType: body.orderType || 'EA',
         status: body.status || 'Pendiente',
@@ -220,7 +371,7 @@ export async function POST(request: NextRequest) {
         color: body.color || '',
         packaging: body.packaging || '',
         customization: body.customization || '',
-        comments: body.comments || '',
+        comments: commentValue || '',
         total: Number(body.total || 0),
         iva: Number(body.iva || 0),
         shippingCost: Number(body.shippingCost || 0),
@@ -237,9 +388,24 @@ export async function POST(request: NextRequest) {
         pickupDate: body.pickupDate || '',
         seller: body.seller || '',
         productDetails: body.productDetails || '',
-        timestamp: new Date()
-      }
+        timestamp: new Date(),
+        customFields: Object.keys(customFields).length > 0 ? customFields : undefined
+      } as any)
     })
+
+     // Debug: confirm saved order comments
+     try {
+       console.log('💾 [Order.create] DATABASE SAVE DEBUG:')
+       console.log('💾 [Order.create] Saved order ID:', order.id)
+       console.log('💾 [Order.create] Saved order comments:', order.comments)
+       console.log('💾 [Order.create] Saved order comments type:', typeof order.comments)
+       console.log('💾 [Order.create] Saved order comments length:', order.comments?.length)
+       console.log('💾 [Order.create] Saved order comments === "":', order.comments === "")
+       console.log('💾 [Order.create] Saved order comments === null:', order.comments === null)
+       console.log('💾 [Order.create] Saved order comments === undefined:', order.comments === undefined)
+     } catch (error) {
+       console.error('❌ [Order.create] Database save debug error:', error)
+     }
 
     // Update inventory stock for products in the order
     try {

@@ -72,7 +72,7 @@ export default function SignInPage() {
         email,
         password,
         redirect: false,
-        callbackUrl: '/home'
+        callbackUrl: '/dashboard'
       })
       
       if (!signInRes || signInRes.error) {
@@ -96,8 +96,8 @@ export default function SignInPage() {
         }
       }
       
-      // Otherwise, go to home
-      window.location.href = '/home'
+      // Otherwise, go to dashboard
+      window.location.href = '/dashboard'
     } catch (err) {
       setError('Error al conectar con el servidor')
       setLoading(false)
@@ -118,7 +118,7 @@ export default function SignInPage() {
       email: email,
       password,
       redirect: false,
-      callbackUrl: '/home'
+      callbackUrl: '/dashboard'
     })
     setLoading(false)
     if (!res || res.error) {
@@ -129,15 +129,15 @@ export default function SignInPage() {
       await applyPlanIfRequested()
       return
     }
-    window.location.href = '/home'
+    window.location.href = '/dashboard'
   }
 
   const handleGoogleSignIn = async () => {
     setLoading(true)
     setError(null)
     try {
-      // After Google, NextAuth will redirect to /home; we intercept via middleware or plan param on URL
-      const callbackUrl = intendedPlan ? `/home?plan=${encodeURIComponent(intendedPlan)}` : '/home'
+      // After Google, NextAuth will redirect to /dashboard; we intercept via middleware or plan param on URL
+      const callbackUrl = intendedPlan ? `/dashboard?plan=${encodeURIComponent(intendedPlan)}` : '/dashboard'
       await signIn('google', { callbackUrl })
     } catch (error) {
       setError('Error al iniciar sesión con Google')

@@ -32,7 +32,7 @@ export function OrderDetails({
   useEffect(() => {
     const loadStatuses = async () => {
       try {
-        const response = await fetch('/api/config/status');
+        const response = await fetch('/api/config/status', { credentials: 'include' });
         const data = await response.json();
         if (data.status === 'success' && data.data.length > 0) {
           setAvailableStatuses(data.data);
@@ -47,11 +47,28 @@ export function OrderDetails({
   const [displayOrder, setDisplayOrder] = useState<Sale>(order);
   const [editedOrder, setEditedOrder] = useState<Sale>(order);
   const [isSaving, setIsSaving] = useState(false);
+  const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
   
   useEffect(() => {
     setDisplayOrder(order);
     setEditedOrder(order);
   }, [order]);
+
+  // Load tenant custom business info fields to display dynamic values on the order
+  useEffect(() => {
+    const fetchBusinessInfo = async () => {
+      try {
+        const res = await fetch('/api/config/business-info', { credentials: 'include' });
+        const data = await res.json();
+        if (data?.status === 'success' && Array.isArray(data.data)) {
+          setBusinessInfoFields(data.data);
+        }
+      } catch (err) {
+        console.error('Error loading business info fields:', err);
+      }
+    };
+    fetchBusinessInfo();
+  }, []);
 
   const handleInputChange = (field: SaleKeys, value: string | number) => {
     setEditedOrder(prev => {
@@ -393,7 +410,51 @@ export function OrderDetails({
                 ['IVA', 'iva', 'number']
               ])}
 
-              {renderSection('Comentarios', [['Comentarios', 'comments']])}
+              {/* Dynamic Custom Fields (Campos personalizados) */}
+              {businessInfoFields.length > 0 && (
+                <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
+                  <div className="p-4 border-b border-gray-100 dark:border-gray-800">
+                    <h3 className="font-medium text-sm text-gray-600 dark:text-gray-300">Campos personalizados</h3>
+                  </div>
+                  <div className="p-4 space-y-2">
+                    {businessInfoFields.map((f) => {
+                      let value: any = (displayOrder as any)[f?.name];
+                      if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
+                        value = (displayOrder as any)?.customFields?.[f?.name];
+                      }
+                      if ((value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) && (displayOrder as any)?.productDetails) {
+                        try {
+                          const pd = JSON.parse((displayOrder as any).productDetails as any);
+                          value = pd?.customFields?.[f?.name];
+                        } catch {}
+                      }
+                      if (value === undefined || value === null || (typeof value === 'string' && String(value).trim() === '')) return null;
+                      return (
+                        <div key={`custom-${f?.id || f?.name}`} className="group relative py-2 transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-md px-2 -mx-2">
+                          <div className="flex justify-between items-baseline">
+                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{f?.label || f?.name}</label>
+                          </div>
+                          <p className="text-sm text-gray-900 dark:text-gray-100 font-medium mt-1">
+                            {typeof value === 'number' ? value.toLocaleString() : String(value)}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Comentario */}
+              {displayOrder.comments && (
+                <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
+                  <div className="p-4 border-b border-gray-100 dark:border-gray-800">
+                    <h3 className="font-medium text-sm text-gray-600 dark:text-gray-300">Comentario</h3>
+                  </div>
+                  <div className="p-4">
+                    <p className="text-sm text-gray-900 dark:text-gray-100">{displayOrder.comments}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </ScrollArea>

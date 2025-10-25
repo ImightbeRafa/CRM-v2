@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
-import { getToken } from 'next-auth/jwt';
+import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 
 export async function GET(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    // Require 'view_sales' permission
+    const auth = await authenticateAPIWithPermission(request, 'view_sales');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const tenantId = (token as any).tenantId;
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
+    const { tenantId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
     const clients = await prisma.client.findMany({
       where: { isActive: true, tenantId },
@@ -39,16 +35,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    // Require 'update_sales' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_sales');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Check if user is MASTER
-    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const { tenantId, userId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
     const body = await request.json();
     const {
@@ -65,15 +57,9 @@ export async function POST(request: NextRequest) {
       isFavorite
     } = body;
 
-    // Get tenant ID from token
-    const tenantId = (token as any).tenantId;
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
-
-    // Check if client already exists by phone in this tenant
+    // Check if client already exists by phone (auto-filtered by tenantPrisma)
     const existingClient = await prisma.client.findFirst({
-      where: { phone, isActive: true, tenantId }
+      where: { phone, isActive: true }
     });
 
     if (existingClient) {
@@ -103,7 +89,7 @@ export async function POST(request: NextRequest) {
         averageOrderValue: 0,
         firstOrder: new Date(),
         lastOrder: new Date(),
-        createdBy: token.sub as string
+        createdBy: userId
       }
     });
 
@@ -122,21 +108,12 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    // Require 'update_sales' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_sales');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Check if user is MASTER
-    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const tenantId = (token as any).tenantId;
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
+    const { tenantId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
     const body = await request.json();
     const {
@@ -154,12 +131,11 @@ export async function PUT(request: NextRequest) {
       isFavorite
     } = body;
 
-    // Check if phone already exists for different client in same tenant
+    // Check if phone already exists for different client (auto-filtered by tenantPrisma)
     const existingClient = await prisma.client.findFirst({
       where: { 
         phone, 
         isActive: true,
-        tenantId,
         id: { not: id }
       }
     });
@@ -204,21 +180,12 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    // Require 'update_sales' permission
+    const auth = await authenticateAPIWithPermission(request, 'update_sales');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Check if user is MASTER
-    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const tenantId = (token as any).tenantId;
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
+    const { tenantId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -227,15 +194,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Client ID is required' }, { status: 400 });
     }
 
-    // Verify ownership
-    const client = await prisma.client.findFirst({
-      where: { id, tenantId }
-    });
-
-    if (!client) {
-      return NextResponse.json({ error: 'Client not found' }, { status: 404 });
-    }
-
+    // CRITICAL: Soft delete with tenant isolation (auto-verified by tenantPrisma)
     await prisma.client.update({
       where: { id },
       data: { isActive: false }

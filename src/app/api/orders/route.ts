@@ -171,8 +171,9 @@ export async function GET(request: NextRequest) {
     // Get query parameters for pagination and filtering
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')
-    const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 500) // Default 100, max 500 items per request
-    const skip = (page - 1) * limit
+    const limitParam = searchParams.get('limit')
+    const limit = limitParam === 'all' ? undefined : Math.min(parseInt(limitParam || '100'), 500) // Support 'all' for unlimited results
+    const skip = limit ? (page - 1) * limit : 0
     const status = searchParams.get('status')
     const orderType = searchParams.get('orderType')
     const search = searchParams.get('search')
@@ -211,7 +212,7 @@ export async function GET(request: NextRequest) {
         where: whereClause,
         orderBy: { timestamp: 'desc' },
         skip,
-        take: limit,
+        ...(limit && { take: limit }), // Only add take if limit is defined
         select: {
           id: true,
           orderId: true,

@@ -81,13 +81,14 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
   const loadOrders = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/orders')
+      const response = await fetch('/api/orders?limit=all')
       
       if (response.ok) {
         const data = await response.json()
         // Handle both response formats
         const ordersData = data.orders || data.data || data || []
         setOrders(ordersData)
+        console.log(`📊 Loaded ${ordersData.length} orders for bulk delete`)
       } else {
         console.error('Failed to load orders:', response.status, response.statusText)
         setOrders([])
@@ -258,7 +259,9 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
           <div className="flex items-center gap-4">
             <div className="text-right">
               <div className="text-2xl font-bold">{filteredOrders.length}</div>
-              <div className="text-red-100 text-sm">órdenes</div>
+              <div className="text-red-100 text-sm">
+                {filteredOrders.length === orders.length ? 'órdenes totales' : `de ${orders.length} órdenes`}
+              </div>
             </div>
             <div className="flex gap-2">
               {selectedOrders.size > 0 && (

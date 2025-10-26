@@ -2,6 +2,7 @@ import { prisma } from './db'
 import { getTenantPrisma } from './prisma-tenant'
 import { createSuccessResponse, createErrorResponse, handleApiError } from './apiUtils'
 import { logBulkDelete, logBulkUpdate, logBulkToggle } from './auditLogger'
+import { withTenantContext } from './tenantContext'
 import { NextRequest } from 'next/server'
 
 export interface BulkOperationResult {
@@ -16,6 +17,9 @@ export interface BulkDeleteRequest {
   reason?: string
   request?: NextRequest
   tenantId?: string  // Add tenant ID for isolation
+  userId?: string    // Add user ID for context
+  role?: string      // Add user role for context
+  session?: any      // Add session for context
 }
 
 export interface BulkUpdateRequest {
@@ -27,7 +31,7 @@ export interface BulkUpdateRequest {
 }
 
 export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperationResult> {
-  const { ids, type, reason, request: httpRequest, tenantId } = request
+  const { ids, type, reason, request: httpRequest, tenantId, userId, role, session } = request
   const result: BulkOperationResult = {
     success: 0,
     failed: 0,
@@ -36,45 +40,131 @@ export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperat
 
   console.log(`🗑️ Starting bulk delete: ${ids.length} ${type} for tenant ${tenantId}`);
 
-  // Use tenant-aware prisma client if tenantId is provided
-  const db = tenantId ? getTenantPrisma(tenantId) : prisma;
+  // If we have a tenantId, use regular prisma with manual tenant filtering
+  if (tenantId) {
+    console.log(`🔧 Using regular Prisma client with manual tenant filtering for tenant: ${tenantId}`);
+    
+    // Set tenant context for audit logging
+    return await withTenantContext(
+      { 
+        tenantId, 
+        userId: userId || 'system', 
+        role: role || 'SYSTEM',
+        userRole: role || 'SYSTEM',
+        userName: session?.user?.email || 'system'
+      },
+      async () => {
+        console.log(`🔧 Tenant context set, proceeding with bulk delete`);
+        return await performBulkDeleteWithTenant(ids, type, reason, httpRequest || null, prisma, tenantId);
+      }
+    );
+  } else {
+    // Use regular prisma for non-tenant operations
+    console.log(`🔧 Using regular Prisma client (no tenant)`);
+    return await performBulkDelete(ids, type, reason, httpRequest || null, prisma);
+  }
+}
 
-  // Get entity names for audit logging
+async function performBulkDeleteWithTenant(
+  ids: string[], 
+  type: string, 
+  reason: string | undefined, 
+  httpRequest: NextRequest | null, 
+  db: any,
+  tenantId: string
+): Promise<BulkOperationResult> {
+  const result: BulkOperationResult = {
+    success: 0,
+    failed: 0,
+    errors: []
+  }
+
+  // Get entity names for audit logging with manual tenant filtering
   const entityMap = new Map<string, string>(); // id -> name
   
   try {
+    console.log(`🔍 Getting entity names for ${ids.length} ${type} items with tenant filter...`);
     switch (type) {
       case 'users':
         const users = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, username: true } })
-        users.forEach(u => entityMap.set(u.id, u.username || 'Unknown'));
+        console.log(`   Found ${users.length} users`);
+        users.forEach((u: any) => entityMap.set(u.id, u.username || 'Unknown'));
         break
       case 'orders':
-        const orders = await db.order.findMany({ where: { id: { in: ids } }, select: { id: true, orderId: true } })
-        orders.forEach(o => entityMap.set(o.id, o.orderId));
+        console.log(`   Querying orders with IDs: ${ids.join(', ')} and tenantId: ${tenantId}`);
+        const orders = await db.order.findMany({ 
+          where: { 
+            id: { in: ids },
+            tenantId: tenantId
+          }, 
+          select: { id: true, orderId: true, tenantId: true } 
+        })
+        console.log(`   Found ${orders.length} orders`);
+        orders.forEach((o: any) => {
+          console.log(`     - ${o.id} (${o.orderId}) - tenant: ${o.tenantId}`);
+          entityMap.set(o.id, o.orderId);
+        });
         break
       case 'fields':
-        const fields = await db.productField.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
-        fields.forEach(f => entityMap.set(f.id, f.label));
+        const fields = await db.productField.findMany({ 
+          where: { 
+            id: { in: ids },
+            tenantId: tenantId
+          }, 
+          select: { id: true, label: true } 
+        })
+        console.log(`   Found ${fields.length} fields`);
+        fields.forEach((f: any) => entityMap.set(f.id, f.label));
         break
       case 'optionSets':
-        const optionSets = await db.productOptionSet.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
-        optionSets.forEach(os => entityMap.set(os.id, os.name));
+        const optionSets = await db.productOptionSet.findMany({ 
+          where: { 
+            id: { in: ids },
+            tenantId: tenantId
+          }, 
+          select: { id: true, name: true } 
+        })
+        console.log(`   Found ${optionSets.length} option sets`);
+        optionSets.forEach((os: any) => entityMap.set(os.id, os.name));
         break
       case 'options':
-        const options = await db.productOption.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
-        options.forEach(o => entityMap.set(o.id, o.label));
+        const options = await db.productOption.findMany({ 
+          where: { 
+            id: { in: ids },
+            tenantId: tenantId
+          }, 
+          select: { id: true, label: true } 
+        })
+        console.log(`   Found ${options.length} options`);
+        options.forEach((o: any) => entityMap.set(o.id, o.label));
         break
       case 'shipping':
-        const shipping = await db.shippingMethod.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
-        shipping.forEach(s => entityMap.set(s.id, s.name));
+        const shipping = await db.shippingMethod.findMany({ 
+          where: { 
+            id: { in: ids },
+            tenantId: tenantId
+          }, 
+          select: { id: true, name: true } 
+        })
+        console.log(`   Found ${shipping.length} shipping methods`);
+        shipping.forEach((s: any) => entityMap.set(s.id, s.name));
         break
       case 'sellers':
-        const sellers = await db.seller.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
-        sellers.forEach(s => entityMap.set(s.id, s.name));
+        const sellers = await db.seller.findMany({ 
+          where: { 
+            id: { in: ids },
+            tenantId: tenantId
+          }, 
+          select: { id: true, name: true } 
+        })
+        console.log(`   Found ${sellers.length} sellers`);
+        sellers.forEach((s: any) => entityMap.set(s.id, s.name));
         break
     }
+    console.log(`✅ Entity map populated with ${entityMap.size} items`);
   } catch (error) {
     console.error('❌ Failed to get entity names for audit:', error)
+    console.log('   Continuing with deletion using IDs as names...')
   }
 
   // Process deletions one by one for better error handling
@@ -85,6 +175,8 @@ export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperat
     const id = ids[i];
     const name = entityMap.get(id) || id;
     
+    console.log(`🗑️ Deleting ${type} ${i + 1}/${ids.length}: ${name} (ID: ${id})`);
+    
     try {
       // Special handling for users
       if (type === 'users') {
@@ -93,9 +185,161 @@ export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperat
           select: { memberships: { select: { role: true } } }
         });
         
-        if (user?.memberships?.some(m => m.role === 'OWNER' || m.role === 'ADMIN')) {
+        if (user?.memberships?.some((m: any) => m.role === 'OWNER' || m.role === 'ADMIN')) {
           result.failed++;
           result.errors.push(`Cannot delete admin/owner user: ${name}`);
+          console.log(`   ❌ Skipped admin/owner user: ${name}`);
+          continue;
+        }
+      }
+      
+      // Delete based on type with tenant filtering
+      switch (type) {
+        case 'users':
+          await db.user.delete({ where: { id } });
+          break;
+        case 'orders':
+          await db.order.delete({ where: { id, tenantId } });
+          break;
+        case 'fields':
+          await db.productField.delete({ where: { id, tenantId } });
+          break;
+        case 'optionSets':
+          await db.productOptionSet.delete({ where: { id, tenantId } });
+          break;
+        case 'options':
+          await db.productOption.delete({ where: { id, tenantId } });
+          break;
+        case 'shipping':
+          await db.shippingMethod.delete({ where: { id, tenantId } });
+          break;
+        case 'sellers':
+          await db.seller.delete({ where: { id, tenantId } });
+          break;
+        default:
+          throw new Error(`Unsupported bulk delete type: ${type}`);
+      }
+      
+      result.success++;
+      successfulIds.push(id);
+      successfulNames.push(name);
+      console.log(`   ✅ Successfully deleted: ${name}`);
+      
+      // Progress logging
+      if ((i + 1) % 10 === 0 || i === ids.length - 1) {
+        console.log(`📊 Progress: ${i + 1}/${ids.length} processed (${result.success} success, ${result.failed} failed)`);
+      }
+      
+    } catch (error) {
+      result.failed++;
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      result.errors.push(`Failed to delete ${name}: ${errorMsg}`);
+      console.error(`   ❌ Failed to delete ${name}:`, errorMsg);
+    }
+  }
+
+  // Log audit trail for successful deletions
+  if (httpRequest && successfulIds.length > 0) {
+    try {
+      console.log(`✅ Logging ${successfulIds.length} successful deletions for audit trail`);
+      await logBulkDelete(httpRequest, type, successfulIds, successfulNames, reason);
+      console.log(`✅ Audit trail created for ${successfulIds.length} ${type} deletions`);
+    } catch (auditError) {
+      console.error('❌ Failed to log bulk delete audit:', auditError);
+    }
+  }
+
+  console.log(`✅ Bulk delete complete: ${result.success} success, ${result.failed} failed`);
+  return result;
+}
+
+async function performBulkDelete(
+  ids: string[], 
+  type: string, 
+  reason: string | undefined, 
+  httpRequest: NextRequest | null, 
+  db: any
+): Promise<BulkOperationResult> {
+  const result: BulkOperationResult = {
+    success: 0,
+    failed: 0,
+    errors: []
+  }
+
+  // Get entity names for audit logging
+  const entityMap = new Map<string, string>(); // id -> name
+  
+  try {
+    console.log(`🔍 Getting entity names for ${ids.length} ${type} items...`);
+    switch (type) {
+      case 'users':
+        const users = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, username: true } })
+        console.log(`   Found ${users.length} users`);
+        users.forEach((u: any) => entityMap.set(u.id, u.username || 'Unknown'));
+        break
+      case 'orders':
+        console.log(`   Querying orders with IDs: ${ids.join(', ')}`);
+        const orders = await db.order.findMany({ where: { id: { in: ids } }, select: { id: true, orderId: true, tenantId: true } })
+        console.log(`   Found ${orders.length} orders`);
+        orders.forEach((o: any) => {
+          console.log(`     - ${o.id} (${o.orderId}) - tenant: ${o.tenantId}`);
+          entityMap.set(o.id, o.orderId);
+        });
+        break
+      case 'fields':
+        const fields = await db.productField.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
+        console.log(`   Found ${fields.length} fields`);
+        fields.forEach((f: any) => entityMap.set(f.id, f.label));
+        break
+      case 'optionSets':
+        const optionSets = await db.productOptionSet.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+        console.log(`   Found ${optionSets.length} option sets`);
+        optionSets.forEach((os: any) => entityMap.set(os.id, os.name));
+        break
+      case 'options':
+        const options = await db.productOption.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
+        console.log(`   Found ${options.length} options`);
+        options.forEach((o: any) => entityMap.set(o.id, o.label));
+        break
+      case 'shipping':
+        const shipping = await db.shippingMethod.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+        console.log(`   Found ${shipping.length} shipping methods`);
+        shipping.forEach((s: any) => entityMap.set(s.id, s.name));
+        break
+      case 'sellers':
+        const sellers = await db.seller.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+        console.log(`   Found ${sellers.length} sellers`);
+        sellers.forEach((s: any) => entityMap.set(s.id, s.name));
+        break
+    }
+    console.log(`✅ Entity map populated with ${entityMap.size} items`);
+  } catch (error) {
+    console.error('❌ Failed to get entity names for audit:', error)
+    console.log('   Continuing with deletion using IDs as names...')
+  }
+
+  // Process deletions one by one for better error handling
+  const successfulIds: string[] = [];
+  const successfulNames: string[] = [];
+  
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
+    const name = entityMap.get(id) || id;
+    
+    console.log(`🗑️ Deleting ${type} ${i + 1}/${ids.length}: ${name} (ID: ${id})`);
+    
+    try {
+      // Special handling for users
+      if (type === 'users') {
+        const user = await db.user.findUnique({
+          where: { id },
+          select: { memberships: { select: { role: true } } }
+        });
+        
+        if (user?.memberships?.some((m: any) => m.role === 'OWNER' || m.role === 'ADMIN')) {
+          result.failed++;
+          result.errors.push(`Cannot delete admin/owner user: ${name}`);
+          console.log(`   ❌ Skipped admin/owner user: ${name}`);
           continue;
         }
       }
@@ -130,17 +374,18 @@ export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperat
       result.success++;
       successfulIds.push(id);
       successfulNames.push(name);
+      console.log(`   ✅ Successfully deleted: ${name}`);
       
       // Progress logging
       if ((i + 1) % 10 === 0 || i === ids.length - 1) {
-        console.log(`Progress: ${i + 1}/${ids.length} deleted`);
+        console.log(`📊 Progress: ${i + 1}/${ids.length} processed (${result.success} success, ${result.failed} failed)`);
       }
       
     } catch (error) {
       result.failed++;
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       result.errors.push(`Failed to delete ${name}: ${errorMsg}`);
-      console.error(`❌ Failed to delete ${name}:`, errorMsg);
+      console.error(`   ❌ Failed to delete ${name}:`, errorMsg);
     }
   }
 

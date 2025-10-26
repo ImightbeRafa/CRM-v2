@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     const auth = await authenticateAPIWithPermission(request, 'view_config');
     if (!auth.ok) return auth.response;
     
-    const { tenantId } = auth;
+    const { tenantId, userId, role, session } = auth;
     
     const body = await request.json()
     const { ids, type, reason } = body
@@ -32,7 +32,10 @@ export async function POST(request: NextRequest) {
       type: type as any, 
       reason,
       request: request as any,
-      tenantId: tenantId  // Pass tenant ID for isolation
+      tenantId: tenantId,  // Pass tenant ID for isolation
+      userId: userId,      // Pass user ID for context
+      role: role,          // Pass user role for context
+      session: session     // Pass session for context
     })
     
     return createSuccessResponse(result, `Bulk delete completed: ${result.success} successful, ${result.failed} failed`)

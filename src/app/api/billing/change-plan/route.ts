@@ -38,12 +38,12 @@ export async function POST(request: NextRequest) {
       free: { name: 'FREE', price: 0 },
       basic: { 
         name: 'BASIC', 
-        price: 15000,
+        price: 20, // $20 USD
         stripePriceId: process.env.NEXT_PUBLIC_STRIPE_BASIC_PRICE_ID 
       },
       pro: { 
         name: 'PRO', 
-        price: 45000,
+        price: 0, // Coming soon
         stripePriceId: process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID 
       },
       enterprise: { name: 'ENTERPRISE', price: 0 }

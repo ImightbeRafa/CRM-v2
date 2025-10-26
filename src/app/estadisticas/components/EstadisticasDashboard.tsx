@@ -11,6 +11,9 @@ import DateRangePicker from './DateRangePicker';
 import RevenueChart from './RevenueChart';
 import SalesVolumeChart from './SalesVolumeChart';
 import StatusBreakdownChart from './StatusBreakdownChart';
+import TopCustomersChart from './TopCustomersChart';
+import EnhancedOrderAnalytics from './EnhancedOrderAnalytics';
+import PerformanceMetrics from './PerformanceMetrics';
 
 interface SummaryData {
   totalSales: number;
@@ -338,6 +341,27 @@ export default function EstadisticasDashboard() {
               </>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Enhanced Analytics Section */}
+      <div className="space-y-6">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Análisis Avanzado</h2>
+          <p className="text-gray-600">Datos detallados de clientes y rendimiento de pedidos</p>
+        </div>
+
+        {/* Top Customers and Enhanced Order Analytics */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <TopCustomersChart startDate={startDate} endDate={endDate} />
+          <div className="space-y-6">
+            <EnhancedOrderAnalytics startDate={startDate} endDate={endDate} />
+          </div>
+        </div>
+
+        {/* Performance Metrics */}
+        <div className="mt-8">
+          <PerformanceMetrics startDate={startDate} endDate={endDate} />
         </div>
       </div>
     </div>

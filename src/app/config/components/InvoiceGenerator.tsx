@@ -378,16 +378,16 @@ export function InvoiceGenerator({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <Card className="max-w-5xl w-full my-8">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 overflow-y-auto">
+      <Card className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <CardHeader className="bg-gradient-to-r from-purple-500 to-pink-600 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-2xl flex items-center gap-2">
-                <FileText className="w-6 h-6" />
+              <CardTitle className="text-lg flex items-center gap-2">
+                <FileText className="w-5 h-5" />
                 Generador de Facturas
               </CardTitle>
-              <CardDescription className="text-purple-100">
+              <CardDescription className="text-purple-100 text-sm">
                 Crea facturas profesionales para tus órdenes
               </CardDescription>
             </div>
@@ -397,63 +397,64 @@ export function InvoiceGenerator({
               onClick={onClose}
               className="text-white hover:bg-white hover:bg-opacity-20"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </Button>
           </div>
         </CardHeader>
 
-        <CardContent className="pt-6">
+        <CardContent className="pt-4">
           {/* Mode Selection */}
-          <div className="flex gap-4 mb-6">
+          <div className="flex gap-2 mb-4">
             <Button
               variant={generationMode === 'single' ? 'default' : 'outline'}
               onClick={() => setGenerationMode('single')}
-              className="flex-1"
+              className="flex-1 text-sm"
             >
-              <FileText className="w-4 h-4 mr-2" />
-              Factura Individual
+              <FileText className="w-4 h-4 mr-1" />
+              Individual
             </Button>
             <Button
               variant={generationMode === 'bulk' ? 'default' : 'outline'}
               onClick={() => setGenerationMode('bulk')}
-              className="flex-1"
+              className="flex-1 text-sm"
             >
-              <Package className="w-4 h-4 mr-2" />
-              Generación Masiva
+              <Package className="w-4 h-4 mr-1" />
+              Masiva
             </Button>
           </div>
 
           {/* Order Selection */}
           {orders.length > 0 && (
-            <Card className="mb-6">
-              <CardHeader>
+            <Card className="mb-4">
+              <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">Seleccionar Órdenes</CardTitle>
+                  <CardTitle className="text-base">Seleccionar Órdenes</CardTitle>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleSelectAll}
+                    className="text-xs"
                   >
-                    {selectedOrders.length === orders.length ? 'Deseleccionar Todas' : 'Seleccionar Todas'}
+                    {selectedOrders.length === orders.length ? 'Deseleccionar' : 'Seleccionar Todas'}
                   </Button>
                 </div>
-                <CardDescription>
+                <CardDescription className="text-sm">
                   {selectedOrders.length} de {orders.length} órdenes seleccionadas
                 </CardDescription>
               </CardHeader>
-              <CardContent className="max-h-64 overflow-y-auto">
-                <div className="space-y-2">
+              <CardContent className="max-h-48 overflow-y-auto">
+                <div className="space-y-1">
                   {orders.map((order) => (
                     <div
                       key={order.id}
-                      className={`flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-all ${
                         selectedOrders.includes(order.id)
                           ? 'border-purple-500 bg-purple-50'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                       onClick={() => handleToggleOrder(order.id)}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
                           checked={selectedOrders.includes(order.id)}
@@ -461,16 +462,16 @@ export function InvoiceGenerator({
                           className="rounded border-gray-300"
                         />
                         <div>
-                          <div className="font-medium text-gray-900">
-                            Orden #{order.orderId}
+                          <div className="font-medium text-gray-900 text-sm">
+                            #{order.orderId}
                           </div>
-                          <div className="text-sm text-gray-500">
+                          <div className="text-xs text-gray-500">
                             {order.customerName} • {formatCurrency(order.total)}
                           </div>
                         </div>
                       </div>
                       {selectedOrders.includes(order.id) && (
-                        <Check className="w-5 h-5 text-purple-600" />
+                        <Check className="w-4 h-4 text-purple-600" />
                       )}
                     </div>
                   ))}

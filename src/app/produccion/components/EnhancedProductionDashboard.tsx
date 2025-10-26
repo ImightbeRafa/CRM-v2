@@ -173,7 +173,7 @@ const getStatusInfo = (status: string) => {
   };
 };
 
-// Enhanced header component
+// Compact header component
 const EnhancedHeader = React.memo(({ 
   loading, 
   searchTerm, 
@@ -207,107 +207,97 @@ const EnhancedHeader = React.memo(({
   totalOrders: number;
   filteredCount: number;
 }) => (
-  <div className="space-y-4">
-    {/* Main Header */}
-    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-      <div className="flex items-center gap-4">
-        <CardTitle className="flex items-center gap-2 text-2xl">
-          🏭 Panel de Producción
-          {loading && <Loader2 className="h-5 w-5 animate-spin" />}
+  <div className="space-y-3">
+    {/* Compact Header */}
+    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      <div className="flex items-center gap-3">
+        <CardTitle className="flex items-center gap-2 text-lg">
+          🏭 Producción
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
         </CardTitle>
-        <Badge variant="outline" className="text-sm">
-          {filteredCount} de {totalOrders} órdenes
+        <Badge variant="outline" className="text-xs">
+          {filteredCount}/{totalOrders}
         </Badge>
       </div>
       
-      {/* Action Buttons */}
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={onBulkOperations} variant="outline" size="sm">
-          <Users className="h-4 w-4 mr-2" />
-          Operaciones Masivas
+      {/* Compact Action Buttons */}
+      <div className="flex flex-wrap gap-1">
+        <Button onClick={onBulkOperations} variant="outline" size="sm" className="text-xs px-2 py-1">
+          <Users className="h-3 w-3 mr-1" />
+          Masivas
         </Button>
-        <Button onClick={onGenerateGuias} variant="outline" size="sm">
-          <Truck className="h-4 w-4 mr-2" />
-          Generar Guías
+        <Button onClick={onGenerateGuias} variant="outline" size="sm" className="text-xs px-2 py-1">
+          <Truck className="h-3 w-3 mr-1" />
+          Guías
         </Button>
-        <Button onClick={onGenerateInvoices} variant="outline" size="sm" className="bg-purple-50 border-purple-200 hover:bg-purple-100">
-          <FileText className="h-4 w-4 mr-2" />
-          Generar Facturas
+        <Button onClick={onGenerateInvoices} variant="outline" size="sm" className="text-xs px-2 py-1 bg-purple-50 border-purple-200 hover:bg-purple-100">
+          <FileText className="h-3 w-3 mr-1" />
+          Facturas
         </Button>
-        <Button onClick={onExport} variant="outline" size="sm">
-          <Download className="h-4 w-4 mr-2" />
+        <Button onClick={onExport} variant="outline" size="sm" className="text-xs px-2 py-1">
+          <Download className="h-3 w-3 mr-1" />
           Exportar
         </Button>
       </div>
     </div>
 
-    {/* Filters Row */}
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    {/* Compact Filters Row */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
         <Input
-          placeholder="Buscar por cliente, orden, producto..."
+          placeholder="Buscar..."
           value={searchTerm}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="pl-10"
+          className="pl-7 h-8 text-sm"
         />
       </div>
       
       <StatusFilterSelect value={statusFilter} onValueChange={onStatusChange} />
       
-      <Button variant="outline" size="sm" className="justify-start">
-        <Filter className="h-4 w-4 mr-2" />
-        Filtros Avanzados
+      <Button variant="outline" size="sm" className="justify-start h-8 text-xs">
+        <Filter className="h-3 w-3 mr-1" />
+        Filtros
       </Button>
       
       <Button 
         variant="outline" 
         size="sm" 
-        className="justify-start"
+        className="justify-start h-8 text-xs"
         onClick={onShowStats}
       >
-        <TrendingUp className="h-4 w-4 mr-2" />
-        Estadísticas
+        <TrendingUp className="h-3 w-3 mr-1" />
+        Stats
       </Button>
       
-      <Button 
-        variant="outline" 
-        size="sm" 
-        className="justify-start"
-        onClick={onShowGuide}
-      >
-        <Users className="h-4 w-4 mr-2" />
-        Guía de Uso
-      </Button>
-      
-      {/* View Mode Toggle */}
-      <div className="flex gap-1 border rounded-md p-1">
+      {/* Compact View Mode Toggle */}
+      <div className="flex gap-1 border rounded-md p-1 h-8">
         <Button 
           variant={viewMode === 'table' ? 'default' : 'ghost'}
           size="sm"
-          className="px-3"
+          className="px-2 h-6"
           onClick={() => onViewModeChange('table')}
-          title="Vista de Tabla"
+          title="Tabla"
         >
-          <LayoutGrid className="h-4 w-4" />
+          <LayoutGrid className="h-3 w-3" />
         </Button>
         <Button 
           variant={viewMode === 'kanban' ? 'default' : 'ghost'}
           size="sm"
-          className="px-3"
+          className="px-2 h-6"
           onClick={() => onViewModeChange('kanban')}
-          title="Vista Kanban"
+          title="Kanban"
         >
-          <Kanban className="h-4 w-4" />
+          <Kanban className="h-3 w-3" />
         </Button>
         <Button 
           variant={viewMode === 'mobile' ? 'default' : 'ghost'}
           size="sm"
-          className="px-3"
+          className="px-2 h-6"
           onClick={() => onViewModeChange('mobile')}
-          title="Vista Móvil"
+          title="Móvil"
         >
-          <List className="h-4 w-4" />
+          <List className="h-3 w-3" />
         </Button>
       </div>
     </div>
@@ -549,20 +539,19 @@ export function EnhancedProductionDashboard({
   }
 
   return (
-    <div className="container mx-auto px-4 py-6 space-y-6">
-      {/* Manual Refresh Button - Temporary for debugging */}
-      <div className="flex justify-between items-center bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <Clock className="h-4 w-4" />
+    <div className="container mx-auto px-4 py-4 space-y-4">
+      {/* Compact Sync Status */}
+      <div className="flex justify-between items-center bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <div className="flex items-center gap-2 text-xs text-gray-600">
+          <Clock className="h-3 w-3" />
           <span>
-            Última sincronización: {lastSync.toLocaleTimeString('es-CR', { 
+            Sincronizado: {lastSync.toLocaleTimeString('es-CR', { 
               hour: '2-digit', 
-              minute: '2-digit',
-              second: '2-digit'
+              minute: '2-digit'
             })}
           </span>
-          <Badge variant="secondary" className="ml-2">
-            {orders.length} órdenes
+          <Badge variant="secondary" className="ml-2 text-xs">
+            {orders.length}
           </Badge>
         </div>
         <Button
@@ -571,18 +560,19 @@ export function EnhancedProductionDashboard({
             refresh();
           }}
           variant="outline"
-          className="gap-2 bg-white"
+          size="sm"
+          className="gap-1 bg-white text-xs"
           disabled={loading}
         >
           {loading ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Sincronizando...
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Sync...
             </>
           ) : (
             <>
-              <RefreshCw className="h-4 w-4" />
-              Sincronizar Ahora
+              <RefreshCw className="h-3 w-3" />
+              Sync
             </>
           )}
         </Button>
@@ -632,26 +622,26 @@ export function EnhancedProductionDashboard({
             />
           ) : (
             <Tabs defaultValue="EA" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-6">
-                <TabsTrigger value="EA" className="flex items-center gap-2">
-                  <Truck className="h-4 w-4" />
-                  Envíos (EA)
-                  <Badge variant="secondary" className="ml-2">
+              <TabsList className="grid w-full grid-cols-2 mb-4">
+                <TabsTrigger value="EA" className="flex items-center gap-1 text-sm">
+                  <Truck className="h-3 w-3" />
+                  Envíos
+                  <Badge variant="secondary" className="ml-1 text-xs">
                     {groupedOrders.EA.length}
                   </Badge>
                 </TabsTrigger>
-                <TabsTrigger value="RA" className="flex items-center gap-2">
-                  <Package className="h-4 w-4" />
-                  Retiros (RA)
-                  <Badge variant="secondary" className="ml-2">
+                <TabsTrigger value="RA" className="flex items-center gap-1 text-sm">
+                  <Package className="h-3 w-3" />
+                  Retiros
+                  <Badge variant="secondary" className="ml-1 text-xs">
                     {groupedOrders.RA.length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
               
               {['EA', 'RA'].map((type) => (
-                <TabsContent key={type} value={type} className="mt-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <TabsContent key={type} value={type} className="mt-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
                     {groupedOrders[type as keyof typeof groupedOrders].map((order) => (
                       <EnhancedOrderCard
                         key={order.orderId}

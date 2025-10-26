@@ -60,15 +60,13 @@ export default function TrialBanner() {
               rel="noopener noreferrer"
               className="px-4 py-2 bg-white text-red-600 rounded-lg font-semibold hover:bg-gray-100 transition text-sm"
             >
-              Plan Basic (₡15,000/mes)
+              Plan Basic ($20/mes)
             </a>
             <a
-              href="https://tp.cr/l/TkRFMU1RPT18MQ=="
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/config?tab=billing"
               className="px-4 py-2 bg-yellow-400 text-red-900 rounded-lg font-semibold hover:bg-yellow-300 transition text-sm"
             >
-              Plan Pro (₡45,000/mes)
+              Pro (Próximamente)
             </a>
           </div>
         </div>
@@ -103,12 +101,10 @@ export default function TrialBanner() {
               Basic
             </a>
             <a
-              href="https://tp.cr/l/TkRFMU1RPT18MQ=="
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/config?tab=billing"
               className="px-3 py-1.5 bg-yellow-900 text-white rounded-lg font-semibold hover:bg-yellow-800 transition text-sm"
             >
-              Pro ⚡
+              Pro (Próximamente)
             </a>
           </div>
         </div>

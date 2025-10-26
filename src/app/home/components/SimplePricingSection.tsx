@@ -13,7 +13,8 @@ const pricingPlans = [
     period: "/month",
     description: "Perfect to get started with 15-day trial",
     features: [
-      "15-day free trial",
+      "1 usuario all access",
+      "15 días gratis",
       "Complete order management",
       "Visual kanban board",
       "Customer tracking",
@@ -27,13 +28,13 @@ const pricingPlans = [
   },
   {
     name: "Basic",
-    price: "$15",
+    price: "$20",
     period: "/month",
-    originalPrice: "₡15,000 CRC",
-    description: "Essential features for growing businesses",
+    description: "All features for growing businesses",
     features: [
-      "Everything in Free",
-      "Unlimited orders",
+      "24/7 support",
+      "Pedidos ilimitados",
+      "Usuarios ilimitados",
       "Advanced analytics",
       "Custom fields",
       "Priority support",
@@ -47,24 +48,24 @@ const pricingPlans = [
   },
   {
     name: "Pro",
-    price: "$45",
-    period: "/month",
-    originalPrice: "₡45,000 CRC",
-    description: "Complete solution for serious businesses",
+    price: "Coming Soon",
+    period: "",
+    originalPrice: "Pro pending!",
+    description: "Advanced features for enterprise businesses",
     features: [
       "Everything in Basic",
-      "Unlimited users",
       "Advanced reports",
       "API access",
       "Custom integrations",
       "Inventory management",
       "Priority 24/7 support",
-      "Dedicated account manager"
+      "Dedicated account manager",
+      "White-label options"
     ],
-    cta: "Start Pro Plan",
+    cta: "Notify Me",
     popular: false,
     priceId: "pro",
-    tilopayLink: "https://tp.cr/l/TkRFMU1BPT18MQ==" // Tilopay Repeat link for PRO
+    tilopayLink: null
   }
 ];
 
@@ -78,7 +79,13 @@ export default function SimplePricingSection() {
       return;
     }
 
-    // For paid plans (BASIC or PRO), show loading and redirect directly to Tilopay
+    // Handle Pro plan (Coming Soon)
+    if (plan.priceId === 'pro' && plan.price === 'Coming Soon') {
+      alert('🚀 Pro plan coming soon! We\'ll notify you when it\'s available. For now, try our Basic plan with all the features you need.');
+      return;
+    }
+
+    // For paid plans (BASIC), show loading and redirect directly to Tilopay
     // User can create account after payment or existing users can upgrade
     setLoading(plan.priceId);
     

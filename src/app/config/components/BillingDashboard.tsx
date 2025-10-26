@@ -86,8 +86,8 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       price: 0,
       interval: 'month',
       features: [
-        '1 usuario',
-        'Hasta 100 órdenes/mes',
+        '1 usuario all access',
+        '15 días gratis',
         'Funcionalidades básicas',
         'Soporte por email',
         '500 MB almacenamiento'
@@ -101,11 +101,12 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
     {
       id: 'basic',
       name: 'BASIC',
-      price: 15000,
+      price: 20,
       interval: 'month',
       features: [
-        'Hasta 5 usuarios',
-        'Hasta 1,000 órdenes/mes',
+        '24/7 support',
+        'Pedidos ilimitados',
+        'Usuarios ilimitados',
         'Todas las funcionalidades',
         'Generador de facturas',
         'Reportes avanzados',
@@ -113,8 +114,8 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         '5 GB almacenamiento'
       ],
       limits: {
-        users: 5,
-        orders: 1000,
+        users: 999999,
+        orders: 999999,
         storage: '5 GB'
       },
       popular: true
@@ -122,38 +123,17 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
     {
       id: 'pro',
       name: 'PRO',
-      price: 45000,
+      price: 0,
       interval: 'month',
       features: [
-        'Hasta 25 usuarios',
-        'Órdenes ilimitadas',
+        'Próximamente disponible',
+        'Funcionalidades avanzadas',
         'Acceso API',
         'Integración TiloPay',
         'Reportes personalizados',
         'Soporte 24/7',
         'Almacenamiento ilimitado',
         'Dominio personalizado'
-      ],
-      limits: {
-        users: 25,
-        orders: 999999,
-        storage: 'Ilimitado'
-      }
-    },
-    {
-      id: 'enterprise',
-      name: 'ENTERPRISE',
-      price: 0,
-      interval: 'month',
-      features: [
-        'Usuarios ilimitados',
-        'Órdenes ilimitadas',
-        'Personalización total',
-        'Integraciones personalizadas',
-        'Gerente de cuenta dedicado',
-        'SLA garantizado',
-        'Capacitación del equipo',
-        'Migración asistida'
       ],
       limits: {
         users: 999999,
@@ -233,8 +213,9 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
   };
 
   const handleChangePlan = async (planId: string) => {
-    if (planId === 'enterprise') {
-      window.location.href = 'mailto:support@betsycrm.com?subject=Enterprise Plan Inquiry';
+    // Handle Pro plan (Coming Soon)
+    if (planId === 'pro') {
+      alert('🚀 Pro plan coming soon! We\'ll notify you when it\'s available. For now, try our Basic plan with all the features you need.');
       return;
     }
 
@@ -274,8 +255,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
     const planHierarchy: Record<string, number> = {
       'free': 0,
       'basic': 1,
-      'pro': 2,
-      'enterprise': 3
+      'pro': 2
     };
 
     const currentLevel = planHierarchy[currentPlanId] || 0;
@@ -301,10 +281,9 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       }
     }
 
-    // For BASIC and PRO plans, redirect to Tilopay Repeat subscription pages
+    // For BASIC plan, redirect to Tilopay Repeat subscription page
     const tilopaySubscriptionLinks: Record<string, string> = {
-      basic: 'https://tp.cr/l/TkRFME9RPT18MQ==',  // Basic Plan - ₡15,000/month
-      pro: 'https://tp.cr/l/TkRFMU1BPT18MQ=='     // Pro Plan - ₡45,000/month
+      basic: 'https://tp.cr/l/TkRFME9RPT18MQ=='  // Basic Plan - ₡20,000/month
     };
     
     const subscriptionUrl = tilopaySubscriptionLinks[planId];
@@ -348,10 +327,10 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
     }
   };
 
-  const formatCurrency = (amount: number, currency: string = 'CRC') => {
-    return new Intl.NumberFormat('es-CR', {
+  const formatCurrency = (amount: number, currency: string = 'USD') => {
+    return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: currency === 'CRC' ? 'CRC' : 'USD',
+      currency: 'USD',
       minimumFractionDigits: 0
     }).format(amount);
   };
@@ -386,25 +365,25 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
     <div className="space-y-6">
       {/* Current Plan Card */}
       <Card>
-        <CardHeader className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
+        <CardHeader className="bg-gradient-to-r from-slate-50 to-gray-100 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-2xl">Plan Actual</CardTitle>
-              <CardDescription className="text-blue-100">
+              <CardTitle className="text-2xl text-gray-900">Plan Actual</CardTitle>
+              <CardDescription className="text-gray-600">
                 Gestiona tu suscripción y facturación
               </CardDescription>
             </div>
             <div className="flex items-center gap-3">
               <Button 
                 onClick={loadBillingData}
-                variant="secondary"
+                variant="outline"
                 size="sm"
-                className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-white/30"
+                className="bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
               >
                 🔄 Actualizar
               </Button>
-              <div className="p-3 bg-white bg-opacity-20 rounded-lg">
-                <CreditCard className="w-8 h-8" />
+              <div className="p-3 bg-blue-50 rounded-lg">
+                <CreditCard className="w-8 h-8 text-blue-600" />
               </div>
             </div>
           </div>
@@ -600,8 +579,8 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                 >
                   {plan.id === currentPlan.name.toLowerCase() 
                     ? 'Plan Actual'
-                    : plan.id === 'enterprise'
-                      ? 'Contactar Ventas'
+                    : plan.id === 'pro'
+                      ? 'Próximamente'
                       : plan.price === 0
                         ? 'Cambiar a Gratis'
                         : 'Actualizar Plan'

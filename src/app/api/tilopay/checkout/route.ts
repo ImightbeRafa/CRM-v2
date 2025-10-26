@@ -33,10 +33,10 @@ export async function POST(request: NextRequest) {
     if (!planId) return NextResponse.json({ error: 'planId required' }, { status: 400 });
 
     const planPricing: Record<string, { name: string; priceMinor: number; currency: string }> = {
-      free: { name: 'FREE', priceMinor: 0, currency: 'CRC' },
-      basic: { name: 'BASIC', priceMinor: 15000, currency: 'CRC' },
-      pro: { name: 'PRO', priceMinor: 45000, currency: 'CRC' },
-      enterprise: { name: 'ENTERPRISE', priceMinor: 0, currency: 'CRC' }
+      free: { name: 'FREE', priceMinor: 0, currency: 'USD' },
+      basic: { name: 'BASIC', priceMinor: 2000, currency: 'USD' }, // $20.00 USD
+      pro: { name: 'PRO', priceMinor: 0, currency: 'USD' }, // Coming soon
+      enterprise: { name: 'ENTERPRISE', priceMinor: 0, currency: 'USD' }
     };
 
     const selected = planPricing[String(planId).toLowerCase()];

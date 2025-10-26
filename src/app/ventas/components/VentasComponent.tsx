@@ -48,28 +48,24 @@ export default function VentasContent() {
             <section className={`space-y-4 lg:space-y-6 transition-all duration-300 ${
               showOrderForm ? 'xl:w-1/3' : 'xl:flex-1'
             }`} style={{ zIndex: 1, position: 'relative', overflow: 'visible' }}>
-              {/* Add Order Button - Enhanced Design */}
+              {/* Add Order Button - Apple-like Minimalistic Design */}
               {!showOrderForm && (
-                <div className="relative overflow-hidden bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 rounded-xl shadow-2xl p-8 text-center group hover:shadow-3xl transition-all duration-300">
-                  {/* Animated background effect */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-                  
-                  <div className="relative z-10">
-                    <div className="mb-3">
-                      <span className="text-4xl">🎯</span>
+                <div className="bg-white rounded-2xl p-8 text-center hover:shadow-lg transition-all duration-300">
+                  <div className="mb-6">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto">
+                      <span className="text-2xl">📝</span>
                     </div>
-                    <h3 className="text-white text-xl font-bold mb-2">¿Listo para una nueva venta?</h3>
-                    <p className="text-blue-100 text-sm mb-6">Crea una orden y sigue aumentando tus ventas</p>
-                    
-                    <Button
-                      onClick={() => setShowOrderForm(true)}
-                      size="lg"
-                      className="bg-white text-blue-600 hover:bg-blue-50 font-bold text-lg px-10 py-6 shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-200 rounded-lg"
-                    >
-                      <span className="text-2xl mr-3">➕</span>
-                      Agregar Nueva Orden
-                    </Button>
                   </div>
+                  <h3 className="text-gray-900 text-xl font-medium mb-3">Nueva Venta</h3>
+                  <p className="text-gray-500 text-base mb-8 max-w-sm mx-auto">Crea una orden y sigue aumentando tus ventas</p>
+                  
+                  <Button
+                    onClick={() => setShowOrderForm(true)}
+                    size="lg"
+                    className="bg-gray-900 hover:bg-gray-800 text-white font-medium px-8 py-4 rounded-xl transition-all duration-200 hover:scale-105"
+                  >
+                    Agregar Orden
+                  </Button>
                 </div>
               )}
               

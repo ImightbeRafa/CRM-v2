@@ -114,8 +114,13 @@ export async function getTransactionStatus(id: string) {
 
 export function verifyWebhookSharedSecret(req: Request): boolean {
   const expected = (process.env.TILOPAY_WEBHOOK_SECRET || '').trim();
-  if (!expected) return true; // allow if not set
   const provided = (req.headers.get('x-tilopay-secret') || '').trim();
+  
+  console.log(`[Webhook Verification] Expected: "${expected}"`);
+  console.log(`[Webhook Verification] Provided: "${provided}"`);
+  console.log(`[Webhook Verification] Match: ${provided === expected}`);
+  
+  if (!expected) return true; // allow if not set
   return !!provided && provided === expected;
 }
 

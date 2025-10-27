@@ -12,6 +12,10 @@ const PUBLIC_ROUTES = [
   '/favicon.ico',
   '/public',
   '/api/ping',
+  '/api/tilopay/webhook',
+  '/api/tilopay/webhook-repeat',
+  '/api/tilopay/callback',
+  '/api/stripe/webhook',
 ];
 
 /**
@@ -23,6 +27,7 @@ export default async function middleware(request: Request) {
 
   // Skip middleware for public routes
   if (isPublicRoute(pathname)) {
+    console.log(`[Middleware] ✅ Public route (skipping auth): ${pathname}`);
     return NextResponse.next();
   }
 
@@ -77,12 +82,18 @@ export default async function middleware(request: Request) {
  * Check if a route is public
  */
 function isPublicRoute(pathname: string): boolean {
-  return PUBLIC_ROUTES.some(route => {
+  console.log(`[Middleware] Checking if route is public: ${pathname}`);
+  console.log(`[Middleware] Public routes:`, PUBLIC_ROUTES);
+  
+  const isPublic = PUBLIC_ROUTES.some(route => {
     if (route.endsWith('*')) {
       return pathname.startsWith(route.slice(0, -1));
     }
     return pathname === route || pathname.startsWith(`${route}/`);
   });
+  
+  console.log(`[Middleware] Is public: ${isPublic}`);
+  return isPublic;
 }
 
 /**

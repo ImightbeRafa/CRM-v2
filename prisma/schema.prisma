@@ -51,6 +51,7 @@ model Tenant {
   billingTransactions BillingTransaction[]
   invoices       Invoice[]
   usageLogs      UsageLog[]
+  webhookLogs    WebhookLog[]
   
   @@index([slug])
   @@index([isActive])
@@ -579,4 +580,22 @@ model UsageLog {
   @@unique([tenantId, metric, period])
   @@index([tenantId])
   @@index([period])
+}
+
+// Webhook Logs for troubleshooting
+model WebhookLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  level     String   // info, warn, error
+  message   String
+  data      String?  // JSON data
+  source    String   // tilopay-webhook, stripe-webhook, etc.
+  createdAt DateTime @default(now())
+  
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([level])
+  @@index([source])
+  @@index([createdAt])
 }

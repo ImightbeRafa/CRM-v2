@@ -52,6 +52,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   const [isClient, setIsClient] = useState(false);
   const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(true);
   // Resolve expected date from either the canonical field (fechaEsperada)
   // or from any business info date field (prefer one whose name/label mentions "esperada" or "expected")
   const resolveExpectedDate = (): string => {
@@ -140,10 +141,14 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
   // Auto-save every 30 seconds
   useEffect(() => {
-    if (!isClient) return;
-    const interval = setInterval(autoSave, 30000);
+    if (!isClient || !isMounted) return;
+    const interval = setInterval(() => {
+      if (isMounted) {
+        autoSave();
+      }
+    }, 30000);
     return () => clearInterval(interval);
-  }, [autoSave, isClient]);
+  }, [isClient, isMounted]);
 
   // Load auto-saved data on component mount
   useEffect(() => {
@@ -172,6 +177,18 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       setAutoSaveStatus('unsaved');
     }
   }, [orderInfo]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      setIsMounted(false);
+      // Clear any pending timeouts
+      if ((window as any).__betsy_success_timeout) {
+        clearTimeout((window as any).__betsy_success_timeout);
+        delete (window as any).__betsy_success_timeout;
+      }
+    };
+  }, []);
 
   const validateForm = (): string | null => {
     // Basic customer info validation (always required)
@@ -471,9 +488,14 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       localStorage.removeItem('betsy_autosave');
       
       // Auto-hide success message after 5 seconds
-      setTimeout(() => {
-        setSubmitStatus({ type: '', message: '' });
+      const timeoutId = setTimeout(() => {
+        if (isMounted) {
+          setSubmitStatus({ type: '', message: '' });
+        }
       }, 5000);
+      
+      // Store timeout ID for cleanup
+      (window as any).__betsy_success_timeout = timeoutId;
       
       resetForm();
 

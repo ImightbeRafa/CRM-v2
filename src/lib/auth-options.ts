@@ -140,11 +140,17 @@ export const authOptions: NextAuthOptions = {
                 slug: profile.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-'),
                 plan: 'FREE',
                 isActive: true,
+                trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
               }
             });
 
-            // Create default order statuses for the new tenant
-            await createDefaultOrderStatuses(newTenant.id, newTenant.name);
+            // Create default order statuses for the new tenant (non-blocking)
+            try {
+              await createDefaultOrderStatuses(newTenant.id, newTenant.name);
+            } catch (statusError) {
+              console.warn('Failed to create default order statuses for new tenant:', statusError);
+              // Don't fail the sign-up process if status creation fails
+            }
 
             // Create user with membership
             dbUser = await prisma.user.create({
@@ -162,7 +168,8 @@ export const authOptions: NextAuthOptions = {
                   create: {
                     tenantId: newTenant.id,
                     role: 'OWNER',
-                    isActive: true
+                    isActive: true,
+                    joinedAt: new Date().toISOString()
                   }
                 }
               },
@@ -179,9 +186,9 @@ export const authOptions: NextAuthOptions = {
 
           // Attach membership info to user object for JWT
           if (dbUser.memberships.length > 0) {
-            user.membershipRole = dbUser.memberships[0].role;
-            user.tenantId = dbUser.memberships[0].tenantId;
-            user.role = dbUser.memberships[0].role === 'OWNER' ? 'MASTER' : 'REGULAR';
+            (user as any).membershipRole = dbUser.memberships[0].role;
+            (user as any).tenantId = dbUser.memberships[0].tenantId;
+            (user as any).role = dbUser.memberships[0].role === 'OWNER' ? 'MASTER' : 'REGULAR';
           }
 
           return true;
@@ -198,8 +205,8 @@ export const authOptions: NextAuthOptions = {
       // Attach role, membershipRole, and tenantId from token
       const role = (token.role as UserRole | undefined) || "REGULAR"
       session.user.role = role as any
-      session.user.membershipRole = token.membershipRole as any
-      session.user.tenantId = token.tenantId as any
+      (session.user as any).membershipRole = token.membershipRole as any
+      (session.user as any).tenantId = token.tenantId as any
       return session
     },
     async jwt({ token, user, account }) {

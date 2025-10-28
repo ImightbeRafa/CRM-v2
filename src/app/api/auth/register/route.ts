@@ -37,6 +37,7 @@ export async function POST(request: Request) {
         slug: email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-'),
         plan: 'FREE',
         isActive: true,
+        trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
       }
     });
 
@@ -53,13 +54,19 @@ export async function POST(request: Request) {
             tenantId: tenant.id,
             role: 'OWNER',
             isActive: true,
+            joinedAt: new Date().toISOString()
           }
         }
       }
     });
 
-    // Create default order statuses for the new tenant
-    await createDefaultOrderStatuses(tenant.id, tenant.name);
+    // Create default order statuses for the new tenant (non-blocking)
+    try {
+      await createDefaultOrderStatuses(tenant.id, tenant.name);
+    } catch (statusError) {
+      console.warn('Failed to create default order statuses for new tenant:', statusError);
+      // Don't fail the registration process if status creation fails
+    }
 
     return NextResponse.json({
       success: true,

@@ -40,8 +40,17 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    if (!user || !user.memberships || user.memberships.length === 0) {
-      return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
+    if (!user) {
+      console.error('❌ User not found for token.sub:', token.sub);
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    if (!user.memberships || user.memberships.length === 0) {
+      console.error('❌ User has no memberships:', { userId: user.id, email: user.email });
+      return NextResponse.json({ 
+        error: 'No active tenant found',
+        details: 'User account is not associated with any tenant. Please contact support.'
+      }, { status: 404 });
     }
 
     const tenant = user.memberships[0].tenant;

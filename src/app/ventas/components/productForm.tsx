@@ -74,9 +74,11 @@ const ProductForm: React.FC<ProductFormProps> = ({
   const [fields, setFields] = useState<any[]>([])
   const [sellers, setSellers] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
+  const [isMounted, setIsMounted] = useState(true)
 
   const loadData = async () => {
     try {
+      if (!isMounted) return;
       setLoading(true)
       const [fRes, sRes, setsRes] = await Promise.all([
         fetch('/api/config/fields'),
@@ -84,7 +86,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
         fetch('/api/config/option-sets')
       ])
       const [fJson, sJson, setsJson] = await Promise.all([fRes.json(), sRes.json(), setsRes.json()])
-      if (fJson.status === 'success') {
+      if (fJson.status === 'success' && isMounted) {
         let nextFields = fJson.data
         // Defensive fix: some select fields might be missing linked optionSet
         if (setsJson?.status === 'success') {
@@ -102,11 +104,13 @@ const ProductForm: React.FC<ProductFormProps> = ({
         }
         setFields(nextFields)
       }
-      if (sJson.status === 'success') setSellers(sJson.data)
+      if (sJson.status === 'success' && isMounted) setSellers(sJson.data)
     } catch (error) {
       console.error('Error loading form data:', error)
     } finally {
-      setLoading(false)
+      if (isMounted) {
+        setLoading(false)
+      }
     }
   }
 
@@ -117,14 +121,17 @@ const ProductForm: React.FC<ProductFormProps> = ({
   // Refresh data when component becomes visible (for new options)
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!document.hidden) {
+      if (!document.hidden && isMounted) {
         loadData()
       }
     }
     
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [])
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      setIsMounted(false)
+    }
+  }, [isMounted])
 
   // No per-product shipping calculation; shipping is handled at order level
 

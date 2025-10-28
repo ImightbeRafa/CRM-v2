@@ -26,8 +26,17 @@ export async function GET(request: NextRequest) {
       include: { memberships: true }
     });
 
-    if (!user || !user.memberships.length) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
+    if (!user) {
+      console.error('❌ User not found for token.sub:', token.sub);
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    if (!user.memberships.length) {
+      console.error('❌ User has no memberships:', { userId: user.id, email: user.email });
+      return NextResponse.json({ 
+        error: 'No tenant membership found',
+        details: 'User account is not associated with any tenant. Please contact support.'
+      }, { status: 400 });
     }
 
     const tenantId = user.memberships[0].tenantId;

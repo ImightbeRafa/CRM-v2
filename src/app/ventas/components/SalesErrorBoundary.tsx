@@ -32,6 +32,20 @@ class SalesErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('Sales Error Boundary caught an error:', error, errorInfo);
+    
+    // Enhanced logging for DOM manipulation errors
+    if (error.name === 'NotFoundError' && error.message.includes('removeChild')) {
+      console.error('🚨 DOM Manipulation Error Detected:', {
+        error: error.message,
+        stack: error.stack,
+        componentStack: errorInfo.componentStack,
+        errorBoundary: 'SalesErrorBoundary',
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        url: window.location.href
+      });
+    }
+    
     this.setState({ error, errorInfo });
   }
 

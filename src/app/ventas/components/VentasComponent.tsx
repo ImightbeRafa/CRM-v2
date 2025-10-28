@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { SalesDashboard } from '@/app/ventas/components/SalesDashboard';
 import DailyStats from '@/app/ventas/components/DailyStats';
 import SalesErrorBoundary from '@/app/ventas/components/SalesErrorBoundary';
+import { DOMErrorBoundary } from '@/app/components/DOMErrorBoundary';
 import { Button } from "@/app/components/ui/button";
 
 // Dynamically import the EnhancedSalesForm with no SSR
@@ -30,8 +31,9 @@ export default function VentasContent() {
       </nav>
 
       <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-6" style={{ overflow: 'visible' }}>
-        <SalesErrorBoundary>
-          <div className="flex flex-col xl:flex-row gap-4 lg:gap-8 transition-all duration-300">
+        <DOMErrorBoundary>
+          <SalesErrorBoundary>
+            <div className="flex flex-col xl:flex-row gap-4 lg:gap-8 transition-all duration-300">
             {/* Form Section - Only shows when open */}
             {showOrderForm && (
               <section className="xl:w-2/3 transition-all duration-300">
@@ -77,8 +79,9 @@ export default function VentasContent() {
                 <SalesDashboard />
               </div>
             </section>
-          </div>
-        </SalesErrorBoundary>
+            </div>
+          </SalesErrorBoundary>
+        </DOMErrorBoundary>
       </div>
     </main>
   );

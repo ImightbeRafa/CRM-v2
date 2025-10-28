@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useToast } from "@/app/hooks/use-toast"
 import { Sale } from '../produccion/types/sales'
+import { useDOMProtection } from '@/lib/dom-protection'
 
 interface SalesStreamOptions {
   onData?: (data: Sale[]) => void;
@@ -28,8 +29,8 @@ export function useSalesStream({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastFetch, setLastFetch] = useState<number>(0);
-  const [isMounted, setIsMounted] = useState(true);
   const { toast } = useToast();
+  const { componentId, isMounted, safeSetState } = useDOMProtection('useSalesStream');
 
   // Don't clear cache on mount - use smart caching instead
   // Cache is valid for 30 seconds
@@ -155,7 +156,7 @@ export function useSalesStream({
       );
 
       // Only update state if component is still mounted
-      if (isMounted) {
+      if (isMounted()) {
         // Update cache with new data
         const cacheData = {
           data: uniqueSales,
@@ -173,7 +174,7 @@ export function useSalesStream({
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch sales data';
       console.error('Error fetching sales:', errorMessage);
       
-      if (isMounted) {
+      if (isMounted()) {
         setError(errorMessage);
         onError?.(errorMessage);
 
@@ -184,7 +185,7 @@ export function useSalesStream({
         });
       }
     } finally {
-      if (isMounted) {
+      if (isMounted()) {
         setIsLoading(false);
       }
     }
@@ -195,24 +196,24 @@ export function useSalesStream({
     localStorage.removeItem('salesCache');
     setLastFetch(0);
     fetchSales(true); // Force fetch on mount
-    
-    return () => {
-      setIsMounted(false);
-    };
   }, []); // Only on mount
 
   // Refetch when filters change
   useEffect(() => {
-    if (lastFetch > 0) { // Skip initial mount
+    if (lastFetch > 0 && isMounted()) { // Skip initial mount and check if mounted
       fetchSales(true);
     }
   }, [filters.status, filters.orderType, filters.search, filters.dateFrom, filters.dateTo]);
 
   // Optional polling (disabled by default for better performance)
   useEffect(() => {
-    if (!enablePolling) return;
+    if (!enablePolling || !isMounted()) return;
 
-    const intervalId = setInterval(() => fetchSales(false), pollingInterval);
+    const intervalId = setInterval(() => {
+      if (isMounted()) {
+        fetchSales(false);
+      }
+    }, pollingInterval);
     return () => clearInterval(intervalId);
   }, [enablePolling, pollingInterval]);
 

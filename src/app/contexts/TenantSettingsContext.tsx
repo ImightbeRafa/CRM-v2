@@ -30,6 +30,7 @@ const TenantSettingsContext = createContext<TenantSettingsContextType>({
 
 export function TenantSettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<TenantSettings>(defaultSettings);
+  const [isMounted, setIsMounted] = useState(true);
 
   const loadSettings = async () => {
     try {
@@ -37,6 +38,11 @@ export function TenantSettingsProvider({ children }: { children: ReactNode }) {
       const res = await fetch('/api/config/settings', {
         credentials: 'include'
       });
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
       const json = await res.json();
       console.log('📥 Settings loaded:', json);
       
@@ -48,16 +54,22 @@ export function TenantSettingsProvider({ children }: { children: ReactNode }) {
           locale: json.data.locale || 'es-CR'
         };
         console.log('✅ Applying settings:', newSettings);
-        setSettings(newSettings);
+        if (isMounted) {
+          setSettings(newSettings);
+        }
       }
     } catch (error) {
       console.error('❌ Error loading tenant settings:', error);
-      // Keep default settings on error
+      // Keep default settings on error - don't throw to prevent app crash
     }
   };
 
   useEffect(() => {
     loadSettings();
+    
+    return () => {
+      setIsMounted(false);
+    };
   }, []);
 
   const formatCurrency = (amount: number): string => {

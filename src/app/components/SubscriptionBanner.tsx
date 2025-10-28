@@ -23,21 +23,37 @@ export default function SubscriptionBanner() {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    // Load billing info
+    // Load billing info with better error handling
     fetch('/api/billing/current')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) {
+          console.warn('Billing API not available:', r.status);
+          return null;
+        }
+        return r.json();
+      })
       .then(j => {
-        if (j.status === 'success' && j.data) setBilling(j.data);
+        if (j && j.status === 'success' && j.data) setBilling(j.data);
       })
-      .catch(() => {});
+      .catch(err => {
+        console.warn('Failed to load billing info:', err);
+      });
 
-    // Load trial status
+    // Load trial status with better error handling
     fetch('/api/billing/trial-status')
-      .then(r => r.json())
-      .then(data => {
-        if (data.isInTrial || data.trialExpired) setTrial(data);
+      .then(r => {
+        if (!r.ok) {
+          console.warn('Trial status API not available:', r.status);
+          return null;
+        }
+        return r.json();
       })
-      .catch(() => {});
+      .then(data => {
+        if (data && (data.isInTrial || data.trialExpired)) setTrial(data);
+      })
+      .catch(err => {
+        console.warn('Failed to load trial status:', err);
+      });
   }, []);
 
   if (dismissed) return null;

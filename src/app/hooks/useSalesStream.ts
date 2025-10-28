@@ -28,6 +28,7 @@ export function useSalesStream({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastFetch, setLastFetch] = useState<number>(0);
+  const [isMounted, setIsMounted] = useState(true);
   const { toast } = useToast();
 
   // Don't clear cache on mount - use smart caching instead
@@ -153,31 +154,39 @@ export function useSalesStream({
         new Map(parsedSales.map((sale: Sale) => [sale.orderId, sale])).values()
       );
 
-      // Update cache with new data
-      const cacheData = {
-        data: uniqueSales,
-        timestamp: now
-      };
-      localStorage.setItem('salesCache', JSON.stringify(cacheData));
-      setLastFetch(now);
+      // Only update state if component is still mounted
+      if (isMounted) {
+        // Update cache with new data
+        const cacheData = {
+          data: uniqueSales,
+          timestamp: now
+        };
+        localStorage.setItem('salesCache', JSON.stringify(cacheData));
+        setLastFetch(now);
 
-      setSales(uniqueSales);
-      onData?.(uniqueSales);
-      setError(null);
+        setSales(uniqueSales);
+        onData?.(uniqueSales);
+        setError(null);
+      }
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch sales data';
       console.error('Error fetching sales:', errorMessage);
-      setError(errorMessage);
-      onError?.(errorMessage);
+      
+      if (isMounted) {
+        setError(errorMessage);
+        onError?.(errorMessage);
 
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: errorMessage,
-      });
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: errorMessage,
+        });
+      }
     } finally {
-      setIsLoading(false);
+      if (isMounted) {
+        setIsLoading(false);
+      }
     }
   }, [onData, onError, toast, parseOrder, filters, lastFetch]);
 
@@ -186,6 +195,10 @@ export function useSalesStream({
     localStorage.removeItem('salesCache');
     setLastFetch(0);
     fetchSales(true); // Force fetch on mount
+    
+    return () => {
+      setIsMounted(false);
+    };
   }, []); // Only on mount
 
   // Refetch when filters change

@@ -71,8 +71,6 @@ export async function POST(request: NextRequest) {
     } = data;
 
     if (message === 'Success' && (status === 'Approved' || status === 'approved')) {
-      console.log('✅ [Tilopay Callback] Payment APPROVED');
-      
       // Parse orderNumber to get tenant and plan
       // Format: {tenantId}-{planId}-{timestamp}
       const parts = orderNumber?.split('-');
@@ -80,8 +78,6 @@ export async function POST(request: NextRequest) {
       if (parts && parts.length >= 2) {
         const tenantId = parts[0];
         const planName = parts[1];
-        
-        console.log(`🏢 [Tilopay Callback] Tenant: ${tenantId}, Plan: ${planName}`);
         
         try {
           // Get tenant info for audit log
@@ -101,13 +97,13 @@ export async function POST(request: NextRequest) {
           // Validate plan exists
           const validPlans = ['FREE', 'BASIC', 'PRO'];
           if (!validPlans.includes(planName.toUpperCase())) {
-            logCallbackEvent('error', `Invalid plan ID in callback: ${planName}`, {
-              callbackId,
-              tenantId,
-              planName,
-              validPlans
-            });
-            const redirectUrl = `${process.env.NEXTAUTH_URL}/config?tab=facturacion&error=invalid_plan`;
+          logCallbackEvent('error', `Invalid plan ID in callback: ${planName}`, {
+            callbackId,
+            tenantId,
+            planName,
+            validPlans
+          });
+            const redirectUrl = `${process.env.NEXTAUTH_URL}/config?tab=billing&payment=error`;
             return NextResponse.redirect(redirectUrl);
           }
 
@@ -126,15 +122,6 @@ export async function POST(request: NextRequest) {
             }
           });
 
-          console.log(`✅ [Tilopay Callback] Plan upgraded: ${tenantId} -> ${planName.toUpperCase()}`);
-          console.log(`📅 [Tilopay Callback] Period: ${now.toISOString()} to ${periodEnd.toISOString()}`);
-          
-          // Log transaction
-          console.log('💳 [Tilopay Callback] Transaction ID:', transactionId);
-          console.log('💰 [Tilopay Callback] Amount:', amount, currency);
-          if (cardToken) {
-            console.log('🎫 [Tilopay Callback] Card token saved for recurring:', cardToken);
-          }
 
           // Create billing transaction record
           try {
@@ -150,7 +137,6 @@ export async function POST(request: NextRequest) {
                 periodEnd: periodEnd
               }
             });
-            console.log(`💳 [Tilopay Callback] Billing transaction created`);
           } catch (txError) {
             console.error('⚠️ [Tilopay Callback] Failed to create billing transaction:', txError);
           }
@@ -181,7 +167,6 @@ export async function POST(request: NextRequest) {
                 }
               }
             });
-            console.log(`📝 [Tilopay Callback] Audit log created`);
           } catch (auditError) {
             console.error('⚠️ [Tilopay Callback] Failed to create audit log:', auditError);
           }
@@ -192,15 +177,12 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Redirect to facturacion section as requested
-      const redirectUrl = `${process.env.NEXTAUTH_URL}/config?tab=facturacion&success=true`;
-      console.log('🔀 Redirecting to:', redirectUrl);
+      // Redirect to billing section with success message
+      const redirectUrl = `${process.env.NEXTAUTH_URL}/config?tab=billing&payment=success`;
       return NextResponse.redirect(redirectUrl);
       
     } else {
       console.error('❌ [Tilopay Callback] Payment failed or declined');
-      console.log('📋 [Tilopay Callback] Status:', status);
-      console.log('📋 [Tilopay Callback] Message:', message);
 
       // Try to extract tenant info for audit log
       const parts = orderNumber?.split('-');
@@ -233,18 +215,22 @@ export async function POST(request: NextRequest) {
               }
             }
           });
-          console.log(`📝 [Tilopay Callback] Failure audit log created`);
         } catch (auditError) {
           console.error('⚠️ [Tilopay Callback] Failed to create failure audit log:', auditError);
         }
       }
       
-      const redirectUrl = `${process.env.NEXTAUTH_URL}/config?tab=facturacion&error=payment_failed`;
+      // Check if payment was cancelled vs failed
+      const isCancelled = message?.toLowerCase().includes('cancel') || 
+                          status?.toLowerCase().includes('cancel') ||
+                          message?.toLowerCase().includes('cancelado');
+      
+      const paymentStatus = isCancelled ? 'cancelled' : 'error';
+      const redirectUrl = `${process.env.NEXTAUTH_URL}/config?tab=billing&payment=${paymentStatus}`;
       return NextResponse.redirect(redirectUrl);
     }
 
     const processingTime = Date.now() - startTime;
-    console.log(`✅ [Tilopay Callback] Processing completed in ${processingTime}ms`);
 
   } catch (error: any) {
     const processingTime = Date.now() - startTime;
@@ -252,7 +238,7 @@ export async function POST(request: NextRequest) {
     console.error('Stack trace:', error.stack);
     
     // Still try to redirect to show user something
-    const redirectUrl = `${process.env.NEXTAUTH_URL}/config?tab=facturacion&error=callback_error`;
+    const redirectUrl = `${process.env.NEXTAUTH_URL}/config?tab=billing&payment=error`;
     return NextResponse.redirect(redirectUrl);
   }
 }
@@ -261,12 +247,8 @@ export async function POST(request: NextRequest) {
  * Handle GET requests (in case Tilopay uses GET redirect)
  */
 export async function GET(request: NextRequest) {
-  console.log('🔔 [Tilopay Callback] Received callback request (GET)');
-  
   const searchParams = request.nextUrl.searchParams;
   const data = Object.fromEntries(searchParams.entries());
-  
-  console.log('📦 [Tilopay Callback] Params:', JSON.stringify(data, null, 2));
   
   // Process same as POST
   return POST(request);

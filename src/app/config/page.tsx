@@ -15,6 +15,7 @@ import { TenantSettingsPanel } from '../components/TenantSettingsPanel'
 import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2 } from 'lucide-react'
 
 export default function ConfigPage() {
+  const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState('fields')
   const [newFieldType, setNewFieldType] = useState('text') // Track type for validation
   const [isMasterUser, setIsMasterUser] = useState(true) // Simplified for demo
@@ -71,20 +72,24 @@ export default function ConfigPage() {
       if (sellersRes.status === 'success') setSellers(sellersRes.data)
       if (ordersRes.status === 'success') setOrders(ordersRes.data)
       
-      console.log('Loaded data:', {
-        fields: fieldsRes.data,
-        users: usersRes.data,
-        optionSets: optionSetsRes.data,
-        shipping: shippingRes.data,
-        sellers: sellersRes.data,
-        orders: ordersRes.data
-      })
     } catch (error) {
       console.error('Error loading data:', error)
     } finally {
       setLoading(false)
     }
   }
+
+  // Read tab from URL query parameter on mount and when URL changes
+  useEffect(() => {
+    const tabParam = searchParams?.get('tab')
+    if (tabParam) {
+      // Validate tab value to prevent invalid tabs
+      const validTabs = ['fields', 'business', 'users', 'option-sets', 'shipping', 'sellers', 'import', 'billing', 'bulk-delete', 'audit', 'legacy-fields']
+      if (validTabs.includes(tabParam)) {
+        setActiveTab(tabParam)
+      }
+    }
+  }, [searchParams])
 
   useEffect(() => {
     loadData()

@@ -134,27 +134,35 @@ export async function withRequestContext<T>(
  * Only for system operations like user creation, tenant creation, etc.
  */
 export async function withoutTenantIsolation<T>(fn: () => Promise<T>): Promise<T> {
-  const currentContext = getTenantContext();
+  const currentCtx = getTenantContext();
   
   // Log when running without tenant isolation
-  if (currentContext) {
+  if (currentCtx) {
     console.warn('⚠️ Running without tenant isolation in a tenant context', {
-      tenantId: currentContext.tenantId,
-      userId: currentContext.userId,
+      tenantId: currentCtx.tenantId,
+      userId: currentCtx.userId,
     });
   }
 
-  // Create a system context with minimal privileges
-  const systemContext: TenantContext = {
-    tenantId: 'system',
-    userId: 'system',
-    userRole: 'SYSTEM',
-    userName: 'System',
-    requestId: crypto.randomUUID(),
-  };
+  // Save the current context
+  const previousContext = currentContext;
   
-  // Run with system context to ensure proper isolation
-  return tenantContext.run(systemContext, fn);
+  try {
+    // Set a system context
+    currentContext = {
+      tenantId: 'system',
+      userId: 'system',
+      userRole: 'SYSTEM',
+      userName: 'System',
+      requestId: crypto.randomUUID(),
+    };
+    
+    // Run the function with system context
+    return await fn();
+  } finally {
+    // Restore previous context
+    currentContext = previousContext;
+  }
 }
 
 /**

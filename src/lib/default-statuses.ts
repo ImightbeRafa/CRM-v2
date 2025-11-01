@@ -22,19 +22,65 @@ export const DEFAULT_ORDER_STATUSES = [
  */
 export async function createDefaultOrderStatuses(tenantId: string, tenantName?: string) {
   try {
-    await prisma.orderStatus.createMany({
-      data: DEFAULT_ORDER_STATUSES.map(status => ({
-        ...status,
-        tenantId,
-        isActive: true,
-      })),
-      skipDuplicates: true, // Prevent errors if statuses already exist
+    // Import tenant context here to avoid circular dependencies
+    const { withTenantContext } = await import('./tenantContext');
+    
+    // First, check if statuses already exist for this tenant
+    const existingStatuses = await prisma.orderStatus.count({
+      where: { tenantId }
     });
 
-    console.log(`✅ Created ${DEFAULT_ORDER_STATUSES.length} default order statuses for tenant: ${tenantName || tenantId}`);
+    // Only create if no statuses exist yet
+    if (existingStatuses === 0) {
+      // Create statuses without tenant isolation since we're setting up the tenant
+      // Use raw Prisma client to bypass tenant context middleware
+      const { withoutTenantIsolation } = await import('./tenantContext');
+      
+      try {
+        await withoutTenantIsolation(async () => {
+          // Import db directly to get the raw Prisma client without middleware
+          const { PrismaClient } = await import('@prisma/client');
+          const rawPrisma = new PrismaClient();
+          
+          await rawPrisma.orderStatus.createMany({
+            data: DEFAULT_ORDER_STATUSES.map(status => ({
+              ...status,
+              tenantId,
+              isActive: true,
+            })),
+            skipDuplicates: true
+          });
+          
+          await rawPrisma.$disconnect();
+        });
+        
+        console.log(`✅ Created ${DEFAULT_ORDER_STATUSES.length} default order statuses for tenant: ${tenantName || tenantId}`);
+        return true;
+      } catch (error) {
+        console.error(`⚠️ Error creating statuses with raw client:`, error);
+        // Fallback: try with regular prisma in case withoutTenantIsolation doesn't work
+        try {
+          await prisma.orderStatus.createMany({
+            data: DEFAULT_ORDER_STATUSES.map(status => ({
+              ...status,
+              tenantId,
+              isActive: true,
+            })),
+            skipDuplicates: true
+          });
+          console.log(`✅ Created ${DEFAULT_ORDER_STATUSES.length} default order statuses (fallback) for tenant: ${tenantName || tenantId}`);
+          return true;
+        } catch (fallbackError) {
+          console.error(`❌ Fallback also failed:`, fallbackError);
+          throw fallbackError;
+        }
+      }
+    }
+    
+    console.log(`ℹ️ Using existing order statuses for tenant: ${tenantName || tenantId}`);
     return true;
   } catch (error) {
-    console.error(`⚠️ Failed to create default order statuses for tenant ${tenantId}:`, error);
+    console.error(`⚠️ Failed to create default order statuses for tenant ${tenantName || tenantId}:`, error);
     // Don't throw - we don't want to fail user registration if status creation fails
     return false;
   }

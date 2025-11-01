@@ -20,6 +20,7 @@
     "upgrade:plan": "node scripts/upgrade-plan-direct.js",
     "check:trials": "node scripts/check-trial-expirations.js",
     "check:tenant": "node scripts/check-tenant-plan.js",
+    "set:trial-expired": "node scripts/set-trial-expired.js",
     "check:billing": "node scripts/check-billing-transactions.js",
     "create:test-user": "node scripts/create-test-user.js",
     "reset:user": "node scripts/reset-user-for-testing.js",

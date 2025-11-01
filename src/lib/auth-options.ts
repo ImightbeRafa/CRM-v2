@@ -1,11 +1,77 @@
-import { NextAuthOptions } from "next-auth"
+import { NextAuthOptions, Session, User } from "next-auth"
+import { JWT } from "next-auth/jwt"
 import CredentialsProvider from "next-auth/providers/credentials"
 import GoogleProvider from "next-auth/providers/google"
 import { prisma } from './db'
 import { verifyPassword, isBcryptHash } from './password'
 import { createDefaultOrderStatuses } from './default-statuses'
 
-type UserRole = "MASTER" | "REGULAR"
+type MemberRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+
+interface Tenant {
+  id: string;
+  name: string;
+  slug: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface Membership {
+  id: string;
+  role: MemberRole;
+  tenantId: string;
+  isActive: boolean;
+  joinedAt: Date;
+  tenant?: Tenant;
+}
+
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
+      role?: "MASTER" | "REGULAR";
+      membershipRole?: "OWNER" | "ADMIN" | "MANAGER" | "SALES" | "PRODUCTION" | "VIEWER";
+      tenantId?: string | null;
+      email_verified?: boolean;
+      active?: boolean;
+      memberships?: Membership[];
+      allTenantIds?: string[];
+      currentTenant?: {
+        id: string;
+        role: MemberRole;
+        name?: string;
+        slug?: string;
+        isActive?: boolean;
+      } | null;
+    } & User;
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    id: string;
+    role?: "MASTER" | "REGULAR";
+    tenantId?: string | null;
+    email_verified?: boolean;
+    active?: boolean;
+    memberships?: Membership[];
+    allTenantIds?: string[];
+    currentTenant?: {
+      id: string;
+      role: MemberRole;
+      name?: string;
+      slug?: string;
+      isActive?: boolean;
+      plan?: string;
+      subscriptionStatus?: string | null;
+      trialEndsAt?: Date | null;
+    } | null;
+  }
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -32,6 +98,7 @@ export const authOptions: NextAuthOptions = {
               email: true,
               password: true, 
               active: true,
+              emailVerified: true,
               defaultTenantId: true,
               memberships: {
                 where: { isActive: true },
@@ -40,8 +107,22 @@ export const authOptions: NextAuthOptions = {
             }
           })
           
-          if (!user || !user.active) {
-            return null
+          // Check if user exists and is active
+          if (!user) {
+            throw new Error('Invalid credentials')
+          }
+          
+          // Check if email is verified (only for non-OAuth users with password)
+          // Temporarily disabled to allow immediate login after registration
+          // if (user.password && !user.emailVerified) {
+          //   throw new Error('Please verify your email before signing in')
+          // }
+          
+          // Check if account is active
+          if (!user.active) {
+            // Allow login but they'll be restricted in the session callback
+            // until they verify their email
+            console.log('⚠️ Unverified user logging in:', user.email);
           }
           
           // Verify password (supports both bcrypt and plain text for migration)
@@ -91,7 +172,14 @@ export const authOptions: NextAuthOptions = {
             name: user.username || user.email, // Username for display, fallback to email
             role: role,
             membershipRole: membershipRole, // Actual role from Membership table
-            tenantId: user.defaultTenantId || user.memberships[0]?.tenantId
+            tenantId: user.defaultTenantId || user.memberships[0]?.tenantId,
+            email_verified: !!user.emailVerified,
+            active: user.active,
+            memberships: user.memberships.map(m => ({
+              id: m.tenantId,
+              role: m.role,
+              tenantId: m.tenantId
+            }))
           }
         } catch (error) {
           console.error('Auth error:', error)
@@ -117,62 +205,20 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async signIn({ user, account, profile }) {
-      // Handle Google OAuth sign-in
-      if (account?.provider === "google" && profile?.email) {
-        try {
-          // Check if user exists
-          let dbUser = await prisma.user.findUnique({
-            where: { email: profile.email },
-            include: {
-              memberships: {
-                where: { isActive: true },
-                include: { tenant: true }
-              }
-            }
-          });
-
-          // If user doesn't exist, create them with a new tenant
-          if (!dbUser) {
-            // Create tenant first
-            const newTenant = await prisma.tenant.create({
-              data: {
-                name: `${profile.name || profile.email}'s Workspace`,
-                slug: profile.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-'),
-                plan: 'FREE',
-                isActive: true,
-                trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
-              }
-            });
-
-            // Create default order statuses for the new tenant (non-blocking)
-            try {
-              await createDefaultOrderStatuses(newTenant.id, newTenant.name);
-            } catch (statusError) {
-              console.warn('Failed to create default order statuses for new tenant:', statusError);
-              // Don't fail the sign-up process if status creation fails
+      // This function is called when a user signs in
+      try {
+        // Handle OAuth sign-in (Google, etc.)
+        if (account?.provider !== 'credentials') {
+          try {
+            const email = user.email || '';
+            if (!email) {
+              console.error('No email provided for OAuth user');
+              return false;
             }
 
-            // Create user with membership
-            dbUser = await prisma.user.create({
-              data: {
-                email: profile.email,
-                username: profile.name || profile.email.split('@')[0],
-                name: profile.name,
-                image: (profile as any).picture,
-                provider: 'google',
-                providerId: account.providerAccountId,
-                emailVerified: new Date(),
-                active: true,
-                defaultTenantId: newTenant.id,
-                memberships: {
-                  create: {
-                    tenantId: newTenant.id,
-                    role: 'OWNER',
-                    isActive: true,
-                    joinedAt: new Date().toISOString()
-                  }
-                }
-              },
+            // Check if user exists
+            const dbUser = await prisma.user.findUnique({
+              where: { email },
               include: {
                 memberships: {
                   where: { isActive: true },
@@ -181,50 +227,315 @@ export const authOptions: NextAuthOptions = {
               }
             });
 
-            console.log(`✅ New Google user created: ${dbUser.email} with tenant: ${newTenant.name}`);
-          }
+            // If user exists, update their information and return
+            if (dbUser) {
+              // Update user with latest info from OAuth provider
+              const updatedUser = await prisma.user.update({
+                where: { id: dbUser.id },
+                data: {
+                  name: user.name || dbUser.name,
+                  image: user.image || dbUser.image,
+                  emailVerified: dbUser.emailVerified || new Date()
+                },
+                include: {
+                  memberships: {
+                    where: { isActive: true },
+                    include: { tenant: true }
+                  }
+                }
+              });
 
-          // Attach membership info to user object for JWT
-          if (dbUser.memberships.length > 0) {
-            (user as any).membershipRole = dbUser.memberships[0].role;
-            (user as any).tenantId = dbUser.memberships[0].tenantId;
-            (user as any).role = dbUser.memberships[0].role === 'OWNER' ? 'MASTER' : 'REGULAR';
-          }
+              // Update user object with latest data
+              user.id = updatedUser.id;
+              (user as any).email_verified = !!updatedUser.emailVerified;
+              (user as any).active = updatedUser.active !== false;
+              (user as any).memberships = updatedUser.memberships || [];
+              
+              // Set role based on memberships
+              if (updatedUser.memberships.length > 0) {
+                const hasOwnerRole = updatedUser.memberships.some(m => m.role === 'OWNER');
+                (user as any).role = hasOwnerRole ? 'MASTER' : 'REGULAR';
+                (user as any).tenantId = updatedUser.memberships[0]?.tenantId;
+              }
+              
+              return true;
+            }
 
+            // If we get here, user doesn't exist - create new user with tenant
+            try {
+              const emailPrefix = email.split('@')[0];
+              const tenantName = `${user.name || emailPrefix}'s Organization`;
+              
+              // Create tenant first
+              const newTenant = await prisma.tenant.create({
+                data: {
+                  name: tenantName,
+                  slug: emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+                  plan: 'FREE',
+                  isActive: true,
+                  trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
+                }
+              });
+
+              // Create default order statuses for the new tenant
+              try {
+                await createDefaultOrderStatuses(newTenant.id);
+              } catch (statusError) {
+                console.warn('Failed to create default order statuses for new tenant:', statusError);
+                // Don't fail the sign-up process if status creation fails
+              }
+
+              // Create user with membership in a transaction to ensure data consistency
+              const newUser = await prisma.$transaction(async (tx) => {
+                const createdUser = await tx.user.create({
+                  data: {
+                    email: email,
+                    username: user.name || emailPrefix,
+                    name: user.name || undefined,
+                    image: user.image || undefined,
+                    provider: 'google',
+                    emailVerified: new Date(),
+                    active: true
+                  }
+                });
+
+                await tx.membership.create({
+                  data: {
+                    role: 'OWNER',
+                    isActive: true,
+                    joinedAt: new Date(),
+                    user: { connect: { id: createdUser.id } },
+                    tenant: { connect: { id: newTenant.id } }
+                  }
+                });
+
+                return tx.user.findUnique({
+                  where: { id: createdUser.id },
+                  include: {
+                    memberships: {
+                      include: { tenant: true }
+                    }
+                  }
+                });
+              });
+
+              if (!newUser) {
+                throw new Error('Failed to create new user');
+              }
+
+              // Update user object with new user data
+              user.id = newUser.id;
+              (user as any).email_verified = true;
+              (user as any).active = true;
+              (user as any).memberships = newUser.memberships || [];
+              (user as any).role = 'MASTER';
+              (user as any).tenantId = newUser.memberships?.[0]?.tenantId;
+              
+              return true;
+            } catch (createError) {
+              console.error('Error creating new user with tenant:', createError);
+              return false;
+            }
+          } catch (error) {
+            console.error('Error during OAuth sign-in:', error);
+            return false;
+          }
+          
           return true;
+        }
+      
+      return true;
+      } catch (error) {
+        console.error('Error during sign-in:', error);
+        return false;
+      }
+    },
+    
+    async jwt({ token, user, account }) {
+      // Initial sign in
+      if (user) {
+        token.id = user.id;
+        token.role = (user as any).role || 'REGULAR';
+        token.tenantId = (user as any).tenantId;
+        token.email_verified = (user as any).email_verified || false;
+        token.active = (user as any).active !== false; // Default to true if not set
+        token.memberships = (user as any).memberships || [];
+      }
+      
+      // Update token with latest user data if needed
+      if (token.email) {
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { email: token.email },
+            include: { 
+              memberships: {
+                where: { isActive: true },
+                include: { 
+                  tenant: {
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                      isActive: true,
+                      plan: true,
+                      subscriptionStatus: true,
+                      trialEndsAt: true,
+                      createdAt: true
+                    }
+                  }
+                }
+              }
+            }
+          });
+          
+          if (dbUser) {
+            // Update token with latest user data
+            token.id = dbUser.id;
+            token.name = dbUser.name;
+            token.email = dbUser.email;
+            token.image = dbUser.image;
+            
+            // Update memberships and role
+            const memberships = dbUser.memberships || [];
+            token.memberships = memberships;
+            
+            // Set role based on memberships
+            if (memberships.length > 0) {
+              const hasOwnerRole = memberships.some(m => m.role === 'OWNER');
+              token.role = hasOwnerRole ? 'MASTER' : 'REGULAR';
+              token.tenantId = memberships[0]?.tenantId;
+              
+              // Store all tenant IDs for easy access
+              token.allTenantIds = memberships.map(m => m.tenantId);
+              
+              // Store current tenant info (first one by default)
+              const currentMembership = memberships[0];
+              if (currentMembership?.tenant) {
+                token.currentTenant = {
+                  id: currentMembership.tenant.id,
+                  role: currentMembership.role,
+                  name: currentMembership.tenant.name,
+                  slug: currentMembership.tenant.slug,
+                  isActive: currentMembership.tenant.isActive,
+                  plan: currentMembership.tenant.plan || 'FREE',
+                  subscriptionStatus: currentMembership.tenant.subscriptionStatus || null,
+                  trialEndsAt: currentMembership.tenant.trialEndsAt || null
+                };
+              }
+            } else {
+              // No tenant found - check if user is verified and create tenant automatically
+              if (dbUser.emailVerified && dbUser.active) {
+                try {
+                  console.log(`🔧 Auto-creating tenant for verified user: ${dbUser.email}`);
+                  const { createDefaultOrderStatuses } = await import('@/lib/default-statuses');
+                  
+                  const newTenant = await prisma.tenant.create({
+                    data: {
+                      name: `${dbUser.username || dbUser.email.split('@')[0]}'s Organization`,
+                      slug: dbUser.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-'),
+                      plan: 'FREE',
+                      isActive: true,
+                      trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
+                    }
+                  });
+                  
+                  // Update user default tenant
+                  await prisma.user.update({
+                    where: { id: dbUser.id },
+                    data: { defaultTenantId: newTenant.id }
+                  });
+                  
+                  // Create membership with OWNER role
+                  const membership = await prisma.membership.create({
+                    data: {
+                      userId: dbUser.id,
+                      tenantId: newTenant.id,
+                      role: 'OWNER',
+                      isActive: true,
+                      joinedAt: new Date()
+                    },
+                    include: { tenant: true }
+                  });
+                  
+                  // Create default order statuses
+                  await createDefaultOrderStatuses(newTenant.id);
+                  
+                  // Update token with new tenant info
+                  token.role = 'MASTER';
+                  token.tenantId = newTenant.id;
+                  token.allTenantIds = [newTenant.id];
+                  token.currentTenant = {
+                    id: newTenant.id,
+                    role: 'OWNER',
+                    name: newTenant.name,
+                    slug: newTenant.slug,
+                    isActive: newTenant.isActive,
+                    plan: newTenant.plan || 'FREE',
+                    subscriptionStatus: newTenant.subscriptionStatus || null,
+                    trialEndsAt: newTenant.trialEndsAt || null
+                  };
+                  token.memberships = [membership];
+                  
+                  console.log(`✅ Auto-created tenant for user: ${dbUser.email}`);
+                } catch (error) {
+                  console.error('Error auto-creating tenant:', error);
+                  // Continue with null tenant - user will be redirected to setup
+                  token.role = 'REGULAR';
+                  token.tenantId = null;
+                  token.allTenantIds = [];
+                  token.currentTenant = null;
+                }
+              } else {
+                // User not verified or inactive - no tenant yet
+                token.role = 'REGULAR';
+                token.tenantId = null;
+                token.allTenantIds = [];
+                token.currentTenant = null;
+              }
+            }
+          }
         } catch (error) {
-          console.error('Error during Google OAuth sign-in:', error);
-          return false;
+          console.error('Error updating token with user data:', error);
         }
       }
       
-      return true;
+      return token;
     },
+    
     async session({ session, token }) {
-      if (!session?.user) return { expires: "" }
-      // Attach role, membershipRole, and tenantId from token
-      const role = (token.role as UserRole | undefined) || "REGULAR"
-      session.user.role = role as any
-      (session.user as any).membershipRole = token.membershipRole as any
-      (session.user as any).tenantId = token.tenantId as any
-      return session
-    },
-    async jwt({ token, user, account }) {
-      if (account && user) {
-        token.accessToken = (account as any).access_token
+      if (session.user) {
+        session.user.id = token.id;
+        session.user.role = token.role;
+        session.user.tenantId = token.tenantId;
+        session.user.email_verified = token.email_verified;
+        session.user.active = token.active;
+        session.user.memberships = token.memberships;
+        session.user.allTenantIds = token.allTenantIds || [];
+        session.user.currentTenant = token.currentTenant || null;
+        
+        // Set membershipRole from currentTenant.role (this is the actual RBAC role: OWNER, ADMIN, etc.)
+        // Map 'MASTER' to 'OWNER' for backward compatibility
+        if (token.currentTenant?.role) {
+          (session.user as any).membershipRole = token.currentTenant.role;
+        } else if (token.role === 'MASTER') {
+          (session.user as any).membershipRole = 'OWNER';
+        } else if (token.memberships && token.memberships.length > 0) {
+          // Fallback: get role from first active membership
+          const firstMembership = token.memberships[0];
+          (session.user as any).membershipRole = firstMembership?.role || 'VIEWER';
+        }
       }
-      // Assign role, membershipRole, and tenantId from database user
-      if (user) {
-        token.role = (user as any).role || "REGULAR"
-        token.membershipRole = (user as any).membershipRole
-        token.tenantId = (user as any).tenantId
-      }
-      return token
-    },
+      return session;
+    }
   },
   session: {
     strategy: "jwt",
-    maxAge: 24 * 60 * 60,
+    maxAge: 24 * 60 * 60, // 24 hours
   },
   secret: process.env.NEXTAUTH_SECRET || "dev-secret",
+  debug: process.env.NODE_ENV === 'development',
+  pages: {
+    signIn: '/auth/signin',
+    error: '/auth/error',
+  }
 }

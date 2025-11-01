@@ -53,6 +53,18 @@ export default async function middleware(request: Request & { nextUrl: URL }) {
     return NextResponse.redirect(url)
   }
 
+  // Check if email is verified for non-API routes and non-verification routes
+  const isVerificationRoute = pathname.startsWith('/api/auth/verify-email');
+  const isApiRoute = pathname.startsWith('/api/');
+  const isAuthRoute = pathname.startsWith('/auth/');
+  
+  if (!isVerificationRoute && !isApiRoute && !isAuthRoute && !token.email_verified) {
+    console.log(`[Middleware] ❌ Unverified email access attempt: ${pathname}`);
+    const url = new URL("/auth/verify-email", (request as any).nextUrl);
+    url.searchParams.set('email', token.email || '');
+    return NextResponse.redirect(url);
+  }
+
   // Restrict /config to MASTER role only
   if (pathname.startsWith('/config')) {
     if ((token as any).role !== 'MASTER') {

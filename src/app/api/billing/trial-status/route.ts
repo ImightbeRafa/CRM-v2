@@ -32,11 +32,18 @@ export async function GET(request: NextRequest) {
     }
 
     if (!user.memberships.length) {
-      console.error('❌ User has no memberships:', { userId: user.id, email: user.email });
-      return NextResponse.json({ 
-        error: 'No tenant membership found',
-        details: 'User account is not associated with any tenant. Please contact support.'
-      }, { status: 400 });
+      // User doesn't have a tenant yet - return default trial status
+      console.log('⚠️ User has no memberships, returning default trial status:', { userId: user.id });
+      const defaultTrialEnd = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000); // 15 days from now
+      return NextResponse.json({
+        tenantId: null,
+        currentPlan: 'FREE',
+        subscriptionStatus: 'active',
+        isInTrial: true,
+        trialEndsAt: defaultTrialEnd.toISOString(),
+        daysRemaining: 15,
+        trialExpired: false
+      });
     }
 
     const tenantId = user.memberships[0].tenantId;

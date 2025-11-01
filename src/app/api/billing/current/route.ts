@@ -46,11 +46,20 @@ export async function GET(request: NextRequest) {
     }
 
     if (!user.memberships || user.memberships.length === 0) {
-      console.error('❌ User has no memberships:', { userId: user.id, email: user.email });
-      return NextResponse.json({ 
-        error: 'No active tenant found',
-        details: 'User account is not associated with any tenant. Please contact support.'
-      }, { status: 404 });
+      // User doesn't have a tenant yet - return default FREE plan
+      console.log('⚠️ User has no memberships, returning default FREE plan:', { userId: user.id });
+      return NextResponse.json({
+        status: 'success',
+        data: {
+          name: 'FREE',
+          status: 'active',
+          currentPeriodEnd: null,
+          cancelAtPeriodEnd: false,
+          stripeCustomerId: null,
+          stripeSubscriptionId: null,
+          tilopaySubscriptionId: null
+        }
+      });
     }
 
     const tenant = user.memberships[0].tenant;

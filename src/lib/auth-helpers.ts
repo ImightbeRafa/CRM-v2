@@ -37,9 +37,35 @@ export async function requirePermission(permission: Permission) {
 
   const userRole = (session.user as any).role as Role;
   const membershipRole = (session.user as any).membershipRole as Role;
+  const tenantId = (session.user as any).tenantId;
 
   // Use membership role if available, fallback to user role
-  const role = membershipRole || userRole || 'VIEWER';
+  let role = membershipRole || userRole || 'VIEWER';
+  
+  // Map legacy roles to RBAC roles
+  if (role === 'MASTER') {
+    role = 'OWNER';
+  } else if (role === 'REGULAR') {
+    // For REGULAR, try to get role from membership or default to VIEWER
+    if (session.user.currentTenant?.role) {
+      role = session.user.currentTenant.role as Role;
+    } else if ((session.user as any).memberships && (session.user as any).memberships.length > 0) {
+      role = (session.user as any).memberships[0]?.role || 'VIEWER';
+    } else {
+      // User without tenant - allow OWNER role for setup purposes
+      // This allows new users to access setup-wizard
+      role = 'OWNER';
+    }
+  }
+
+  // If user doesn't have a tenant, they should be in setup mode
+  // Allow OWNER role users to access setup-related permissions even without tenant
+  if (!tenantId && (role === 'OWNER' || role === 'MASTER')) {
+    // For setup-related permissions, allow access even without tenant
+    if (permission === 'view_config' || permission === 'update_config' || permission === 'manage_tenant') {
+      return { session, role: 'OWNER' as Role };
+    }
+  }
 
   if (!hasPermission(role as Role, permission)) {
     redirect('/unauthorized');

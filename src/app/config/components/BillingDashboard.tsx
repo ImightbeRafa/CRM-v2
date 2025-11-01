@@ -16,7 +16,8 @@ import {
   DollarSign,
   Users,
   Package,
-  BarChart3
+  BarChart3,
+  Clock
 } from 'lucide-react';
 
 interface BillingDashboardProps {
@@ -78,6 +79,8 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<{id: string, amount: number} | null>(null);
+  const [paymentMessage, setPaymentMessage] = useState<{type: 'success' | 'error' | 'cancelled', message: string} | null>(null);
+  const [trialStatus, setTrialStatus] = useState<{trialExpired: boolean, daysRemaining: number, isInTrial: boolean, trialEndsAt?: string | null} | null>(null);
 
   const plans: Plan[] = [
     {
@@ -151,31 +154,41 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
     const paymentStatus = urlParams.get('payment');
     
     if (paymentStatus) {
-      // Show message based on status
+      // Set message based on status
       if (paymentStatus === 'success') {
-        alert('✅ ¡Pago procesado exitosamente! Tu plan se está actualizando...');
+        setPaymentMessage({
+          type: 'success',
+          message: '¡Pago procesado exitosamente! Tu plan se está actualizando...'
+        });
         // Reload billing data multiple times to ensure it catches the update
+        setTimeout(() => loadBillingData(), 2000);
+        setTimeout(() => loadBillingData(), 5000);
         setTimeout(() => {
-          console.log('⏱️ First reload after payment...');
           loadBillingData();
-        }, 2000); // 2 seconds
-        setTimeout(() => {
-          console.log('⏱️ Second reload after payment...');
-          loadBillingData();
-        }, 5000); // 5 seconds
-        setTimeout(() => {
-          console.log('⏱️ Third reload after payment...');
-          loadBillingData();
-        }, 8000); // 8 seconds
+          setTimeout(() => setPaymentMessage(null), 2000);
+        }, 8000);
       } else if (paymentStatus === 'error') {
-        alert('❌ Hubo un error al procesar el pago. Por favor intenta nuevamente.');
+        setPaymentMessage({
+          type: 'error',
+          message: 'Hubo un error al procesar el pago. Por favor intenta nuevamente.'
+        });
       } else if (paymentStatus === 'cancelled') {
-        alert('ℹ️ Pago cancelado. Puedes intentar nuevamente cuando lo desees.');
+        setPaymentMessage({
+          type: 'cancelled',
+          message: 'Pago cancelado. Puedes intentar nuevamente cuando lo desees.'
+        });
       }
       
       // Clean URL (remove payment parameter)
       const cleanUrl = window.location.pathname + '?tab=billing';
       window.history.replaceState({}, '', cleanUrl);
+      
+      // Auto-hide error/cancelled messages after 10 seconds
+      if (paymentStatus === 'error' || paymentStatus === 'cancelled') {
+        setTimeout(() => {
+          setPaymentMessage(null);
+        }, 10000);
+      }
     }
   }, []);
 
@@ -206,6 +219,18 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         if (usageData.status === 'success') {
           setUsageStats(usageData.data);
         }
+      }
+
+      // Load trial status
+      const trialRes = await fetch('/api/billing/trial-status');
+      if (trialRes.ok) {
+        const trialData = await trialRes.json();
+        setTrialStatus({
+          trialExpired: trialData.trialExpired || false,
+          daysRemaining: trialData.daysRemaining || 0,
+          isInTrial: trialData.isInTrial || false,
+          trialEndsAt: trialData.trialEndsAt || null
+        });
       }
     } catch (error) {
       console.error('Error loading billing data:', error);
@@ -281,6 +306,17 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       }
     }
 
+    // Show important warning about email before redirecting
+    const emailWarning = confirm(
+      '⚠️ IMPORTANTE: Email para Pago\n\n' +
+      'Cuando hagas el pago en TiloPay, DEBES usar el mismo email con el que inicias sesión en BetsyCRM.\n\n' +
+      '¿Continuar al pago?'
+    );
+    
+    if (!emailWarning) {
+      return; // User canceled
+    }
+    
     // For BASIC plan, redirect to Tilopay Repeat subscription page
     const tilopaySubscriptionLinks: Record<string, string> = {
       basic: 'https://tp.cr/l/TkRFME9RPT18MQ=='  // Basic Plan - ₡20,000/month
@@ -288,7 +324,6 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
     
     const subscriptionUrl = tilopaySubscriptionLinks[planId];
     if (subscriptionUrl) {
-      console.log(`🔗 Redirecting to Tilopay subscription page for ${planId}...`);
       window.location.href = subscriptionUrl;
     } else {
       alert('Plan no disponible');
@@ -363,6 +398,76 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
 
   return (
     <div className="space-y-6">
+      {/* Trial Expired Banner - Most prominent */}
+      {trialStatus?.trialExpired && (
+        <Card className="border-red-500 bg-red-50 dark:bg-red-900/20">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-4">
+              <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">
+                  Tu Período de Prueba ha Expirado
+                </h3>
+                <p className="text-red-800 dark:text-red-200 mb-4">
+                  Tu período de prueba gratuita de 15 días ha finalizado. Para continuar usando todas las funcionalidades de BetsyCRM, 
+                  necesitas actualizar a un plan de pago.
+                </p>
+                <div className="flex gap-3 flex-wrap">
+                  <Button
+                    onClick={() => handleChangePlan('basic')}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    Actualizar a Plan Basic ($20/mes)
+                  </Button>
+                </div>
+                <p className="text-sm text-red-700 dark:text-red-300 mt-4">
+                  <strong>Nota:</strong> Tu acceso está restringido hasta que actualices tu plan. Solo puedes acceder a esta página de facturación.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Payment Status Message */}
+      {paymentMessage && (
+        <Card className={`border-2 ${
+          paymentMessage.type === 'success' ? 'border-green-500 bg-green-50' :
+          paymentMessage.type === 'error' ? 'border-red-500 bg-red-50' :
+          'border-yellow-500 bg-yellow-50'
+        }`}>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {paymentMessage.type === 'success' ? (
+                  <Check className="w-5 h-5 text-green-600" />
+                ) : paymentMessage.type === 'error' ? (
+                  <X className="w-5 h-5 text-red-600" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-yellow-600" />
+                )}
+                <p className={`font-medium ${
+                  paymentMessage.type === 'success' ? 'text-green-900' :
+                  paymentMessage.type === 'error' ? 'text-red-900' :
+                  'text-yellow-900'
+                }`}>
+                  {paymentMessage.type === 'success' ? '✅ ' : paymentMessage.type === 'error' ? '❌ ' : 'ℹ️ '}
+                  {paymentMessage.message}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setPaymentMessage(null)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       {/* Current Plan Card */}
       <Card>
         <CardHeader className="bg-gradient-to-r from-slate-50 to-gray-100 border-b border-gray-200">
@@ -394,19 +499,56 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <h3 className="text-3xl font-bold text-gray-900">{currentPlan.name}</h3>
-                {getStatusBadge(currentPlan.status)}
+                {/* Hide status badge for FREE plan - we show green "Activo" badge below instead */}
+                {currentPlan.name !== 'FREE' && getStatusBadge(currentPlan.status)}
               </div>
               
               {currentPlanDetails && (
                 <div className="space-y-2">
-                  <p className="text-2xl font-bold text-blue-600">
-                    {currentPlanDetails.price === 0 
-                      ? 'Gratis' 
-                      : `${formatCurrency(currentPlanDetails.price)}/mes`
-                    }
-                  </p>
+                  {/* Price display */}
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-2xl font-bold text-blue-600">
+                      {currentPlanDetails.price === 0 
+                        ? 'Gratis' 
+                        : `${formatCurrency(currentPlanDetails.price)}/mes`
+                      }
+                    </p>
+                    {currentPlan.name === 'FREE' && (
+                      <Badge variant="default" className="bg-green-100 text-green-800 border-green-300">
+                        Activo
+                      </Badge>
+                    )}
+                  </div>
                   
-                  {currentPlan.currentPeriodEnd && (
+                  {/* Trial expiration date for FREE plan */}
+                  {currentPlan.name === 'FREE' && trialStatus && (
+                    <div className="space-y-2">
+                      {trialStatus.isInTrial && !trialStatus.trialExpired && (
+                        <p className="text-sm text-gray-600">
+                          <Calendar className="inline w-4 h-4 mr-1" />
+                          Período de prueba expira: {trialStatus.trialEndsAt ? formatDate(trialStatus.trialEndsAt) : 'N/A'}
+                        </p>
+                      )}
+                      {trialStatus.trialExpired && (
+                        <p className="text-sm text-red-600 font-medium">
+                          <AlertCircle className="inline w-4 h-4 mr-1" />
+                          Período de prueba expirado
+                        </p>
+                      )}
+                      {trialStatus.daysRemaining > 0 && trialStatus.daysRemaining <= 15 && (
+                        <p className="text-sm text-orange-600">
+                          <Clock className="inline w-4 h-4 mr-1" />
+                          {trialStatus.daysRemaining === 1 
+                            ? '¡Último día de prueba!' 
+                            : `${trialStatus.daysRemaining} días restantes de prueba gratuita`
+                          }
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Billing period for paid plans */}
+                  {currentPlan.currentPeriodEnd && currentPlan.name !== 'FREE' && (
                     <p className="text-sm text-gray-600">
                       <Calendar className="inline w-4 h-4 mr-1" />
                       {currentPlan.cancelAtPeriodEnd 
@@ -513,6 +655,28 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                   </Button>
                 </div>
               )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Important Disclaimer for TiloPay */}
+      <Card className="border-2 border-yellow-400 bg-yellow-50">
+        <CardContent className="pt-6">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <h3 className="font-semibold text-yellow-900 mb-2">
+                ⚠️ Importante: Email para Pagos de TiloPay
+              </h3>
+              <p className="text-sm text-yellow-800 mb-2">
+                Cuando hagas el pago en TiloPay, <strong>debes usar el mismo email de tu cuenta de BetsyCRM</strong>.
+              </p>
+              
+              <p className="text-xs text-yellow-700 font-medium mt-3">
+                ✓ Usa el email con el que inicias sesión en BetsyCRM<br/>
+                ✗ No uses un email diferente al hacer el pago
+              </p>
             </div>
           </div>
         </CardContent>

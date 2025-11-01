@@ -8,7 +8,24 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   try {
     const auth = await authenticateAPIWithPermission(request, 'view_config')
-    if (!auth.ok) return auth.response
+    
+    // If authentication failed due to missing tenant, return default settings
+    // This allows the app to work before tenant setup is complete
+    if (!auth.ok) {
+      const response = auth.response
+      // Check if it's a 400 "Tenant not found" error by checking status
+      // NextResponse extends Response, so it has a status property
+      const statusCode = (response as any).status || (response as Response).status
+      if (statusCode === 400) {
+        // Return default settings when tenant is not found
+        return NextResponse.json({ 
+          status: 'success', 
+          data: { currency: 'CRC', currencySymbol: '₡', locale: 'es-CR', language: 'es' }
+        })
+      }
+      // For other auth errors (401, 403), return the error response
+      return response
+    }
     
     const { tenantId } = auth
     const prisma = getTenantPrisma(tenantId)
@@ -21,7 +38,7 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json({ 
       status: 'success', 
-      data: tenant?.settings || { currency: 'CRC', currencySymbol: '₡', locale: 'es-CR' }
+      data: tenant?.settings || { currency: 'CRC', currencySymbol: '₡', locale: 'es-CR', language: 'es' }
     })
   } catch (error) {
     console.error('Error loading settings:', error)

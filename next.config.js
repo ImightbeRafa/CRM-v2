@@ -18,7 +18,10 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  
+  env: {
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    // Add other environment variables here
+  },
   // Add global polyfills for server-side rendering
   experimental: {
     serverComponentsExternalPackages: [],

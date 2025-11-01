@@ -158,22 +158,28 @@ model Order {
 }
 
 model User {
+  // Basic info
   id        String   @id @default(cuid())
-  email     String   @unique  // Changed from username to email
-  username  String?  // Optional display name
-  password  String?  // Optional for OAuth users
+  email     String   @unique
+  username  String?
+  password  String?
   
   // Profile
   name      String?
-  image     String?  // Profile picture URL
-  emailVerified DateTime?
+  image     String?
+  emailVerified DateTime? @map("emailVerified")
+  emailVerificationToken String? @map("emailVerificationToken")
+  emailVerificationTokenExpires DateTime? @map("emailVerificationTokenExpires")
+  // Old snake_case fields - these should be removed after migration
+  email_verification_token String? @map("email_verification_token")
+  email_verification_token_expires DateTime? @map("email_verification_token_expires")
   
   // OAuth
-  provider  String?  // "google", "credentials", etc.
-  providerId String? // OAuth provider user ID
+  provider  String?
+  providerId String?
   
   // Settings
-  active    Boolean  @default(true)
+  active    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   lastActive DateTime?
@@ -181,10 +187,11 @@ model User {
   // Default tenant (for quick access)
   defaultTenantId String?
   
-    // Relations
-    memberships Membership[]
-    auditLogs   AuditLog[]
+  // Relations
+  memberships Membership[]
+  auditLogs   AuditLog[]
   
+  @@map("User")
   @@index([email])
   @@index([active])
 }

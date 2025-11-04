@@ -65,15 +65,19 @@ export async function POST(request: NextRequest) {
     }, async () => {
       const prisma = getTenantPrisma(tenantId);
       const body = await request.json();
-      
+      // Wizard sends: productName, sku, quantity, price
+      // API expects: name, description, category, sku, currentStock, minStock, maxStock, unitCost, sellingPrice, supplier, location, reorderPoint, reorderQuantity, isFavorite
       const {
-        name,
+        productName,
+        name: apiName,
         description,
         category,
         sku,
+        quantity,
         currentStock,
         minStock,
         maxStock,
+        price,
         unitCost,
         sellingPrice,
         supplier,
@@ -82,10 +86,16 @@ export async function POST(request: NextRequest) {
         reorderQuantity,
         isFavorite
       } = body;
+      
+      // Map wizard fields to API fields
+      const mappedName = apiName || productName;
+      const mappedCurrentStock = currentStock !== undefined ? currentStock : (quantity !== undefined ? quantity : 0);
+      const mappedSellingPrice = sellingPrice !== undefined ? sellingPrice : (price !== undefined ? price : 0);
+      const mappedUnitCost = unitCost !== undefined ? unitCost : (price !== undefined ? price : 0);
 
       // Check if SKU already exists for this tenant (active or inactive)
       const existingItem = await prisma.inventoryItem.findFirst({
-        where: { sku }
+        where: { sku: sku || `SKU-${Date.now()}` }
       });
 
       if (existingItem) {
@@ -94,18 +104,18 @@ export async function POST(request: NextRequest) {
           const reactivated = await prisma.inventoryItem.update({
             where: { id: existingItem.id },
             data: {
-              name,
-              description,
-              category,
-              currentStock: parseInt(currentStock) || 0,
-              minStock: parseInt(minStock) || 0,
-              maxStock: maxStock ? parseInt(maxStock) : null,
-              unitCost: parseFloat(unitCost) || 0,
-              sellingPrice: parseFloat(sellingPrice) || 0,
-              supplier,
-              location,
-              reorderPoint: parseInt(reorderPoint) || 0,
-              reorderQuantity: parseInt(reorderQuantity) || 0,
+              name: mappedName,
+              description: description || 'Producto de inventario',
+              category: category || 'General',
+              currentStock: parseInt(String(mappedCurrentStock)) || 0,
+              minStock: parseInt(String(minStock)) || 0,
+              maxStock: maxStock ? parseInt(String(maxStock)) : null,
+              unitCost: parseFloat(String(mappedUnitCost)) || 0,
+              sellingPrice: parseFloat(String(mappedSellingPrice)) || 0,
+              supplier: supplier || null,
+              location: location || null,
+              reorderPoint: parseInt(String(reorderPoint)) || 0,
+              reorderQuantity: parseInt(String(reorderQuantity)) || 0,
               isFavorite: isFavorite || false,
               isActive: true,
               lastUpdated: new Date(),
@@ -126,19 +136,19 @@ export async function POST(request: NextRequest) {
       try {
         inventoryItem = await prisma.inventoryItem.create({
           data: {
-            name,
-            description,
-            category,
-            sku,
-            currentStock: parseInt(currentStock) || 0,
-            minStock: parseInt(minStock) || 0,
-            maxStock: maxStock ? parseInt(maxStock) : null,
-            unitCost: parseFloat(unitCost) || 0,
-            sellingPrice: parseFloat(sellingPrice) || 0,
-            supplier,
-            location,
-            reorderPoint: parseInt(reorderPoint) || 0,
-            reorderQuantity: parseInt(reorderQuantity) || 0,
+            name: mappedName,
+            description: description || 'Producto de inventario',
+            category: category || 'General',
+            sku: sku || `SKU-${Date.now()}`,
+            currentStock: parseInt(String(mappedCurrentStock)) || 0,
+            minStock: parseInt(String(minStock)) || 0,
+            maxStock: maxStock ? parseInt(String(maxStock)) : null,
+            unitCost: parseFloat(String(mappedUnitCost)) || 0,
+            sellingPrice: parseFloat(String(mappedSellingPrice)) || 0,
+            supplier: supplier || null,
+            location: location || null,
+            reorderPoint: parseInt(String(reorderPoint)) || 0,
+            reorderQuantity: parseInt(String(reorderQuantity)) || 0,
             isFavorite: isFavorite || false,
             isActive: true,
             createdBy: userId,
@@ -158,18 +168,18 @@ export async function POST(request: NextRequest) {
           const reactivated = await prisma.inventoryItem.update({
             where: { id: existing.id },
             data: {
-              name,
-              description,
-              category,
-              currentStock: parseInt(currentStock) || 0,
-              minStock: parseInt(minStock) || 0,
-              maxStock: maxStock ? parseInt(maxStock) : null,
-              unitCost: parseFloat(unitCost) || 0,
-              sellingPrice: parseFloat(sellingPrice) || 0,
-              supplier,
-              location,
-              reorderPoint: parseInt(reorderPoint) || 0,
-              reorderQuantity: parseInt(reorderQuantity) || 0,
+              name: mappedName,
+              description: description || 'Producto de inventario',
+              category: category || 'General',
+              currentStock: parseInt(String(mappedCurrentStock)) || 0,
+              minStock: parseInt(String(minStock)) || 0,
+              maxStock: maxStock ? parseInt(String(maxStock)) : null,
+              unitCost: parseFloat(String(mappedUnitCost)) || 0,
+              sellingPrice: parseFloat(String(mappedSellingPrice)) || 0,
+              supplier: supplier || null,
+              location: location || null,
+              reorderPoint: parseInt(String(reorderPoint)) || 0,
+              reorderQuantity: parseInt(String(reorderQuantity)) || 0,
               isFavorite: isFavorite || false,
               isActive: true,
               lastUpdated: new Date(),
@@ -209,15 +219,20 @@ export async function PUT(request: NextRequest) {
     return await withTenantContext({ tenantId, userId, role: auth.role, userRole: auth.role, userName }, async () => {
       const prisma = getTenantPrisma(tenantId);
       const body = await request.json();
+      // Wizard sends: id, productName, sku, quantity, price
+      // API expects: id, name, description, category, sku, currentStock, minStock, maxStock, unitCost, sellingPrice, supplier, location, reorderPoint, reorderQuantity, isFavorite
       const {
         id,
-        name,
+        productName,
+        name: apiName,
         description,
         category,
         sku,
+        quantity,
         currentStock,
         minStock,
         maxStock,
+        price,
         unitCost,
         sellingPrice,
         supplier,
@@ -226,6 +241,12 @@ export async function PUT(request: NextRequest) {
         reorderQuantity,
         isFavorite
       } = body;
+      
+      // Map wizard fields to API fields
+      const mappedName = apiName || productName;
+      const mappedCurrentStock = currentStock !== undefined ? currentStock : (quantity !== undefined ? quantity : undefined);
+      const mappedSellingPrice = sellingPrice !== undefined ? sellingPrice : (price !== undefined ? price : undefined);
+      const mappedUnitCost = unitCost !== undefined ? unitCost : (price !== undefined ? price : undefined);
 
       // Check if SKU already exists for different item (auto-filtered by tenantPrisma)
       const existingItem = await prisma.inventoryItem.findFirst({
@@ -243,23 +264,26 @@ export async function PUT(request: NextRequest) {
         );
       }
 
+      // Get existing item to preserve values not provided by wizard
+      const existing = await prisma.inventoryItem.findUnique({ where: { id } });
+      
       const inventoryItem = await prisma.inventoryItem.update({
         where: { id },
         data: {
-          name,
-          description,
-          category,
-          sku,
-          currentStock: parseInt(currentStock) || 0,
-          minStock: parseInt(minStock) || 0,
-          maxStock: maxStock ? parseInt(maxStock) : null,
-          unitCost: parseFloat(unitCost) || 0,
-          sellingPrice: parseFloat(sellingPrice) || 0,
-          supplier,
-          location,
-          reorderPoint: parseInt(reorderPoint) || 0,
-          reorderQuantity: parseInt(reorderQuantity) || 0,
-          isFavorite,
+          name: mappedName || existing?.name || name,
+          description: description || existing?.description || 'Producto de inventario',
+          category: category || existing?.category || 'General',
+          sku: sku || existing?.sku,
+          currentStock: mappedCurrentStock !== undefined ? parseInt(String(mappedCurrentStock)) : (currentStock !== undefined ? parseInt(String(currentStock)) : existing?.currentStock || 0),
+          minStock: minStock !== undefined ? parseInt(String(minStock)) : existing?.minStock || 0,
+          maxStock: maxStock !== undefined ? (maxStock ? parseInt(String(maxStock)) : null) : existing?.maxStock,
+          unitCost: mappedUnitCost !== undefined ? parseFloat(String(mappedUnitCost)) : (unitCost !== undefined ? parseFloat(String(unitCost)) : existing?.unitCost || 0),
+          sellingPrice: mappedSellingPrice !== undefined ? parseFloat(String(mappedSellingPrice)) : (sellingPrice !== undefined ? parseFloat(String(sellingPrice)) : existing?.sellingPrice || 0),
+          supplier: supplier !== undefined ? supplier : existing?.supplier,
+          location: location !== undefined ? location : existing?.location,
+          reorderPoint: reorderPoint !== undefined ? parseInt(String(reorderPoint)) : existing?.reorderPoint || 0,
+          reorderQuantity: reorderQuantity !== undefined ? parseInt(String(reorderQuantity)) : existing?.reorderQuantity || 0,
+          isFavorite: isFavorite !== undefined ? isFavorite : existing?.isFavorite || false,
           lastUpdated: new Date()
         }
       });

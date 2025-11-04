@@ -31,8 +31,15 @@ export function OrderStatusStep({ onNext, markCompleted }: WizardStepProps) {
       const response = await fetch('/api/config/status');
       if (response.ok) {
         const result = await response.json();
-        if (result.data?.length > 0) {
-          setStatuses(result.data);
+        if (result.status === 'success' && result.data?.length > 0) {
+          // Map API response to wizard format
+          setStatuses(result.data.map((s: any) => ({
+            id: s.id,
+            name: s.label || s.name || '',
+            color: s.color || '#3B82F6',
+            order: s.order || 0,
+            isActive: s.isActive !== undefined ? s.isActive : true
+          })));
           markCompleted();
         }
       }
@@ -74,18 +81,26 @@ export function OrderStatusStep({ onNext, markCompleted }: WizardStepProps) {
     setLoading(true);
     try {
       for (const status of statuses) {
-        if (status.id) {
-          await fetch('/api/config/status', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(status)
-          });
-        } else {
-          await fetch('/api/config/status', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(status)
-          });
+        const response = await fetch('/api/config/status', {
+          method: status.id ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: status.id,
+            name: status.name,
+            color: status.color,
+            order: status.order,
+            isActive: status.isActive
+          })
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(errorData.error || `Failed to ${status.id ? 'update' : 'create'} status: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        if (result.status !== 'success') {
+          throw new Error(result.error || 'Failed to save status');
         }
       }
 

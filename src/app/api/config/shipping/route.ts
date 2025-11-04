@@ -40,13 +40,16 @@ export async function POST(request: NextRequest) {
     const prisma = getTenantPrisma(tenantId);
 
     const body = await request.json();
+    // Wizard sends: name, cost, estimatedDays
+    // API expects: name, carrier, basePrice
+    const { name, cost, estimatedDays, carrier, basePrice } = body;
     
     // CRITICAL: Create shipping method with tenant isolation (auto-injected by tenantPrisma)
     const created = await prisma.shippingMethod.create({ 
       data: { 
-        name: body.name, 
-        carrier: body.carrier || null, 
-        basePrice: Number(body.basePrice) || 0, 
+        name: name || body.name, 
+        carrier: carrier || body.carrier || null, 
+        basePrice: Number(basePrice || cost || body.basePrice) || 0, 
         active: true,
         tenant: { connect: { id: tenantId } }
       } 
@@ -69,15 +72,17 @@ export async function PUT(request: NextRequest) {
     const prisma = getTenantPrisma(tenantId);
 
     const body = await request.json();
+    // Wizard sends: id, name, cost, estimatedDays
+    const { id, name, cost, estimatedDays, carrier, basePrice, active } = body;
     
     // CRITICAL: Update with tenant isolation (auto-verified by tenantPrisma)
     const updated = await prisma.shippingMethod.update({ 
-      where: { id: body.id }, 
+      where: { id: id || body.id }, 
       data: { 
-        name: body.name, 
-        carrier: body.carrier || null, 
-        basePrice: Number(body.basePrice) || 0, 
-        active: body.active ?? true 
+        name: name || body.name, 
+        carrier: carrier || body.carrier || null, 
+        basePrice: Number(basePrice || cost || body.basePrice) || 0, 
+        active: active !== undefined ? active : (body.active ?? true) 
       } 
     });
     

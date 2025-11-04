@@ -31,8 +31,15 @@ export function FrequentClientsStep({ onNext, onSkip, markCompleted }: WizardSte
       const response = await fetch('/api/config/frequent-customers');
       if (response.ok) {
         const result = await response.json();
-        if (result.data?.length > 0) {
-          setClients(result.data);
+        if (result.status === 'success' && result.data?.length > 0) {
+          // Map API response to wizard format
+          setClients(result.data.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            phone: c.phone || '',
+            email: c.email || '',
+            address: c.address || ''
+          })));
           markCompleted();
         }
       }
@@ -65,12 +72,21 @@ export function FrequentClientsStep({ onNext, onSkip, markCompleted }: WizardSte
     setLoading(true);
     try {
       for (const client of clients) {
-        const method = client.id ? 'PUT' : 'POST';
-        await fetch('/api/config/frequent-customers', {
-          method,
+        const response = await fetch('/api/config/frequent-customers', {
+          method: client.id ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(client)
         });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(errorData.error || `Failed to ${client.id ? 'update' : 'create'} client: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        if (result.status !== 'success') {
+          throw new Error(result.error || 'Failed to save client');
+        }
       }
 
       markCompleted();

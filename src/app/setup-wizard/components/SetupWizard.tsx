@@ -178,8 +178,16 @@ export function SetupWizard() {
     }
   };
 
-  const handleExit = () => {
-    router.push('/home');
+  const handleExit = async () => {
+    // Try to navigate to dashboard, but if setup wizard isn't completed,
+    // the middleware will redirect back - that's expected behavior
+    // Users can still exit and come back later
+    try {
+      router.push('/dashboard');
+    } catch (error) {
+      // Fallback to home if dashboard fails
+      router.push('/home');
+    }
   };
 
   const completedSteps = steps.filter(s => s.completed).length;

@@ -31,8 +31,15 @@ export function InventoryStep({ onNext, onSkip, markCompleted }: WizardStepProps
       const response = await fetch('/api/config/inventory');
       if (response.ok) {
         const result = await response.json();
-        if (result.data?.length > 0) {
-          setItems(result.data);
+        if (result.status === 'success' && result.data?.length > 0) {
+          // Map API response to wizard format
+          setItems(result.data.map((item: any) => ({
+            id: item.id,
+            productName: item.name,
+            sku: item.sku || '',
+            quantity: item.currentStock || 0,
+            price: item.sellingPrice || item.unitCost || 0
+          })));
           markCompleted();
         }
       }
@@ -65,12 +72,27 @@ export function InventoryStep({ onNext, onSkip, markCompleted }: WizardStepProps
     setLoading(true);
     try {
       for (const item of items) {
-        const method = item.id ? 'PUT' : 'POST';
-        await fetch('/api/config/inventory', {
-          method,
+        const response = await fetch('/api/config/inventory', {
+          method: item.id ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(item)
+          body: JSON.stringify({
+            id: item.id,
+            productName: item.productName,
+            sku: item.sku || `SKU-${Date.now()}`,
+            quantity: item.quantity,
+            price: item.price
+          })
         });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(errorData.error || `Failed to ${item.id ? 'update' : 'create'} inventory item: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        if (result.status !== 'success') {
+          throw new Error(result.error || 'Failed to save inventory item');
+        }
       }
 
       markCompleted();

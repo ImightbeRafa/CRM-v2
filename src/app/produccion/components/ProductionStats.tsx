@@ -1,5 +1,5 @@
 "use client";
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -27,6 +27,23 @@ interface ProductionStatsProps {
 
 export const ProductionStats = React.memo(function ProductionStats({ orders, onClose, detailed = false, onFilterChange }: ProductionStatsProps) {
   const { formatCurrency } = useTenantSettings();
+  const [availableStatuses, setAvailableStatuses] = useState<Array<{key: string; label: string; color?: string}>>([]);
+  
+  // Load available statuses from API
+  useEffect(() => {
+    const loadStatuses = async () => {
+      try {
+        const response = await fetch('/api/config/status', { credentials: 'include' });
+        const data = await response.json();
+        if (data.status === 'success' && data.data.length > 0) {
+          setAvailableStatuses(data.data);
+        }
+      } catch (error) {
+        console.error('Error loading statuses:', error);
+      }
+    };
+    loadStatuses();
+  }, []);
   
   const stats = React.useMemo(() => {
     const total = orders.length;
@@ -100,6 +117,37 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
   }, [orders]);
 
   const getStatusColor = (status: string) => {
+    // First, try to find the status in the configured statuses with custom colors
+    const configuredStatus = availableStatuses.find(s => s.label === status);
+    
+    if (configuredStatus && configuredStatus.color) {
+      // Check if color is a hex value or a Tailwind class
+      const isHexColor = configuredStatus.color.startsWith('#');
+      
+      if (isHexColor) {
+        // For hex colors, calculate text color based on brightness
+        const hex = configuredStatus.color.replace('#', '');
+        const r = parseInt(hex.substr(0, 2), 16);
+        const g = parseInt(hex.substr(2, 2), 16);
+        const b = parseInt(hex.substr(4, 2), 16);
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        const textColor = brightness > 128 ? 'text-gray-900' : 'text-white';
+        
+        // Return both the color style and text color class
+        return {
+          className: textColor,
+          style: { backgroundColor: configuredStatus.color }
+        };
+      } else {
+        // For Tailwind classes, use as is
+        return {
+          className: `${configuredStatus.color} text-white`,
+          style: undefined
+        };
+      }
+    }
+    
+    // Fallback to hardcoded colors if status not configured
     const colors: Record<string, string> = {
       'Pendiente': 'bg-yellow-100 text-yellow-800',
       'En Proceso': 'bg-blue-100 text-blue-800',
@@ -110,7 +158,10 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
       'Impreso': 'bg-cyan-100 text-cyan-800',
       'PendienteDiseño': 'bg-orange-100 text-orange-800'
     };
-    return colors[status] || 'bg-gray-100 text-gray-800';
+    return {
+      className: colors[status] || 'bg-gray-100 text-gray-800',
+      style: undefined
+    };
   };
 
   const StatCard = React.memo(({ 
@@ -268,16 +319,22 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
             <div>
               <h3 className="text-lg font-semibold mb-4">Distribución por Estado</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                {Object.entries(stats.statusCounts).map(([status, count]) => (
-                  <div key={status} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Badge className={getStatusColor(status)}>
-                        {status}
-                      </Badge>
+                {Object.entries(stats.statusCounts).map(([status, count]) => {
+                  const statusColor = getStatusColor(status);
+                  return (
+                    <div key={status} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Badge 
+                          className={statusColor.className}
+                          style={statusColor.style}
+                        >
+                          {status}
+                        </Badge>
+                      </div>
+                      <span className="font-semibold">{count}</span>
                     </div>
-                    <span className="font-semibold">{count}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 

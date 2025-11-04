@@ -33,8 +33,16 @@ export function CustomFieldsStep({ onNext, markCompleted }: WizardStepProps) {
       const response = await fetch('/api/config/fields');
       if (response.ok) {
         const result = await response.json();
-        if (result.data?.length > 0) {
-          setFields(result.data);
+        if (result.status === 'success' && result.data?.length > 0) {
+          // Map API response to wizard format
+          setFields(result.data.map((field: any) => ({
+            id: field.id,
+            name: field.key || field.name || '',
+            label: field.label || '',
+            type: field.type || 'text',
+            required: field.required || false,
+            order: field.order || 0
+          })));
           markCompleted();
         }
       }
@@ -77,18 +85,26 @@ export function CustomFieldsStep({ onNext, markCompleted }: WizardStepProps) {
     setLoading(true);
     try {
       for (const field of fields) {
-        if (field.id) {
-          await fetch('/api/config/fields', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(field)
-          });
-        } else {
-          await fetch('/api/config/fields', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(field)
-          });
+        const response = await fetch('/api/config/fields', {
+          method: field.id ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            key: field.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+            label: field.label,
+            type: field.type,
+            required: field.required,
+            order: field.order
+          })
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(errorData.error || `Failed to ${field.id ? 'update' : 'create'} field: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        if (result.status !== 'success') {
+          throw new Error(result.error || 'Failed to save field');
         }
       }
 

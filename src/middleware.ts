@@ -8,6 +8,7 @@ const PUBLIC_ROUTES = [
   '/auth/error',
   '/api/auth',
   '/landing',
+  '/home',
   '/_next',
   '/favicon.ico',
   '/public',
@@ -49,7 +50,6 @@ export default async function middleware(request: Request) {
 
     // Validate required fields
     if (!userId) {
-      console.error('User ID not found in token');
       return redirectToLogin(url);
     }
 
@@ -61,8 +61,6 @@ export default async function middleware(request: Request) {
     // Handle app routes
     return handleAppRoute(request, { tenantId, userId, role, email_verified });
   } catch (error) {
-    console.error('Middleware error:', error);
-    
     // Don't expose internal errors to the client
     if (error instanceof TenantError) {
       return NextResponse.json(
@@ -160,7 +158,6 @@ async function handleApiRequest(
       }
     );
   } catch (error) {
-    console.error('Error in tenant context:', error);
     return new NextResponse(
       JSON.stringify({ error: 'Failed to process request with tenant context' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
@@ -211,6 +208,9 @@ async function handleAppRoute(
     return NextResponse.redirect(new URL('/', url.origin));
   }
 
+  // Setup wizard is now optional - users can access it from the dashboard if needed
+  // No blocking logic - users can navigate freely throughout the application
+
   // Check trial/subscription status and enforce restrictions
   // Allow billing-related routes for expired trials
   const isBillingApiRoute = pathname.startsWith('/api/billing') || 
@@ -224,16 +224,14 @@ async function handleAppRoute(
   if (tenantId) {
     try {
       // Get plan and subscription status from JWT token (set in auth-options.ts)
-      const currentTenant = (token as any).currentTenant;
+      const token = await getToken({
+        req: request as any,
+        secret: process.env.NEXTAUTH_SECRET || 'dev-secret',
+      });
+      const currentTenant = (token as any)?.currentTenant;
       const plan = currentTenant?.plan || 'FREE';
       const subscriptionStatus = currentTenant?.subscriptionStatus || null;
       const trialEndsAt = currentTenant?.trialEndsAt ? new Date(currentTenant.trialEndsAt) : null;
-      
-      console.log(`🔍 [MIDDLEWARE] Checking trial/subscription for tenant ${tenantId}:`, {
-        plan,
-        subscriptionStatus,
-        trialEndsAt: trialEndsAt?.toISOString()
-      });
       
       // Normalize plan (handle enum/string)
       const normalizedPlan = plan ? String(plan).trim().toUpperCase() : 'FREE';
@@ -263,24 +261,7 @@ async function handleAppRoute(
       // CRITICAL: Only restrict if trial expired OR subscription inactive
       const shouldRestrict = trialExpired || !subscriptionActive;
       
-      console.log(`🔍 [MIDDLEWARE] Restriction decision for tenant ${tenantId}:`, {
-        plan: normalizedPlan,
-        subscriptionStatus: normalizedStatus,
-        trialExpired,
-        subscriptionActive,
-        shouldRestrict,
-        pathname
-      });
-      
       if (shouldRestrict) {
-        console.log(`🔒 [MIDDLEWARE] Access RESTRICTED for tenant ${tenantId}:`, {
-          plan: normalizedPlan,
-          subscriptionStatus: normalizedStatus,
-          trialExpired,
-          subscriptionActive,
-          pathname
-        });
-        
         // Allow billing API routes
         if (isBillingApiRoute) {
           // Allow API routes to proceed
@@ -293,25 +274,14 @@ async function handleAppRoute(
         }
         // If accessing /config but not billing tab, redirect to billing
         else if (isConfigPage && !isBillingTab) {
-          console.log(`🔒 Trial expired or subscription inactive - redirecting /config to billing tab: ${pathname}`);
           return NextResponse.redirect(new URL('/config?tab=billing', url.origin));
         }
         // Block all other routes - redirect to billing
         else {
-          console.log(`🔒 Trial expired or subscription inactive - redirecting to billing: ${pathname}`);
           return NextResponse.redirect(new URL('/config?tab=billing', url.origin));
         }
-      } else {
-        // Access allowed - paid plan or active subscription/trial
-        console.log(`✅ [MIDDLEWARE] Access ALLOWED for tenant ${tenantId}:`, {
-          plan: normalizedPlan,
-          subscriptionStatus: normalizedStatus,
-          trialExpired,
-          subscriptionActive
-        });
       }
     } catch (error) {
-      console.error('Error checking trial/subscription status:', error);
       // On error, allow access (fail open) - don't block users due to DB errors
     }
   }

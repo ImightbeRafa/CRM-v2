@@ -30,8 +30,14 @@ export function FrequentProductsStep({ onNext, onSkip, markCompleted }: WizardSt
       const response = await fetch('/api/config/frequent-products');
       if (response.ok) {
         const result = await response.json();
-        if (result.data?.length > 0) {
-          setProducts(result.data);
+        if (result.status === 'success' && result.data?.length > 0) {
+          // Map API response to wizard format
+          setProducts(result.data.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            price: p.sellingPrice || p.unitCost || 0,
+            description: p.description || ''
+          })));
           markCompleted();
         }
       }
@@ -64,12 +70,21 @@ export function FrequentProductsStep({ onNext, onSkip, markCompleted }: WizardSt
     setLoading(true);
     try {
       for (const product of products) {
-        const method = product.id ? 'PUT' : 'POST';
-        await fetch('/api/config/frequent-products', {
-          method,
+        const response = await fetch('/api/config/frequent-products', {
+          method: product.id ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(product)
         });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(errorData.error || `Failed to ${product.id ? 'update' : 'create'} product: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        if (result.status !== 'success') {
+          throw new Error(result.error || 'Failed to save product');
+        }
       }
 
       markCompleted();

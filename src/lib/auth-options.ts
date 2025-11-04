@@ -46,6 +46,7 @@ declare module "next-auth" {
         name?: string;
         slug?: string;
         isActive?: boolean;
+        setupWizardCompleted?: boolean;
       } | null;
     } & User;
   }
@@ -69,6 +70,7 @@ declare module "next-auth/jwt" {
       plan?: string;
       subscriptionStatus?: string | null;
       trialEndsAt?: Date | null;
+      setupWizardCompleted?: boolean;
     } | null;
   }
 }
@@ -122,43 +124,25 @@ export const authOptions: NextAuthOptions = {
           if (!user.active) {
             // Allow login but they'll be restricted in the session callback
             // until they verify their email
-            console.log('⚠️ Unverified user logging in:', user.email);
           }
           
           // Verify password (supports both bcrypt and plain text for migration)
           let passwordValid = false;
           
-          console.log('🔐 Login attempt for:', user.email);
-          console.log('🔐 Password provided:', password ? 'YES' : 'NO');
-          console.log('🔐 Password in DB:', user.password ? 'YES' : 'NO');
-          console.log('🔐 Password starts with:', user.password?.substring(0, 7));
-          console.log('🔐 Is bcrypt hash:', isBcryptHash(user.password || ''));
-          
           if (user.password) {
             if (isBcryptHash(user.password)) {
               // Password is hashed with bcrypt - verify securely
-              console.log('🔐 Using bcrypt verification...');
               passwordValid = await verifyPassword(password, user.password);
-              console.log('🔐 Bcrypt verification result:', passwordValid);
             } else {
               // Legacy plain text password (for migration period)
               // TODO: Remove this after all passwords are migrated to bcrypt
-              console.log('🔐 Using plain text comparison...');
               passwordValid = user.password === password;
-              console.log('🔐 Plain text comparison result:', passwordValid);
-              
-              if (passwordValid) {
-                console.warn(`User ${user.username || user.email} logged in with plain text password - needs migration`);
-              }
             }
           }
           
           if (!passwordValid) {
-            console.error('🔐 Password validation failed!');
             return null
           }
-          
-          console.log('🔐 Login successful!');
           
           // Get membership role (OWNER, ADMIN, MANAGER, SALES, PRODUCTION, VIEWER)
           const membershipRole = user.memberships.length > 0 ? user.memberships[0].role : null
@@ -380,6 +364,7 @@ export const authOptions: NextAuthOptions = {
                       plan: true,
                       subscriptionStatus: true,
                       trialEndsAt: true,
+                      setupWizardCompleted: true,
                       createdAt: true
                     }
                   }
@@ -411,6 +396,8 @@ export const authOptions: NextAuthOptions = {
               // Store current tenant info (first one by default)
               const currentMembership = memberships[0];
               if (currentMembership?.tenant) {
+                // Safely access setupWizardCompleted - it may not exist in all database schemas
+                const tenant = currentMembership.tenant as any;
                 token.currentTenant = {
                   id: currentMembership.tenant.id,
                   role: currentMembership.role,
@@ -419,14 +406,14 @@ export const authOptions: NextAuthOptions = {
                   isActive: currentMembership.tenant.isActive,
                   plan: currentMembership.tenant.plan || 'FREE',
                   subscriptionStatus: currentMembership.tenant.subscriptionStatus || null,
-                  trialEndsAt: currentMembership.tenant.trialEndsAt || null
+                  trialEndsAt: currentMembership.tenant.trialEndsAt || null,
+                  setupWizardCompleted: tenant.setupWizardCompleted ?? false // Default to false if not present
                 };
               }
             } else {
               // No tenant found - check if user is verified and create tenant automatically
               if (dbUser.emailVerified && dbUser.active) {
                 try {
-                  console.log(`🔧 Auto-creating tenant for verified user: ${dbUser.email}`);
                   const { createDefaultOrderStatuses } = await import('@/lib/default-statuses');
                   
                   const newTenant = await prisma.tenant.create({
@@ -436,6 +423,7 @@ export const authOptions: NextAuthOptions = {
                       plan: 'FREE',
                       isActive: true,
                       trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
+                      setupWizardCompleted: false, // New tenants must complete setup wizard
                     }
                   });
                   
@@ -472,13 +460,11 @@ export const authOptions: NextAuthOptions = {
                     isActive: newTenant.isActive,
                     plan: newTenant.plan || 'FREE',
                     subscriptionStatus: newTenant.subscriptionStatus || null,
-                    trialEndsAt: newTenant.trialEndsAt || null
+                    trialEndsAt: newTenant.trialEndsAt || null,
+                    setupWizardCompleted: newTenant.setupWizardCompleted || false
                   };
                   token.memberships = [membership];
-                  
-                  console.log(`✅ Auto-created tenant for user: ${dbUser.email}`);
                 } catch (error) {
-                  console.error('Error auto-creating tenant:', error);
                   // Continue with null tenant - user will be redirected to setup
                   token.role = 'REGULAR';
                   token.tenantId = null;

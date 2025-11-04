@@ -39,10 +39,16 @@ export async function POST(request: NextRequest) {
     const prisma = getTenantPrisma(tenantId)
     
     const body = await request.json()
+    // Wizard sends: name, color, order, isActive
+    // API expects: key, label, color, order, isActive
+    const { name, key, label, color, order, isActive } = body
+    const statusKey = key || (name ? name.toLowerCase().replace(/[^a-z0-9]/g, '-') : `status-${Date.now()}`)
+    const statusLabel = label || name || 'Estado'
+    
     // Idempotent: if key exists for this tenant (even inactive), update/reactivate; else create
     const existing = await prisma.orderStatus.findFirst({ 
       where: { 
-        key: body.key,
+        key: statusKey,
         tenantId 
       } 
     })
@@ -50,21 +56,21 @@ export async function POST(request: NextRequest) {
       const updated = await prisma.orderStatus.update({
         where: { id: existing.id },
         data: {
-          label: body.label ?? existing.label,
-          color: body.color ?? existing.color,
-          order: body.order ?? existing.order,
-          isActive: true,
+          label: statusLabel,
+          color: color ?? existing.color,
+          order: order !== undefined ? Number(order) : existing.order,
+          isActive: isActive !== undefined ? isActive : true,
         },
       })
       return NextResponse.json({ status: 'success', data: updated })
     }
     const created = await prisma.orderStatus.create({ 
       data: { 
-        key: body.key, 
-        label: body.label, 
-        color: body.color || null, 
-        order: Number(body.order) || 0, 
-        isActive: true,
+        key: statusKey, 
+        label: statusLabel, 
+        color: color || null, 
+        order: Number(order) || 0, 
+        isActive: isActive !== undefined ? isActive : true,
         tenantId 
       } 
     })
@@ -83,15 +89,29 @@ export async function PUT(request: NextRequest) {
     const prisma = getTenantPrisma(tenantId)
     
     const body = await request.json()
+    // Wizard sends: id, name, color, order, isActive
+    // API expects: id, key, label, color, order, isActive
+    const { id, name, key, label, color, order, isActive } = body
+    const statusLabel = label || name
+    
+    // Build update data object with only provided fields
+    const updateData: any = {
+      color: (color || body.color) || null, 
+      order: order !== undefined ? Number(order) : Number(body.order || 0), 
+      isActive: isActive !== undefined ? isActive : (body.isActive ?? true) 
+    }
+    
+    // Only update key and label if provided
+    if (key || body.key) {
+      updateData.key = key || body.key
+    }
+    if (statusLabel || body.label) {
+      updateData.label = statusLabel || body.label
+    }
+    
     const updated = await prisma.orderStatus.update({ 
-      where: { id: body.id },
-      data: { 
-        key: body.key, 
-        label: body.label, 
-        color: body.color || null, 
-        order: Number(body.order) || 0, 
-        isActive: body.isActive ?? true 
-      } 
+      where: { id: id || body.id },
+      data: updateData
     })
     return NextResponse.json({ status: 'success', data: updated })
   } catch (e) {

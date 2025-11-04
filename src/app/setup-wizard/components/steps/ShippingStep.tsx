@@ -30,8 +30,14 @@ export function ShippingStep({ onNext, onSkip, markCompleted }: WizardStepProps)
       const response = await fetch('/api/config/shipping');
       if (response.ok) {
         const result = await response.json();
-        if (result.data?.length > 0) {
-          setMethods(result.data);
+        if (result.status === 'success' && result.data?.length > 0) {
+          // Map API response to wizard format
+          setMethods(result.data.map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            cost: m.basePrice || 0,
+            estimatedDays: m.estimatedDays || 1
+          })));
           markCompleted();
         }
       }
@@ -64,12 +70,27 @@ export function ShippingStep({ onNext, onSkip, markCompleted }: WizardStepProps)
     setLoading(true);
     try {
       for (const method of methods) {
-        const reqMethod = method.id ? 'PUT' : 'POST';
-        await fetch('/api/config/shipping', {
-          method: reqMethod,
+        const response = await fetch('/api/config/shipping', {
+          method: method.id ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(method)
+          body: JSON.stringify({
+            id: method.id,
+            name: method.name,
+            cost: method.cost,
+            basePrice: method.cost,
+            estimatedDays: method.estimatedDays
+          })
         });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(errorData.error || `Failed to ${method.id ? 'update' : 'create'} shipping method: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        if (result.status !== 'success') {
+          throw new Error(result.error || 'Failed to save shipping method');
+        }
       }
 
       markCompleted();

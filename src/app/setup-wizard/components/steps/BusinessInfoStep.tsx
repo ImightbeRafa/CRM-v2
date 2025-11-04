@@ -34,8 +34,17 @@ export function BusinessInfoStep({ onNext, markCompleted }: WizardStepProps) {
       const response = await fetch('/api/config/business-info');
       if (response.ok) {
         const result = await response.json();
-        if (result.data?.length > 0) {
-          setFields(result.data);
+        if (result.status === 'success' && result.data?.length > 0) {
+          // Map API response to wizard format
+          setFields(result.data.map((field: any) => ({
+            id: field.id,
+            name: field.name,
+            type: field.type,
+            label: field.label,
+            placeholder: field.placeholder || '',
+            required: field.required || false,
+            order: field.order || 0
+          })));
           markCompleted();
         }
       }
@@ -81,20 +90,20 @@ export function BusinessInfoStep({ onNext, markCompleted }: WizardStepProps) {
     try {
       // Save each field
       for (const field of fields) {
-        if (field.id) {
-          // Update existing
-          await fetch('/api/config/business-info', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(field)
-          });
-        } else {
-          // Create new
-          await fetch('/api/config/business-info', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(field)
-          });
+        const response = await fetch('/api/config/business-info', {
+          method: field.id ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(field)
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(errorData.error || `Failed to ${field.id ? 'update' : 'create'} field: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        if (result.status !== 'success') {
+          throw new Error(result.error || 'Failed to save field');
         }
       }
 

@@ -30,8 +30,14 @@ export function SellersStep({ onNext, onSkip, markCompleted }: WizardStepProps) 
       const response = await fetch('/api/config/sellers');
       if (response.ok) {
         const result = await response.json();
-        if (result.data?.length > 0) {
-          setSellers(result.data);
+        if (result.status === 'success' && result.data?.length > 0) {
+          // Map API response to wizard format (schema only has name, not email/phone)
+          setSellers(result.data.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            email: '', // Schema doesn't have email
+            phone: '' // Schema doesn't have phone
+          })));
           markCompleted();
         }
       }
@@ -64,12 +70,24 @@ export function SellersStep({ onNext, onSkip, markCompleted }: WizardStepProps) 
     setLoading(true);
     try {
       for (const seller of sellers) {
-        const method = seller.id ? 'PUT' : 'POST';
-        await fetch('/api/config/sellers', {
-          method,
+        const response = await fetch('/api/config/sellers', {
+          method: seller.id ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(seller)
+          body: JSON.stringify({
+            id: seller.id,
+            name: seller.name
+          })
         });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(errorData.error || `Failed to ${seller.id ? 'update' : 'create'} seller: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        if (result.status !== 'success') {
+          throw new Error(result.error || 'Failed to save seller');
+        }
       }
 
       markCompleted();

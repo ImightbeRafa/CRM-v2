@@ -96,6 +96,7 @@ export async function GET(request: Request) {
           plan: 'FREE',
           isActive: true,
           trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
+          setupWizardCompleted: false, // New tenants must complete setup wizard
         }
       });
 

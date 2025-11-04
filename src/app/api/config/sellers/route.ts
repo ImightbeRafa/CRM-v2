@@ -35,9 +35,13 @@ export async function POST(request: NextRequest) {
     const prisma = getTenantPrisma(tenantId)
     
     const body = await request.json()
+    // Wizard sends: name, email, phone (but schema only has name)
+    // API expects: name
+    const { name } = body
+    
     const created = await prisma.seller.create({ 
       data: { 
-        name: body.name, 
+        name: name || body.name, 
         active: true,
         tenantId
       } 
@@ -58,9 +62,15 @@ export async function PUT(request: NextRequest) {
     const prisma = getTenantPrisma(tenantId)
     
     const body = await request.json()
+    // Wizard sends: id, name, email, phone (but schema only has name)
+    const { id, name, active } = body
+    
     const updated = await prisma.seller.update({ 
-      where: { id: body.id }, 
-      data: { name: body.name, active: body.active ?? true } 
+      where: { id: id || body.id }, 
+      data: { 
+        name: name || body.name, 
+        active: active !== undefined ? active : (body.active ?? true) 
+      } 
     })
     return NextResponse.json({ status: 'success', data: updated })
   } catch (e) {

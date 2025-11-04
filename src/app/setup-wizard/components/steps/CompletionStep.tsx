@@ -19,6 +19,15 @@ export function CompletionStep({ markCompleted }: WizardStepProps) {
 
   useEffect(() => {
     markCompleted();
+    
+    // Mark wizard as completed in the database
+    fetch('/api/setup/wizard-complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }).catch(error => {
+      console.error('Error marking wizard as complete:', error);
+      // Don't block user flow if this fails
+    });
   }, [markCompleted]);
 
   const nextSteps = [

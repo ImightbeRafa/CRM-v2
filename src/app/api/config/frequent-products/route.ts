@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
-import { getToken } from 'next-auth/jwt';
+import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { logCreate, logUpdate, logDelete } from '@/lib/auditLogger';
 
 export async function GET(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    const auth = await authenticateAPIWithPermission(request, 'view_config');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { tenantId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
     const frequentProducts = await prisma.inventoryItem.findMany({
       where: { isActive: true },
@@ -35,54 +35,32 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Check if user is MASTER
-    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const { tenantId, userId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
     const body = await request.json();
-    const { name, type, color, tamano, baseCost, isFavorite } = body;
-
-    // Get user's tenant
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub },
-      select: {
-        defaultTenantId: true,
-        memberships: {
-          where: { isActive: true },
-          select: { tenantId: true },
-          take: 1
-        }
-      }
-    });
-
-    const tenantId = user?.memberships[0]?.tenantId || user?.defaultTenantId;
-
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
+    // Wizard sends: name, price, description
+    // API expects: name, type, color, tamano, baseCost, isFavorite
+    const { name, price, description, type, color, tamano, baseCost, isFavorite } = body;
 
     const frequentProduct = await prisma.inventoryItem.create({
       data: {
         name,
-        description: type,
+        description: description || type || 'Producto frecuente',
         category: 'General',
         sku: `SKU-${Date.now()}`,
         currentStock: 0,
         minStock: 0,
-        unitCost: baseCost || 0,
-        sellingPrice: baseCost || 0,
+        unitCost: baseCost || price || 0,
+        sellingPrice: price || baseCost || 0,
         isActive: true,
         isFavorite: isFavorite || false,
         totalSold: 0,
-        createdBy: token.sub as string,
-        tenant: { connect: { id: tenantId } }
+        createdBy: userId,
+        tenantId
       }
     });
 
@@ -110,19 +88,15 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Check if user is MASTER
-    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const { tenantId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
     const body = await request.json();
-    const { id, name, type, color, tamano, baseCost, isFavorite, active } = body;
+    // Wizard sends: id, name, price, description
+    const { id, name, price, description, type, color, tamano, baseCost, isFavorite, active } = body;
 
     // Get old values for audit
     const oldProduct = await prisma.inventoryItem.findUnique({ where: { id } });
@@ -131,10 +105,10 @@ export async function PUT(request: NextRequest) {
       where: { id },
       data: {
         name,
-        description: type,
-        unitCost: baseCost || 0,
-        sellingPrice: baseCost || 0,
-        isFavorite,
+        description: description || type || oldProduct?.description || 'Producto frecuente',
+        unitCost: baseCost || price || oldProduct?.unitCost || 0,
+        sellingPrice: price || baseCost || oldProduct?.sellingPrice || 0,
+        isFavorite: isFavorite !== undefined ? isFavorite : oldProduct?.isFavorite || false,
         isActive: active !== undefined ? active : true,
         lastUpdated: new Date()
       }
@@ -165,16 +139,11 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
+    if (!auth.ok) return auth.response;
     
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Check if user is MASTER
-    if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const { tenantId } = auth;
+    const prisma = getTenantPrisma(tenantId);
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

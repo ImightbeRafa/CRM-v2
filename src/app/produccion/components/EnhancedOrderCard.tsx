@@ -80,18 +80,42 @@ export function EnhancedOrderCard({
     const configuredStatus = availableStatuses.find(s => s.label === status);
     
     if (configuredStatus && configuredStatus.color) {
-      // Use the custom color from configuration
-      return {
-        color: `${configuredStatus.color} text-white border-transparent`,
-        icon: <Clock className="h-3 w-3" />,
-        label: configuredStatus.label,
-        priority: 'medium' as const
-      };
+      // Check if color is a hex value or a Tailwind class
+      const isHexColor = configuredStatus.color.startsWith('#');
+      
+      if (isHexColor) {
+        // For hex colors, use inline styles with proper contrast
+        // Calculate text color based on brightness
+        const hex = configuredStatus.color.replace('#', '');
+        const r = parseInt(hex.substr(0, 2), 16);
+        const g = parseInt(hex.substr(2, 2), 16);
+        const b = parseInt(hex.substr(4, 2), 16);
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        const textColor = brightness > 128 ? 'text-gray-900' : 'text-white';
+        
+        return {
+          color: `border-transparent ${textColor}`,
+          colorStyle: { backgroundColor: configuredStatus.color },
+          icon: <Clock className="h-3 w-3" />,
+          label: configuredStatus.label,
+          priority: 'medium' as const
+        };
+      } else {
+        // For Tailwind classes, use as is
+        return {
+          color: `${configuredStatus.color} text-white border-transparent`,
+          colorStyle: undefined,
+          icon: <Clock className="h-3 w-3" />,
+          label: configuredStatus.label,
+          priority: 'medium' as const
+        };
+      }
     }
     
     // Fallback to hardcoded colors if status not configured
     const statusMap: Record<string, { 
       color: string; 
+      colorStyle?: React.CSSProperties;
       icon: React.ReactNode; 
       label: string;
       priority: 'low' | 'medium' | 'high' | 'urgent';
@@ -246,7 +270,10 @@ export function EnhancedOrderCard({
             </div>
           </div>
           
-          <Badge className={`${statusInfo.color} border flex items-center gap-1`}>
+          <Badge 
+            className={`${statusInfo.color} border flex items-center gap-1`}
+            style={statusInfo.colorStyle}
+          >
             {statusInfo.icon}
             {statusInfo.label}
           </Badge>

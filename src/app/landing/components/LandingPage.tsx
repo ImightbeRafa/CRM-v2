@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import NextImage from 'next/image';
 import { Button } from '@/app/components/ui/button';
+import BetsyLogo from '@/BetsyLogo.png';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { 
@@ -93,8 +95,16 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <h1 className="text-2xl font-bold text-blue-600">Betsy CRM</h1>
+              <div className="flex-shrink-0 flex items-center gap-3">
+                <NextImage 
+                  src={BetsyLogo} 
+                  alt="Betsy CRM" 
+                  width={40}
+                  height={40}
+                  className="object-contain"
+                  priority
+                />
+                <h1 className="text-2xl font-bold text-gray-900 hidden sm:block">Betsy CRM</h1>
               </div>
             </div>
             

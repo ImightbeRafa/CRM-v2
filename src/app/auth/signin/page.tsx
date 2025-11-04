@@ -3,7 +3,9 @@
 import { signIn } from "next-auth/react"
 import { useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
+import Image from "next/image"
 import { Button } from "@/app/components/ui/button"
+import BetsyLogo from "@/BetsyLogo.png"
 
 export default function SignInPage() {
   const [email, setEmail] = useState("")
@@ -149,7 +151,17 @@ export default function SignInPage() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100">
       <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-6 shadow-md">
         <div className="text-center">
-          <h2 className="mt-6 text-3xl font-bold text-gray-900">
+          <div className="flex justify-center mb-6">
+            <Image 
+              src={BetsyLogo} 
+              alt="Betsy CRM" 
+              width={64}
+              height={64}
+              className="object-contain"
+              priority
+            />
+          </div>
+          <h2 className="mt-2 text-3xl font-bold text-gray-900">
             {isRegistering ? 'Crear Cuenta' : 'Iniciar Sesión'}
           </h2>
           <p className="mt-2 text-gray-600">

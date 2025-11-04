@@ -3,7 +3,9 @@ import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import LogoutButton from "@/app/components/LogoutButton";
+import BetsyLogo from "@/BetsyLogo.png";
 import { Button } from "@/app/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/app/components/ui/dialog";
 import { Sparkles, Zap, Settings } from "lucide-react";
@@ -30,7 +32,17 @@ export default function HomeContent() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100">
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-gray-800 mb-4">Betsy CRM</h1>
+          <div className="flex justify-center mb-6">
+            <Image 
+              src={BetsyLogo} 
+              alt="Betsy CRM" 
+              width={80}
+              height={80}
+              className="object-contain"
+              priority
+            />
+          </div>
+          
           <p className="text-gray-600 mb-8">Por favor, inicia sesión para continuar</p>
           <Link
             href="/auth/signin"
@@ -48,16 +60,27 @@ export default function HomeContent() {
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
       <main className="container mx-auto px-4 md:px-6 py-6 md:py-8">
         <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6 md:mb-8">
-          <div className="flex-1">
-            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-800 mb-1 md:mb-2">Betsy CRM</h1>
-            <p className="text-sm md:text-base text-gray-600">Sistema de Gestión</p>
-            <div className="flex items-center gap-2 mt-2">
-              <p className="text-xs md:text-sm text-gray-500 truncate max-w-[200px] sm:max-w-none">Bienvenido, {session.user?.email}</p>
-              {session.user?.role === 'MASTER' && (
-                <span className="bg-red-600 text-white text-xs px-2 py-1 rounded-full font-bold flex-shrink-0">
-                  M
-                </span>
-              )}
+          <div className="flex-1 flex items-center gap-3">
+            <Image 
+              src={BetsyLogo} 
+              alt="Betsy CRM" 
+              width={56}
+              height={56}
+              className="object-contain flex-shrink-0"
+              style={{ width: 'auto', height: '3rem' }}
+              priority
+            />
+            <div>
+              
+              <p className="text-sm md:text-base text-gray-600 mb-2">Sistema de Gestión</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs md:text-sm text-gray-500 truncate max-w-[200px] sm:max-w-none">Bienvenido, {session.user?.email}</p>
+                {session.user?.role === 'MASTER' && (
+                  <span className="bg-red-600 text-white text-xs px-2 py-1 rounded-full font-bold flex-shrink-0">
+                    M
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 md:gap-4">

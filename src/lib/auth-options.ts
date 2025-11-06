@@ -249,7 +249,19 @@ export const authOptions: NextAuthOptions = {
                 providerId: true,
                 memberships: {
                   where: { isActive: true },
-                  include: { tenant: true }
+                  include: { 
+                    tenant: {
+                      select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                        plan: true,
+                        isActive: true,
+                        subscriptionStatus: true,
+                        trialEndsAt: true
+                      }
+                    }
+                  }
                 }
               }
             });
@@ -271,7 +283,19 @@ export const authOptions: NextAuthOptions = {
                   providerId: true,
                   memberships: {
                     where: { isActive: true },
-                    include: { tenant: true }
+                    include: { 
+                      tenant: {
+                        select: {
+                          id: true,
+                          name: true,
+                          slug: true,
+                          plan: true,
+                          isActive: true,
+                          subscriptionStatus: true,
+                          trialEndsAt: true
+                        }
+                      }
+                    }
                   }
                 }
               });
@@ -309,7 +333,19 @@ export const authOptions: NextAuthOptions = {
                   defaultTenantId: true,
                   memberships: {
                     where: { isActive: true },
-                    include: { tenant: true }
+                    include: { 
+                      tenant: {
+                        select: {
+                          id: true,
+                          name: true,
+                          slug: true,
+                          plan: true,
+                          isActive: true,
+                          subscriptionStatus: true,
+                          trialEndsAt: true
+                        }
+                      }
+                    }
                   }
                 }
               });
@@ -356,7 +392,19 @@ export const authOptions: NextAuthOptions = {
                       userId: updatedUser.id,
                       tenantId: updatedUser.defaultTenantId
                     },
-                    include: { tenant: true }
+                    include: { 
+                      tenant: {
+                        select: {
+                          id: true,
+                          name: true,
+                          slug: true,
+                          plan: true,
+                          isActive: true,
+                          subscriptionStatus: true,
+                          trialEndsAt: true
+                        }
+                      }
+                    }
                   });
                   
                   if (membership) {
@@ -385,7 +433,19 @@ export const authOptions: NextAuthOptions = {
                         isActive: true,
                         joinedAt: new Date()
                       },
-                      include: { tenant: true }
+                      include: { 
+                        tenant: {
+                          select: {
+                            id: true,
+                            name: true,
+                            slug: true,
+                            plan: true,
+                            isActive: true,
+                            subscriptionStatus: true,
+                            trialEndsAt: true
+                          }
+                        }
+                      }
                     });
                     
                     (user as any).role = 'REGULAR';
@@ -405,7 +465,19 @@ export const authOptions: NextAuthOptions = {
               const anyMembership = await prisma.membership.findFirst({
                 where: { userId: updatedUser.id },
                 orderBy: { joinedAt: 'desc' },
-                include: { tenant: true }
+                include: { 
+                  tenant: {
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                      plan: true,
+                      isActive: true,
+                      subscriptionStatus: true,
+                      trialEndsAt: true
+                    }
+                  }
+                }
               });
               
               if (anyMembership) {
@@ -490,7 +562,19 @@ export const authOptions: NextAuthOptions = {
                   where: { id: createdUser.id },
                   include: {
                     memberships: {
-                      include: { tenant: true }
+                      include: { 
+                        tenant: {
+                          select: {
+                            id: true,
+                            name: true,
+                            slug: true,
+                            plan: true,
+                            isActive: true,
+                            subscriptionStatus: true,
+                            trialEndsAt: true
+                          }
+                        }
+                      }
                     }
                   }
                 });
@@ -754,7 +838,19 @@ export const authOptions: NextAuthOptions = {
                       isActive: true,
                       joinedAt: new Date()
                     },
-                    include: { tenant: true }
+                    include: { 
+                      tenant: {
+                        select: {
+                          id: true,
+                          name: true,
+                          slug: true,
+                          plan: true,
+                          isActive: true,
+                          subscriptionStatus: true,
+                          trialEndsAt: true
+                        }
+                      }
+                    }
                   });
                   
                   // Create default order statuses

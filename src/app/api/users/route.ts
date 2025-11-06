@@ -139,7 +139,8 @@ export async function POST(request: NextRequest) {
           email: normalizedEmail, // Use normalized email
           username: username || normalizedEmail,
           password: hashedPassword,
-          active,
+          active: active !== false, // Default to true if not explicitly set to false
+          emailVerified: new Date(), // Set email as verified for API-created users
           defaultTenantId: tenantId
         },
         select: {

@@ -206,7 +206,17 @@ export const authOptions: NextAuthOptions = {
             // Check if user exists (try exact match first, then case-insensitive)
             let dbUser = await prisma.user.findUnique({
               where: { email: normalizedEmail },
-              include: {
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                username: true,
+                image: true,
+                emailVerified: true,
+                active: true,
+                defaultTenantId: true,
+                provider: true,
+                providerId: true,
                 memberships: {
                   where: { isActive: true },
                   include: { tenant: true }
@@ -218,7 +228,17 @@ export const authOptions: NextAuthOptions = {
             if (!dbUser && email !== normalizedEmail) {
               dbUser = await prisma.user.findUnique({
                 where: { email: email.trim() },
-                include: {
+                select: {
+                  id: true,
+                  email: true,
+                  name: true,
+                  username: true,
+                  image: true,
+                  emailVerified: true,
+                  active: true,
+                  defaultTenantId: true,
+                  provider: true,
+                  providerId: true,
                   memberships: {
                     where: { isActive: true },
                     include: { tenant: true }
@@ -244,7 +264,15 @@ export const authOptions: NextAuthOptions = {
                   // Normalize email if it was stored with different casing
                   ...(dbUser.email !== normalizedEmail && { email: normalizedEmail })
                 },
-                include: {
+                select: {
+                  id: true,
+                  email: true,
+                  name: true,
+                  username: true,
+                  image: true,
+                  emailVerified: true,
+                  active: true,
+                  defaultTenantId: true,
                   memberships: {
                     where: { isActive: true },
                     include: { tenant: true }
@@ -279,11 +307,90 @@ export const authOptions: NextAuthOptions = {
               (user as any).tenantId = selectedTenantId;
               console.log(`[OAuth] User associated with tenant: ${(user as any).tenantId} (from ${updatedUser.memberships.length} membership(s))`);
             } else {
-              // User exists but has no memberships - don't create a new tenant
-              // They need to be added to a tenant by an admin
-              console.warn(`[OAuth] User ${updatedUser.email} exists but has no active memberships`);
+              // User exists but has no memberships
+              // Check if they have a defaultTenantId set (they were added to a tenant but membership might be inactive)
+              if (updatedUser.defaultTenantId) {
+                // User has a defaultTenantId but no active memberships
+                // Try to reactivate or create membership
+                try {
+                  const existingMembership = await prisma.membership.findFirst({
+                    where: {
+                      userId: updatedUser.id,
+                      tenantId: updatedUser.defaultTenantId
+                    }
+                  });
+                  
+                  if (existingMembership) {
+                    // Reactivate the membership
+                    await prisma.membership.update({
+                      where: { id: existingMembership.id },
+                      data: { isActive: true }
+                    });
+                    // Reload user with updated memberships
+                    const reloadedUser = await prisma.user.findUnique({
+                      where: { id: updatedUser.id },
+                      include: {
+                        memberships: {
+                          where: { isActive: true },
+                          include: { tenant: true }
+                        }
+                      }
+                    });
+                    if (reloadedUser && reloadedUser.memberships.length > 0) {
+                      (user as any).role = reloadedUser.memberships.some(m => m.role === 'OWNER') ? 'MASTER' : 'REGULAR';
+                      (user as any).tenantId = reloadedUser.defaultTenantId || reloadedUser.memberships[0]?.tenantId;
+                      (user as any).memberships = reloadedUser.memberships;
+                      console.log(`[OAuth] Reactivated membership for user ${updatedUser.email}`);
+                      return true;
+                    }
+                  } else {
+                    // Create new membership - try to get role from any existing inactive membership
+                    const inactiveMembership = await prisma.membership.findFirst({
+                      where: {
+                        userId: updatedUser.id,
+                        tenantId: updatedUser.defaultTenantId
+                      }
+                    });
+                    const membershipRole = inactiveMembership?.role || 'VIEWER';
+                    
+                    await prisma.membership.create({
+                      data: {
+                        userId: updatedUser.id,
+                        tenantId: updatedUser.defaultTenantId,
+                        role: membershipRole,
+                        isActive: true,
+                        joinedAt: new Date()
+                      }
+                    });
+                    // Reload user
+                    const reloadedUser = await prisma.user.findUnique({
+                      where: { id: updatedUser.id },
+                      include: {
+                        memberships: {
+                          where: { isActive: true },
+                          include: { tenant: true }
+                        }
+                      }
+                    });
+                    if (reloadedUser && reloadedUser.memberships.length > 0) {
+                      (user as any).role = 'REGULAR';
+                      (user as any).tenantId = reloadedUser.defaultTenantId || reloadedUser.memberships[0]?.tenantId;
+                      (user as any).memberships = reloadedUser.memberships;
+                      console.log(`[OAuth] Created membership for user ${updatedUser.email}`);
+                      return true;
+                    }
+                  }
+                } catch (membershipError) {
+                  console.error(`[OAuth] Error handling membership for user ${updatedUser.email}:`, membershipError);
+                }
+              }
+              
+              // If we get here, user has no memberships and no defaultTenantId
+              // Allow login but they'll need to be added to a tenant
+              console.warn(`[OAuth] User ${updatedUser.email} exists but has no active memberships or defaultTenantId`);
               (user as any).role = 'REGULAR';
               (user as any).tenantId = null;
+              // Still return true to allow login - they can be added to tenant later
             }
               
               return true;

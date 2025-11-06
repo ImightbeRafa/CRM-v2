@@ -339,7 +339,8 @@ export default function ConfigPage() {
             email: userData.email,
             username: userData.username, // Required field for tracking
             role: userData.role,
-            active: userData.active
+            active: userData.active,
+            password: userData.password // Password is required for new users
           }
 
       const response = await fetch(url, {
@@ -1533,6 +1534,31 @@ export default function ConfigPage() {
                   />
                   <p className="text-xs text-gray-500 mt-1">Usado para identificar quién realiza acciones (ventas, órdenes, etc.)</p>
                 </div>
+                {!editingUser && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Contraseña <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        name="password"
+                        placeholder="Mínimo 8 caracteres"
+                        className="w-full p-2 pr-24 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                        required
+                        minLength={8}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(prev => !prev)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-purple-600 hover:text-purple-800"
+                      >
+                        {showPassword ? 'Ocultar' : 'Mostrar'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">La contraseña es requerida para nuevos usuarios. Mínimo 8 caracteres.</p>
+                  </div>
+                )}
                 {editingUser && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>

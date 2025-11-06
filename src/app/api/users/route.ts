@@ -67,12 +67,22 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response
     
     const { tenantId } = auth
-    const { email, username, role = 'VIEWER', active = true } = await request.json()
+    const { email, username, role = 'VIEWER', active = true, password } = await request.json()
     
     // Validate required fields
     const missingField = validateRequiredFields({ email }, ['email'])
     if (missingField) {
       return createErrorResponse(missingField, 400)
+    }
+    
+    // Validate password is provided for new users
+    if (!password || password.trim().length === 0) {
+      return createErrorResponse('Password is required when creating a new user', 400)
+    }
+    
+    // Validate password strength (minimum 8 characters)
+    if (password.trim().length < 8) {
+      return createErrorResponse('Password must be at least 8 characters long', 400)
     }
     
     // Normalize email (trim and lowercase) for consistency
@@ -121,9 +131,8 @@ export async function POST(request: NextRequest) {
       // Add existing user to this tenant
       userId = existingUser.id
     } else {
-      // Create new user
-      const defaultPassword = 'password123' // Default password for new users
-      const hashedPassword = await hashPassword(defaultPassword) // Hash password with bcrypt
+      // Create new user with provided password
+      const hashedPassword = await hashPassword(password.trim()) // Hash password with bcrypt
       
       const newUser = await prisma.user.create({
         data: {

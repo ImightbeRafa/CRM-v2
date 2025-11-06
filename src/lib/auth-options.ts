@@ -258,20 +258,33 @@ export const authOptions: NextAuthOptions = {
               (user as any).active = updatedUser.active !== false;
               (user as any).memberships = updatedUser.memberships || [];
               
-              // Set role based on memberships - use existing tenant memberships
-              if (updatedUser.memberships.length > 0) {
-                const hasOwnerRole = updatedUser.memberships.some(m => m.role === 'OWNER');
-                (user as any).role = hasOwnerRole ? 'MASTER' : 'REGULAR';
-                // Use the first active membership's tenant (or defaultTenantId if set)
-                (user as any).tenantId = updatedUser.defaultTenantId || updatedUser.memberships[0]?.tenantId;
-                console.log(`[OAuth] User associated with tenant: ${(user as any).tenantId}`);
+            // Set role based on memberships - use existing tenant memberships
+            if (updatedUser.memberships.length > 0) {
+              const hasOwnerRole = updatedUser.memberships.some(m => m.role === 'OWNER');
+              (user as any).role = hasOwnerRole ? 'MASTER' : 'REGULAR';
+              // Prioritize defaultTenantId if set, otherwise use first active membership
+              // Also check if defaultTenantId is in the memberships list
+              let selectedTenantId = updatedUser.defaultTenantId;
+              if (selectedTenantId) {
+                // Verify defaultTenantId is in active memberships
+                const hasDefaultTenant = updatedUser.memberships.some(m => m.tenantId === selectedTenantId);
+                if (!hasDefaultTenant) {
+                  // Default tenant not in active memberships, use first one
+                  selectedTenantId = updatedUser.memberships[0]?.tenantId;
+                }
               } else {
-                // User exists but has no memberships - don't create a new tenant
-                // They need to be added to a tenant by an admin
-                console.warn(`[OAuth] User ${updatedUser.email} exists but has no active memberships`);
-                (user as any).role = 'REGULAR';
-                (user as any).tenantId = null;
+                // No defaultTenantId, use first active membership
+                selectedTenantId = updatedUser.memberships[0]?.tenantId;
               }
+              (user as any).tenantId = selectedTenantId;
+              console.log(`[OAuth] User associated with tenant: ${(user as any).tenantId} (from ${updatedUser.memberships.length} membership(s))`);
+            } else {
+              // User exists but has no memberships - don't create a new tenant
+              // They need to be added to a tenant by an admin
+              console.warn(`[OAuth] User ${updatedUser.email} exists but has no active memberships`);
+              (user as any).role = 'REGULAR';
+              (user as any).tenantId = null;
+            }
               
               return true;
             }
@@ -384,7 +397,15 @@ export const authOptions: NextAuthOptions = {
         try {
           const dbUser = await prisma.user.findUnique({
             where: { email: token.email },
-            include: { 
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              username: true,
+              image: true,
+              emailVerified: true,
+              active: true,
+              defaultTenantId: true,
               memberships: {
                 where: { isActive: true },
                 include: { 
@@ -421,13 +442,28 @@ export const authOptions: NextAuthOptions = {
             if (memberships.length > 0) {
               const hasOwnerRole = memberships.some(m => m.role === 'OWNER');
               token.role = hasOwnerRole ? 'MASTER' : 'REGULAR';
-              token.tenantId = memberships[0]?.tenantId;
+              
+              // Prioritize defaultTenantId if set and in active memberships
+              let selectedTenantId = dbUser.defaultTenantId;
+              if (selectedTenantId) {
+                // Verify defaultTenantId is in active memberships
+                const hasDefaultTenant = memberships.some(m => m.tenantId === selectedTenantId);
+                if (!hasDefaultTenant) {
+                  // Default tenant not in active memberships, use first one
+                  selectedTenantId = memberships[0]?.tenantId;
+                }
+              } else {
+                // No defaultTenantId, use first active membership
+                selectedTenantId = memberships[0]?.tenantId;
+              }
+              
+              token.tenantId = selectedTenantId;
               
               // Store all tenant IDs for easy access
               token.allTenantIds = memberships.map(m => m.tenantId);
               
-              // Store current tenant info (first one by default)
-              const currentMembership = memberships[0];
+              // Find the membership for the selected tenant
+              const currentMembership = memberships.find(m => m.tenantId === selectedTenantId) || memberships[0];
               if (currentMembership?.tenant) {
                 // Safely access setupWizardCompleted - it may not exist in all database schemas
                 const tenant = currentMembership.tenant as any;
@@ -553,8 +589,4 @@ export const authOptions: NextAuthOptions = {
   },
   secret: process.env.NEXTAUTH_SECRET || "dev-secret",
   debug: process.env.NODE_ENV === 'development',
-  pages: {
-    signIn: '/auth/signin',
-    error: '/auth/error',
-  }
 }

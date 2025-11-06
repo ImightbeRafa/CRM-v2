@@ -279,7 +279,10 @@ export const authOptions: NextAuthOptions = {
 
             // If user exists, update their information and associate with existing tenants
             if (dbUser) {
-              console.log(`[OAuth] Found existing user: ${dbUser.email} with ${dbUser.memberships.length} active membership(s)`);
+              console.log(`[OAuth] 📧 Found existing user: ${dbUser.email}`);
+              console.log(`[OAuth] 📊 Active memberships: ${dbUser.memberships.length}`);
+              console.log(`[OAuth] 🎯 User active status: ${dbUser.active}`);
+              console.log(`[OAuth] 🏢 Default tenant ID: ${dbUser.defaultTenantId || 'none'}`);
               
               // Update user with latest info from OAuth provider, including OAuth provider info
               const updatedUser = await prisma.user.update({
@@ -526,14 +529,107 @@ export const authOptions: NextAuthOptions = {
     },
     
     async jwt({ token, user, account }) {
-      // Initial sign in
+      // Initial sign in - populate all token fields
       if (user) {
         token.id = user.id;
         token.role = (user as any).role || 'REGULAR';
         token.tenantId = (user as any).tenantId;
         token.email_verified = (user as any).email_verified || false;
         token.active = (user as any).active !== false; // Default to true if not set
-        token.memberships = (user as any).memberships || [];
+        
+        const memberships = (user as any).memberships || [];
+        token.memberships = memberships;
+        
+        // CRITICAL: Set allTenantIds and currentTenant during initial sign-in
+        if (memberships.length > 0) {
+          token.allTenantIds = memberships.map((m: any) => m.tenantId || m.tenant?.id).filter(Boolean);
+          
+          // Find current tenant details
+          const tenantId = (user as any).tenantId;
+          const currentMembership = memberships.find((m: any) => (m.tenantId || m.tenant?.id) === tenantId) || memberships[0];
+          
+          if (currentMembership) {
+            const tenant = currentMembership.tenant;
+            
+            // If tenant data is not included, fetch it from database
+            if (!tenant && currentMembership.tenantId) {
+              try {
+                const fetchedTenant = await prisma.tenant.findUnique({
+                  where: { id: currentMembership.tenantId },
+                  select: {
+                    id: true,
+                    name: true,
+                    slug: true,
+                    isActive: true,
+                    plan: true,
+                    subscriptionStatus: true,
+                    trialEndsAt: true
+                  }
+                });
+                
+                if (fetchedTenant) {
+                  token.currentTenant = {
+                    id: fetchedTenant.id,
+                    role: currentMembership.role,
+                    name: fetchedTenant.name,
+                    slug: fetchedTenant.slug,
+                    isActive: fetchedTenant.isActive,
+                    plan: fetchedTenant.plan || 'FREE',
+                    subscriptionStatus: fetchedTenant.subscriptionStatus || null,
+                    trialEndsAt: fetchedTenant.trialEndsAt || null,
+                    setupWizardCompleted: false
+                  };
+                  console.log(`[JWT] ✅ Fetched tenant data for initial sign-in: ${fetchedTenant.name}`);
+                }
+              } catch (error) {
+                console.error('[JWT] ❌ Error fetching tenant data:', error);
+                // Fallback to basic tenant info
+                token.currentTenant = {
+                  id: currentMembership.tenantId || tenantId,
+                  role: currentMembership.role,
+                  name: '',
+                  slug: '',
+                  isActive: true,
+                  plan: 'FREE',
+                  subscriptionStatus: null,
+                  trialEndsAt: null,
+                  setupWizardCompleted: false
+                };
+              }
+            } else if (tenant) {
+              // Tenant data is already included
+              token.currentTenant = {
+                id: tenant.id,
+                role: currentMembership.role,
+                name: tenant.name,
+                slug: tenant.slug,
+                isActive: tenant.isActive,
+                plan: tenant.plan || 'FREE',
+                subscriptionStatus: tenant.subscriptionStatus || null,
+                trialEndsAt: tenant.trialEndsAt || null,
+                setupWizardCompleted: false
+              };
+              console.log(`[JWT] ✅ Using included tenant data: ${tenant.name}`);
+            } else {
+              // No tenant data available, use minimal fallback
+              token.currentTenant = {
+                id: currentMembership.tenantId || tenantId,
+                role: currentMembership.role,
+                name: '',
+                slug: '',
+                isActive: true,
+                plan: 'FREE',
+                subscriptionStatus: null,
+                trialEndsAt: null,
+                setupWizardCompleted: false
+              };
+              console.log(`[JWT] ⚠️ Using fallback tenant data for: ${currentMembership.tenantId || tenantId}`);
+            }
+          }
+        } else {
+          token.allTenantIds = [];
+          token.currentTenant = null;
+        }
       }
       
       // Update token with latest user data if needed
@@ -562,7 +658,6 @@ export const authOptions: NextAuthOptions = {
                       plan: true,
                       subscriptionStatus: true,
                       trialEndsAt: true,
-                      setupWizardCompleted: true,
                       createdAt: true
                     }
                   }
@@ -609,8 +704,6 @@ export const authOptions: NextAuthOptions = {
               // Find the membership for the selected tenant
               const currentMembership = memberships.find(m => m.tenantId === selectedTenantId) || memberships[0];
               if (currentMembership?.tenant) {
-                // Safely access setupWizardCompleted - it may not exist in all database schemas
-                const tenant = currentMembership.tenant as any;
                 token.currentTenant = {
                   id: currentMembership.tenant.id,
                   role: currentMembership.role,
@@ -620,7 +713,7 @@ export const authOptions: NextAuthOptions = {
                   plan: currentMembership.tenant.plan || 'FREE',
                   subscriptionStatus: currentMembership.tenant.subscriptionStatus || null,
                   trialEndsAt: currentMembership.tenant.trialEndsAt || null,
-                  setupWizardCompleted: tenant.setupWizardCompleted ?? false // Default to false if not present
+                  setupWizardCompleted: false
                 };
               }
             } else {
@@ -635,8 +728,7 @@ export const authOptions: NextAuthOptions = {
                       slug: dbUser.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-'),
                       plan: 'FREE',
                       isActive: true,
-                      trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
-                      setupWizardCompleted: false, // New tenants must complete setup wizard
+                      trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000) // 15 days from now
                     }
                   });
                   
@@ -674,7 +766,7 @@ export const authOptions: NextAuthOptions = {
                     plan: newTenant.plan || 'FREE',
                     subscriptionStatus: newTenant.subscriptionStatus || null,
                     trialEndsAt: newTenant.trialEndsAt || null,
-                    setupWizardCompleted: newTenant.setupWizardCompleted || false
+                    setupWizardCompleted: false
                   };
                   token.memberships = [membership];
                 } catch (error) {

@@ -200,9 +200,12 @@ export const authOptions: NextAuthOptions = {
               return false;
             }
 
-            // Check if user exists
-            const dbUser = await prisma.user.findUnique({
-              where: { email },
+            // Normalize email for lookup (trim and lowercase)
+            const normalizedEmail = email.trim().toLowerCase();
+            
+            // Check if user exists (try exact match first, then case-insensitive)
+            let dbUser = await prisma.user.findUnique({
+              where: { email: normalizedEmail },
               include: {
                 memberships: {
                   where: { isActive: true },
@@ -210,16 +213,36 @@ export const authOptions: NextAuthOptions = {
                 }
               }
             });
+            
+            // If not found with normalized email, try original email (in case database has different casing)
+            if (!dbUser && email !== normalizedEmail) {
+              dbUser = await prisma.user.findUnique({
+                where: { email: email.trim() },
+                include: {
+                  memberships: {
+                    where: { isActive: true },
+                    include: { tenant: true }
+                  }
+                }
+              });
+            }
 
-            // If user exists, update their information and return
+            // If user exists, update their information and associate with existing tenants
             if (dbUser) {
-              // Update user with latest info from OAuth provider
+              console.log(`[OAuth] Found existing user: ${dbUser.email} with ${dbUser.memberships.length} active membership(s)`);
+              
+              // Update user with latest info from OAuth provider, including OAuth provider info
               const updatedUser = await prisma.user.update({
                 where: { id: dbUser.id },
                 data: {
                   name: user.name || dbUser.name,
                   image: user.image || dbUser.image,
-                  emailVerified: dbUser.emailVerified || new Date()
+                  emailVerified: dbUser.emailVerified || new Date(),
+                  // Update OAuth provider info so user can log in with Google in the future
+                  provider: account?.provider || dbUser.provider || 'google',
+                  providerId: account?.providerAccountId || dbUser.providerId,
+                  // Normalize email if it was stored with different casing
+                  ...(dbUser.email !== normalizedEmail && { email: normalizedEmail })
                 },
                 include: {
                   memberships: {
@@ -235,19 +258,28 @@ export const authOptions: NextAuthOptions = {
               (user as any).active = updatedUser.active !== false;
               (user as any).memberships = updatedUser.memberships || [];
               
-              // Set role based on memberships
+              // Set role based on memberships - use existing tenant memberships
               if (updatedUser.memberships.length > 0) {
                 const hasOwnerRole = updatedUser.memberships.some(m => m.role === 'OWNER');
                 (user as any).role = hasOwnerRole ? 'MASTER' : 'REGULAR';
-                (user as any).tenantId = updatedUser.memberships[0]?.tenantId;
+                // Use the first active membership's tenant (or defaultTenantId if set)
+                (user as any).tenantId = updatedUser.defaultTenantId || updatedUser.memberships[0]?.tenantId;
+                console.log(`[OAuth] User associated with tenant: ${(user as any).tenantId}`);
+              } else {
+                // User exists but has no memberships - don't create a new tenant
+                // They need to be added to a tenant by an admin
+                console.warn(`[OAuth] User ${updatedUser.email} exists but has no active memberships`);
+                (user as any).role = 'REGULAR';
+                (user as any).tenantId = null;
               }
               
               return true;
             }
 
             // If we get here, user doesn't exist - create new user with tenant
+            console.log(`[OAuth] Creating new user: ${normalizedEmail}`);
             try {
-              const emailPrefix = email.split('@')[0];
+              const emailPrefix = normalizedEmail.split('@')[0];
               const tenantName = `${user.name || emailPrefix}'s Organization`;
               
               // Create tenant first
@@ -273,11 +305,12 @@ export const authOptions: NextAuthOptions = {
               const newUser = await prisma.$transaction(async (tx) => {
                 const createdUser = await tx.user.create({
                   data: {
-                    email: email,
+                    email: normalizedEmail, // Use normalized email
                     username: user.name || emailPrefix,
                     name: user.name || undefined,
                     image: user.image || undefined,
-                    provider: 'google',
+                    provider: account?.provider || 'google',
+                    providerId: account?.providerAccountId,
                     emailVerified: new Date(),
                     active: true
                   }

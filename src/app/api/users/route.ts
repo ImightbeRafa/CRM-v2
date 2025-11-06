@@ -75,6 +75,9 @@ export async function POST(request: NextRequest) {
       return createErrorResponse(missingField, 400)
     }
     
+    // Normalize email (trim and lowercase) for consistency
+    const normalizedEmail = email.trim().toLowerCase()
+    
     // Check plan user limit (soft enforcement)
     const limitCheck = await checkUserLimit(tenantId)
     if (!limitCheck.allowed) {
@@ -88,10 +91,17 @@ export async function POST(request: NextRequest) {
       }, { status: 402 }) // 402 Payment Required
     }
 
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
+    // Check if user already exists (try normalized email first)
+    let existingUser = await prisma.user.findUnique({
+      where: { email: normalizedEmail }
     })
+    
+    // If not found, try original email (in case database has different casing)
+    if (!existingUser && email !== normalizedEmail) {
+      existingUser = await prisma.user.findUnique({
+        where: { email: email.trim() }
+      })
+    }
     
     let userId: string
     
@@ -117,8 +127,8 @@ export async function POST(request: NextRequest) {
       
       const newUser = await prisma.user.create({
         data: {
-          email,
-          username: username || email,
+          email: normalizedEmail, // Use normalized email
+          username: username || normalizedEmail,
           password: hashedPassword,
           active,
           defaultTenantId: tenantId
@@ -147,9 +157,9 @@ export async function POST(request: NextRequest) {
     
     // Log audit trail
     try {
-      await logCreate(request, 'user', userId, username || email, {
-        email,
-        username: username || email,
+      await logCreate(request, 'user', userId, username || normalizedEmail, {
+        email: normalizedEmail,
+        username: username || normalizedEmail,
         role: role || 'VIEWER',
         tenantId
       })
@@ -158,7 +168,7 @@ export async function POST(request: NextRequest) {
     }
     
     return createSuccessResponse(
-      { userId, email, role, membershipId: membership.id }, 
+      { userId, email: normalizedEmail, role, membershipId: membership.id }, 
       existingUser ? 'Usuario agregado al tenant' : 'Usuario creado exitosamente'
     )
   } catch (error) {

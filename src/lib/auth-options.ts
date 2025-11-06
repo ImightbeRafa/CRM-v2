@@ -288,6 +288,7 @@ export const authOptions: NextAuthOptions = {
                   name: user.name || dbUser.name,
                   image: user.image || dbUser.image,
                   emailVerified: dbUser.emailVerified || new Date(),
+                  active: true, // CRITICAL: Activate user on OAuth login (fixes users created inactive via API)
                   // Update OAuth provider info so user can log in with Google in the future
                   provider: account?.provider || dbUser.provider || 'google',
                   providerId: account?.providerAccountId || dbUser.providerId,

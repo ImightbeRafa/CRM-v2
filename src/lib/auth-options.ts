@@ -89,10 +89,13 @@ export const authOptions: NextAuthOptions = {
         if (!email || !password) return null
         
         try {
-          // Find user by email only (username is for display/tracking purposes)
-          const user = await prisma.user.findUnique({
+          // Normalize email (trim and lowercase) for consistent lookup
+          const normalizedEmail = email.toLowerCase()
+          
+          // Find user by normalized email (emails are stored normalized)
+          let user = await prisma.user.findUnique({
             where: { 
-              email: email
+              email: normalizedEmail
             },
             select: { 
               id: true, 
@@ -109,9 +112,36 @@ export const authOptions: NextAuthOptions = {
             }
           })
           
-          // Check if user exists and is active
+          // If not found with normalized email, try original (for migration)
+          if (!user && email !== normalizedEmail) {
+            user = await prisma.user.findUnique({
+              where: { email: email },
+              select: { 
+                id: true, 
+                username: true, 
+                email: true,
+                password: true, 
+                active: true,
+                emailVerified: true,
+                defaultTenantId: true,
+                memberships: {
+                  where: { isActive: true },
+                  select: { role: true, tenantId: true }
+                }
+              }
+            })
+          }
+          
+          // Check if user exists
           if (!user) {
-            throw new Error('Invalid credentials')
+            console.log(`[Credentials Auth] User not found: ${normalizedEmail}`)
+            return null
+          }
+          
+          // Check if user is active
+          if (!user.active) {
+            console.log(`[Credentials Auth] User is inactive: ${normalizedEmail}`)
+            return null
           }
           
           // Check if email is verified (only for non-OAuth users with password)
@@ -386,11 +416,45 @@ export const authOptions: NextAuthOptions = {
               }
               
               // If we get here, user has no memberships and no defaultTenantId
-              // Allow login but they'll need to be added to a tenant
-              console.warn(`[OAuth] User ${updatedUser.email} exists but has no active memberships or defaultTenantId`);
-              (user as any).role = 'REGULAR';
-              (user as any).tenantId = null;
-              // Still return true to allow login - they can be added to tenant later
+              // Check if they have ANY memberships (even inactive ones) to get tenant info
+              const anyMembership = await prisma.membership.findFirst({
+                where: { userId: updatedUser.id },
+                orderBy: { joinedAt: 'desc' }
+              });
+              
+              if (anyMembership) {
+                // Reactivate the most recent membership
+                await prisma.membership.update({
+                  where: { id: anyMembership.id },
+                  data: { isActive: true }
+                });
+                // Update defaultTenantId
+                await prisma.user.update({
+                  where: { id: updatedUser.id },
+                  data: { defaultTenantId: anyMembership.tenantId }
+                });
+                // Reload
+                const reloadedUser = await prisma.user.findUnique({
+                  where: { id: updatedUser.id },
+                  include: {
+                    memberships: {
+                      where: { isActive: true },
+                      include: { tenant: true }
+                    }
+                  }
+                });
+                if (reloadedUser && reloadedUser.memberships.length > 0) {
+                  (user as any).role = reloadedUser.memberships.some(m => m.role === 'OWNER') ? 'MASTER' : 'REGULAR';
+                  (user as any).tenantId = reloadedUser.memberships[0]?.tenantId;
+                  (user as any).memberships = reloadedUser.memberships;
+                  console.log(`[OAuth] Reactivated most recent membership for user ${updatedUser.email}`);
+                  return true;
+                }
+              }
+              
+              // If still no memberships, deny access - user needs to be added to a tenant
+              console.error(`[OAuth] User ${updatedUser.email} has no memberships - denying access`);
+              return false;
             }
               
               return true;

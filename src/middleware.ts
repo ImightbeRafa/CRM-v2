@@ -50,6 +50,13 @@ export default async function middleware(request: Request) {
 
     // Validate required fields
     if (!userId) {
+      // For API routes, return JSON; for app routes, redirect
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json(
+          { error: 'Unauthorized', message: 'Invalid session' },
+          { status: 401, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
       return redirectToLogin(url);
     }
 
@@ -92,8 +99,20 @@ function isPublicRoute(pathname: string): boolean {
 
 /**
  * Redirect to login page with callback URL
+ * For API routes, return JSON error instead of redirect
  */
 function redirectToLogin(url: URL): NextResponse {
+  const pathname = url.pathname;
+  
+  // For API routes, return JSON error instead of HTML redirect
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.json(
+      { error: 'Unauthorized', message: 'Authentication required' },
+      { status: 401, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+  
+  // For app routes, redirect to login page
   const loginUrl = new URL('/auth/signin', url.origin);
   loginUrl.searchParams.set('callbackUrl', url.pathname);
   return NextResponse.redirect(loginUrl);

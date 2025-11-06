@@ -544,9 +544,16 @@ export const authOptions: NextAuthOptions = {
         if (memberships.length > 0) {
           token.allTenantIds = memberships.map((m: any) => m.tenantId || m.tenant?.id).filter(Boolean);
           
-          // Find current tenant details
-          const tenantId = (user as any).tenantId;
-          const currentMembership = memberships.find((m: any) => (m.tenantId || m.tenant?.id) === tenantId) || memberships[0];
+          // Find current tenant details - prioritize user's tenantId, fallback to first membership
+          const userTenantId = (user as any).tenantId;
+          const currentMembership = memberships.find((m: any) => (m.tenantId || m.tenant?.id) === userTenantId) || memberships[0];
+          
+          // CRITICAL: Always set tenantId on token when user has memberships
+          const selectedTenantId = currentMembership.tenantId || currentMembership.tenant?.id;
+          if (selectedTenantId) {
+            token.tenantId = selectedTenantId;
+            console.log(`[JWT] ✅ Set tenantId on initial sign-in: ${selectedTenantId}`);
+          }
           
           if (currentMembership) {
             const tenant = currentMembership.tenant;
@@ -585,7 +592,7 @@ export const authOptions: NextAuthOptions = {
                 console.error('[JWT] ❌ Error fetching tenant data:', error);
                 // Fallback to basic tenant info
                 token.currentTenant = {
-                  id: currentMembership.tenantId || tenantId,
+                  id: currentMembership.tenantId || selectedTenantId,
                   role: currentMembership.role,
                   name: '',
                   slug: '',
@@ -613,7 +620,7 @@ export const authOptions: NextAuthOptions = {
             } else {
               // No tenant data available, use minimal fallback
               token.currentTenant = {
-                id: currentMembership.tenantId || tenantId,
+                id: currentMembership.tenantId || selectedTenantId,
                 role: currentMembership.role,
                 name: '',
                 slug: '',
@@ -623,7 +630,7 @@ export const authOptions: NextAuthOptions = {
                 trialEndsAt: null,
                 setupWizardCompleted: false
               };
-              console.log(`[JWT] ⚠️ Using fallback tenant data for: ${currentMembership.tenantId || tenantId}`);
+              console.log(`[JWT] ⚠️ Using fallback tenant data for: ${currentMembership.tenantId || selectedTenantId}`);
             }
           }
         } else {

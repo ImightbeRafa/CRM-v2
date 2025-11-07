@@ -33,7 +33,7 @@ model Tenant {
   currentPeriodEnd      DateTime?
   cancelAtPeriodEnd     Boolean  @default(false)
   trialEndsAt           DateTime? // 15-day trial end date
-  setupWizardCompleted  Boolean  @default(false) // Track if setup wizard has been completed
+  setupWizardCompleted  Boolean?  @default(false) // Track if setup wizard has been completed
   
   // Relations
   memberships    Membership[]

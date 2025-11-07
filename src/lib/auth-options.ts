@@ -512,30 +512,25 @@ export const authOptions: NextAuthOptions = {
             try {
               const emailPrefix = normalizedEmail.split('@')[0];
               const tenantName = `${user.name || emailPrefix}'s Organization`;
+              const tenantSlug = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now();
               
-              // Create tenant first
-              const newTenant = await prisma.tenant.create({
-                data: {
-                  name: tenantName,
-                  slug: emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-                  plan: 'FREE',
-                  isActive: true,
-                  trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
-                }
-              });
-
-              // Create default order statuses for the new tenant
-              try {
-                await createDefaultOrderStatuses(newTenant.id);
-              } catch (statusError) {
-                console.warn('Failed to create default order statuses for new tenant:', statusError);
-                // Don't fail the sign-up process if status creation fails
-              }
-
-              // Create user with membership in a transaction to ensure data consistency
+              // Create user, tenant, membership, and statuses in ONE atomic transaction
               let newUser: any
               try {
                 newUser = await prisma.$transaction(async (tx) => {
+                  console.log('[OAuth]   1️⃣ Creating tenant...');
+                  const newTenant = await tx.tenant.create({
+                    data: {
+                      name: tenantName,
+                      slug: tenantSlug, // Include timestamp to avoid duplicates
+                      plan: 'FREE',
+                      isActive: true,
+                      trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
+                    }
+                  });
+                  console.log('[OAuth]   ✅ Tenant created:', newTenant.id);
+
+                  console.log('[OAuth]   2️⃣ Creating user...');
                   const createdUser = await tx.user.create({
                     data: {
                       email: normalizedEmail, // Use normalized email (MUST be globally unique)
@@ -549,38 +544,63 @@ export const authOptions: NextAuthOptions = {
                       defaultTenantId: newTenant.id // Set default tenant immediately
                     }
                   });
+                  console.log('[OAuth]   ✅ User created:', createdUser.id);
 
-                await tx.membership.create({
-                  data: {
-                    role: 'OWNER',
-                    isActive: true,
-                    joinedAt: new Date(),
-                    user: { connect: { id: createdUser.id } },
-                    tenant: { connect: { id: newTenant.id } }
-                  }
-                });
+                  console.log('[OAuth]   3️⃣ Creating membership...');
+                  await tx.membership.create({
+                    data: {
+                      role: 'OWNER',
+                      isActive: true,
+                      joinedAt: new Date(),
+                      user: { connect: { id: createdUser.id } },
+                      tenant: { connect: { id: newTenant.id } }
+                    }
+                  });
+                  console.log('[OAuth]   ✅ Membership created');
 
-                return tx.user.findUnique({
-                  where: { id: createdUser.id },
-                  include: {
-                    memberships: {
-                      include: { 
-                        tenant: {
-                          select: {
-                            id: true,
-                            name: true,
-                            slug: true,
-                            plan: true,
-                            isActive: true,
-                            subscriptionStatus: true,
-                            trialEndsAt: true
+                  // Create default order statuses in same transaction
+                  console.log('[OAuth]   4️⃣ Creating default order statuses...');
+                  const defaultStatuses = [
+                    { key: 'pendiente', label: 'Pendiente', color: '#FCD34D', order: 0 },
+                    { key: 'en-proceso', label: 'En Proceso', color: '#60A5FA', order: 1 },
+                    { key: 'urgente', label: 'Urgente', color: '#EF4444', order: 2 },
+                    { key: 'completado', label: 'Completado', color: '#10B981', order: 3 },
+                    { key: 'enviado', label: 'Enviado', color: '#A855F7', order: 4 },
+                    { key: 'entregado', label: 'Entregado', color: '#059669', order: 5 },
+                  ];
+
+                  await tx.orderStatus.createMany({
+                    data: defaultStatuses.map(status => ({
+                      ...status,
+                      tenantId: newTenant.id,
+                      isActive: true,
+                    })),
+                    skipDuplicates: true
+                  });
+                  console.log('[OAuth]   ✅ Order statuses created');
+
+                  return tx.user.findUnique({
+                    where: { id: createdUser.id },
+                    include: {
+                      memberships: {
+                        include: { 
+                          tenant: {
+                            select: {
+                              id: true,
+                              name: true,
+                              slug: true,
+                              plan: true,
+                              isActive: true,
+                              subscriptionStatus: true,
+                              trialEndsAt: true
+                            }
                           }
                         }
                       }
                     }
-                  }
+                  });
                 });
-                });
+                console.log('[OAuth] ✅ Transaction completed successfully');
               } catch (userCreateError: any) {
                 // Handle unique constraint violation (P2002)
                 if (userCreateError.code === 'P2002') {

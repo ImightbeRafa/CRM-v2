@@ -1,9 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import Image from 'next/image';
 import { Button } from '@/app/components/ui/button';
-import BetsyLogo from '@/BetsyLogo.png';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { 
@@ -18,12 +16,15 @@ import {
   ArrowRight,
   Menu,
   X,
-  Twitter,
   Linkedin,
   Mail,
   Eye,
   Target,
-  DollarSign
+  DollarSign,
+  MessageSquare,
+  Send,
+  Phone,
+  Instagram
 } from 'lucide-react';
 import SimplePricingSection from './SimplePricingSection';
 import SimpleAuthModal from './SimpleAuthModal';
@@ -31,7 +32,37 @@ import SimpleAuthModal from './SimpleAuthModal';
 export default function LandingPage() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [contactForm, setContactForm] = useState({ name: '', email: '', subject: '', message: '' });
+  const [contactStatus, setContactStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
+
+  const handleContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setContactStatus({ type: null, message: '' });
+
+    try {
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(contactForm)
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setContactStatus({ type: 'success', message: data.message });
+        setContactForm({ name: '', email: '', subject: '', message: '' });
+      } else {
+        setContactStatus({ type: 'error', message: data.error || 'Failed to send message' });
+      }
+    } catch (error) {
+      setContactStatus({ type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const features = [
     {
@@ -96,15 +127,9 @@ export default function LandingPage() {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
               <div className="flex-shrink-0 flex items-center gap-3">
-                <Image 
-                  src={BetsyLogo} 
-                  alt="Betsy CRM" 
-                  width={40}
-                  height={40}
-                  className="object-contain"
-                  priority
-                />
-                
+                <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                  Betsy
+                </span>
               </div>
             </div>
             
@@ -816,68 +841,222 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Social Proof Section */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 bg-white">
+      
+
+      {/* Contact Section */}
+      <section id="contact" className="py-20 px-4 sm:px-6 lg:px-8 bg-white">
         <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Real People. Real Results.
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
+              Get In Touch
             </h2>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Here&apos;s what happens when you stop losing orders and start staying organized
+            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+              Have questions? We'd love to hear from you. Send us a message and we'll respond as soon as possible.
             </p>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
-            <Card className="border-0 shadow-lg text-center">
-              <CardContent className="pt-8">
-                <div className="text-5xl font-bold text-blue-600 mb-2">40%</div>
-                <p className="text-gray-600 text-lg">Average sales increase in first 3 months</p>
-              </CardContent>
-            </Card>
-            <Card className="border-0 shadow-lg text-center">
-              <CardContent className="pt-8">
-                <div className="text-5xl font-bold text-green-600 mb-2">5hrs</div>
-                <p className="text-gray-600 text-lg">Saved per week on admin tasks</p>
-              </CardContent>
-            </Card>
-            <Card className="border-0 shadow-lg text-center">
-              <CardContent className="pt-8">
-                <div className="text-5xl font-bold text-purple-600 mb-2">0</div>
-                <p className="text-gray-600 text-lg">Lost orders due to disorganization</p>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </section>
 
-      {/* CTA Section */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-blue-600 to-purple-600">
-        <div className="max-w-7xl mx-auto text-center">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-            Ready to Sell More and Stay Organized?
-          </h2>
-          <p className="text-xl text-blue-100 mb-8 max-w-3xl mx-auto">
-            Join hundreds of businesses already growing with Betsy. 
-            Get started in 5 minutes - no credit card required.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
-            <Button size="lg" variant="secondary" className="text-lg px-8 py-3" onClick={() => setIsAuthModalOpen(true)}>
-              Start Free Trial
-              <ArrowRight className="ml-2 h-5 w-5" />
-            </Button>
-            <Button size="lg" variant="outline" className="text-lg px-8 py-3 text-white border-white hover:bg-white hover:text-blue-600">
-              Schedule a Demo
-            </Button>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+            {/* Contact Form */}
+            <div>
+              <Card className="border-2 shadow-xl">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <MessageSquare className="h-6 w-6 text-blue-600" />
+                    Send us a message
+                  </CardTitle>
+                  <CardDescription>
+                    Fill out the form below and we'll get back to you within 24 hours.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleContactSubmit} className="space-y-4">
+                    <div>
+                      <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                        Name *
+                      </label>
+                      <input
+                        type="text"
+                        id="name"
+                        required
+                        value={contactForm.name}
+                        onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Your name"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                        Email *
+                      </label>
+                      <input
+                        type="email"
+                        id="email"
+                        required
+                        value={contactForm.email}
+                        onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="your@email.com"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="subject" className="block text-sm font-medium text-gray-700 mb-1">
+                        Subject *
+                      </label>
+                      <input
+                        type="text"
+                        id="subject"
+                        required
+                        value={contactForm.subject}
+                        onChange={(e) => setContactForm({ ...contactForm, subject: e.target.value })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="How can we help?"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-1">
+                        Message *
+                      </label>
+                      <textarea
+                        id="message"
+                        required
+                        rows={5}
+                        value={contactForm.message}
+                        onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Tell us more about your needs..."
+                      />
+                    </div>
+                    
+                    {contactStatus.type && (
+                      <div className={`p-4 rounded-lg ${
+                        contactStatus.type === 'success' 
+                          ? 'bg-green-50 text-green-800 border border-green-200' 
+                          : 'bg-red-50 text-red-800 border border-red-200'
+                      }`}>
+                        {contactStatus.message}
+                      </div>
+                    )}
+
+                    <Button 
+                      type="submit" 
+                      className="w-full" 
+                      size="lg"
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? (
+                        <span className="flex items-center gap-2">
+                          <span className="animate-spin">⏳</span> Sending...
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-2">
+                          <Send className="h-4 w-4" /> Send Message
+                        </span>
+                      )}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Contact Info */}
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-2xl font-bold text-gray-900 mb-6">Other ways to reach us</h3>
+              </div>
+
+              {/* WhatsApp */}
+              <Card className="border-2 hover:shadow-lg transition-shadow">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-green-100 p-3 rounded-lg flex-shrink-0">
+                      <Phone className="h-6 w-6 text-green-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-lg mb-1">WhatsApp</h4>
+                      <p className="text-gray-600 mb-3">Chat with us directly for quick support</p>
+                      <a 
+                        href="https://wa.me/50661498470" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-green-600 hover:text-green-700 font-medium"
+                      >
+                        <span>+506 6149-8470</span>
+                        <ArrowRight className="h-4 w-4" />
+                      </a>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Email */}
+              <Card className="border-2 hover:shadow-lg transition-shadow">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-blue-100 p-3 rounded-lg flex-shrink-0">
+                      <Mail className="h-6 w-6 text-blue-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-lg mb-1">Email</h4>
+                      <p className="text-gray-600 mb-3">Send us an email anytime</p>
+                      <a 
+                        href="mailto:betsycrm.cr@gmail.com"
+                        className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        <span>betsycrm.cr@gmail.com</span>
+                        <ArrowRight className="h-4 w-4" />
+                      </a>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Instagram */}
+              <Card className="border-2 hover:shadow-lg transition-shadow">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-gradient-to-br from-purple-500 to-pink-500 p-3 rounded-lg flex-shrink-0">
+                      <Instagram className="h-6 w-6 text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-lg mb-1">Instagram</h4>
+                      <p className="text-gray-600 mb-3">Follow us for tips and updates</p>
+                      <a 
+                        href="https://www.instagram.com/betsy_crm/" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-purple-600 hover:text-purple-700 font-medium"
+                      >
+                        <span>@betsy_crm</span>
+                        <ArrowRight className="h-4 w-4" />
+                      </a>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 24/7 Support */}
+              <Card className="border-2 bg-gradient-to-br from-blue-50 to-purple-50">
+                <CardContent className="p-8">
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <div className="flex items-center justify-center bg-blue-100 p-4 rounded-full mb-6">
+                      <Clock className="h-8 w-8 text-blue-600" />
+                    </div>
+                    <h4 className="font-bold text-2xl mb-3 text-gray-900">
+                      24/7 Support
+                    </h4>
+                    <p className="text-gray-600 max-w-xs mx-auto">
+                      We&apos;re here whenever you need us. Get help anytime, anywhere.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </div>
-          <p className="text-blue-100 text-sm">
-            ✓ Free 14-day trial &nbsp;&nbsp; ✓ No credit card needed &nbsp;&nbsp; ✓ Cancel anytime &nbsp;&nbsp; ✓ Setup in 5 minutes
-          </p>
         </div>
       </section>
 
       {/* Footer */}
-      <footer id="contact" className="bg-gray-900 text-white py-16 px-4 sm:px-6 lg:px-8">
+      <footer className="bg-gray-900 text-white py-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
@@ -886,13 +1065,13 @@ export default function LandingPage() {
                 Simple order management that helps you sell more and stay organized.
               </p>
               <div className="flex space-x-4">
-                <a href="#" className="text-gray-400 hover:text-white">
-                  <Twitter className="h-6 w-6" />
+                <a href="https://wa.me/50661498470" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white" aria-label="WhatsApp">
+                  <Phone className="h-6 w-6" />
                 </a>
-                <a href="#" className="text-gray-400 hover:text-white">
-                  <Linkedin className="h-6 w-6" />
+                <a href="https://www.instagram.com/betsy_crm/" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white" aria-label="Instagram">
+                  <Instagram className="h-6 w-6" />
                 </a>
-                <a href="#" className="text-gray-400 hover:text-white">
+                <a href="mailto:betsycrm.cr@gmail.com" className="text-gray-400 hover:text-white" aria-label="Email">
                   <Mail className="h-6 w-6" />
                 </a>
               </div>

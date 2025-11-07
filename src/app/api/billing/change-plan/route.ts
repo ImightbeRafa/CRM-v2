@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
-// Stripe removed; using Tilopay exclusively
-import { NextResponse as _NR } from 'next/server';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -33,19 +31,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Plan ID required' }, { status: 400 });
     }
 
-    // Define pricing for each plan
-    const planPricing: Record<string, { name: string; stripePriceId?: string; price: number }> = {
+    // Define pricing for each plan (Tilopay only)
+    const planPricing: Record<string, { name: string; price: number }> = {
       free: { name: 'FREE', price: 0 },
-      basic: { 
-        name: 'BASIC', 
-        price: 20, // $20 USD
-        stripePriceId: process.env.NEXT_PUBLIC_STRIPE_BASIC_PRICE_ID 
-      },
-      pro: { 
-        name: 'PRO', 
-        price: 0, // Coming soon
-        stripePriceId: process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID 
-      },
+      basic: { name: 'BASIC', price: 20 }, // $20 USD
+      pro: { name: 'PRO', price: 45 }, // $45 USD
       enterprise: { name: 'ENTERPRISE', price: 0 }
     };
 
@@ -62,8 +52,7 @@ export async function POST(request: NextRequest) {
           plan: 'FREE',
           subscriptionStatus: 'active',
           currentPeriodEnd: null,
-          stripeCustomerId: null,
-          stripeSubscriptionId: null
+          tilopaySubscriptionId: null
         }
       });
 

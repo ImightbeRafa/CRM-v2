@@ -74,89 +74,13 @@ const TENANT_MODELS = [
 const TENANT_MODELS_LOWER: readonly string[] = TENANT_MODELS.map((m) => m.toLowerCase());
 
 /**
- * Global Prisma query extension to enforce tenant isolation (Prisma v6+)
- * Uses AsyncLocalStorage context to scope queries on tenant models.
+ * REMOVED: Top-level prismaGlobal.$extends() had no effect (not assigned to variable)
+ * Tenant isolation is implemented via:
+ * 1. Global extension in db.ts for base isolation
+ * 2. createTenantPrisma() below for explicit tenant-scoped clients
+ * 
+ * This ensures a single, clear tenant isolation strategy without drift.
  */
-prismaGlobal.$extends({
-  name: 'globalTenantIsolation',
-  query: {
-    $allModels: {
-      async $allOperations({ operation, model, args, query }) {
-        const modelName = model?.toLowerCase();
-        if (!isTenantModel(modelName)) {
-          return query(args);
-        }
-
-        const context = getTenantContext();
-        const tenantIdFromContext = context?.tenantId;
-        // Try to infer tenantId from args when provided by an outer extension/client
-        const extractTenantId = (input: any): string | undefined => {
-          if (!input) return undefined;
-          if (input.where?.tenantId) return input.where.tenantId as string;
-          if (input.data?.tenantId) return input.data.tenantId as string;
-          if (input.create?.tenantId) return input.create.tenantId as string;
-          return undefined;
-        };
-        const tenantIdFromArgs = extractTenantId(args);
-        const tenantId = tenantIdFromContext || tenantIdFromArgs;
-
-        // Block tenant-model access without tenant context (except safe find returning empty)
-        if (!tenantId && modelName !== 'tenant') {
-          if (operation === 'findMany') return [];
-          if (operation === 'findFirst' || operation === 'findUnique') return null;
-          throw new TenantError('Tenant context is required for this operation');
-        }
-
-        // Clone args to avoid mutation
-        const modifiedArgs = JSON.parse(JSON.stringify(args || {}));
-
-        // Helper to add tenant to where
-        const addTenantToWhere = (where: any) => {
-          if (!tenantId) return where; // allow system ops when no tenantId
-          if (!where) return { tenantId };
-          if (where.OR) {
-            return { ...where, OR: where.OR.map((c: any) => ({ ...c, tenantId })), tenantId };
-          }
-          if (where.AND) {
-            return { ...where, AND: where.AND.map((c: any) => ({ ...c, tenantId: c.tenantId || tenantId })), tenantId };
-          }
-          return { ...where, tenantId };
-        };
-
-        switch (operation) {
-          case 'findUnique':
-          case 'findFirst':
-            modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
-            break;
-          case 'findMany':
-            if (modifiedArgs.where?.tenantId !== null) {
-              modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
-            }
-            break;
-          case 'create':
-            if (tenantId) {
-              modifiedArgs.data = { ...modifiedArgs.data, tenantId };
-            }
-            break;
-          case 'update':
-          case 'updateMany':
-          case 'delete':
-          case 'deleteMany':
-            modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
-            if (modifiedArgs.data && 'tenantId' in modifiedArgs.data) delete modifiedArgs.data.tenantId;
-            break;
-          case 'upsert':
-            modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
-            if (tenantId) modifiedArgs.create = { ...modifiedArgs.create, tenantId };
-            if (modifiedArgs.update && 'tenantId' in modifiedArgs.update) delete modifiedArgs.update.tenantId;
-            break;
-        }
-
-        return query(modifiedArgs);
-      }
-    }
-  }
-});
 
 /**
  * Create a Prisma client extension that automatically injects tenantId

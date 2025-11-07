@@ -24,11 +24,10 @@ model Tenant {
   // Settings
   settings  Json?    // Tenant-specific configuration
   
-  // Billing fields
-  stripeCustomerId      String?
-  stripeSubscriptionId  String?
+  // Billing fields (Tilopay only)
   tilopaySubscriptionId String?  // Tilopay Repeat subscription ID
-  subscriptionStatus    String?  // active, canceled, past_due, trialing, trial_expired
+  tilopayCustomerId     String?  // Tilopay customer ID for saved cards
+  subscriptionStatus    String?  // active, canceled, past_due, trialing, trial_expired, payment_failed
   currentPeriodStart    DateTime?
   currentPeriodEnd      DateTime?
   cancelAtPeriodEnd     Boolean  @default(false)

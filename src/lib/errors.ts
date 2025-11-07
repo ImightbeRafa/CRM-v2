@@ -129,7 +129,7 @@ export class InternalServerError extends BaseError {
 }
 
 /**
- * Error handler middleware
+ * Error handler middleware for generic use
  */
 export function handleError(err: unknown) {
   if (err instanceof BaseError) {
@@ -155,4 +155,67 @@ export function handleError(err: unknown) {
     statusCode: error.statusCode,
     body: JSON.stringify(error.toJSON()),
   };
+}
+
+/**
+ * Standardized NextResponse error helper
+ * Use this in API route handlers to ensure consistent error responses
+ * 
+ * @example
+ * import { errorResponse } from '@/lib/errors';
+ * return errorResponse(new UnauthorizedError('Invalid credentials'));
+ */
+export function errorResponse(err: unknown) {
+  // Import NextResponse dynamically to avoid bundling issues
+  const { NextResponse } = require('next/server');
+  
+  if (err instanceof BaseError) {
+    // Exclude stack trace in production unless it's a development operational error
+    const response = err.toJSON();
+    if (process.env.NODE_ENV === 'production' && !err.isOperational) {
+      delete response.stack;
+    }
+    
+    return NextResponse.json(response, { 
+      status: err.statusCode,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  // Handle unexpected errors - don't leak internals in production
+  const message = process.env.NODE_ENV === 'development'
+    ? String(err)
+    : 'An unexpected error occurred';
+    
+  console.error('[API Error]', err);
+  
+  return NextResponse.json(
+    {
+      name: 'InternalServerError',
+      statusCode: 500,
+      message,
+      ...(process.env.NODE_ENV === 'development' && { 
+        details: err instanceof Error ? { stack: err.stack } : {}
+      })
+    },
+    { 
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    }
+  );
+}
+
+/**
+ * Success response helper for consistent API responses
+ * 
+ * @example
+ * return successResponse({ user: userData }, 201);
+ */
+export function successResponse<T>(data: T, status = 200) {
+  const { NextResponse } = require('next/server');
+  
+  return NextResponse.json(data, {
+    status,
+    headers: { 'Content-Type': 'application/json' }
+  });
 }

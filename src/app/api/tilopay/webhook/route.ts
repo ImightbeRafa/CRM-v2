@@ -8,19 +8,14 @@ export const dynamic = 'force-dynamic';
 // Enhanced logging utility for webhook troubleshooting
 function logWebhookEvent(level: 'info' | 'warn' | 'error', message: string, data?: any, tenantId?: string) {
   const timestamp = new Date().toISOString();
-  const logEntry = {
-    timestamp,
-    level,
-    message,
-    tenantId: tenantId || 'unknown',
-    data: data ? JSON.stringify(data, null, 2) : undefined
-  };
   
-  console.log(`[${timestamp}] [${level.toUpperCase()}] [Tilopay Webhook] ${message}`, data ? data : '');
-  
-  // Store in database for troubleshooting
+  // Only log errors and warnings to console (not info)
   if (level === 'error' || level === 'warn') {
-    // Only create webhook log if we have a valid tenantId
+    console.log(`[${timestamp}] [${level.toUpperCase()}] [Tilopay Webhook] ${message}`);
+  }
+  
+  // Store errors and warnings in database for troubleshooting
+  if (level === 'error' || level === 'warn') {
     if (tenantId && tenantId !== 'unknown') {
       prisma.webhookLog.create({
         data: {
@@ -54,28 +49,15 @@ export async function POST(req: NextRequest) {
   const startTime = Date.now();
   const webhookId = `webhook_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   
-  console.log(`🚀 [WEBHOOK] POST request received - ID: ${webhookId}`);
-  
   try {
-    logWebhookEvent('info', `Webhook received [${webhookId}]`, { 
-      headers: Object.fromEntries(req.headers.entries()),
-      url: req.url 
-    });
     
     // Verify webhook authenticity
     if (!verifyWebhookSharedSecret(req)) {
-      logWebhookEvent('error', 'Unauthorized webhook - Invalid secret', { 
-        webhookId,
-        headers: Object.fromEntries(req.headers.entries())
-      });
+      logWebhookEvent('error', 'Unauthorized webhook - Invalid secret', { webhookId });
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await req.json();
-    logWebhookEvent('info', `Webhook payload received [${webhookId}]`, { 
-      webhookId,
-      payload: body 
-    });
 
     // Extract status and reference with enhanced validation
     const status: string = String(body.estado || body.status || '').toLowerCase();
@@ -86,49 +68,23 @@ export async function POST(req: NextRequest) {
     const paymentMethod = body.metodo_pago || body.payment_method || 'tilopay';
     const declineReason = body.razon_rechazo || body.decline_reason || body.reason || 'Unknown';
 
-    logWebhookEvent('info', `Processing payment [${webhookId}]`, {
-      webhookId,
-      status,
-      reference: ref,
-      transactionId,
-      amount,
-      paymentMethod,
-      declineReason: status.includes('rechazada') || status.includes('declined') ? declineReason : null
-    });
-
     // Parse reference to extract tenant and plan
     const [tenantId, planId] = ref.split('-');
     if (!tenantId || !planId) {
-      logWebhookEvent('warn', 'Invalid reference format - ignoring webhook', {
-        webhookId,
-        reference: ref,
-        expectedFormat: 'tenantId-planId-timestamp'
-      });
+      logWebhookEvent('warn', 'Invalid reference format - ignoring webhook', { webhookId, reference: ref });
       return NextResponse.json({ ok: true, ignored: true, reason: 'Invalid reference format' });
     }
 
     // Validate plan exists
     const validPlans = ['FREE', 'BASIC', 'PRO'];
     if (!validPlans.includes(planId.toUpperCase())) {
-      logWebhookEvent('error', `Invalid plan ID: ${planId}`, {
-        webhookId,
-        tenantId,
-        planId,
-        validPlans
-      });
+      logWebhookEvent('error', `Invalid plan ID: ${planId}`, { webhookId, tenantId, planId });
       return NextResponse.json({ 
         ok: false, 
         error: 'Invalid plan ID',
         validPlans: validPlans
       }, { status: 400 });
     }
-
-    logWebhookEvent('info', `Processing for tenant [${webhookId}]`, {
-      webhookId,
-      tenantId,
-      planId,
-      status
-    });
 
     // Get tenant info for logging
     const tenant = await prisma.tenant.findUnique({
@@ -146,14 +102,6 @@ export async function POST(req: NextRequest) {
 
     // Handle different payment statuses
     if (['aprobada', 'approved', 'success', 'paid'].includes(status)) {
-      logWebhookEvent('info', `Payment APPROVED [${webhookId}]`, {
-        webhookId,
-        tenantId,
-        tenantName: tenant.name,
-        planId,
-        transactionId,
-        amount
-      });
       
       // Check for duplicate processing
       const existingTransaction = await prisma.billingTransaction.findFirst({
@@ -164,12 +112,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (existingTransaction) {
-        logWebhookEvent('warn', `Duplicate webhook detected [${webhookId}]`, {
-          webhookId,
-          tenantId,
-          transactionId,
-          existingTransactionId: existingTransaction.id
-        });
+        logWebhookEvent('warn', `Duplicate webhook detected [${webhookId}]`, { webhookId, tenantId });
         return NextResponse.json({ 
           ok: true, 
           message: 'Duplicate webhook - already processed',
@@ -194,22 +137,16 @@ export async function POST(req: NextRequest) {
             currentPeriodEnd: periodEnd,
             cancelAtPeriodEnd: false, // Clear any cancellation flags
             tilopaySubscriptionId: transactionId,
-            stripeCustomerId: null,
-            stripeSubscriptionId: null,
           }
         });
-        console.log(`✅ [Tilopay Webhook] Tenant updated successfully:`, {
-          id: updatedTenant.id,
-          plan: updatedTenant.plan,
-          status: updatedTenant.subscriptionStatus
-        });
       } catch (updateError) {
-        console.error(`❌ [Tilopay Webhook] Failed to update tenant:`, updateError);
+        logWebhookEvent('error', `Failed to update tenant [${webhookId}]`, {
+          webhookId,
+          tenantId,
+          error: updateError,
+        });
         throw updateError;
       }
-
-      console.log(`✅ [Tilopay Webhook] Updated ${tenant.name}: ${oldPlan} → ${planId.toUpperCase()}`);
-      console.log(`📅 [Tilopay Webhook] Billing period: ${now.toISOString()} to ${periodEnd.toISOString()}`);
 
       // Create billing transaction record
       try {
@@ -225,52 +162,21 @@ export async function POST(req: NextRequest) {
             periodEnd: periodEnd
           }
         });
-        console.log(`💳 [Tilopay Webhook] Billing transaction created`);
       } catch (txError) {
-        console.error('⚠️ [Tilopay Webhook] Failed to create billing transaction:', txError);
-      }
-
-      // Create audit log
-      try {
-        await prisma.auditLog.create({
-          data: {
-            tenantId: tenantId,
-            userId: 'system',
-            userName: 'Tilopay Webhook',
-            userRole: 'SYSTEM',
-            action: 'UPDATE',
-            entityType: 'subscription',
-            entityId: transactionId,
-            entityName: `${planId.toUpperCase()} Plan`,
-            oldValues: {
-              plan: oldPlan,
-              status: oldStatus,
-              webhookEvent: 'payment_approved'
-            },
-            newValues: {
-              ...body,
-              plan: planId.toUpperCase(),
-              status: 'active',
-              webhookEvent: 'payment_approved',
-              processedAt: new Date().toISOString()
-            }
-          }
+        logWebhookEvent('error', `Failed to create billing transaction [${webhookId}]`, {
+          webhookId,
+          tenantId,
+          error: txError,
         });
-        console.log(`📝 [Tilopay Webhook] Audit log created`);
-      } catch (auditError) {
-        console.error('⚠️ [Tilopay Webhook] Failed to create audit log:', auditError);
       }
 
     } else if (['rechazada', 'declined', 'failed', 'canceled', 'cancelada'].includes(status)) {
       logWebhookEvent('error', `Payment DECLINED/FAILED [${webhookId}]`, {
         webhookId,
         tenantId,
-        tenantName: tenant.name,
         planId,
-        transactionId,
         status,
-        declineReason,
-        amount
+        declineReason
       });
       
       // Update subscription status to indicate payment failure
@@ -279,15 +185,7 @@ export async function POST(req: NextRequest) {
           where: { id: tenantId },
           data: { 
             subscriptionStatus: 'payment_failed',
-            // Don't change the plan - keep current plan but mark as failed
           }
-        });
-
-        logWebhookEvent('info', `Updated tenant status to payment_failed [${webhookId}]`, {
-          webhookId,
-          tenantId,
-          oldStatus,
-          newStatus: 'payment_failed'
         });
       } catch (updateError) {
         logWebhookEvent('error', `Failed to update tenant status [${webhookId}]`, {
@@ -314,9 +212,8 @@ export async function POST(req: NextRequest) {
             periodEnd: failedDate
           }
         });
-        console.log(`💳 [Tilopay Webhook] Failed transaction recorded`);
       } catch (txError) {
-        console.error('⚠️ [Tilopay Webhook] Failed to record failed transaction:', txError);
+        console.error('[Tilopay Webhook] Failed to record failed transaction:', txError);
       }
 
       // Create audit log for declined payment
@@ -338,7 +235,7 @@ export async function POST(req: NextRequest) {
             },
             newValues: {
               ...body,
-              plan: oldPlan, // Keep old plan
+              plan: oldPlan,
               status: 'payment_failed',
               webhookEvent: 'payment_declined',
               declineReason: status,
@@ -346,29 +243,15 @@ export async function POST(req: NextRequest) {
             }
           }
         });
-        console.log(`📝 [Tilopay Webhook] Decline audit log created`);
       } catch (auditError) {
-        console.error('⚠️ [Tilopay Webhook] Failed to create decline audit log:', auditError);
+        console.error('[Tilopay Webhook] Failed to create decline audit log:', auditError);
       }
 
     } else {
-      logWebhookEvent('warn', `Unknown payment status [${webhookId}]`, {
-        webhookId,
-        tenantId,
-        status,
-        planId,
-        transactionId
-      });
+      logWebhookEvent('warn', `Unknown payment status [${webhookId}]`, { webhookId, status });
     }
 
     const processingTime = Date.now() - startTime;
-    logWebhookEvent('info', `Webhook processing completed [${webhookId}]`, {
-      webhookId,
-      tenantId,
-      planId,
-      status,
-      processingTime: `${processingTime}ms`
-    });
 
     return NextResponse.json({ 
       ok: true, 

@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
     const user = await prisma.user.findUnique({
       where: { id: token.sub },
       select: {
+        id: true,
         defaultTenantId: true,
         memberships: {
           where: { isActive: true },
@@ -29,8 +30,6 @@ export async function GET(request: NextRequest) {
                 subscriptionStatus: true,
                 currentPeriodEnd: true,
                 cancelAtPeriodEnd: true,
-                stripeCustomerId: true,
-                stripeSubscriptionId: true,
                 tilopaySubscriptionId: true
               }
             }
@@ -55,8 +54,6 @@ export async function GET(request: NextRequest) {
           status: 'active',
           currentPeriodEnd: null,
           cancelAtPeriodEnd: false,
-          stripeCustomerId: null,
-          stripeSubscriptionId: null,
           tilopaySubscriptionId: null
         }
       });
@@ -73,8 +70,6 @@ export async function GET(request: NextRequest) {
         status: tenant.subscriptionStatus || 'active',
         currentPeriodEnd: tenant.currentPeriodEnd?.toISOString() || null,
         cancelAtPeriodEnd: tenant.cancelAtPeriodEnd || false,
-        stripeCustomerId: tenant.stripeCustomerId,
-        stripeSubscriptionId: tenant.stripeSubscriptionId,
         tilopaySubscriptionId: tenant.tilopaySubscriptionId
       }
     });

@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
-import Stripe from 'stripe';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
-
-const stripe = process.env.STRIPE_SECRET_KEY 
-  ? new Stripe(process.env.STRIPE_SECRET_KEY, {
-      apiVersion: '2025-09-30.clover',
-    })
-  : null;
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,7 +24,6 @@ export async function POST(request: NextRequest) {
             tenant: {
               select: {
                 plan: true,
-                stripeSubscriptionId: true,
                 tilopaySubscriptionId: true,
                 subscriptionStatus: true
               }
@@ -56,19 +48,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`❌ Canceling subscription for tenant ${tenantId}, plan: ${tenant.plan}`);
 
-    // Cancel subscription based on payment provider
-    if (tenant.stripeSubscriptionId && stripe) {
-      // Cancel in Stripe
-      await stripe.subscriptions.update(tenant.stripeSubscriptionId, {
-        cancel_at_period_end: true,
-      });
-      console.log('✅ Stripe subscription marked for cancellation');
-    } else if (tenant.tilopaySubscriptionId) {
-      // For Tilopay, we just mark it for cancellation in our system
-      // User needs to cancel directly in Tilopay if they want to stop charges
-      console.log('⚠️ Tilopay subscription - marking for downgrade at period end');
-      console.log('ℹ️ User should also cancel in Tilopay to stop automatic charges');
-    }
+    // For Tilopay, mark subscription for cancellation at period end
+    // Tilopay Repeat subscriptions are managed in their dashboard
+    if (tenant.tilopaySubscriptionId) {
+      console.log('ℹ️ Tilopay subscription will be canceled at period end');
+    } 
+    console.log('ℹ️ User should also cancel in Tilopay to stop automatic charges');
 
     // Update tenant - mark for cancellation at period end
     await prisma.tenant.update({
@@ -93,7 +78,7 @@ export async function POST(request: NextRequest) {
             userRole: 'OWNER',
             action: 'UPDATE',
             entityType: 'subscription',
-            entityId: tenant.tilopaySubscriptionId || tenant.stripeSubscriptionId || 'unknown',
+            entityId: tenant.tilopaySubscriptionId || 'unknown',
             entityName: 'Subscription Cancellation',
             reason: feedback,
             oldValues: { plan: tenant.plan, status: 'active' },

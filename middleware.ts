@@ -2,6 +2,11 @@
 import { NextResponse } from "next/server"
 import { getToken } from "next-auth/jwt"
 
+// Validate NEXTAUTH_SECRET is set (fail fast in production)
+if (process.env.NODE_ENV === 'production' && !process.env.NEXTAUTH_SECRET) {
+  throw new Error('NEXTAUTH_SECRET must be set in production environment');
+}
+
 /**
  * Public routes that don't require authentication
  */
@@ -65,11 +70,8 @@ export default async function middleware(request: Request & { nextUrl: URL }) {
   const url = new URL(request.url)
   const { pathname } = url
   
-  console.log(`[Middleware] Processing: ${pathname}`)
-  
   // Skip middleware for public routes
   if (isPublicRoute(pathname)) {
-    console.log(`[Middleware] ✅ Public route: ${pathname}`)
     return NextResponse.next()
   }
 
@@ -77,12 +79,11 @@ export default async function middleware(request: Request & { nextUrl: URL }) {
     // Get session token
     const token = await getToken({
       req: request as any,
-      secret: process.env.NEXTAUTH_SECRET || 'dev-secret',
+      secret: process.env.NEXTAUTH_SECRET,
     })
 
     // Redirect to login if no token
     if (!token) {
-      console.log(`[Middleware] ❌ No token for: ${pathname}`)
       return redirectToLogin(url)
     }
 
@@ -93,7 +94,7 @@ export default async function middleware(request: Request & { nextUrl: URL }) {
 
     // Validate required fields
     if (!userId) {
-      console.log(`[Middleware] ❌ No userId in token for: ${pathname}`)
+      console.error('[Middleware] Invalid session - missing userId');
       // For API routes, return JSON; for app routes, redirect
       if (pathname.startsWith('/api/')) {
         return NextResponse.json(
@@ -155,13 +156,11 @@ export default async function middleware(request: Request & { nextUrl: URL }) {
       
       // If email not verified, redirect to verify email
       if (email_verified === false) {
-        console.log(`[Middleware] ❌ Email not verified: ${pathname}`)
         return NextResponse.redirect(new URL(`/auth/verify-email?email=${token.email || ''}`, url.origin))
       }
       
       // Otherwise redirect to setup-tenant
       if (pathname !== '/setup-tenant') {
-        console.log(`[Middleware] Redirecting to setup-tenant from: ${pathname}`)
         return NextResponse.redirect(new URL('/setup-tenant', url.origin))
       }
       
@@ -170,13 +169,11 @@ export default async function middleware(request: Request & { nextUrl: URL }) {
 
     // Restrict admin routes to MASTER role
     if (pathname.startsWith('/admin') && role !== 'MASTER') {
-      console.log(`[Middleware] ❌ Forbidden (not MASTER): ${pathname}`)
       return NextResponse.redirect(new URL('/', url.origin))
     }
 
     // Restrict /config to MASTER role
     if (pathname.startsWith('/config') && role !== 'MASTER') {
-      console.log(`[Middleware] ❌ Forbidden (not MASTER): ${pathname}`)
       return NextResponse.redirect(new URL('/', url.origin))
     }
 
@@ -238,7 +235,6 @@ export default async function middleware(request: Request & { nextUrl: URL }) {
       response.headers.set('x-tenant-id', tenantId)
     }
     
-    console.log(`[Middleware] ✅ Authenticated: ${pathname}`)
     return response
   } catch (error) {
     console.error('[Middleware] Error:', error)

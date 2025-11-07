@@ -157,18 +157,17 @@ export const authOptions: NextAuthOptions = {
             // until they verify their email
           }
           
-          // Verify password (supports both bcrypt and plain text for migration)
+          // Verify password (bcrypt only - plaintext support removed for security)
           let passwordValid = false;
           
           if (user.password) {
-            if (isBcryptHash(user.password)) {
-              // Password is hashed with bcrypt - verify securely
-              passwordValid = await verifyPassword(password, user.password);
-            } else {
-              // Legacy plain text password (for migration period)
-              // TODO: Remove this after all passwords are migrated to bcrypt
-              passwordValid = user.password === password;
+            if (!isBcryptHash(user.password)) {
+              // Password is not bcrypt hashed - reject login
+              console.error(`[Credentials Auth] User ${normalizedEmail} has non-bcrypt password - login rejected`);
+              return null;
             }
+            // Password is hashed with bcrypt - verify securely
+            passwordValid = await verifyPassword(password, user.password);
           }
           
           if (!passwordValid) {
@@ -988,6 +987,6 @@ export const authOptions: NextAuthOptions = {
     strategy: "jwt",
     maxAge: 24 * 60 * 60, // 24 hours
   },
-  secret: process.env.NEXTAUTH_SECRET || "dev-secret",
+  secret: process.env.NEXTAUTH_SECRET,
   debug: process.env.NODE_ENV === 'development',
 }

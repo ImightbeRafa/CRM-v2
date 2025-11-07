@@ -33,7 +33,7 @@ export function TenantSettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<TenantSettings>(defaultSettings);
   const [isMounted, setIsMounted] = useState(true);
 
-  const { data: session, status } = useSession();
+  const { status } = useSession();
 
   const loadSettings = async () => {
     try {
@@ -69,14 +69,14 @@ export function TenantSettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Only load settings if user is authenticated
-    if (status === 'authenticated' && session) {
+    if (status === 'authenticated') {
       loadSettings();
     }
     
     return () => {
       setIsMounted(false);
     };
-  }, [status, session]);
+  }, [status]);
 
   const formatCurrency = (amount: number): string => {
     if (isNaN(amount)) return `${settings.currencySymbol}0`;

@@ -20,14 +20,21 @@ interface BusinessField {
   order: number;
 }
 
-export function BusinessInfoStep({ onNext, markCompleted }: WizardStepProps) {
+export function BusinessInfoStep({ onNext, markCompleted, markUnsavedChanges }: WizardStepProps) {
   const [fields, setFields] = useState<BusinessField[]>([]);
+  const [initialFields, setInitialFields] = useState<BusinessField[]>([]);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     loadExistingFields();
   }, []);
+
+  // Track changes
+  useEffect(() => {
+    const hasChanges = JSON.stringify(fields) !== JSON.stringify(initialFields);
+    markUnsavedChanges(hasChanges);
+  }, [fields, initialFields, markUnsavedChanges]);
 
   const loadExistingFields = async () => {
     try {
@@ -36,7 +43,7 @@ export function BusinessInfoStep({ onNext, markCompleted }: WizardStepProps) {
         const result = await response.json();
         if (result.status === 'success' && result.data?.length > 0) {
           // Map API response to wizard format
-          setFields(result.data.map((field: any) => ({
+          const loadedFields = result.data.map((field: any) => ({
             id: field.id,
             name: field.name,
             type: field.type,
@@ -44,7 +51,9 @@ export function BusinessInfoStep({ onNext, markCompleted }: WizardStepProps) {
             placeholder: field.placeholder || '',
             required: field.required || false,
             order: field.order || 0
-          })));
+          }));
+          setFields(loadedFields);
+          setInitialFields(loadedFields);
           markCompleted();
         }
       }
@@ -108,6 +117,8 @@ export function BusinessInfoStep({ onNext, markCompleted }: WizardStepProps) {
       }
 
       markCompleted();
+      setInitialFields(fields); // Update initial state to current state
+      markUnsavedChanges(false); // Clear unsaved changes flag
       toast({
         title: '¡Guardado!',
         description: `${fields.length} campos de información empresarial configurados.`

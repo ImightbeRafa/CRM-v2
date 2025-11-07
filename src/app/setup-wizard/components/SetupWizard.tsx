@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
@@ -21,9 +21,22 @@ import {
   CheckCircle2,
   ArrowRight,
   Home,
-  Info
+  Info,
+  AlertTriangle,
+  Save,
+  X
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/app/components/ui/alert-dialog';
 
 // Import step components
 import { WelcomeStep } from './steps/WelcomeStep';
@@ -52,6 +65,7 @@ export interface WizardStepProps {
   onSkip: () => void;
   onBack: () => void;
   markCompleted: () => void;
+  markUnsavedChanges: (hasChanges: boolean) => void;
   isFirst: boolean;
   isLast: boolean;
 }
@@ -146,30 +160,68 @@ export function SetupWizard() {
     WIZARD_STEPS.map(step => ({ ...step, completed: false }))
   );
   const [canProceed, setCanProceed] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showExitDialog, setShowExitDialog] = useState(false);
+  const [showNavigationDialog, setShowNavigationDialog] = useState(false);
+  const [pendingNavigationIndex, setPendingNavigationIndex] = useState<number | null>(null);
 
   const currentStep = steps[currentStepIndex];
   const progress = ((currentStepIndex + 1) / steps.length) * 100;
   const StepComponent = currentStep.component;
 
-  const markCompleted = () => {
+  const markCompleted = useCallback(() => {
     setSteps(prev => prev.map((step, idx) => 
       idx === currentStepIndex ? { ...step, completed: true } : step
     ));
     setCanProceed(true);
-  };
+    setHasUnsavedChanges(false); // Mark as saved when completed
+  }, [currentStepIndex]);
+
+  const markUnsavedChanges = useCallback((hasChanges: boolean) => {
+    setHasUnsavedChanges(hasChanges);
+  }, []);
 
   const handleNext = () => {
+    if (hasUnsavedChanges) {
+      setPendingNavigationIndex(currentStepIndex + 1);
+      setShowNavigationDialog(true);
+      return;
+    }
+    
     if (currentStepIndex < steps.length - 1) {
       setCurrentStepIndex(prev => prev + 1);
       setCanProceed(false);
+      setHasUnsavedChanges(false);
     }
   };
 
   const handleBack = () => {
+    if (hasUnsavedChanges) {
+      setPendingNavigationIndex(currentStepIndex - 1);
+      setShowNavigationDialog(true);
+      return;
+    }
+    
     if (currentStepIndex > 0) {
       setCurrentStepIndex(prev => prev - 1);
       setCanProceed(true); // Can always proceed back
+      setHasUnsavedChanges(false);
     }
+  };
+
+  const confirmNavigation = () => {
+    if (pendingNavigationIndex !== null) {
+      setCurrentStepIndex(pendingNavigationIndex);
+      setHasUnsavedChanges(false);
+      setCanProceed(pendingNavigationIndex < currentStepIndex); // Can proceed if going back
+    }
+    setShowNavigationDialog(false);
+    setPendingNavigationIndex(null);
+  };
+
+  const cancelNavigation = () => {
+    setShowNavigationDialog(false);
+    setPendingNavigationIndex(null);
   };
 
   const handleSkip = () => {
@@ -178,17 +230,36 @@ export function SetupWizard() {
     }
   };
 
-  const handleExit = async () => {
-    // Try to navigate to dashboard, but if setup wizard isn't completed,
-    // the middleware will redirect back - that's expected behavior
-    // Users can still exit and come back later
-    try {
-      router.push('/dashboard');
-    } catch (error) {
-      // Fallback to home if dashboard fails
-      router.push('/home');
+  const handleExit = () => {
+    if (hasUnsavedChanges) {
+      setShowExitDialog(true);
+      return;
     }
+    confirmExit();
   };
+
+  const confirmExit = () => {
+    // Navigate to dashboard - users can exit and come back later
+    router.push('/dashboard');
+    setShowExitDialog(false);
+  };
+
+  const cancelExit = () => {
+    setShowExitDialog(false);
+  };
+
+  // Warn before closing/refreshing page if there are unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   const completedSteps = steps.filter(s => s.completed).length;
   const totalSteps = steps.length;
@@ -210,10 +281,18 @@ export function SetupWizard() {
                 </p>
               </div>
             </div>
-            <Button variant="ghost" onClick={handleExit}>
-              <Home className="h-4 w-4 mr-2" />
-              Salir
-            </Button>
+            <div className="flex items-center gap-2">
+              {hasUnsavedChanges && (
+                <Badge variant="destructive" className="animate-pulse">
+                  <AlertTriangle className="h-3 w-3 mr-1" />
+                  Cambios sin guardar
+                </Badge>
+              )}
+              <Button variant="ghost" onClick={handleExit}>
+                <Home className="h-4 w-4 mr-2" />
+                {hasUnsavedChanges ? 'Salir (sin guardar)' : 'Salir'}
+              </Button>
+            </div>
           </div>
 
           {/* Progress Bar */}
@@ -339,6 +418,7 @@ export function SetupWizard() {
                   onSkip={handleSkip}
                   onBack={handleBack}
                   markCompleted={markCompleted}
+                  markUnsavedChanges={markUnsavedChanges}
                   isFirst={currentStepIndex === 0}
                   isLast={currentStepIndex === steps.length - 1}
                 />
@@ -388,6 +468,58 @@ export function SetupWizard() {
           </div>
         </div>
       </div>
+
+      {/* Exit Confirmation Dialog */}
+      <AlertDialog open={showExitDialog} onOpenChange={setShowExitDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              ¿Salir sin guardar?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Tienes cambios sin guardar en este paso. Si sales ahora, perderás estos cambios.
+              ¿Estás seguro de que deseas salir?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelExit}>
+              <X className="h-4 w-4 mr-2" />
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={confirmExit} className="bg-red-600 hover:bg-red-700">
+              <Home className="h-4 w-4 mr-2" />
+              Salir sin guardar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Navigation Confirmation Dialog */}
+      <AlertDialog open={showNavigationDialog} onOpenChange={setShowNavigationDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              ¿Continuar sin guardar?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Tienes cambios sin guardar en este paso. Si continúas, perderás estos cambios.
+              ¿Deseas continuar de todas formas?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelNavigation}>
+              <X className="h-4 w-4 mr-2" />
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={confirmNavigation} className="bg-amber-600 hover:bg-amber-700">
+              <ChevronRight className="h-4 w-4 mr-2" />
+              Continuar sin guardar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

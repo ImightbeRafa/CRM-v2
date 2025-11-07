@@ -101,7 +101,8 @@ export async function POST(request: NextRequest) {
       }, { status: 402 }) // 402 Payment Required
     }
 
-    // Check if user already exists (try normalized email first)
+    // CRITICAL: Check if user already exists with this email (normalized)
+    // This prevents duplicate users across different tenants
     let existingUser = await prisma.user.findUnique({
       where: { email: normalizedEmail }
     })
@@ -129,29 +130,51 @@ export async function POST(request: NextRequest) {
       }
       
       // Add existing user to this tenant
+      console.log(`[User API] Adding existing user ${normalizedEmail} to tenant ${tenantId}`)
       userId = existingUser.id
     } else {
       // Create new user with provided password
+      console.log(`[User API] Creating new user ${normalizedEmail}`)
       const hashedPassword = await hashPassword(password.trim()) // Hash password with bcrypt
       
-      const newUser = await prisma.user.create({
-        data: {
-          email: normalizedEmail, // Use normalized email
-          username: username || normalizedEmail,
-          password: hashedPassword,
-          active: active !== false, // Default to true if not explicitly set to false
-          emailVerified: new Date(), // Set email as verified for API-created users
-          defaultTenantId: tenantId
-        },
-        select: {
-          id: true,
-          username: true,
-          email: true,
-          active: true,
-          createdAt: true
+      try {
+        const newUser = await prisma.user.create({
+          data: {
+            email: normalizedEmail, // Use normalized email (MUST be unique globally)
+            username: username || normalizedEmail,
+            password: hashedPassword,
+            active: active !== false, // Default to true if not explicitly set to false
+            emailVerified: new Date(), // Set email as verified for API-created users
+            defaultTenantId: tenantId
+          },
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            active: true,
+            createdAt: true
+          }
+        })
+        userId = newUser.id
+      } catch (createError: any) {
+        // Handle unique constraint violation (P2002)
+        if (createError.code === 'P2002') {
+          console.error(`[User API] ❌ Unique constraint violation for email: ${normalizedEmail}`)
+          // Email already exists - this shouldn't happen since we checked above
+          // But if it does (race condition), try to find the user and add to tenant
+          const raceConditionUser = await prisma.user.findUnique({
+            where: { email: normalizedEmail }
+          })
+          if (raceConditionUser) {
+            console.log(`[User API] ⚠️ Race condition detected - using existing user ${normalizedEmail}`)
+            userId = raceConditionUser.id
+          } else {
+            return createErrorResponse('Error: Email ya existe en el sistema', 409)
+          }
+        } else {
+          throw createError // Re-throw other errors
         }
-      })
-      userId = newUser.id
+      }
     }
     
     // Create membership for current tenant

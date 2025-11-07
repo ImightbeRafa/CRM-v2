@@ -533,20 +533,22 @@ export const authOptions: NextAuthOptions = {
               }
 
               // Create user with membership in a transaction to ensure data consistency
-              const newUser = await prisma.$transaction(async (tx) => {
-                const createdUser = await tx.user.create({
-                  data: {
-                    email: normalizedEmail, // Use normalized email
-                    username: user.name || emailPrefix,
-                    name: user.name || undefined,
-                    image: user.image || undefined,
-                    provider: account?.provider || 'google',
-                    providerId: account?.providerAccountId,
-                    emailVerified: new Date(),
-                    active: true, // CRITICAL: Must be true for OAuth users
-                    defaultTenantId: newTenant.id // Set default tenant immediately
-                  }
-                });
+              let newUser: any
+              try {
+                newUser = await prisma.$transaction(async (tx) => {
+                  const createdUser = await tx.user.create({
+                    data: {
+                      email: normalizedEmail, // Use normalized email (MUST be globally unique)
+                      username: user.name || emailPrefix,
+                      name: user.name || undefined,
+                      image: user.image || undefined,
+                      provider: account?.provider || 'google',
+                      providerId: account?.providerAccountId,
+                      emailVerified: new Date(),
+                      active: true, // CRITICAL: Must be true for OAuth users
+                      defaultTenantId: newTenant.id // Set default tenant immediately
+                    }
+                  });
 
                 await tx.membership.create({
                   data: {
@@ -578,7 +580,43 @@ export const authOptions: NextAuthOptions = {
                     }
                   }
                 });
-              });
+                });
+              } catch (userCreateError: any) {
+                // Handle unique constraint violation (P2002)
+                if (userCreateError.code === 'P2002') {
+                  console.error(`[OAuth] ❌ Unique constraint violation - email already exists: ${normalizedEmail}`);
+                  // Email already exists (race condition) - try to use existing user
+                  const existingRaceUser = await prisma.user.findUnique({
+                    where: { email: normalizedEmail },
+                    include: {
+                      memberships: {
+                        include: {
+                          tenant: {
+                            select: {
+                              id: true,
+                              name: true,
+                              slug: true,
+                              plan: true,
+                              isActive: true,
+                              subscriptionStatus: true,
+                              trialEndsAt: true
+                            }
+                          }
+                        }
+                      }
+                    }
+                  })
+                  if (existingRaceUser) {
+                    console.log(`[OAuth] ⚠️ Race condition - using existing user ${normalizedEmail}`)
+                    newUser = existingRaceUser
+                  } else {
+                    console.error(`[OAuth] ❌ Failed to find user after constraint error`)
+                    return false
+                  }
+                } else {
+                  throw userCreateError // Re-throw other errors
+                }
+              }
 
               if (!newUser) {
                 throw new Error('Failed to create new user');

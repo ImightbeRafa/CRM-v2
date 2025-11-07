@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { hashPassword } from '@/lib/password';
 import { sendVerificationEmail } from '@/lib/email';
+import { withoutTenantIsolation } from '@/lib/tenantContext';
 
 // Disable body parsing since we need the raw body for webhook verification
 export const dynamic = 'force-dynamic';
@@ -45,8 +46,10 @@ export async function POST(request: Request) {
     console.log('🏢 Tenant slug generated:', tenantSlug);
 
     // Create user with tenant and membership in a transaction
+    // Use withoutTenantIsolation since this is a system operation creating a new tenant
     console.log('🔄 Starting transaction...');
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await withoutTenantIsolation(async () => {
+      return await prisma.$transaction(async (tx) => {
       // 1. Create tenant first
       console.log('  1️⃣ Creating tenant...');
       const tenant = await tx.tenant.create({
@@ -116,6 +119,7 @@ export async function POST(request: Request) {
       console.log('  ✅ Order statuses created');
 
       return { user, tenant };
+      });
     });
     console.log('✅ Transaction completed successfully');
 

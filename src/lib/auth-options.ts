@@ -5,6 +5,7 @@ import GoogleProvider from "next-auth/providers/google"
 import { prisma } from './db'
 import { verifyPassword, isBcryptHash } from './password'
 import { createDefaultOrderStatuses } from './default-statuses'
+import { withoutTenantIsolation } from './tenantContext'
 
 type MemberRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
 
@@ -515,9 +516,11 @@ export const authOptions: NextAuthOptions = {
               const tenantSlug = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now();
               
               // Create user, tenant, membership, and statuses in ONE atomic transaction
+              // Use withoutTenantIsolation since this is a system operation creating a new tenant
               let newUser: any
               try {
-                newUser = await prisma.$transaction(async (tx) => {
+                newUser = await withoutTenantIsolation(async () => {
+                  return await prisma.$transaction(async (tx) => {
                   console.log('[OAuth]   1️⃣ Creating tenant...');
                   const newTenant = await tx.tenant.create({
                     data: {
@@ -598,6 +601,7 @@ export const authOptions: NextAuthOptions = {
                         }
                       }
                     }
+                  });
                   });
                 });
                 console.log('[OAuth] ✅ Transaction completed successfully');

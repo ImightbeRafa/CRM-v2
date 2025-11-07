@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { X, CreditCard, AlertCircle, Clock } from 'lucide-react';
 
 interface BillingInfo {
@@ -18,11 +19,17 @@ interface TrialStatus {
 }
 
 export default function SubscriptionBanner() {
+  const { data: session, status } = useSession();
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [trial, setTrial] = useState<TrialStatus | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
+    // Only load if authenticated
+    if (status !== 'authenticated' || !session) {
+      return;
+    }
+
     // Load billing info with better error handling
     fetch('/api/billing/current')
       .then(r => {
@@ -54,7 +61,7 @@ export default function SubscriptionBanner() {
       .catch(err => {
         console.warn('Failed to load trial status:', err);
       });
-  }, []);
+  }, [status, session]);
 
   if (dismissed) return null;
 

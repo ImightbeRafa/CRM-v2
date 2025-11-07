@@ -15,6 +15,7 @@ const PUBLIC_ROUTES = [
   '/favicon.ico',
   '/public',
   '/api/ping',
+  '/api/contact',
   '/api/tilopay/webhook',
   '/api/tilopay/webhook-repeat',
   '/api/tilopay/callback',

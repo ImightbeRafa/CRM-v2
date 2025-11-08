@@ -22,19 +22,34 @@ export default function EnhancedHomeContent() {
     ordersWeek: 0,
     pendingOrders: 0,
     totalClients: 0,
-    weeklyRevenue: 0
+    weeklyRevenue: 0,
+    ordersChange: 0,
+    newClientsThisWeek: 0,
+    revenueChange: 0
   });
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
 
   // Fetch quick stats
   useEffect(() => {
     if (session) {
-      // TODO: Replace with actual API calls
-      setStats({
-        ordersWeek: 47,
-        pendingOrders: 5,
-        totalClients: 48,
-        weeklyRevenue: 285000
-      });
+      const fetchStats = async () => {
+        try {
+          setIsLoadingStats(true);
+          const response = await fetch('/api/dashboard/stats');
+          if (response.ok) {
+            const data = await response.json();
+            setStats(data);
+          } else {
+            console.error('Failed to fetch dashboard stats');
+          }
+        } catch (error) {
+          console.error('Error fetching dashboard stats:', error);
+        } finally {
+          setIsLoadingStats(false);
+        }
+      };
+      
+      fetchStats();
     }
   }, [session]);
 
@@ -133,11 +148,17 @@ export default function EnhancedHomeContent() {
             </CardHeader>
             <CardContent>
               <div className="flex items-baseline justify-between">
-                <p className="text-3xl font-bold text-gray-900">{stats.ordersWeek}</p>
-                <span className="text-green-600 text-sm flex items-center">
-                  <TrendingUp className="h-3 w-3 mr-1" />
-                  +12%
-                </span>
+                <p className="text-3xl font-bold text-gray-900">{isLoadingStats ? '...' : stats.ordersWeek}</p>
+                {!isLoadingStats && stats.ordersChange !== 0 && (
+                  <span className={`text-sm flex items-center ${
+                    stats.ordersChange > 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    <TrendingUp className={`h-3 w-3 mr-1 ${
+                      stats.ordersChange < 0 ? 'rotate-180' : ''
+                    }`} />
+                    {stats.ordersChange > 0 ? '+' : ''}{stats.ordersChange}%
+                  </span>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -151,10 +172,12 @@ export default function EnhancedHomeContent() {
             </CardHeader>
             <CardContent>
               <div className="flex items-baseline justify-between">
-                <p className="text-3xl font-bold text-gray-900">{stats.pendingOrders}</p>
-                <Link href="/ventas?status=pending" className="text-orange-600 text-sm hover:underline">
-                  Ver →
-                </Link>
+                <p className="text-3xl font-bold text-gray-900">{isLoadingStats ? '...' : stats.pendingOrders}</p>
+                {stats.pendingOrders > 0 && (
+                  <Link href="/ventas?status=pending" className="text-orange-600 text-sm hover:underline">
+                    Ver →
+                  </Link>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -168,11 +191,13 @@ export default function EnhancedHomeContent() {
             </CardHeader>
             <CardContent>
               <div className="flex items-baseline justify-between">
-                <p className="text-3xl font-bold text-gray-900">{stats.totalClients}</p>
-                <span className="text-purple-600 text-sm flex items-center">
-                  <ArrowUpRight className="h-3 w-3 mr-1" />
-                  +8
-                </span>
+                <p className="text-3xl font-bold text-gray-900">{isLoadingStats ? '...' : stats.totalClients}</p>
+                {!isLoadingStats && stats.newClientsThisWeek > 0 && (
+                  <span className="text-purple-600 text-sm flex items-center">
+                    <ArrowUpRight className="h-3 w-3 mr-1" />
+                    +{stats.newClientsThisWeek}
+                  </span>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -186,11 +211,22 @@ export default function EnhancedHomeContent() {
             </CardHeader>
             <CardContent>
               <div className="flex items-baseline justify-between">
-                <p className="text-2xl font-bold text-gray-900">₡{(stats.weeklyRevenue / 1000).toFixed(0)}k</p>
-                <span className="text-green-600 text-sm flex items-center">
-                  <TrendingUp className="h-3 w-3 mr-1" />
-                  +18%
-                </span>
+                <p className="text-2xl font-bold text-gray-900">
+                  {isLoadingStats ? '...' : stats.weeklyRevenue >= 1000 
+                    ? `₡${(stats.weeklyRevenue / 1000).toFixed(1)}k` 
+                    : `₡${stats.weeklyRevenue}`
+                  }
+                </p>
+                {!isLoadingStats && stats.revenueChange !== 0 && (
+                  <span className={`text-sm flex items-center ${
+                    stats.revenueChange > 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    <TrendingUp className={`h-3 w-3 mr-1 ${
+                      stats.revenueChange < 0 ? 'rotate-180' : ''
+                    }`} />
+                    {stats.revenueChange > 0 ? '+' : ''}{stats.revenueChange}%
+                  </span>
+                )}
               </div>
             </CardContent>
           </Card>

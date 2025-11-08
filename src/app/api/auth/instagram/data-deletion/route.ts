@@ -5,6 +5,19 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
+ * GET handler for Meta verification
+ * Meta checks if the endpoint exists before approving the app
+ */
+export async function GET(request: NextRequest) {
+  return NextResponse.json({ 
+    status: 'ok',
+    message: 'Data deletion endpoint is active',
+    method: 'POST',
+    description: 'Send a POST request with signed_request parameter to delete user data'
+  })
+}
+
+/**
  * Instagram Data Deletion Request endpoint (required for Meta compliance)
  * When a user deletes your app from their Instagram/Facebook account,
  * Meta will call this endpoint to request deletion of their data.

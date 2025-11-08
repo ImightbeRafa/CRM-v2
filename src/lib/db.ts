@@ -106,8 +106,8 @@ const prisma = basePrisma.$extends({
 });
 
 if (process.env.NODE_ENV !== 'production') {
-  // @ts-expect-error assign extended client globally for dev hot-reload
-  global.prisma = prisma;
+  // Assign extended client globally for dev hot-reload
+  (global as any).prisma = prisma;
 }
 
 export { prisma };

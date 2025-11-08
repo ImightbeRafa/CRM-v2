@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import { verifyWebhookSharedSecret } from '@/lib/tilopay';
-
-const prisma = new PrismaClient();
 
 // Force dynamic rendering for webhooks
 export const dynamic = 'force-dynamic';

@@ -2,12 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { Parser } from 'json2csv';
-import * as XLSX from 'xlsx';
+import { exportRateLimit } from '@/lib/rate-limit';
 
 export async function GET(request: NextRequest) {
   try {
+    // Apply rate limiting
+    const rateLimitHeaders = exportRateLimit(request);
+    if (rateLimitHeaders instanceof Response) {
+      return rateLimitHeaders; // Rate limit exceeded
+    }
+    
     // Authenticate and check permissions
-    const session = await authenticateAPIWithPermission(request, 'view_sales');
+    const auth = await authenticateAPIWithPermission(request, 'view_sales');
+    if (!auth.ok) return auth.response;
     
     const { searchParams } = new URL(request.url);
     const format = searchParams.get('format') || 'json';
@@ -23,15 +30,15 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    const prisma = getTenantPrisma(session.user.tenantId);
+    const prisma = getTenantPrisma(auth.tenantId);
     
     // Build where clause for filtering
     const whereClause: any = {};
     
     if (startDate || endDate) {
-      whereClause.createdAt = {};
-      if (startDate) whereClause.createdAt.gte = new Date(startDate);
-      if (endDate) whereClause.createdAt.lte = new Date(endDate);
+      whereClause.timestamp = {};
+      if (startDate) whereClause.timestamp.gte = new Date(startDate);
+      if (endDate) whereClause.timestamp.lte = new Date(endDate);
     }
     
     if (status) {
@@ -41,56 +48,31 @@ export async function GET(request: NextRequest) {
     // Fetch orders with related data
     const orders = await prisma.order.findMany({
       where: whereClause,
-      include: {
-        client: {
-          select: {
-            name: true,
-            email: true,
-            phone: true,
-          }
-        },
-        seller: {
-          select: {
-            name: true,
-            email: true,
-          }
-        },
-        orderItems: {
-          include: {
-            product: {
-              select: {
-                name: true,
-                price: true,
-              }
-            }
-          }
-        }
-      },
       orderBy: {
-        createdAt: 'desc'
+        timestamp: 'desc'
       }
     });
     
     // Transform data for export
     const exportData = orders.map(order => ({
       id: order.id,
-      orderNumber: order.orderNumber,
+      orderNumber: order.orderId,
       status: order.status,
       total: order.total,
-      clientName: order.client?.name || 'N/A',
-      clientEmail: order.client?.email || 'N/A',
-      clientPhone: order.client?.phone || 'N/A',
-      sellerName: order.seller?.name || 'N/A',
-      sellerEmail: order.seller?.email || 'N/A',
-      itemsCount: order.orderItems.length,
-      items: order.orderItems.map(item => ({
-        productName: item.product?.name || 'N/A',
-        quantity: item.quantity,
-        price: item.product?.price || 0,
-        subtotal: item.quantity * (item.product?.price || 0)
-      })),
-      createdAt: order.createdAt.toISOString(),
-      updatedAt: order.updatedAt.toISOString(),
+      clientName: order.customerName || 'N/A',
+      clientEmail: order.email || 'N/A',
+      clientPhone: order.phone || 'N/A',
+      sellerName: order.username || 'N/A',
+      sellerEmail: order.email || 'N/A',
+      itemsCount: 1, // Since schema is flat, treat each order as 1 item
+      items: [{
+        productName: order.product || 'N/A',
+        quantity: order.quantity,
+        price: order.productCost || 0,
+        subtotal: order.quantity * (order.productCost || 0)
+      }],
+      createdAt: order.timestamp.toISOString(),
+      updatedAt: order.timestamp.toISOString(),
     }));
     
     // Generate export based on format
@@ -130,6 +112,8 @@ export async function GET(request: NextRequest) {
         break;
         
       case 'xlsx':
+        // Dynamic import to reduce bundle size for non-xlsx exports
+        const XLSX = await import('xlsx');
         // Create workbook and worksheet
         const workbook = XLSX.utils.book_new();
         const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -148,12 +132,13 @@ export async function GET(request: NextRequest) {
     }
     
     // Return file download
-    return new NextResponse(exportContent, {
+    return new NextResponse(exportContent as any, {
       status: 200,
       headers: {
         'Content-Type': contentType,
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Content-Length': exportContent.length.toString(),
+        ...rateLimitHeaders, // Add rate limit headers
       },
     });
     

@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server'
 import { logUpdate } from '@/lib/auditLogger'
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '@/lib/db'
+import { withoutTenantIsolation } from '@/lib/tenantContext'
 import { getToken } from 'next-auth/jwt'
-
-// Use raw Prisma client to avoid tenant context middleware issues
-const prisma = new PrismaClient()
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'

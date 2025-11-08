@@ -327,6 +327,23 @@ async function handleAppRoute(
       // Add tenant ID to response headers for client-side use
       response.headers.set('x-tenant-id', tenantId);
       
+      // Content Security Policy (Report-Only for monitoring)
+      // Adjust to your needs; switch to enforced by removing '-Report-Only' once stable
+      const csp = [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://vercel.live https://app.tilopay.com",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com",
+        "img-src 'self' data: blob: https://vercel.com https://vercel.live https://*.vercel.app https://*.vercel-storage.com",
+        "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://vercel.live https://*.vercel-storage.com",
+        "frame-src 'self' https://app.tilopay.com",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "upgrade-insecure-requests",
+      ].join('; ');
+      response.headers.set('Content-Security-Policy-Report-Only', csp);
+      
       return response;
     }
   );

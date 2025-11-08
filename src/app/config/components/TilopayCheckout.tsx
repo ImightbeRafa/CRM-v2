@@ -12,7 +12,6 @@ import Script from 'next/script';
 declare global {
   interface Window {
     Tilopay: any;
-    $: any;
   }
 }
 
@@ -49,9 +48,9 @@ export default function TilopayCheckout({ planId, amount, onClose }: TilopayChec
       if (data.status === 'success' && data.token) {
         setSdkToken(data.token);
         
-        // Wait for SDK to be ready
+        // Wait for SDK v2 to be ready (no jQuery needed)
         const checkSDK = setInterval(() => {
-          if (window.Tilopay && window.$) {
+          if (window.Tilopay) {
             clearInterval(checkSDK);
             
             console.log('🎯 Initializing Tilopay SDK...');
@@ -141,17 +140,11 @@ export default function TilopayCheckout({ planId, amount, onClose }: TilopayChec
 
   return (
     <>
-      {/* Load jQuery (required by Tilopay SDK) */}
+      {/* Load Tilopay SDK v2 (jQuery-free) */}
       <Script 
-        src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"
-        strategy="beforeInteractive"
-      />
-      
-      {/* Load Tilopay SDK */}
-      <Script 
-        src="https://app.tilopay.com/sdk/v1/sdk.min.js"
+        src="https://app.tilopay.com/sdk/v2/sdk_tpay.min.js"
         strategy="afterInteractive"
-        onLoad={() => console.log('✅ Tilopay SDK loaded')}
+        onLoad={() => console.log('✅ Tilopay SDK v2 loaded')}
         onError={() => setError('Error cargando SDK de Tilopay')}
       />
       

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
+import TilopaySubscriptionCheckout from './TilopaySubscriptionCheckout';
 import { 
   CreditCard, 
   TrendingUp, 
@@ -90,7 +91,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       interval: 'month',
       features: [
         '1 usuario all access',
-        '15 días gratis',
+        '7 días gratis',
         'Funcionalidades básicas',
         'Soporte por email',
         '500 MB almacenamiento'
@@ -317,14 +318,16 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       return; // User canceled
     }
     
-    // For BASIC plan, redirect to Tilopay Repeat subscription page
-    const tilopaySubscriptionLinks: Record<string, string> = {
-      basic: 'https://tp.cr/l/TkRFME9RPT18MQ=='  // Basic Plan - ₡20,000/month
+    // Show embedded Tilopay SDK v2 checkout
+    const planPricing: Record<string, number> = {
+      basic: 10000,  // ₡10,000/month ($20 USD)
+      pro: 45000     // ₡45,000/month
     };
     
-    const subscriptionUrl = tilopaySubscriptionLinks[planId];
-    if (subscriptionUrl) {
-      window.location.href = subscriptionUrl;
+    const amount = planPricing[planId];
+    if (amount) {
+      setSelectedPlan({ id: planId, amount });
+      setShowCheckout(true);
     } else {
       alert('Plan no disponible');
     }
@@ -409,7 +412,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                   Tu Período de Prueba ha Expirado
                 </h3>
                 <p className="text-red-800 dark:text-red-200 mb-4">
-                  Tu período de prueba gratuita de 15 días ha finalizado. Para continuar usando todas las funcionalidades de BetsyCRM, 
+                  Tu período de prueba gratuita de 7 días ha finalizado. Para continuar usando todas las funcionalidades de BetsyCRM, 
                   necesitas actualizar a un plan de pago.
                 </p>
                 <div className="flex gap-3 flex-wrap">
@@ -535,7 +538,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                           Período de prueba expirado
                         </p>
                       )}
-                      {trialStatus.daysRemaining > 0 && trialStatus.daysRemaining <= 15 && (
+                      {trialStatus.daysRemaining > 0 && trialStatus.daysRemaining <= 7 && (
                         <p className="text-sm text-orange-600">
                           <Clock className="inline w-4 h-4 mr-1" />
                           {trialStatus.daysRemaining === 1 
@@ -900,8 +903,37 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         </div>
       )}
 
-      {/* Note: Tilopay checkout now uses direct subscription links */}
-      {/* Users are redirected to Tilopay Repeat hosted pages */}
+      {/* Tilopay SDK v2 Checkout Modal */}
+      {showCheckout && selectedPlan && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="relative max-w-md w-full">
+            <TilopaySubscriptionCheckout
+              planId={selectedPlan.id}
+              planName={selectedPlan.id.toUpperCase()}
+              amount={selectedPlan.amount / 1000} // Convert CRC to USD approximation
+              onSuccess={() => {
+                setShowCheckout(false);
+                setSelectedPlan(null);
+                loadBillingData();
+                setPaymentMessage({
+                  type: 'success',
+                  message: '¡Suscripción activada exitosamente! Tu tarjeta será cargada mensualmente.'
+                });
+              }}
+              onError={(error) => {
+                setPaymentMessage({ 
+                  type: 'error', 
+                  message: error || 'Error al procesar el pago. Intenta nuevamente.'
+                });
+              }}
+              onClose={() => {
+                setShowCheckout(false);
+                setSelectedPlan(null);
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

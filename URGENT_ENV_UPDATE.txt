@@ -1,0 +1,123 @@
+================================================================================
+🚨 URGENT: UPDATE YOUR .env.local FILE
+================================================================================
+
+THE FIX: Wrong API Domain!
+
+OLD (WRONG):
+  TILOPAY_BASE_URL=https://app.tilopay.com/api/v1
+
+NEW (CORRECT):
+  TILOPAY_BASE_URL=https://api.tilopay.com/v1
+
+================================================================================
+WHY THIS MATTERS
+================================================================================
+
+app.tilopay.com  →  Admin panel & SDK assets ONLY
+api.tilopay.com  →  API calls (token generation, payments, etc.)
+
+This is why you were getting 404 errors!
+
+================================================================================
+ACTION REQUIRED - UPDATE .env.local NOW
+================================================================================
+
+1. Open: d:\code\Betsy\Betsy\.env.local
+
+2. Find this line:
+   TILOPAY_BASE_URL=https://app.tilopay.com/api/v1
+
+3. Change to:
+   TILOPAY_BASE_URL=https://api.tilopay.com/v1
+
+4. Save the file
+
+5. Restart dev server:
+   - Stop current server (Ctrl+C)
+   - Run: npm run dev
+
+================================================================================
+COMPLETE .env.local CONFIGURATION
+================================================================================
+
+# Database
+DATABASE_URL="postgresql://..."
+
+# NextAuth
+NEXTAUTH_SECRET="your-secret-here"
+NEXTAUTH_URL=http://localhost:3000
+
+# Master Admin
+MASTER_USERNAME=admin
+MASTER_PASSWORD=21126
+
+# Tilopay SDK v2 Configuration
+# CRITICAL: Use api.tilopay.com for API calls (NOT app.tilopay.com!)
+TILOPAY_BASE_URL=https://api.tilopay.com/v1
+TILOPAY_API_KEY=7067-2615-6995-8721-7143
+TILOPAY_USER=0S4T29
+TILOPAY_PASSWORD=exojM6
+TILOPAY_WEBHOOK_SECRET=your-webhook-secret
+TILOPAY_TEST_MODE=true
+
+================================================================================
+FILES ALREADY UPDATED (NO ACTION NEEDED)
+================================================================================
+
+✅ src/app/api/tilopay/create-subscription-token/route.ts
+✅ src/lib/tilopay.ts
+✅ src/lib/tilopay-v1.ts
+✅ src/app/api/tilopay/create-payment-link/route.ts
+✅ src/app/api/tilopay/create-subscription/route.ts
+✅ src/app/api/tilopay/get-sdk-token/route.ts
+
+All code files now default to https://api.tilopay.com/v1
+
+================================================================================
+AFTER UPDATING
+================================================================================
+
+Expected terminal output:
+```
+📤 Requesting SDK v2 token from Tilopay...
+🌐 Endpoint: https://api.tilopay.com/v1/GetTokenSdk
+📥 Response status: 200  ← SUCCESS!
+✅ Token generated successfully
+```
+
+Expected browser console:
+```
+✅ Tilopay SDK v2 loaded
+✅ SDK token received: tk_xxxxx
+✅ Tilopay SDK v2 initialized for subscription
+💳 Payment methods available: 1
+```
+
+================================================================================
+IF STILL 404 AFTER UPDATE
+================================================================================
+
+Try these fallbacks in order:
+
+1. Test lowercase endpoint:
+   Change /GetTokenSdk to /gettokensdk in code
+
+2. Contact Tilopay support:
+   Email: sac@tilopay.com
+   Ask: "What is the correct endpoint for SDK v2 token generation?"
+
+3. Try alternative base URL:
+   TILOPAY_BASE_URL=https://api.tilopay.com/api/v1
+
+================================================================================
+SUMMARY
+================================================================================
+
+✅ Code Updated: All files now use api.tilopay.com
+⏳ Manual Action: Update .env.local file
+🔄 Restart: npm run dev after updating
+
+This should resolve the 404 error and allow token generation to succeed!
+
+================================================================================

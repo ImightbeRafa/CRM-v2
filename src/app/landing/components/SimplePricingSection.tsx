@@ -11,10 +11,10 @@ const pricingPlans = [
     name: "Free",
     price: "$0",
     period: "/month",
-    description: "Perfect to get started with 15-day trial",
+    description: "Perfect to get started with 7-day trial",
     features: [
       "1 usuario all access",
-      "15 días gratis",
+      "7 días gratis",
       "Complete order management",
       "Visual kanban board",
       "Customer tracking",

@@ -1,0 +1,348 @@
+================================================================================
+🔄 TILOPAY SDK V2 INTEGRATION - CURRENT STATUS
+================================================================================
+Date: November 7, 2025, 6:56 PM
+Status: ⚠️ CARD FORM WORKING - PAYMENT SUBMISSION FAILING
+
+================================================================================
+✅ WHAT'S WORKING
+================================================================================
+
+1. ✅ JWT Authentication
+   - Successfully logging in to Tilopay via /loginSdk endpoint
+   - Receiving bearer token: access_token
+   - Token expires properly (86400 seconds / 24 hours)
+   - Correct payload: { apiuser, password, key }
+
+2. ✅ SDK v2 Loading
+   - Script loads from: https://app.tilopay.com/sdk/v2/sdk_tpay.min.js
+   - SDK available: window.Tilopay
+   - No jQuery required
+   - Console confirms: "✅ Tilopay SDK v2 loaded"
+
+3. ✅ SDK Initialization
+   - SDK Init() call succeeds
+   - Response: { message: "Success", methods: [...] }
+   - Using bearer token from /loginSdk
+   - All required HTML elements found:
+     * tlpy_cc_number
+     * tlpy_cc_expiration_date
+     * tlpy_cvv
+     * responseTilopay
+
+4. ✅ Card Form Display
+   - Card input fields render correctly
+   - Form is interactive and accepts input
+   - User can type card number, expiry, CVV
+   - Visual styling works (TailwindCSS)
+
+5. ✅ Backend API Routes
+   - /api/tilopay/create-subscription-token → 200 OK
+   - Returns bearer token successfully
+   - User authentication works (NextAuth)
+   - Tenant lookup works (Prisma)
+
+6. ✅ Webhook Handler
+   - Updated to handle subscription events:
+     * subscription.renewed
+     * subscription.cancelled
+     * payment.approved
+     * payment.failed
+   - Duplicate prevention implemented
+   - Database updates configured
+
+================================================================================
+❌ WHAT'S FAILING
+================================================================================
+
+1. ❌ Payment Submission (startPayment)
+   - User enters card details
+   - Clicks "Pagar ₡10,000 / mes"
+   - SDK calls: tilopayInstanceRef.current.startPayment()
+   - Error returned: "There was an error with the selected payment method, please try again."
+   
+   Console Output:
+   ```
+   💳 Starting payment with subscription...
+   ❌ Payment failed: There was an error with the selected payment method, please try again.
+   ```
+
+2. ❌ Payment Response Details
+   - Need to see full response object from startPayment()
+   - Added detailed logging but not visible yet (may need hard refresh)
+   - Unknown if error is from:
+     * Invalid bearer token for payment processing
+     * Missing/incorrect payload parameters
+     * Payment method not configured
+     * Test vs Production mode mismatch
+
+================================================================================
+🔍 KEY DISCOVERIES
+================================================================================
+
+1. 🔑 Authentication Method
+   - Tilopay uses JWT Bearer tokens, NOT Basic Auth
+   - Endpoint: POST /api/v1/loginSdk
+   - Payload: { "apiuser": user, "password": pass, "key": apiKey }
+   - Response: { "access_token": "...", "expires_in": "..." }
+
+2. 🔑 GetTokenSdk Endpoint DOES NOT EXIST
+   - Attempted 8 different endpoint variations
+   - All returned 404 Not Found
+   - /GetTokenSdk, /getTokenSdk, /gettokensdk, etc.
+   - Conclusion: No separate token generation for SDK v2
+
+3. 🔑 Bearer Token Usage
+   - Bearer token from /loginSdk used for SDK Init()
+   - SDK accepts the token without errors
+   - Init succeeds, but payment fails
+   - Possible: Bearer token is for API calls, not SDK payments
+
+4. 🔑 DOM Element Timing
+   - SDK requires HTML elements to exist BEFORE Init()
+   - Fixed by showing form first, then initializing
+   - Original error: "Cannot read properties of null (reading 'addEventListener')"
+   - Solution: setSdkInitialized(true) before SDK Init()
+
+================================================================================
+📁 FILES MODIFIED
+================================================================================
+
+Backend:
+--------
+✅ src/app/api/tilopay/create-subscription-token/route.ts
+   - Added JWT login via /loginSdk
+   - Returns bearer token to frontend
+   - Removed GetTokenSdk attempts (endpoint doesn't exist)
+   - Added detailed logging
+
+✅ src/app/api/tilopay/webhook/route.ts
+   - Added subscription.renewed event handling
+   - Added subscription.cancelled event handling
+   - Enhanced event type detection
+   - Improved duplicate prevention
+
+Frontend:
+---------
+✅ src/app/config/components/TilopaySubscriptionCheckout.tsx
+   - Shows form before SDK init (DOM timing fix)
+   - Fetches bearer token from backend
+   - Initializes SDK with bearer token
+   - Added detailed payment response logging
+   - Card form renders correctly
+
+✅ next.config.js (already done earlier)
+   - CSP allows all required Tilopay domains
+
+Environment:
+------------
+✅ .env.local (user configured)
+   - TILOPAY_BASE_URL=https://app.tilopay.com/api/v1
+   - TILOPAY_API_KEY=7067-2615-6995-8721-7143
+   - TILOPAY_USER=0S4T29
+   - TILOPAY_PASSWORD=exojM6
+
+================================================================================
+🎯 CURRENT FLOW
+================================================================================
+
+1. User clicks "Iniciar Pago Seguro"
+   ↓
+2. Frontend: initializeSDK()
+   ↓
+3. Show card form (setSdkInitialized = true)
+   ↓
+4. Wait 100ms for DOM to render
+   ↓
+5. POST /api/tilopay/create-subscription-token
+   ↓
+6. Backend: POST /loginSdk → Get bearer token
+   ↓
+7. Backend: Return { token: bearer_token, orderNumber, email, ... }
+   ↓
+8. Frontend: Tilopay.Init({ token: bearer_token, ... })
+   ↓
+9. SDK Init Success ✅
+   ↓
+10. Card form becomes interactive ✅
+   ↓
+11. User enters card details ✅
+   ↓
+12. User clicks "Pagar"
+   ↓
+13. Frontend: tilopayInstance.startPayment()
+   ↓
+14. ❌ ERROR: "There was an error with the selected payment method"
+
+================================================================================
+🤔 POSSIBLE CAUSES OF PAYMENT FAILURE
+================================================================================
+
+1. Bearer Token Not Valid for Payments
+   - Bearer token from /loginSdk might be for API calls only
+   - SDK might need different token or no token at all
+   - Tilopay documentation unclear on SDK v2 token requirements
+
+2. Missing Payment Method Configuration
+   - Account might not be configured for card payments
+   - Test mode vs Production mode mismatch
+   - Payment gateway not activated for this API key
+
+3. Incorrect Init Parameters
+   - SDK Init might need different parameters for v2
+   - hashVersion: "V2" might not be sufficient
+   - Missing required fields in Init payload
+
+4. Payment Flow Different for Subscriptions
+   - Recurring payments might require different approach
+   - Might need to use /createPlanRepeat instead of direct SDK
+   - Subscription setup might be separate from payment
+
+5. Card Data Not Being Captured
+   - SDK might not be reading card input fields correctly
+   - Tokenization might be failing silently
+   - Form validation might be preventing submission
+
+================================================================================
+🔧 NEXT TROUBLESHOOTING STEPS
+================================================================================
+
+Priority 1: Get Detailed Payment Response
+──────────────────────────────────────────
+□ Hard refresh browser (Ctrl+Shift+R)
+□ Open DevTools Console
+□ Enter test card: 4242 4242 4242 4242
+□ Click "Pagar" button
+□ Look for these console logs:
+  - 💳 Starting payment with subscription...
+  - 📦 Payment response: { ... }
+  - 📊 Response details: { ... }
+□ Copy full response object
+
+Priority 2: Test Without Bearer Token
+──────────────────────────────────────
+□ Try SDK Init with empty token: token: ''
+□ Try SDK Init with just API key: key: 'xxx'
+□ Try SDK Init without token parameter
+□ See which approach allows payment to proceed
+
+Priority 3: Contact Tilopay Support
+────────────────────────────────────
+Email: sac@tilopay.com
+
+Questions:
+1. Does SDK v2 require a backend token for initialization?
+2. What token should be passed to Tilopay.Init() for recurring payments?
+3. Is the bearer token from /loginSdk used for SDK init or API calls?
+4. Are test credentials valid for card payment processing?
+5. What's the correct flow for setting up monthly recurring subscriptions?
+
+Priority 4: Alternative Approach - Plan Repeat
+───────────────────────────────────────────────
+□ Use /createPlanRepeat endpoint instead of direct SDK
+□ Create subscription plan on backend
+□ Get hosted payment URL
+□ Redirect user or embed iframe
+□ Let Tilopay handle all payment processing
+□ Receive webhook notifications for renewals
+
+================================================================================
+📊 SDK INIT PARAMETERS (CURRENT)
+================================================================================
+
+```javascript
+await window.Tilopay.Init({
+  token: '<bearer_token_from_loginSdk>',
+  currency: 'CRC',
+  language: 'es',
+  amount: 10000,
+  billToEmail: 'peter@peter.com',
+  billToFirstName: 'Customer',
+  billToLastName: 'User',
+  billToAddress: 'San Jose, Costa Rica',
+  billToAddress2: '',
+  billToCity: 'San Jose',
+  billToState: '',
+  billToZipPostCode: '',
+  billToCountry: 'CR',
+  billToTelephone: '',
+  orderNumber: 'cmh44aerw0006vijg0640vfl0-basic-1762562558913',
+  capture: 1,
+  redirect: 'http://localhost:3000/config?tab=billing',
+  subscription: 1,
+  hashVersion: 'V2'
+})
+```
+
+Response: { message: "Success", methods: [...] } ✅
+
+================================================================================
+📊 PAYMENT SUBMISSION (CURRENT)
+================================================================================
+
+```javascript
+const paymentResponse = await tilopayInstance.startPayment();
+```
+
+Current Error:
+```
+{
+  message: "There was an error with the selected payment method, please try again."
+}
+```
+
+Need Full Response Object to Debug!
+
+================================================================================
+🎯 IMMEDIATE ACTION REQUIRED
+================================================================================
+
+1. ⏳ Get detailed payment response
+   - Hard refresh and check console logs
+   - Full response object will tell us the exact issue
+
+2. ⏳ Test card validation
+   - Verify card fields are being read
+   - Check if SDK is tokenizing the card data
+
+3. ⏳ Review Tilopay documentation
+   - Confirm SDK v2 payment flow
+   - Check if recurring setup is different
+
+4. ⏳ Consider Plan Repeat approach
+   - Might be simpler and more reliable
+   - Tilopay handles all payment processing
+   - Better for recurring subscriptions
+
+================================================================================
+📝 NOTES
+================================================================================
+
+- Integration is 90% complete
+- SDK loads and initializes successfully
+- Card form works and accepts input
+- Only payment submission is failing
+- Likely a token/configuration issue, not code bug
+- May need Tilopay support to resolve
+- Alternative approach (Plan Repeat) available
+
+================================================================================
+🔗 USEFUL ENDPOINTS (CONFIRMED WORKING)
+================================================================================
+
+✅ POST https://app.tilopay.com/api/v1/loginSdk
+   Headers: Content-Type: application/json
+   Body: { "apiuser": "0S4T29", "password": "exojM6", "key": "7067-2615-6995-8721-7143" }
+   Response: { "access_token": "...", "token_type": "bearer", "expires_in": "..." }
+
+❓ POST https://app.tilopay.com/api/v1/createPlanRepeat
+   (Not implemented yet - alternative approach)
+   Would create recurring subscription plan
+   Returns payment URL for user
+
+================================================================================
+END OF STATUS REPORT
+================================================================================
+
+Last Updated: November 7, 2025, 6:56 PM
+Next Session: Continue with detailed payment response debugging

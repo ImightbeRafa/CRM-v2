@@ -34,7 +34,7 @@ export async function isTrialExpired(tenantId: string): Promise<boolean> {
     // If subscription is active on a FREE plan, check trial status
     // Otherwise, check if trial has expired
     const now = new Date();
-    const trialEndsAt = tenant.trialEndsAt || new Date(tenant.createdAt.getTime() + 15 * 24 * 60 * 60 * 1000);
+    const trialEndsAt = tenant.trialEndsAt || new Date(tenant.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
     
     // Trial expired if:
     // 1. Plan is FREE
@@ -144,7 +144,7 @@ export async function isSubscriptionActive(tenantId: string): Promise<boolean> {
     // If FREE plan, check if trial is still active
     if (normalizedPlan === 'FREE' || !normalizedPlan || normalizedPlan === '') {
       const now = new Date();
-      const trialEndsAt = tenant.trialEndsAt || new Date(tenant.createdAt.getTime() + 15 * 24 * 60 * 60 * 1000);
+      const trialEndsAt = tenant.trialEndsAt || new Date(tenant.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
       const trialActive = now < trialEndsAt;
       if (!trialActive) {
         console.log(`⚠️ Tenant ${tenantId} on FREE plan with expired trial - access restricted`);

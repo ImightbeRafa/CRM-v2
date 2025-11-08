@@ -1,11 +1,12 @@
 /**
  * Tilopay API v1 Integration
- * Based on official documentation: https://app.tilopay.com/api/v1/
+ * API Endpoint: https://api.tilopay.com/v1/
+ * Admin/SDK: https://app.tilopay.com/
  * 
  * Tilopay uses API Key authentication directly (no separate login required)
  */
 
-const TILOPAY_BASE_URL = process.env.TILOPAY_BASE_URL || 'https://app.tilopay.com/api/v1';
+const TILOPAY_BASE_URL = process.env.TILOPAY_BASE_URL || 'https://api.tilopay.com/v1';
 const TILOPAY_API_KEY = process.env.TILOPAY_API_KEY || '';
 const TILOPAY_API_USER = process.env.TILOPAY_USER || '';
 const TILOPAY_API_PASSWORD = process.env.TILOPAY_PASSWORD || '';

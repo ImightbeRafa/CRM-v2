@@ -34,9 +34,13 @@ export default async function middleware(request: Request) {
 
   try {
     // Get session token
+    const secret = process.env.NEXTAUTH_SECRET;
+    if (!secret && process.env.NODE_ENV === 'production') {
+      throw new Error('NEXTAUTH_SECRET must be set in production');
+    }
     const token = await getToken({
       req: request as any,
-      secret: process.env.NEXTAUTH_SECRET || 'dev-secret',
+      secret: secret || 'dev-secret-localhost-only',
     });
 
     // Redirect to login if no token
@@ -208,9 +212,13 @@ async function handleAppRoute(
     
     // If email not verified, redirect to verify email
     if (email_verified === false) {
+      const secret = process.env.NEXTAUTH_SECRET;
+      if (!secret && process.env.NODE_ENV === 'production') {
+        throw new Error('NEXTAUTH_SECRET must be set in production');
+      }
       const token = await getToken({
         req: request as any,
-        secret: process.env.NEXTAUTH_SECRET || 'dev-secret',
+        secret: secret || 'dev-secret-localhost-only',
       });
       return NextResponse.redirect(new URL(`/auth/verify-email?email=${token?.email || ''}`, url.origin));
     }
@@ -244,9 +252,13 @@ async function handleAppRoute(
   if (tenantId) {
     try {
       // Get plan and subscription status from JWT token (set in auth-options.ts)
+      const secret = process.env.NEXTAUTH_SECRET;
+      if (!secret && process.env.NODE_ENV === 'production') {
+        throw new Error('NEXTAUTH_SECRET must be set in production');
+      }
       const token = await getToken({
         req: request as any,
-        secret: process.env.NEXTAUTH_SECRET || 'dev-secret',
+        secret: secret || 'dev-secret-localhost-only',
       });
       const currentTenant = (token as any)?.currentTenant;
       const plan = currentTenant?.plan || 'FREE';

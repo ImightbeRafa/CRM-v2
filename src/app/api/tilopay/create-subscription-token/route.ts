@@ -11,13 +11,21 @@ import { getToken } from 'next-auth/jwt';
  */
 export async function POST(request: NextRequest) {
   try {
+    console.log('🔐 [create-subscription-token] Starting...');
+    
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     
     if (!token || !token.sub) {
+      console.error('❌ [create-subscription-token] Unauthorized - no token');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { planId, amount, currency = 'CRC', recurring = true } = await request.json();
+    console.log('✅ [create-subscription-token] User authenticated:', token.sub);
+
+    const body = await request.json();
+    console.log('📦 [create-subscription-token] Request body:', body);
+    
+    const { planId, amount, currency = 'CRC', recurring = true } = body;
 
     if (!planId || !amount) {
       return NextResponse.json({ 
@@ -61,72 +69,78 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // Create Basic Auth header
-    const auth = Buffer.from(`${apiUser}:${apiPassword}`).toString('base64');
+    // Step 1: Login to get JWT access token
+    console.log('🔐 Logging in to Tilopay...');
+    
+    // Login payload: only apiuser and password (key is used AFTER login for API calls)
+    const loginPayload = {
+      apiuser: apiUser,
+      password: apiPassword
+    };
+    // Login payload prepared (credentials not logged for security)
+    
+    const loginResponse = await fetch(`${baseUrl}/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(loginPayload)
+    });
+
+    console.log('📥 Login response status:', loginResponse.status);
+
+    if (!loginResponse.ok) {
+      const loginError = await loginResponse.text();
+      console.error('❌ Tilopay login failed:', loginResponse.status, loginError);
+      console.error('❌ Check: 1) Credentials correct? 2) Test mode enabled? 3) Account active?');
+      return NextResponse.json({ 
+        error: 'Failed to authenticate with payment provider',
+        details: loginError,
+        hint: 'Check credentials in .env.local: TILOPAY_USER, TILOPAY_PASSWORD, TILOPAY_API_KEY'
+      }, { status: 500 });
+    }
+
+    const loginData = await loginResponse.json();
+    const accessToken = loginData.access_token;
+
+    if (!accessToken) {
+      console.error('❌ No access token in login response:', loginData);
+      return NextResponse.json({ 
+        error: 'Invalid authentication response'
+      }, { status: 500 });
+    }
+
+    console.log('✅ Logged in successfully, token expires at:', loginData.expires_in);
 
     // Generate unique order reference
     const orderNumber = `${tenantId}-${planId}-${Date.now()}`;
 
-    // Payload for SDK token generation
-    const payload = {
-      currency,
-      amount,
+    console.log('💡 No GetTokenSdk endpoint exists - using bearer token directly for SDK');
+    console.log('📦 Order number:', orderNumber);
+
+    // Return the bearer token we got from login
+    // SDK v2 might be able to use this directly
+    const data = {
+      token: accessToken, // Bearer token from login
       orderNumber,
-      billToEmail: user.email,
-      billToFirstName: user.name?.split(' ')[0] || 'User',
-      billToLastName: user.name?.split(' ').slice(1).join(' ') || 'Customer',
-      subscription: recurring ? 1 : 0, // 1 = save card for recurring
-      capture: 1, // Capture payment immediately
-      redirect: `${process.env.NEXTAUTH_URL}/config?tab=billing&success=true`
+      email: user.email,
+      firstName: user.name?.split(' ')[0] || 'User',
+      lastName: user.name?.split(' ').slice(1).join(' ') || 'Customer'
     };
 
-    console.log('📤 Requesting SDK token from Tilopay...', { orderNumber, amount, currency });
+    console.log('✅ Returning bearer token to frontend');
+    console.log('📤 SDK will attempt initialization with bearer token');
 
-    // Request SDK token from Tilopay
-    const response = await fetch(`${baseUrl}/getTokenSdk`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'X-API-KEY': apiKey,
-        'key': apiKey,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Tilopay token error:', response.status, errorText);
-      return NextResponse.json({ 
-        error: 'Failed to generate payment token',
-        details: errorText,
-        status: response.status
-      }, { status: 500 });
-    }
-
-    const data = await response.json();
-
-    if (!data.token) {
-      console.error('❌ No token in Tilopay response:', data);
-      return NextResponse.json({ 
-        error: 'Invalid response from payment provider' 
-      }, { status: 500 });
-    }
-
-    console.log('✅ SDK token generated successfully');
-
-    return NextResponse.json({
-      success: true,
-      token: data.token,
-      orderNumber,
-      environment: data.environment || (process.env.NODE_ENV === 'production' ? 'production' : 'test')
-    });
+    return NextResponse.json(data);
 
   } catch (error: any) {
-    console.error('❌ Error generating SDK token:', error);
+    console.error('❌ [create-subscription-token] Error:', error);
+    console.error('❌ [create-subscription-token] Error message:', error.message);
+    console.error('❌ [create-subscription-token] Error stack:', error.stack);
     return NextResponse.json({
       error: 'Failed to initialize payment',
-      message: error.message
+      message: error.message,
+      details: error.toString()
     }, { status: 500 });
   }
 }

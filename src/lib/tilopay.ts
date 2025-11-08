@@ -1,4 +1,4 @@
-const TILOPAY_BASE_URL = process.env.TILOPAY_BASE_URL || 'https://app.tilopay.com/api/v1';
+const TILOPAY_BASE_URL = process.env.TILOPAY_BASE_URL || 'https://api.tilopay.com/v1';
 const TILOPAY_API_KEY = process.env.TILOPAY_API_KEY || '';
 const TILOPAY_USER = process.env.TILOPAY_USER || '';
 const TILOPAY_PASSWORD = process.env.TILOPAY_PASSWORD || '';

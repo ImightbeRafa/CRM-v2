@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     const { planId, amount } = await request.json();
     
     const apiKey = process.env.TILOPAY_API_KEY || '';
-    const baseUrl = process.env.TILOPAY_BASE_URL || 'https://app.tilopay.com/api/v1';
+    const baseUrl = process.env.TILOPAY_BASE_URL || 'https://api.tilopay.com/v1';
 
     if (!apiKey) {
       console.error('❌ Missing Tilopay API key');

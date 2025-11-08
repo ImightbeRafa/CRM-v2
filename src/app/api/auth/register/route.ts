@@ -58,7 +58,7 @@ export async function POST(request: Request) {
           slug: tenantSlug,
           plan: 'FREE',
           isActive: true,
-          trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000) // 15 days trial
+          trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days trial
         }
       });
       console.log('  ✅ Tenant created:', tenant.id);

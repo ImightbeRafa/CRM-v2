@@ -11,10 +11,10 @@ const pricingPlans = [
     name: "Free",
     price: "$0",
     period: "/month",
-    description: "Perfect to get started with 15-day trial",
+    description: "Perfect to get started with 7-day trial",
     features: [
       "1 usuario all access",
-      "15 días gratis",
+      "7 días gratis",
       "Complete order management",
       "Visual kanban board",
       "Customer tracking",
@@ -172,7 +172,7 @@ export default function SimplePricingSection() {
 
         <div className="mt-12 text-center">
           <p className="text-gray-600 mb-4">
-            Free plan includes 15-day trial. Paid plans start immediately. Cancel anytime.
+            Free plan includes 7-day trial. Paid plans start immediately. Cancel anytime.
           </p>
           <p className="text-sm text-gray-500 mb-4">
             💳 We accept all major credit cards via secure Tilopay payment processing

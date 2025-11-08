@@ -527,7 +527,7 @@ export const authOptions: NextAuthOptions = {
                       slug: tenantSlug, // Include timestamp to avoid duplicates
                       plan: 'FREE',
                       isActive: true,
-                      trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
+                      trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
                     }
                   });
                   console.log('[OAuth]   ✅ Tenant created:', newTenant.id);
@@ -880,7 +880,7 @@ export const authOptions: NextAuthOptions = {
                       slug: dbUser.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-'),
                       plan: 'FREE',
                       isActive: true,
-                      trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000) // 15 days from now
+                      trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
                     }
                   });
                   

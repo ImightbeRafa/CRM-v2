@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     const apiUser = process.env.TILOPAY_API_USER || process.env.TILOPAY_USER || '';
     const apiPassword = process.env.TILOPAY_API_PASSWORD || process.env.TILOPAY_PASSWORD || '';
     const apiKey = process.env.TILOPAY_API_KEY || '';
-    const baseUrl = process.env.TILOPAY_BASE_URL || 'https://app.tilopay.com/api/v1';
+    const baseUrl = process.env.TILOPAY_BASE_URL || 'https://api.tilopay.com/v1';
 
     if (!apiUser || !apiPassword || !apiKey) {
       console.error('❌ Missing Tilopay credentials');

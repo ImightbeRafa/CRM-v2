@@ -4,6 +4,13 @@ import SessionProvider from "./components/Sessionprovider"
 import { ErrorBoundary } from "./components/ErrorBoundary"
 import { TenantSettingsProvider } from "./contexts/TenantSettingsContext"
 import SubscriptionBanner from "./components/SubscriptionBanner"
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  other: {
+    'facebook-domain-verification': '0p9ljactuhfpuxjkd46xl1kh5m2tjd',
+  },
+}
 
 export default async function RootLayout({
   children,
@@ -12,6 +19,9 @@ export default async function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <meta name="facebook-domain-verification" content="0p9ljactuhfpuxjkd46xl1kh5m2tjd" />
+      </head>
       <body className="min-h-screen bg-background">
         <ErrorBoundary>
           <SessionProvider>

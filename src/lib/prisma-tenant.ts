@@ -69,6 +69,8 @@ const TENANT_MODELS = [
   'stockAdjustment',
   'inventoryCount',
   'inventoryTransfer',
+  'socialAccount',
+  'chatMessage',
 ] as const;
 
 const TENANT_MODELS_LOWER: readonly string[] = TENANT_MODELS.map((m) => m.toLowerCase());

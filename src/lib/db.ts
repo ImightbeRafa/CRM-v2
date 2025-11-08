@@ -34,6 +34,8 @@ const prisma = basePrisma.$extends({
           'inventoryitem',
           'auditlog',
           'businessinfo',
+          'socialaccount',
+          'chatmessage',
         ]);
 
         if (!modelName || !tenantModels.has(modelName)) {

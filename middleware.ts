@@ -25,6 +25,8 @@ const PUBLIC_ROUTES = [
   '/api/tilopay/webhook-repeat',
   '/api/tilopay/callback',
   '/api/stripe/webhook',
+  '/api/chat/webhook',
+  
 ]
 
 /**
@@ -172,9 +174,22 @@ export default async function middleware(request: Request & { nextUrl: URL }) {
       return NextResponse.redirect(new URL('/', url.origin))
     }
 
-    // Restrict /config to MASTER role
-    if (pathname.startsWith('/config') && role !== 'MASTER') {
-      return NextResponse.redirect(new URL('/', url.origin))
+    // Restrict /config to MASTER role, except /config/social which allows OWNER and MASTER
+    if (pathname.startsWith('/config')) {
+      // Allow /config/social for OWNER and MASTER
+      if (pathname.startsWith('/config/social')) {
+        const membershipRole = (token as any).membershipRole as string | undefined
+        const effectiveRole = membershipRole || role
+        console.log('[Middleware] /config/social access attempt:', { role, membershipRole, effectiveRole, pathname })
+        if (effectiveRole !== 'OWNER' && effectiveRole !== 'MASTER') {
+          console.log('[Middleware] Blocking /config/social - insufficient role')
+          return NextResponse.redirect(new URL('/', url.origin))
+        }
+        console.log('[Middleware] Allowing /config/social access')
+      } else if (role !== 'MASTER') {
+        // All other /config routes require MASTER
+        return NextResponse.redirect(new URL('/', url.origin))
+      }
     }
 
     // Check trial/subscription status for billing restrictions

@@ -18,6 +18,7 @@ const PUBLIC_ROUTES = [
   '/api/tilopay/webhook-repeat',
   '/api/tilopay/callback',
   '/api/stripe/webhook',
+  '/api/chat/webhook',
 ];
 
 /**

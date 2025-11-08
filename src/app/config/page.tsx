@@ -12,7 +12,7 @@ import { BillingDashboard } from './components/BillingDashboard'
 import { ExcelImporter } from './components/ExcelImporter'
 import { StatusManager } from './components/StatusManager'
 import { TenantSettingsPanel } from '../components/TenantSettingsPanel'
-import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2 } from 'lucide-react'
+import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle } from 'lucide-react'
 
 export default function ConfigPage() {
   const searchParams = useSearchParams()
@@ -84,7 +84,7 @@ export default function ConfigPage() {
     const tabParam = searchParams?.get('tab')
     if (tabParam) {
       // Validate tab value to prevent invalid tabs
-      const validTabs = ['fields', 'business', 'users', 'option-sets', 'shipping', 'sellers', 'import', 'billing', 'bulk-delete', 'audit', 'legacy-fields']
+      const validTabs = ['fields', 'business', 'users', 'option-sets', 'shipping', 'sellers', 'import', 'billing', 'bulk-delete', 'audit', 'legacy-fields', 'social']
       if (validTabs.includes(tabParam)) {
         setActiveTab(tabParam)
       }
@@ -493,6 +493,7 @@ export default function ConfigPage() {
     { id: 'inventory', label: 'Inventario', icon: Package },
     { id: 'clients', label: 'Clientes', icon: UserCheck },
     { id: 'users', label: 'Usuarios', icon: Users },
+    { id: 'social', label: 'Cuentas Sociales', icon: MessageCircle },
     { id: 'import', label: 'Importar Excel', icon: FileSpreadsheet },
     { id: 'billing', label: 'Facturación', icon: BarChart3 },
     { id: 'bulk-delete', label: 'Eliminación Masiva', icon: Trash2 },
@@ -703,6 +704,34 @@ export default function ConfigPage() {
                       ))}
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Social Tab */}
+          {activeTab === 'social' && (
+            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-blue-100 rounded-xl">
+                      <MessageCircle className="w-6 h-6 text-blue-600" />
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-bold">Cuentas Sociales</h2>
+                      <p className="text-gray-600">Vincula Instagram y WhatsApp para gestionar chats en Betsy</p>
+                    </div>
+                  </div>
+                  <a
+                    href="/config/social"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Gestionar Cuentas
+                  </a>
+                </div>
+                <div className="text-sm text-gray-500">
+                  Solo usuarios Owner o Master pueden vincular cuentas sociales.
                 </div>
               </div>
             </div>

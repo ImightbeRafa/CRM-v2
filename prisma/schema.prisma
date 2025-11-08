@@ -42,6 +42,8 @@ model Tenant {
   sellers        Seller[]
   shippingMethods ShippingMethod[]
   productFields  ProductField[]
+  socialAccounts SocialAccount[]
+  chatMessages   ChatMessage[]
   productOptionSets ProductOptionSet[]
   businessInfo   BusinessInfo[]
   orderStatuses  OrderStatus[]
@@ -148,6 +150,7 @@ model Order {
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   invoices Invoice[]  // Orders can have invoices
+  chatMessages ChatMessage[]
   
   @@unique([tenantId, orderId]) // Unique within tenant
   @@index([tenantId])
@@ -190,6 +193,7 @@ model User {
   // Relations
   memberships Membership[]
   auditLogs   AuditLog[]
+  socialAccounts SocialAccount[]
   
   @@map("User")
   @@index([email])
@@ -223,6 +227,7 @@ model Client {
   
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  chatMessages ChatMessage[]
   
   @@index([tenantId])
   @@index([tenantId, isActive])
@@ -605,4 +610,45 @@ model WebhookLog {
   @@index([level])
   @@index([source])
   @@index([createdAt])
+}
+
+model SocialAccount {
+  id           String   @id @default(cuid())
+  tenantId     String
+  userId       String
+  platform     String
+  accountId    String
+  accessToken  String?
+  refreshToken String?
+  expiresAt    DateTime?
+  linkedAt     DateTime @default(now())
+  isActive     Boolean  @default(true)
+
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id])
+  messages ChatMessage[]
+
+  @@unique([platform, accountId, tenantId])
+  @@index([tenantId])
+}
+
+model ChatMessage {
+  id               String   @id @default(cuid())
+  tenantId         String
+  socialAccountId  String
+  clientId         String?
+  orderId          String?
+  direction        String
+  content          String
+  metadata         Json?
+  sentAt           DateTime
+  receivedAt       DateTime?
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  account SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  client  Client?       @relation(fields: [clientId], references: [id])
+  order   Order?        @relation(fields: [orderId], references: [id])
+
+  @@index([tenantId, socialAccountId, sentAt(sort: Desc)])
+  @@index([tenantId])
 }

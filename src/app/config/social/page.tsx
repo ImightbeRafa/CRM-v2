@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { getInstagramAuthUrl } from '@/lib/instagram-oauth'
 
 interface SocialAccount {
   id: string
@@ -247,21 +246,32 @@ export default function SocialConfigPage() {
   }
 
   async function handleLinkInstagram() {
-    const authUrl = getInstagramAuthUrl()
-    // Open popup
-    const popup = window.open(authUrl, 'instagram_oauth', 'width=600,height=700')
-    if (!popup) {
-      alert('No se pudo abrir la ventana de inicio de sesión')
-      return
-    }
-    // Poll for closure (simple approach)
-    const checkClosed = setInterval(() => {
-      if (popup.closed) {
-        clearInterval(checkClosed)
-        fetchAccounts()
-        alert('Recargando cuentas...')
+    try {
+      // Fetch auth URL from server (to access environment variables)
+      const res = await fetch('/api/auth/instagram/auth-url')
+      if (!res.ok) {
+        throw new Error('Failed to get Instagram auth URL')
       }
-    }, 1000)
+      const { authUrl } = await res.json()
+      
+      // Open popup
+      const popup = window.open(authUrl, 'instagram_oauth', 'width=600,height=700')
+      if (!popup) {
+        alert('No se pudo abrir la ventana de inicio de sesión')
+        return
+      }
+      // Poll for closure (simple approach)
+      const checkClosed = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(checkClosed)
+          fetchAccounts()
+          alert('Recargando cuentas...')
+        }
+      }, 1000)
+    } catch (error) {
+      console.error('Error launching Instagram OAuth:', error)
+      alert('Error al iniciar sesión con Instagram')
+    }
   }
 
   async function handleLinkWhatsApp(e: React.FormEvent) {

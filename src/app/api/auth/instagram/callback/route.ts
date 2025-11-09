@@ -150,6 +150,27 @@ export async function GET(request: NextRequest) {
       return new NextResponse(html, { status: 400, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
     }
 
+    // Subscribe the Page to this app for messaging webhooks (required for IG messaging delivery)
+    try {
+      const subscribeParams = new URLSearchParams({
+        access_token: pageAccessToken,
+        subscribed_fields: 'messages'
+      })
+      const subRes = await fetch(`https://graph.facebook.com/v18.0/${pageId}/subscribed_apps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: subscribeParams
+      })
+      const subText = await subRes.text()
+      if (!subRes.ok) {
+        console.warn('[instagram/callback] Page subscribe failed', subText)
+      } else {
+        console.log('[instagram/callback] Page subscribed to app', subText)
+      }
+    } catch (e) {
+      console.warn('[instagram/callback] Page subscribe error', e)
+    }
+
     // Use page access token as the long-lived token (doesn't expire unless revoked)
     const longLivedToken = pageAccessToken
     const expiresIn = 5184000 // 60 days (page tokens don't expire but we set a refresh reminder)

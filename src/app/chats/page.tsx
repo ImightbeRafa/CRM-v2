@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useSession } from 'next-auth/react'
 
 interface SocialAccount {
   id: string
@@ -20,15 +21,28 @@ interface ChatMessage {
   orderId?: string
 }
 
+interface Conversation {
+  recipientId: string
+  recipientName?: string
+  lastMessage?: string
+  lastMessageAt?: string
+  unreadCount?: number
+  messages: ChatMessage[]
+}
+
 export default function ChatsPage() {
+  const { data: session } = useSession()
   const [accounts, setAccounts] = useState<SocialAccount[]>([])
   const [selectedPlatform, setSelectedPlatform] = useState<'instagram' | 'whatsapp'>('whatsapp')
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [selectedConversation, setSelectedConversation] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [messageInput, setMessageInput] = useState('')
-  const [recipient, setRecipient] = useState('')
+  const [replyingTo, setReplyingTo] = useState<string | null>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const platformAccounts = accounts.filter(a => a.platform === selectedPlatform)
   const instagramCount = accounts.filter(a => a.platform === 'instagram').length
@@ -44,6 +58,14 @@ export default function ChatsPage() {
     }
   }, [selectedAccountId])
 
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
   async function fetchAccounts() {
     try {
       const res = await fetch('/api/chat/accounts')
@@ -51,7 +73,7 @@ export default function ChatsPage() {
       if (json.success) setAccounts(json.accounts)
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Error al cargar cuentas'
-      alert(message)
+      console.error(message)
     }
   }
 
@@ -59,22 +81,69 @@ export default function ChatsPage() {
     if (!selectedAccountId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/chat/messages?socialAccountId=${selectedAccountId}&limit=50`)
+      const res = await fetch(`/api/chat/messages?socialAccountId=${selectedAccountId}&limit=100`)
       const json = await res.json()
-      if (json.success) setMessages(json.messages)
+      if (json.success) {
+        setMessages(json.messages)
+        // Group messages by recipient to create conversations
+        groupMessagesByRecipient(json.messages)
+      }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Error al cargar mensajes'
-      alert(message)
+      console.error(message)
     } finally {
       setLoading(false)
     }
   }
 
-  async function handleSend() {
-    if (!messageInput.trim() || !selectedAccountId || !recipient.trim()) {
-      alert('Escribe un mensaje y un destinatario')
+  function groupMessagesByRecipient(msgs: ChatMessage[]) {
+    const grouped: Record<string, Conversation> = {}
+    
+    msgs.forEach(msg => {
+      // Extract recipient from metadata or use a placeholder
+      const recipientId = msg.metadata?.from || msg.metadata?.to || 'unknown'
+      
+      if (!grouped[recipientId]) {
+        grouped[recipientId] = {
+          recipientId,
+          recipientName: msg.metadata?.name || recipientId,
+          messages: [],
+          lastMessageAt: msg.sentAt || msg.receivedAt || undefined,
+          lastMessage: msg.content.substring(0, 50),
+        }
+      }
+      
+      grouped[recipientId].messages.push(msg)
+      
+      // Update last message if this one is newer
+      const currentLast = grouped[recipientId].lastMessageAt
+      const thisTime = msg.sentAt || msg.receivedAt
+      if (!currentLast || (thisTime && thisTime > currentLast)) {
+        grouped[recipientId].lastMessageAt = thisTime || undefined
+        grouped[recipientId].lastMessage = msg.content.substring(0, 50)
+      }
+    })
+    
+    const convs = Object.values(grouped).sort((a, b) => {
+      const aTime = a.lastMessageAt || '0'
+      const bTime = b.lastMessageAt || '0'
+      return bTime.localeCompare(aTime)
+    })
+    
+    setConversations(convs)
+  }
+
+  async function handleSendMessage(e: React.FormEvent) {
+    e.preventDefault()
+    if (!messageInput.trim() || !selectedAccountId) return
+
+    if (!selectedConversation) {
+      alert('Selecciona una conversación para responder')
       return
     }
+
+    const recipient = selectedConversation
+
     setSending(true)
     try {
       const res = await fetch('/api/chat/send', {
@@ -82,15 +151,16 @@ export default function ChatsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           socialAccountId: selectedAccountId,
-          recipient: recipient.trim(),
-          content: messageInput.trim(),
+          recipient,
+          content: messageInput.trim()
         })
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Error al enviar')
-      alert('Mensaje enviado')
+      if (!res.ok) throw new Error(json.error || 'Error desconocido')
+      
       setMessageInput('')
-      fetchMessages()
+      setReplyingTo(null)
+      fetchMessages() // Refresh messages
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Error al enviar'
       alert(message)
@@ -100,21 +170,26 @@ export default function ChatsPage() {
   }
 
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId)
+  const currentConversation = conversations.find(c => c.recipientId === selectedConversation)
+  const displayMessages = currentConversation?.messages || []
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Mensajería Social</h1>
-        <p className="text-gray-600">Gestiona todas tus conversaciones de Instagram y WhatsApp en un solo lugar.</p>
+    <div className="h-screen flex flex-col bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b px-6 py-4">
+        <h1 className="text-2xl font-bold">💬 Mensajería Social</h1>
+        <p className="text-sm text-gray-600">Gestiona tus conversaciones de WhatsApp e Instagram</p>
       </div>
 
       {/* Platform Tabs */}
-      <div className="flex gap-2 border-b">
+      <div className="bg-white border-b flex gap-1 px-6">
         <button
           onClick={() => {
             setSelectedPlatform('whatsapp')
             setSelectedAccountId(null)
+            setSelectedConversation(null)
             setMessages([])
+            setConversations([])
           }}
           className={`px-6 py-3 font-medium transition-colors border-b-2 ${
             selectedPlatform === 'whatsapp'
@@ -128,7 +203,9 @@ export default function ChatsPage() {
           onClick={() => {
             setSelectedPlatform('instagram')
             setSelectedAccountId(null)
+            setSelectedConversation(null)
             setMessages([])
+            setConversations([])
           }}
           className={`px-6 py-3 font-medium transition-colors border-b-2 ${
             selectedPlatform === 'instagram'
@@ -140,105 +217,210 @@ export default function ChatsPage() {
         </button>
       </div>
 
-      {/* Account Selector */}
-      <div className="border rounded-lg p-4 bg-white shadow-sm">
-        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-          <span className={`w-3 h-3 rounded-full ${
-            selectedPlatform === 'whatsapp' ? 'bg-green-500' : 'bg-pink-500'
-          }`}></span>
-          Cuentas de {selectedPlatform === 'whatsapp' ? 'WhatsApp' : 'Instagram'}
-        </h2>
-        {platformAccounts.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="text-gray-500 mb-3">No hay cuentas de {selectedPlatform} vinculadas.</p>
-            <a
-              href="/config/social"
-              className="text-blue-600 hover:underline font-medium"
-            >
-              Vincular cuenta de {selectedPlatform === 'whatsapp' ? 'WhatsApp' : 'Instagram'}
-            </a>
-          </div>
-        ) : (
-          <div className="grid gap-2">
-            {platformAccounts.map(acc => (
-              <button
-                key={acc.id}
-                onClick={() => setSelectedAccountId(acc.id)}
-                className={`text-left p-3 rounded-lg border-2 transition-all ${
-                  selectedAccountId === acc.id
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300 bg-white'
-                }`}
-              >
-                <div className="font-medium">{acc.accountId}</div>
-                <div className="text-xs text-gray-500">
-                  {selectedPlatform === 'whatsapp' ? 'Phone Number ID' : 'Instagram Account'}
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {selectedAccount && (
-        <>
-          {/* Recipient input (for demo; real apps would show conversation list) */}
-          <div className="border rounded p-4">
-            <h2 className="text-lg font-semibold mb-2">Destinatario (ID de Instagram o número de WhatsApp)</h2>
-            <input
-              value={recipient}
-              onChange={(e) => setRecipient(e.target.value)}
-              placeholder="Ej: 123456789 (Instagram) o +5491112345678 (WhatsApp)"
-              className="w-full border rounded px-3 py-2"
-            />
-          </div>
-
-          {/* Messages */}
-          <div className="border rounded p-4">
-            <h2 className="text-lg font-semibold mb-2">Mensajes</h2>
-            <div className="h-96 overflow-y-auto border rounded p-4 space-y-2">
-              {loading ? (
-                <div className="text-gray-600">Cargando...</div>
-              ) : messages.length === 0 ? (
-                <div className="text-gray-600">No hay mensajes aún.</div>
-              ) : (
-                messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`max-w-md px-4 py-2 rounded whitespace-pre-wrap ${
-                      msg.direction === 'outbound'
-                        ? 'bg-blue-600 text-white ml-auto'
-                        : 'bg-gray-200 text-gray-800'
+      {/* Main Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar - Account Selection */}
+        <div className="w-80 bg-white border-r flex flex-col">
+          <div className="p-4 border-b">
+            <h2 className="font-semibold text-gray-900 mb-3">
+              Cuentas de {selectedPlatform === 'whatsapp' ? 'WhatsApp' : 'Instagram'}
+            </h2>
+            {platformAccounts.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-500 text-sm mb-3">No hay cuentas vinculadas</p>
+                <a
+                  href="/config/social"
+                  className="text-blue-600 hover:underline text-sm font-medium"
+                >
+                  Vincular cuenta →
+                </a>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {platformAccounts.map(acc => (
+                  <button
+                    key={acc.id}
+                    onClick={() => {
+                      setSelectedAccountId(acc.id)
+                      setSelectedConversation(null)
+                    }}
+                    className={`w-full text-left p-3 rounded-lg border transition-all ${
+                      selectedAccountId === acc.id
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
-                    <div>{msg.content}</div>
-                    <div className="text-xs opacity-70 mt-1">
-                      {new Date(msg.sentAt).toLocaleTimeString()}
+                    <div className="font-medium text-sm">{acc.accountId}</div>
+                    <div className="text-xs text-gray-500">
+                      {selectedPlatform === 'whatsapp' ? 'Phone Number ID' : 'Instagram Account'}
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Send input */}
-          <div className="border rounded p-4">
-            <div className="flex gap-2">
-              <input
-                value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
-                placeholder="Escribe un mensaje..."
-                disabled={sending}
-                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                className="flex-1 border rounded px-3 py-2"
-              />
-              <button onClick={handleSend} disabled={sending} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50">
-                {sending ? 'Enviando...' : 'Enviar'}
-              </button>
+          {/* Conversations List */}
+          {selectedAccountId && (
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-4 border-b">
+                <h3 className="font-semibold text-sm text-gray-700">Conversaciones Entrantes</h3>
+                <p className="text-xs text-gray-500 mt-1">Clientes que te han contactado</p>
+              </div>
+              {loading ? (
+                <div className="p-4 text-center text-gray-500 text-sm">Cargando...</div>
+              ) : conversations.length === 0 ? (
+                <div className="p-4 text-center text-gray-500 text-sm">
+                  No hay conversaciones aún
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {conversations.map(conv => (
+                    <button
+                      key={conv.recipientId}
+                      onClick={() => setSelectedConversation(conv.recipientId)}
+                      className={`w-full text-left p-4 hover:bg-gray-50 transition-colors ${
+                        selectedConversation === conv.recipientId ? 'bg-blue-50' : ''
+                      }`}
+                    >
+                      <div className="flex items-start justify-between mb-1">
+                        <div className="font-medium text-sm">{conv.recipientName}</div>
+                        <div className="text-xs text-gray-500">
+                          {conv.lastMessageAt ? new Date(conv.lastMessageAt).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-600 truncate">{conv.lastMessage}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        </>
-      )}
+          )}
+        </div>
+
+        {/* Chat Area */}
+        <div className="flex-1 flex flex-col">
+          {!selectedAccountId ? (
+            <div className="flex-1 flex items-center justify-center text-gray-500">
+              <div className="text-center">
+                <div className="text-6xl mb-4">💬</div>
+                <p className="text-lg font-medium">Selecciona una cuenta para comenzar</p>
+              </div>
+            </div>
+          ) : !selectedConversation ? (
+            <div className="flex-1 flex items-center justify-center text-gray-500">
+              <div className="text-center max-w-md">
+                <div className="text-6xl mb-4">💬</div>
+                <p className="text-lg font-medium mb-2">Selecciona una conversación</p>
+                <p className="text-sm text-gray-500">Elige una conversación de la lista para ver los mensajes y responder a tus clientes</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Chat Header */}
+              <div className="bg-white border-b px-6 py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold">
+                      {currentConversation?.recipientName?.charAt(0) || '?'}
+                    </div>
+                    <div>
+                      <h2 className="font-semibold text-lg">
+                        {currentConversation?.recipientName || 'Cliente'}
+                      </h2>
+                      <p className="text-xs text-gray-500">
+                        {currentConversation?.recipientId}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-gray-500">Última actividad</div>
+                    <div className="text-sm font-medium">
+                      {currentConversation?.lastMessageAt ? new Date(currentConversation.lastMessageAt).toLocaleString('es', { 
+                        month: 'short', 
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      }) : '-'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
+                {displayMessages.length === 0 ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center text-gray-500">
+                      <div className="text-4xl mb-2">📭</div>
+                      <p className="text-sm">No hay mensajes en esta conversación</p>
+                    </div>
+                  </div>
+                ) : null}
+                {displayMessages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`max-w-md px-4 py-2 rounded-lg ${
+                        msg.direction === 'outbound'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-200 text-gray-900'
+                      }`}
+                    >
+                      <p className="text-sm">{msg.content}</p>
+                      <p className={`text-xs mt-1 ${msg.direction === 'outbound' ? 'text-blue-100' : 'text-gray-500'}`}>
+                        {new Date(msg.sentAt || msg.receivedAt || '').toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Message Input */}
+              <div className="bg-white border-t p-4">
+                <div className="mb-2 text-xs text-gray-500 flex items-center justify-between">
+                  <span>Respondiendo a {currentConversation?.recipientName || 'cliente'}</span>
+                  {displayMessages.length > 0 && displayMessages[displayMessages.length - 1].direction === 'inbound' && (
+                    <span className="text-orange-600 font-medium">⚠️ Mensaje sin responder</span>
+                  )}
+                </div>
+                <form onSubmit={handleSendMessage} className="flex gap-3">
+                  <input
+                    type="text"
+                    value={messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                    placeholder="Escribe tu respuesta..."
+                    className="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={sending}
+                    autoFocus
+                  />
+                  <button
+                    type="submit"
+                    disabled={sending || !messageInput.trim()}
+                    className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors flex items-center gap-2"
+                  >
+                    {sending ? (
+                      <>
+                        <span className="animate-spin">⏳</span>
+                        Enviando...
+                      </>
+                    ) : (
+                      <>
+                        <span>📤</span>
+                        Enviar Respuesta
+                      </>
+                    )}
+                  </button>
+                </form>
+                <p className="text-xs text-gray-400 mt-2">💡 Tip: Responde de forma personalizada para brindar mejor servicio</p>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

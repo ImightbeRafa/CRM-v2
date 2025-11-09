@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import crypto from 'crypto'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -70,9 +71,26 @@ export async function POST(request: NextRequest) {
     const providedSecret = request.headers.get('x-webhook-secret') || ''
     const signature = request.headers.get('x-hub-signature-256') || ''
     const allowed = getVerifyTokens()
-    if (allowed.length && !allowed.includes(providedSecret)) {
-      if (process.env.NODE_ENV === 'production') {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Verify HMAC signature from Meta (X-Hub-Signature-256: sha256=...)
+    const appSecret = process.env.META_APP_SECRET || ''
+    let signatureValid = false
+    if (appSecret && signature && signature.startsWith('sha256=')) {
+      try {
+        const expected = 'sha256=' + crypto.createHmac('sha256', appSecret).update(raw).digest('hex')
+        const a = Buffer.from(signature)
+        const b = Buffer.from(expected)
+        if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+          signatureValid = true
+        }
+      } catch {}
+    }
+
+    // In production, require either valid HMAC or a valid shared secret header
+    if (process.env.NODE_ENV === 'production') {
+      const sharedSecretOk = allowed.length > 0 && allowed.includes(providedSecret)
+      if (!signatureValid && !sharedSecretOk) {
+        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
       }
     }
 
@@ -81,10 +99,15 @@ export async function POST(request: NextRequest) {
     const to = payload.to || payload.recipient || payload?.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id || null
     const text = payload.text || payload.message || payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body || ''
     const timestamp = payload.timestamp || Date.now()
+    
+    // Extract sender information for conversation grouping
+    const from = payload.from || payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from || null
+    const senderName = payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.profile?.name || from
     try {
       console.log('[chat/webhook][POST] Incoming event', {
         contentType,
         signaturePresent: Boolean(signature),
+        signatureValid,
         providedSecretPresent: Boolean(providedSecret),
         platform,
         to,
@@ -113,7 +136,12 @@ export async function POST(request: NextRequest) {
         socialAccountId: account.id,
         direction: 'inbound',
         content: String(text || ''),
-        metadata: { raw: payload },
+        metadata: { 
+          raw: payload,
+          from,
+          name: senderName,
+          platform
+        },
         sentAt,
         receivedAt: new Date(),
       }

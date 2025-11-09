@@ -49,7 +49,11 @@ export async function POST(request: Request) {
         orderId: orderId ?? undefined,
         direction: 'outbound',
         content,
-        metadata: { recipient, provider: account.platform },
+        metadata: { 
+          to: recipient,
+          provider: account.platform,
+          platform: account.platform
+        },
         sentAt: now,
         receivedAt: null,
       }

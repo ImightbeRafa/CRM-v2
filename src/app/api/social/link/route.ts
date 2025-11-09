@@ -25,6 +25,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing platform or accountId' }, { status: 400 })
     }
 
+    // Auto-subscribe WhatsApp number to app so webhooks are delivered
+    if (platform === 'whatsapp' && accountId && accessToken) {
+      try {
+        const subscribeUrl = `https://graph.facebook.com/v18.0/${encodeURIComponent(accountId)}/subscribed_apps`;
+        const body = new URLSearchParams({ access_token: accessToken })
+        const subRes = await fetch(subscribeUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body
+        })
+        const subText = await subRes.text()
+        if (!subRes.ok) {
+          console.warn('[social/link] WhatsApp subscribed_apps failed', { accountId, status: subRes.status, subText })
+        } else {
+          console.log('[social/link] WhatsApp number subscribed_apps success', { accountId, subText })
+        }
+      } catch (e) {
+        console.warn('[social/link] WhatsApp subscribed_apps error', e)
+      }
+    }
+
     const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null
 
     const existing = await db.socialAccount.findFirst({

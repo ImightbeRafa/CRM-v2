@@ -8,7 +8,7 @@ export function getInstagramAuthUrl(): string {
   // Use Facebook OAuth for Instagram Business API access
   const baseUrl = 'https://www.facebook.com/v18.0/dialog/oauth'
   const params = new URLSearchParams({
-    client_id: process.env.META_APP_ID || '',
+    client_id: process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID || '',
     redirect_uri: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/auth/instagram/callback`,
     response_type: 'code',
     scope: [

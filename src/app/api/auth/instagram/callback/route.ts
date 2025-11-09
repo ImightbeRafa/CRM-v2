@@ -52,8 +52,8 @@ export async function GET(request: NextRequest) {
 
     // Step 1: Exchange code for Facebook access token
     const tokenUrl = `https://graph.facebook.com/v18.0/oauth/access_token?${new URLSearchParams({
-      client_id: process.env.META_APP_ID!,
-      client_secret: process.env.META_APP_SECRET!,
+      client_id: process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID!,
+      client_secret: process.env.INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET!,
       redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/instagram/callback`,
       code,
     })}`

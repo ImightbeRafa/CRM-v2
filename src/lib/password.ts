@@ -41,7 +41,7 @@ export async function hashPassword(password: string): Promise<string> {
  * @example
  * const isValid = await verifyPassword('myPassword123', hashedPassword);
  * if (isValid) {
- *   console.log('Password is correct');
+ *   // Password verification successful
  * }
  */
 export async function verifyPassword(

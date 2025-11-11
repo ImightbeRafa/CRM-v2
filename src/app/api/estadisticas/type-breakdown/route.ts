@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { prisma } from '@/lib/db';
+import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { prisma as globalPrisma } from '@/lib/db';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
+
+const typeCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 30000;
 
 export async function GET(req: NextRequest) {
   try {
@@ -14,7 +18,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get user's tenant through memberships
-    const user = await prisma.user.findUnique({
+    const user = await globalPrisma.user.findUnique({
       where: { id: token.sub },
       select: {
         memberships: {
@@ -34,6 +38,15 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    
+    // Check cache
+    const cacheKey = `${tenantId}-${startDate}-${endDate}`;
+    const cached = typeCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+      return NextResponse.json(cached.data);
+    }
+    
+    const prisma = getTenantPrisma(tenantId);
 
     // Build date filter - use saleDate when available, fallback to timestamp
     const dateFilter: any = {};
@@ -78,7 +91,7 @@ export async function GET(req: NextRequest) {
       _sum: { total: true },
     });
 
-    return NextResponse.json({
+    const result = {
       EA: {
         count: eaOrders._count._all,
         revenue: eaOrders._sum.total || 0,
@@ -87,7 +100,12 @@ export async function GET(req: NextRequest) {
         count: raOrders._count._all,
         revenue: raOrders._sum.total || 0,
       },
-    });
+    };
+    
+    // Store in cache
+    typeCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Error fetching type breakdown:', error);
     return NextResponse.json(

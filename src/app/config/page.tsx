@@ -19,6 +19,7 @@ export default function ConfigPage() {
   const [activeTab, setActiveTab] = useState('fields')
   const [newFieldType, setNewFieldType] = useState('text') // Track type for validation
   const [isMasterUser, setIsMasterUser] = useState(true) // Simplified for demo
+  const [mounted, setMounted] = useState(false) // Client-side mount detection
   
   // Data states
   const [fields, setFields] = useState<any[]>([])
@@ -79,8 +80,14 @@ export default function ConfigPage() {
     }
   }
 
+  // Client-side mount detection
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   // Read tab from URL query parameter on mount and when URL changes
   useEffect(() => {
+    if (!mounted) return
     const tabParam = searchParams?.get('tab')
     if (tabParam) {
       // Validate tab value to prevent invalid tabs
@@ -89,11 +96,13 @@ export default function ConfigPage() {
         setActiveTab(tabParam)
       }
     }
-  }, [searchParams])
+  }, [searchParams, mounted])
 
   useEffect(() => {
+    if (!mounted) return
     loadData()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted])
 
   // Bulk operation handlers
   const handleBulkDelete = async (ids: string[], reason?: string) => {
@@ -500,6 +509,21 @@ export default function ConfigPage() {
     { id: 'audit', label: 'Auditoría', icon: Shield }
   ];
 
+  // Show loading skeleton on server/initial render
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+        <div className="max-w-7xl mx-auto p-4 md:p-6">
+          <div className="animate-pulse space-y-4">
+            <div className="h-24 bg-gray-200 rounded-xl"></div>
+            <div className="h-16 bg-gray-200 rounded-xl"></div>
+            <div className="h-96 bg-gray-200 rounded-xl"></div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
       <div className="max-w-7xl mx-auto p-4 md:p-6">
@@ -536,25 +560,29 @@ export default function ConfigPage() {
 
           {/* Tab Navigation */}
         <div className="mb-6 md:mb-8">
-          {/* Desktop: Grid layout, Mobile: Scrollable */}
+          {/* Desktop: Grid layout */}
           <div className="hidden md:block">
-            <div className="flex gap-2 bg-white p-2 rounded-xl shadow-lg border border-gray-200">
+            <div className="grid grid-cols-5 gap-3 bg-white p-3 rounded-xl shadow-lg border border-gray-200">
               {tabs.map((tab) => {
                 const Icon = tab.icon
                 return (
                 <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex-1 rounded-lg transition-all duration-200 px-4 py-2 min-h-[44px] ${
+                    className={`group rounded-lg transition-all duration-200 px-3 py-3.5 min-h-[60px] flex flex-col items-center justify-center gap-2 ${
                       activeTab === tab.id
-                        ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg ring-1 ring-black/5'
-                        : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                        ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md ring-1 ring-blue-400/50'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 hover:shadow-sm'
                   }`}
                 >
-                  <div className="flex items-center justify-center gap-2 text-center leading-tight whitespace-normal">
-                      <Icon className="w-4 h-4 md:w-5 md:h-5 flex-shrink-0" />
-                      <span className="text-xs md:text-sm">{tab.label}</span>
-                  </div>
+                  <Icon className={`w-5 h-5 flex-shrink-0 transition-transform duration-200 ${
+                    activeTab === tab.id ? '' : 'group-hover:scale-110'
+                  }`} />
+                  <span className={`text-xs font-medium text-center leading-tight max-w-full line-clamp-2 ${
+                    activeTab === tab.id ? 'font-semibold' : ''
+                  }`}>
+                    {tab.label}
+                  </span>
                 </button>
                 )
               })}
@@ -562,18 +590,18 @@ export default function ConfigPage() {
           </div>
           
           {/* Mobile: Scrollable tabs */}
-          <div className="md:hidden -mx-4 px-4 overflow-x-auto">
-            <div className="flex gap-2 pb-2 min-w-max">
+          <div className="md:hidden -mx-4 px-4 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-2.5 pb-2 min-w-max">
               {tabs.map((tab) => {
                 const Icon = tab.icon
                 return (
                 <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+                    className={`flex items-center gap-2.5 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${
                       activeTab === tab.id
-                        ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg'
-                        : 'bg-white text-gray-600 hover:text-gray-900 shadow border border-gray-200'
+                        ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg scale-105'
+                        : 'bg-white text-gray-600 hover:text-gray-900 shadow-sm border border-gray-200 hover:border-blue-300'
                   }`}
                 >
                     <Icon className="w-4 h-4 flex-shrink-0" />

@@ -35,6 +35,7 @@ import { Loader2 } from 'lucide-react';
 
 interface KanbanBoardProps {
   orders: Sale[];
+  statuses?: Array<{key: string; label: string; color: string | null}>;
   onOrderUpdate: (orderId: string, updates: Partial<Sale>) => Promise<void>;
   onOrderClick: (order: Sale) => void;
   onStatusReorder?: (statuses: KanbanStatus[]) => Promise<void>;
@@ -46,12 +47,19 @@ interface KanbanStatus {
   color: string;
 }
 
-export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReorder }: KanbanBoardProps) {
+function KanbanBoardComponent({ orders, statuses: statusesProp, onOrderUpdate, onOrderClick, onStatusReorder }: KanbanBoardProps) {
   const [statuses, setStatuses] = useState<KanbanStatus[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatingOrder, setUpdatingOrder] = useState<string | null>(null);
   const [isDraggingColumn, setIsDraggingColumn] = useState(false);
+  const [isRendered, setIsRendered] = useState(false);
+  
+  // Defer heavy rendering to prevent blocking
+  useEffect(() => {
+    const timer = setTimeout(() => setIsRendered(true), 100);
+    return () => clearTimeout(timer);
+  }, []);
   const [isPanning, setIsPanning] = useState(false);
   const [panStartX, setPanStartX] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -61,6 +69,9 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
   const [localOrders, setLocalOrders] = useState<Sale[]>(orders);
   // Track pending updates to avoid race conditions
   const [pendingUpdates, setPendingUpdates] = useState<Map<string, string>>(new Map());
+  
+  // Ref to prevent multiple simultaneous status loads
+  const statusLoadingRef = React.useRef(false);
   
   const { toast } = useToast();
 
@@ -128,26 +139,40 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
     return closestCenter(args);
   };
 
-  // Load statuses from API with immediate fallback for fast initial render
+  // Use statuses from props if provided, otherwise load from API
   useEffect(() => {
-    // Set fallback statuses immediately for instant render
-    const fallbackStatuses = [
-      { key: 'pendiente', label: 'Pendiente', color: '#FCD34D' },
-      { key: 'en-proceso', label: 'En Proceso', color: '#60A5FA' },
-      { key: 'urgente', label: 'Urgente', color: '#EF4444' },
-      { key: 'completado', label: 'Completado', color: '#10B981' },
-      { key: 'enviado', label: 'Enviado', color: '#A855F7' },
-      { key: 'entregado', label: 'Entregado', color: '#059669' },
-    ];
+    if (statusesProp && statusesProp.length > 0) {
+      const statusesData = statusesProp.map((status) => ({
+        key: status.key,
+        label: status.label,
+        color: status.color || getStatusColor(status.label),
+      }));
+      setStatuses(statusesData);
+      setLoading(false);
+      return;
+    }
     
-    setStatuses(fallbackStatuses);
-    setLoading(false); // Show board immediately
+    // Prevent duplicate loads if no props provided
+    if (statusLoadingRef.current) {
+      return;
+    }
     
-    // Load actual statuses in background
+    let isMounted = true;
+    statusLoadingRef.current = true;
+    
     const loadStatuses = async () => {
       try {
-        const response = await fetch('/api/config/status');
+        const response = await fetch('/api/config/status', {
+          credentials: 'include',
+        });
+        
+        if (!response.ok) {
+          throw new Error(`API returned ${response.status}`);
+        }
+        
         const data = await response.json();
+        
+        if (!isMounted) return;
         
         if (data.status === 'success' && data.data.length > 0) {
           const statusesData = data.data.map((status: any) => ({
@@ -156,28 +181,54 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
             color: status.color || getStatusColor(status.label),
           }));
           setStatuses(statusesData);
+        } else {
+          setStatuses([
+            { key: 'pendiente', label: 'Pendiente', color: '#FCD34D' },
+          ]);
         }
       } catch (error) {
-        console.error('Error loading statuses:', error);
-        // Keep fallback statuses
+        console.error('[KanbanBoard] Error loading statuses:', error);
+        if (isMounted) {
+          setStatuses([
+            { key: 'pendiente', label: 'Pendiente', color: '#FCD34D' },
+          ]);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+          statusLoadingRef.current = false;
+        }
       }
     };
 
     loadStatuses();
-  }, []);
+    
+    return () => {
+      isMounted = false;
+      statusLoadingRef.current = false;
+    };
+  }, [statusesProp]);
 
   // Group orders by status and sort by timestamp (oldest first)
-  // Use localOrders for instant UI updates
+  // OPTIMIZED: Limit orders per column to prevent UI freeze
   const ordersByStatus = useMemo(() => {
     const grouped: Record<string, Sale[]> = {};
+    
+    // If no statuses loaded yet, return empty groups
+    if (statuses.length === 0) {
+      return grouped;
+    }
     
     // Initialize all status columns
     statuses.forEach(status => {
       grouped[status.label] = [];
     });
 
+    // OPTIMIZATION: Limit to recent orders only (last 100)
+    const recentOrders = localOrders.slice(0, 100);
+    
     // Group orders by status with case-insensitive matching
-    localOrders.forEach(order => {
+    recentOrders.forEach(order => {
       // Find matching status (case-insensitive)
       const matchingStatus = statuses.find(
         status => status.label.toLowerCase() === order.status.toLowerCase()
@@ -186,9 +237,6 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
       if (matchingStatus) {
         grouped[matchingStatus.label].push(order);
       } else {
-        // If no matching status found, log it for debugging
-        console.warn(`Order ${order.orderId} has unmapped status: "${order.status}"`);
-        
         // Try to find a close match or add to first column
         const firstStatus = statuses[0];
         if (firstStatus) {
@@ -198,12 +246,15 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
     });
     
     // Sort each column by timestamp (oldest first - at the top)
+    // OPTIMIZATION: Limit each column to 20 orders max for performance
     Object.keys(grouped).forEach(status => {
       grouped[status].sort((a, b) => {
         const dateA = new Date(a.timestamp).getTime();
         const dateB = new Date(b.timestamp).getTime();
         return dateA - dateB; // Oldest first
       });
+      // Limit to 20 orders per column
+      grouped[status] = grouped[status].slice(0, 20);
     });
     
     return grouped;
@@ -467,11 +518,16 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
 
   const activeOrder = activeId ? orders.find(o => o.orderId === activeId) : null;
 
-  if (loading) {
+  // Show loading state while deferred or loading statuses
+  if (!isRendered || loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-        <span className="ml-2 text-gray-600">Cargando tablero...</span>
+      <div className="flex items-center justify-center h-64">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+          <p className="text-sm text-gray-500">
+            {!isRendered ? 'Preparando tablero...' : 'Cargando estados...'}
+          </p>
+        </div>
       </div>
     );
   }
@@ -558,6 +614,9 @@ export function KanbanBoard({ orders, onOrderUpdate, onOrderClick, onStatusReord
     </div>
   );
 }
+
+// Export memoized version to prevent unnecessary re-renders
+export const KanbanBoard = React.memo(KanbanBoardComponent);
 
 // Helper function to get status colors
 function getStatusColor(status: string): string {

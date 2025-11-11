@@ -31,26 +31,39 @@ export default function EnhancedHomeContent() {
 
   // Fetch quick stats
   useEffect(() => {
-    if (session) {
-      const fetchStats = async () => {
-        try {
-          setIsLoadingStats(true);
-          const response = await fetch('/api/dashboard/stats');
-          if (response.ok) {
-            const data = await response.json();
-            setStats(data);
-          } else {
-            console.error('Failed to fetch dashboard stats');
-          }
-        } catch (error) {
-          console.error('Error fetching dashboard stats:', error);
-        } finally {
-          setIsLoadingStats(false);
+    if (!session) return;
+    
+    const abortController = new AbortController();
+    
+    const fetchStats = async () => {
+      try {
+        setIsLoadingStats(true);
+        const response = await fetch('/api/dashboard/stats', {
+          signal: abortController.signal,
+          credentials: 'include'
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setStats(data);
+        } else {
+          console.error('Failed to fetch dashboard stats');
         }
-      };
-      
-      fetchStats();
-    }
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log('[Dashboard] Stats request aborted');
+          return;
+        }
+        console.error('Error fetching dashboard stats:', error);
+      } finally {
+        setIsLoadingStats(false);
+      }
+    };
+    
+    fetchStats();
+    
+    return () => {
+      abortController.abort();
+    };
   }, [session]);
 
   // Show loading state while checking authentication
@@ -74,8 +87,8 @@ export default function EnhancedHomeContent() {
             <Image 
               src={BetsyLogo} 
               alt="Betsy CRM" 
-              width={80}
-              height={80}
+              width={140}
+              height={140}
               className="object-contain"
               priority
             />
@@ -103,10 +116,10 @@ export default function EnhancedHomeContent() {
             <Image 
               src={BetsyLogo} 
               alt="Betsy CRM" 
-              width={56}
-              height={56}
+              width={80}
+              height={80}
               className="object-contain flex-shrink-0"
-              style={{ width: 'auto', height: '3rem' }}
+              style={{ width: 'auto', height: '5rem' }}
               priority
             />
             <div>

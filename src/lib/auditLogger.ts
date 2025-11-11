@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { prismaRaw } from '@/lib/prisma-tenant'
 import { getToken } from 'next-auth/jwt'
 import { NextRequest } from 'next/server'
 import { getTenantContext } from './tenantContext'
@@ -278,12 +279,37 @@ export async function logAudit(data: AuditLogData): Promise<void> {
       logData.newValues = newVals;
     }
 
-    await prisma.auditLog.create({
-      data: logData
-    });
+    // Try to create audit log, but if userId is invalid, create without it
+    try {
+      await prisma.auditLog.create({
+        data: logData
+      });
+    } catch (auditError: any) {
+      // Handle foreign key constraint violation for userId
+      if (auditError?.code === 'P2003' && auditError?.meta?.constraint === 'AuditLog_userId_fkey') {
+        console.warn('[AuditLogger] Invalid userId, logging without user reference:', data.userId);
+        // Retry without userId using raw Prisma client (no middleware at all)
+        // This bypasses ALL middleware including tenant context
+        const { userId, ...logDataWithoutUser } = logData;
+        try {
+          await prismaRaw.auditLog.create({
+            data: {
+              ...logDataWithoutUser,
+              userId: null, // Set to null explicitly
+              userName: data.userName || 'Unknown User (Deleted)',
+            }
+          });
+          console.log('[AuditLogger] ✅ Successfully logged without userId using raw client');
+        } catch (retryError) {
+          console.error('[AuditLogger] Failed to log even without userId:', retryError);
+        }
+      } else {
+        throw auditError; // Re-throw if it's a different error
+      }
+    }
   } catch (error) {
     console.error('Failed to log audit event:', error);
-    // Consider implementing retry logic or dead-letter queue for failed audit logs
+    // Don't throw - audit logging should not break the main operation
   }
 }
 

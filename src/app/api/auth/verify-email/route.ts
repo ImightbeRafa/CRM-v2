@@ -13,8 +13,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    console.log(`🔍 Verifying email token: ${token?.substring(0, 8)}...`);
-    console.log(`🔍 Full token length: ${token?.length}`);
+    console.log(`🔍 Verifying email token...`);
     console.log(`🔍 Current time: ${new Date().toISOString()}`);
     
     // Find user with this token (using raw query to handle the mapped fields)

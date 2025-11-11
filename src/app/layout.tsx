@@ -3,7 +3,9 @@ import '@/app/globals-mobile.css'
 import SessionProvider from "./components/Sessionprovider"
 import { ErrorBoundary } from "./components/ErrorBoundary"
 import { TenantSettingsProvider } from "./contexts/TenantSettingsContext"
+import { ConfigProvider } from "./contexts/ConfigContext"
 import SubscriptionBanner from "./components/SubscriptionBanner"
+import { ClientProviders } from "./components/ClientProviders"
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
@@ -26,8 +28,12 @@ export default async function RootLayout({
         <ErrorBoundary>
           <SessionProvider>
             <TenantSettingsProvider>
-              <SubscriptionBanner />
-              {children}
+              <ConfigProvider>
+                <ClientProviders>
+                  <SubscriptionBanner />
+                  {children}
+                </ClientProviders>
+              </ConfigProvider>
             </TenantSettingsProvider>
           </SessionProvider>
         </ErrorBoundary>

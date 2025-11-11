@@ -6,10 +6,27 @@ declare global {
   var prisma: PrismaClient | undefined;
 }
 
-// Create a new Prisma client instance
+// Create a new Prisma client instance with connection pooling via URL parameters
+// Add connection pool settings to DATABASE_URL: ?connection_limit=20&pool_timeout=20
+const getDatabaseUrl = () => {
+  const baseUrl = process.env.DATABASE_URL;
+  if (!baseUrl) return baseUrl;
+  
+  // Check if URL already has query params
+  const hasParams = baseUrl.includes('?');
+  const separator = hasParams ? '&' : '?';
+  
+  // Add connection pool parameters if not already present
+  if (!baseUrl.includes('connection_limit')) {
+    return `${baseUrl}${separator}connection_limit=20&pool_timeout=20`;
+  }
+  
+  return baseUrl;
+};
+
 const basePrisma: PrismaClient = global.prisma || new PrismaClient({
   log: ['error', 'warn'],
-  datasourceUrl: process.env.DATABASE_URL,
+  datasourceUrl: getDatabaseUrl(),
 });
 
 // Attach a global tenant isolation extension so all consumers are scoped
@@ -49,6 +66,10 @@ const prisma = basePrisma.$extends({
           if (input.where?.tenantId) return input.where.tenantId as string;
           if (input.data?.tenantId) return input.data.tenantId as string;
           if (input.create?.tenantId) return input.create.tenantId as string;
+          // For createMany, check first item in data array
+          if (Array.isArray(input.data) && input.data.length > 0 && input.data[0]?.tenantId) {
+            return input.data[0].tenantId as string;
+          }
           return undefined;
         };
         const tenantIdFromArgs = extractTenantId(args);
@@ -86,6 +107,15 @@ const prisma = basePrisma.$extends({
             break;
           case 'create':
             if (tenantId) modifiedArgs.data = { ...modifiedArgs.data, tenantId };
+            break;
+          case 'createMany':
+            // Handle createMany by adding tenantId to each item in the data array
+            if (tenantId && Array.isArray(modifiedArgs.data)) {
+              modifiedArgs.data = modifiedArgs.data.map((item: any) => ({
+                ...item,
+                tenantId: item.tenantId || tenantId
+              }));
+            }
             break;
           case 'update':
           case 'updateMany':

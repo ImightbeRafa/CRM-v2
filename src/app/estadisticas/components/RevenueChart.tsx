@@ -1,6 +1,7 @@
 'use client';
 
-import dynamic from 'next/dynamic';
+import { useState, useEffect } from 'react';
+import RevenueChartInner from './RevenueChartInner';
 
 interface RevenueChartProps {
   data: Array<{
@@ -17,15 +18,17 @@ function RevenueChartSkeleton({ height = 300 }: { height?: number }) {
   return <div className="w-full bg-gray-200 animate-pulse rounded" style={{ height }} />;
 }
 
-const RevenueChartInner = dynamic(
-  () => import('./RevenueChartInner'),
-  {
-    loading: () => <RevenueChartSkeleton />,
-    ssr: false
-  }
-);
-
 export default function RevenueChart(props: RevenueChartProps) {
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  if (!isMounted) {
+    return <RevenueChartSkeleton height={props.height} />;
+  }
+
   return <RevenueChartInner {...props} />;
 }
 

@@ -42,18 +42,28 @@ export default function TopCustomersChart({ startDate, endDate }: TopCustomersCh
   const [activeTab, setActiveTab] = useState<'revenue' | 'orders' | 'activity'>('revenue');
 
   useEffect(() => {
-    fetchData();
+    const abortController = new AbortController();
+    fetchData(abortController.signal);
+    
+    return () => {
+      abortController.abort();
+    };
   }, [startDate, endDate]);
 
-  const fetchData = async () => {
+  const fetchData = async (signal?: AbortSignal) => {
     setLoading(true);
     setError('');
     try {
       const response = await axios.get('/api/estadisticas/top-customers', {
-        params: { startDate, endDate, limit: 10 }
+        params: { startDate, endDate, limit: 10 },
+        signal,
       });
       setData(response.data);
     } catch (error) {
+      if (axios.isCancel(error)) {
+        console.log('[TopCustomers] Request cancelled');
+        return;
+      }
       console.error('Error fetching top customers:', error);
       setError('Error al cargar datos de clientes');
     } finally {

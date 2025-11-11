@@ -36,7 +36,7 @@ export async function sendVerificationEmail({ email, name }: SendVerificationEma
       `;
       
       console.log(`✅ Token saved to database for: ${email}`);
-      console.log(`   Token: ${token.substring(0, 8)}...`);
+      // Token details omitted for security
       console.log(`   Expires: ${expiresAt.toISOString()}`);
       
       // Verify the token was saved correctly

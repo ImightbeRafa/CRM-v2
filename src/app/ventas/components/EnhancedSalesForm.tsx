@@ -7,7 +7,6 @@ import { Button } from "@/app/components/ui/button";
 import OrderTypeToggle from './OrderTypeToggle';
 import CustomerForm from './customerForm';
 import ProductList from './ProductList';
-import SmartSuggestions from './SmartSuggestions';
 import EnhancedSmartSuggestions from './EnhancedSmartSuggestions';
 import RecurringCustomers from './RecurringCustomers';
 import { CustomerInfo, ProductInfo, OrderInfo, SubmitStatus, ProductTemplate, CustomerSuggestion } from './types';
@@ -53,6 +52,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(true);
+  
   // Resolve expected date from either the canonical field (fechaEsperada)
   // or from any business info date field (prefer one whose name/label mentions "esperada" or "expected")
   const resolveExpectedDate = (): string => {
@@ -71,7 +71,6 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     return fallback;
   };
 
-
   // Auto-assign vendedor to products that don't have one
   useEffect(() => {
     if (user && orderInfo.products.some(p => !p.vendedor.trim())) {
@@ -85,21 +84,35 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     }
   }, [user, orderInfo.products]);
 
-  // Fetch business info fields
+  // Fetch business info fields (non-blocking with cache)
   useEffect(() => {
-    const fetchBusinessInfo = async () => {
+    // Check cache first
+    const cached = sessionStorage.getItem('businessInfoFields');
+    if (cached) {
       try {
-        const response = await fetch('/api/config/business-info', { credentials: 'include' });
-        const data = await response.json();
+        const { data, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < 300000) { // 5 minutes
+          setBusinessInfoFields(data);
+          return;
+        }
+      } catch (e) {
+        sessionStorage.removeItem('businessInfoFields');
+      }
+    }
+
+    // Fetch in background, don't await
+    fetch('/api/config/business-info', { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => {
         if (data.status === 'success') {
           setBusinessInfoFields(data.data);
+          sessionStorage.setItem('businessInfoFields', JSON.stringify({
+            data: data.data,
+            timestamp: Date.now()
+          }));
         }
-      } catch (error) {
-        console.error('Error fetching business info fields:', error);
-      }
-    };
-
-    fetchBusinessInfo();
+      })
+      .catch(error => console.error('Error fetching business info fields:', error));
   }, []);
 
   // Initialize client-side state

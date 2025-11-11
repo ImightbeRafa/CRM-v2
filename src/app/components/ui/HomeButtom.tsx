@@ -1,10 +1,10 @@
 'use client';
 import React from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Home, ShoppingCart, Factory, BarChart } from 'lucide-react';
 
 const NavigationMenu = () => {
-  const router = useRouter();
   const pathname = usePathname();
 
   const menuItems = [
@@ -17,22 +17,29 @@ const NavigationMenu = () => {
   const isActivePath = (path: string) => pathname === path;
 
   return (
-    <div className="flex items-center gap-4 p-2 bg-white rounded-lg shadow-sm">
+    <nav className="flex items-center gap-4 p-2 bg-white rounded-lg shadow-sm">
       {menuItems.map((item) => {
         const Icon = item.icon;
         const isActive = isActivePath(item.path);
         
         return (
-          <button
+          <Link
             key={item.path}
-            onClick={() => router.push(item.path)}
+            href={item.path}
+            prefetch={false}
             className={`
               group flex items-center gap-2 px-4 py-2 rounded-lg
               transition-all duration-200 ease-in-out
               ${isActive 
-                ? 'bg-blue-500 text-white' 
-                : 'text-gray-600 hover:bg-blue-50 hover:text-blue-500'}
+                ? 'bg-blue-500 text-white cursor-default pointer-events-none' 
+                : 'text-gray-600 hover:bg-blue-50 hover:text-blue-500 active:scale-95'}
             `}
+            onClick={(e) => {
+              // Prevent navigation if already on this path
+              if (isActive) {
+                e.preventDefault();
+              }
+            }}
           >
             <Icon 
               className={`
@@ -42,10 +49,10 @@ const NavigationMenu = () => {
               size={20}
             />
             <span className="font-medium">{item.label}</span>
-          </button>
+          </Link>
         )
       })}
-    </div>
+    </nav>
   );
 };
 

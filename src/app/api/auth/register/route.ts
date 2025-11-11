@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     }
 
     // Hash password
-    console.log('🔒 Hashing password...');
+    // Hashing password for security
     const hashedPassword = await hashPassword(password);
     const emailPrefix = normalizedEmail.split('@')[0];
     const tenantSlug = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now();

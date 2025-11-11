@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { prisma } from '@/lib/db';
+import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { prisma as globalPrisma } from '@/lib/db';
 import { startOfDay, startOfWeek, startOfMonth, format } from 'date-fns';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
+
+// Cache results for 30 seconds
+const revenueCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 30000;
 
 export async function GET(req: NextRequest) {
   try {
@@ -15,7 +20,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get user's tenant through memberships
-    const user = await prisma.user.findUnique({
+    const user = await globalPrisma.user.findUnique({
       where: { id: token.sub },
       select: {
         memberships: {
@@ -36,6 +41,15 @@ export async function GET(req: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const groupBy = searchParams.get('groupBy') || 'day'; // day, week, month
+    
+    // Check cache
+    const cacheKey = `${tenantId}-${startDate}-${endDate}-${groupBy}`;
+    const cached = revenueCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+      return NextResponse.json(cached.data);
+    }
+    
+    const prisma = getTenantPrisma(tenantId);
 
     if (!startDate || !endDate) {
       return NextResponse.json(
@@ -112,6 +126,9 @@ export async function GET(req: NextRequest) {
         orderCount: data.orderCount,
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Store in cache
+    revenueCache.set(cacheKey, { data: result, timestamp: Date.now() });
 
     return NextResponse.json(result);
   } catch (error) {

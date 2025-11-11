@@ -48,7 +48,7 @@ interface Sale {
   orderType: 'EA' | 'RA';
 }
 
-export function SalesDashboard() {
+export const SalesDashboard = React.memo(function SalesDashboard() {
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [orderTypeFilter, setOrderTypeFilter] = useState<'ALL' | 'EA' | 'RA'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -392,4 +392,4 @@ export function SalesDashboard() {
       </Dialog>
     </div>
   );
-}
+});

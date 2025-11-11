@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { logUpdate } from '@/lib/auditLogger'
-import { prisma } from '@/lib/db'
-import { withoutTenantIsolation } from '@/lib/tenantContext'
+import { getTenantPrisma } from '@/lib/prisma-tenant'
+import { withTenantContext } from '@/lib/tenantContext'
 import { getToken } from 'next-auth/jwt'
 
 export const runtime = 'nodejs'
@@ -26,41 +26,46 @@ export async function POST(request: Request) {
     }
     const userId = (token as any)?.sub as string | undefined
     const userName = (token as any)?.name || (token as any)?.email || 'System'
+    const userRole = (token as any)?.membershipRole
 
-    // Get the existing order with tenant filter
-    const existingOrder = await prisma.order.findFirst({
-      where: { orderId: body.orderId, tenantId }
-    })
-
-    if (!existingOrder) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
-    }
-
-    // Update the order status
-    const updatedOrder = await prisma.order.update({
-      where: { id: existingOrder.id },
-      data: { status: body.status }
-    })
-
-    // Log audit trail (non-blocking)
-    try {
-      console.log('[orders/status] Status update:', {
-        orderId: body.orderId,
-        oldStatus: existingOrder.status,
-        newStatus: body.status,
-        userId
+    return await withTenantContext({ tenantId, userId, role: userRole, userRole, userName }, async () => {
+      const prisma = getTenantPrisma(tenantId)
+      
+      // Get the existing order with tenant filter
+      const existingOrder = await prisma.order.findFirst({
+        where: { orderId: body.orderId, tenantId }
       })
-      await logUpdate(request as any, 'order', updatedOrder.id, `Order #${body.orderId}`, 
-        { status: existingOrder.status }, 
-        { status: body.status })
-    } catch (auditError) {
-      console.error('[orders/status] Audit logging failed (non-fatal):', auditError)
-    }
 
-    return NextResponse.json({ success: true, data: updatedOrder })
+      if (!existingOrder) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
+        )
+      }
+
+      // Update the order status
+      const updatedOrder = await prisma.order.update({
+        where: { id: existingOrder.id },
+        data: { status: body.status }
+      })
+
+      // Log audit trail (non-blocking)
+      try {
+        console.log('[orders/status] Status update:', {
+          orderId: body.orderId,
+          oldStatus: existingOrder.status,
+          newStatus: body.status,
+          userId
+        })
+        await logUpdate(request as any, 'order', updatedOrder.id, `Order #${body.orderId}`, 
+          { status: existingOrder.status }, 
+          { status: body.status })
+      } catch (auditError) {
+        console.error('[orders/status] Audit logging failed (non-fatal):', auditError)
+      }
+
+      return NextResponse.json({ success: true, data: updatedOrder })
+    })
   } catch (error) {
     console.error('[orders/status] Error:', error)
     const errorMessage = error instanceof Error ? error.message : 'Internal server error'

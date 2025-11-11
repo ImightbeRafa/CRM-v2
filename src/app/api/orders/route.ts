@@ -12,51 +12,57 @@ import { checkOrderLimit } from '@/lib/plan-enforcement'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// Function to update inventory when an order is created
+// Function to update inventory when an order is created (optimized)
 async function updateInventoryForOrder(order: any, tenantPrisma: any) {
-  console.log('Updating inventory for order:', {
-    orderId: order.orderId,
-    product: order.product,
-    quantity: order.quantity,
-    productDetails: order.productDetails
-  })
+  // Only log in development
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[Inventory] Updating for order:', order.orderId)
+  }
 
   // Try to use detailed product information first
   if (order.productDetails) {
     try {
       const productDetails = JSON.parse(order.productDetails)
-      console.log('Parsed product details:', productDetails)
-      
-      for (const product of productDetails) {
-        await updateInventoryForProduct(product, tenantPrisma)
-      }
+      // Process inventory updates in parallel for speed
+      await Promise.all(
+        productDetails.map((product: any) => 
+          updateInventoryForProduct(product, tenantPrisma).catch(err => {
+            console.error('[Inventory] Failed to update:', err)
+          })
+        )
+      )
       return
     } catch (error) {
-      console.error('Failed to parse product details:', error)
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[Inventory] Failed to parse product details:', error)
+      }
     }
   }
 
   // Fallback to old method if productDetails is not available
   if (!order.product || !order.quantity) {
-    console.log('No products or quantity to update inventory for')
     return
   }
 
-  // Parse products from the comma-separated string (these are product types)
-  const productTypes = order.product.split(',').map((p: string) => p.trim())
+  // Parse products from the comma-separated string
+  const productTypes = order.product.split(',')
+    .map((p: string) => p.trim())
+    .filter(Boolean)
   
-  for (let i = 0; i < productTypes.length; i++) {
-    const productType = productTypes[i]
-    if (!productType) continue
-
-    await updateInventoryForProduct({
-      type: productType,
-      cantidad: 1, // Default to 1 if we don't have detailed info
-      color: '',
-      tamano: '',
-      productCost: 0
-    }, tenantPrisma)
-  }
+  // Process inventory updates in parallel for speed
+  await Promise.all(
+    productTypes.map((productType: string) => 
+      updateInventoryForProduct({
+        type: productType,
+        cantidad: 1,
+        color: '',
+        tamano: '',
+        productCost: 0
+      }, tenantPrisma).catch(err => {
+        console.error('[Inventory] Failed to update:', err)
+      })
+    )
+  )
 }
 
 // Helper function to update inventory for a single product
@@ -91,17 +97,12 @@ async function updateInventoryForProduct(product: any, tenantPrisma: any) {
       // Fourth try: Match by description
       const descMatch = itemDesc.includes(productType) || productType.includes(itemDesc)
       
-      console.log(`Checking match for "${productType}" vs SKU:"${itemSku}" Category:"${itemCategory}" Name:"${itemName}" Desc:"${itemDesc}": sku=${skuMatch}, category=${categoryMatch}, name=${nameMatch}, desc=${descMatch}`)
-      
       return skuMatch || categoryMatch || nameMatch || descMatch
     })
-
-    console.log(`Found ${matchingItems.length} matching items for product type: ${type}`)
     
     // If no exact matches, try fuzzy matching for common product types
     let finalMatches = matchingItems
     if (matchingItems.length === 0) {
-      console.log('No exact matches found, trying fuzzy matching...')
       const fuzzyMatches = inventoryItems.filter((item: any) => {
         const itemName = item.name.toLowerCase()
         const itemDesc = item.description?.toLowerCase() || ''
@@ -125,7 +126,6 @@ async function updateInventoryForProduct(product: any, tenantPrisma: any) {
       })
       
       if (fuzzyMatches.length > 0) {
-        console.log(`Found ${fuzzyMatches.length} fuzzy matches`)
         finalMatches = fuzzyMatches
       }
     }
@@ -260,7 +260,7 @@ export async function GET(request: NextRequest) {
         page,
         limit,
         total: totalCount,
-        totalPages: Math.ceil(totalCount / limit),
+        totalPages: limit ? Math.ceil(totalCount / limit) : 1,
         hasMore: skip + orders.length < totalCount
       }
     })
@@ -308,65 +308,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-     // Debug: log incoming payload keys for comment visibility
-     try {
-       console.log('🔍 [Order.create] FULL PAYLOAD DEBUG:')
-       console.log('📦 [Order.create] Raw body keys:', Object.keys(body))
-       console.log('📦 [Order.create] Full body:', JSON.stringify(body, null, 2))
-       
-       const possibleCommentKeys = Object.keys(body).filter(k => /comentario|comentarios|comment|comments|observacion|observaciones|nota|notas|descripcion|description/i.test(k))
-       console.log('💬 [Order.create] Potential comment keys in body:', possibleCommentKeys)
-       console.log('💬 [Order.create] body.comments value:', body?.comments)
-       console.log('💬 [Order.create] body.comments type:', typeof body?.comments)
-       console.log('💬 [Order.create] body.comments length:', body?.comments?.length)
-       
-       if (body?.customFields) {
-         console.log('🔧 [Order.create] customFields type:', typeof body.customFields)
-         console.log('🔧 [Order.create] customFields keys:', Object.keys(body.customFields))
-         console.log('🔧 [Order.create] customFields content:', JSON.stringify(body.customFields, null, 2))
-       } else {
-         console.log('🔧 [Order.create] No customFields in payload')
-       }
-     } catch (error) {
-       console.error('❌ [Order.create] Debug logging error:', error)
+     // Minimal logging for production performance
+     if (process.env.NODE_ENV === 'development') {
+       console.log('[Order.create] Creating order:', body.orderId)
      }
 
-     // Map comments EXCLUSIVELY from dynamic custom fields (campos personalizados)
+     // Map comments from dynamic custom fields
      const commentKeywords = ['comentario','comentarios','comment','comments','observacion','observaciones','nota','notas','note','notes','descripcion','description']
      let commentValue: string | undefined
      
-     console.log('🔍 [Order.create] COMMENT DETECTION DEBUG:')
-     console.log('🔍 [Order.create] customFields to search:', Object.keys(customFields))
-     console.log('🔍 [Order.create] commentKeywords:', commentKeywords)
-     
      for (const k of Object.keys(customFields)) {
-       console.log(`🔍 [Order.create] Checking key: "${k}"`)
-       const matches = commentKeywords.filter(w => k.toLowerCase().includes(w))
-       console.log(`🔍 [Order.create] Key "${k}" matches keywords:`, matches)
-       
        if (commentKeywords.some(w => k.toLowerCase().includes(w))) {
          const v = (customFields as any)[k]
-         console.log(`🔍 [Order.create] Found potential comment in key "${k}":`, v)
-         console.log(`🔍 [Order.create] Value type:`, typeof v)
-         console.log(`🔍 [Order.create] Value length:`, v?.length)
-         console.log(`🔍 [Order.create] Value trimmed:`, String(v).trim())
-         
          if (v !== undefined && v !== null && String(v).trim() !== '') { 
            commentValue = String(v).trim()
-           console.log(`✅ [Order.create] COMMENT FOUND: "${commentValue}"`)
            break 
-         } else {
-           console.log(`❌ [Order.create] Comment value is empty or invalid`)
          }
        }
-     }
-
-     // Debug: show detected comment and customFields presence
-     try {
-       console.log('💬 [Order.create] Final detected commentValue:', commentValue)
-       console.log('💬 [Order.create] Final customFields keys:', Object.keys(customFields))
-     } catch (error) {
-       console.error('❌ [Order.create] Final debug error:', error)
      }
 
     // Check plan limits (soft enforcement with clear messaging)
@@ -381,6 +339,17 @@ export async function POST(request: NextRequest) {
         limit: limitCheck.limit
       }, { status: 402 }) // 402 Payment Required
     }
+    
+    // Calculate total on server side to ensure accuracy
+    const productCost = Number(body.productCost || 0);
+    const shippingCost = Number(body.shippingCost || 0);
+    const iva = Number(body.iva || 0);
+    const calculatedTotal = productCost + shippingCost + iva;
+    
+    // Use calculated total if client didn't provide one or sent 0
+    const finalTotal = (body.total && Number(body.total) > 0) 
+      ? Number(body.total) 
+      : calculatedTotal;
     
     // Create a new order with explicit tenantId
     const order = await tenantPrisma.order.create({
@@ -402,10 +371,10 @@ export async function POST(request: NextRequest) {
         packaging: body.packaging || '',
         customization: body.customization || '',
         comments: commentValue || '',
-        total: Number(body.total || 0),
-        iva: Number(body.iva || 0),
-        shippingCost: Number(body.shippingCost || 0),
-        productCost: Number(body.productCost || 0),
+        total: finalTotal, // Use server-calculated total
+        iva: iva,
+        shippingCost: shippingCost,
+        productCost: productCost,
         funnel: body.funnel || '',
         address: body.address || '',
         province: body.province || '',
@@ -423,34 +392,17 @@ export async function POST(request: NextRequest) {
       } as any)
     })
 
-     // Debug: confirm saved order comments
-     try {
-       console.log('💾 [Order.create] DATABASE SAVE DEBUG:')
-       console.log('💾 [Order.create] Saved order ID:', order.id)
-       console.log('💾 [Order.create] Saved order comments:', order.comments)
-       console.log('💾 [Order.create] Saved order comments type:', typeof order.comments)
-       console.log('💾 [Order.create] Saved order comments length:', order.comments?.length)
-       console.log('💾 [Order.create] Saved order comments === "":', order.comments === "")
-       console.log('💾 [Order.create] Saved order comments === null:', order.comments === null)
-       console.log('💾 [Order.create] Saved order comments === undefined:', order.comments === undefined)
-     } catch (error) {
-       console.error('❌ [Order.create] Database save debug error:', error)
-     }
+     // Order created successfully
 
-    // Update inventory stock for products in the order
-    try {
-      await updateInventoryForOrder(order, tenantPrisma)
-    } catch (inventoryError) {
-      console.error('Failed to update inventory:', inventoryError)
-      // Don't fail the order creation if inventory update fails
-    }
-
-    // Log audit trail
-    try {
-      await logCreate(request, 'order', order.id, `Order #${order.orderId}`, order)
-    } catch (auditError) {
-      console.error('Failed to log audit trail:', auditError)
-    }
+    // Update inventory and audit log in parallel (non-blocking)
+    Promise.all([
+      updateInventoryForOrder(order, tenantPrisma).catch(err => {
+        console.error('Failed to update inventory:', err)
+      }),
+      logCreate(request, 'order', order.id, `Order #${order.orderId}`, order).catch(err => {
+        console.error('Failed to log audit trail:', err)
+      })
+    ]).catch(() => {}) // Ignore errors, don't block response
 
     return createSuccessResponse(order, 'Order created successfully')
   } catch (error) {

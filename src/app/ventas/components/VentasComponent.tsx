@@ -1,23 +1,35 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
 import HomeButton from '@/app/components/ui/HomeButtom';
-import dynamic from 'next/dynamic';
 import { SalesDashboard } from '@/app/ventas/components/SalesDashboard';
 import DailyStats from '@/app/ventas/components/DailyStats';
 import SalesErrorBoundary from '@/app/ventas/components/SalesErrorBoundary';
 import { DOMErrorBoundary } from '@/app/components/DOMErrorBoundary';
 import { Button } from "@/app/components/ui/button";
+import { Loader2 } from 'lucide-react';
 
-// Dynamically import the EnhancedSalesForm with no SSR
-const EnhancedSalesForm = dynamic(() => import('./EnhancedSalesForm'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex justify-center py-4">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+// Lazy load the form
+const EnhancedSalesForm = lazy(() => import('./EnhancedSalesForm'));
+
+// Loading skeleton component
+function FormSkeleton() {
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6 animate-pulse">
+      <div className="h-8 bg-gray-200 rounded w-1/3 mb-6"></div>
+      <div className="space-y-4">
+        <div className="h-10 bg-gray-200 rounded"></div>
+        <div className="h-10 bg-gray-200 rounded"></div>
+        <div className="h-10 bg-gray-200 rounded"></div>
+        <div className="h-32 bg-gray-200 rounded"></div>
+      </div>
+      <div className="mt-6 flex items-center gap-2 text-blue-600">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        <span className="text-sm">Cargando formulario...</span>
+      </div>
     </div>
-  )
-});
+  );
+}
 
 export default function VentasContent() {
   const [showOrderForm, setShowOrderForm] = useState(false);
@@ -38,10 +50,12 @@ export default function VentasContent() {
             {showOrderForm && (
               <section className="xl:w-2/3 transition-all duration-300">
                 <div className="sticky top-4 xl:top-6">
-                  <EnhancedSalesForm 
-                    showOrderForm={showOrderForm}
-                    onToggleForm={setShowOrderForm}
-                  />
+                  <Suspense fallback={<FormSkeleton />}>
+                    <EnhancedSalesForm 
+                      showOrderForm={showOrderForm}
+                      onToggleForm={setShowOrderForm}
+                    />
+                  </Suspense>
                 </div>
               </section>
             )}

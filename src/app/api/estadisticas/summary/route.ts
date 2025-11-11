@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { prisma } from '@/lib/db';
+import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { prisma as globalPrisma } from '@/lib/db';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
+
+// Cache results for 30 seconds
+const summaryCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 30000;
 
 export async function GET(req: NextRequest) {
   try {
@@ -14,7 +19,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get user's tenant through memberships
-    const user = await prisma.user.findUnique({
+    const user = await globalPrisma.user.findUnique({
       where: { id: token.sub },
       select: {
         memberships: {
@@ -30,10 +35,19 @@ export async function GET(req: NextRequest) {
     }
 
     const tenantId = user.memberships[0].tenantId;
-
+    
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    
+    // Check cache
+    const cacheKey = `${tenantId}-${startDate}-${endDate}`;
+    const cached = summaryCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+      return NextResponse.json(cached.data);
+    }
+    
+    const prisma = getTenantPrisma(tenantId);
 
     // Build date filter - use saleDate if available, fallback to timestamp
     // Handle timezone properly by treating dates as local
@@ -118,13 +132,18 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    return NextResponse.json({
+    const result = {
       totalSales,
       totalRevenue: revenue,
       averageOrderValue,
       activeClients,
       trends,
-    });
+    };
+    
+    // Store in cache
+    summaryCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Error fetching summary:', error);
     return NextResponse.json(

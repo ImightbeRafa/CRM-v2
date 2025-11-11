@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { prisma } from '@/lib/db';
+import { getTenantPrisma } from '@/lib/prisma-tenant';
+
+// Cache stats for 30 seconds to prevent repeated heavy queries
+const statsCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 30000; // 30 seconds
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,6 +15,14 @@ export async function GET(request: NextRequest) {
     }
 
     const tenantId = token.tenantId as string;
+    
+    // Check cache first
+    const cached = statsCache.get(tenantId);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+      return NextResponse.json(cached.data);
+    }
+
+    const prisma = getTenantPrisma(tenantId);
 
     // Calculate date for this week (Monday to Sunday)
     const now = new Date();
@@ -112,7 +124,7 @@ export async function GET(request: NextRequest) {
       ? Math.round(((weeklyRevenue - lastWeekRevenue) / lastWeekRevenue) * 100)
       : weeklyRevenue > 0 ? 100 : 0;
 
-    return NextResponse.json({
+    const stats = {
       ordersWeek: ordersThisWeek,
       ordersChange,
       pendingOrders,
@@ -120,7 +132,12 @@ export async function GET(request: NextRequest) {
       newClientsThisWeek,
       weeklyRevenue: Math.round(weeklyRevenue),
       revenueChange
-    });
+    };
+    
+    // Store in cache
+    statsCache.set(tenantId, { data: stats, timestamp: Date.now() });
+
+    return NextResponse.json(stats);
 
   } catch (error) {
     console.error('❌ [Dashboard Stats] Error fetching stats:', error);

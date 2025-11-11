@@ -5,6 +5,7 @@
  * Use getTenantPrisma() in API routes for automatic tenant isolation
  */
 
+import { PrismaClient } from '@prisma/client';
 import { prisma as prismaGlobal } from './db';
 import { getTenantContext } from './tenantContext';
 import { logAudit } from './auditLogger';
@@ -84,16 +85,47 @@ const TENANT_MODELS_LOWER: readonly string[] = TENANT_MODELS.map((m) => m.toLowe
  * This ensures a single, clear tenant isolation strategy without drift.
  */
 
+// Helper to get DATABASE_URL with connection pooling parameters
+const getDatabaseUrl = () => {
+  const baseUrl = process.env.DATABASE_URL;
+  if (!baseUrl) return baseUrl;
+  
+  const hasParams = baseUrl.includes('?');
+  const separator = hasParams ? '&' : '?';
+  
+  if (!baseUrl.includes('connection_limit')) {
+    return `${baseUrl}${separator}connection_limit=20&pool_timeout=20`;
+  }
+  
+  return baseUrl;
+};
+
+// Create a clean base Prisma client for tenant-scoped operations (without global middleware)
+const basePrismaClient = new PrismaClient({
+  log: ['error', 'warn'],
+  datasourceUrl: getDatabaseUrl(),
+});
+
+// Export raw Prisma client without ANY middleware for system operations
+export const prismaRaw = basePrismaClient;
+
+// Cache tenant-scoped Prisma clients to avoid expensive re-creation
+// Use LRU-like behavior: limit cache size and evict oldest entries
+const MAX_TENANT_CACHE_SIZE = 50; // Limit to 50 tenant clients max
+const tenantPrismaCache = new Map<string, ReturnType<typeof createTenantPrismaUncached>>();
+const tenantAccessOrder: string[] = []; // Track access order for LRU
+
 /**
- * Create a Prisma client extension that automatically injects tenantId
+ * Create a Prisma client extension that automatically injects tenantId (uncached version)
  */
-export function createTenantPrisma(tenantId: string) {
+function createTenantPrismaUncached(tenantId: string) {
   if (!tenantId) {
     throw new Error('Tenant ID is required for tenant-isolated queries');
   }
 
   // Create a single extension that handles all tenant isolation
-  return prismaGlobal.$extends({
+  // Use clean basePrismaClient to avoid double middleware
+  return basePrismaClient.$extends({
     name: 'tenantIsolation',
     query: {
       $allModels: {
@@ -256,14 +288,17 @@ export function createTenantPrisma(tenantId: string) {
             
           } catch (error) {
             console.error(`Error in tenant-isolated query (${model}.${operation}):`, error);
-            // Log the error for audit
+            // Log the error for audit (non-critical, don't fail if logging fails)
             try {
               await logAudit({
-                action: 'ERROR' as const,
+                action: 'UPDATE',
                 entityType: modelName || 'unknown',
-                entityId: 'n/a',
+                entityId: 'error',
                 userId: userId,
                 tenantId: contextTenantId,
+                userRole: (context?.role as any) || 'SYSTEM',
+                userName: context?.userName || 'System',
+                description: `Error in ${operation}: ${error instanceof Error ? error.message : String(error)}`,
                 details: {
                   operation,
                   model: modelName,
@@ -283,7 +318,7 @@ export function createTenantPrisma(tenantId: string) {
 }
 
 /**
- * Get a tenant-aware Prisma client
+ * Get a tenant-aware Prisma client (with caching for performance)
  * Use this in API routes after extracting tenantId from session
  * 
  * @example
@@ -295,21 +330,47 @@ export function getTenantPrisma(tenantId: string) {
     throw new TenantError('Tenant ID is required for tenant-isolated queries');
   }
   
-  // Log the creation of a tenant-scoped Prisma client
+  // Check cache first for performance
+  const cached = tenantPrismaCache.get(tenantId);
+  if (cached) {
+    // Update access order for LRU
+    const index = tenantAccessOrder.indexOf(tenantId);
+    if (index > -1) {
+      tenantAccessOrder.splice(index, 1);
+    }
+    tenantAccessOrder.push(tenantId);
+    return cached;
+  }
+  
+  // Log the creation of a tenant-scoped Prisma client (only on first creation)
   const context = getTenantContext();
   if (context?.tenantId && context.tenantId !== tenantId) {
     logAudit({
-      action: 'SECURITY_WARNING' as const, // Type assertion for custom audit action
+      action: 'SECURITY_WARNING' as const,
       entityType: 'TenantContext',
       entityId: tenantId,
       description: `Tenant context mismatch: ${context.tenantId} != ${tenantId}`,
       userId: context.userId || 'unknown',
-      userRole: context.role || 'system', // Use role from context or default to 'system'
+      userRole: context.role || 'system',
       tenantId: context.tenantId,
     });
   }
 
-  return createTenantPrisma(tenantId);
+  // Implement LRU eviction if cache is full
+  if (tenantPrismaCache.size >= MAX_TENANT_CACHE_SIZE) {
+    const oldestTenantId = tenantAccessOrder.shift();
+    if (oldestTenantId) {
+      tenantPrismaCache.delete(oldestTenantId);
+      console.log(`[Prisma Cache] Evicted tenant client: ${oldestTenantId} (cache full)`);
+    }
+  }
+
+  // Create and cache the client
+  const client = createTenantPrismaUncached(tenantId);
+  tenantPrismaCache.set(tenantId, client);
+  tenantAccessOrder.push(tenantId);
+  
+  return client;
 }
 
 /**

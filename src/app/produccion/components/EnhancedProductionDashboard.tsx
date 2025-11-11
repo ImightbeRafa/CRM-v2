@@ -13,6 +13,7 @@ import { Button } from "@/app/components/ui/button";
 import { Badge } from "@/app/components/ui/badge";
 import { useSalesStream } from '@/app/hooks/useSalesStream';
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
+import { useConfig } from '@/app/contexts/ConfigContext';
 import { Sale } from '../types/sales';
 import { Loader2, Search, Filter, Download, Printer, Eye, Edit, CheckCircle, Clock, AlertCircle, Truck, Package, Users, TrendingUp, LayoutGrid, List, Kanban, FileText, RefreshCw } from 'lucide-react';
 import { useToast } from "@/app/hooks/use-toast";
@@ -28,24 +29,10 @@ import { GuiaGenerator } from './GuiaGenerator';
 import { InvoiceGenerator } from '@/app/config/components/InvoiceGenerator';
 import { KanbanBoard } from './KanbanBoard';
 
-// Dynamic Status Filter Component
+// Dynamic Status Filter Component - now using global config
 const StatusFilterSelect = ({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) => {
-  const [statuses, setStatuses] = useState<Array<{key: string; label: string}>>([]);
-
-  useEffect(() => {
-    const loadStatuses = async () => {
-      try {
-        const response = await fetch('/api/config/status', { credentials: 'include' });
-        const data = await response.json();
-        if (data.status === 'success' && data.data.length > 0) {
-          setStatuses(data.data);
-        }
-      } catch (error) {
-        console.error('Error loading statuses:', error);
-      }
-    };
-    loadStatuses();
-  }, []);
+  const { config } = useConfig();
+  const statuses = config.statuses;
 
   return (
     <Select value={value} onValueChange={onValueChange}>
@@ -327,6 +314,9 @@ export function EnhancedProductionDashboard({
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'EA' | 'RA' | 'urgent'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const { config } = useConfig(); // Use global config context
+  const statuses = config.statuses;
+  const businessInfoFields = config.businessInfoFields;
 
   // Define handleStatsFilter callback at the top level
   const handleStatsFilter = React.useCallback((filter: 'all' | 'EA' | 'RA' | 'urgent') => {
@@ -355,6 +345,8 @@ export function EnhancedProductionDashboard({
       });
     }
   });
+
+  // Config data now comes from global context - no need to load separately
 
   // Update last sync time when orders change
   useEffect(() => {
@@ -615,6 +607,7 @@ export function EnhancedProductionDashboard({
           ) : viewMode === 'kanban' ? (
             <KanbanBoard
               orders={filteredOrders}
+              statuses={statuses}
               onOrderUpdate={async (orderId, updates) => {
                 await handleOrderUpdate(orderId, updates);
               }}
@@ -656,6 +649,8 @@ export function EnhancedProductionDashboard({
                               : [...prev, orderId]
                           );
                         }}
+                        availableStatuses={statuses}
+                        businessInfoFields={businessInfoFields}
                       />
                     ))}
                   </div>

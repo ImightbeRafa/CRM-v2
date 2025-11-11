@@ -3,17 +3,14 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { format, subDays } from 'date-fns';
-import { Package, DollarSign, TrendingUp, Users, Download, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
-import KPICard from './KPICard';
 import ChartContainer from './ChartContainer';
 import DateRangePicker from './DateRangePicker';
 import RevenueChart from './RevenueChart';
 import SalesVolumeChart from './SalesVolumeChart';
 import StatusBreakdownChart from './StatusBreakdownChart';
 import TopCustomersChart from './TopCustomersChart';
-import EnhancedOrderAnalytics from './EnhancedOrderAnalytics';
-import PerformanceMetrics from './PerformanceMetrics';
 
 interface SummaryData {
   totalSales: number;
@@ -79,15 +76,20 @@ export default function EstadisticasDashboard() {
     fetchStatusBreakdown();
   };
 
-  const fetchSummary = async () => {
+  const fetchSummary = async (signal?: AbortSignal) => {
     setLoadingSummary(true);
     setErrorSummary('');
     try {
       const response = await axios.get('/api/estadisticas/summary', {
         params: { startDate, endDate },
+        signal,
       });
       setSummary(response.data);
     } catch (error) {
+      if (axios.isCancel(error)) {
+        console.log('[Estadisticas] Summary request cancelled');
+        return;
+      }
       console.error('Error fetching summary:', error);
       setErrorSummary('Error al cargar resumen');
     } finally {
@@ -95,15 +97,20 @@ export default function EstadisticasDashboard() {
     }
   };
 
-  const fetchRevenueData = async () => {
+  const fetchRevenueData = async (signal?: AbortSignal) => {
     setLoadingRevenue(true);
     setErrorRevenue('');
     try {
       const response = await axios.get('/api/estadisticas/revenue', {
         params: { startDate, endDate, groupBy },
+        signal,
       });
       setRevenueData(response.data);
     } catch (error) {
+      if (axios.isCancel(error)) {
+        console.log('[Estadisticas] Revenue request cancelled');
+        return;
+      }
       console.error('Error fetching revenue data:', error);
       setErrorRevenue('Error al cargar datos de ingresos');
     } finally {
@@ -111,15 +118,20 @@ export default function EstadisticasDashboard() {
     }
   };
 
-  const fetchTypeBreakdown = async () => {
+  const fetchTypeBreakdown = async (signal?: AbortSignal) => {
     setLoadingType(true);
     setErrorType('');
     try {
       const response = await axios.get('/api/estadisticas/type-breakdown', {
         params: { startDate, endDate },
+        signal,
       });
       setTypeBreakdown(response.data);
     } catch (error) {
+      if (axios.isCancel(error)) {
+        console.log('[Estadisticas] Type breakdown request cancelled');
+        return;
+      }
       console.error('Error fetching type breakdown:', error);
       setErrorType('Error al cargar distribución de tipos');
     } finally {
@@ -127,15 +139,20 @@ export default function EstadisticasDashboard() {
     }
   };
 
-  const fetchStatusBreakdown = async () => {
+  const fetchStatusBreakdown = async (signal?: AbortSignal) => {
     setLoadingStatus(true);
     setErrorStatus('');
     try {
       const response = await axios.get('/api/estadisticas/status-breakdown', {
         params: { startDate, endDate },
+        signal,
       });
       setStatusBreakdown(response.data);
     } catch (error) {
+      if (axios.isCancel(error)) {
+        console.log('[Estadisticas] Status breakdown request cancelled');
+        return;
+      }
       console.error('Error fetching status breakdown:', error);
       setErrorStatus('Error al cargar distribución de estados');
     } finally {
@@ -145,11 +162,26 @@ export default function EstadisticasDashboard() {
 
   // Effects
   useEffect(() => {
-    fetchAllData();
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+    
+    fetchSummary(signal);
+    fetchRevenueData(signal);
+    fetchTypeBreakdown(signal);
+    fetchStatusBreakdown(signal);
+    
+    return () => {
+      abortController.abort();
+    };
   }, [startDate, endDate]);
 
   useEffect(() => {
-    fetchRevenueData();
+    const abortController = new AbortController();
+    fetchRevenueData(abortController.signal);
+    
+    return () => {
+      abortController.abort();
+    };
   }, [groupBy]);
 
   const handleDateChange = (start: string, end: string) => {
@@ -189,73 +221,6 @@ export default function EstadisticasDashboard() {
         endDate={endDate}
         onDateChange={handleDateChange}
       />
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <KPICard
-          title="Total de Ventas"
-          value={summary?.totalSales || 0}
-          subtitle="Número de pedidos"
-          trend={
-            summary?.trends
-              ? {
-                  value: summary.trends.sales,
-                  isPositive: summary.trends.sales >= 0,
-                  period: 'vs período anterior',
-                }
-              : undefined
-          }
-          icon={<Package className="w-6 h-6" />}
-          color="blue"
-          loading={loadingSummary}
-        />
-        <KPICard
-          title="Ingresos Totales"
-          value={summary?.totalRevenue || 0}
-          subtitle="En colones"
-          trend={
-            summary?.trends
-              ? {
-                  value: summary.trends.revenue,
-                  isPositive: summary.trends.revenue >= 0,
-                  period: 'vs período anterior',
-                }
-              : undefined
-          }
-          icon={<DollarSign className="w-6 h-6" />}
-          color="green"
-          loading={loadingSummary}
-          prefix={settings.currencySymbol}
-          decimals={0}
-        />
-        <KPICard
-          title="Valor Promedio"
-          value={summary?.averageOrderValue || 0}
-          subtitle="Por pedido"
-          trend={
-            summary?.trends
-              ? {
-                  value: summary.trends.avgOrderValue,
-                  isPositive: summary.trends.avgOrderValue >= 0,
-                  period: 'vs período anterior',
-                }
-              : undefined
-          }
-          icon={<TrendingUp className="w-6 h-6" />}
-          color="purple"
-          loading={loadingSummary}
-          prefix={settings.currencySymbol}
-          decimals={0}
-        />
-        <KPICard
-          title="Clientes Activos"
-          value={summary?.activeClients || 0}
-          subtitle="Clientes únicos"
-          icon={<Users className="w-6 h-6" />}
-          color="orange"
-          loading={loadingSummary}
-        />
-      </div>
 
       {/* Charts Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -344,25 +309,9 @@ export default function EstadisticasDashboard() {
         </div>
       </div>
 
-      {/* Enhanced Analytics Section */}
-      <div className="space-y-6">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Análisis Avanzado</h2>
-          <p className="text-gray-600">Datos detallados de clientes y rendimiento de pedidos</p>
-        </div>
-
-        {/* Top Customers and Enhanced Order Analytics */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <TopCustomersChart startDate={startDate} endDate={endDate} />
-          <div className="space-y-6">
-            <EnhancedOrderAnalytics startDate={startDate} endDate={endDate} />
-          </div>
-        </div>
-
-        {/* Performance Metrics */}
-        <div className="mt-8">
-          <PerformanceMetrics startDate={startDate} endDate={endDate} />
-        </div>
+      {/* Top Customers */}
+      <div>
+        <TopCustomersChart startDate={startDate} endDate={endDate} />
       </div>
     </div>
   );

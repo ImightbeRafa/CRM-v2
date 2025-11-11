@@ -30,6 +30,8 @@ interface EnhancedOrderCardProps {
   onStatusUpdate: (orderId: string, newStatus: string) => Promise<void>;
   isSelected: boolean;
   onToggleSelection: (orderId: string) => void;
+  availableStatuses?: Array<{key: string; label: string; color?: string | null}>;
+  businessInfoFields?: any[];
 }
 
 export function EnhancedOrderCard({ 
@@ -37,43 +39,71 @@ export function EnhancedOrderCard({
   onSelectOrder, 
   onStatusUpdate,
   isSelected,
-  onToggleSelection 
+  onToggleSelection,
+  availableStatuses: statusesProp,
+  businessInfoFields: businessInfoProp
 }: EnhancedOrderCardProps) {
-  const [availableStatuses, setAvailableStatuses] = useState<Array<{key: string; label: string; color?: string}>>([]);
+  const [availableStatuses, setAvailableStatuses] = useState<Array<{key: string; label: string; color?: string | null}>>(statusesProp || []);
+  const [businessInfoFields, setBusinessInfoFields] = useState<any[]>(businessInfoProp || []);
+  const [isUpdating, setIsUpdating] = useState(false);
   
-  // Load available statuses from API
+  // Only load statuses if not provided as prop
   useEffect(() => {
+    if (statusesProp) {
+      setAvailableStatuses(statusesProp);
+      return;
+    }
+    
+    const abortController = new AbortController();
     const loadStatuses = async () => {
       try {
-        const response = await fetch('/api/config/status', { credentials: 'include' });
+        const response = await fetch('/api/config/status', { 
+          credentials: 'include',
+          signal: abortController.signal
+        });
         const data = await response.json();
         if (data.status === 'success' && data.data.length > 0) {
           setAvailableStatuses(data.data);
         }
       } catch (error) {
-        console.error('Error loading statuses:', error);
+        if (error instanceof Error && error.name !== 'AbortError') {
+          console.error('Error loading statuses:', error);
+        }
       }
     };
     loadStatuses();
-  }, []);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
+    
+    return () => abortController.abort();
+  }, [statusesProp]);
 
-  // Load tenant custom fields definitions
+  // Only load business info if not provided as prop
   useEffect(() => {
+    if (businessInfoProp) {
+      setBusinessInfoFields(businessInfoProp);
+      return;
+    }
+    
+    const abortController = new AbortController();
     const fetchBusinessInfo = async () => {
       try {
-        const res = await fetch('/api/config/business-info', { credentials: 'include' });
+        const res = await fetch('/api/config/business-info', { 
+          credentials: 'include',
+          signal: abortController.signal
+        });
         const data = await res.json();
         if (data?.status === 'success' && Array.isArray(data.data)) {
           setBusinessInfoFields(data.data);
         }
       } catch (err) {
-        console.error('Error loading business info fields:', err);
+        if (err instanceof Error && err.name !== 'AbortError') {
+          console.error('Error loading business info fields:', err);
+        }
       }
     };
     fetchBusinessInfo();
-  }, []);
+    
+    return () => abortController.abort();
+  }, [businessInfoProp]);
 
   const getStatusInfo = (status: string) => {
     // First, try to find the status in the configured statuses with custom colors

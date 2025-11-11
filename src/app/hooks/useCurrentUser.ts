@@ -8,10 +8,15 @@ interface User {
   active: boolean;
 }
 
+// Cache user data to avoid repeated API calls
+let cachedUser: User | null = null;
+let cacheTimestamp = 0;
+const CACHE_DURATION = 60000; // 1 minute
+
 export function useCurrentUser() {
   const { data: session, status } = useSession();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(cachedUser);
+  const [loading, setLoading] = useState(!cachedUser);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -19,6 +24,15 @@ export function useCurrentUser() {
       
       if (!session) {
         setUser(null);
+        setLoading(false);
+        cachedUser = null;
+        return;
+      }
+
+      // Use cache if available and fresh
+      const now = Date.now();
+      if (cachedUser && (now - cacheTimestamp) < CACHE_DURATION) {
+        setUser(cachedUser);
         setLoading(false);
         return;
       }
@@ -28,8 +42,11 @@ export function useCurrentUser() {
         const data = await response.json();
         
         if (data.status === 'success') {
+          cachedUser = data.data;
+          cacheTimestamp = now;
           setUser(data.data);
         } else {
+          cachedUser = null;
           setUser(null);
         }
       } catch (error) {

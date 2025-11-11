@@ -95,25 +95,41 @@ export function useSalesStream({
     return null;
   }, []);
 
-  const fetchSales = useCallback(async (force = false) => {
-    // Check cache first (5 second TTL for faster updates)
+  const fetchSales = useCallback(async (force = false, signal?: AbortSignal) => {
     const now = Date.now();
-    if (!force && now - lastFetch < 5000) {
-      const cached = localStorage.getItem('salesCache');
-      if (cached) {
-        try {
-          const { data, timestamp } = JSON.parse(cached);
-          if (now - timestamp < 5000) {
-            console.log('[useSalesStream] Using cached sales data');
-            setSales(data);
-            setIsLoading(false);
-            return;
-          }
-        } catch (e) {
-          console.warn('Failed to parse cache:', e);
-          localStorage.removeItem('salesCache');
+    
+    // Try to use cache first (stale-while-revalidate pattern)
+    const cached = localStorage.getItem('salesCache');
+    if (cached) {
+      try {
+        const { data, timestamp } = JSON.parse(cached);
+        const cacheAge = now - timestamp;
+        
+        // Use cache if less than 30 seconds old and not forced
+        if (!force && cacheAge < 30000) {
+          console.log('[useSalesStream] Using fresh cache');
+          setSales(data);
+          setIsLoading(false);
+          return;
         }
+        
+        // Show stale data immediately while fetching fresh data
+        if (cacheAge < 300000) { // Cache valid for 5 minutes
+          console.log('[useSalesStream] Showing stale cache, fetching fresh data');
+          setSales(data);
+          setIsLoading(false); // Show cached data, mark as not loading
+          // Continue to fetch fresh data in background
+        }
+      } catch (e) {
+        console.warn('Failed to parse cache:', e);
+        localStorage.removeItem('salesCache');
       }
+    }
+    
+    // Check if already aborted
+    if (signal?.aborted) {
+      console.log('[useSalesStream] Request aborted before fetch');
+      return;
     }
     
     console.log('[useSalesStream] Fetching fresh data from API');
@@ -132,6 +148,7 @@ export function useSalesStream({
       if (filters.dateTo) params.set('dateTo', filters.dateTo);
 
       const response = await fetch(`/api/orders?${params.toString()}`, {
+        signal,
         credentials: 'include',
       });
 
@@ -171,6 +188,12 @@ export function useSalesStream({
       }
 
     } catch (err) {
+      // Ignore abort errors - they're expected on navigation
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.log('[useSalesStream] Request aborted (navigation)');
+        return;
+      }
+      
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch sales data';
       console.error('Error fetching sales:', errorMessage);
       
@@ -192,16 +215,22 @@ export function useSalesStream({
   }, [onData, onError, toast, parseOrder, filters, lastFetch]);
 
   useEffect(() => {
-    // Clear cache on mount to ensure fresh data
-    localStorage.removeItem('salesCache');
-    setLastFetch(0);
-    fetchSales(true); // Force fetch on mount
+    const abortController = new AbortController();
+    // Use cache on mount for instant display, then refresh in background
+    fetchSales(false, abortController.signal);
+    return () => {
+      abortController.abort();
+    };
   }, []); // Only on mount
 
   // Refetch when filters change
   useEffect(() => {
-    if (lastFetch > 0 && isMounted()) { // Skip initial mount and check if mounted
-      fetchSales(true);
+    if (lastFetch > 0 && isMounted()) {
+      const abortController = new AbortController();
+      fetchSales(true, abortController.signal);
+      return () => {
+        abortController.abort();
+      };
     }
   }, [filters.status, filters.orderType, filters.search, filters.dateFrom, filters.dateTo]);
 
@@ -209,12 +238,17 @@ export function useSalesStream({
   useEffect(() => {
     if (!enablePolling || !isMounted()) return;
 
+    const abortController = new AbortController();
     const intervalId = setInterval(() => {
       if (isMounted()) {
-        fetchSales(false);
+        fetchSales(false, abortController.signal);
       }
     }, pollingInterval);
-    return () => clearInterval(intervalId);
+    
+    return () => {
+      clearInterval(intervalId);
+      abortController.abort();
+    };
   }, [enablePolling, pollingInterval]);
 
   const stats = useMemo(() => ({

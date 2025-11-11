@@ -181,9 +181,9 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
   }
 
   const filteredOrders = orders.filter(order => {
-    const matchesSearch = order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         order.orderId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         order.phone.includes(searchTerm) ||
+    const matchesSearch = (order.customerName && order.customerName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                         (order.orderId && order.orderId.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                         (order.phone && order.phone.includes(searchTerm)) ||
                          (order.product && order.product.toLowerCase().includes(searchTerm.toLowerCase())) ||
                          (order.seller && order.seller.toLowerCase().includes(searchTerm.toLowerCase()))
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter

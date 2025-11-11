@@ -1,5 +1,4 @@
 import { getSessionWithTenant } from "@/lib/auth-helpers"
-import HomeContent from "./home-content";
 import EnhancedHomeContent from "./enhanced-home-content";
 
 export default async function DashboardPage() {

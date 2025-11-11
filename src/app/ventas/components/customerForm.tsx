@@ -19,15 +19,17 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
   const parseCustomerText = (text: string) => {
     const lines = text.split(/[\n\r]+/).map(line => line.trim()).filter(Boolean);
     
-    // Try parsing with labels first
+    // Enhanced patterns for both formats including emojis
     const labeledPatterns = {
-      name: /(?:Nombre(?:\s*completo)?[:|\-]?\s*)([\wáéíóúñÁÉÍÓÚÑ\s]+?)(?=Teléfono|[\d]|Provincia|$)/i,
-      phone: /(?:Teléfono|Tel)[:|\-]?\s*([\d\-\s]+)/i,
-      province: /Provincia[:|\-]?\s*([^,\n\d]+?)(?=Cantón|Distrito|$)/i,
+      name: /(?:📍\s*)?Nombre(?:\s*completo)?[:|\-]?\s*([\wáéíóúñÁÉÍÓÚÑ\s]+?)(?=☎️|Teléfono|[\d]|Provincia|$)/i,
+      phone: /(?:☎️\s*)?(?:Teléfono|Tel)[:|\-]?\s*([\d\-\s]+)/i,
+      province: /🏠\s*Provincia[:|\-]?\s*([^,\n\d]+?)(?=Cantón|Distrito|$)/i,
+      // Handle both "Provincia, Cantón, Distrito:" format and individual formats
+      locationGroup: /(?:🏠\s*)?Provincia,\s*Cantón,\s*Distrito[:|\-]?\s*([^\n]+?)(?=Correo|Email|✉️|$)/i,
       canton: /Cantón[:|\-]?\s*([^,\n\d]+?)(?=Distrito|Email|$)/i,
       district: /Distrito[:|\-]?\s*([^,\n\d]+?)(?=Email|e-mail|Dirección|$)/i,
-      email: /(?:Email|e-mail)[:|\-]?\s*([^\s,\n]+@[^\s,\n]+)/i,
-      address: /(?:Dirección[^:]*|donde\s+desea\s+recibir\s+el\s+pedido)[:|\-]?\s*([^,\n].*?)(?=Rango|Horas|Email|$)/i,
+      email: /(?:✉️\s*)?(?:Email|e-mail|Correo\s*electrónico)[:|\-]?\s*([^\s,\n]+@[^\s,\n]+)/i,
+      address: /(?:🗺️\s*)?(?:Dirección[^:]*|donde\s+desea\s+recibir\s+el\s+pedido|Dirección\s+exacta\s+donde\s+deseas\s+recibirlo)[:|\-]?\s*([^,\n].*?)(?=Rango|Horas|Email|$)/i,
     };
 
     const normalizedText = text.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ');
@@ -44,14 +46,30 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
 
     let newCustomerInfo;
     if (hasLabels) {
+      // First try to extract grouped location (Provincia, Cantón, Distrito: Guanacaste, Liberia, Liberia)
+      const locationGroupMatch = normalizedText.match(labeledPatterns.locationGroup);
+      let province = '', canton = '', district = '';
+      
+      if (locationGroupMatch && locationGroupMatch[1]) {
+        const locationParts = locationGroupMatch[1].split(',').map(part => part.trim());
+        province = locationParts[0] || '';
+        canton = locationParts[1] || '';
+        district = locationParts[2] || '';
+      } else {
+        // Fall back to individual patterns
+        province = findMatch(labeledPatterns.province);
+        canton = findMatch(labeledPatterns.canton);
+        district = findMatch(labeledPatterns.district);
+      }
+
       // Use labeled parsing
       newCustomerInfo = {
         ...customerInfo,
         name: findMatch(labeledPatterns.name),
         phone: findMatch(labeledPatterns.phone)?.replace(/[-\s]/g, ''),
-        province: findMatch(labeledPatterns.province),
-        canton: findMatch(labeledPatterns.canton),
-        district: findMatch(labeledPatterns.district),
+        province,
+        canton,
+        district,
         email: findMatch(labeledPatterns.email),
         address: findMatch(labeledPatterns.address),
       };
@@ -84,6 +102,12 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
     });
   };
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    e.preventDefault();
+    const pastedText = e.clipboardData.getData('text');
+    parseCustomerText(pastedText);
+  };
+
   return (
     <div className="space-y-6">
       {/* Customer Info Paste Area */}
@@ -92,10 +116,11 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
           Información del Cliente (Pegar texto)
         </label>
         <textarea 
-          className="w-full h-32 p-2 border rounded"
+          className="w-full h-32 p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           value={rawCustomerText}
           onChange={(e) => parseCustomerText(e.target.value)}
-          placeholder="Pegar información del cliente aquí..."
+          onPaste={handlePaste}
+          placeholder="📋 Pegar información del cliente aquí...&#10;&#10;Formatos soportados:&#10;• Nombre completo: [nombre]&#10;  Teléfono: [teléfono]&#10;  Provincia, Cantón, Distrito: [provincia], [cantón], [distrito]&#10;  Correo electrónico: [email]&#10;  Dirección exacta donde deseas recibirlo: [dirección]&#10;&#10;• 📍 Nombre completo: [nombre]&#10;  ☎️ Teléfono: [teléfono]&#10;  🏠 Provincia, Cantón, Distrito: [provincia], [cantón], [distrito]&#10;  ✉️ Correo electrónico: [email]&#10;  🗺️ Dirección exacta donde deseas recibirlo: [dirección]"
         />
       </div>
 

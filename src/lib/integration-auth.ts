@@ -2,8 +2,12 @@ import { createHash } from 'crypto';
 import { prisma } from './db';
 
 export async function validateApiKey(apiKey: string): Promise<string | null> {
+  console.log('[validateApiKey] Starting validation');
+  const startTime = Date.now();
+  
   try {
     const keyHash = hashApiKey(apiKey);
+    console.log('[validateApiKey] Key hashed, querying database...');
     
     const apiKeyRecord = await prisma.apiKey.findFirst({
       where: {
@@ -15,9 +19,13 @@ export async function validateApiKey(apiKey: string): Promise<string | null> {
       },
     });
 
+    const duration = Date.now() - startTime;
+    console.log(`[validateApiKey] Query completed in ${duration}ms`);
+    
     return apiKeyRecord?.tenantId || null;
   } catch (error) {
-    console.error('Error validating API key:', error);
+    const duration = Date.now() - startTime;
+    console.error(`[validateApiKey] Error after ${duration}ms:`, error);
     return null;
   }
 }

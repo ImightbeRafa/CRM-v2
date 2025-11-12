@@ -10,6 +10,7 @@ scripts
 
 # Documentation and Notes (local only)
 *.md
+*.txt
 !README.md
 !HereWeGo.md
 migrate.ps1
@@ -21,7 +22,7 @@ downloads/
 # Next.js
 .next/
 out/
-
+.env.example
 # Production
 build/
 dist/

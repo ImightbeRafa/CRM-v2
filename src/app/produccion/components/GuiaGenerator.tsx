@@ -7,6 +7,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/app/components/ui/dialog";
 import { Input } from "@/app/components/ui/input";
@@ -77,6 +78,24 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
       const response = await fetch('/api/config/shipping-config', {
         credentials: 'include'
       });
+      
+      if (!response.ok) {
+        if (response.status === 403) {
+          console.warn('Access denied to shipping configs. Using default configuration.');
+          // Set a default config for manual mode
+          setShippingConfigs([{
+            id: 'default',
+            carrier: 'correos',
+            name: 'Correos de Costa Rica',
+            isActive: true,
+            isDefault: true
+          }]);
+          setSelectedCarrier('correos');
+          return;
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const result = await response.json();
       
       if (result.status === 'success') {
@@ -85,9 +104,20 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
         if (defaultConfig) {
           setSelectedCarrier(defaultConfig.carrier);
         }
+      } else {
+        throw new Error(result.error || 'Failed to load shipping configs');
       }
     } catch (error) {
       console.error('Error loading shipping configs:', error);
+      // Fallback to default config
+      setShippingConfigs([{
+        id: 'default',
+        carrier: 'correos',
+        name: 'Correos de Costa Rica',
+        isActive: true,
+        isDefault: true
+      }]);
+      setSelectedCarrier('correos');
     }
   };
 
@@ -336,16 +366,19 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Truck className="h-5 w-5" />
-            Generar Guías de Envío
+      <DialogContent className="w-[95vw] sm:max-w-2xl md:max-w-3xl lg:max-w-4xl max-h-[95vh] sm:max-h-[90vh] p-0">
+        <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6 pb-2">
+          <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <Truck className="h-4 w-4 sm:h-5 sm:w-5" />
+            <span className="truncate">Generar Guías de Envío</span>
           </DialogTitle>
+          <DialogDescription className="text-sm text-gray-600">
+            Seleccione las órdenes y genere guías de envío manualmente o automáticamente con Correos de Costa Rica.
+          </DialogDescription>
         </DialogHeader>
         {/* Generation Mode Selection */}
-        <div className="px-4 py-2 border-b">
-          <div className="flex items-center gap-4">
+        <div className="px-4 sm:px-6 py-3 border-b bg-gray-50">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
             <div className="flex items-center gap-2">
               <input
                 type="radio"
@@ -354,8 +387,9 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
                 value="manual"
                 checked={generationMode === 'manual'}
                 onChange={(e) => setGenerationMode(e.target.value as 'manual' | 'automatic')}
+                className="w-4 h-4"
               />
-              <label htmlFor="manual" className="text-sm">Manual</label>
+              <label htmlFor="manual" className="text-sm sm:text-base cursor-pointer">Manual</label>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -365,21 +399,25 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
                 value="automatic"
                 checked={generationMode === 'automatic'}
                 onChange={(e) => setGenerationMode(e.target.value as 'manual' | 'automatic')}
+                className="w-4 h-4"
               />
-              <label htmlFor="automatic" className="text-sm">Automático (Correos de Costa Rica)</label>
+              <label htmlFor="automatic" className="text-sm sm:text-base cursor-pointer">
+                <span className="hidden sm:inline">Automático (Correos de Costa Rica)</span>
+                <span className="sm:hidden">Automático</span>
+              </label>
             </div>
           </div>
         </div>
 
         {/* Carrier Selection for Automatic Mode */}
         {generationMode === 'automatic' && (
-          <div className="px-4 py-2 border-b">
-            <div className="flex items-center gap-4">
-              <label className="text-sm font-medium">Empresa de Envío:</label>
+          <div className="px-4 sm:px-6 py-3 border-b bg-blue-50">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+              <label className="text-sm font-medium whitespace-nowrap">Empresa de Envío:</label>
               <select
                 value={selectedCarrier}
                 onChange={(e) => setSelectedCarrier(e.target.value)}
-                className="px-3 py-1 border rounded-md text-sm"
+                className="w-full sm:w-auto px-3 py-2 border rounded-md text-sm bg-white"
               >
                 <option value="">Seleccionar empresa</option>
                 {shippingConfigs.map(config => (
@@ -392,23 +430,26 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
           </div>
         )}
 
-        <ScrollArea className="max-h-[50vh] px-4">
-          <div className="space-y-4">
+        <ScrollArea className="max-h-[50vh] sm:max-h-[55vh] px-4 sm:px-6">
+          <div className="space-y-3 py-2">
             {orderGuias.map((og) => {
               const order = orders.find(o => o.orderId === og.orderId);
               if (!order) return null;
 
               return (
-                <div key={og.orderId} className="flex items-center space-x-4 p-4 border rounded-lg">
-                  <Checkbox
-                    checked={og.selected}
-                    onCheckedChange={() => handleToggleOrder(og.orderId)}
-                    disabled={og.status === 'generating'}
-                  />
-                  <div className="flex-1 grid grid-cols-2 gap-4">
+                <div key={og.orderId} className="flex items-start sm:items-center gap-3 p-3 sm:p-4 border rounded-lg bg-white shadow-sm">
+                  <div className="pt-1 sm:pt-0">
+                    <Checkbox
+                      checked={og.selected}
+                      onCheckedChange={() => handleToggleOrder(og.orderId)}
+                      disabled={og.status === 'generating'}
+                      className="w-5 h-5"
+                    />
+                  </div>
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium">Orden: {og.orderId}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-sm sm:text-base">Orden: {og.orderId}</p>
                         {og.status === 'generating' && (
                           <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
                         )}
@@ -419,21 +460,22 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
                           <XCircle className="h-4 w-4 text-red-500" />
                         )}
                       </div>
-                      <p className="text-sm text-gray-500">{order.customerName}</p>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-xs sm:text-sm text-gray-600 mt-1 truncate">{order.customerName}</p>
+                      <p className="text-xs sm:text-sm text-gray-500 truncate">
                         {order.orderType === 'EA' ? `${order.province}, ${order.canton}` : 'N/A'}
                       </p>
-                      <p className="text-sm text-gray-500">Cantidad: {order.quantity}</p>
+                      <p className="text-xs sm:text-sm text-gray-500">Cantidad: {order.quantity}</p>
                       {og.error && (
-                        <p className="text-xs text-red-500 mt-1">{og.error}</p>
+                        <p className="text-xs text-red-500 mt-1 break-words">{og.error}</p>
                       )}
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-2 mt-2 sm:mt-0">
                       <Input
                         placeholder="Número de guía"
                         value={og.guiaNumber}
                         onChange={(e) => handleGuiaNumberChange(og.orderId, e.target.value)}
                         disabled={!og.selected || og.status === 'generating'}
+                        className="text-sm h-9 sm:h-10"
                       />
                       {og.trackingNumber && (
                         <div className="text-xs text-gray-600">
@@ -453,8 +495,12 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
             })}
           </div>
         </ScrollArea>
-        <DialogFooter className="mt-4 flex gap-2">
-          <Button variant="outline" onClick={onClose}>
+        <DialogFooter className="px-4 sm:px-6 py-3 sm:py-4 border-t bg-gray-50 flex-col sm:flex-row gap-2">
+          <Button 
+            variant="outline" 
+            onClick={onClose}
+            className="w-full sm:w-auto order-3 sm:order-1"
+          >
             Cancelar
           </Button>
           
@@ -462,20 +508,26 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
             <Button 
               onClick={handleAutomaticGeneration} 
               disabled={!canGenerateAutomatically}
-              className="flex items-center gap-2"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 order-1 sm:order-2"
             >
               {isGenerating ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Globe className="h-4 w-4" />
               )}
-              Generar Automáticamente
+              <span className="hidden sm:inline">Generar Automáticamente</span>
+              <span className="sm:hidden">Generar Auto</span>
             </Button>
           )}
           
-          <Button onClick={handlePrint} disabled={!canPrint}>
-            <Download className="h-4 w-4 mr-2" />
-            Generar e Imprimir Seleccionados
+          <Button 
+            onClick={handlePrint} 
+            disabled={!canPrint}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 order-2 sm:order-3"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Generar e Imprimir Seleccionados</span>
+            <span className="sm:hidden">Imprimir</span>
           </Button>
         </DialogFooter>
       </DialogContent>

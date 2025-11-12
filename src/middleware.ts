@@ -19,6 +19,7 @@ const PUBLIC_ROUTES = [
   '/api/tilopay/callback',
   '/api/stripe/webhook',
   '/api/chat/webhook',
+  '/api/integration', // Allow external website integrations with API key auth
 ];
 
 /**

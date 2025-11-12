@@ -54,6 +54,8 @@ model Tenant {
   invoices       Invoice[]
   usageLogs      UsageLog[]
   webhookLogs    WebhookLog[]
+  apiKeys        ApiKey[]
+  integrationLogs IntegrationLog[]
   
   @@index([slug])
   @@index([isActive])
@@ -651,4 +653,38 @@ model ChatMessage {
 
   @@index([tenantId, socialAccountId, sentAt(sort: Desc)])
   @@index([tenantId])
+}
+
+// ============================================================================
+// INTEGRATION MODELS (NEW!)
+// ============================================================================
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  tenantId  String
+  keyHash   String   @unique  // SHA256 hash of the actual API key
+  name      String   // Human-readable name for the key
+  active    Boolean  @default(true)
+  lastUsed  DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([keyHash])
+}
+
+model IntegrationLog {
+  id        String   @id @default(cuid())
+  tenantId  String?  // Nullable for unauthenticated requests
+  action    String   // ORDER_CREATED, VALIDATION_ERROR, API_ERROR, etc.
+  data      Json?    // Additional context data
+  createdAt DateTime @default(now())
+  
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([action])
+  @@index([createdAt])
 }

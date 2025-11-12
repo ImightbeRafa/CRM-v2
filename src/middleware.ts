@@ -30,8 +30,26 @@ export default async function middleware(request: Request) {
   const { pathname } = url;
   const origin = request.headers.get('origin');
 
-  // CORS Configuration
-  if (origin) {
+  // CORS Configuration - Allow integration API from external websites
+  if (origin && pathname.startsWith('/api/integration')) {
+    console.log(`[Middleware] Integration API request from origin: ${origin}, path: ${pathname}, method: ${request.method}`);
+    
+    // For integration endpoints, allow any origin (API key auth provides security)
+    const response = NextResponse.next();
+    response.headers.set('Access-Control-Allow-Origin', origin);
+    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
+    response.headers.set('Access-Control-Allow-Credentials', 'true');
+    
+    // Handle preflight requests
+    if (request.method === 'OPTIONS') {
+      console.log(`[Middleware] Handling OPTIONS preflight for ${pathname}`);
+      return new Response(null, { status: 200, headers: response.headers });
+    }
+    
+    console.log(`[Middleware] Allowing integration request to proceed`);
+  } else if (origin) {
+    // For other endpoints, restrict to allowed origins
     const allowedOrigins = process.env.NODE_ENV === 'production' 
       ? ['https://your-production-domain.com'] // Update with actual production domain
       : ['http://localhost:3000', 'https://gaynell-nonparental-marlin.ngrok-free.dev']; // Allow ngrok for development

@@ -12,7 +12,7 @@ import { BillingDashboard } from './components/BillingDashboard'
 import { ExcelImporter } from './components/ExcelImporter'
 import { StatusManager } from './components/StatusManager'
 import { TenantSettingsPanel } from '../components/TenantSettingsPanel'
-import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle } from 'lucide-react'
+import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug } from 'lucide-react'
 
 export default function ConfigPage() {
   const searchParams = useSearchParams()
@@ -91,7 +91,7 @@ export default function ConfigPage() {
     const tabParam = searchParams?.get('tab')
     if (tabParam) {
       // Validate tab value to prevent invalid tabs
-      const validTabs = ['fields', 'business', 'users', 'option-sets', 'shipping', 'sellers', 'import', 'billing', 'bulk-delete', 'audit', 'legacy-fields', 'social']
+      const validTabs = ['fields', 'business', 'users', 'option-sets', 'shipping', 'sellers', 'import', 'billing', 'bulk-delete', 'audit', 'legacy-fields', 'social', 'integrations']
       if (validTabs.includes(tabParam)) {
         setActiveTab(tabParam)
       }
@@ -503,6 +503,7 @@ export default function ConfigPage() {
     { id: 'clients', label: 'Clientes', icon: UserCheck },
     { id: 'users', label: 'Usuarios', icon: Users },
     { id: 'social', label: 'Cuentas Sociales', icon: MessageCircle },
+    { id: 'integrations', label: 'Integraciones API', icon: Plug },
     { id: 'import', label: 'Importar Excel', icon: FileSpreadsheet },
     { id: 'billing', label: 'Facturación', icon: BarChart3 },
     { id: 'bulk-delete', label: 'Eliminación Masiva', icon: Trash2 },
@@ -766,6 +767,26 @@ export default function ConfigPage() {
           )}
 
           {/* Import Tab */}
+          {/* Integrations Tab */}
+          {activeTab === 'integrations' && (
+            <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+              <div className="text-center">
+                <Plug className="w-12 h-12 text-blue-600 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Integraciones API</h3>
+                <p className="text-gray-600 mb-6">
+                  Conecta tu sitio web para sincronizar órdenes automáticamente
+                </p>
+                <a
+                  href="/config/integrations"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                >
+                  <Plug className="w-5 h-5" />
+                  Ir a Integraciones
+                </a>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'import' && (
             <ExcelImporter />
           )}

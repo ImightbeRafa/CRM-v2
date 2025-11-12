@@ -16,7 +16,8 @@ import {
   Activity,
   AlertCircle,
   CheckCircle,
-  Globe
+  Globe,
+  ArrowLeft
 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/app/components/ui/alert';
 
@@ -131,6 +132,17 @@ export default function IntegrationsPage() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Back Button */}
+      <div className="mb-4">
+        <a
+          href="/config?tab=integrations"
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Volver a Configuración
+        </a>
+      </div>
+
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold">Integraciones de Sitio Web</h1>

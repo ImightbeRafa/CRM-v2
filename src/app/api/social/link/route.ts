@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getToken } from 'next-auth/jwt'
+import { addAppSecretProofToUrl } from '@/lib/meta-api'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,16 +29,28 @@ export async function POST(request: Request) {
     // Auto-subscribe WhatsApp number to app so webhooks are delivered
     if (platform === 'whatsapp' && accountId && accessToken) {
       try {
-        const subscribeUrl = `https://graph.facebook.com/v18.0/${encodeURIComponent(accountId)}/subscribed_apps`;
-        const body = new URLSearchParams({ access_token: accessToken })
-        const subRes = await fetch(subscribeUrl, {
+        const subscribeUrl = `https://graph.facebook.com/v18.0/${encodeURIComponent(accountId)}/subscribed_apps`
+        const urlWithProof = addAppSecretProofToUrl(subscribeUrl, accessToken)
+        
+        const body = new URLSearchParams({ 
+          access_token: accessToken,
+          subscribed_fields: 'messages'
+        })
+        
+        const subRes = await fetch(urlWithProof, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body
         })
         const subText = await subRes.text()
         if (!subRes.ok) {
-          console.warn('[social/link] WhatsApp subscribed_apps failed', { accountId, status: subRes.status, subText })
+          console.warn('[social/link] WhatsApp subscribed_apps failed', { 
+            accountId, 
+            status: subRes.status, 
+            subText, 
+            hasAppSecret: Boolean(process.env.META_APP_SECRET),
+            urlUsed: urlWithProof.replace(/appsecret_proof=[^&]+/, 'appsecret_proof=***')
+          })
         } else {
           console.log('[social/link] WhatsApp number subscribed_apps success', { accountId, subText })
         }

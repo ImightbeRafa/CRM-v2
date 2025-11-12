@@ -95,8 +95,34 @@ export async function POST(request: NextRequest) {
     }
 
     const headerPlatform = (request.headers.get('x-platform') || '').toLowerCase()
-    const platform = String(payload.platform || headerPlatform || '').toLowerCase()
-    const to = payload.to || payload.recipient || payload?.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id || null
+    
+    // Parse platform from Meta webhook payload structure
+    let platform = String(payload.platform || headerPlatform || '').toLowerCase()
+    
+    // Handle Meta's specific webhook object types
+    if (!platform && payload.object) {
+      if (payload.object === 'whatsapp_business_account') {
+        platform = 'whatsapp'
+      } else if (payload.object === 'instagram') {
+        platform = 'instagram'
+      } else if (payload.object === 'page') {
+        platform = 'facebook'
+      }
+    }
+    
+    // Extract recipient/target account ID based on platform
+    let to = payload.to || payload.recipient || null
+    
+    // For WhatsApp, extract from entry[0].id (WABA ID) or phone_number_id
+    if (!to && platform === 'whatsapp' && payload.entry?.[0]) {
+      to = payload.entry[0].id || payload.entry[0].changes?.[0]?.value?.metadata?.phone_number_id
+    }
+    
+    // For Instagram, extract from entry[0].id
+    if (!to && platform === 'instagram' && payload.entry?.[0]) {
+      to = payload.entry[0].id
+    }
+    
     const text = payload.text || payload.message || payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body || ''
     const timestamp = payload.timestamp || Date.now()
     
@@ -113,14 +139,61 @@ export async function POST(request: NextRequest) {
         to,
         textPreview: String(text || '').slice(0, 120),
         payloadKeys: payload ? Object.keys(payload) : [],
+        object: payload.object,
+        entryId: payload.entry?.[0]?.id,
         rawPreview: raw.slice(0, 300),
       })
     } catch {}
 
     let account = null as null | { id: string; tenantId: string }
+    
+    // Enhanced SocialAccount lookup with better logging
     if (platform && to) {
-      const found = await db.socialAccount.findFirst({ where: { platform, accountId: String(to) } })
-      if (found) account = { id: found.id, tenantId: found.tenantId }
+      try {
+        const found = await db.socialAccount.findFirst({ 
+          where: { 
+            platform, 
+            accountId: String(to),
+            isActive: true
+          }
+        })
+        if (found) {
+          account = { id: found.id, tenantId: found.tenantId }
+          console.log('[chat/webhook][POST] Found SocialAccount', { 
+            socialAccountId: found.id, 
+            tenantId: found.tenantId, 
+            platform, 
+            accountId: found.accountId 
+          })
+        } else {
+          console.warn('[chat/webhook][POST] No active SocialAccount found', { 
+            platform, 
+            to, 
+            searchedAccountId: String(to) 
+          })
+          
+          // Log all accounts for this tenant for debugging
+          if (process.env.NODE_ENV !== 'production') {
+            const allAccounts = await db.socialAccount.findMany({
+              where: { platform },
+              select: { id: true, accountId: true, isActive: true, tenantId: true }
+            })
+            console.log('[chat/webhook][POST] All SocialAccounts for platform', { 
+              platform, 
+              accounts: allAccounts 
+            })
+          }
+        }
+      } catch (error) {
+        console.error('[chat/webhook][POST] Error finding SocialAccount', error)
+      }
+    } else {
+      console.warn('[chat/webhook][POST] Missing platform or to for lookup', { 
+        platform, 
+        to, 
+        object: payload.object,
+        hasEntry: Boolean(payload.entry?.[0])
+      })
     }
 
     if (!account) {

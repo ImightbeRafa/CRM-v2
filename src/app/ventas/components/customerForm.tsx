@@ -17,78 +17,163 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
   orderType,
 }) => {
   const parseCustomerText = (text: string) => {
-    const lines = text.split(/[\n\r]+/).map(line => line.trim()).filter(Boolean);
+    if (!text.trim()) return;
     
-    // Enhanced patterns for both formats including emojis
-    const labeledPatterns = {
-      name: /(?:📍\s*)?Nombre(?:\s*completo)?[:|\-]?\s*([\wáéíóúñÁÉÍÓÚÑ\s]+?)(?=☎️|Teléfono|[\d]|Provincia|$)/i,
-      phone: /(?:☎️\s*)?(?:Teléfono|Tel)[:|\-]?\s*([\d\-\s]+)/i,
-      province: /🏠\s*Provincia[:|\-]?\s*([^,\n\d]+?)(?=Cantón|Distrito|$)/i,
-      // Handle both "Provincia, Cantón, Distrito:" format and individual formats
-      locationGroup: /(?:🏠\s*)?Provincia,\s*Cantón,\s*Distrito[:|\-]?\s*([^\n]+?)(?=Correo|Email|✉️|$)/i,
-      canton: /Cantón[:|\-]?\s*([^,\n\d]+?)(?=Distrito|Email|$)/i,
-      district: /Distrito[:|\-]?\s*([^,\n\d]+?)(?=Email|e-mail|Dirección|$)/i,
-      email: /(?:✉️\s*)?(?:Email|e-mail|Correo\s*electrónico)[:|\-]?\s*([^\s,\n]+@[^\s,\n]+)/i,
-      address: /(?:🗺️\s*)?(?:Dirección[^:]*|donde\s+desea\s+recibir\s+el\s+pedido|Dirección\s+exacta\s+donde\s+deseas\s+recibirlo)[:|\-]?\s*([^,\n].*?)(?=Rango|Horas|Email|$)/i,
-    };
-
+    const lines = text.split(/[\n\r]+/).map(line => line.trim()).filter(Boolean);
     const normalizedText = text.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ');
     
-    const findMatch = (pattern: RegExp): string => {
-      const match = normalizedText.match(pattern);
-      return match && match[1] ? match[1].trim() : '';
-    };
-
-    // Check if we have any labeled fields
-    const hasLabels = Object.values(labeledPatterns).some(pattern => 
-      pattern.test(normalizedText)
-    );
-
-    let newCustomerInfo;
-    if (hasLabels) {
-      // First try to extract grouped location (Provincia, Cantón, Distrito: Guanacaste, Liberia, Liberia)
-      const locationGroupMatch = normalizedText.match(labeledPatterns.locationGroup);
-      let province = '', canton = '', district = '';
-      
-      if (locationGroupMatch && locationGroupMatch[1]) {
-        const locationParts = locationGroupMatch[1].split(',').map(part => part.trim());
-        province = locationParts[0] || '';
-        canton = locationParts[1] || '';
-        district = locationParts[2] || '';
-      } else {
-        // Fall back to individual patterns
-        province = findMatch(labeledPatterns.province);
-        canton = findMatch(labeledPatterns.canton);
-        district = findMatch(labeledPatterns.district);
+    // ===== STRATEGY 1: Multi-pattern labeled extraction =====
+    // Support for various separators: :, -, =, |, etc.
+    const separators = '[:=|\\-~]';
+    
+    const extractField = (keywords: string[], wholeText: string): string => {
+      // Try each keyword with flexible separators
+      for (const keyword of keywords) {
+        // Pattern 1: Label with separator and content until next field or end
+        const pattern1 = new RegExp(
+          `(?:📍|☎️|🏠|✉️|🗺️)?\\s*${keyword}\\s*${separators}?\\s*([^\\n]+?)(?=(?:Nombre|Tel[eé]fono|Tel|Provincia|Cant[oó]n|Distrito|Correo|Email|Direcci[oó]n|$))`,
+          'i'
+        );
+        const match1 = wholeText.match(pattern1);
+        if (match1 && match1[1].trim()) return match1[1].trim();
+        
+        // Pattern 2: Label with separator on its own line or inline
+        const pattern2 = new RegExp(`${keyword}\\s*${separators}\\s*(.+?)(?=\\n|$)`, 'i');
+        const match2 = wholeText.match(pattern2);
+        if (match2 && match2[1].trim()) return match2[1].trim();
       }
-
-      // Use labeled parsing
-      newCustomerInfo = {
-        ...customerInfo,
-        name: findMatch(labeledPatterns.name),
-        phone: findMatch(labeledPatterns.phone)?.replace(/[-\s]/g, ''),
-        province,
-        canton,
-        district,
-        email: findMatch(labeledPatterns.email),
-        address: findMatch(labeledPatterns.address),
-      };
+      return '';
+    };
+    
+    // Extract with multiple keyword variations
+    const nameRaw = extractField([
+      'Nombre\\s*completo',
+      'Nombre',
+      'Name',
+      'Cliente',
+      'Comprador'
+    ], normalizedText);
+    
+    const phoneRaw = extractField([
+      'Tel[eé]fono',
+      'Tel[eé]f',
+      'Tel',
+      'Phone',
+      'Celular',
+      'M[oó]vil',
+      'Contacto'
+    ], normalizedText);
+    
+    const emailRaw = extractField([
+      'Correo\\s*electr[oó]nico',
+      'Correo',
+      'Email',
+      'e-mail',
+      'E-mail',
+      'Mail'
+    ], normalizedText);
+    
+    const addressRaw = extractField([
+      'Direcci[oó]n\\s*exacta\\s*donde\\s*deseas?\\s*recibirlo',
+      'Direcci[oó]n\\s*exacta',
+      'Direcci[oó]n\\s*de\\s*entrega',
+      'Direcci[oó]n',
+      'Address',
+      'Domicilio',
+      'Ubicaci[oó]n',
+      'Donde\\s*desea\\s*recibir'
+    ], normalizedText);
+    
+    // ===== STRATEGY 2: Location extraction with multiple formats =====
+    let province = '', canton = '', district = '';
+    
+    // Try grouped format: "Provincia/Cantón/Distrito: X, Y, Z" or "Provincia, Cantón, Distrito: X, Y, Z"
+    const locationGroupPattern = /(?:Provincia[,\/\s]*Cant[oó]n[,\/\s]*Distrito)\s*[:=|\-~]?\s*([^,\n]+),\s*([^,\n]+),\s*([^.\n]+)/i;
+    const locationGroupMatch = normalizedText.match(locationGroupPattern);
+    
+    if (locationGroupMatch) {
+      province = locationGroupMatch[1].trim().replace(/\.$/, '');
+      canton = locationGroupMatch[2].trim().replace(/\.$/, '');
+      district = locationGroupMatch[3].trim().replace(/\.$/, '');
     } else {
-      // Use position-based parsing
-      const emailLine = lines.find(line => line.includes('@')) || '';
-      const phoneLine = lines.find(line => /^\d[\d\-\s]+$/.test(line)) || '';
-      
-      newCustomerInfo = {
-        ...customerInfo,
-        name: lines[0] || '',
-        phone: phoneLine.replace(/[-\s]/g, ''),
-        email: emailLine,
-        province: lines.find(l => l.includes('José') || l.includes('Alajuela') || l.includes('Cartago') || l.includes('Heredia') || l.includes('Guanacaste') || l.includes('Puntarenas') || l.includes('Limón')) || '',
-        canton: lines[3] || '',
-        district: lines[4] || '',
-        address: lines.find(l => l.includes('Condominio') || l.includes('casa') || l.includes('apartamento') || l.length > 50) || '',
-      };
+      // Try individual extraction
+      province = extractField(['Provincia', 'Province'], normalizedText);
+      canton = extractField(['Cant[oó]n', 'Canton'], normalizedText);
+      district = extractField(['Distrito', 'District'], normalizedText);
     }
+    
+    // ===== STRATEGY 3: Smart content-based detection (fallback) =====
+    // If labeled extraction failed, use intelligent content detection
+    
+    // Email: anything with @ symbol
+    let email = emailRaw;
+    if (!email) {
+      const emailMatch = normalizedText.match(/([a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+      email = emailMatch ? emailMatch[1] : '';
+    }
+    
+    // Phone: Look for 8+ consecutive digits (with optional separators)
+    let phone = phoneRaw;
+    if (!phone) {
+      // Try to find phone in any line
+      const phonePatterns = [
+        /(\d{4}[\s\-]?\d{4})/,  // 8 digits with optional separator
+        /(\d{8,})/,              // 8+ consecutive digits
+        /(\+?\d{1,3}[\s\-]?\d{4}[\s\-]?\d{4})/ // International format
+      ];
+      
+      for (const pattern of phonePatterns) {
+        const match = normalizedText.match(pattern);
+        if (match) {
+          phone = match[1];
+          break;
+        }
+      }
+    }
+    phone = phone.replace(/[-\s]/g, ''); // Clean phone number
+    
+    // Name: If not found, use first substantial line (more than 3 words or 10 chars)
+    let name = nameRaw;
+    if (!name) {
+      name = lines.find(line => {
+        const cleanLine = line.replace(/[📍☎️🏠✉️🗺️]/g, '').trim();
+        return cleanLine.length > 10 || cleanLine.split(/\s+/).length >= 2;
+      }) || lines[0] || '';
+    }
+    
+    // Address: If not found, look for longest line or one with address keywords
+    let address = addressRaw;
+    if (!address) {
+      const addressKeywords = ['casa', 'apartamento', 'condominio', 'edificio', 'residencial', 'metros', 'frente', 'costado', 'cruce', 'esquina', 'barrio', 'colonia'];
+      address = lines.find(l => addressKeywords.some(kw => l.toLowerCase().includes(kw))) || '';
+      
+      // If still nothing, take longest line (likely the address)
+      if (!address) {
+        address = lines.reduce((longest, current) => 
+          current.length > longest.length ? current : longest, ''
+        );
+        // But only if it's substantial
+        if (address.length < 15) address = '';
+      }
+    }
+    
+    // Province: Check common Costa Rican provinces
+    if (!province) {
+      const provinces = ['San José', 'Alajuela', 'Cartago', 'Heredia', 'Guanacaste', 'Puntarenas', 'Limón'];
+      province = lines.find(l => provinces.some(p => l.includes(p))) || '';
+    }
+    
+    // ===== Build result =====
+    const newCustomerInfo = {
+      ...customerInfo,
+      name: name.replace(/^(Nombre|Name)[:\-=|~]?\s*/i, '').trim(),
+      phone,
+      province,
+      canton,
+      district,
+      email,
+      address: address.replace(/^(Dirección|Address)[:\-=|~]?\s*/i, '').trim(),
+    };
 
     onRawCustomerTextChange(text);
     onCustomerInfoChange(newCustomerInfo);
@@ -120,7 +205,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
           value={rawCustomerText}
           onChange={(e) => parseCustomerText(e.target.value)}
           onPaste={handlePaste}
-          placeholder="📋 Pegar información del cliente aquí...&#10;&#10;Formatos soportados:&#10;• Nombre completo: [nombre]&#10;  Teléfono: [teléfono]&#10;  Provincia, Cantón, Distrito: [provincia], [cantón], [distrito]&#10;  Correo electrónico: [email]&#10;  Dirección exacta donde deseas recibirlo: [dirección]&#10;&#10;• 📍 Nombre completo: [nombre]&#10;  ☎️ Teléfono: [teléfono]&#10;  🏠 Provincia, Cantón, Distrito: [provincia], [cantón], [distrito]&#10;  ✉️ Correo electrónico: [email]&#10;  🗺️ Dirección exacta donde deseas recibirlo: [dirección]"
+          placeholder="📋 Pegar información del cliente aquí...&#10;&#10;✅ Acepta múltiples formatos:&#10;• Con etiquetas: Nombre: Carlos | Tel: 88979856 | Email: test@mail.com&#10;• Con emojis: 📍 Nombre - Juan | ☎️ Teléfono: 88887777&#10;• Ubicación: Provincia/Cantón/Distrito: Alajuela, Alajuela, Carrizal&#10;• Sin etiquetas: Detecta emails (@), teléfonos (8+ dígitos), direcciones&#10;• Separadores flexibles: : - = | ~&#10;&#10;💡 Inteligente: Si no encuentra etiquetas, analiza el contenido automáticamente"
         />
       </div>
 

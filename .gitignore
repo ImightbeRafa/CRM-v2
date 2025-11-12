@@ -7,7 +7,8 @@ node_modules/
 # Testing
 coverage/
 scripts
-
+SDK_V2_FINAL_CONFIGURATION.txt
+SDK_V2_IMPLEMENTATION.txt
 # Documentation and Notes (local only)
 *.md
 *.txt

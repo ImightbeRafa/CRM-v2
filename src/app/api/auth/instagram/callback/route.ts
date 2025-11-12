@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getToken } from 'next-auth/jwt'
+import { addAppSecretProofToUrl } from '@/lib/meta-api'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -89,9 +90,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Step 2: Get Facebook Pages connected to this user
-    const pagesRes = await fetch(
-      `https://graph.facebook.com/v18.0/me/accounts?access_token=${fbAccessToken}`
-    )
+    const pagesUrl = `https://graph.facebook.com/v18.0/me/accounts?access_token=${fbAccessToken}`
+    const pagesUrlWithProof = addAppSecretProofToUrl(pagesUrl, fbAccessToken)
+    
+    const pagesRes = await fetch(pagesUrlWithProof)
     if (!pagesRes.ok) {
       const errText = await pagesRes.text()
       console.error('[instagram/callback] Failed to get pages', errText)
@@ -121,9 +123,10 @@ export async function GET(request: NextRequest) {
     const pageId = pages[0].id
     const pageAccessToken = pages[0].access_token
 
-    const igAccountRes = await fetch(
-      `https://graph.facebook.com/v18.0/${pageId}?fields=instagram_business_account&access_token=${pageAccessToken}`
-    )
+    const igAccountUrl = `https://graph.facebook.com/v18.0/${pageId}?fields=instagram_business_account&access_token=${pageAccessToken}`
+    const igAccountUrlWithProof = addAppSecretProofToUrl(igAccountUrl, pageAccessToken)
+    
+    const igAccountRes = await fetch(igAccountUrlWithProof)
     if (!igAccountRes.ok) {
       const errText = await igAccountRes.text()
       console.error('[instagram/callback] Failed to get IG account', errText)
@@ -152,18 +155,26 @@ export async function GET(request: NextRequest) {
 
     // Subscribe the Page to this app for messaging webhooks (required for IG messaging delivery)
     try {
+      const subscribeUrl = `https://graph.facebook.com/v18.0/${pageId}/subscribed_apps`
+      const subscribeUrlWithProof = addAppSecretProofToUrl(subscribeUrl, pageAccessToken)
+      
       const subscribeParams = new URLSearchParams({
         access_token: pageAccessToken,
         subscribed_fields: 'messages'
       })
-      const subRes = await fetch(`https://graph.facebook.com/v18.0/${pageId}/subscribed_apps`, {
+      const subRes = await fetch(subscribeUrlWithProof, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: subscribeParams
       })
       const subText = await subRes.text()
       if (!subRes.ok) {
-        console.warn('[instagram/callback] Page subscribe failed', subText)
+        console.warn('[instagram/callback] Page subscribe failed', { 
+          status: subRes.status, 
+          subText, 
+          hasAppSecret: Boolean(process.env.META_APP_SECRET),
+          urlUsed: subscribeUrlWithProof.replace(/appsecret_proof=[^&]+/, 'appsecret_proof=***')
+        })
       } else {
         console.log('[instagram/callback] Page subscribed to app', subText)
       }

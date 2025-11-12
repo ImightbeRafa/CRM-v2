@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { prisma } from '@/lib/db'
+import { addAppSecretProofToUrl } from '@/lib/meta-api'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -211,15 +212,27 @@ export async function POST(request: NextRequest) {
     if (phoneNumberId && businessToken) {
       try {
         const subscribeUrl = `https://graph.facebook.com/v24.0/${encodeURIComponent(phoneNumberId)}/subscribed_apps`
-        const form = new URLSearchParams({ access_token: businessToken })
-        const subRes = await fetch(subscribeUrl, {
+        const subscribeUrlWithProof = addAppSecretProofToUrl(subscribeUrl, businessToken)
+        
+        const form = new URLSearchParams({ 
+          access_token: businessToken,
+          subscribed_fields: 'messages'
+        })
+        
+        const subRes = await fetch(subscribeUrlWithProof, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: form,
         })
         const subText = await subRes.text()
         if (!subRes.ok) {
-          console.warn('[wa/exchange] subscribed_apps failed', { phoneNumberId, status: subRes.status, subText })
+          console.warn('[wa/exchange] subscribed_apps failed', { 
+            phoneNumberId, 
+            status: subRes.status, 
+            subText,
+            hasAppSecret: Boolean(process.env.META_APP_SECRET),
+            urlUsed: subscribeUrlWithProof.replace(/appsecret_proof=[^&]+/, 'appsecret_proof=***')
+          })
         } else {
           console.log('[wa/exchange] subscribed_apps success', { phoneNumberId, subText })
         }

@@ -2,6 +2,9 @@ import { prisma } from './db';
 import { ExternalOrderData } from '@/types/integration';
 
 export async function createExternalOrder(tenantId: string, orderData: ExternalOrderData) {
+  // Use comments from metadata if provided, otherwise leave empty
+  const comments = orderData.metadata?.comments || '';
+
   // Map external order data to internal Order model
   const order = await prisma.order.create({
     data: {
@@ -20,9 +23,9 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
       district: orderData.shipping.address.district,
       address: orderData.shipping.address.fullAddress,
       orderType: 'EA', // External orders are typically shipping orders
-      status: 'Pendiente', // Default status for new orders
+      status: 'Pendiente', // Default status for new orders (order fulfillment status)
       saleDate: new Date().toISOString().split('T')[0],
-      comments: `External order from ${orderData.source || 'website'}. Payment: ${orderData.payment.method} (${orderData.payment.transactionId}) - ${orderData.payment.status}`,
+      comments: comments,
       // Store original external data as custom fields
       customFields: {
         external: true,

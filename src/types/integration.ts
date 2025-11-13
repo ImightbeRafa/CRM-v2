@@ -13,6 +13,7 @@ export interface ExternalOrderData {
   };
   shipping: {
     cost: string;
+    courier?: string;
     address: {
       province: string;
       canton: string;
@@ -29,6 +30,8 @@ export interface ExternalOrderData {
   };
   // Optional metadata
   source?: string; // Website name/identifier
+  salesChannel?: string;
+  seller?: string;
   metadata?: Record<string, any>;
 }
 

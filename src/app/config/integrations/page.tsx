@@ -44,6 +44,11 @@ export default function IntegrationsPage() {
   const [showNewKeyDialog, setShowNewKeyDialog] = useState(false);
   const [newApiKey, setNewApiKey] = useState('');
   const [showKey, setShowKey] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<string>('');
+  const [testing, setTesting] = useState(false);
+  
+  // Get the current domain for API endpoint URL
+  const apiBaseUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
   useEffect(() => {
     loadData();
@@ -114,6 +119,36 @@ export default function IntegrationsPage() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+  };
+
+  const testConnection = async () => {
+    setTesting(true);
+    setTestResult('');
+    
+    try {
+      const response = await fetch('/api/integration/test', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          test: true,
+          timestamp: new Date().toISOString(),
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setTestResult(`✅ Conexión exitosa! El endpoint está funcionando correctamente.\n\nRespuesta: ${JSON.stringify(data, null, 2)}`);
+      } else {
+        setTestResult(`❌ Error: ${data.error || 'Unknown error'}\n\nDetalles: ${JSON.stringify(data, null, 2)}`);
+      }
+    } catch (error) {
+      setTestResult(`❌ Error de conexión: ${error instanceof Error ? error.message : 'Unknown error'}\n\nNo se pudo conectar al endpoint. Verifica que el servidor esté funcionando.`);
+    } finally {
+      setTesting(false);
+    }
   };
 
   const formatDate = (dateStr: string) => {
@@ -344,6 +379,46 @@ export default function IntegrationsPage() {
         </CardContent>
       </Card>
 
+      {/* Test Connection */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            Probar Conexión
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Verifica que el endpoint de integración esté funcionando correctamente.
+          </p>
+          <div className="flex items-center gap-4">
+            <Button 
+              onClick={testConnection} 
+              disabled={testing}
+              className="flex items-center gap-2"
+            >
+              <Activity className={`h-4 w-4 ${testing ? 'animate-spin' : ''}`} />
+              {testing ? 'Probando...' : 'Probar Conexión'}
+            </Button>
+            {testResult && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => copyToClipboard(testResult)}
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Copiar Resultado
+              </Button>
+            )}
+          </div>
+          {testResult && (
+            <pre className="bg-gray-100 p-4 rounded text-xs overflow-x-auto whitespace-pre-wrap">
+              {testResult}
+            </pre>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Integration Instructions */}
       <Card>
         <CardHeader>
@@ -354,12 +429,27 @@ export default function IntegrationsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="prose max-w-none">
+            <h4 className="text-lg font-semibold">URL del Endpoint:</h4>
+            <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+              <code className="flex-1 text-sm font-mono text-blue-900">
+                {apiBaseUrl}/api/integration/orders/create
+              </code>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => copyToClipboard(`${apiBaseUrl}/api/integration/orders/create`)}
+                className="text-blue-600 hover:text-blue-700"
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+            
             <h4 className="text-lg font-semibold">Cómo conectar tu sitio web:</h4>
             <ol className="list-decimal list-inside space-y-2 text-sm">
               <li>Crea una API Key usando el botón "Nueva API Key"</li>
               <li>Guarda la clave de forma segura en las variables de entorno de tu sitio</li>
-              <li>Configura tu sitio para enviar pedidos a: <code className="bg-gray-100 px-2 py-1 rounded">POST /api/integration/orders/create</code></li>
-              <li>Incluye la API Key en el header: <code className="bg-gray-100 px-2 py-1 rounded">x-api-key</code></li>
+              <li>Configura tu sitio para enviar pedidos a la URL mostrada arriba</li>
+              <li>Incluye la API Key en el header: <code className="bg-gray-100 px-2 py-1 rounded">x-api-key: tu-api-key-aqui</code></li>
             </ol>
             
             <h4 className="text-lg font-semibold mt-6">Formato de datos requerido:</h4>

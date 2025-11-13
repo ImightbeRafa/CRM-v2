@@ -23,6 +23,7 @@ const ExternalOrderSchema = z.object({
   }),
   shipping: z.object({
     cost: z.string().min(1),
+    courier: z.string().optional(),
     address: z.object({
       province: z.string().min(1),
       canton: z.string().min(1),
@@ -38,6 +39,8 @@ const ExternalOrderSchema = z.object({
     date: z.string().min(1),
   }),
   source: z.string().optional(),
+  salesChannel: z.string().optional(),
+  seller: z.string().optional(),
   metadata: z.record(z.any()).optional(),
 });
 

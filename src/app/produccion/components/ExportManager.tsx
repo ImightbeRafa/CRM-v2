@@ -141,7 +141,7 @@ export function ExportManager({ orders, onClose }: ExportManagerProps) {
     // Create Excel-like CSV with proper formatting
     const headers = [];
     if (includeFields.customerInfo) {
-      headers.push('ID Orden', 'Cliente', 'Teléfono', 'Email');
+      headers.push('ID Orden', 'Cliente', 'Teléfono', 'Email', 'Negocio');
     }
     if (includeFields.productInfo) {
       headers.push('Producto', 'Cantidad', 'Tamaño', 'Color', 'Empaque', 'Personalización');

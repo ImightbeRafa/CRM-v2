@@ -139,6 +139,7 @@ model Order {
   pickupDate    String?
   saleDate      String?
   seller        String?
+  salesChannel  String?
   
   // Delivery status or method
   delivery      String?

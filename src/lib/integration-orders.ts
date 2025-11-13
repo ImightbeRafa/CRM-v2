@@ -25,6 +25,9 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
         canton: orderData.shipping.address.canton,
         district: orderData.shipping.address.district,
         address: orderData.shipping.address.fullAddress,
+        courier: orderData.shipping.courier,
+        salesChannel: orderData.salesChannel,
+        seller: orderData.seller,
         orderType: 'EA', // External orders are typically shipping orders
         status: 'Pendiente', // Default status for new orders (order fulfillment status)
         saleDate: new Date().toISOString().split('T')[0],

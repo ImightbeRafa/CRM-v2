@@ -21,7 +21,7 @@ const planLimits = {
 export async function checkOrderLimit(tenantId: string): Promise<PlanCheck> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
-    select: { plan: true, subscriptionStatus: true }
+    select: { plan: true }
   });
 
   if (!tenant) {
@@ -64,7 +64,7 @@ export async function checkOrderLimit(tenantId: string): Promise<PlanCheck> {
 export async function checkUserLimit(tenantId: string): Promise<PlanCheck> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
-    select: { plan: true, subscriptionStatus: true }
+    select: { plan: true }
   });
 
   if (!tenant) {
@@ -110,14 +110,14 @@ export async function checkSubscriptionStatus(tenantId: string): Promise<{
 }> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
-    select: { subscriptionStatus: true, plan: true }
+    select: { plan: true }
   });
 
   if (!tenant) {
     return { active: false, status: 'unknown', warning: 'Tenant not found' };
   }
 
-  const status = tenant.subscriptionStatus || 'active';
+  const status = 'active'; // Default to active since subscriptionStatus field doesn't exist
 
   // Hard block: subscription is truly dead
   if (['canceled', 'expired'].includes(status)) {

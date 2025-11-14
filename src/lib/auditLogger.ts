@@ -59,16 +59,20 @@ export async function logAuditEvent(data: AuditLogData): Promise<void> {
         }
         return base;
       })(),
-      userId: data.userId,
       userName: data.userName || 'System',
       userRole: data.userRole,
       ipAddress: data.ipAddress || null,
       userAgent: data.userAgent || null,
-      tenantId: data.tenantId
+      user: {
+        connect: { id: data.userId }
+      },
+      tenant: {
+        connect: { id: data.tenantId }
+      }
     };
 
-    // Create the audit log
-    await prisma.auditLog.create({
+    // Create the audit log using raw client to bypass tenant middleware
+    await prismaRaw.auditLog.create({
       data: logData
     });
     
@@ -89,7 +93,7 @@ export async function getAuditContext(request: NextRequest) {
     }
 
     // Get user details from database using the token's sub (user ID)
-    const user = await prisma.user.findUnique({
+    const user = await prismaRaw.user.findUnique({
       where: { id: token.sub },
       select: { 
         id: true, 
@@ -258,10 +262,14 @@ export async function logAudit(data: AuditLogData): Promise<void> {
       reason: data.description || null,
       ipAddress: data.ipAddress?.substring(0, 100) || null,
       userAgent: data.userAgent?.substring(0, 255) || null,
-      userId: data.userId,
       userRole: safeUserRole,
-      userName: data.userName || 'System', // Default to 'System' if not provided
-      tenantId: data.tenantId,
+      userName: data.userName || 'System', // Default to 'System' if not provided,
+      user: {
+        connect: { id: data.userId }
+      },
+      tenant: {
+        connect: { id: data.tenantId }
+      }
     };
 
     // Handle JSON fields with proper typing
@@ -279,29 +287,27 @@ export async function logAudit(data: AuditLogData): Promise<void> {
       logData.newValues = newVals;
     }
 
-    // Try to create audit log, but if userId is invalid, create without it
+    // Try to create audit log using raw client to bypass tenant middleware
     try {
-      await prisma.auditLog.create({
+      await prismaRaw.auditLog.create({
         data: logData
       });
     } catch (auditError: any) {
       // Handle foreign key constraint violation for userId
       if (auditError?.code === 'P2003' && auditError?.meta?.constraint === 'AuditLog_userId_fkey') {
         console.warn('[AuditLogger] Invalid userId, logging without user reference:', data.userId);
-        // Retry without userId using raw Prisma client (no middleware at all)
-        // This bypasses ALL middleware including tenant context
-        const { userId, ...logDataWithoutUser } = logData;
+        // Retry without user relation using raw Prisma client
+        const { user, ...logDataWithoutUser } = logData;
         try {
           await prismaRaw.auditLog.create({
             data: {
               ...logDataWithoutUser,
-              userId: null, // Set to null explicitly
               userName: data.userName || 'Unknown User (Deleted)',
             }
           });
-          console.log('[AuditLogger] ✅ Successfully logged without userId using raw client');
+          console.log('[AuditLogger] ✅ Successfully logged without user reference using raw client');
         } catch (retryError) {
-          console.error('[AuditLogger] Failed to log even without userId:', retryError);
+          console.error('[AuditLogger] Failed to log even without user reference:', retryError);
         }
       } else {
         throw auditError; // Re-throw if it's a different error

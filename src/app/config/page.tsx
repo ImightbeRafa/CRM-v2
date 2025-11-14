@@ -12,7 +12,7 @@ import { BillingDashboard } from './components/BillingDashboard'
 import { ExcelImporter } from './components/ExcelImporter'
 import { StatusManager } from './components/StatusManager'
 import { TenantSettingsPanel } from '../components/TenantSettingsPanel'
-import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug } from 'lucide-react'
+import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck } from 'lucide-react'
 
 export default function ConfigPage() {
   const searchParams = useSearchParams()
@@ -501,6 +501,7 @@ export default function ConfigPage() {
     { id: 'statuses', label: 'Estados de Órdenes', icon: Settings },
     { id: 'inventory', label: 'Inventario', icon: Package },
     { id: 'clients', label: 'Clientes', icon: UserCheck },
+    { id: 'shipping-config', label: 'Envíos (Correos CR)', icon: Truck },
     { id: 'users', label: 'Usuarios', icon: Users },
     { id: 'social', label: 'Cuentas Sociales', icon: MessageCircle },
     { id: 'integrations', label: 'Integraciones API', icon: Plug },
@@ -634,6 +635,11 @@ export default function ConfigPage() {
           {/* Clients Tab - locked to clients only */}
           {activeTab === 'clients' && (
             <MasterConfigDashboard key="clients" initialTab="clients" lockToInitial />
+          )}
+
+          {/* Shipping Config Tab */}
+          {activeTab === 'shipping-config' && (
+            <MasterConfigDashboard key="shipping" initialTab="shipping" lockToInitial />
           )}
 
           {/* Users Tab */}

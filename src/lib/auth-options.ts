@@ -257,9 +257,7 @@ export const authOptions: NextAuthOptions = {
                         name: true,
                         slug: true,
                         plan: true,
-                        isActive: true,
-                        subscriptionStatus: true,
-                        trialEndsAt: true
+                        isActive: true
                       }
                     }
                   }
@@ -292,7 +290,7 @@ export const authOptions: NextAuthOptions = {
                           slug: true,
                           plan: true,
                           isActive: true,
-                          subscriptionStatus: true,
+                          
                           trialEndsAt: true
                         }
                       }
@@ -342,7 +340,7 @@ export const authOptions: NextAuthOptions = {
                           slug: true,
                           plan: true,
                           isActive: true,
-                          subscriptionStatus: true,
+                          
                           trialEndsAt: true
                         }
                       }
@@ -401,7 +399,7 @@ export const authOptions: NextAuthOptions = {
                           slug: true,
                           plan: true,
                           isActive: true,
-                          subscriptionStatus: true,
+                          
                           trialEndsAt: true
                         }
                       }
@@ -442,7 +440,7 @@ export const authOptions: NextAuthOptions = {
                             slug: true,
                             plan: true,
                             isActive: true,
-                            subscriptionStatus: true,
+                            
                             trialEndsAt: true
                           }
                         }
@@ -474,7 +472,7 @@ export const authOptions: NextAuthOptions = {
                       slug: true,
                       plan: true,
                       isActive: true,
-                      subscriptionStatus: true,
+                      
                       trialEndsAt: true
                     }
                   }
@@ -528,7 +526,7 @@ export const authOptions: NextAuthOptions = {
                       slug: tenantSlug, // Include timestamp to avoid duplicates
                       plan: 'FREE',
                       isActive: true,
-                      trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+                       // 7 days from now
                     }
                   });
                   console.log('[OAuth]   ✅ Tenant created:', newTenant.id);
@@ -594,7 +592,7 @@ export const authOptions: NextAuthOptions = {
                               slug: true,
                               plan: true,
                               isActive: true,
-                              subscriptionStatus: true,
+                              
                               trialEndsAt: true
                             }
                           }
@@ -622,7 +620,7 @@ export const authOptions: NextAuthOptions = {
                               slug: true,
                               plan: true,
                               isActive: true,
-                              subscriptionStatus: true,
+                              
                               trialEndsAt: true
                             }
                           }
@@ -715,7 +713,7 @@ export const authOptions: NextAuthOptions = {
                     slug: true,
                     isActive: true,
                     plan: true,
-                    subscriptionStatus: true,
+                    
                     trialEndsAt: true
                   }
                 });
@@ -728,8 +726,8 @@ export const authOptions: NextAuthOptions = {
                     slug: fetchedTenant.slug,
                     isActive: fetchedTenant.isActive,
                     plan: fetchedTenant.plan || 'FREE',
-                    subscriptionStatus: fetchedTenant.subscriptionStatus || null,
-                    trialEndsAt: fetchedTenant.trialEndsAt || null,
+                    
+                    
                     setupWizardCompleted: false
                   };
                   console.log(`[JWT] ✅ Fetched tenant data for initial sign-in: ${fetchedTenant.name}`);
@@ -744,8 +742,8 @@ export const authOptions: NextAuthOptions = {
                   slug: '',
                   isActive: true,
                   plan: 'FREE',
-                  subscriptionStatus: null,
-                  trialEndsAt: null,
+                  
+                  
                   setupWizardCompleted: false
                 };
               }
@@ -758,8 +756,8 @@ export const authOptions: NextAuthOptions = {
                 slug: tenant.slug,
                 isActive: tenant.isActive,
                 plan: tenant.plan || 'FREE',
-                subscriptionStatus: tenant.subscriptionStatus || null,
-                trialEndsAt: tenant.trialEndsAt || null,
+                
+                
                 setupWizardCompleted: false
               };
               console.log(`[JWT] ✅ Using included tenant data: ${tenant.name}`);
@@ -772,8 +770,8 @@ export const authOptions: NextAuthOptions = {
                 slug: '',
                 isActive: true,
                 plan: 'FREE',
-                subscriptionStatus: null,
-                trialEndsAt: null,
+                
+                
                 setupWizardCompleted: false
               };
               console.log(`[JWT] ⚠️ Using fallback tenant data for: ${currentMembership.tenantId || selectedTenantId}`);
@@ -809,8 +807,8 @@ export const authOptions: NextAuthOptions = {
                       slug: true,
                       isActive: true,
                       plan: true,
-                      subscriptionStatus: true,
-                      trialEndsAt: true,
+                      
+                      
                       createdAt: true
                     }
                   }
@@ -865,8 +863,8 @@ export const authOptions: NextAuthOptions = {
                   slug: currentMembership.tenant.slug,
                   isActive: currentMembership.tenant.isActive,
                   plan: currentMembership.tenant.plan || 'FREE',
-                  subscriptionStatus: currentMembership.tenant.subscriptionStatus || null,
-                  trialEndsAt: currentMembership.tenant.trialEndsAt || null,
+                  
+                  
                   setupWizardCompleted: false
                 };
               }
@@ -909,7 +907,7 @@ export const authOptions: NextAuthOptions = {
                           slug: true,
                           plan: true,
                           isActive: true,
-                          subscriptionStatus: true,
+                          
                           trialEndsAt: true
                         }
                       }
@@ -930,8 +928,8 @@ export const authOptions: NextAuthOptions = {
                     slug: newTenant.slug,
                     isActive: newTenant.isActive,
                     plan: newTenant.plan || 'FREE',
-                    subscriptionStatus: newTenant.subscriptionStatus || null,
-                    trialEndsAt: newTenant.trialEndsAt || null,
+                    
+                    
                     setupWizardCompleted: false
                   };
                   // @ts-ignore - Membership type mismatch; runtime works correctly

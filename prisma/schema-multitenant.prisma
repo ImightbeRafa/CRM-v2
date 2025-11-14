@@ -21,6 +21,13 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   
+  // Billing fields
+  subscriptionStatus String?  // active, past_due, canceled, etc.
+  trialEndsAt        DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean  @default(false)
+  tilopaySubscriptionId String?
+  
   // Settings
   settings  Json?    // Tenant-specific configuration
   
@@ -387,6 +394,19 @@ model ShippingConfig {
   isActive    Boolean  @default(true)
   isDefault   Boolean  @default(false)
   settings    Json?
+  
+  // Sender (Remitente) Information for Correos de Costa Rica
+  senderIdType        String?  // "Física", "Dimex", "Pasaporte", "Jurídica"
+  senderIdNumber      String?  // Número de identificación
+  senderName          String?  // Nombre completo del remitente
+  senderPhone         String?  // Teléfono del remitente
+  senderEmail         String?  // Correo electrónico del remitente
+  senderProvince      String?  // Provincia del remitente
+  senderCanton        String?  // Cantón del remitente
+  senderDistrict      String?  // Distrito del remitente
+  senderPostalCode    String?  // Código postal del remitente
+  senderAddress       String?  // Señas exactas de dirección del remitente
+  
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
@@ -403,13 +423,14 @@ model ShippingGuia {
   tenantId      String   // NEW: Tenant isolation
   orderId       String
   carrier       String
-  guiaNumber    String
+  guiaNumber    String?
   trackingNumber String?
-  status        String   @default("created")
-  cost          Float?
-  weight        Float?
-  dimensions    String?
+  status        String   // 'queued' | 'processing' | 'completed' | 'failed'
   serviceType   String?
+  progress      String?  // Current step: 'Creating guía...', 'Downloading PDF...', etc.
+  errorMessage  String?  @db.Text
+  pdfData       Bytes?   // Store PDF as binary data
+  pdfFileName   String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   

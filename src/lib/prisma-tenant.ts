@@ -138,8 +138,16 @@ function createTenantPrismaUncached(tenantId: string) {
             return query(args);
           }
           
-          // Create a deep copy of args to avoid mutating the original
-          const modifiedArgs = JSON.parse(JSON.stringify(args || {}));
+          // IMPORTANT: Do NOT JSON-clone args (breaks Buffers for Bytes fields)
+          // Make a shallow copy to avoid mutating the original while preserving Buffer types
+          const originalArgs: any = args || {};
+          const modifiedArgs: any = {
+            ...originalArgs,
+            where: originalArgs.where ? { ...originalArgs.where } : originalArgs.where,
+            data: originalArgs.data ? { ...originalArgs.data } : originalArgs.data,
+            create: originalArgs.create ? { ...originalArgs.create } : originalArgs.create,
+            update: originalArgs.update ? { ...originalArgs.update } : originalArgs.update,
+          };
           const context = getTenantContext();
           const contextTenantId = context?.tenantId || tenantId;
           const userId = context?.userId || 'system';
@@ -185,17 +193,18 @@ function createTenantPrismaUncached(tenantId: string) {
                 break;
                 
               case 'findMany':
-                // Only add tenant filter if not explicitly disabled
-                if (modifiedArgs.where?.tenantId !== null) {
-                  modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
-                }
+                // ALWAYS add tenant filter for data isolation
+                modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
                 break;
                 
               case 'create':
-                modifiedArgs.data = {
-                  ...modifiedArgs.data,
-                  tenantId: contextTenantId
-                };
+                // Only inject tenantId if tenant relation is not already set
+                if (!modifiedArgs.data?.tenant) {
+                  modifiedArgs.data = {
+                    ...modifiedArgs.data,
+                    tenantId: contextTenantId
+                  };
+                }
                 break;
                 
               case 'update':
@@ -214,10 +223,13 @@ function createTenantPrismaUncached(tenantId: string) {
                 
               case 'upsert':
                 modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
-                modifiedArgs.create = {
-                  ...modifiedArgs.create,
-                  tenantId: contextTenantId
-                };
+                // Only inject tenantId in create if tenant relation is not already set
+                if (!modifiedArgs.create?.tenant) {
+                  modifiedArgs.create = {
+                    ...modifiedArgs.create,
+                    tenantId: contextTenantId
+                  };
+                }
                 if (modifiedArgs.update && 'tenantId' in modifiedArgs.update) {
                   delete modifiedArgs.update.tenantId;
                 }

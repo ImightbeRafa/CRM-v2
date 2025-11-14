@@ -167,48 +167,54 @@ export async function GET(request: NextRequest) {
     if (!auth.ok) return auth.response
     
     const { tenantId } = auth
+    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
+    const userId = (token as any)?.sub as string | undefined
+    const userName = (token as any)?.name || (token as any)?.email || 'System'
 
-    // Get query parameters for pagination and filtering
-    const { searchParams } = new URL(request.url)
-    const page = parseInt(searchParams.get('page') || '1')
-    const limitParam = searchParams.get('limit')
-    const limit = limitParam === 'all' ? undefined : Math.min(parseInt(limitParam || '100'), 500) // Support 'all' for unlimited results
-    const skip = limit ? (page - 1) * limit : 0
-    const status = searchParams.get('status')
-    const orderType = searchParams.get('orderType')
-    const search = searchParams.get('search')
-    const dateFrom = searchParams.get('dateFrom')
-    const dateTo = searchParams.get('dateTo')
+    return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName }, async () => {
+      const tenantPrisma = getTenantPrisma(tenantId)
 
-    console.log('[GET /api/orders] Fetching orders for tenant:', tenantId, { status, orderType, search })
-    
-    // Build where clause for filtering
-    const whereClause: any = { tenantId }
-    if (status && status !== 'all') whereClause.status = status
-    if (orderType && orderType !== 'all') whereClause.orderType = orderType
-    
-    // Add search filter
-    if (search) {
-      whereClause.OR = [
-        { customerName: { contains: search, mode: 'insensitive' } },
-        { orderId: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search, mode: 'insensitive' } },
-        { product: { contains: search, mode: 'insensitive' } },
-      ]
-    }
-    
-    // Add date range filter
-    if (dateFrom || dateTo) {
-      whereClause.timestamp = {}
-      if (dateFrom) whereClause.timestamp.gte = new Date(dateFrom)
-      if (dateTo) whereClause.timestamp.lte = new Date(dateTo)
-    }
-    
-    // Get total count for pagination
-    const totalCount = await prisma.order.count({ where: whereClause })
-    
-    // Fetch only essential fields to reduce payload
-    const orders = await prisma.order.findMany({
+      // Get query parameters for pagination and filtering
+      const { searchParams } = new URL(request.url)
+      const page = parseInt(searchParams.get('page') || '1')
+      const limitParam = searchParams.get('limit')
+      const limit = limitParam === 'all' ? undefined : Math.min(parseInt(limitParam || '100'), 500) // Support 'all' for unlimited results
+      const skip = limit ? (page - 1) * limit : 0
+      const status = searchParams.get('status')
+      const orderType = searchParams.get('orderType')
+      const search = searchParams.get('search')
+      const dateFrom = searchParams.get('dateFrom')
+      const dateTo = searchParams.get('dateTo')
+
+      console.log('[GET /api/orders] Fetching orders for tenant:', tenantId, { status, orderType, search })
+      
+      // Build where clause for filtering (tenantId will be auto-injected by middleware)
+      const whereClause: any = {}
+      if (status && status !== 'all') whereClause.status = status
+      if (orderType && orderType !== 'all') whereClause.orderType = orderType
+      
+      // Add search filter
+      if (search) {
+        whereClause.OR = [
+          { customerName: { contains: search, mode: 'insensitive' } },
+          { orderId: { contains: search, mode: 'insensitive' } },
+          { phone: { contains: search, mode: 'insensitive' } },
+          { product: { contains: search, mode: 'insensitive' } },
+        ]
+      }
+      
+      // Add date range filter
+      if (dateFrom || dateTo) {
+        whereClause.timestamp = {}
+        if (dateFrom) whereClause.timestamp.gte = new Date(dateFrom)
+        if (dateTo) whereClause.timestamp.lte = new Date(dateTo)
+      }
+      
+      // Get total count for pagination - using tenant-isolated client
+      const totalCount = await tenantPrisma.order.count({ where: whereClause })
+      
+      // Fetch only essential fields to reduce payload - using tenant-isolated client
+      const orders = await tenantPrisma.order.findMany({
         where: whereClause,
         orderBy: { timestamp: 'desc' },
         skip,
@@ -251,26 +257,27 @@ export async function GET(request: NextRequest) {
     })
     
     console.log(`[GET /api/orders] Returning ${orders.length} orders for tenant ${tenantId}`)
-    
-    // Return orders with pagination metadata - NO CACHE HEADERS
-    const response = NextResponse.json({
-      status: 'success',
-      data: orders,
-      pagination: {
-        page,
-        limit,
-        total: totalCount,
-        totalPages: limit ? Math.ceil(totalCount / limit) : 1,
-        hasMore: skip + orders.length < totalCount
-      }
+      
+      // Return orders with pagination metadata - NO CACHE HEADERS
+      const response = NextResponse.json({
+        status: 'success',
+        data: orders,
+        pagination: {
+          page,
+          limit,
+          total: totalCount,
+          totalPages: limit ? Math.ceil(totalCount / limit) : 1,
+          hasMore: skip + orders.length < totalCount
+        }
+      })
+      
+      // DISABLE caching to ensure fresh data
+      response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+      response.headers.set('Pragma', 'no-cache')
+      response.headers.set('Expires', '0')
+      
+      return response
     })
-    
-    // DISABLE caching to ensure fresh data
-    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-    response.headers.set('Pragma', 'no-cache')
-    response.headers.set('Expires', '0')
-    
-    return response
   } catch (error) {
     console.error('[GET /api/orders] Error:', error)
     return handleApiError(error)

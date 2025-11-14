@@ -715,12 +715,13 @@ export function EnhancedProductionDashboard({
       {showGuide && (
         <ProductionWorkflowGuide
           onClose={() => setShowGuide(false)}
+          open={showGuide}
         />
       )}
 
       <GuiaGenerator
         orders={filteredOrders.filter(order => order.orderType === 'EA')}
-        isOpen={isGuiaGeneratorOpen}
+        open={isGuiaGeneratorOpen}
         onClose={onGuiaGeneratorClose}
         onUpdateOrder={handleOrderUpdate}
       />

@@ -434,13 +434,17 @@ model ShippingGuia {
   tenantId      String   // NEW: Tenant isolation
   orderId       String
   carrier       String
-  guiaNumber    String
+  guiaNumber    String?
   trackingNumber String?
   status        String   @default("created")
   cost          Float?
   weight        Float?
   dimensions    String?
   serviceType   String?
+  progress      String?  // Current step: 'Creating guía...', 'Downloading PDF...', etc.
+  errorMessage  String?  @db.Text
+  pdfData       Bytes?   // Store PDF as binary data
+  pdfFileName   String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   

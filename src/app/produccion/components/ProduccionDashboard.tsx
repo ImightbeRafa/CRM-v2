@@ -288,7 +288,7 @@ export function ProductionDashboard({ onGenerateGuias, isGuiaGeneratorOpen, onGu
 
       <GuiaGenerator
         orders={groupedOrders.EA}
-        isOpen={isGuiaGeneratorOpen}
+        open={isGuiaGeneratorOpen}
         onClose={onGuiaGeneratorClose}
         onUpdateOrder={handleOrderUpdate}
       />

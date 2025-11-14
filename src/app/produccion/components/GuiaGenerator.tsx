@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sale } from '../types/sales';
 import { Button } from "@/app/components/ui/button";
-import {
+import { 
   Dialog,
   DialogContent,
   DialogHeader,
@@ -22,14 +22,30 @@ import {
   Loader2,
   Globe,
   Settings,
-  FileText
+  FileText,
+  Clock,
+  RefreshCw
 } from 'lucide-react';
 
 interface GuiaGeneratorProps {
+  open: boolean;
   orders: Sale[];
-  isOpen: boolean;
   onClose: () => void;
   onUpdateOrder: (orderId: string, updatedData: Partial<Sale>) => Promise<Sale>;
+}
+
+interface GuiaStatus {
+  id: string;
+  orderId: string;
+  carrier: string;
+  guiaNumber: string | null;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  progress: string | null;
+  errorMessage: string | null;
+  hasPdf: boolean;
+  pdfFileName: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface OrderGuiaData {
@@ -50,28 +66,33 @@ interface ShippingConfig {
   isDefault: boolean;
 }
 
-export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGeneratorProps) {
-  const [orderGuias, setOrderGuias] = useState<OrderGuiaData[]>(
-    orders
-      .filter(order => order.orderType === 'EA')
-      .map(order => ({
-        orderId: order.orderId,
-        guiaNumber: '',
-        selected: false,
-        status: 'pending' as const,
-      }))
-  );
-
+export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGeneratorProps) {
+  const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
+  const [orderGuias, setOrderGuias] = useState<OrderGuiaData[]>([]);
   const [shippingConfigs, setShippingConfigs] = useState<ShippingConfig[]>([]);
   const [selectedCarrier, setSelectedCarrier] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationMode, setGenerationMode] = useState<'manual' | 'automatic'>('manual');
+  const [deliveryType, setDeliveryType] = useState<'Domicilio' | 'Sucursal' | 'Punto de correo'>('Domicilio');
+  const [guiasHistory, setGuiasHistory] = useState<GuiaStatus[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // Only process orders when dialog opens
   useEffect(() => {
-    if (isOpen) {
+    if (open) {
+      // Filter and map orders only when opening
+      const eaOrders = orders
+        .filter(order => order.orderType === 'EA')
+        .map(order => ({
+          orderId: order.orderId,
+          guiaNumber: '',
+          selected: false,
+          status: 'pending' as const,
+        }));
+      setOrderGuias(eaOrders);
       loadShippingConfigs();
     }
-  }, [isOpen]);
+  }, [open, orders]);
 
   const loadShippingConfigs = async () => {
     try {
@@ -172,7 +193,8 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
         credentials: 'include',
         body: JSON.stringify({
           orderIds: selectedOrders.map(og => og.orderId),
-          carrier: selectedCarrier
+          carrier: selectedCarrier,
+          deliveryType: deliveryType
         })
       });
 
@@ -364,19 +386,102 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
   const canPrint = orderGuias.some(og => og.selected && og.guiaNumber);
   const canGenerateAutomatically = orderGuias.some(og => og.selected) && selectedCarrier && !isGenerating;
 
+  // Load guías history when History tab is active
+  const loadGuiasHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const response = await fetch('/api/shipping/guias/status', {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setGuiasHistory(data.data.guias || []);
+      }
+    } catch (error) {
+      console.error('Error loading guías history:', error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  // Load history when dialog opens and History tab is selected
+  useEffect(() => {
+    if (open && activeTab === 'history') {
+      loadGuiasHistory();
+    }
+  }, [open, activeTab]);
+
+  const downloadPDF = async (guiaId: string, fileName: string) => {
+    try {
+      const response = await fetch(`/api/shipping/guias/download/${guiaId}`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+    }
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="w-[95vw] sm:max-w-2xl md:max-w-3xl lg:max-w-4xl max-h-[95vh] sm:max-h-[90vh] p-0">
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="w-[95vw] sm:max-w-2xl md:max-w-3xl lg:max-w-4xl max-h-[95vh] sm:max-h-[90vh] p-0 flex flex-col overflow-hidden">
         <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6 pb-2">
           <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
             <Truck className="h-4 w-4 sm:h-5 sm:w-5" />
-            <span className="truncate">Generar Guías de Envío</span>
+            <span className="truncate">Guías de Envío</span>
           </DialogTitle>
-          <DialogDescription className="text-sm text-gray-600">
-            Seleccione las órdenes y genere guías de envío manualmente o automáticamente con Correos de Costa Rica.
-          </DialogDescription>
         </DialogHeader>
-        {/* Generation Mode Selection */}
+
+        {/* Tabs for Generate and History */}
+        <div className="px-4 sm:px-6">
+          <div className="flex gap-2 border-b">
+            <button
+              onClick={() => setActiveTab('generate')}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+                activeTab === 'generate'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <FileText className="inline h-4 w-4 mr-2" />
+              Generar
+            </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+                activeTab === 'history'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Download className="inline h-4 w-4 mr-2" />
+              Historial ({guiasHistory.length})
+            </button>
+          </div>
+        </div>
+
+        {activeTab === 'generate' ? (
+          <>
+            <div className="px-4 sm:px-6 py-2">
+              <p className="text-sm text-gray-600">
+                {generationMode === 'manual' 
+                  ? 'Ingrese manualmente los números de guía de Betsy para las órdenes seleccionadas.'
+                  : 'Genere guías automáticamente con Correos de Costa Rica usando el sistema de automatización.'}
+              </p>
+            </div>
+            {/* Generation Mode Selection */}
         <div className="px-4 sm:px-6 py-3 border-b bg-gray-50">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
             <div className="flex items-center gap-2">
@@ -411,25 +516,71 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
 
         {/* Carrier Selection for Automatic Mode */}
         {generationMode === 'automatic' && (
-          <div className="px-4 sm:px-6 py-3 border-b bg-blue-50">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-              <label className="text-sm font-medium whitespace-nowrap">Empresa de Envío:</label>
-              <select
-                value={selectedCarrier}
-                onChange={(e) => setSelectedCarrier(e.target.value)}
-                className="w-full sm:w-auto px-3 py-2 border rounded-md text-sm bg-white"
-              >
-                <option value="">Seleccionar empresa</option>
-                {shippingConfigs.map(config => (
-                  <option key={config.id} value={config.carrier}>
-                    {config.name}
-                  </option>
-                ))}
-              </select>
+          <div className="px-4 sm:px-6 py-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Empresa de Envío:</label>
+                <select
+                  value={selectedCarrier}
+                  onChange={(e) => setSelectedCarrier(e.target.value)}
+                  className="w-full sm:w-auto px-3 py-2 border border-blue-300 rounded-md text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Seleccionar empresa</option>
+                  {shippingConfigs.map(config => (
+                    <option key={config.id} value={config.carrier}>
+                      {config.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* Delivery Type Selection for Correos */}
+              {(selectedCarrier === 'correos_cr' || selectedCarrier === 'correos' || selectedCarrier.toLowerCase().includes('correo')) && (
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 pt-2 border-t border-blue-200">
+                  <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Tipo de Envío:</label>
+                  <div className="flex flex-wrap gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="deliveryType"
+                        value="Domicilio"
+                        checked={deliveryType === 'Domicilio'}
+                        onChange={(e) => setDeliveryType(e.target.value as any)}
+                        className="w-4 h-4 text-blue-600"
+                      />
+                      <span className="text-sm">Domicilio</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="deliveryType"
+                        value="Sucursal"
+                        checked={deliveryType === 'Sucursal'}
+                        onChange={(e) => setDeliveryType(e.target.value as any)}
+                        className="w-4 h-4 text-blue-600"
+                      />
+                      <span className="text-sm">Sucursal</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="deliveryType"
+                        value="Punto de correo"
+                        checked={deliveryType === 'Punto de correo'}
+                        onChange={(e) => setDeliveryType(e.target.value as any)}
+                        className="w-4 h-4 text-blue-600"
+                      />
+                      <span className="text-sm">Punto de correo</span>
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
+        {/* Make only the list scrollable and keep footer visible */}
+        <div className="flex-1 overflow-hidden flex flex-col">
         <ScrollArea className="max-h-[50vh] sm:max-h-[55vh] px-4 sm:px-6">
           <div className="space-y-3 py-2">
             {orderGuias.map((og) => {
@@ -530,6 +681,116 @@ export function GuiaGenerator({ orders, isOpen, onClose, onUpdateOrder }: GuiaGe
             <span className="sm:hidden">Imprimir</span>
           </Button>
         </DialogFooter>
+        </div>
+          </>
+        ) : (
+          /* History Tab */
+          <div className="flex-1 overflow-auto px-4 sm:px-6 py-4">
+            {loadingHistory ? (
+              <div className="flex justify-center items-center h-64">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+              </div>
+            ) : guiasHistory.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <FileText className="h-16 w-16 mx-auto mb-4 opacity-30" />
+                <p className="text-lg font-medium">No hay guías generadas</p>
+                <p className="text-sm mt-2">Las guías que generes aparecerán aquí</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {guiasHistory.map((guia) => (
+                  <div
+                    key={guia.id}
+                    className="border rounded-lg p-4 hover:shadow-md transition-shadow bg-white"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="font-semibold text-lg">
+                            {guia.guiaNumber || 'Sin número'}
+                          </span>
+                          <Badge
+                            variant={
+                              guia.status === 'completed'
+                                ? 'default'
+                                : guia.status === 'failed'
+                                ? 'destructive'
+                                : 'secondary'
+                            }
+                            className="text-xs"
+                          >
+                            {guia.status === 'completed' ? (
+                              <CheckCircle className="inline h-3 w-3 mr-1" />
+                            ) : guia.status === 'failed' ? (
+                              <XCircle className="inline h-3 w-3 mr-1" />
+                            ) : (
+                              <Clock className="inline h-3 w-3 mr-1" />
+                            )}
+                            {guia.status}
+                          </Badge>
+                        </div>
+                        <div className="text-sm text-gray-600 space-y-1">
+                          <p>
+                            <strong>Orden:</strong> {guia.orderId}
+                          </p>
+                          <p>
+                            <strong>Carrier:</strong> {guia.carrier}
+                          </p>
+                          {guia.progress && (
+                            <p className="text-xs text-gray-500">{guia.progress}</p>
+                          )}
+                          {guia.errorMessage && (
+                            <p className="text-xs text-red-600">{guia.errorMessage}</p>
+                          )}
+                          <p className="text-xs text-gray-400">
+                            Creado: {new Date(guia.createdAt).toLocaleString('es-CR')}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {guia.hasPdf ? (
+                          <Button
+                            onClick={() => downloadPDF(guia.id, guia.pdfFileName || `guia-${guia.guiaNumber}.pdf`)}
+                            size="sm"
+                            className="flex items-center gap-2"
+                          >
+                            <Download className="h-4 w-4" />
+                            PDF
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled
+                            className="flex items-center gap-2"
+                          >
+                            <XCircle className="h-4 w-4" />
+                            Sin PDF
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="mt-4 flex justify-between items-center">
+              <p className="text-sm text-gray-600">
+                Total: {guiasHistory.length} guía(s)
+              </p>
+              <Button
+                onClick={loadGuiasHistory}
+                variant="outline"
+                size="sm"
+                disabled={loadingHistory}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${loadingHistory ? 'animate-spin' : ''}`} />
+                Actualizar
+              </Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

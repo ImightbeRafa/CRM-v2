@@ -378,8 +378,19 @@ export async function POST(request: NextRequest) {
     console.log('[POST /api/orders] Creating order:', {
       orderId: body.orderId || `ORDER-${Date.now()}`,
       customerName: body.customerName,
-      tenantId
+      tenantId,
+      sessionUserId: userId,
+      sessionUserName: userName
     });
+    
+    // Additional security check - log if user email doesn't match seller
+    if (body.seller && userName && body.seller !== userName) {
+      console.warn('[POST /api/orders] ⚠️ Seller name mismatch:', {
+        sessionUser: userName,
+        orderSeller: body.seller,
+        orderId: body.orderId
+      });
+    }
     
     const order = await tenantPrisma.order.create({
       data: ({

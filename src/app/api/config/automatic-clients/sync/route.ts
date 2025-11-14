@@ -9,6 +9,7 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response;
     
     const { tenantId, userId } = auth;
+    console.log('[automatic-clients/sync] Starting sync for tenant:', tenantId);
     const prisma = getTenantPrisma(tenantId);
 
     // Get all orders to extract unique clients (auto-filtered by tenantPrisma)
@@ -117,6 +118,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    console.log('[automatic-clients/sync] ✅ Sync completed:', {
+      tenantId,
+      syncedClients: syncedCount,
+      updatedClients: updatedCount,
+      totalClients: clientMap.size
+    });
+    
     return NextResponse.json({
       status: 'success',
       data: {

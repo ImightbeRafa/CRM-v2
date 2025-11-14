@@ -12,13 +12,28 @@ export async function GET(request: NextRequest) {
     const prisma = getTenantPrisma(tenantId);
 
     const clients = await prisma.client.findMany({
-      where: { isActive: true, tenantId },
+      where: { isActive: true },
       orderBy: [
         { isFavorite: 'desc' },
         { totalSpent: 'desc' },
         { name: 'asc' }
       ]
     });
+    
+    // Security logging - verify all clients belong to this tenant
+    if (process.env.NODE_ENV !== 'production') {
+      const wrongTenantClients = clients.filter((c: any) => c.tenantId !== tenantId);
+      if (wrongTenantClients.length > 0) {
+        console.error('🚨 TENANT ISOLATION BREACH in /api/config/automatic-clients:', {
+          requestedTenant: tenantId,
+          breachedClients: wrongTenantClients.map((c: any) => ({ 
+            id: c.id, 
+            name: c.name,
+            tenantId: c.tenantId 
+          }))
+        });
+      }
+    }
 
     return NextResponse.json({
       status: 'success',

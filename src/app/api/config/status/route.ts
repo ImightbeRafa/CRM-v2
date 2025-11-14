@@ -15,11 +15,22 @@ export async function GET(request: NextRequest) {
     
     const statuses = await prisma.orderStatus.findMany({ 
       where: { 
-        tenantId,
         isActive: true 
       }, 
       orderBy: { order: 'asc' } 
     })
+    
+    // Security logging - verify all statuses belong to this tenant
+    if (process.env.NODE_ENV !== 'production') {
+      const wrongTenantStatuses = statuses.filter(s => s.tenantId !== tenantId);
+      if (wrongTenantStatuses.length > 0) {
+        console.error('🚨 TENANT ISOLATION BREACH DETECTED in /api/config/status:', {
+          requestedTenant: tenantId,
+          wrongStatuses: wrongTenantStatuses.map(s => ({ id: s.id, tenantId: s.tenantId }))
+        });
+      }
+    }
+    
     return NextResponse.json({ status: 'success', data: statuses })
   } catch (e: any) {
     const msg = typeof e?.message === 'string' ? e.message : ''
@@ -48,8 +59,7 @@ export async function POST(request: NextRequest) {
     // Idempotent: if key exists for this tenant (even inactive), update/reactivate; else create
     const existing = await prisma.orderStatus.findFirst({ 
       where: { 
-        key: statusKey,
-        tenantId 
+        key: statusKey
       } 
     })
     if (existing) {

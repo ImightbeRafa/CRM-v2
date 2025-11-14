@@ -113,15 +113,15 @@ export async function POST(request: NextRequest) {
 
     return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName: (token as any)?.name || (token as any)?.email || 'System' }, async () => {
       const prisma = getTenantPrisma(tenantId)
-      // Find order with tenant isolation
+      // Find order with tenant isolation (middleware auto-filters by tenantId)
       const existing = await prisma.order.findFirst({ 
         where: { 
-          orderId: cleanData.orderId,
-          tenantId: tenantId
+          orderId: cleanData.orderId
         }
       })
     
       if (!existing) {
+        console.error('[Order Update] Order not found:', { orderId: cleanData.orderId, tenantId });
         return createErrorResponse('Order not found', 404)
       }
 
@@ -174,16 +174,26 @@ export async function POST(request: NextRequest) {
       updateData.customFields = { ...currentCustom, ...additions }
     }
 
-      // Update order with tenant isolation and explicit tenant filter
+      // Update order with tenant isolation (middleware auto-filters by tenantId)
       const updateRes = await prisma.order.updateMany({ 
-        where: { id: existing.id, tenantId }, 
+        where: { id: existing.id }, 
         data: updateData 
       })
       if (updateRes.count === 0) {
+        console.error('[Order Update] Update failed - order not found:', { 
+          orderId: existing.orderId, 
+          id: existing.id, 
+          tenantId,
+          updateDataKeys: Object.keys(updateData)
+        });
         return createErrorResponse('Order not found in this tenant', 404)
       }
       // Re-fetch the updated record
       const result = await prisma.order.findUnique({ where: { id: existing.id } })
+      if (!result) {
+        console.error('[Order Update] Re-fetch failed after successful update:', { id: existing.id, tenantId });
+        return createErrorResponse('Order update verification failed', 500)
+      }
 
     // Log audit trail with smart change detection
       if (Object.keys(updateData).length > 0) {

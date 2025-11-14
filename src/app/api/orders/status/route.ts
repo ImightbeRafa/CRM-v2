@@ -31,12 +31,17 @@ export async function POST(request: Request) {
     return await withTenantContext({ tenantId, userId, role: userRole, userRole, userName }, async () => {
       const prisma = getTenantPrisma(tenantId)
       
-      // Get the existing order with tenant filter
+      // Get the existing order (tenant filter applied by middleware)
       const existingOrder = await prisma.order.findFirst({
-        where: { orderId: body.orderId, tenantId }
+        where: { orderId: body.orderId }
       })
-
+      
       if (!existingOrder) {
+        console.error('[orders/status] SECURITY: Order not found or wrong tenant', { 
+          orderId: body.orderId, 
+          tenantId,
+          attemptedBy: userId 
+        });
         return NextResponse.json(
           { error: 'Order not found' },
           { status: 404 }

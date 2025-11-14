@@ -34,6 +34,18 @@ export interface AuditLogData {
 
 export async function logAuditEvent(data: AuditLogData): Promise<void> {
   try {
+    // Validate that user exists before attempting to create audit log
+    let userExists = false;
+    try {
+      const user = await prismaRaw.user.findUnique({
+        where: { id: data.userId },
+        select: { id: true }
+      });
+      userExists = !!user;
+    } catch (err) {
+      console.warn('[AuditLogger] Failed to verify user exists:', err);
+    }
+
     // Ensure the action is a valid Prisma audit action
     const action: PrismaAuditAction = isPrismaAuditAction(data.action) 
       ? data.action 
@@ -63,20 +75,28 @@ export async function logAuditEvent(data: AuditLogData): Promise<void> {
       userRole: data.userRole,
       ipAddress: data.ipAddress || null,
       userAgent: data.userAgent || null,
-      user: {
-        connect: { id: data.userId }
-      },
       tenant: {
         connect: { id: data.tenantId }
       }
     };
+
+    // Only add user relation if user exists
+    if (userExists) {
+      logData.user = {
+        connect: { id: data.userId }
+      };
+    }
 
     // Create the audit log using raw client to bypass tenant middleware
     await prismaRaw.auditLog.create({
       data: logData
     });
     
-    console.log(`✅ Audit log created: ${data.action} on ${data.entityType} by ${data.userName || 'System'} (tenant: ${data.tenantId})`);
+    if (!userExists) {
+      console.log(`⚠️  Audit log created without user reference: ${data.action} on ${data.entityType} by ${data.userName || 'System'} (tenant: ${data.tenantId})`);
+    } else {
+      console.log(`✅ Audit log created: ${data.action} on ${data.entityType} by ${data.userName || 'System'} (tenant: ${data.tenantId})`);
+    }
   } catch (error) {
     console.error('❌ Failed to log audit event:', error);
     // Don't throw error to avoid breaking the main operation
@@ -287,14 +307,37 @@ export async function logAudit(data: AuditLogData): Promise<void> {
       logData.newValues = newVals;
     }
 
+    // Validate that user exists before attempting to create audit log
+    let userExists = false;
+    try {
+      const user = await prismaRaw.user.findUnique({
+        where: { id: data.userId },
+        select: { id: true }
+      });
+      userExists = !!user;
+    } catch (err) {
+      console.warn('[AuditLogger] Failed to verify user exists:', err);
+    }
+
+    // Only add user relation if user exists
+    if (userExists) {
+      logData.user = {
+        connect: { id: data.userId }
+      };
+    }
+
     // Try to create audit log using raw client to bypass tenant middleware
     try {
       await prismaRaw.auditLog.create({
         data: logData
       });
+      if (!userExists) {
+        console.log('[AuditLogger] ⚠️  Audit log created without user reference (user not found):', data.userId);
+      }
     } catch (auditError: any) {
-      // Handle foreign key constraint violation for userId
-      if (auditError?.code === 'P2003' && auditError?.meta?.constraint === 'AuditLog_userId_fkey') {
+      // Handle both P2025 (record not found) and P2003 (foreign key constraint) errors
+      if ((auditError?.code === 'P2025' || auditError?.code === 'P2003') && 
+          (auditError?.meta?.cause?.includes('User') || auditError?.meta?.constraint === 'AuditLog_userId_fkey')) {
         console.warn('[AuditLogger] Invalid userId, logging without user reference:', data.userId);
         // Retry without user relation using raw Prisma client
         const { user, ...logDataWithoutUser } = logData;

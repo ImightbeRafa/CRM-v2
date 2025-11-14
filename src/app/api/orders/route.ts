@@ -252,9 +252,25 @@ export async function GET(request: NextRequest) {
           saleDate: true,
           seller: true,
           delivery: true,
+          tenantId: true, // Include for security verification
           // Exclude only the heaviest field: productDetails (can be loaded separately if needed)
         }
     })
+    
+    // Security logging - verify all orders belong to this tenant
+    if (process.env.NODE_ENV !== 'production') {
+      const wrongTenantOrders = orders.filter((o: any) => o.tenantId !== tenantId);
+      if (wrongTenantOrders.length > 0) {
+        console.error('🚨 CRITICAL TENANT ISOLATION BREACH in /api/orders:', {
+          requestedTenant: tenantId,
+          breachedOrders: wrongTenantOrders.map((o: any) => ({ 
+            orderId: o.orderId, 
+            tenantId: o.tenantId,
+            customerName: o.customerName 
+          }))
+        });
+      }
+    }
     
     console.log(`[GET /api/orders] Returning ${orders.length} orders for tenant ${tenantId}`)
       
@@ -359,6 +375,12 @@ export async function POST(request: NextRequest) {
       : calculatedTotal;
     
     // Create a new order with explicit tenantId
+    console.log('[POST /api/orders] Creating order:', {
+      orderId: body.orderId || `ORDER-${Date.now()}`,
+      customerName: body.customerName,
+      tenantId
+    });
+    
     const order = await tenantPrisma.order.create({
       data: ({
         tenantId,
@@ -398,8 +420,13 @@ export async function POST(request: NextRequest) {
         customFields: Object.keys(customFields).length > 0 ? customFields : undefined
       } as any)
     })
-
-     // Order created successfully
+    
+    console.log('[POST /api/orders] ✅ Order created successfully:', {
+      orderId: order.orderId,
+      id: order.id,
+      customerName: order.customerName,
+      tenantId: order.tenantId
+    });
 
     // Update inventory and audit log in parallel (non-blocking)
     Promise.all([

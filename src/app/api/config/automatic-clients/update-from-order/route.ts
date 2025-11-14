@@ -43,8 +43,7 @@ export async function POST(request: NextRequest) {
         existingClient = await prisma.client.findFirst({
           where: { 
             id: customerId, 
-            isActive: true, 
-            tenantId 
+            isActive: true
           }
         });
       }
@@ -54,14 +53,20 @@ export async function POST(request: NextRequest) {
         existingClient = await prisma.client.findFirst({
           where: { 
             phone, 
-            isActive: true, 
-            tenantId 
+            isActive: true
           }
         });
       }
 
       if (existingClient) {
         // UPDATE existing client with new information
+        console.log('[update-from-order] Updating existing client:', {
+          clientId: existingClient.id,
+          name: existingClient.name,
+          phone: existingClient.phone,
+          tenantId
+        });
+        
         const updatedClient = await prisma.client.update({
           where: { id: existingClient.id },
           data: {
@@ -77,6 +82,8 @@ export async function POST(request: NextRequest) {
           }
         });
 
+        console.log('[update-from-order] ✅ Client updated successfully:', updatedClient.id);
+        
         return NextResponse.json({
           status: 'success',
           action: 'updated',
@@ -84,6 +91,12 @@ export async function POST(request: NextRequest) {
         });
       } else {
         // CREATE new client with explicit tenantId
+        console.log('[update-from-order] Creating new client:', {
+          name,
+          phone,
+          tenantId
+        });
+        
         const newClient = await prisma.client.create({
           data: {
             tenantId,
@@ -107,6 +120,8 @@ export async function POST(request: NextRequest) {
           }
         });
 
+        console.log('[update-from-order] ✅ New client created:', newClient.id);
+        
         return NextResponse.json({
           status: 'success',
           action: 'created',

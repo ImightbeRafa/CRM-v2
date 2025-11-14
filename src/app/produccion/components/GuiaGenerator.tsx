@@ -120,8 +120,24 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
       const result = await response.json();
       
       if (result.status === 'success') {
-        setShippingConfigs(result.data);
-        const defaultConfig = result.data.find((config: ShippingConfig) => config.isDefault);
+        const configs: ShippingConfig[] = result.data || [];
+
+        if (configs.length === 0) {
+          // Fallback when API returns success but no configs
+          const defaultCorreosConfig: ShippingConfig = {
+            id: 'default',
+            carrier: 'correos',
+            name: 'Correos de Costa Rica',
+            isActive: true,
+            isDefault: true
+          };
+          setShippingConfigs([defaultCorreosConfig]);
+          setSelectedCarrier(defaultCorreosConfig.carrier);
+          return;
+        }
+
+        setShippingConfigs(configs);
+        const defaultConfig = configs.find((config: ShippingConfig) => config.isDefault);
         if (defaultConfig) {
           setSelectedCarrier(defaultConfig.carrier);
         }

@@ -14,6 +14,7 @@ import { Badge } from "@/app/components/ui/badge";
 import { useSalesStream } from '@/app/hooks/useSalesStream';
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 import { useConfig } from '@/app/contexts/ConfigContext';
+import { OrderStatus } from '@/app/config/components/StatusManager';
 import { Sale } from '../types/sales';
 import { Loader2, Search, Filter, Download, Printer, Eye, Edit, CheckCircle, Clock, AlertCircle, Truck, Package, Users, TrendingUp, LayoutGrid, List, Kanban, FileText, RefreshCw } from 'lucide-react';
 import { useToast } from "@/app/hooks/use-toast";
@@ -31,8 +32,9 @@ import { KanbanBoard } from './KanbanBoard';
 
 // Dynamic Status Filter Component - now using global config
 const StatusFilterSelect = ({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) => {
-  const { config } = useConfig();
-  const statuses = config.statuses;
+  const { getState } = useConfig();
+  const statusesState = getState<OrderStatus[]>('statuses');
+  const statuses = statusesState.data ?? [];
 
   return (
     <Select value={value} onValueChange={onValueChange}>
@@ -314,9 +316,11 @@ export function EnhancedProductionDashboard({
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'EA' | 'RA' | 'urgent'>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const { config } = useConfig(); // Use global config context
-  const statuses = config.statuses;
-  const businessInfoFields = config.businessInfoFields;
+  const { getState } = useConfig();
+  const statusesState = getState<OrderStatus[]>('statuses');
+  const statuses = statusesState.data ?? [];
+  const businessInfoFieldsState = getState<any[]>('businessInfoFields');
+  const businessInfoFields = businessInfoFieldsState.data ?? [];
 
   // Define handleStatsFilter callback at the top level
   const handleStatsFilter = React.useCallback((filter: 'all' | 'EA' | 'RA' | 'urgent') => {
@@ -715,7 +719,6 @@ export function EnhancedProductionDashboard({
       {showGuide && (
         <ProductionWorkflowGuide
           onClose={() => setShowGuide(false)}
-          open={showGuide}
         />
       )}
 

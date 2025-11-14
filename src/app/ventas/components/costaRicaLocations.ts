@@ -13,7 +13,7 @@ export const costaRicaLocations: ProvinceData[] = [
     nombre: "San José",
     cantones: [
       {
-        nombre: "Central",
+        nombre: "San José",
         distritos: [
           "Carmen",
           "Merced",
@@ -169,7 +169,7 @@ export const costaRicaLocations: ProvinceData[] = [
     nombre: "Alajuela",
     cantones: [
       {
-        nombre: "Central",
+        nombre: "Alajuela",
         distritos: [
           "Alajuela",
           "San José",
@@ -281,7 +281,7 @@ export const costaRicaLocations: ProvinceData[] = [
     nombre: "Cartago",
     cantones: [
       {
-        nombre: "Central",
+        nombre: "Cartago",
         distritos: [
           "Oriental",
           "Occidental",
@@ -343,7 +343,7 @@ export const costaRicaLocations: ProvinceData[] = [
     nombre: "Heredia",
     cantones: [
       {
-        nombre: "Central",
+        nombre: "Heredia",
         distritos: ["Heredia", "Mercedes", "San Francisco", "Ulloa", "Varablanca"]
       },
       {
@@ -437,7 +437,7 @@ export const costaRicaLocations: ProvinceData[] = [
     nombre: "Puntarenas",
     cantones: [
       {
-        nombre: "Central",
+        nombre: "Puntarenas",
         distritos: [
           "Puntarenas",
           "Pitahaya",
@@ -513,7 +513,7 @@ export const costaRicaLocations: ProvinceData[] = [
     nombre: "Limón",
     cantones: [
       {
-        nombre: "Central",
+        nombre: "Limón",
         distritos: ["Limón", "Valle La Estrella", "Río Blanco", "Matama"]
       },
       {

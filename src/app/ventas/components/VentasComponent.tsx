@@ -7,7 +7,7 @@ import DailyStats from '@/app/ventas/components/DailyStats';
 import SalesErrorBoundary from '@/app/ventas/components/SalesErrorBoundary';
 import { DOMErrorBoundary } from '@/app/components/DOMErrorBoundary';
 import { Button } from "@/app/components/ui/button";
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 
 // Lazy load the form
 const EnhancedSalesForm = lazy(() => import('./EnhancedSalesForm'));
@@ -66,21 +66,14 @@ export default function VentasContent() {
             }`} style={{ zIndex: 1, position: 'relative', overflow: 'visible' }}>
               {/* Add Order Button - Apple-like Minimalistic Design */}
               {!showOrderForm && (
-                <div className="bg-white rounded-2xl p-8 text-center hover:shadow-lg transition-all duration-300">
-                  <div className="mb-6">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto">
-                      <span className="text-2xl">📝</span>
-                    </div>
-                  </div>
-                  <h3 className="text-gray-900 text-xl font-medium mb-3">Nueva Venta</h3>
-                  <p className="text-gray-500 text-base mb-8 max-w-sm mx-auto">Crea una orden y sigue aumentando tus ventas</p>
-                  
+                <div className="flex justify-end">
                   <Button
                     onClick={() => setShowOrderForm(true)}
-                    size="lg"
-                    className="bg-gray-900 hover:bg-gray-800 text-white font-medium px-8 py-4 rounded-xl transition-all duration-200 hover:scale-105"
+                    size="icon"
+                    aria-label="Agregar orden"
+                    className="w-12 h-12 rounded-2xl bg-black text-white shadow-lg hover:bg-black/80 transition-transform duration-150 hover:scale-105"
                   >
-                    Agregar Orden
+                    <Plus className="h-5 w-5" aria-hidden="true" />
                   </Button>
                 </div>
               )}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -8,7 +8,7 @@ import { Badge } from '@/app/components/ui/badge';
 import { Plus, Edit, Trash2, CheckCircle, GripVertical } from 'lucide-react';
 import { useToast } from '@/app/hooks/use-toast';
 
-interface OrderStatus {
+export interface OrderStatus {
   id: string;
   key: string;
   label: string;
@@ -17,35 +17,17 @@ interface OrderStatus {
   isActive: boolean;
 }
 
-export function StatusManager() {
-  const [statuses, setStatuses] = useState<OrderStatus[]>([]);
-  const [loading, setLoading] = useState(true);
+interface StatusManagerProps {
+  statuses: OrderStatus[];
+  loading?: boolean;
+  onRefresh?: () => Promise<void> | void;
+}
+
+export function StatusManager({ statuses, loading = false, onRefresh }: StatusManagerProps) {
   const [showForm, setShowForm] = useState(false);
   const [editingStatus, setEditingStatus] = useState<OrderStatus | null>(null);
   const [formData, setFormData] = useState({ key: '', label: '', color: '#60A5FA', order: 0 });
   const { toast } = useToast();
-
-  const loadStatuses = async () => {
-    try {
-      const res = await fetch('/api/config/status');
-      const json = await res.json();
-      if (json.status === 'success') {
-        setStatuses(json.data);
-      }
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudieron cargar los estados"
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadStatuses();
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,10 +48,10 @@ export function StatusManager() {
           title: "✅ Estado guardado",
           description: editingStatus ? "Estado actualizado correctamente" : "Estado creado correctamente"
         });
-        loadStatuses();
+        await onRefresh?.();
         setShowForm(false);
         setEditingStatus(null);
-        setFormData({ key: '', label: '', color: '#60A5FA', order: 0 });
+        setFormData({ key: '', label: '', color: '#60A5FA', order: statuses.length });
       }
     } catch (error) {
       toast({
@@ -92,7 +74,7 @@ export function StatusManager() {
           title: "✅ Estado eliminado",
           description: "El estado ha sido desactivado"
         });
-        loadStatuses();
+        await onRefresh?.();
       }
     } catch (error) {
       toast({

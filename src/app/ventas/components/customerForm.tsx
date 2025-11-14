@@ -1,5 +1,22 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { CustomerInfo } from './types';
+import {
+  costaRicaLocations,
+  provinceNames,
+  ProvinceData,
+  CantonData,
+} from './costaRicaLocations';
+
+type CantonWithProvince = {
+  province: string;
+  canton: string;
+};
+
+type DistrictWithHierarchy = {
+  province: string;
+  canton: string;
+  district: string;
+};
 
 interface CustomerFormProps {
   customerInfo: CustomerInfo;
@@ -9,6 +26,33 @@ interface CustomerFormProps {
   orderType: 'EA' | 'RA';
 }
 
+const normalizeText = (value: string | undefined | null) => {
+  const safeValue = (value ?? '').toString();
+  return safeValue
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+};
+
+const findProvince = (provinceName: string): ProvinceData | undefined => {
+  const normalizedTarget = normalizeText(provinceName);
+  return costaRicaLocations.find(
+    (province) => normalizeText(province.nombre) === normalizedTarget
+  );
+};
+
+const findCanton = (
+  province: ProvinceData | undefined,
+  cantonName: string
+): CantonData | undefined => {
+  if (!province) return undefined;
+  const normalizedTarget = normalizeText(cantonName);
+  return province.cantones.find(
+    (canton) => normalizeText(canton.nombre) === normalizedTarget
+  );
+};
+
 const CustomerForm: React.FC<CustomerFormProps> = ({
   customerInfo,
   onCustomerInfoChange,
@@ -16,6 +60,155 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
   onRawCustomerTextChange,
   orderType,
 }) => {
+  const [cantonSearch, setCantonSearch] = useState(customerInfo.canton || '');
+  const [districtSearch, setDistrictSearch] = useState(customerInfo.district || '');
+  const [cantonSuggestionsOpen, setCantonSuggestionsOpen] = useState(false);
+  const [districtSuggestionsOpen, setDistrictSuggestionsOpen] = useState(false);
+
+  const selectedProvince = useMemo(
+    () => findProvince(customerInfo.province),
+    [customerInfo.province]
+  );
+
+  const cantonsForProvince = useMemo(
+    () => selectedProvince?.cantones ?? [],
+    [selectedProvince]
+  );
+
+  const selectedCanton = useMemo(
+    () => findCanton(selectedProvince, customerInfo.canton),
+    [selectedProvince, customerInfo.canton]
+  );
+
+  const districtsForCanton = useMemo(
+    () => selectedCanton?.distritos ?? [],
+    [selectedCanton]
+  );
+
+  const allCantons: CantonWithProvince[] = useMemo(
+    () =>
+      costaRicaLocations.flatMap((province) =>
+        province.cantones.map((canton) => ({
+          province: province.nombre,
+          canton: canton.nombre,
+        }))
+      ),
+    []
+  );
+
+  const allDistricts: DistrictWithHierarchy[] = useMemo(
+    () =>
+      costaRicaLocations.flatMap((province) =>
+        province.cantones.flatMap((canton) =>
+          canton.distritos.map((district) => ({
+            province: province.nombre,
+            canton: canton.nombre,
+            district,
+          }))
+        )
+      ),
+    []
+  );
+
+  const cantonSearchResults = useMemo(() => {
+    const search = normalizeText(cantonSearch);
+    if (!search) return [];
+
+    const selectedNormalized = normalizeText(customerInfo.canton || '');
+    if (search === selectedNormalized && customerInfo.canton) {
+      return [];
+    }
+
+    return allCantons
+      .filter((item) => normalizeText(item.canton).includes(search))
+      .slice(0, 10);
+  }, [allCantons, cantonSearch, customerInfo.canton]);
+
+  const districtSearchResults = useMemo(() => {
+    const search = normalizeText(districtSearch);
+    if (!search) return [];
+
+    const selectedNormalized = normalizeText(customerInfo.district || '');
+    if (search === selectedNormalized && customerInfo.district) {
+      return [];
+    }
+
+    return allDistricts
+      .filter((item) => normalizeText(item.district).includes(search))
+      .slice(0, 10);
+  }, [allDistricts, districtSearch, customerInfo.district]);
+
+  const displayedCantonResults = useMemo(() => {
+    if (cantonSearchResults.length > 0) {
+      return cantonSearchResults;
+    }
+
+    if (selectedProvince) {
+      const provinceSuggestions = selectedProvince.cantones
+        .filter((canton) =>
+          cantonSearch.trim() === ''
+            ? true
+            : normalizeText(canton.nombre).includes(normalizeText(cantonSearch))
+        )
+        .map((canton) => ({
+          province: selectedProvince.nombre,
+          canton: canton.nombre,
+        }));
+
+      if (provinceSuggestions.length > 0) {
+        return provinceSuggestions.slice(0, 15);
+      }
+    }
+
+    const globalSuggestions = allCantons.filter((item) =>
+      cantonSearch.trim() === ''
+        ? true
+        : normalizeText(item.canton).includes(normalizeText(cantonSearch))
+    );
+
+    return globalSuggestions.slice(0, 15);
+  }, [cantonSearchResults, cantonSearch, selectedProvince, allCantons]);
+
+  const displayedDistrictResults = useMemo(() => {
+    if (districtSearchResults.length > 0) {
+      return districtSearchResults;
+    }
+
+    if (selectedProvince && selectedCanton) {
+      const cantonSuggestions = selectedCanton.distritos
+        .filter((district) =>
+          districtSearch.trim() === ''
+            ? true
+            : normalizeText(district).includes(normalizeText(districtSearch))
+        )
+        .map((district) => ({
+          province: selectedProvince.nombre,
+          canton: selectedCanton.nombre,
+          district,
+        }));
+
+      if (cantonSuggestions.length > 0) {
+        return cantonSuggestions.slice(0, 15);
+      }
+    }
+
+    const globalSuggestions = allDistricts.filter((item) =>
+      districtSearch.trim() === ''
+        ? true
+        : normalizeText(item.district).includes(normalizeText(districtSearch))
+    );
+
+    return globalSuggestions.slice(0, 15);
+  }, [districtSearchResults, districtSearch, selectedProvince, selectedCanton, allDistricts]);
+
+  useEffect(() => {
+    setCantonSearch(customerInfo.canton || '');
+  }, [customerInfo.canton]);
+
+  useEffect(() => {
+    setDistrictSearch(customerInfo.district || '');
+  }, [customerInfo.district]);
+
   const parseCustomerText = (text: string) => {
     if (!text.trim()) return;
     
@@ -164,13 +357,19 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
     }
     
     // ===== Build result =====
+    const provinceMatch = findProvince(province) || selectedProvince;
+    const cantonMatch = findCanton(provinceMatch, canton) || selectedCanton;
+    const districtMatch = cantonMatch?.distritos.find(
+      (d) => normalizeText(d) === normalizeText(district)
+    );
+
     const newCustomerInfo = {
       ...customerInfo,
       name: name.replace(/^(Nombre|Name)[:\-=|~]?\s*/i, '').trim(),
       phone,
-      province,
-      canton,
-      district,
+      province: provinceMatch?.nombre || province,
+      canton: cantonMatch?.nombre || canton,
+      district: districtMatch || district,
       email,
       address: address.replace(/^(Dirección|Address)[:\-=|~]?\s*/i, '').trim(),
     };
@@ -179,12 +378,62 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
     onCustomerInfoChange(newCustomerInfo);
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ) => {
     const { name, value } = e.target;
     onCustomerInfoChange({
       ...customerInfo,
       [name]: value,
     });
+  };
+
+  const handleProvinceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    const province = costaRicaLocations.find((p) => p.nombre === value);
+
+    onCustomerInfoChange({
+      ...customerInfo,
+      province: province ? province.nombre : value,
+      canton: '',
+      district: '',
+    });
+    setCantonSearch('');
+    setDistrictSearch('');
+  };
+
+  const handleCantonSearch = (value: string) => {
+    setCantonSearch(value);
+    setCantonSuggestionsOpen(true);
+  };
+
+  const handleDistrictSearch = (value: string) => {
+    setDistrictSearch(value);
+    setDistrictSuggestionsOpen(true);
+  };
+
+  const applyCantonMatch = (match: CantonWithProvince) => {
+    setCantonSearch(match.canton);
+    onCustomerInfoChange({
+      ...customerInfo,
+      province: match.province,
+      canton: match.canton,
+      district: '',
+    });
+    setDistrictSearch('');
+    setCantonSuggestionsOpen(false);
+  };
+
+  const applyDistrictMatch = (match: DistrictWithHierarchy) => {
+    setDistrictSearch(match.district);
+    onCustomerInfoChange({
+      ...customerInfo,
+      province: match.province,
+      canton: match.canton,
+      district: match.district,
+    });
+    setCantonSearch(match.canton);
+    setDistrictSuggestionsOpen(false);
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -266,36 +515,100 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
             <>
               <div>
                 <label className="block text-sm text-gray-600">Provincia</label>
-                <input
-                  type="text"
+                <select
                   name="province"
                   className="w-full p-2 bg-white border rounded"
-                  value={customerInfo.province}
-                  onChange={handleInputChange}
-                  placeholder="No detectado"
-                />
+                  value={selectedProvince?.nombre || customerInfo.province}
+                  onChange={handleProvinceChange}
+                >
+                  <option value="">Seleccione provincia</option>
+                  {provinceNames.map((province) => (
+                    <option key={province} value={province}>
+                      {province}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm text-gray-600">Cantón</label>
-                <input
-                  type="text"
-                  name="canton"
-                  className="w-full p-2 bg-white border rounded"
-                  value={customerInfo.canton}
-                  onChange={handleInputChange}
-                  placeholder="No detectado"
-                />
+                <div className="space-y-1">
+                  <input
+                    type="text"
+                    value={cantonSearch}
+                    onChange={(e) => handleCantonSearch(e.target.value)}
+                    onFocus={() => setCantonSuggestionsOpen(true)}
+                    onBlur={() => setTimeout(() => setCantonSuggestionsOpen(false), 150)}
+                    placeholder="Buscar cantón"
+                    className="w-full p-2 bg-white border rounded"
+                  />
+                  {cantonSuggestionsOpen && (
+                    <div className="max-h-48 overflow-y-auto border rounded bg-white shadow-sm">
+                      {displayedCantonResults.length > 0 ? (
+                        displayedCantonResults.map((result) => (
+                          <button
+                            key={`${result.province}-${result.canton}`}
+                            type="button"
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              applyCantonMatch({
+                                province: result.province,
+                                canton: result.canton,
+                              });
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
+                          >
+                            <div className="font-medium text-gray-800">{result.canton}</div>
+                            <div className="text-xs text-gray-500">{result.province}</div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="px-3 py-2 text-sm text-gray-500">
+                          No se encontraron cantones.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <label className="block text-sm text-gray-600">Distrito</label>
-                <input
-                  type="text"
-                  name="district"
-                  className="w-full p-2 bg-white border rounded"
-                  value={customerInfo.district}
-                  onChange={handleInputChange}
-                  placeholder="No detectado"
-                />
+                <div className="space-y-1">
+                  <input
+                    type="text"
+                    value={districtSearch}
+                    onChange={(e) => handleDistrictSearch(e.target.value)}
+                    onFocus={() => setDistrictSuggestionsOpen(true)}
+                    onBlur={() => setTimeout(() => setDistrictSuggestionsOpen(false), 150)}
+                    placeholder="Buscar distrito"
+                    className="w-full p-2 bg-white border rounded"
+                  />
+                  {districtSuggestionsOpen && (
+                    <div className="max-h-48 overflow-y-auto border rounded bg-white shadow-sm">
+                      {displayedDistrictResults.length > 0 ? (
+                        displayedDistrictResults.map((result) => (
+                          <button
+                            key={`${result.province}-${result.canton}-${result.district}`}
+                            type="button"
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              applyDistrictMatch(result);
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
+                          >
+                            <div className="font-medium text-gray-800">{result.district}</div>
+                            <div className="text-xs text-gray-500">
+                              {result.canton} • {result.province}
+                            </div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="px-3 py-2 text-sm text-gray-500">
+                          No se encontraron distritos.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="col-span-1 sm:col-span-2">
                 <label className="block text-sm text-gray-600">Dirección</label>

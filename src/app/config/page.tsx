@@ -10,8 +10,9 @@ import { SimpleFieldsManager } from './components/SimpleFieldsManager'
 import { OptionSetsManager } from './components/OptionSetsManager'
 import { BillingDashboard } from './components/BillingDashboard'
 import { ExcelImporter } from './components/ExcelImporter'
-import { StatusManager } from './components/StatusManager'
+import { StatusManager, OrderStatus } from './components/StatusManager'
 import { TenantSettingsPanel } from '../components/TenantSettingsPanel'
+import { useConfig } from '../contexts/ConfigContext'
 import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck } from 'lucide-react'
 
 export default function ConfigPage() {
@@ -51,6 +52,10 @@ export default function ConfigPage() {
   const [editingShipping, setEditingShipping] = useState<any>(null)
   const [editingUser, setEditingUser] = useState<any>(null)
   const [showPassword, setShowPassword] = useState(false)
+  const { getState, refresh } = useConfig()
+
+  const statusesState = getState<OrderStatus[]>('statuses')
+  const statuses = statusesState.data ?? []
 
   const loadData = async () => {
     setLoading(true)
@@ -90,8 +95,7 @@ export default function ConfigPage() {
     if (!mounted) return
     const tabParam = searchParams?.get('tab')
     if (tabParam) {
-      // Validate tab value to prevent invalid tabs
-      const validTabs = ['fields', 'business', 'users', 'option-sets', 'shipping', 'sellers', 'import', 'billing', 'bulk-delete', 'audit', 'legacy-fields', 'social', 'integrations']
+      const validTabs = ['fields', 'business', 'users', 'option-sets', 'shipping', 'sellers', 'import', 'billing', 'bulk-delete', 'audit', 'legacy-fields', 'social', 'integrations', 'statuses']
       if (validTabs.includes(tabParam)) {
         setActiveTab(tabParam)
       }
@@ -103,6 +107,13 @@ export default function ConfigPage() {
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted])
+
+  useEffect(() => {
+    if (!mounted) return
+    if (activeTab === 'statuses') {
+      void refresh('statuses')
+    }
+  }, [activeTab, mounted, refresh])
 
   // Bulk operation handlers
   const handleBulkDelete = async (ids: string[], reason?: string) => {
@@ -624,7 +635,11 @@ export default function ConfigPage() {
 
           {/* Statuses Tab */}
           {activeTab === 'statuses' && (
-            <StatusManager />
+            <StatusManager
+              statuses={statuses}
+              loading={statusesState.loading}
+              onRefresh={() => refresh('statuses')}
+            />
           )}
 
           {/* Inventory Tab - locked to inventory only */}

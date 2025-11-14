@@ -64,12 +64,16 @@ interface ShippingConfig {
   name: string;
   isActive: boolean;
   isDefault: boolean;
+  email?: string | null;
+  password?: string | null;
+  requiresSetup?: boolean;
 }
 
 export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGeneratorProps) {
   const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
   const [orderGuias, setOrderGuias] = useState<OrderGuiaData[]>([]);
   const [shippingConfigs, setShippingConfigs] = useState<ShippingConfig[]>([]);
+  const [requiresShippingSetup, setRequiresShippingSetup] = useState(false);
   const [selectedCarrier, setSelectedCarrier] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationMode, setGenerationMode] = useState<'manual' | 'automatic'>('manual');
@@ -93,6 +97,16 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
       loadShippingConfigs();
     }
   }, [open, orders]);
+
+  const handleCarrierChange = (carrierValue: string) => {
+    setSelectedCarrier(carrierValue);
+    const config = shippingConfigs.find(cfg => cfg.carrier === carrierValue);
+    if (config) {
+      setRequiresShippingSetup(!!config.requiresSetup && !(config.password === '***'));
+    } else {
+      setRequiresShippingSetup(false);
+    }
+  };
 
   const loadShippingConfigs = async () => {
     try {
@@ -120,7 +134,10 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
       const result = await response.json();
       
       if (result.status === 'success') {
-        const configs: ShippingConfig[] = result.data || [];
+        const configs: ShippingConfig[] = (result.data || []).map((config: ShippingConfig) => ({
+          ...config,
+          requiresSetup: !config.email || (!config.password || config.password === '')
+        }));
 
         if (configs.length === 0) {
           // Fallback when API returns success but no configs
@@ -129,17 +146,21 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
             carrier: 'correos',
             name: 'Correos de Costa Rica',
             isActive: true,
-            isDefault: true
+            isDefault: true,
+            requiresSetup: true
           };
           setShippingConfigs([defaultCorreosConfig]);
           setSelectedCarrier(defaultCorreosConfig.carrier);
+          setRequiresShippingSetup(true);
           return;
         }
 
         setShippingConfigs(configs);
-        const defaultConfig = configs.find((config: ShippingConfig) => config.isDefault);
+        const defaultConfig = configs.find((config: ShippingConfig) => config.isDefault)
+          || configs[0];
         if (defaultConfig) {
           setSelectedCarrier(defaultConfig.carrier);
+          setRequiresShippingSetup(!!defaultConfig.requiresSetup && !(defaultConfig.password === '***'));
         }
       } else {
         throw new Error(result.error || 'Failed to load shipping configs');
@@ -188,6 +209,11 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
 
     if (!selectedCarrier) {
       alert('Seleccione una empresa de envío');
+      return;
+    }
+
+    if (requiresShippingSetup) {
+      alert('Configura las credenciales de Correos de Costa Rica antes de generar guías automáticamente.');
       return;
     }
 
@@ -538,7 +564,7 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
                 <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Empresa de Envío:</label>
                 <select
                   value={selectedCarrier}
-                  onChange={(e) => setSelectedCarrier(e.target.value)}
+                  onChange={(e) => handleCarrierChange(e.target.value)}
                   className="w-full sm:w-auto px-3 py-2 border border-blue-300 rounded-md text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">Seleccionar empresa</option>
@@ -548,6 +574,11 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
                     </option>
                   ))}
                 </select>
+                {requiresShippingSetup && (
+                  <p className="text-xs text-red-600 sm:ml-4">
+                    Configura el usuario y contraseña de Correos en Configuración &gt; Envíos.
+                  </p>
+                )}
               </div>
               
               {/* Delivery Type Selection for Correos */}

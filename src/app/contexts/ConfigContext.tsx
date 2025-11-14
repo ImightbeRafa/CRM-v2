@@ -2,117 +2,140 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
-interface ConfigData {
-  statuses: Array<{key: string; label: string; color: string | null}>;
-  businessInfoFields: any[];
-  fields: any[];
-  sellers: any[];
-  shipping: any[];
-  inventory: any[];
-  optionSets: any[];
-}
-
-interface ConfigContextType {
-  config: ConfigData;
+type FetchState<T> = {
+  data: T;
   loading: boolean;
   error: string | null;
-  refresh: () => Promise<void>;
-}
+};
+
+type ConfigKeys =
+  | 'statuses'
+  | 'businessInfoFields'
+  | 'fields'
+  | 'sellers'
+  | 'shipping'
+  | 'inventory'
+  | 'optionSets';
+
+type ConfigData = Record<ConfigKeys, any[]>;
+
+type ConfigContextType = {
+  getState: <T = any[]>(key: ConfigKeys) => FetchState<T>;
+  refresh: (key?: ConfigKeys | ConfigKeys[]) => Promise<void>;
+};
 
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 
-const initialConfig: ConfigData = {
-  statuses: [],
-  businessInfoFields: [],
-  fields: [],
-  sellers: [],
-  shipping: [],
-  inventory: [],
-  optionSets: [],
+const DEFAULT_STATE: FetchState<any[]> = {
+  data: [],
+  loading: true,
+  error: null,
 };
 
+const RESOURCE_ENDPOINTS: Record<ConfigKeys, string> = {
+  statuses: '/api/config/status',
+  businessInfoFields: '/api/config/business-info',
+  fields: '/api/config/fields',
+  sellers: '/api/config/sellers',
+  shipping: '/api/config/shipping',
+  inventory: '/api/config/inventory',
+  optionSets: '/api/config/option-sets',
+};
+
+const HIGH_PRIORITY_KEYS: ConfigKeys[] = [
+  'statuses',
+  'fields',
+  'sellers',
+  'shipping',
+  'businessInfoFields',
+  'optionSets',
+];
+
+const LOW_PRIORITY_KEYS: ConfigKeys[] = ['inventory'];
+
 export function ConfigProvider({ children }: { children: ReactNode }) {
-  const [config, setConfig] = useState<ConfigData>(initialConfig);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [states, setStates] = useState<Record<ConfigKeys, FetchState<any[]>>>(() => {
+    return {
+      statuses: { ...DEFAULT_STATE },
+      businessInfoFields: { ...DEFAULT_STATE },
+      fields: { ...DEFAULT_STATE },
+      sellers: { ...DEFAULT_STATE },
+      shipping: { ...DEFAULT_STATE },
+      inventory: { ...DEFAULT_STATE },
+      optionSets: { ...DEFAULT_STATE },
+    };
+  });
 
-  const loadConfig = async (signal?: AbortSignal) => {
+  const updateState = (key: ConfigKeys, updater: Partial<FetchState<any[]>>) => {
+    setStates((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        ...updater,
+      },
+    }));
+  };
+
+  const fetchResource = async (key: ConfigKeys, signal?: AbortSignal) => {
+    const endpoint = RESOURCE_ENDPOINTS[key];
+    if (!endpoint) return;
+
     try {
-      setLoading(true);
-      setError(null);
+      updateState(key, { loading: true, error: null });
 
-      // Fetch config data in batches to avoid overwhelming database connections
-      // Batch 1: Critical config
-      const [statusRes, businessRes] = await Promise.all([
-        fetch('/api/config/status', { credentials: 'include', signal }),
-        fetch('/api/config/business-info', { credentials: 'include', signal }),
-      ]);
-
-      const [statusData, businessData] = await Promise.all([
-        statusRes.json(),
-        businessRes.json(),
-      ]);
-
-      // Batch 2: Form-related config
-      const [fieldsRes, sellersRes, shippingRes] = await Promise.all([
-        fetch('/api/config/fields', { credentials: 'include', signal }),
-        fetch('/api/config/sellers', { credentials: 'include', signal }),
-        fetch('/api/config/shipping', { credentials: 'include', signal }),
-      ]);
-
-      const [fieldsData, sellersData, shippingData] = await Promise.all([
-        fieldsRes.json(),
-        sellersRes.json(),
-        shippingRes.json(),
-      ]);
-
-      // Batch 3: Optional config
-      const [inventoryRes, optionSetsRes] = await Promise.all([
-        fetch('/api/config/inventory', { credentials: 'include', signal }),
-        fetch('/api/config/option-sets', { credentials: 'include', signal }),
-      ]);
-
-      const [inventoryData, optionSetsData] = await Promise.all([
-        inventoryRes.json(),
-        optionSetsRes.json(),
-      ]);
-
-      setConfig({
-        statuses: statusData.status === 'success' ? statusData.data : [],
-        businessInfoFields: businessData.status === 'success' ? businessData.data : [],
-        fields: fieldsData.status === 'success' ? fieldsData.data : [],
-        sellers: sellersData.status === 'success' ? sellersData.data : [],
-        shipping: shippingData.status === 'success' ? shippingData.data : [],
-        inventory: inventoryData.status === 'success' ? inventoryData.data : [],
-        optionSets: optionSetsData.status === 'success' ? optionSetsData.data : [],
+      const response = await fetch(endpoint, {
+        credentials: 'include',
+        signal,
+        cache: 'no-store',
       });
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        console.log('[ConfigContext] Load aborted');
+
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const json = await response.json();
+      if (json.status === 'success') {
+        updateState(key, { data: json.data || [] });
+      } else {
+        updateState(key, { data: [], error: json.error || 'Failed to load data' });
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
         return;
       }
-      console.error('[ConfigContext] Error loading config:', err);
-      setError('Failed to load configuration');
+      console.error(`[ConfigContext] Failed to load ${key}:`, error);
+      updateState(key, { error: 'Failed to load data' });
     } finally {
-      setLoading(false);
+      updateState(key, { loading: false });
     }
   };
 
   useEffect(() => {
     const abortController = new AbortController();
-    loadConfig(abortController.signal);
-    
-    return () => {
-      abortController.abort();
-    };
+
+    HIGH_PRIORITY_KEYS.forEach((key) => {
+      fetchResource(key, abortController.signal);
+    });
+
+    return () => abortController.abort();
   }, []);
 
-  const refresh = async () => {
-    await loadConfig();
+  const refresh = async (keys?: ConfigKeys | ConfigKeys[]) => {
+    const targetKeys = Array.isArray(keys)
+      ? keys
+      : keys
+      ? [keys]
+      : [...HIGH_PRIORITY_KEYS, ...LOW_PRIORITY_KEYS];
+
+    await Promise.all(targetKeys.map((key) => fetchResource(key)));
+  };
+
+  const getState = <T,>(key: ConfigKeys): FetchState<T> => {
+    return states[key] as FetchState<T>;
   };
 
   return (
-    <ConfigContext.Provider value={{ config, loading, error, refresh }}>
+    <ConfigContext.Provider value={{ getState, refresh }}>
       {children}
     </ConfigContext.Provider>
   );
@@ -120,7 +143,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
 export function useConfig() {
   const context = useContext(ConfigContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error('useConfig must be used within a ConfigProvider');
   }
   return context;

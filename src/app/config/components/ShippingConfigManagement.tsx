@@ -52,18 +52,7 @@ export function ShippingConfigManagement() {
     apiKey: '',
     baseUrl: '',
     isDefault: false,
-    settings: {},
-    // Sender (Remitente) information
-    senderIdType: '',
-    senderIdNumber: '',
-    senderName: '',
-    senderPhone: '',
-    senderEmail: '',
-    senderProvince: '',
-    senderCanton: '',
-    senderDistrict: '',
-    senderPostalCode: '',
-    senderAddress: ''
+    settings: {}
   });
 
   useEffect(() => {
@@ -114,17 +103,7 @@ export function ShippingConfigManagement() {
           apiKey: '',
           baseUrl: '',
           isDefault: false,
-          settings: {},
-          senderIdType: '',
-          senderIdNumber: '',
-          senderName: '',
-          senderPhone: '',
-          senderEmail: '',
-          senderProvince: '',
-          senderCanton: '',
-          senderDistrict: '',
-          senderPostalCode: '',
-          senderAddress: ''
+          settings: {}
         });
       }
     } catch (error) {
@@ -158,17 +137,7 @@ export function ShippingConfigManagement() {
       apiKey: config.apiKey || '',
       baseUrl: config.baseUrl || '',
       isDefault: config.isDefault,
-      settings: config.settings || {},
-      senderIdType: (config as any).senderIdType || '',
-      senderIdNumber: (config as any).senderIdNumber || '',
-      senderName: (config as any).senderName || '',
-      senderPhone: (config as any).senderPhone || '',
-      senderEmail: (config as any).senderEmail || '',
-      senderProvince: (config as any).senderProvince || '',
-      senderCanton: (config as any).senderCanton || '',
-      senderDistrict: (config as any).senderDistrict || '',
-      senderPostalCode: (config as any).senderPostalCode || '',
-      senderAddress: (config as any).senderAddress || ''
+      settings: config.settings || {}
     });
     setShowForm(true);
   };
@@ -247,17 +216,7 @@ export function ShippingConfigManagement() {
               apiKey: '',
               baseUrl: '',
               isDefault: false,
-              settings: {},
-              senderIdType: '',
-              senderIdNumber: '',
-              senderName: '',
-              senderPhone: '',
-              senderEmail: '',
-              senderProvince: '',
-              senderCanton: '',
-              senderDistrict: '',
-              senderPostalCode: '',
-              senderAddress: ''
+              settings: {}
             });
             setShowForm(true);
           }}
@@ -339,124 +298,9 @@ export function ShippingConfigManagement() {
                 </div>
               </div>
 
-              {/* Sender (Remitente) Information Section */}
-              {formData.carrier.toLowerCase().includes('correos') && (
-                <>
-                  <div className="border-t pt-4 mt-4">
-                    <h3 className="text-lg font-semibold mb-4">Información del Remitente</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="senderIdType">Tipo de Identificación *</Label>
-                        <select
-                          id="senderIdType"
-                          value={formData.senderIdType}
-                          onChange={(e) => setFormData({ ...formData, senderIdType: e.target.value })}
-                          className="w-full h-10 px-3 border border-gray-300 rounded-md"
-                          required={formData.carrier.toLowerCase().includes('correos')}
-                        >
-                          <option value="">Seleccione tipo</option>
-                          <option value="Física">Física</option>
-                          <option value="Dimex">Dimex</option>
-                          <option value="Pasaporte">Pasaporte</option>
-                          <option value="Jurídica">Jurídica</option>
-                        </select>
-                      </div>
-                      <div>
-                        <Label htmlFor="senderIdNumber">Número de Identificación *</Label>
-                        <Input
-                          id="senderIdNumber"
-                          value={formData.senderIdNumber}
-                          onChange={(e) => setFormData({ ...formData, senderIdNumber: e.target.value })}
-                          placeholder="Número de cédula o identificación"
-                          required={formData.carrier.toLowerCase().includes('correos')}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="senderName">Nombre Completo *</Label>
-                        <Input
-                          id="senderName"
-                          value={formData.senderName}
-                          onChange={(e) => setFormData({ ...formData, senderName: e.target.value })}
-                          placeholder="Nombre completo del remitente"
-                          required={formData.carrier.toLowerCase().includes('correos')}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="senderPhone">Teléfono *</Label>
-                        <Input
-                          id="senderPhone"
-                          value={formData.senderPhone}
-                          onChange={(e) => setFormData({ ...formData, senderPhone: e.target.value })}
-                          placeholder="Teléfono del remitente"
-                          required={formData.carrier.toLowerCase().includes('correos')}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="senderEmail">Correo Electrónico *</Label>
-                        <Input
-                          id="senderEmail"
-                          type="email"
-                          value={formData.senderEmail}
-                          onChange={(e) => setFormData({ ...formData, senderEmail: e.target.value })}
-                          placeholder="correo@ejemplo.com"
-                          required={formData.carrier.toLowerCase().includes('correos')}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="senderProvince">Provincia *</Label>
-                        <Input
-                          id="senderProvince"
-                          value={formData.senderProvince}
-                          onChange={(e) => setFormData({ ...formData, senderProvince: e.target.value })}
-                          placeholder="San José, Alajuela, etc."
-                          required={formData.carrier.toLowerCase().includes('correos')}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="senderCanton">Cantón *</Label>
-                        <Input
-                          id="senderCanton"
-                          value={formData.senderCanton}
-                          onChange={(e) => setFormData({ ...formData, senderCanton: e.target.value })}
-                          placeholder="Cantón"
-                          required={formData.carrier.toLowerCase().includes('correos')}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="senderDistrict">Distrito *</Label>
-                        <Input
-                          id="senderDistrict"
-                          value={formData.senderDistrict}
-                          onChange={(e) => setFormData({ ...formData, senderDistrict: e.target.value })}
-                          placeholder="Distrito"
-                          required={formData.carrier.toLowerCase().includes('correos')}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="senderPostalCode">Código Postal *</Label>
-                        <Input
-                          id="senderPostalCode"
-                          value={formData.senderPostalCode}
-                          onChange={(e) => setFormData({ ...formData, senderPostalCode: e.target.value })}
-                          placeholder="10101"
-                          required={formData.carrier.toLowerCase().includes('correos')}
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <Label htmlFor="senderAddress">Señas Exactas de Dirección *</Label>
-                        <textarea
-                          id="senderAddress"
-                          value={formData.senderAddress}
-                          onChange={(e) => setFormData({ ...formData, senderAddress: e.target.value })}
-                          placeholder="Dirección completa del remitente"
-                          className="w-full min-h-[80px] px-3 py-2 border border-gray-300 rounded-md"
-                          required={formData.carrier.toLowerCase().includes('correos')}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
+              {/* Note: Sender (remitente) information is NOT required for Correos de Costa Rica.
+                  The system automatically handles sender information through the logged-in account. 
+                  Only email and password credentials are needed above. */}
               
               <div className="flex items-center space-x-2">
                 <Checkbox

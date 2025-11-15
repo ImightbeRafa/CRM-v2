@@ -3,7 +3,6 @@ import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { CorreosAutomation, convertOrderToCorreosFormat } from '@/lib/correosAutomation';
-import { decrypt } from '@/lib/encryption';
 import fs from 'fs';
 import path from 'path';
 
@@ -71,13 +70,11 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Decrypt password
-      const decryptedPassword = decrypt(shippingConfig.password);
-
       // Initialize automation (only credentials required)
+      // Password is stored in plain text for automation
       const automation = new CorreosAutomation({
         email: shippingConfig.email,
-        password: decryptedPassword
+        password: shippingConfig.password
       });
 
       // Convert orders to Correos format

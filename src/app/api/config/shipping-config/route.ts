@@ -79,18 +79,7 @@ export async function POST(request: NextRequest) {
       apiKey,
       baseUrl,
       isDefault,
-      settings,
-      // Sender (Remitente) fields
-      senderIdType,
-      senderIdNumber,
-      senderName,
-      senderPhone,
-      senderEmail,
-      senderProvince,
-      senderCanton,
-      senderDistrict,
-      senderPostalCode,
-      senderAddress
+      settings
     } = body;
 
     // Validate required fields
@@ -134,17 +123,6 @@ export async function POST(request: NextRequest) {
           baseUrl,
           isDefault,
           settings: settings || null,
-          // Sender (Remitente) fields
-          senderIdType,
-          senderIdNumber,
-          senderName,
-          senderPhone,
-          senderEmail,
-          senderProvince,
-          senderCanton,
-          senderDistrict,
-          senderPostalCode,
-          senderAddress,
           tenantId
         }
       });
@@ -190,18 +168,7 @@ export async function PUT(request: NextRequest) {
       apiKey,
       baseUrl,
       isDefault,
-      settings,
-      // Sender (Remitente) fields
-      senderIdType,
-      senderIdNumber,
-      senderName,
-      senderPhone,
-      senderEmail,
-      senderProvince,
-      senderCanton,
-      senderDistrict,
-      senderPostalCode,
-      senderAddress
+      settings
     } = body;
 
     if (!id) {
@@ -211,71 +178,61 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const tenantId = (token as any).tenantId;
+    const tenantId = (token as any).currentTenant?.id || (token as any).tenantId;
+    const userId = (token as any).sub || (token as any).id;
+    const userName = (token as any).name || (token as any).email || 'System';
+    
     if (!tenantId) {
       return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
     }
 
-    // If this is set as default, unset other defaults in same tenant
-    if (isDefault) {
-      await prisma.shippingConfig.updateMany({
-        where: { 
-          isDefault: true,
-          tenantId,
-          id: { not: id }
-        },
-        data: { 
-          isDefault: false,
-          tenantId // Required by Prisma middleware
+    return await withTenantContext({ tenantId, userId, role, userRole: role, userName }, async () => {
+      const prisma = getTenantPrisma(tenantId);
+
+      // If this is set as default, unset other defaults in same tenant
+      if (isDefault) {
+        await prisma.shippingConfig.updateMany({
+          where: { 
+            isDefault: true,
+            id: { not: id }
+          },
+          data: { 
+            isDefault: false
+          }
+        });
+      }
+
+      // Handle password update
+      const passwordToStore = (password && password !== '***') ? password : undefined;
+
+      const updateData: any = {
+        carrier,
+        name,
+        email,
+        apiKey,
+        baseUrl,
+        isDefault,
+        settings: settings || null,
+        updatedAt: new Date()
+      };
+
+      // Only update password if a new one is provided
+      if (passwordToStore !== undefined) {
+        updateData.password = passwordToStore;
+      }
+
+      const shippingConfig = await prisma.shippingConfig.update({
+        where: { id },
+        data: updateData
+      });
+
+      return NextResponse.json({
+        status: 'success',
+        data: {
+          ...shippingConfig,
+          password: shippingConfig.password ? '***' : null
         }
       });
-    }
-
-    // Handle password update
-    let encryptedPassword = undefined;
-    if (password && password !== '***') {
-      encryptedPassword = encrypt(password);
-    }
-
-    const updateData: any = {
-      tenantId, // Required by Prisma middleware
-      carrier,
-      name,
-      email,
-      apiKey,
-      baseUrl,
-      isDefault,
-      settings: settings || null,
-      // Sender (Remitente) fields
-      senderIdType,
-      senderIdNumber,
-      senderName,
-      senderPhone,
-      senderEmail,
-      senderProvince,
-      senderCanton,
-      senderDistrict,
-      senderPostalCode,
-      senderAddress,
-      updatedAt: new Date()
-    };
-
-    // Only update password if a new one is provided
-    if (encryptedPassword !== undefined) {
-      updateData.password = encryptedPassword;
-    }
-
-    const shippingConfig = await prisma.shippingConfig.update({
-      where: { id },
-      data: updateData
-    });
-
-    return NextResponse.json({
-      status: 'success',
-      data: {
-        ...shippingConfig,
-        password: shippingConfig.password ? '***' : null
-      }
     });
   } catch (error) {
     console.error('Error updating shipping config:', error);

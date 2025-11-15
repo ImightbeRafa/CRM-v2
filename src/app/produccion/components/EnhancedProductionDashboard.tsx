@@ -394,7 +394,7 @@ export function EnhancedProductionDashboard({
     }
   };
 
-  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+  const updateOrderStatus = async (orderId: string, newStatus: string, skipRefresh = false) => {
     try {
       const response = await fetch('/api/orders/status', {
         method: 'POST',
@@ -412,17 +412,23 @@ export function EnhancedProductionDashboard({
         throw new Error('Failed to update status');
       }
 
-      refresh();
-      toast({
-        title: "Estado actualizado",
-        description: "El estado de la orden ha sido actualizado exitosamente.",
-      });
+      // Only refresh if not in bulk operation
+      if (!skipRefresh) {
+        refresh();
+        toast({
+          title: "Estado actualizado",
+          description: "El estado de la orden ha sido actualizado exitosamente.",
+        });
+      }
     } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: `No se pudo actualizar el estado de la orden: ${error instanceof Error ? error.message : 'Error desconocido'}`,
-      });
+      if (!skipRefresh) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: `No se pudo actualizar el estado de la orden: ${error instanceof Error ? error.message : 'Error desconocido'}`,
+        });
+      }
+      throw error; // Re-throw for bulk operations to count failures
     }
   };
 
@@ -478,10 +484,10 @@ export function EnhancedProductionDashboard({
         description: `Actualizando ${orderIds.length} órdenes...`,
       });
 
-      // Process one at a time with progress
+      // Process one at a time with progress (skip refresh during bulk)
       for (let i = 0; i < orderIds.length; i++) {
         try {
-          await updateOrderStatus(orderIds[i], newStatus);
+          await updateOrderStatus(orderIds[i], newStatus, true); // Skip individual refreshes
           successCount++;
           
           // Show progress every 10 orders

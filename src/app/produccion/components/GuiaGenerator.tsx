@@ -96,7 +96,8 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
       setOrderGuias(eaOrders);
       loadShippingConfigs();
     }
-  }, [open, orders]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]); // Only run when dialog opens/closes, not when orders change
 
   const handleCarrierChange = (carrierValue: string) => {
     setSelectedCarrier(carrierValue);
@@ -627,9 +628,9 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
         )}
 
         {/* Make only the list scrollable and keep footer visible */}
-        <div className="flex-1 overflow-hidden flex flex-col">
-        <ScrollArea className="max-h-[50vh] sm:max-h-[55vh] px-4 sm:px-6">
-          <div className="space-y-3 py-2">
+        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+        <ScrollArea className="h-[400px] sm:h-[500px] px-4 sm:px-6">
+          <div className="space-y-3 py-2 pr-4">
             {orderGuias.map((og) => {
               const order = orders.find(o => o.orderId === og.orderId);
               if (!order) return null;
@@ -732,7 +733,7 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
           </>
         ) : (
           /* History Tab */
-          <div className="flex-1 overflow-auto px-4 sm:px-6 py-4">
+          <ScrollArea className="h-[500px] sm:h-[600px] px-4 sm:px-6 py-4">
             {loadingHistory ? (
               <div className="flex justify-center items-center h-64">
                 <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
@@ -836,7 +837,7 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
                 Actualizar
               </Button>
             </div>
-          </div>
+          </ScrollArea>
         )}
       </DialogContent>
     </Dialog>

@@ -1,5 +1,16 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
 
+// Dynamically import chromium for serverless environments
+let chromium: any;
+if (process.cwd().includes('/var/task')) {
+  // In serverless environment, use @sparticuz/chromium
+  try {
+    chromium = require('@sparticuz/chromium');
+  } catch (e) {
+    console.warn('⚠️ @sparticuz/chromium not found. Install it for serverless: npm install @sparticuz/chromium');
+  }
+}
+
 export interface CorreosCredentials {
   email: string;
   password: string;
@@ -65,19 +76,25 @@ export class CorreosAutomation {
       // Create downloads directory if it doesn't exist
       const fs = require('fs');
       const path = require('path');
-      const downloadPath = path.join(process.cwd(), 'downloads');
+      
+      // Use /tmp in serverless environments (Lambda), otherwise use local downloads folder
+      const isLambda = process.cwd().includes('/var/task');
+      const downloadPath = isLambda 
+        ? '/tmp/downloads' 
+        : path.join(process.cwd(), 'downloads');
       
       if (!fs.existsSync(downloadPath)) {
         fs.mkdirSync(downloadPath, { recursive: true });
-        console.log(`Created downloads directory: ${downloadPath}`);
+        console.log(`Created downloads directory: ${downloadPath} (Lambda: ${isLambda})`);
       }
       
       const headlessEnv = process.env.CORREOS_HEADLESS?.toLowerCase();
       const headless = (this.debugMode || headlessEnv === 'false') ? false : true;
 
-      console.log(`Launching Correos automation browser (headless: ${headless})`);
+      console.log(`Launching Correos automation browser (headless: ${headless}, Lambda: ${isLambda})`);
 
-      this.browser = await puppeteer.launch({
+      // Configure puppeteer for serverless vs local environments
+      const launchOptions: any = {
         headless,
         args: [
           '--no-sandbox',
@@ -93,7 +110,16 @@ export class CorreosAutomation {
           '--disable-save-password-bubble',
           '--disable-blink-features=AutomationControlled'
         ]
-      });
+      };
+
+      // In Lambda, use chromium executable and additional args
+      if (isLambda && chromium) {
+        launchOptions.executablePath = await chromium.executablePath();
+        launchOptions.args = chromium.args.concat(launchOptions.args);
+        console.log('Using serverless Chrome executable');
+      }
+
+      this.browser = await puppeteer.launch(launchOptions);
 
       this.page = await this.browser.newPage();
       this.page.setDefaultNavigationTimeout(60000);

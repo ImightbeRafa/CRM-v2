@@ -24,7 +24,11 @@ const nextConfig = {
   },
   // Add global polyfills for server-side rendering
   experimental: {
-    serverComponentsExternalPackages: [],
+    serverComponentsExternalPackages: [
+      'puppeteer',
+      'puppeteer-core',
+      '@sparticuz/chromium',
+    ],
   },
 
   // Domain configuration

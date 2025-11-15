@@ -1,13 +1,21 @@
-import puppeteer, { Browser, Page } from 'puppeteer';
+// Type imports only - won't be bundled
+import type { Browser, Page } from 'puppeteer';
 
-// Dynamically import chromium for serverless environments
-let chromium: any;
-if (process.cwd().includes('/var/task')) {
-  // In serverless environment, use @sparticuz/chromium
-  try {
-    chromium = require('@sparticuz/chromium');
-  } catch (e) {
-    console.warn('⚠️ @sparticuz/chromium not found. Install it for serverless: npm install @sparticuz/chromium');
+// Lazy-load puppeteer and chromium only when needed (server-side)
+async function loadPuppeteer() {
+  const isLambdaEnv = process.cwd().includes('/var/task') || process.cwd().includes('/var/runtime');
+  
+  if (isLambdaEnv) {
+    // In serverless environment, use puppeteer-core with @sparticuz/chromium
+    const puppeteerCore = await import('puppeteer-core');
+    const chromium = await import('@sparticuz/chromium');
+    console.log('📦 Loaded puppeteer-core and chromium for serverless');
+    return { puppeteer: puppeteerCore.default, chromium: chromium.default, isLambda: true };
+  } else {
+    // In local dev, use standard puppeteer
+    const puppeteer = await import('puppeteer');
+    console.log('📦 Loaded puppeteer for local development');
+    return { puppeteer: puppeteer.default, chromium: null, isLambda: false };
   }
 }
 
@@ -73,12 +81,14 @@ export class CorreosAutomation {
 
   async initialize(): Promise<void> {
     try {
+      // Lazy-load puppeteer modules (server-side only)
+      const { puppeteer, chromium, isLambda } = await loadPuppeteer();
+      
       // Create downloads directory if it doesn't exist
       const fs = require('fs');
       const path = require('path');
       
       // Use /tmp in serverless environments (Lambda), otherwise use local downloads folder
-      const isLambda = process.cwd().includes('/var/task');
       const downloadPath = isLambda 
         ? '/tmp/downloads' 
         : path.join(process.cwd(), 'downloads');
@@ -114,14 +124,26 @@ export class CorreosAutomation {
 
       // In Lambda, use chromium executable and additional args
       if (isLambda && chromium) {
+        // Set font config path for Lambda
+        process.env.FONTCONFIG_PATH = '/tmp';
+        
+        // Get executable path
         launchOptions.executablePath = await chromium.executablePath();
-        launchOptions.args = chromium.args.concat(launchOptions.args);
-        console.log('Using serverless Chrome executable');
+        
+        // Combine chromium args with our args
+        launchOptions.args = [
+          ...chromium.args,
+          ...launchOptions.args,
+          '--single-process',
+          '--disable-dev-profile'
+        ];
+        
+        console.log('Using serverless Chrome executable:', launchOptions.executablePath);
       }
 
-      this.browser = await puppeteer.launch(launchOptions);
+      this.browser = await puppeteer.launch(launchOptions) as Browser;
 
-      this.page = await this.browser.newPage();
+      this.page = await this.browser!.newPage();
       this.page.setDefaultNavigationTimeout(60000);
       this.page.setDefaultTimeout(30000);
       

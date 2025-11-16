@@ -45,6 +45,7 @@ model Tenant {
   socialAccounts SocialAccount[]
   chatMessages   ChatMessage[]
   productOptionSets ProductOptionSet[]
+  productOptions ProductOption[]
   businessInfo   BusinessInfo[]
   orderStatuses  OrderStatus[]
   shippingConfigs ShippingConfig[]
@@ -327,6 +328,7 @@ model ProductOptionSet {
 
 model ProductOption {
   id         String            @id @default(cuid())
+  tenantId   String            // Tenant isolation
   setId      String
   set        ProductOptionSet  @relation(fields: [setId], references: [id], onDelete: Cascade)
   label      String
@@ -335,7 +337,12 @@ model ProductOption {
   metadata   Json?
   active     Boolean           @default(true)
   
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
   @@index([setId])
+  @@index([tenantId])
+  @@index([tenantId, active])
   @@index([active])
 }
 

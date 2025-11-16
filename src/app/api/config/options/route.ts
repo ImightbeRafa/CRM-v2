@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
         where: {
           setId,
           active: true,
-          set: { tenantId }
+          tenantId // Direct tenant filter now that ProductOption has tenantId
         },
         orderBy: { label: 'asc' }
       })
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       const options = await prisma.productOption.findMany({
         where: {
           active: true,
-          set: { tenantId }
+          tenantId // Direct tenant filter now that ProductOption has tenantId
         },
         include: { set: true },
         orderBy: { label: 'asc' }
@@ -75,9 +75,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Option set not found or access denied' }, { status: 404 })
     }
     
-    // Create the option (auto-injected with tenantId by tenantPrisma)
+    // Create the option with explicit tenantId for proper tenant isolation
     const created = await prisma.productOption.create({
       data: {
+        tenantId,
         setId: body.setId,
         label: body.label,
         value: body.value,

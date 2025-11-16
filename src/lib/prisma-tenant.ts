@@ -44,6 +44,7 @@ const TENANT_MODELS = [
   'orderStatus',
   'productField',
   'productOptionSet',
+  'productOption', // CRITICAL: Added for tenant isolation of shipping method options
   'shippingMethod',
   'shippingConfig',
   'shippingGuia',

@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/app
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/app/components/ui/dialog";
 import { 
   Sparkles, Zap, Settings, TrendingUp, Users, Package, 
-  ShoppingCart, Plus, BarChart3, DollarSign, ArrowUpRight, Clock
+  ShoppingCart, Plus, BarChart3, DollarSign, ArrowUpRight, Clock, RefreshCw
 } from "lucide-react";
 
 export default function EnhancedHomeContent() {
@@ -30,40 +30,30 @@ export default function EnhancedHomeContent() {
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
   // Fetch quick stats
+  const fetchStats = async (forceRefresh = false) => {
+    try {
+      setIsLoadingStats(true);
+      const url = forceRefresh ? '/api/dashboard/stats?refresh=true' : '/api/dashboard/stats';
+      const response = await fetch(url, {
+        credentials: 'include'
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+      } else {
+        console.error('Failed to fetch dashboard stats');
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+    } finally {
+      setIsLoadingStats(false);
+    }
+  };
+
   useEffect(() => {
     if (!session) return;
     
-    const abortController = new AbortController();
-    
-    const fetchStats = async () => {
-      try {
-        setIsLoadingStats(true);
-        const response = await fetch('/api/dashboard/stats', {
-          signal: abortController.signal,
-          credentials: 'include'
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setStats(data);
-        } else {
-          console.error('Failed to fetch dashboard stats');
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          console.log('[Dashboard] Stats request aborted');
-          return;
-        }
-        console.error('Error fetching dashboard stats:', error);
-      } finally {
-        setIsLoadingStats(false);
-      }
-    };
-    
     fetchStats();
-    
-    return () => {
-      abortController.abort();
-    };
   }, [session]);
 
   // Show loading state while checking authentication
@@ -137,6 +127,15 @@ export default function EnhancedHomeContent() {
             </div>
           </div>
           <div className="flex items-center gap-2 md:gap-4">
+            <button
+              onClick={() => fetchStats(true)}
+              disabled={isLoadingStats}
+              className="inline-flex items-center justify-center bg-blue-600 text-white px-3 md:px-4 py-2.5 md:py-2 rounded-md hover:bg-blue-700 transition-colors text-sm md:text-base min-h-[44px] disabled:opacity-50"
+              title="Actualizar estadísticas"
+            >
+              <RefreshCw className={`w-4 h-4 md:mr-2 ${isLoadingStats ? 'animate-spin' : ''}`} />
+              <span className="hidden md:inline">Actualizar</span>
+            </button>
             {session.user?.role === 'MASTER' && (
               <Link
                 href="/config"

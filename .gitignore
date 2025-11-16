@@ -49,7 +49,9 @@ yarn-error.log*
 *.swo
 *.swn
 *.bak
-
+add-product-option-tenantid.sql
+fix-product-option-tenant.js
+upgrade-tenant-to-pro.js
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts

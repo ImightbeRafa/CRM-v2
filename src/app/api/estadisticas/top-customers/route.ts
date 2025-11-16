@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { prisma } from '@/lib/db';
+import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { prisma as globalPrisma } from '@/lib/db';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get user's tenant through memberships
-    const user = await prisma.user.findUnique({
+    const user = await globalPrisma.user.findUnique({
       where: { id: token.sub },
       select: {
         memberships: {
@@ -30,6 +31,9 @@ export async function GET(req: NextRequest) {
     }
 
     const tenantId = user.memberships[0].tenantId;
+    
+    // CRITICAL: Use tenant-isolated prisma client
+    const prisma = getTenantPrisma(tenantId);
 
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get('startDate');

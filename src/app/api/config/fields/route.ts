@@ -18,7 +18,15 @@ export async function GET(request: NextRequest) {
     const fields = await prisma.productField.findMany({
       where: { active: true, tenantId },
       orderBy: { order: 'asc' },
-      include: { optionSet: { include: { options: { where: { active: true } } } } },
+      include: { 
+        optionSet: { 
+          include: { 
+            options: { 
+              where: { active: true, tenantId } // Explicit tenant filter for nested options
+            } 
+          } 
+        } 
+      },
     })
     return NextResponse.json({ status: 'success', data: fields })
   } catch (error) {

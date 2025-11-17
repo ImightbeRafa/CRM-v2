@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { isSuperAdmin } from '@/lib/super-admin-helpers';
+import { prisma as globalPrisma } from '@/lib/db';
 
 // Cache stats for 30 seconds to prevent repeated heavy queries
 const statsCache = new Map<string, { data: any; timestamp: number }>();
@@ -25,19 +27,24 @@ export async function GET(request: NextRequest) {
 
     const tenantId = token.tenantId as string;
     
+    // Check if user is super admin
+    const isSuper = await isSuperAdmin(token.sub || '');
+    
     // Check for force refresh parameter
     const { searchParams } = new URL(request.url);
     const forceRefresh = searchParams.get('refresh') === 'true';
     
     // Check cache first (unless force refresh)
+    const cacheKey = isSuper ? 'super-admin-all' : tenantId;
     if (!forceRefresh) {
-      const cached = statsCache.get(tenantId);
+      const cached = statsCache.get(cacheKey);
       if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
         return NextResponse.json(cached.data);
       }
     }
 
-    const prisma = getTenantPrisma(tenantId);
+    // Super admin gets all data, regular users get tenant-specific data
+    const prisma = getTenantPrisma(tenantId, isSuper);
 
     // Calculate date for this week (Monday to Sunday)
     const now = new Date();
@@ -51,10 +58,13 @@ export async function GET(request: NextRequest) {
     const startOfLastWeek = new Date(startOfWeek);
     startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
 
+    // Build where clause (super admin sees all, regular users see their tenant)
+    const whereClause: any = isSuper ? {} : { tenantId };
+    
     // Fetch orders this week
     const ordersThisWeek = await prisma.order.count({
       where: {
-        tenantId,
+        ...whereClause,
         timestamp: {
           gte: startOfWeek
         }
@@ -64,7 +74,7 @@ export async function GET(request: NextRequest) {
     // Fetch orders last week
     const ordersLastWeek = await prisma.order.count({
       where: {
-        tenantId,
+        ...whereClause,
         timestamp: {
           gte: startOfLastWeek,
           lt: startOfWeek
@@ -83,7 +93,7 @@ export async function GET(request: NextRequest) {
     
     const pendingOrders = await prisma.order.count({
       where: {
-        tenantId,
+        ...whereClause,
         status: {
           notIn: completedStatuses
         }
@@ -92,15 +102,13 @@ export async function GET(request: NextRequest) {
 
     // Fetch total clients
     const totalClients = await prisma.client.count({
-      where: {
-        tenantId
-      }
+      where: whereClause
     });
 
     // Fetch clients from last week for comparison
     const clientsLastWeek = await prisma.client.count({
       where: {
-        tenantId,
+        ...whereClause,
         createdAt: {
           lt: startOfWeek
         }
@@ -112,7 +120,7 @@ export async function GET(request: NextRequest) {
     // Calculate weekly revenue (sum of all order totals this week)
     const ordersWithTotals = await prisma.order.findMany({
       where: {
-        tenantId,
+        ...whereClause,
         timestamp: {
           gte: startOfWeek
         }
@@ -122,12 +130,12 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    const weeklyRevenue = ordersWithTotals.reduce((sum, order) => sum + (order.total || 0), 0);
+    const weeklyRevenue = ordersWithTotals.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
 
     // Calculate last week's revenue
     const ordersLastWeekWithTotals = await prisma.order.findMany({
       where: {
-        tenantId,
+        ...whereClause,
         timestamp: {
           gte: startOfLastWeek,
           lt: startOfWeek
@@ -138,7 +146,7 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    const lastWeekRevenue = ordersLastWeekWithTotals.reduce((sum, order) => sum + (order.total || 0), 0);
+    const lastWeekRevenue = ordersLastWeekWithTotals.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
 
     const revenueChange = lastWeekRevenue > 0
       ? Math.round(((weeklyRevenue - lastWeekRevenue) / lastWeekRevenue) * 100)
@@ -152,10 +160,12 @@ export async function GET(request: NextRequest) {
       newClientsThisWeek,
       weeklyRevenue: Math.round(weeklyRevenue),
       revenueChange,
+      isSuperAdmin: isSuper, // Flag to indicate super admin view
       // Debug info (only in development)
       ...(process.env.NODE_ENV === 'development' && {
         _debug: {
           tenantId,
+          isSuperAdmin: isSuper,
           startOfWeek: startOfWeek.toISOString(),
           completedStatuses,
           ordersLastWeek,
@@ -165,9 +175,10 @@ export async function GET(request: NextRequest) {
     };
     
     // Store in cache
-    statsCache.set(tenantId, { data: stats, timestamp: Date.now() });
+    statsCache.set(cacheKey, { data: stats, timestamp: Date.now() });
 
-    console.log(`[Dashboard Stats] Tenant ${tenantId}: Orders this week: ${ordersThisWeek}, Pending: ${pendingOrders}, Clients: ${totalClients}, Revenue: ${weeklyRevenue}`);
+    const logPrefix = isSuper ? '[Dashboard Stats] 🔐 SUPER ADMIN - ALL TENANTS' : `[Dashboard Stats] Tenant ${tenantId}`;
+    console.log(`${logPrefix}: Orders this week: ${ordersThisWeek}, Pending: ${pendingOrders}, Clients: ${totalClients}, Revenue: ${weeklyRevenue}`);
 
     return NextResponse.json(stats);
 

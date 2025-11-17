@@ -52,6 +52,7 @@ yarn-error.log*
 add-product-option-tenantid.sql
 fix-product-option-tenant.js
 upgrade-tenant-to-pro.js
+set-super-admin.js
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts

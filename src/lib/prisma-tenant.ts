@@ -5,8 +5,8 @@
  * Use getTenantPrisma() in API routes for automatic tenant isolation
  */
 
-import { PrismaClient } from '@prisma/client';
-import { prisma as prismaGlobal } from './db';
+import { PrismaClient, Prisma } from '@prisma/client';
+import { prisma as globalPrisma } from './db';
 import { getTenantContext } from './tenantContext';
 import { logAudit } from './auditLogger';
 import { TenantError } from './errors';
@@ -331,16 +331,27 @@ function createTenantPrismaUncached(tenantId: string) {
 }
 
 /**
- * Get a tenant-aware Prisma client (with caching for performance)
- * Use this in API routes after extracting tenantId from session
  * 
- * @example
- * const tenantPrisma = getTenantPrisma(session.user.tenantId);
- * const orders = await tenantPrisma.order.findMany(); // Auto-filtered by tenantId
+ * @param tenantId - The tenant ID to isolate queries to
+ * @param bypassIsolation - If true, returns client without tenant isolation (super admin only)
  */
-export function getTenantPrisma(tenantId: string) {
-  if (!tenantId) {
+export function getTenantPrisma(tenantId: string, bypassIsolation: boolean = false) {
+  if (!tenantId && !bypassIsolation) {
     throw new TenantError('Tenant ID is required for tenant-isolated queries');
+  }
+  
+  // ⚠️ SECURITY CRITICAL: Super admin bypass - return base client without tenant isolation
+  // WARNING: This bypasses ALL tenant filtering. Only use for authorized accounts.
+  if (bypassIsolation) {
+    console.warn(`🔐 [SECURITY WARNING] Super admin tenant isolation BYPASSED - ALL tenant data accessible`, {
+      requestedTenantId: tenantId,
+      bypassGranted: true,
+      timestamp: new Date().toISOString(),
+      stackTrace: new Error().stack?.split('\n')[2]?.trim() // Log caller
+    });
+    
+    // Return global prisma client without ANY tenant filtering
+    return globalPrisma;
   }
   
   // Check cache first for performance
@@ -408,5 +419,5 @@ export function getTenantIdFromSession(session: any): string {
  * - Membership management
  * - System operations
  */
-export { prismaGlobal };
+export { globalPrisma };
 

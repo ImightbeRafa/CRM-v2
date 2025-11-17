@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 
 type FetchState<T> = {
   data: T;
@@ -66,7 +66,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     };
   });
 
-  const updateState = (key: ConfigKeys, updater: Partial<FetchState<any[]>>) => {
+  const updateState = useCallback((key: ConfigKeys, updater: Partial<FetchState<any[]>>) => {
     setStates((prev) => ({
       ...prev,
       [key]: {
@@ -74,9 +74,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
         ...updater,
       },
     }));
-  };
+  }, []);
 
-  const fetchResource = async (key: ConfigKeys, signal?: AbortSignal) => {
+  const fetchResource = useCallback(async (key: ConfigKeys, signal?: AbortSignal) => {
     const endpoint = RESOURCE_ENDPOINTS[key];
     if (!endpoint) return;
 
@@ -108,7 +108,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     } finally {
       updateState(key, { loading: false });
     }
-  };
+  }, [updateState]);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -118,9 +118,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     });
 
     return () => abortController.abort();
-  }, []);
+  }, [fetchResource]);
 
-  const refresh = async (keys?: ConfigKeys | ConfigKeys[]) => {
+  const refresh = useCallback(async (keys?: ConfigKeys | ConfigKeys[]) => {
     const targetKeys = Array.isArray(keys)
       ? keys
       : keys
@@ -128,14 +128,16 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       : [...HIGH_PRIORITY_KEYS, ...LOW_PRIORITY_KEYS];
 
     await Promise.all(targetKeys.map((key) => fetchResource(key)));
-  };
+  }, [fetchResource]);
 
-  const getState = <T,>(key: ConfigKeys): FetchState<T> => {
+  const getState = useCallback(<T,>(key: ConfigKeys): FetchState<T> => {
     return states[key] as FetchState<T>;
-  };
+  }, [states]);
+
+  const value = useMemo(() => ({ getState, refresh }), [getState, refresh]);
 
   return (
-    <ConfigContext.Provider value={{ getState, refresh }}>
+    <ConfigContext.Provider value={value}>
       {children}
     </ConfigContext.Provider>
   );

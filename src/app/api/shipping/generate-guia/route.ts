@@ -3,6 +3,7 @@ import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { CorreosAutomation, convertOrderToCorreosFormat } from '@/lib/correosAutomation';
+import { isSuperAdmin } from '@/lib/super-admin-helpers';
 import fs from 'fs';
 import path from 'path';
 
@@ -22,6 +23,9 @@ export async function POST(request: NextRequest) {
     const userId = (token as any)?.sub as string | undefined;
     const userName = (token as any)?.name || (token as any)?.email || 'System';
     const userRole = (token as any)?.membershipRole;
+    
+    // Check if user is super admin for cross-tenant access
+    const isSuper = await isSuperAdmin(userId || '');
 
     const body = await request.json();
     const { orderIds, carrier = 'correos_cr', deliveryType = 'Domicilio' } = body;
@@ -33,8 +37,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const logPrefix = isSuper ? '[Generate Guía] 🔐 SUPER ADMIN' : `[Generate Guía] Tenant ${tenantId}`;
+    console.log(logPrefix, 'Generating guías for orders:', orderIds);
+
     return await withTenantContext({ tenantId, userId, role: userRole, userRole, userName }, async () => {
-      const prisma = getTenantPrisma(tenantId)
+      // Super admin gets unrestricted access to all orders
+      const prisma = getTenantPrisma(tenantId, isSuper)
       
       // Validate shipping configuration exists
       const shippingConfig = await prisma.shippingConfig.findFirst({
@@ -54,13 +62,17 @@ export async function POST(request: NextRequest) {
 
       // Sender information no longer required; Correos pre-fills remitente
 
-      // Get orders
+      // Get orders (super admin can access all tenants' orders)
+      const whereClause: any = {
+        orderId: { in: orderIds },
+        orderType: 'EA'
+      };
+      
+      // Regular users only see their tenant's orders (auto-filtered by middleware)
+      // Super admin sees all orders (no filter applied)
+      
       const orders = await prisma.order.findMany({
-        where: {
-          orderId: { in: orderIds },
-          orderType: 'EA',
-          tenantId: tenantId
-        }
+        where: whereClause
       });
 
       if (orders.length === 0) {
@@ -125,20 +137,30 @@ export async function POST(request: NextRequest) {
             });
             savedGuias.push(guia);
 
-            // Update order status
-            await prisma.order.update({
-              where: {
-                tenantId_orderId: {
-                  tenantId: tenantId,
-                  orderId: result.orderId
-                }
-              },
-              data: {
-                status: 'Enviado',
-                courier: carrier,
-                tenantId: tenantId
+            // Update order status - find the actual order to get its correct tenantId
+            try {
+              const order = orders.find(o => o.orderId === result.orderId);
+              if (order) {
+                const orderTenantId = order.tenantId || tenantId;
+                await prisma.order.update({
+                  where: {
+                    tenantId_orderId: {
+                      tenantId: orderTenantId,
+                      orderId: result.orderId
+                    }
+                  },
+                  data: {
+                    status: 'Enviado',
+                    courier: carrier
+                  }
+                });
+                console.log(`✓ Updated order ${result.orderId} status to Enviado`);
+              } else {
+                console.warn(`⚠ Order ${result.orderId} not found in original orders list`);
               }
-            });
+            } catch (updateError) {
+              console.error(`❌ Failed to update order ${result.orderId}:`, updateError);
+            }
           } catch (error) {
             console.error(`Failed to save guía for order ${result.orderId}:`, error);
           }
@@ -202,8 +224,12 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const orderId = searchParams.get('orderId');
 
+    // Check if user is super admin for cross-tenant access
+    const isSuper = await isSuperAdmin(userId || '');
+
     return await withTenantContext({ tenantId, userId, role: userRole, userRole, userName }, async () => {
-      const prisma = getTenantPrisma(tenantId)
+      // Super admin gets unrestricted access
+      const prisma = getTenantPrisma(tenantId, isSuper)
       
       if (orderId) {
         // Get guía for specific order

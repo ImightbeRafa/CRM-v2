@@ -76,7 +76,8 @@ export class CorreosAutomation {
   constructor(credentials: CorreosCredentials, senderInfo?: SenderInfo) {
     this.credentials = credentials;
     this.senderInfo = senderInfo;
-    this.debugMode = process.env.CORREOS_DEBUG === '';
+    // Enable debug mode if CORREOS_DEBUG is set to any truthy value
+    this.debugMode = process.env.CORREOS_DEBUG === 'true' || process.env.CORREOS_DEBUG === '1' || process.env.NODE_ENV !== 'production';
   }
 
   async initialize(): Promise<void> {
@@ -992,8 +993,8 @@ export class CorreosAutomation {
 
     try {
       // The guía number should be visible in the "¿Deseas crear otra guía?" dialog
-      // Wait for it to appear
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Wait longer for it to appear
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Take a screenshot to debug
       await this.captureScreenshot('guia-created');
@@ -1006,14 +1007,18 @@ export class CorreosAutomation {
         
         // Look for the guía number in the success dialog or page
         // Common patterns: PY05869748CR, 10823199, etc.
+        // Also check dialog content and page title
         const patterns = [
           /PY\d{8,10}CR/i,  // PY########CR format
           /\bPY\d{8,10}\b/i,  // PY######## without CR
           /Guía[:\s#]*(\d{7,10})/i,
-          /Número[:\s]+(\d{7,10})/i,
+          /Número[:\s#]+(\d{7,10})/i,
           /Guide[:\s#]+(\d{7,10})/i,
-          /creada[:\s]+(\d{7,10})/i,
-          /exitosamente[:\s]+(\d{7,10})/i
+          /creada[\s:]*(\d{7,10})/i,
+          /exitosamente[\s:]*(\d{7,10})/i,
+          /código[\s:]*(\d{7,10})/i,
+          /registro[\s:]*(\d{7,10})/i,
+          /\b(\d{8,10})\b/  // Any 8-10 digit number as last resort
         ];
 
         for (const pattern of patterns) {
@@ -1028,15 +1033,24 @@ export class CorreosAutomation {
           }
         }
 
-        // Also check for any number in the dialog title, header, or success message
-        const elements = Array.from(document.querySelectorAll('h1, h2, h3, h4, .modal-title, .dialog-title, .alert-success, .text-success, strong, b'));
+        // Also check dialog and modal content
+        const elements = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6, .modal-title, .dialog-title, .swal2-title, .alert-success, .text-success, strong, b, p, span, div'));
         for (const element of elements) {
           const text = element.textContent || '';
-          const match = text.match(/\d{7,10}/);
-          if (match && !/^\d{5}$/.test(match[0]) && !/^[67]\d{7}$/.test(match[0])) {
-            console.log('Found guía number in element:', element.tagName, '→', match[0]);
-            return match[0];
+          // Look for longer numbers first (8-10 digits)
+          const match = text.match(/\b(\d{8,10})\b/);
+          if (match && !/^\d{5}$/.test(match[1]) && !/^[67]\d{7}$/.test(match[1])) {
+            console.log('Found guía number in element:', element.tagName, element.className, '→', match[1]);
+            return match[1];
           }
+        }
+
+        // Check page title as well
+        const pageTitle = document.title;
+        const titleMatch = pageTitle.match(/\b(\d{8,10})\b/);
+        if (titleMatch) {
+          console.log('Found guía number in page title:', titleMatch[1]);
+          return titleMatch[1];
         }
 
         return null;
@@ -1113,8 +1127,8 @@ export class CorreosAutomation {
       console.log(`Looking for PDF download button for customer: ${customerName}`);
       
       // Wait for the table to load
-      await this.page.waitForSelector('table, tr', { timeout: 5000 }).catch(() => {});
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await this.page.waitForSelector('table, tbody, tr', { timeout: 10000 }).catch(() => {});
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Take a screenshot to debug
       await this.captureScreenshot('guias-list');
@@ -1126,25 +1140,38 @@ export class CorreosAutomation {
         };
         
         const searchName = normalizeText(name);
-        const rows = Array.from(document.querySelectorAll('tr'));
+        // Try multiple selectors for table rows
+        const rows = Array.from(document.querySelectorAll('table tbody tr, table tr, tr'));
         
         console.log(`Searching for customer: ${name} (normalized: ${searchName})`);
-        console.log(`Found ${rows.length} rows`);
+        console.log(`Found ${rows.length} rows in table`);
+        
+        // Log first few rows for debugging
+        rows.slice(0, 3).forEach((row, idx) => {
+          console.log(`Row ${idx}:`, row.textContent?.substring(0, 80));
+        });
         
         for (const row of rows) {
           const rowText = normalizeText(row.textContent || '');
           if (rowText.includes(searchName)) {
             console.log('Found matching row:', row.textContent?.substring(0, 100));
             
-            // Look for PDF download link
-            const downloadBtn = row.querySelector('a[href*="/guide/pdf/"], a[href*="/pdf/"]') as HTMLAnchorElement;
+            // Look for PDF download link with multiple patterns
+            const downloadBtn = row.querySelector('a[href*="/guide/pdf/"], a[href*="/pdf/"], a[href*="download"], a[download], button[onclick*="pdf"]') as HTMLAnchorElement;
             if (downloadBtn) {
-              console.log('Found download button:', downloadBtn.href);
-              return { success: true, href: downloadBtn.href };
-            } else {
-              console.log('No download button in row');
-              return { success: false, error: 'Download button not found in row' };
+              const href = downloadBtn.href || downloadBtn.getAttribute('href') || '';
+              console.log('Found download link:', href);
+              return { success: true, href };
             }
+            
+            // Also check for any link or button in the row
+            const allLinks = Array.from(row.querySelectorAll('a, button'));
+            console.log(`Found ${allLinks.length} links/buttons in matching row`);
+            allLinks.forEach((link: any) => {
+              console.log('  -', link.textContent?.trim(), link.href || link.onclick);
+            });
+            
+            return { success: false, error: 'Download button not found in row' };
           }
         }
         

@@ -7,7 +7,6 @@ import { getToken } from 'next-auth/jwt'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { logCreate } from '@/lib/auditLogger'
 import { checkOrderLimit } from '@/lib/plan-enforcement'
-import { isSuperAdmin } from '@/lib/super-admin-helpers'
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic'
@@ -171,13 +170,11 @@ export async function GET(request: NextRequest) {
     const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
     const userId = (token as any)?.sub as string | undefined
     const userName = (token as any)?.name || (token as any)?.email || 'System'
-    
-    // Check if user is super admin for cross-tenant access
-    const isSuper = await isSuperAdmin(userId || '')
 
     return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName }, async () => {
-      // Super admin gets unrestricted access to all orders
-      const tenantPrisma = getTenantPrisma(tenantId, isSuper)
+      // SECURITY: Always use tenant-isolated client for regular endpoints
+      // Super admins work within tenant context like regular admins
+      const tenantPrisma = getTenantPrisma(tenantId)
 
       // Get query parameters for pagination and filtering
       const { searchParams } = new URL(request.url)
@@ -191,11 +188,9 @@ export async function GET(request: NextRequest) {
       const dateFrom = searchParams.get('dateFrom')
       const dateTo = searchParams.get('dateTo')
 
-      const logPrefix = isSuper ? '[GET /api/orders] 🔐 SUPER ADMIN - ALL TENANTS' : `[GET /api/orders] Tenant ${tenantId}`;
-      console.log(logPrefix, { status, orderType, search })
+      console.log(`[GET /api/orders] Tenant ${tenantId}`, { status, orderType, search })
       
-      // Build where clause for filtering
-      // Super admin sees all tenants, regular users see only their tenant (auto-injected by middleware)
+      // Build where clause for filtering (tenant filter auto-injected by middleware)
       const whereClause: any = {}
       if (status && status !== 'all') whereClause.status = status
       if (orderType && orderType !== 'all') whereClause.orderType = orderType
@@ -264,8 +259,8 @@ export async function GET(request: NextRequest) {
         }
     })
     
-    // Security logging - verify all orders belong to this tenant (skip for super admin)
-    if (process.env.NODE_ENV !== 'production' && !isSuper) {
+    // Security logging - verify all orders belong to this tenant
+    if (process.env.NODE_ENV !== 'production') {
       const wrongTenantOrders = orders.filter((o: any) => o.tenantId !== tenantId);
       if (wrongTenantOrders.length > 0) {
         console.error('🚨 CRITICAL TENANT ISOLATION BREACH in /api/orders:', {

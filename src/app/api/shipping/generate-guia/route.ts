@@ -3,7 +3,6 @@ import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { CorreosAutomation, convertOrderToCorreosFormat } from '@/lib/correosAutomation';
-import { isSuperAdmin } from '@/lib/super-admin-helpers';
 import fs from 'fs';
 import path from 'path';
 
@@ -23,9 +22,6 @@ export async function POST(request: NextRequest) {
     const userId = (token as any)?.sub as string | undefined;
     const userName = (token as any)?.name || (token as any)?.email || 'System';
     const userRole = (token as any)?.membershipRole;
-    
-    // Check if user is super admin for cross-tenant access
-    const isSuper = await isSuperAdmin(userId || '');
 
     const body = await request.json();
     const { orderIds, carrier = 'correos_cr', deliveryType = 'Domicilio' } = body;
@@ -37,12 +33,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const logPrefix = isSuper ? '[Generate Guía] 🔐 SUPER ADMIN' : `[Generate Guía] Tenant ${tenantId}`;
-    console.log(logPrefix, 'Generating guías for orders:', orderIds);
+    console.log(`[Generate Guía] Tenant ${tenantId}`, 'Generating guías for orders:', orderIds);
 
     return await withTenantContext({ tenantId, userId, role: userRole, userRole, userName }, async () => {
-      // Super admin gets unrestricted access to all orders
-      const prisma = getTenantPrisma(tenantId, isSuper)
+      // SECURITY: Always use tenant-isolated client
+      const prisma = getTenantPrisma(tenantId)
       
       // Validate shipping configuration exists
       const shippingConfig = await prisma.shippingConfig.findFirst({
@@ -224,12 +219,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const orderId = searchParams.get('orderId');
 
-    // Check if user is super admin for cross-tenant access
-    const isSuper = await isSuperAdmin(userId || '');
-
     return await withTenantContext({ tenantId, userId, role: userRole, userRole, userName }, async () => {
-      // Super admin gets unrestricted access
-      const prisma = getTenantPrisma(tenantId, isSuper)
+      // SECURITY: Always use tenant-isolated client
+      const prisma = getTenantPrisma(tenantId)
       
       if (orderId) {
         // Get guía for specific order

@@ -3,9 +3,12 @@
  * 
  * Uses AsyncLocalStorage to maintain tenant context across async operations
  * without passing tenantId through every function call.
+ * 
+ * CRITICAL: Uses AsyncLocalStorage for proper request-scoped isolation.
+ * This prevents tenant context from mixing between concurrent requests.
  */
 
-// import { AsyncLocalStorage } from 'async_hooks';
+import { AsyncLocalStorage } from 'async_hooks';
 import { TenantError } from './errors';
 
 export interface TenantContext {
@@ -20,18 +23,21 @@ export interface TenantContext {
   [key: string]: any; // Allow additional properties
 }
 
-// Simple context store for tenant context (Edge Runtime compatible)
-let currentContext: TenantContext | undefined;
+// CRITICAL FIX: Use AsyncLocalStorage for request-scoped tenant context
+// This ensures each request has its own isolated context that cannot be
+// overwritten by concurrent requests from other tenants
+const asyncLocalStorage = new AsyncLocalStorage<TenantContext>();
 
 /**
  * Get the current tenant ID from context
  * @throws {TenantError} if tenant context is not set
  */
 export function getTenantId(): string {
-  if (!currentContext?.tenantId) {
+  const context = asyncLocalStorage.getStore();
+  if (!context?.tenantId) {
     throw new TenantError('Tenant context not set. Ensure middleware is setting tenant context.');
   }
-  return currentContext.tenantId;
+  return context.tenantId;
 }
 
 /**
@@ -39,14 +45,15 @@ export function getTenantId(): string {
  * @returns TenantContext or undefined
  */
 export function getTenantContext(): TenantContext | undefined {
-  return currentContext;
+  return asyncLocalStorage.getStore();
 }
 
 /**
  * Check if tenant context is set
  */
 export function hasTenantContext(): boolean {
-  return !!currentContext?.tenantId;
+  const context = asyncLocalStorage.getStore();
+  return !!context?.tenantId;
 }
 
 /**
@@ -76,16 +83,8 @@ export async function withTenantContext<T>(
     requestId: crypto.randomUUID(),
   };
 
-  // Set the context and run the function
-  const previousContext = currentContext;
-  currentContext = enhancedContext;
-  
-  try {
-    return await fn();
-  } finally {
-    // Restore previous context
-    currentContext = previousContext;
-  }
+  // Run the function within AsyncLocalStorage context
+  return asyncLocalStorage.run(enhancedContext, fn);
 }
 
 /**
@@ -117,16 +116,8 @@ export async function withRequestContext<T>(
     userAgent: request.headers.get('user-agent') || 'unknown',
   };
 
-  // Set the context and run the function
-  const previousContext = currentContext;
-  currentContext = enhancedContext;
-  
-  try {
-    return await fn();
-  } finally {
-    // Restore previous context
-    currentContext = previousContext;
-  }
+  // Run the function within AsyncLocalStorage context
+  return asyncLocalStorage.run(enhancedContext, fn);
 }
 
 /**
@@ -144,25 +135,17 @@ export async function withoutTenantIsolation<T>(fn: () => Promise<T>): Promise<T
     });
   }
 
-  // Save the current context
-  const previousContext = currentContext;
+  // Create a system context
+  const systemContext: TenantContext = {
+    tenantId: 'system',
+    userId: 'system',
+    userRole: 'SYSTEM',
+    userName: 'System',
+    requestId: crypto.randomUUID(),
+  };
   
-  try {
-    // Set a system context
-    currentContext = {
-      tenantId: 'system',
-      userId: 'system',
-      userRole: 'SYSTEM',
-      userName: 'System',
-      requestId: crypto.randomUUID(),
-    };
-    
-    // Run the function with system context
-    return await fn();
-  } finally {
-    // Restore previous context
-    currentContext = previousContext;
-  }
+  // Run the function with system context in AsyncLocalStorage
+  return asyncLocalStorage.run(systemContext, fn);
 }
 
 /**

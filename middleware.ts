@@ -8,7 +8,7 @@ if (process.env.NODE_ENV === 'production' && !process.env.NEXTAUTH_SECRET) {
 }
 
 /**
- * Public routes that don't require authentication
+ * Public routes that don't require authentication me bad
  */
 const PUBLIC_ROUTES = [
   '/auth/signin',

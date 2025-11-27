@@ -26,7 +26,7 @@ const PUBLIC_ROUTES = [
   '/api/tilopay/callback',
   '/api/stripe/webhook',
   '/api/chat/webhook',
-  
+  '/api/bot/telegram/webhook',  // Telegram bot webhook (must be public)
 ]
 
 /**

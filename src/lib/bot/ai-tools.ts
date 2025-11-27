@@ -736,37 +736,52 @@ export async function generateShippingGuia(
           };
         }
 
-        // ALWAYS generate manual guía
-        const guiaData = {
-          tenantId: ctx.tenantId,
-          orderId: order.id,
-          carrier: params.carrier || 'correos',
-          type: 'manual', // ALWAYS MANUAL
-          customerName: order.customerName,
-          address: order.address || '',
-          province: order.province || '',
-          canton: order.canton || '',
-          district: order.district || '',
-          phone: order.phone || '',
-          createdBy: ctx.userName,
-        };
-
-        const guia = await tenantPrisma.shippingGuia.create({
-          data: guiaData,
+        // Check if order already has a guía
+        const existingGuia = await tenantPrisma.shippingGuia.findFirst({
+          where: { orderId: order.id },
         });
 
-        // Generate PDF URL (this would use your existing PDF generation)
+        if (existingGuia) {
+          const pdfUrl = `/api/shipping/guia/${existingGuia.id}/pdf`;
+          return {
+            success: true,
+            data: {
+              guiaId: existingGuia.id,
+              orderId: order.orderId,
+              guiaNumber: existingGuia.guiaNumber,
+              status: existingGuia.status,
+              pdfUrl: `https://www.betsycrm.com${pdfUrl}`,
+            },
+            message: `ℹ️ Esta orden ya tiene una guía generada.\n\n📄 **PDF:** https://www.betsycrm.com${pdfUrl}\n\n🔢 **Guía #:** ${existingGuia.guiaNumber || 'Manual'}\n📍 **Estado:** ${existingGuia.status}`,
+          };
+        }
+
+        // Create manual guía with only valid schema fields
+        const guia = await tenantPrisma.shippingGuia.create({
+          data: {
+            tenantId: ctx.tenantId,
+            orderId: order.id,
+            carrier: params.carrier || 'correos',
+            status: 'created',
+            serviceType: 'manual',
+            progress: `Guía manual creada por ${ctx.userName}`,
+          },
+        });
+
+        // Generate PDF URL
         const pdfUrl = `/api/shipping/guia/${guia.id}/pdf`;
+
+        // Build response with order details for context
+        const addressParts = [order.province, order.canton, order.district].filter(Boolean).join(', ');
 
         return {
           success: true,
           data: {
             guiaId: guia.id,
             orderId: order.orderId,
-            type: 'manual',
             pdfUrl: `https://www.betsycrm.com${pdfUrl}`,
           },
-          message: `✅ Guía manual generada exitosamente.\n\n📄 **PDF:** ${`https://www.betsycrm.com${pdfUrl}`}\n\n La guía está lista para imprimir.`,
+          message: `✅ Guía manual generada exitosamente.\n\n📦 **Orden:** #${order.orderId}\n👤 **Cliente:** ${order.customerName}\n📍 **Destino:** ${addressParts || 'No especificado'}\n📱 **Teléfono:** ${order.phone || 'No especificado'}\n\n📄 **PDF:** https://www.betsycrm.com${pdfUrl}\n\n✨ La guía está lista para imprimir.`,
         };
       } catch (error: any) {
         console.error('[AI Tool] generateShippingGuia error:', error);

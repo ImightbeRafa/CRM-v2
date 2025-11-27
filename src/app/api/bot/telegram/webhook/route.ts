@@ -55,19 +55,27 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     
-    console.log('[Telegram Webhook] Received update:', JSON.stringify(body).slice(0, 500));
+    console.log('[Telegram Webhook] ✅ Received update:', JSON.stringify(body).slice(0, 500));
     
     // Handle different update types
     if (body.message) {
+      console.log('[Telegram Webhook] 📨 Processing message...');
       await handleMessage(body.message);
+      console.log('[Telegram Webhook] ✅ Message handled successfully');
     } else if (body.callback_query) {
+      console.log('[Telegram Webhook] 🔘 Processing callback query...');
       await handleCallbackQuery(body.callback_query);
+      console.log('[Telegram Webhook] ✅ Callback handled successfully');
+    } else {
+      console.log('[Telegram Webhook] ⚠️ Unknown update type:', Object.keys(body));
     }
     
     // Always return 200 to acknowledge receipt
     return NextResponse.json({ ok: true });
-  } catch (error) {
-    console.error('[Telegram Webhook] Error:', error);
+  } catch (error: any) {
+    console.error('[Telegram Webhook] ❌ CRITICAL ERROR:', error);
+    console.error('[Telegram Webhook] Error stack:', error.stack);
+    console.error('[Telegram Webhook] Error message:', error.message);
     // Still return 200 to prevent Telegram from retrying
     return NextResponse.json({ ok: true, error: 'Internal error' });
   }
@@ -77,77 +85,104 @@ export async function POST(request: NextRequest) {
  * Handle incoming messages
  */
 async function handleMessage(message: any) {
-  const chatId = String(message.chat.id);
-  const userId = String(message.from?.id || chatId);
-  const text = message.text || '';
-  const displayName = message.from?.first_name || message.from?.username || 'Usuario';
-  const username = message.from?.username;
-  
-  console.log(`[Telegram] Message from ${displayName} (${chatId}): ${text.slice(0, 100)}`);
-  
-  // Rate limiting
-  if (isRateLimited(chatId)) {
-    await sendMessage(chatId, '⏳ Has enviado muchos mensajes. Por favor espera un momento antes de continuar.');
-    return;
-  }
-  
-  // Handle /start command (connection flow)
-  if (text.startsWith('/start')) {
-    await handleStartCommand(chatId, text, { displayName, username });
-    return;
-  }
-  
-  // Handle /help command
-  if (text === '/help') {
-    await handleHelpCommand(chatId);
-    return;
-  }
-  
-  // Handle /clear command (clear conversation history)
-  if (text === '/clear') {
-    await clearConversationHistory('telegram', chatId);
-    await sendMessage(chatId, '🗑️ Historial de conversación limpiado. ¡Empecemos de nuevo!');
-    return;
-  }
-  
-  // Handle /status command
-  if (text === '/status') {
-    await handleStatusCommand(chatId);
-    return;
-  }
-  
-  // Check if user is connected
-  const sessionContext = await getBotSessionWithContext('telegram', chatId);
-  
-  if (!sessionContext) {
-    await sendMessage(chatId, generateUnauthorizedMessage());
-    return;
-  }
-  
-  // Check if tenant is active
-  if (!sessionContext.tenant.isActive) {
-    await sendMessage(chatId, '⚠️ Tu cuenta de Betsy está desactivada. Contacta a soporte para más información.');
-    return;
-  }
-  
-  // Show typing indicator
-  await sendTypingAction(chatId);
-  
-  // Process message through AI agent
-  const response = await processMessage(
-    'telegram',
-    chatId,
-    text,
-    {
-      tenantId: sessionContext.session.tenantId,
-      userId: sessionContext.user.id,
-      userName: sessionContext.user.name || sessionContext.user.username || sessionContext.user.email || displayName,
-      userRole: sessionContext.role,
+  try {
+    const chatId = String(message.chat.id);
+    const userId = String(message.from?.id || chatId);
+    const text = message.text || '';
+    const displayName = message.from?.first_name || message.from?.username || 'Usuario';
+    const username = message.from?.username;
+    
+    console.log(`[Telegram] 📩 Message from ${displayName} (${chatId}): ${text.slice(0, 100)}`);
+    
+    // Rate limiting
+    if (isRateLimited(chatId)) {
+      console.log(`[Telegram] ⏳ Rate limited: ${chatId}`);
+      await sendMessage(chatId, '⏳ Has enviado muchos mensajes. Por favor espera un momento antes de continuar.');
+      return;
     }
-  );
-  
-  // Send response (split if too long for Telegram)
-  await sendLongMessage(chatId, response);
+    
+    // Handle /start command (connection flow)
+    if (text.startsWith('/start')) {
+      console.log(`[Telegram] 🚀 Handling /start command for ${chatId}`);
+      await handleStartCommand(chatId, text, { displayName, username });
+      return;
+    }
+    
+    // Handle /help command
+    if (text === '/help') {
+      console.log(`[Telegram] ❓ Handling /help command for ${chatId}`);
+      await handleHelpCommand(chatId);
+      return;
+    }
+    
+    // Handle /clear command (clear conversation history)
+    if (text === '/clear') {
+      console.log(`[Telegram] 🗑️ Handling /clear command for ${chatId}`);
+      await clearConversationHistory('telegram', chatId);
+      await sendMessage(chatId, '🗑️ Historial de conversación limpiado. ¡Empecemos de nuevo!');
+      return;
+    }
+    
+    // Handle /status command
+    if (text === '/status') {
+      console.log(`[Telegram] 📊 Handling /status command for ${chatId}`);
+      await handleStatusCommand(chatId);
+      return;
+    }
+    
+    // Check if user is connected
+    console.log(`[Telegram] 🔍 Checking session for ${chatId}...`);
+    const sessionContext = await getBotSessionWithContext('telegram', chatId);
+    
+    if (!sessionContext) {
+      console.log(`[Telegram] ⚠️ No session found for ${chatId}`);
+      await sendMessage(chatId, generateUnauthorizedMessage());
+      return;
+    }
+    
+    console.log(`[Telegram] ✅ Session found for ${chatId} - User: ${sessionContext.user.email}, Tenant: ${sessionContext.tenant.name}`);
+    
+    // Check if tenant is active
+    if (!sessionContext.tenant.isActive) {
+      console.log(`[Telegram] ⚠️ Tenant inactive for ${chatId}`);
+      await sendMessage(chatId, '⚠️ Tu cuenta de Betsy está desactivada. Contacta a soporte para más información.');
+      return;
+    }
+    
+    // Show typing indicator
+    console.log(`[Telegram] ⌨️ Sending typing action...`);
+    await sendTypingAction(chatId);
+    
+    // Process message through AI agent
+    console.log(`[Telegram] 🤖 Processing message through AI agent...`);
+    const response = await processMessage(
+      'telegram',
+      chatId,
+      text,
+      {
+        tenantId: sessionContext.session.tenantId,
+        userId: sessionContext.user.id,
+        userName: sessionContext.user.name || sessionContext.user.username || sessionContext.user.email || displayName,
+        userRole: sessionContext.role,
+      }
+    );
+    
+    console.log(`[Telegram] 💬 AI Response generated (${response.length} chars)`);
+    
+    // Send response (split if too long for Telegram)
+    console.log(`[Telegram] 📤 Sending response to ${chatId}...`);
+    await sendLongMessage(chatId, response);
+    console.log(`[Telegram] ✅ Response sent successfully to ${chatId}`);
+  } catch (error: any) {
+    console.error(`[Telegram] ❌ Error in handleMessage:`, error);
+    console.error(`[Telegram] Error stack:`, error.stack);
+    // Try to send error message to user
+    try {
+      await sendMessage(message.chat.id, '❌ Lo siento, ocurrió un error al procesar tu mensaje. Por favor intenta de nuevo.');
+    } catch (sendError) {
+      console.error(`[Telegram] ❌ Failed to send error message:`, sendError);
+    }
+  }
 }
 
 /**

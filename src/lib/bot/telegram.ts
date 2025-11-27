@@ -46,6 +46,7 @@ export function createWebhookHandler() {
 
 /**
  * Send a text message to a Telegram chat
+ * Uses direct HTTP API to avoid AbortSignal issues in serverless
  */
 export async function sendMessage(
   chatId: string | number,
@@ -55,44 +56,106 @@ export async function sendMessage(
     replyMarkup?: InlineKeyboard;
   }
 ): Promise<void> {
-  const bot = getTelegramBot();
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    throw new Error('TELEGRAM_BOT_TOKEN not set');
+  }
   
-  await bot.api.sendMessage(chatId, text, {
+  const body: any = {
+    chat_id: chatId,
+    text: text,
     parse_mode: options?.parseMode || 'HTML',
-    reply_markup: options?.replyMarkup,
+  };
+  
+  if (options?.replyMarkup) {
+    body.reply_markup = options.replyMarkup;
+  }
+  
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
   });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    console.error('[Telegram] sendMessage failed:', error);
+    throw new Error(`Telegram API error: ${error}`);
+  }
 }
 
 /**
  * Send typing indicator to show the bot is processing
+ * Uses direct HTTP API to avoid AbortSignal issues in serverless
  */
 export async function sendTypingAction(chatId: string | number): Promise<void> {
-  const bot = getTelegramBot();
-  await bot.api.sendChatAction(chatId, 'typing');
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    throw new Error('TELEGRAM_BOT_TOKEN not set');
+  }
+  
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      chat_id: chatId,
+      action: 'typing',
+    }),
+  });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    console.error('[Telegram] sendChatAction failed:', error);
+    // Don't throw - typing indicator is optional
+  }
 }
 
 /**
  * Send a message with inline keyboard buttons
+ * Uses direct HTTP API to avoid AbortSignal issues in serverless
  */
 export async function sendMessageWithButtons(
   chatId: string | number,
   text: string,
   buttons: Array<{ text: string; callbackData: string }[]>
 ): Promise<void> {
-  const bot = getTelegramBot();
-  
-  const keyboard = new InlineKeyboard();
-  for (const row of buttons) {
-    for (const btn of row) {
-      keyboard.text(btn.text, btn.callbackData);
-    }
-    keyboard.row();
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    throw new Error('TELEGRAM_BOT_TOKEN not set');
   }
   
-  await bot.api.sendMessage(chatId, text, {
-    parse_mode: 'HTML',
-    reply_markup: keyboard,
+  // Build inline keyboard structure
+  const inline_keyboard = buttons.map(row =>
+    row.map(btn => ({
+      text: btn.text,
+      callback_data: btn.callbackData,
+    }))
+  );
+  
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: text,
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard,
+      },
+    }),
   });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    console.error('[Telegram] sendMessageWithButtons failed:', error);
+    throw new Error(`Telegram API error: ${error}`);
+  }
 }
 
 /**

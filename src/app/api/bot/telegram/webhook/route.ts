@@ -60,18 +60,26 @@ function verifyWebhookSecret(request: NextRequest): boolean {
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
   
   // If no secret is configured, allow all requests (for easier initial setup)
-  if (!secret) {
+  if (!secret || secret === '') {
+    console.log('[Telegram Webhook] ℹ️ Secret verification disabled (TELEGRAM_WEBHOOK_SECRET not set)');
     return true;
   }
   
   // Check X-Telegram-Bot-Api-Secret-Token header
   const providedSecret = request.headers.get('X-Telegram-Bot-Api-Secret-Token');
   
+  if (!providedSecret) {
+    console.warn('[Telegram Webhook] ⚠️ Secret is configured but Telegram did not send secret token header');
+    console.warn('[Telegram Webhook] ℹ️ Set webhook with: setWebhook?url=...&secret_token=YOUR_SECRET');
+    return false;
+  }
+  
   if (providedSecret !== secret) {
     console.warn('[Telegram Webhook] ⚠️ Invalid secret token received');
     return false;
   }
   
+  console.log('[Telegram Webhook] ✅ Secret token verified');
   return true;
 }
 

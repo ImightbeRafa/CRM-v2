@@ -321,9 +321,12 @@ export async function setConversationState(
   
   if (redis) {
     try {
-      await redis.set(key, JSON.stringify(state), {
+      const stateJson = JSON.stringify(state);
+      console.log(`[ConversationMemory] Storing state for ${key}:`, stateJson);
+      await redis.set(key, stateJson, {
         ex: 600, // 10 minutes expiration
       });
+      console.log(`[ConversationMemory] State stored successfully`);
     } catch (error) {
       console.error('[ConversationMemory] Failed to store conversation state:', error);
     }
@@ -331,6 +334,7 @@ export async function setConversationState(
   }
   
   // For in-memory
+  console.log(`[ConversationMemory] Storing state in memory for ${key}`);
   memoryStorage.set(`state:${key}`, [state]);
 }
 
@@ -346,12 +350,46 @@ export async function getConversationState(
   
   if (redis) {
     try {
-      const data = await redis.get<string>(key);
-      if (data) {
+      const data = await redis.get(key);
+      console.log(`[ConversationMemory] Retrieved raw data for ${key}:`, typeof data, data);
+      
+      if (!data) {
+        console.log(`[ConversationMemory] No state found for ${key}`);
+        return null;
+      }
+      
+      // Handle if data is already an object (some Redis clients auto-parse)
+      if (typeof data === 'object' && data !== null) {
+        console.log(`[ConversationMemory] Data is already an object, returning directly`);
+        return data as Record<string, any>;
+      }
+      
+      // Handle if data is a string
+      if (typeof data === 'string') {
+        // Check if it's the problematic "[object Object]" string
+        if (data === '[object Object]') {
+          console.error(`[ConversationMemory] Found corrupted state "[object Object]", clearing it`);
+          await redis.del(key);
+          return null;
+        }
+        
+        console.log(`[ConversationMemory] Parsing JSON string`);
         return JSON.parse(data);
       }
-    } catch (error) {
+      
+      console.warn(`[ConversationMemory] Unexpected data type: ${typeof data}`);
+      return null;
+      
+    } catch (error: any) {
       console.error('[ConversationMemory] Failed to get conversation state:', error);
+      console.error('[ConversationMemory] Error details:', error.message);
+      // Clear corrupted state
+      try {
+        await redis.del(key);
+        console.log(`[ConversationMemory] Cleared corrupted state`);
+      } catch (delError) {
+        console.error(`[ConversationMemory] Failed to clear corrupted state:`, delError);
+      }
     }
     return null;
   }

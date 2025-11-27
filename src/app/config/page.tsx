@@ -13,7 +13,7 @@ import { ExcelImporter } from './components/ExcelImporter'
 import { StatusManager, OrderStatus } from './components/StatusManager'
 import { TenantSettingsPanel } from '../components/TenantSettingsPanel'
 import { useConfig } from '../contexts/ConfigContext'
-import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck } from 'lucide-react'
+import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck, Bot } from 'lucide-react'
 
 export default function ConfigPage() {
   const searchParams = useSearchParams()
@@ -95,7 +95,7 @@ export default function ConfigPage() {
     if (!mounted) return
     const tabParam = searchParams?.get('tab')
     if (tabParam) {
-      const validTabs = ['fields', 'business', 'users', 'option-sets', 'shipping', 'sellers', 'import', 'billing', 'bulk-delete', 'audit', 'legacy-fields', 'social', 'integrations', 'statuses']
+      const validTabs = ['fields', 'business', 'users', 'option-sets', 'shipping', 'sellers', 'import', 'billing', 'bulk-delete', 'audit', 'legacy-fields', 'social', 'integrations', 'statuses', 'ai-assistant']
       if (validTabs.includes(tabParam)) {
         setActiveTab(tabParam)
       }
@@ -515,6 +515,7 @@ export default function ConfigPage() {
     { id: 'shipping-config', label: 'Envíos (Correos CR)', icon: Truck },
     { id: 'users', label: 'Usuarios', icon: Users },
     { id: 'social', label: 'Cuentas Sociales', icon: MessageCircle },
+    { id: 'ai-assistant', label: 'AI Assistant', icon: Bot },
     { id: 'integrations', label: 'Integraciones API', icon: Plug },
     { id: 'import', label: 'Importar Excel', icon: FileSpreadsheet },
     { id: 'billing', label: 'Facturación', icon: BarChart3 },
@@ -783,6 +784,26 @@ export default function ConfigPage() {
                 <div className="text-sm text-gray-500">
                   Solo usuarios Owner o Master pueden vincular cuentas sociales.
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* AI Assistant Tab */}
+          {activeTab === 'ai-assistant' && (
+            <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+              <div className="text-center">
+                <Bot className="w-12 h-12 text-indigo-600 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Betsy AI Sales Assistant</h3>
+                <p className="text-gray-600 mb-6">
+                  Gestiona tu negocio con comandos naturales vía Telegram
+                </p>
+                <a
+                  href="/config/ai-assistant"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg transition-colors font-medium"
+                >
+                  <Bot className="w-5 h-5" />
+                  Configurar AI Assistant
+                </a>
               </div>
             </div>
           )}

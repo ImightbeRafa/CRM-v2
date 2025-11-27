@@ -1,4 +1,4 @@
-import { prisma } from './db';
+import { getTenantPrisma } from './prisma-tenant';
 import { ExternalOrderData } from '@/types/integration';
 
 export async function createExternalOrder(tenantId: string, orderData: ExternalOrderData) {
@@ -8,8 +8,11 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
   const comments = orderData.metadata?.comments || '';
 
   try {
+    // Use tenant-isolated Prisma client for security
+    const tenantPrisma = getTenantPrisma(tenantId);
+    
     // Map external order data to internal Order model
-    const order = await prisma.order.create({
+    const order = await tenantPrisma.order.create({
       data: {
         tenantId,
         orderId: orderData.orderId,
@@ -62,7 +65,10 @@ export async function checkDuplicateOrder(tenantId: string, orderId: string): Pr
   console.log(`[checkDuplicateOrder] Checking for order ${orderId} in tenant ${tenantId}`);
   
   try {
-    const existing = await prisma.order.findFirst({
+    // Use tenant-isolated Prisma client for security
+    const tenantPrisma = getTenantPrisma(tenantId);
+    
+    const existing = await tenantPrisma.order.findFirst({
       where: {
         tenantId,
         orderId,
@@ -92,6 +98,9 @@ export async function getExternalOrders(
 ) {
   const { limit = 50, offset = 0, startDate, endDate } = options;
 
+  // Use tenant-isolated Prisma client for security
+  const tenantPrisma = getTenantPrisma(tenantId);
+
   const where: any = {
     tenantId,
     // Filter for external orders using customFields
@@ -107,7 +116,7 @@ export async function getExternalOrders(
     if (endDate) where.timestamp.lte = endDate;
   }
 
-  return prisma.order.findMany({
+  return tenantPrisma.order.findMany({
     where,
     orderBy: {
       timestamp: 'desc',
@@ -136,7 +145,10 @@ export async function updateExternalOrderStatus(
   status: string
 ): Promise<boolean> {
   try {
-    await prisma.order.updateMany({
+    // Use tenant-isolated Prisma client for security
+    const tenantPrisma = getTenantPrisma(tenantId);
+    
+    await tenantPrisma.order.updateMany({
       where: {
         tenantId,
         orderId,

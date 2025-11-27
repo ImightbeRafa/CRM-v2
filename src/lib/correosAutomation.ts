@@ -99,10 +99,13 @@ export class CorreosAutomation {
         console.log(`Created downloads directory: ${downloadPath} (Lambda: ${isLambda})`);
       }
       
+      // Always use headless mode in production for automation
+      // Only allow non-headless in development with explicit debug flag
       const headlessEnv = process.env.CORREOS_HEADLESS?.toLowerCase();
-      const headless = (this.debugMode || headlessEnv === 'false') ? false : true;
+      const isProduction = process.env.NODE_ENV === 'production';
+      const headless = isProduction ? true : (this.debugMode || headlessEnv === 'false') ? false : true;
 
-      console.log(`Launching Correos automation browser (headless: ${headless}, Lambda: ${isLambda})`);
+      console.log(`Launching Correos automation browser (headless: ${headless}, Lambda: ${isLambda}, Production: ${isProduction})`);
 
       // Configure puppeteer for serverless vs local environments
       const launchOptions: any = {

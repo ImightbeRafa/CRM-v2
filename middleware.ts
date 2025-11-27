@@ -84,6 +84,11 @@ export default async function middleware(request: Request & { nextUrl: URL }) {
       secret: process.env.NEXTAUTH_SECRET,
     })
 
+    // Integration API routes use API key authentication, bypass session check
+    if (pathname.startsWith('/api/integration/')) {
+      return NextResponse.next()
+    }
+
     // Redirect to login if no token
     if (!token) {
       return redirectToLogin(url)

@@ -57,6 +57,7 @@ model Tenant {
   webhookLogs    WebhookLog[]
   apiKeys        ApiKey[]
   integrationLogs IntegrationLog[]
+  botSessions    BotSession[]
   
   @@index([slug])
   @@index([isActive])
@@ -199,6 +200,7 @@ model User {
   memberships Membership[]
   auditLogs   AuditLog[]
   socialAccounts SocialAccount[]
+  botSessions BotSession[]
   
   @@map("User")
   @@index([email])
@@ -700,4 +702,30 @@ model IntegrationLog {
   @@index([tenantId])
   @@index([action])
   @@index([createdAt])
+}
+
+// ============================================================================
+// BOT SESSION MODEL (Telegram/WhatsApp AI Assistant)
+// ============================================================================
+
+model BotSession {
+  id           String   @id @default(cuid())
+  platform     String   // "telegram" | "whatsapp"
+  platformId   String   // telegram_chat_id or whatsapp_phone as string
+  userId       String
+  tenantId     String
+  connectedAt  DateTime @default(now())
+  isActive     Boolean  @default(true)
+  
+  // Optional metadata
+  displayName  String?  // User's display name from the platform
+  username     String?  // @username on Telegram
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@unique([platform, platformId])
+  @@index([tenantId])
+  @@index([userId])
+  @@index([platform, isActive])
 }

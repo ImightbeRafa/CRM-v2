@@ -441,15 +441,18 @@ export async function POST(request: NextRequest) {
       tenantId: order.tenantId
     });
 
-    // Update inventory and audit log in parallel (non-blocking)
-    Promise.all([
-      updateInventoryForOrder(order, tenantPrisma).catch(err => {
-        console.error('Failed to update inventory:', err)
-      }),
-      logCreate(request, 'order', order.id, `Order #${order.orderId}`, order).catch(err => {
-        console.error('Failed to log audit trail:', err)
-      })
-    ]).catch(() => {}) // Ignore errors, don't block response
+    // Update inventory and audit log in parallel (non-blocking, fire-and-forget)
+    // Don't await - let these run in background to speed up response
+    setImmediate(() => {
+      Promise.all([
+        updateInventoryForOrder(order, tenantPrisma).catch(err => {
+          console.error('Failed to update inventory:', err)
+        }),
+        logCreate(request, 'order', order.id, `Order #${order.orderId}`, order).catch(err => {
+          console.error('Failed to log audit trail:', err)
+        })
+      ]).catch(() => {}) // Ignore errors, don't block response
+    })
 
     return createSuccessResponse(order, 'Order created successfully')
   } catch (error) {

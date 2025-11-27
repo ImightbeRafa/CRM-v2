@@ -422,16 +422,19 @@ Ahora puedes gestionar tu negocio con comandos naturales. Por ejemplo:
  * Generate an error message for unauthorized users
  */
 export function generateUnauthorizedMessage(): string {
-  return `⚠️ **No estás conectado a ninguna cuenta de Betsy**
+  return `⚠️ <b>No estás conectado</b>
 
-Para usar este bot, necesitas conectar tu cuenta:
+Para conectarte, necesitas un código de acceso de 12 caracteres.
 
-1. Inicia sesión en tu cuenta de Betsy CRM
-2. Ve a Configuración → AI Assistant
-3. Haz clic en "Conectar Telegram"
-4. Sigue el enlace para vincular tu cuenta
+<b>¿Cómo conectarse?</b>
 
-Si ya tienes cuenta, visita https://betsycrm.com para conectar.
+1. Pide a tu administrador el código de acceso
+2. Envía: <code>/start CODIGO123ABC</code>
+3. Proporciona tu nombre cuando te lo pida
+4. ¡Listo!
+
+<b>¿Eres administrador?</b>
+Obtén tu código en: https://www.betsycrm.com/config/ai-assistant
 
 ¿Necesitas ayuda? Contacta soporte en support@betsycrm.com`;
 }

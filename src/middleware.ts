@@ -20,6 +20,9 @@ const PUBLIC_ROUTES = [
   '/api/stripe/webhook',
   '/api/chat/webhook',
   '/api/integration', // Allow external website integrations (includes /test and /orders/create)
+  '/api/bot/telegram/webhook',       // Telegram bot webhook (must be public)
+  '/api/bot/telegram/test-webhook',  // Telegram test webhook (diagnostic)
+  '/api/bot/telegram/health',        // Telegram health check (diagnostic)
 ];
 
 /**

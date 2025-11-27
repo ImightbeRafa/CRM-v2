@@ -53,10 +53,40 @@ function isRateLimited(chatId: string): boolean {
 }
 
 /**
+ * Optional: Verify webhook secret (disabled by default for easier setup)
+ * Enable this in production by setting TELEGRAM_WEBHOOK_SECRET
+ */
+function verifyWebhookSecret(request: NextRequest): boolean {
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  
+  // If no secret is configured, allow all requests (for easier initial setup)
+  if (!secret) {
+    return true;
+  }
+  
+  // Check X-Telegram-Bot-Api-Secret-Token header
+  const providedSecret = request.headers.get('X-Telegram-Bot-Api-Secret-Token');
+  
+  if (providedSecret !== secret) {
+    console.warn('[Telegram Webhook] ⚠️ Invalid secret token received');
+    return false;
+  }
+  
+  return true;
+}
+
+/**
  * POST handler for Telegram webhook
+ * This endpoint is PUBLIC - no authentication required (Telegram calls it directly)
  */
 export async function POST(request: NextRequest) {
   try {
+    // Optional: Verify the request came from Telegram
+    if (!verifyWebhookSecret(request)) {
+      console.warn('[Telegram Webhook] ❌ Unauthorized webhook request (invalid secret)');
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    
     const body = await request.json();
     
     console.log('[Telegram Webhook] ✅ Received update:', JSON.stringify(body).slice(0, 500));

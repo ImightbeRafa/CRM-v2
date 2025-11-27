@@ -165,16 +165,73 @@ async function handleMessage(message: any) {
       return;
     }
     
-    // Handle /status command
-    if (text === '/status') {
-      console.log(`[Telegram] 📊 Handling /status command for ${chatId}`);
-      await handleStatusCommand(chatId);
+  // Handle /status command
+  if (text === '/status') {
+    console.log(`[Telegram] 📊 Handling /status command for ${chatId}`);
+    await handleStatusCommand(chatId);
+    return;
+  }
+  
+  // Check if awaiting name (during setup)
+  const { getConversationState, clearConversationState } = await import('@/lib/bot/conversation-memory');
+  const state = await getConversationState('telegram', chatId);
+  
+  if (state?.awaitingName) {
+    console.log(`[Telegram] 📝 User provided name during setup: ${text}`);
+    
+    // Validate name (basic check)
+    if (text.length < 2 || text.length > 100) {
+      await sendMessage(chatId, '⚠️ Por favor ingresa un nombre válido (entre 2 y 100 caracteres).');
       return;
     }
     
-    // Check if user is connected
-    console.log(`[Telegram] 🔍 Checking session for ${chatId}...`);
-    const sessionContext = await getBotSessionWithContext('telegram', chatId);
+    // Create bot session
+    const { prisma } = await import('@/lib/db');
+    await prisma.botSession.create({
+      data: {
+        platform: 'telegram',
+        platformId: chatId,
+        tenantId: state.tenantId,
+        userId: null, // No specific user - team member
+        providedName: text.trim(),
+        displayName: displayName,
+        username: username,
+        isActive: true,
+      },
+    });
+    
+    // Clear state
+    await clearConversationState('telegram', chatId);
+    
+    // Send welcome message
+    const welcomeMsg = `🎉 <b>¡Perfecto, ${text.trim()}!</b>
+
+Ya estás conectado a <b>${state.tenantName}</b>.
+
+Ahora puedes:
+• 📦 Crear y gestionar órdenes
+• 📊 Consultar inventario
+• 📈 Ver estadísticas de ventas
+• 🚚 Generar guías de envío
+• 👥 Buscar clientes
+
+<b>Ejemplos de lo que puedes decir:</b>
+• "Cuántas órdenes tengo pendientes?"
+• "Crea una orden para Juan Pérez..."
+• "Cuánto stock tengo de camisetas?"
+• "Muéstrame las ventas de esta semana"
+
+Escribe tu pregunta en lenguaje natural o usa /help para más información.`;
+    
+    await sendMessage(chatId, welcomeMsg);
+    
+    console.log(`[Telegram] ✅ Session created for ${text.trim()} (@${username}) in tenant ${state.tenantName}`);
+    return;
+  }
+  
+  // Check if user is connected
+  console.log(`[Telegram] 🔍 Checking session for ${chatId}...`);
+  const sessionContext = await getBotSessionWithContext('telegram', chatId);
     
     if (!sessionContext) {
       console.log(`[Telegram] ⚠️ No session found for ${chatId}`);
@@ -228,60 +285,66 @@ async function handleMessage(message: any) {
 }
 
 /**
- * Handle /start command - connection flow
+ * Handle /start command - NEW CODE-BASED flow
  */
 async function handleStartCommand(
   chatId: string,
   text: string,
   userInfo: { displayName: string; username?: string }
 ) {
-  // Check if there's a connection token
-  const parts = text.split(' ');
-  const token = parts[1]; // /start <token>
+  const { validateBotAccessCode } = await import('@/lib/bot/access-code');
+  const { getConversationMemory, addMessageToMemory } = await import('@/lib/bot/conversation-memory');
   
-  if (token) {
-    // Verify and use the token to connect
-    const payload = await verifyConnectionToken(token);
+  // Check if there's an access code
+  const parts = text.split(' ');
+  const code = parts[1]?.trim().toUpperCase(); // /start ABC123XYZ789
+  
+  if (code) {
+    // Validate the access code
+    const tenant = await validateBotAccessCode(code);
     
-    if (!payload) {
-      await sendMessage(chatId, '⚠️ El enlace de conexión ha expirado o es inválido.\n\nPor favor, genera un nuevo enlace desde tu panel de Betsy.');
+    if (!tenant) {
+      await sendMessage(chatId, `⚠️ <b>Código inválido</b>
+
+El código <code>${code}</code> no existe o ha expirado.
+
+Por favor verifica el código e intenta de nuevo.`);
       return;
     }
     
-    // Create bot session
-    await createBotSession(
-      'telegram',
-      chatId,
-      payload.userId,
-      payload.tenantId,
-      {
-        displayName: userInfo.displayName,
-        username: userInfo.username,
-      }
-    );
-    
-    // Get tenant name
-    const { prisma } = await import('@/lib/db');
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: payload.tenantId },
-      select: { name: true },
+    // Code is valid! Ask for their name for audit trail
+    const { setConversationState } = await import('@/lib/bot/conversation-memory');
+    await setConversationState('telegram', chatId, {
+      awaitingName: true,
+      tenantId: tenant.id,
+      tenantName: tenant.name,
     });
     
-    // Send welcome message
-    await sendMessage(
-      chatId,
-      generateWelcomeMessage(payload.userName || userInfo.displayName, tenant?.name || 'tu negocio')
-    );
+    await sendMessage(chatId, `✅ <b>Código válido!</b>
+
+Estás conectando a: <b>${tenant.name}</b>
+
+Para el registro de auditoría, ¿cuál es tu nombre completo?
+
+<i>Ejemplo: Juan Pérez o María González</i>`);
     
     return;
   }
   
-  // No token - check if already connected
+  // No code - check if already connected
   const existingSession = await findBotSession('telegram', chatId);
   
   if (existingSession) {
     // Already connected
-    await sendMessage(chatId, `👋 ¡Hola de nuevo! Ya estás conectado a Betsy.
+    const { prisma } = await import('@/lib/db');
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: existingSession.tenantId },
+      select: { name: true },
+    });
+    
+    await sendMessage(chatId, `👋 <b>¡Hola de nuevo!</b>
+
+Ya estás conectado a <b>${tenant?.name || 'Betsy'}</b>.
 
 ¿En qué puedo ayudarte hoy?
 
@@ -289,8 +352,18 @@ Escribe tu pregunta en lenguaje natural o usa /help para ver los comandos dispon
     return;
   }
   
-  // Not connected and no token
-  await sendMessage(chatId, generateUnauthorizedMessage());
+  // Not connected and no code
+  await sendMessage(chatId, `👋 <b>¡Bienvenido a Betsy AI Assistant!</b>
+
+Para conectarte, necesitas un código de acceso de 12 caracteres.
+
+<b>¿Cómo obtener tu código?</b>
+
+1. Pide a tu administrador el código de acceso
+2. Envía: <code>/start CODIGO123ABC</code>
+
+<b>¿Eres administrador?</b>
+Encuentra tu código en: https://www.betsycrm.com/config/ai-assistant`);
 }
 
 /**

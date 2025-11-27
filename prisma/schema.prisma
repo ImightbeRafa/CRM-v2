@@ -24,6 +24,9 @@ model Tenant {
   // Settings
   settings  Json?    // Tenant-specific configuration
   
+  // Bot Access Code (for Telegram/WhatsApp team access)
+  botAccessCode String? @unique  // e.g., "ABC123XYZ789" - share with team
+  
   // Billing fields (Tilopay)
   tilopaySubscriptionId String?  // Tilopay Repeat subscription ID
   tilopayCustomerId     String?  // Tilopay customer ID for saved cards
@@ -712,16 +715,17 @@ model BotSession {
   id           String   @id @default(cuid())
   platform     String   // "telegram" | "whatsapp"
   platformId   String   // telegram_chat_id or whatsapp_phone as string
-  userId       String
+  userId       String?  // Optional - team members might not have Betsy accounts
   tenantId     String
   connectedAt  DateTime @default(now())
   isActive     Boolean  @default(true)
   
-  // Optional metadata
-  displayName  String?  // User's display name from the platform
+  // User identification (for audit trail)
+  providedName String?  // Name provided during bot setup
+  displayName  String?  // User's display name from the platform (Telegram first_name)
   username     String?  // @username on Telegram
   
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   
   @@unique([platform, platformId])

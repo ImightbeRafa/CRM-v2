@@ -308,3 +308,82 @@ export async function clearPendingConfirmation(
   memoryStorage.delete(`pending:${key}`);
 }
 
+/**
+ * Store conversation state (for multi-step flows like bot setup)
+ */
+export async function setConversationState(
+  platform: string,
+  platformId: string,
+  state: Record<string, any>
+): Promise<void> {
+  const key = `betsy:state:${platform}:${platformId}`;
+  const redis = getRedisClient();
+  
+  if (redis) {
+    try {
+      await redis.set(key, JSON.stringify(state), {
+        ex: 600, // 10 minutes expiration
+      });
+    } catch (error) {
+      console.error('[ConversationMemory] Failed to store conversation state:', error);
+    }
+    return;
+  }
+  
+  // For in-memory
+  memoryStorage.set(`state:${key}`, [state]);
+}
+
+/**
+ * Get conversation state
+ */
+export async function getConversationState(
+  platform: string,
+  platformId: string
+): Promise<Record<string, any> | null> {
+  const key = `betsy:state:${platform}:${platformId}`;
+  const redis = getRedisClient();
+  
+  if (redis) {
+    try {
+      const data = await redis.get<string>(key);
+      if (data) {
+        return JSON.parse(data);
+      }
+    } catch (error) {
+      console.error('[ConversationMemory] Failed to get conversation state:', error);
+    }
+    return null;
+  }
+  
+  // For in-memory
+  const state = memoryStorage.get(`state:${key}`);
+  if (state && state.length > 0) {
+    return state[0];
+  }
+  
+  return null;
+}
+
+/**
+ * Clear conversation state
+ */
+export async function clearConversationState(
+  platform: string,
+  platformId: string
+): Promise<void> {
+  const key = `betsy:state:${platform}:${platformId}`;
+  const redis = getRedisClient();
+  
+  if (redis) {
+    try {
+      await redis.del(key);
+    } catch (error) {
+      console.error('[ConversationMemory] Failed to clear conversation state:', error);
+    }
+    return;
+  }
+  
+  memoryStorage.delete(`state:${key}`);
+}
+

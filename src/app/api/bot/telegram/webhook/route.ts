@@ -7,6 +7,8 @@
  * Webhook URL: https://betsycrm.com/api/bot/telegram/webhook
  */
 
+console.log('🚀🚀🚀 WEBHOOK MODULE LOADING 🚀🚀🚀', new Date().toISOString());
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getTelegramBot, sendMessage, sendTypingAction } from '@/lib/bot/telegram';
 import { 
@@ -17,6 +19,8 @@ import {
 } from '@/lib/bot/bot-session';
 import { processMessage, generateWelcomeMessage, generateUnauthorizedMessage } from '@/lib/bot/ai-agent';
 import { clearConversationHistory } from '@/lib/bot/conversation-memory';
+
+console.log('🚀 WEBHOOK MODULE LOADED SUCCESSFULLY 🚀');
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';

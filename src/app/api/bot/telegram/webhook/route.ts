@@ -185,43 +185,64 @@ async function handleMessage(message: any) {
       return;
     }
     
-    // Create bot session
-    const { prisma } = await import('@/lib/db');
-    await prisma.botSession.create({
-      data: {
-        platform: 'telegram',
-        platformId: chatId,
-        tenantId: state.tenantId,
-        userId: null, // No specific user - team member
+    // Create bot session using helper function
+    await createBotSession(
+      'telegram',
+      chatId,
+      null, // No specific user - team member
+      state.tenantId,
+      {
         providedName: text.trim(),
         displayName: displayName,
         username: username,
-        isActive: true,
-      },
-    });
+      }
+    );
     
     // Clear state
     await clearConversationState('telegram', chatId);
     
     // Send welcome message
-    const welcomeMsg = `🎉 <b>¡Perfecto, ${text.trim()}!</b>
+    const welcomeMsg = `🎉 <b>¡Configuración completa, ${text.trim()}!</b>
 
-Ya estás conectado a <b>${state.tenantName}</b>.
+✅ <b>Tu bot está listo para usar</b>
 
-Ahora puedes:
-• 📦 Crear y gestionar órdenes
-• 📊 Consultar inventario
-• 📈 Ver estadísticas de ventas
-• 🚚 Generar guías de envío
-• 👥 Buscar clientes
+Conectado a: <b>${state.tenantName}</b>
+Tu nombre: <b>${text.trim()}</b>
+Usuario: ${username ? `@${username}` : 'Telegram'}
 
-<b>Ejemplos de lo que puedes decir:</b>
+━━━━━━━━━━━━━━━━━━━━
+
+<b>💬 Ya puedes empezar a trabajar:</b>
+
+📦 <b>ÓRDENES</b>
+• "Crea una orden para María López..."
 • "Cuántas órdenes tengo pendientes?"
-• "Crea una orden para Juan Pérez..."
-• "Cuánto stock tengo de camisetas?"
-• "Muéstrame las ventas de esta semana"
+• "Muéstrame las órdenes de hoy"
+• "Actualiza el estado de la orden #123"
 
-Escribe tu pregunta en lenguaje natural o usa /help para más información.`;
+📊 <b>INVENTARIO</b>
+• "Cuánto stock tengo de camisetas?"
+• "Busca producto hoodie negro"
+• "Muéstrame productos con poco stock"
+
+📈 <b>REPORTES</b>
+• "Cuánto vendí esta semana?"
+• "Top 5 productos más vendidos"
+• "Estadísticas del mes"
+
+🚚 <b>ENVÍOS</b>
+• "Genera guía de envío para orden #456"
+• "Órdenes listas para enviar"
+
+👥 <b>CLIENTES</b>
+• "Busca cliente Juan Pérez"
+• "Clientes con más compras"
+
+━━━━━━━━━━━━━━━━━━━━
+
+<b>🚀 ¡Escribe tu primera consulta ahora!</b>
+
+Usa /help para ver todos los comandos disponibles.`;
     
     await sendMessage(chatId, welcomeMsg);
     
@@ -342,13 +363,25 @@ Para el registro de auditoría, ¿cuál es tu nombre completo?
       select: { name: true },
     });
     
-    await sendMessage(chatId, `👋 <b>¡Hola de nuevo!</b>
+    const userName = existingSession.providedName || existingSession.displayName || userInfo.displayName;
+    
+    await sendMessage(chatId, `👋 <b>¡Hola de nuevo, ${userName}!</b>
 
-Ya estás conectado a <b>${tenant?.name || 'Betsy'}</b>.
+✅ <b>Tu sesión está activa y lista</b>
 
-¿En qué puedo ayudarte hoy?
+Conectado a: <b>${tenant?.name || 'Betsy'}</b>
 
-Escribe tu pregunta en lenguaje natural o usa /help para ver los comandos disponibles.`);
+━━━━━━━━━━━━━━━━━━━━
+
+<b>💬 ¿En qué puedo ayudarte hoy?</b>
+
+Ejemplos rápidos:
+• "Cuántas órdenes tengo pendientes?"
+• "Crea una orden para..."
+• "Muéstrame el inventario"
+• "Estadísticas del día"
+
+Usa /help para ver todos los comandos.`);
     return;
   }
   
@@ -370,28 +403,51 @@ Encuentra tu código en: https://www.betsycrm.com/config/ai-assistant`);
  * Handle /help command
  */
 async function handleHelpCommand(chatId: string) {
-  const helpMessage = `📚 **Comandos disponibles:**
+  const helpMessage = `📚 <b>Guía Rápida de Betsy AI</b>
 
-/start - Iniciar o reconectar el bot
-/help - Mostrar esta ayuda
-/status - Ver estado de conexión
-/clear - Limpiar historial de conversación
+✅ <b>Tu bot está listo para:</b>
 
-📦 **Ejemplos de uso:**
+━━━━━━━━━━━━━━━━━━━━
 
+📦 <b>GESTIONAR ÓRDENES</b>
 • "Muéstrame las órdenes de hoy"
-• "Crea orden para María García, 1 camiseta talla M, ₡12000"
-• "¿Cuánto vendí esta semana?"
-• "Busca el cliente Juan Pérez"
-• "Cambia estado de orden BOT-123 a Enviado"
-• "¿Cuánto stock tengo de hoodie negro?"
+• "Crea orden para María García, 1 camiseta talla M, ₡12000, San José"
+• "Cambia estado de orden #123 a Enviado"
+• "Órdenes pendientes de esta semana"
 
-💡 **Tips:**
-• Puedes escribir en lenguaje natural
-• Incluye toda la información posible en tu mensaje
-• Para cancelar una acción, escribe "cancelar"
+📊 <b>REVISAR INVENTARIO</b>
+• "Cuánto stock tengo de hoodie negro talla L?"
+• "Productos con menos de 10 unidades"
+• "Busca producto camiseta blanca"
 
-¿Necesitas más ayuda? Visita https://betsycrm.com/docs`;
+📈 <b>VER ESTADÍSTICAS</b>
+• "Cuánto vendí hoy?"
+• "Ventas de esta semana"
+• "Top 5 productos más vendidos"
+• "Resumen del mes"
+
+🚚 <b>GESTIONAR ENVÍOS</b>
+• "Genera guía de envío para orden #456"
+• "Órdenes listas para enviar"
+
+👥 <b>BUSCAR CLIENTES</b>
+• "Busca cliente Juan Pérez"
+• "Clientes con más compras"
+
+━━━━━━━━━━━━━━━━━━━━
+
+<b>⚡ COMANDOS RÁPIDOS</b>
+/start - Reconectar
+/status - Ver tu conexión
+/clear - Limpiar conversación
+/help - Esta ayuda
+
+💡 <b>Tips:</b>
+• Escribe en lenguaje natural
+• Sé específico con los detalles
+• Incluye toda la info en un mensaje
+
+<b>🚀 ¡Ya puedes empezar a trabajar!</b>`;
 
   await sendMessage(chatId, helpMessage);
 }
@@ -403,18 +459,44 @@ async function handleStatusCommand(chatId: string) {
   const session = await getBotSessionWithContext('telegram', chatId);
   
   if (!session) {
-    await sendMessage(chatId, '❌ No estás conectado a ninguna cuenta de Betsy.\n\nUsa el enlace de conexión desde tu panel de Betsy para vincular tu cuenta.');
+    await sendMessage(chatId, `❌ <b>No estás conectado</b>
+
+Para conectarte, necesitas un código de acceso.
+
+Pide el código a tu administrador y envía:
+<code>/start CODIGO123ABC</code>`);
     return;
   }
   
-  const statusMessage = `✅ **Estado de conexión**
+  const userName = session.user.name || session.user.email;
+  const connectedDate = session.session.connectedAt.toLocaleDateString('es-CR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+  
+  const statusMessage = `✅ <b>Tu sesión está ACTIVA</b>
 
-👤 **Usuario:** ${session.user.name || session.user.email}
-🏢 **Tenant:** ${session.tenant.name}
-📊 **Plan:** ${session.tenant.plan}
-🔑 **Rol:** ${session.role}
+━━━━━━━━━━━━━━━━━━━━
 
-Conectado desde: ${session.session.connectedAt.toLocaleDateString('es-CR')}`;
+👤 <b>Usuario:</b> ${userName}
+🏢 <b>Empresa:</b> ${session.tenant.name}
+📊 <b>Plan:</b> ${session.tenant.plan}
+🔑 <b>Rol:</b> ${session.role}
+⏰ <b>Conectado:</b> ${connectedDate}
+
+━━━━━━━━━━━━━━━━━━━━
+
+🚀 <b>Estado:</b> Listo para recibir comandos
+
+<b>Puedes:</b>
+• Crear y gestionar órdenes
+• Consultar inventario
+• Ver estadísticas
+• Generar guías de envío
+• Buscar clientes
+
+Escribe cualquier consulta o usa /help para ejemplos.`;
 
   await sendMessage(chatId, statusMessage);
 }

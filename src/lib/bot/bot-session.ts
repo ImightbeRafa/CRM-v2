@@ -20,8 +20,9 @@ export interface BotSessionData {
   id: string;
   platform: 'telegram' | 'whatsapp';
   platformId: string;
-  userId: string;
+  userId: string | null; // Null for team members without Betsy accounts
   tenantId: string;
+  providedName: string | null; // Name provided during setup (for audit)
   displayName: string | null;
   username: string | null;
   isActive: boolean;
@@ -77,16 +78,18 @@ export async function verifyConnectionToken(
 }
 
 /**
- * Create or update a bot session when user connects via magic link
+ * Create or update a bot session
+ * Supports both magic link (with userId) and code-based (without userId) connections
  */
 export async function createBotSession(
   platform: 'telegram' | 'whatsapp',
   platformId: string,
-  userId: string,
+  userId: string | null,
   tenantId: string,
   metadata?: {
     displayName?: string;
     username?: string;
+    providedName?: string;
   }
 ): Promise<BotSessionData> {
   // Upsert - create if not exists, update if exists
@@ -102,6 +105,7 @@ export async function createBotSession(
       platformId,
       userId,
       tenantId,
+      providedName: metadata?.providedName || null,
       displayName: metadata?.displayName || null,
       username: metadata?.username || null,
       isActive: true,
@@ -109,6 +113,7 @@ export async function createBotSession(
     update: {
       userId,
       tenantId,
+      providedName: metadata?.providedName || null,
       displayName: metadata?.displayName || null,
       username: metadata?.username || null,
       isActive: true,
@@ -116,7 +121,7 @@ export async function createBotSession(
     },
   });
   
-  console.log(`[BotSession] Created/updated session for ${platform}:${platformId} -> tenant:${tenantId}`);
+  console.log(`[BotSession] Created/updated session for ${platform}:${platformId} -> tenant:${tenantId}${userId ? ` (user:${userId})` : ' (team member)'}`);
   
   return session as BotSessionData;
 }
@@ -244,11 +249,13 @@ export async function deactivateBotSessionById(
 /**
  * Get session with user and tenant details
  * Used for full context when processing bot messages
+ * Supports sessions with or without linked users (for team members)
  */
 export async function getBotSessionWithContext(
   platform: 'telegram' | 'whatsapp',
   platformId: string
 ) {
+  // First get the session to check if user exists
   const session = await prisma.botSession.findUnique({
     where: {
       platform_platformId: {
@@ -257,21 +264,6 @@ export async function getBotSessionWithContext(
       },
     },
     include: {
-      user: {
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          name: true,
-          memberships: {
-            where: { isActive: true },
-            select: {
-              role: true,
-              tenantId: true,
-            },
-          },
-        },
-      },
       tenant: {
         select: {
           id: true,
@@ -288,14 +280,52 @@ export async function getBotSessionWithContext(
     return null;
   }
   
-  // Get the membership role for this tenant
-  const membership = session.user.memberships.find(
+  // For sessions WITHOUT a user (team members via code)
+  if (!session.userId) {
+    return {
+      session,
+      user: {
+        id: `bot-${session.platformId}`, // Virtual user ID for audit logs
+        email: `bot-${session.platformId}@telegram.local`,
+        username: session.username || session.platformId,
+        name: session.providedName || session.displayName || 'Bot User',
+        memberships: [],
+      },
+      tenant: session.tenant,
+      role: 'MANAGER' as const, // Default role for team members
+    };
+  }
+  
+  // For sessions WITH a user (linked Betsy accounts), fetch user details
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: {
+      id: true,
+      email: true,
+      username: true,
+      name: true,
+      memberships: {
+        where: { isActive: true },
+        select: {
+          role: true,
+          tenantId: true,
+        },
+      },
+    },
+  });
+  
+  if (!user) {
+    // User was deleted but session still exists
+    return null;
+  }
+  
+  const membership = user.memberships.find(
     (m) => m.tenantId === session.tenantId
   );
   
   return {
     session,
-    user: session.user,
+    user,
     tenant: session.tenant,
     role: membership?.role || 'VIEWER',
   };

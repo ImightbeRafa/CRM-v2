@@ -122,10 +122,15 @@ export async function POST(request: NextRequest) {
     // Log the action
     await prisma.auditLog.create({
       data: {
-        action: 'bot_code_generated',
+        action: 'CREATE',
+        entityType: 'BotAccessCode',
+        entityId: tenantId,
+        entityName: 'Bot Access Code',
         userId: session.user.id,
+        userName: session.user.email || 'Unknown',
+        userRole: userRole,
         tenantId,
-        details: {
+        newValues: {
           message: `Bot access code ${code ? 'regenerated' : 'generated'}`,
         },
       },

@@ -356,7 +356,6 @@ async function handleStartCommand(
   userInfo: { displayName: string; username?: string }
 ) {
   const { validateBotAccessCode } = await import('@/lib/bot/access-code');
-  const { getConversationMemory, addMessageToMemory } = await import('@/lib/bot/conversation-memory');
   
   // Check if there's an access code
   const parts = text.split(' ');

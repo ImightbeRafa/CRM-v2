@@ -52,7 +52,7 @@ export const toolSchemas = {
       courier: z.string().optional().describe('Método de envío o courier'),
       paymentMethod: z.string().optional().describe('Método de pago (contraentrega, transferencia, etc)'),
       comments: z.string().optional().describe('Comentarios o notas adicionales'),
-      orderType: z.enum(['EA', 'RA']).default('EA').describe('Tipo de orden: EA (Encargo) o RA (Recibo)'),
+      orderType: z.enum(['EA', 'RA']).default('EA').describe('Tipo de orden: EA = Envío a Domicilio (se envía), RA = Retiro en Local (cliente recoge)'),
     }),
   },
 
@@ -117,12 +117,21 @@ export const toolSchemas = {
   },
 
   search_inventory: {
-    description: 'Buscar productos en el inventario.',
+    description: 'Buscar productos en el inventario. Si el usuario pide "todo el inventario", usa un límite alto (50).',
     parameters: z.object({
-      query: z.string().describe('Término de búsqueda (nombre, SKU, categoría)'),
+      query: z.string().optional().describe('Término de búsqueda (nombre, SKU, categoría). Vacío para listar todo'),
       category: z.string().optional().describe('Filtrar por categoría'),
       lowStock: z.boolean().optional().describe('Solo mostrar productos con stock bajo'),
-      limit: z.number().int().min(1).max(20).default(5).describe('Cantidad máxima de resultados'),
+      limit: z.number().int().min(1).max(100).default(10).describe('Cantidad máxima de resultados. Usa 50+ para "todo el inventario"'),
+    }),
+  },
+
+  update_inventory_stock: {
+    description: 'Actualizar el stock de un producto. Úsalo cuando el usuario diga "agregar X al stock" o "reducir stock en Y".',
+    parameters: z.object({
+      productId: z.string().describe('ID del producto o nombre del producto'),
+      change: z.number().int().describe('Cantidad a cambiar (positivo para agregar, negativo para reducir)'),
+      reason: z.string().optional().describe('Razón del cambio (restock, venta, daño, etc)'),
     }),
   },
 
@@ -146,10 +155,10 @@ export const toolSchemas = {
 
   // Shipping
   generate_shipping_guia: {
-    description: 'Generar guía de envío para una orden. IMPORTANTE: Esta es una acción que puede tener costo, confirma con el usuario antes de ejecutar.',
+    description: 'Generar guía de envío MANUAL para una orden. SIEMPRE genera guías manuales, nunca automáticas. Proporciona el PDF al usuario.',
     parameters: z.object({
       orderId: z.string().describe('ID de la orden para generar guía'),
-      carrier: z.string().default('correos').describe('Carrier de envío (correos, etc)'),
+      carrier: z.string().default('correos').describe('Carrier de envío (correos, etc). Siempre usa tipo manual'),
     }),
   },
 };
@@ -627,7 +636,7 @@ export async function getStatisticsSummary(
               from: startDate.toISOString().split('T')[0],
               to: endDate.toISOString().split('T')[0],
             },
-            topProducts: topProducts.map((p) => ({
+            topProducts: topProducts.map((p: { product: string | null; _count: { product: number }; _sum: { total: number | null } }) => ({
               product: p.product,
               count: p._count.product,
               revenue: p._sum.total || 0,
@@ -699,19 +708,148 @@ export async function searchClients(
 }
 
 /**
- * Generate shipping guía (placeholder - needs integration)
+ * Generate shipping guía - ALWAYS MANUAL
  */
 export async function generateShippingGuia(
   ctx: ToolContext,
   params: z.infer<typeof toolSchemas.generate_shipping_guia.parameters>
 ): Promise<ToolResult> {
-  // This would integrate with the existing shipping API
-  // For now, return a message that this requires confirmation
-  return {
-    success: false,
-    error: '⚠️ La generación de guías requiere confirmación. Por favor, usa el panel de Betsy para generar guías de envío.',
-    message: 'Esta funcionalidad estará disponible próximamente en el bot.',
-  };
+  return withTenantContext(
+    { tenantId: ctx.tenantId, userId: ctx.userId, userName: ctx.userName, userRole: ctx.userRole },
+    async () => {
+      try {
+        // Get order details first
+        const tenantPrisma = getTenantPrisma(ctx.tenantId);
+        const order = await tenantPrisma.order.findFirst({
+          where: {
+            OR: [
+              { orderId: params.orderId },
+              { id: params.orderId },
+            ],
+          },
+        });
+
+        if (!order) {
+          return {
+            success: false,
+            error: `No se encontró la orden ${params.orderId}`,
+          };
+        }
+
+        // ALWAYS generate manual guía
+        const guiaData = {
+          tenantId: ctx.tenantId,
+          orderId: order.id,
+          carrier: params.carrier || 'correos',
+          type: 'manual', // ALWAYS MANUAL
+          customerName: order.customerName,
+          address: order.address || '',
+          province: order.province || '',
+          canton: order.canton || '',
+          district: order.district || '',
+          phone: order.phone || '',
+          createdBy: ctx.userName,
+        };
+
+        const guia = await tenantPrisma.shippingGuia.create({
+          data: guiaData,
+        });
+
+        // Generate PDF URL (this would use your existing PDF generation)
+        const pdfUrl = `/api/shipping/guia/${guia.id}/pdf`;
+
+        return {
+          success: true,
+          data: {
+            guiaId: guia.id,
+            orderId: order.orderId,
+            type: 'manual',
+            pdfUrl: `https://www.betsycrm.com${pdfUrl}`,
+          },
+          message: `✅ Guía manual generada exitosamente.\n\n📄 **PDF:** ${`https://www.betsycrm.com${pdfUrl}`}\n\n La guía está lista para imprimir.`,
+        };
+      } catch (error: any) {
+        console.error('[AI Tool] generateShippingGuia error:', error);
+        return {
+          success: false,
+          error: error.message || 'Error al generar guía de envío',
+        };
+      }
+    }
+  );
+}
+
+/**
+ * Update inventory stock
+ */
+export async function updateInventoryStock(
+  ctx: ToolContext,
+  params: z.infer<typeof toolSchemas.update_inventory_stock.parameters>
+): Promise<ToolResult> {
+  return withTenantContext(
+    { tenantId: ctx.tenantId, userId: ctx.userId, userName: ctx.userName, userRole: ctx.userRole },
+    async () => {
+      try {
+        const tenantPrisma = getTenantPrisma(ctx.tenantId);
+
+        // Find product by ID or name
+        const product = await tenantPrisma.inventoryItem.findFirst({
+          where: {
+            OR: [
+              { id: params.productId },
+              { name: { contains: params.productId, mode: 'insensitive' } },
+              { sku: params.productId },
+            ],
+          },
+        });
+
+        if (!product) {
+          return {
+            success: false,
+            error: `No se encontró el producto "${params.productId}"`,
+          };
+        }
+
+        // Calculate new stock
+        const oldStock = product.currentStock || 0;
+        const newStock = oldStock + params.change;
+
+        if (newStock < 0) {
+          return {
+            success: false,
+            error: `No se puede reducir el stock a ${newStock}. Stock actual: ${oldStock}`,
+          };
+        }
+
+        // Update stock
+        const updated = await tenantPrisma.inventoryItem.update({
+          where: { id: product.id },
+          data: { currentStock: newStock },
+        });
+
+        const action = params.change > 0 ? 'agregado' : 'reducido';
+        const changeAmount = Math.abs(params.change);
+
+        return {
+          success: true,
+          data: {
+            productId: updated.id,
+            productName: updated.name,
+            oldStock,
+            newStock,
+            change: params.change,
+          },
+          message: `✅ Stock ${action} exitosamente.\n\n**Producto:** ${updated.name}\n**Stock anterior:** ${oldStock}\n**Stock nuevo:** ${newStock}\n**Cambio:** ${params.change > 0 ? '+' : ''}${params.change}`,
+        };
+      } catch (error: any) {
+        console.error('[AI Tool] updateInventoryStock error:', error);
+        return {
+          success: false,
+          error: error.message || 'Error al actualizar inventario',
+        };
+      }
+    }
+  );
 }
 
 // ============================================================================
@@ -728,6 +866,7 @@ const toolExecutors: Record<ToolName, (ctx: ToolContext, params: any) => Promise
   update_order_status: updateOrderStatus,
   get_inventory_item: getInventoryItem,
   search_inventory: searchInventory,
+  update_inventory_stock: updateInventoryStock,
   get_statistics_summary: getStatisticsSummary,
   search_clients: searchClients,
   generate_shipping_guia: generateShippingGuia,

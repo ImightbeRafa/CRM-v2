@@ -30,8 +30,21 @@ import {
 import SimplePricingSection from './SimplePricingSection';
 import SimpleAuthModal from './SimpleAuthModal';
 
-// Telegram message animation component
-const TelegramDemo = () => {
+// Platform icons
+const TelegramIcon = () => (
+  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
+    <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+  </svg>
+);
+
+const WhatsAppIcon = () => (
+  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+  </svg>
+);
+
+// Messaging app demo component with platform toggle
+const MessagingDemo = ({ platform }: { platform: 'telegram' | 'whatsapp' }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isTyping, setIsTyping] = useState(false);
   
@@ -60,12 +73,25 @@ const TelegramDemo = () => {
     return () => clearInterval(interval);
   }, [currentStep, messages.length]);
 
+  const isTelegram = platform === 'telegram';
+  const bgPrimary = isTelegram ? 'bg-[#0e1621]' : 'bg-[#efeae2]';
+  const bgHeader = isTelegram ? 'bg-[#17212b]' : 'bg-[#075e54]';
+  const bgUserBubble = isTelegram ? 'bg-[#2b5278]' : 'bg-[#dcf8c6]';
+  const bgBotBubble = isTelegram ? 'bg-[#182533]' : 'bg-white';
+  const textUser = isTelegram ? 'text-white' : 'text-gray-900';
+  const textBot = isTelegram ? 'text-gray-100' : 'text-gray-900';
+  const bgInput = isTelegram ? 'bg-[#242f3d]' : 'bg-white';
+
   return (
     <div className="relative">
       {/* Phone Frame */}
       <div className="relative mx-auto w-[300px] md:w-[340px]">
         {/* Glow effect */}
-        <div className="absolute -inset-4 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 blur-3xl rounded-full" />
+        <div className={`absolute -inset-4 blur-3xl rounded-full ${
+          isTelegram 
+            ? 'bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20' 
+            : 'bg-gradient-to-r from-green-500/20 via-emerald-500/20 to-teal-500/20'
+        }`} />
         
         {/* Phone */}
         <div className="relative bg-gray-900 rounded-[2.5rem] p-2.5 shadow-2xl">
@@ -73,46 +99,52 @@ const TelegramDemo = () => {
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-6 bg-gray-900 rounded-b-xl z-10" />
           
           {/* Screen */}
-          <div className="bg-[#0e1621] rounded-[2rem] overflow-hidden">
-            {/* Telegram Header */}
-            <div className="bg-[#17212b] px-4 py-2.5 flex items-center gap-3 border-b border-gray-700/50">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+          <div className={`${bgPrimary} rounded-[2rem] overflow-hidden`}>
+            {/* Header */}
+            <div className={`${bgHeader} px-4 py-2.5 flex items-center gap-3 border-b ${isTelegram ? 'border-gray-700/50' : 'border-transparent'}`}>
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center ${
+                isTelegram 
+                  ? 'bg-gradient-to-br from-blue-500 to-purple-600' 
+                  : 'bg-gradient-to-br from-green-500 to-emerald-600'
+              }`}>
                 <Bot className="w-4 h-4 text-white" />
               </div>
               <div className="flex-1">
                 <p className="text-white font-medium text-sm">Betsy AI</p>
-                <p className="text-green-400 text-xs">online</p>
+                <p className={`text-xs ${isTelegram ? 'text-green-400' : 'text-green-300'}`}>online</p>
               </div>
             </div>
             
             {/* Chat Messages */}
-            <div className="h-[340px] md:h-[380px] p-3 space-y-3 overflow-hidden">
+            <div className={`h-[340px] md:h-[380px] p-3 space-y-3 overflow-hidden ${!isTelegram ? 'bg-[url("/whatsapp-bg.png")] bg-repeat bg-[length:400px]' : ''}`}>
               {messages.slice(0, currentStep + 1).map((msg, i) => (
                 <div 
                   key={i}
                   className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2 duration-300`}
                 >
-                  <div className={`max-w-[85%] rounded-2xl px-3 py-2 ${
+                  <div className={`max-w-[85%] rounded-2xl px-3 py-2 shadow-sm ${
                     msg.type === 'user' 
-                      ? 'bg-[#2b5278] text-white rounded-br-sm' 
-                      : 'bg-[#182533] text-gray-100 rounded-bl-sm'
+                      ? `${bgUserBubble} ${textUser} rounded-br-sm` 
+                      : `${bgBotBubble} ${textBot} rounded-bl-sm`
                   }`}>
                     {msg.isVoice ? (
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-purple-500/30 flex items-center justify-center">
-                          <Mic className="w-4 h-4 text-purple-400" />
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                          isTelegram ? 'bg-purple-500/30' : 'bg-green-500/30'
+                        }`}>
+                          <Mic className={`w-4 h-4 ${isTelegram ? 'text-purple-400' : 'text-green-600'}`} />
                         </div>
                         <div>
                           <div className="flex gap-0.5 mb-1">
                             {[...Array(10)].map((_, i) => (
                               <div 
                                 key={i} 
-                                className="w-0.5 bg-purple-400 rounded-full"
+                                className={`w-0.5 rounded-full ${isTelegram ? 'bg-purple-400' : 'bg-green-500'}`}
                                 style={{ height: `${Math.random() * 12 + 6}px` }}
                               />
                             ))}
                           </div>
-                          <p className="text-xs text-gray-400 italic">{msg.voiceText}</p>
+                          <p className={`text-xs italic ${isTelegram ? 'text-gray-400' : 'text-gray-500'}`}>{msg.voiceText}</p>
                         </div>
                       </div>
                     ) : (
@@ -124,7 +156,7 @@ const TelegramDemo = () => {
               
               {isTyping && (
                 <div className="flex justify-start animate-in fade-in">
-                  <div className="bg-[#182533] rounded-2xl rounded-bl-sm px-4 py-2.5">
+                  <div className={`${bgBotBubble} rounded-2xl rounded-bl-sm px-4 py-2.5 shadow-sm`}>
                     <div className="flex gap-1">
                       <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                       <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -136,14 +168,14 @@ const TelegramDemo = () => {
             </div>
             
             {/* Input Bar */}
-            <div className="bg-[#17212b] px-3 py-2.5 flex items-center gap-2 border-t border-gray-700/50">
-              <button className="p-1.5 text-gray-400">
+            <div className={`${isTelegram ? 'bg-[#17212b]' : 'bg-[#f0f0f0]'} px-3 py-2.5 flex items-center gap-2 border-t ${isTelegram ? 'border-gray-700/50' : 'border-gray-200'}`}>
+              <button className={`p-1.5 ${isTelegram ? 'text-gray-400' : 'text-gray-500'}`}>
                 <Mic className="w-4 h-4" />
               </button>
-              <div className="flex-1 bg-[#242f3d] rounded-full px-3 py-1.5">
-                <p className="text-gray-500 text-xs">Escribe o envía audio...</p>
+              <div className={`flex-1 ${bgInput} rounded-full px-3 py-1.5 ${!isTelegram ? 'shadow-sm' : ''}`}>
+                <p className={`text-xs ${isTelegram ? 'text-gray-500' : 'text-gray-400'}`}>Escribe o envía audio...</p>
               </div>
-              <button className="p-1.5 text-blue-400">
+              <button className={`p-1.5 ${isTelegram ? 'text-blue-400' : 'text-green-600'}`}>
                 <Send className="w-4 h-4" />
               </button>
             </div>
@@ -151,6 +183,111 @@ const TelegramDemo = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+// AI Assistant Section with platform toggle
+const AIAssistantSection = ({ 
+  aiCapabilities, 
+  onOpenAuth 
+}: { 
+  aiCapabilities: string[]; 
+  onOpenAuth: () => void;
+}) => {
+  const [selectedPlatform, setSelectedPlatform] = useState<'telegram' | 'whatsapp'>('telegram');
+
+  return (
+    <section id="ai-assistant" className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-slate-50 to-purple-50">
+      <div className="max-w-7xl mx-auto">
+        <div className="grid lg:grid-cols-2 gap-12 items-center">
+          {/* Left - Content */}
+          <div>
+            <Badge className="mb-6 bg-purple-100 text-purple-700 border-purple-200">
+              <Bot className="w-3 h-3 mr-1" />
+              AI Sales Assistant
+            </Badge>
+            
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6">
+              Tu negocio en
+              <span className="block bg-gradient-to-r from-[#0088cc] to-[#25D366] bg-clip-text text-transparent">
+                Telegram & WhatsApp
+              </span>
+            </h2>
+            
+            <p className="text-gray-600 text-lg mb-6">
+              Envía un mensaje de voz o texto y el asistente entiende lo que necesitas. 
+              Crea órdenes, consulta inventario, ve estadísticas - todo hablando naturalmente en español.
+              <span className="font-medium text-gray-700"> Usa la app que prefieras.</span>
+            </p>
+            
+            <div className="bg-white rounded-xl p-6 shadow-lg border border-gray-100 mb-6">
+              <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Mic className="w-5 h-5 text-purple-600" />
+                Lo que puedes hacer:
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {aiCapabilities.map((cap, i) => (
+                  <div key={i} className="flex items-center gap-2 text-gray-600 text-sm">
+                    <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                    {cap}
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button 
+                size="lg"
+                className="bg-gradient-to-r from-[#0088cc] to-[#0077b5] hover:from-[#0077b5] hover:to-[#006699] text-white"
+                onClick={onOpenAuth}
+              >
+                <span className="mr-2"><TelegramIcon /></span>
+                Conectar Telegram
+              </Button>
+              <Button 
+                size="lg"
+                className="bg-gradient-to-r from-[#25D366] to-[#128C7E] hover:from-[#128C7E] hover:to-[#075e54] text-white"
+                onClick={onOpenAuth}
+              >
+                <span className="mr-2"><WhatsAppIcon /></span>
+                Conectar WhatsApp
+              </Button>
+            </div>
+          </div>
+          
+          {/* Right - Phone Demo with Toggle */}
+          <div className="flex flex-col items-center">
+            {/* Platform Toggle */}
+            <div className="flex bg-gray-100 rounded-full p-1 mb-6 shadow-inner">
+              <button
+                onClick={() => setSelectedPlatform('telegram')}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-all ${
+                  selectedPlatform === 'telegram'
+                    ? 'bg-white text-[#0088cc] shadow-md'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <TelegramIcon />
+                Telegram
+              </button>
+              <button
+                onClick={() => setSelectedPlatform('whatsapp')}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-all ${
+                  selectedPlatform === 'whatsapp'
+                    ? 'bg-white text-[#25D366] shadow-md'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <WhatsAppIcon />
+                WhatsApp
+              </button>
+            </div>
+            
+            <MessagingDemo platform={selectedPlatform} />
+          </div>
+        </div>
+      </div>
+    </section>
   );
 };
 
@@ -315,8 +452,11 @@ export default function LandingPage() {
             
             <p className="text-lg md:text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
               La plataforma de gestión de pedidos más simple para tu negocio. 
-              Ahora con <span className="font-semibold text-purple-600">AI Assistant en Telegram</span> para 
-              gestionar todo con voz o texto.
+              Ahora con <span className="font-semibold text-purple-600">AI Assistant</span> en 
+              <span className="inline-flex items-center gap-1 mx-1">
+                <span className="text-[#0088cc]">Telegram</span> y <span className="text-[#25D366]">WhatsApp</span>
+              </span>
+              para gestionar todo con voz o texto.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
@@ -361,7 +501,7 @@ export default function LandingPage() {
               Dos formas de potenciar tu negocio
             </h2>
             <p className="text-blue-100 text-lg max-w-2xl mx-auto">
-              Usa la plataforma web completa o gestiona todo desde Telegram con IA
+              Usa la plataforma web completa o gestiona todo desde Telegram y WhatsApp con IA
             </p>
           </div>
           
@@ -397,12 +537,17 @@ export default function LandingPage() {
             
             {/* AI Card */}
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 hover:bg-white/15 transition-all">
-              <div className="w-14 h-14 bg-gradient-to-br from-purple-400 to-pink-400 rounded-xl flex items-center justify-center mb-6">
-                <Bot className="w-7 h-7 text-white" />
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-14 h-14 bg-gradient-to-br from-[#0088cc] to-[#0077b5] rounded-xl flex items-center justify-center text-white">
+                  <TelegramIcon />
+                </div>
+                <div className="w-14 h-14 bg-gradient-to-br from-[#25D366] to-[#128C7E] rounded-xl flex items-center justify-center text-white">
+                  <WhatsAppIcon />
+                </div>
               </div>
-              <h3 className="text-2xl font-bold text-white mb-3">AI en Telegram</h3>
+              <h3 className="text-2xl font-bold text-white mb-3">AI en Telegram & WhatsApp</h3>
               <p className="text-blue-100 mb-6">
-                Asistente inteligente que entiende voz y texto. Gestiona tu negocio conversando naturalmente.
+                Asistente inteligente que entiende voz y texto. Gestiona tu negocio conversando naturalmente desde tu app favorita.
               </p>
               <ul className="space-y-2 text-blue-100">
                 <li className="flex items-center gap-2">
@@ -521,58 +666,10 @@ export default function LandingPage() {
       </section>
 
       {/* AI Assistant Section */}
-      <section id="ai-assistant" className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-slate-50 to-purple-50">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            {/* Left - Content */}
-            <div>
-              <Badge className="mb-6 bg-purple-100 text-purple-700 border-purple-200">
-                <Bot className="w-3 h-3 mr-1" />
-                AI Sales Assistant
-              </Badge>
-              
-              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6">
-                Tu negocio en
-                <span className="block text-purple-600">Telegram</span>
-              </h2>
-              
-              <p className="text-gray-600 text-lg mb-6">
-                Envía un mensaje de voz o texto y el asistente entiende lo que necesitas. 
-                Crea órdenes, consulta inventario, ve estadísticas - todo hablando naturalmente en español.
-              </p>
-              
-              <div className="bg-white rounded-xl p-6 shadow-lg border border-gray-100 mb-6">
-                <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Mic className="w-5 h-5 text-purple-600" />
-                  Lo que puedes hacer:
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {aiCapabilities.map((cap, i) => (
-                    <div key={i} className="flex items-center gap-2 text-gray-600 text-sm">
-                      <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                      {cap}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              <Button 
-                size="lg"
-                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                onClick={() => setIsAuthModalOpen(true)}
-              >
-                Conectar mi Telegram
-                <MessageCircle className="ml-2 w-5 h-5" />
-              </Button>
-            </div>
-            
-            {/* Right - Telegram Demo */}
-            <div>
-              <TelegramDemo />
-            </div>
-          </div>
-        </div>
-      </section>
+      <AIAssistantSection 
+        aiCapabilities={aiCapabilities} 
+        onOpenAuth={() => setIsAuthModalOpen(true)} 
+      />
 
       {/* Testimonials */}
       <section className="py-20 px-4 sm:px-6 lg:px-8 bg-white">
@@ -713,28 +810,40 @@ export default function LandingPage() {
                 <span className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Betsy</span>
               </div>
               <p className="text-gray-400 text-sm mb-6">
-                La plataforma de gestión de pedidos más simple para tu negocio. Con AI Assistant en Telegram.
+                La plataforma de gestión de pedidos más simple para tu negocio. Con AI Assistant en Telegram y WhatsApp.
               </p>
-              <div className="flex gap-4">
+              <div className="flex gap-3">
+                <a 
+                  href="https://t.me/BetsyCRMBot" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="w-10 h-10 bg-gray-800 hover:bg-[#0088cc] rounded-lg flex items-center justify-center transition-colors"
+                  title="Telegram"
+                >
+                  <TelegramIcon />
+                </a>
                 <a 
                   href="https://wa.me/50661498470" 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  className="w-10 h-10 bg-gray-800 hover:bg-green-600 rounded-lg flex items-center justify-center transition-colors"
+                  className="w-10 h-10 bg-gray-800 hover:bg-[#25D366] rounded-lg flex items-center justify-center transition-colors"
+                  title="WhatsApp"
                 >
-                  <Phone className="w-5 h-5" />
+                  <WhatsAppIcon />
                 </a>
                 <a 
                   href="https://www.instagram.com/betsy_crm/" 
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="w-10 h-10 bg-gray-800 hover:bg-gradient-to-br hover:from-purple-600 hover:to-pink-600 rounded-lg flex items-center justify-center transition-all"
+                  title="Instagram"
                 >
                   <Instagram className="w-5 h-5" />
                 </a>
                 <a 
                   href="mailto:betsycrm.cr@gmail.com"
                   className="w-10 h-10 bg-gray-800 hover:bg-blue-600 rounded-lg flex items-center justify-center transition-colors"
+                  title="Email"
                 >
                   <Mail className="w-5 h-5" />
                 </a>
@@ -747,13 +856,16 @@ export default function LandingPage() {
               <ul className="space-y-3 text-gray-400">
                 <li><a href="#platform" className="hover:text-white transition-colors">Plataforma Web</a></li>
                 <li><a href="#ai-assistant" className="hover:text-white transition-colors">AI Assistant</a></li>
-                <li><a href="#pricing" className="hover:text-white transition-colors">Precios</a></li>
-                <li>
-                  <span className="inline-flex items-center gap-2">
-                    Mensajes de Voz
-                    <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30 text-xs">Nuevo</Badge>
-                  </span>
+                <li className="flex items-center gap-2">
+                  <span className="text-[#0088cc]"><TelegramIcon /></span>
+                  Telegram Bot
                 </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-[#25D366]"><WhatsAppIcon /></span>
+                  WhatsApp Bot
+                  <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">Nuevo</Badge>
+                </li>
+                <li><a href="#pricing" className="hover:text-white transition-colors">Precios</a></li>
               </ul>
             </div>
             

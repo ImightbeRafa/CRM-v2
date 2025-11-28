@@ -94,10 +94,13 @@ export const authOptions: NextAuthOptions = {
           // Normalize email (trim and lowercase) for consistent lookup
           const normalizedEmail = email.toLowerCase()
           
-          // Find user by normalized email (emails are stored normalized)
-          let user = await prisma.user.findUnique({
+          // Find user by email (CASE-INSENSITIVE to handle legacy data with mixed casing)
+          const user = await prisma.user.findFirst({
             where: { 
-              email: normalizedEmail
+              email: { 
+                equals: normalizedEmail, 
+                mode: 'insensitive' 
+              }
             },
             select: { 
               id: true, 
@@ -113,26 +116,6 @@ export const authOptions: NextAuthOptions = {
               }
             }
           })
-          
-          // If not found with normalized email, try original (for migration)
-          if (!user && email !== normalizedEmail) {
-            user = await prisma.user.findUnique({
-              where: { email: email },
-              select: { 
-                id: true, 
-                username: true, 
-                email: true,
-                password: true, 
-                active: true,
-                emailVerified: true,
-                defaultTenantId: true,
-                memberships: {
-                  where: { isActive: true },
-                  select: { role: true, tenantId: true }
-                }
-              }
-            })
-          }
           
           // Check if user exists
           if (!user) {
@@ -231,12 +214,18 @@ export const authOptions: NextAuthOptions = {
               return false;
             }
 
-            // Normalize email for lookup (trim and lowercase)
+            // Normalize email for storage (trim and lowercase)
             const normalizedEmail = email.trim().toLowerCase();
             
-            // Check if user exists (try exact match first, then case-insensitive)
-            let dbUser = await prisma.user.findUnique({
-              where: { email: normalizedEmail },
+            // CRITICAL: Use case-insensitive search to find existing users
+            // This prevents duplicate users when email casing differs (e.g., "User@gmail.com" vs "user@gmail.com")
+            let dbUser = await prisma.user.findFirst({
+              where: { 
+                email: { 
+                  equals: normalizedEmail, 
+                  mode: 'insensitive' 
+                } 
+              },
               select: {
                 id: true,
                 email: true,
@@ -257,48 +246,14 @@ export const authOptions: NextAuthOptions = {
                         name: true,
                         slug: true,
                         plan: true,
-                        isActive: true
+                        isActive: true,
+                        trialEndsAt: true
                       }
                     }
                   }
                 }
               }
             });
-            
-            // If not found with normalized email, try original email (in case database has different casing)
-            if (!dbUser && email !== normalizedEmail) {
-              dbUser = await prisma.user.findUnique({
-                where: { email: email.trim() },
-                select: {
-                  id: true,
-                  email: true,
-                  name: true,
-                  username: true,
-                  image: true,
-                  emailVerified: true,
-                  active: true,
-                  defaultTenantId: true,
-                  provider: true,
-                  providerId: true,
-                  memberships: {
-                    where: { isActive: true },
-                    include: { 
-                      tenant: {
-                        select: {
-                          id: true,
-                          name: true,
-                          slug: true,
-                          plan: true,
-                          isActive: true,
-                          
-                          trialEndsAt: true
-                        }
-                      }
-                    }
-                  }
-                }
-              });
-            }
 
             // If user exists, update their information and associate with existing tenants
             if (dbUser) {

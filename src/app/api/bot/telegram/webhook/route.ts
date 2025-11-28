@@ -124,15 +124,114 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * Transcribe voice message using OpenAI Whisper
+ */
+async function transcribeVoiceMessage(fileId: string): Promise<string | null> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const openaiKey = process.env.OPENAI_API_KEY;
+  
+  if (!botToken || !openaiKey) {
+    console.error('[Telegram] Missing TELEGRAM_BOT_TOKEN or OPENAI_API_KEY for voice transcription');
+    return null;
+  }
+  
+  try {
+    // 1. Get file path from Telegram
+    console.log(`[Telegram] 🎤 Getting file path for voice message: ${fileId}`);
+    const fileResponse = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`);
+    const fileData = await fileResponse.json();
+    
+    if (!fileData.ok || !fileData.result?.file_path) {
+      console.error('[Telegram] Failed to get file path:', fileData);
+      return null;
+    }
+    
+    const filePath = fileData.result.file_path;
+    console.log(`[Telegram] 📁 File path: ${filePath}`);
+    
+    // 2. Download the voice file from Telegram
+    const fileUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
+    const audioResponse = await fetch(fileUrl);
+    const audioBuffer = await audioResponse.arrayBuffer();
+    
+    console.log(`[Telegram] 📥 Downloaded audio: ${audioBuffer.byteLength} bytes`);
+    
+    // 3. Send to OpenAI Whisper for transcription
+    const formData = new FormData();
+    const audioBlob = new Blob([audioBuffer], { type: 'audio/ogg' });
+    formData.append('file', audioBlob, 'voice.ogg');
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'es'); // Spanish
+    
+    console.log(`[Telegram] 🔄 Sending to Whisper for transcription...`);
+    const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiKey}`,
+      },
+      body: formData,
+    });
+    
+    if (!whisperResponse.ok) {
+      const errorText = await whisperResponse.text();
+      console.error('[Telegram] Whisper API error:', errorText);
+      return null;
+    }
+    
+    const transcription = await whisperResponse.json();
+    console.log(`[Telegram] ✅ Transcription: "${transcription.text?.slice(0, 100)}..."`);
+    
+    return transcription.text || null;
+  } catch (error: any) {
+    console.error('[Telegram] Voice transcription error:', error);
+    return null;
+  }
+}
+
+/**
  * Handle incoming messages
  */
 async function handleMessage(message: any) {
   try {
     const chatId = String(message.chat.id);
     const userId = String(message.from?.id || chatId);
-    const text = message.text || '';
+    let text = message.text || '';
     const displayName = message.from?.first_name || message.from?.username || 'Usuario';
     const username = message.from?.username;
+    
+    // Handle voice messages
+    if (message.voice) {
+      console.log(`[Telegram] 🎤 Voice message from ${displayName} (${chatId}), duration: ${message.voice.duration}s`);
+      
+      await sendMessage(chatId, '🎤 Procesando tu mensaje de voz...');
+      
+      const transcribedText = await transcribeVoiceMessage(message.voice.file_id);
+      
+      if (!transcribedText) {
+        await sendMessage(chatId, '❌ No pude procesar tu mensaje de voz. Por favor intenta de nuevo o escribe tu mensaje.');
+        return;
+      }
+      
+      text = transcribedText;
+      console.log(`[Telegram] 📝 Transcribed voice: "${text.slice(0, 100)}"`);
+    }
+    
+    // Handle audio messages (similar to voice but different field)
+    if (message.audio) {
+      console.log(`[Telegram] 🎵 Audio message from ${displayName} (${chatId})`);
+      
+      await sendMessage(chatId, '🎵 Procesando tu audio...');
+      
+      const transcribedText = await transcribeVoiceMessage(message.audio.file_id);
+      
+      if (!transcribedText) {
+        await sendMessage(chatId, '❌ No pude procesar tu audio. Por favor intenta de nuevo o escribe tu mensaje.');
+        return;
+      }
+      
+      text = transcribedText;
+      console.log(`[Telegram] 📝 Transcribed audio: "${text.slice(0, 100)}"`);
+    }
     
     console.log(`[Telegram] 📩 Message from ${displayName} (${chatId}): ${text.slice(0, 100)}`);
     

@@ -742,7 +742,7 @@ export async function generateShippingGuia(
         });
 
         if (existingGuia) {
-          const pdfUrl = `/api/shipping/guia/${existingGuia.id}/pdf`;
+          const hasPdf = !!existingGuia.pdfData;
           return {
             success: true,
             data: {
@@ -750,26 +750,23 @@ export async function generateShippingGuia(
               orderId: order.orderId,
               guiaNumber: existingGuia.guiaNumber,
               status: existingGuia.status,
-              pdfUrl: `https://www.betsycrm.com${pdfUrl}`,
+              hasPdf,
             },
-            message: `ℹ️ Esta orden ya tiene una guía generada.\n\n📄 **PDF:** https://www.betsycrm.com${pdfUrl}\n\n🔢 **Guía #:** ${existingGuia.guiaNumber || 'Manual'}\n📍 **Estado:** ${existingGuia.status}`,
+            message: `ℹ️ Esta orden ya tiene una guía generada.\n\n🔢 **Guía #:** ${existingGuia.guiaNumber || 'Manual'}\n📍 **Estado:** ${existingGuia.status}${hasPdf ? '\n📄 **PDF disponible** en el panel de Betsy' : ''}\n\n🔗 Ver en: https://www.betsycrm.com/produccion`,
           };
         }
 
-        // Create manual guía with only valid schema fields
+        // Create manual guía record (no PDF - PDF is generated via Correos integration)
         const guia = await tenantPrisma.shippingGuia.create({
           data: {
             tenantId: ctx.tenantId,
             orderId: order.id,
             carrier: params.carrier || 'correos',
-            status: 'created',
+            status: 'pending',
             serviceType: 'manual',
-            progress: `Guía manual creada por ${ctx.userName}`,
+            progress: `Guía manual registrada por ${ctx.userName}`,
           },
         });
-
-        // Generate PDF URL
-        const pdfUrl = `/api/shipping/guia/${guia.id}/pdf`;
 
         // Build response with order details for context
         const addressParts = [order.province, order.canton, order.district].filter(Boolean).join(', ');
@@ -779,9 +776,8 @@ export async function generateShippingGuia(
           data: {
             guiaId: guia.id,
             orderId: order.orderId,
-            pdfUrl: `https://www.betsycrm.com${pdfUrl}`,
           },
-          message: `✅ Guía manual generada exitosamente.\n\n📦 **Orden:** #${order.orderId}\n👤 **Cliente:** ${order.customerName}\n📍 **Destino:** ${addressParts || 'No especificado'}\n📱 **Teléfono:** ${order.phone || 'No especificado'}\n\n📄 **PDF:** https://www.betsycrm.com${pdfUrl}\n\n✨ La guía está lista para imprimir.`,
+          message: `✅ Guía registrada para envío.\n\n📦 **Orden:** #${order.orderId}\n👤 **Cliente:** ${order.customerName}\n📍 **Destino:** ${addressParts || 'No especificado'}\n📱 **Teléfono:** ${order.phone || 'No especificado'}\n📫 **Dirección:** ${order.address || 'No especificada'}\n\n⚠️ **Siguiente paso:** Ve a Producción en Betsy para generar la guía con Correos de Costa Rica y obtener el PDF.\n\n🔗 https://www.betsycrm.com/produccion`,
         };
       } catch (error: any) {
         console.error('[AI Tool] generateShippingGuia error:', error);

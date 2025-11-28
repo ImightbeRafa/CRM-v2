@@ -21,17 +21,22 @@ export async function POST(request: Request) {
       );
     }
 
-    // Normalize email first
+    // Normalize email first (always store lowercase)
     const normalizedEmail = email.trim().toLowerCase();
     console.log('📧 Normalized email:', normalizedEmail.substring(0, 3) + '***');
 
-    // Check if user already exists (with normalized email)
-    const existingUser = await prisma.user.findUnique({
-      where: { email: normalizedEmail }
+    // Check if user already exists (CASE-INSENSITIVE search to prevent duplicates)
+    const existingUser = await prisma.user.findFirst({
+      where: { 
+        email: { 
+          equals: normalizedEmail, 
+          mode: 'insensitive' 
+        } 
+      }
     });
 
     if (existingUser) {
-      console.warn('⚠️ User already exists:', normalizedEmail);
+      console.warn('⚠️ User already exists:', existingUser.email, '(searched:', normalizedEmail, ')');
       return NextResponse.json(
         { error: 'User with this email already exists' },
         { status: 400 }

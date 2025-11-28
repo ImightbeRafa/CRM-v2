@@ -23,6 +23,7 @@ const PUBLIC_ROUTES = [
   '/api/bot/telegram/webhook',       // Telegram bot webhook (must be public)
   '/api/bot/telegram/test-webhook',  // Telegram test webhook (diagnostic)
   '/api/bot/telegram/health',        // Telegram health check (diagnostic)
+  '/api/bot/whatsapp/webhook',       // WhatsApp bot webhook (must be public for Meta verification)
 ];
 
 /**

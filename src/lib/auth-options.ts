@@ -47,7 +47,7 @@ declare module "next-auth" {
         name?: string;
         slug?: string;
         isActive?: boolean;
-        setupWizardCompleted?: boolean;
+        profileCompleted?: boolean;
       } | null;
     } & User;
   }
@@ -71,7 +71,7 @@ declare module "next-auth/jwt" {
       plan?: string;
       subscriptionStatus?: string | null;
       trialEndsAt?: Date | null;
-      setupWizardCompleted?: boolean;
+      profileCompleted?: boolean;
     } | null;
   }
 }
@@ -683,7 +683,7 @@ export const authOptions: NextAuthOptions = {
                     plan: fetchedTenant.plan || 'FREE',
                     
                     
-                    setupWizardCompleted: false
+                    profileCompleted: false
                   };
                   console.log(`[JWT] ✅ Fetched tenant data for initial sign-in: ${fetchedTenant.name}`);
                 }
@@ -699,7 +699,7 @@ export const authOptions: NextAuthOptions = {
                   plan: 'FREE',
                   
                   
-                  setupWizardCompleted: false
+                  profileCompleted: false
                 };
               }
             } else if (tenant) {
@@ -713,7 +713,7 @@ export const authOptions: NextAuthOptions = {
                 plan: tenant.plan || 'FREE',
                 
                 
-                setupWizardCompleted: false
+                profileCompleted: false
               };
               console.log(`[JWT] ✅ Using included tenant data: ${tenant.name}`);
             } else {
@@ -727,7 +727,7 @@ export const authOptions: NextAuthOptions = {
                 plan: 'FREE',
                 
                 
-                setupWizardCompleted: false
+                profileCompleted: false
               };
               console.log(`[JWT] ⚠️ Using fallback tenant data for: ${currentMembership.tenantId || selectedTenantId}`);
             }
@@ -820,7 +820,7 @@ export const authOptions: NextAuthOptions = {
                   plan: currentMembership.tenant.plan || 'FREE',
                   
                   
-                  setupWizardCompleted: false
+                  profileCompleted: false
                 };
               }
             } else {
@@ -885,7 +885,7 @@ export const authOptions: NextAuthOptions = {
                     plan: newTenant.plan || 'FREE',
                     
                     
-                    setupWizardCompleted: false
+                    profileCompleted: false
                   };
                   // @ts-ignore - Membership type mismatch; runtime works correctly
                   token.memberships = [membership];

@@ -13,7 +13,8 @@ import { ExcelImporter } from './components/ExcelImporter'
 import { StatusManager, OrderStatus } from './components/StatusManager'
 import { TenantSettingsPanel } from '../components/TenantSettingsPanel'
 import { useConfig } from '../contexts/ConfigContext'
-import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck, Bot } from 'lucide-react'
+import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck, Bot, Building2 } from 'lucide-react'
+import { BusinessProfileSettings } from './components/BusinessProfileSettings'
 
 export default function ConfigPage() {
   const searchParams = useSearchParams()
@@ -95,7 +96,7 @@ export default function ConfigPage() {
     if (!mounted) return
     const tabParam = searchParams?.get('tab')
     if (tabParam) {
-      const validTabs = ['fields', 'business', 'users', 'option-sets', 'shipping', 'sellers', 'import', 'billing', 'bulk-delete', 'audit', 'legacy-fields', 'social', 'integrations', 'statuses', 'ai-assistant']
+      const validTabs = ['profile', 'fields', 'business', 'users', 'option-sets', 'shipping', 'sellers', 'import', 'billing', 'bulk-delete', 'audit', 'legacy-fields', 'social', 'integrations', 'statuses', 'ai-assistant']
       if (validTabs.includes(tabParam)) {
         setActiveTab(tabParam)
       }
@@ -508,6 +509,7 @@ export default function ConfigPage() {
 
 
   const tabs = [
+    { id: 'profile', label: 'Perfil del Negocio', icon: Building2 },
     { id: 'fields', label: 'Configuración de Campos', icon: Database },
     { id: 'statuses', label: 'Estados de Órdenes', icon: Settings },
     { id: 'inventory', label: 'Inventario', icon: Package },
@@ -629,6 +631,11 @@ export default function ConfigPage() {
 
           {/* Tab Content */}
         <div className="space-y-6">
+          {/* Business Profile Tab */}
+          {activeTab === 'profile' && (
+            <BusinessProfileSettings />
+          )}
+
           {/* Fields Tab */}
           {activeTab === 'fields' && (
             <SimpleFieldsManager />

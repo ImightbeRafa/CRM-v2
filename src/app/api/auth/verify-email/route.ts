@@ -88,6 +88,7 @@ export async function GET(request: Request) {
     // Create tenant and update user in a transaction
     const result = await prisma.$transaction(async (tx) => {
       // Create tenant
+      // @ts-ignore - profileCompleted exists in schema, regenerate Prisma client if TypeScript complains
       const tenant = await tx.tenant.create({
         data: {
           name: `${userData.username || userData.email.split('@')[0]}'s Organization`,
@@ -95,8 +96,8 @@ export async function GET(request: Request) {
           plan: 'FREE',
           isActive: true,
           trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
-          setupWizardCompleted: false, // New tenants must complete setup wizard
-        }
+          profileCompleted: false, // Will be prompted to complete profile on login
+        } as any
       });
 
       // Update user with tenant info and mark as active using raw query for mapped fields

@@ -9,8 +9,8 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const { name, email, password } = await request.json();
-    console.log('📝 Registration request received:', { name, email: email.substring(0, 3) + '***' });
+    const { name, email, password, businessName, phone, country, province } = await request.json();
+    console.log('📝 Registration request received:', { name, email: email.substring(0, 3) + '***', hasPhone: !!phone });
 
     // Validate input
     if (!name || !email || !password) {
@@ -57,14 +57,22 @@ export async function POST(request: Request) {
       return await prisma.$transaction(async (tx) => {
       // 1. Create tenant first
       console.log('  1️⃣ Creating tenant...');
+      // @ts-ignore - New profile fields exist in schema, regenerate Prisma client if TypeScript complains
       const tenant = await tx.tenant.create({
         data: {
-          name: `${name}'s Organization`,
+          name: businessName || `${name}'s Organization`,
           slug: tenantSlug,
           plan: 'FREE',
           isActive: true,
-          trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days trial
-        }
+          trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days trial
+          // Business profile fields
+          businessName: businessName || null,
+          ownerName: name,
+          phone: phone || null,
+          country: country || null,
+          province: province || null,
+          profileCompleted: !!(phone && country), // Mark as completed if basic info provided
+        } as any
       });
       console.log('  ✅ Tenant created:', tenant.id);
 

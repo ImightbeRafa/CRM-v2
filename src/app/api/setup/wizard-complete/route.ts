@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 
 /**
  * POST /api/setup/wizard-complete
- * Marks the setup wizard as completed for the current tenant
+ * Marks the profile as completed for the current tenant
  */
 export async function POST(request: Request) {
   try {
@@ -26,26 +26,26 @@ export async function POST(request: Request) {
       );
     }
 
-    // Update tenant to mark wizard as completed
+    // Update tenant to mark profile as completed
+    // @ts-ignore - profileCompleted exists in schema, regenerate Prisma client if TypeScript complains
     const updatedTenant = await prisma.tenant.update({
       where: { id: tenantId },
-      data: { setupWizardCompleted: true },
-      select: { id: true, setupWizardCompleted: true }
+      data: { profileCompleted: true } as any,
+      select: { id: true, profileCompleted: true } as any
     });
 
-    console.log(`✅ Setup wizard marked as completed for tenant ${tenantId}`);
+    console.log(`✅ Profile marked as completed for tenant ${tenantId}`);
 
     return NextResponse.json({ 
       success: true,
-      message: 'Setup wizard marked as completed',
+      message: 'Profile marked as completed',
       tenant: updatedTenant
     });
   } catch (error) {
-    console.error('Error marking wizard as complete:', error);
+    console.error('Error marking profile as complete:', error);
     return NextResponse.json(
-      { error: 'Failed to mark wizard as complete' },
+      { error: 'Failed to mark profile as complete' },
       { status: 500 }
     );
   }
 }
-

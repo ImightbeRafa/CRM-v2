@@ -21,6 +21,16 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   
+  // Business Profile (for registration/verification)
+  businessName      String?   // Company/business name
+  ownerName         String?   // Owner's full name
+  phone             String?   // Primary contact phone
+  phoneVerified     Boolean   @default(false)
+  phoneVerifiedAt   DateTime?
+  country           String?   // Country code (e.g., "CR" for Costa Rica)
+  province          String?   // Province/State
+  profileCompleted  Boolean   @default(false)  // True when all required info is filled
+  
   // Settings
   settings  Json?    // Tenant-specific configuration
   

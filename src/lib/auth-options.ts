@@ -824,80 +824,68 @@ export const authOptions: NextAuthOptions = {
                 };
               }
             } else {
-              // No tenant found - check if user is verified and create tenant automatically
-              if (dbUser.emailVerified && dbUser.active) {
-                try {
-                  const { createDefaultOrderStatuses } = await import('@/lib/default-statuses');
-                  
-                  const newTenant = await prisma.tenant.create({
-                    data: {
-                      name: `${dbUser.username || dbUser.email.split('@')[0]}'s Organization`,
-                      slug: dbUser.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-'),
-                      plan: 'FREE',
-                      isActive: true,
-                      trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
-                    }
-                  });
-                  
-                  // Update user default tenant
-                  await prisma.user.update({
-                    where: { id: dbUser.id },
-                    data: { defaultTenantId: newTenant.id }
-                  });
-                  
-                  // Create membership with OWNER role
-                  const membership = await prisma.membership.create({
-                    data: {
-                      userId: dbUser.id,
-                      tenantId: newTenant.id,
-                      role: 'OWNER',
-                      isActive: true,
-                      joinedAt: new Date()
-                    },
-                    include: { 
-                      tenant: {
-                        select: {
-                          id: true,
-                          name: true,
-                          slug: true,
-                          plan: true,
-                          isActive: true,
-                          
-                          trialEndsAt: true
-                        }
+              // No active memberships found
+              // IMPORTANT: Do NOT auto-create tenants here! This runs on every JWT refresh.
+              // Tenants should only be created during explicit registration or first-time OAuth sign-up.
+              // Users without memberships need to be invited to a tenant or go through proper registration.
+              console.log(`[JWT] ⚠️ User ${dbUser.email} has no active memberships - not creating auto-tenant`);
+              
+              // Check if user has a defaultTenantId but no membership (inconsistent state)
+              if (dbUser.defaultTenantId) {
+                // Try to find ANY membership (even inactive) and reactivate it
+                const anyMembership = await prisma.membership.findFirst({
+                  where: {
+                    userId: dbUser.id,
+                    tenantId: dbUser.defaultTenantId
+                  },
+                  include: {
+                    tenant: {
+                      select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                        isActive: true,
+                        plan: true,
+                        trialEndsAt: true
                       }
                     }
-                  });
+                  }
+                });
+                
+                if (anyMembership) {
+                  // Found membership - reactivate if inactive
+                  if (!anyMembership.isActive) {
+                    await prisma.membership.update({
+                      where: { id: anyMembership.id },
+                      data: { isActive: true }
+                    });
+                    console.log(`[JWT] ✅ Reactivated membership for ${dbUser.email}`);
+                  }
                   
-                  // Create default order statuses
-                  await createDefaultOrderStatuses(newTenant.id);
-                  
-                  // Update token with new tenant info
-                  token.role = 'MASTER';
-                  token.tenantId = newTenant.id;
-                  token.allTenantIds = [newTenant.id];
+                  token.role = anyMembership.role === 'OWNER' ? 'MASTER' : 'REGULAR';
+                  token.tenantId = dbUser.defaultTenantId;
+                  token.allTenantIds = [dbUser.defaultTenantId];
                   token.currentTenant = {
-                    id: newTenant.id,
-                    role: 'OWNER',
-                    name: newTenant.name,
-                    slug: newTenant.slug,
-                    isActive: newTenant.isActive,
-                    plan: newTenant.plan || 'FREE',
-                    
-                    
+                    id: anyMembership.tenant.id,
+                    role: anyMembership.role,
+                    name: anyMembership.tenant.name,
+                    slug: anyMembership.tenant.slug,
+                    isActive: anyMembership.tenant.isActive,
+                    plan: anyMembership.tenant.plan || 'FREE',
                     profileCompleted: false
                   };
-                  // @ts-ignore - Membership type mismatch; runtime works correctly
-                  token.memberships = [membership];
-                } catch (error) {
-                  // Continue with null tenant - user will be redirected to setup
+                  // @ts-ignore
+                  token.memberships = [anyMembership];
+                } else {
+                  // No membership at all - user needs to be properly invited or registered
+                  console.log(`[JWT] ❌ User ${dbUser.email} has defaultTenantId but no membership record`);
                   token.role = 'REGULAR';
                   token.tenantId = null;
                   token.allTenantIds = [];
                   token.currentTenant = null;
                 }
               } else {
-                // User not verified or inactive - no tenant yet
+                // No defaultTenantId and no memberships - user needs proper registration
                 token.role = 'REGULAR';
                 token.tenantId = null;
                 token.allTenantIds = [];

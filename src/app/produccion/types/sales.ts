@@ -1,5 +1,6 @@
 // hooks/types.ts
 export interface BaseOrder {
+  id: string;
   orderId: string;
   status: string;
   delivery: string;

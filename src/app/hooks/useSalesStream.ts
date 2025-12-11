@@ -43,6 +43,7 @@ export function useSalesStream({
     }
 
     const commonFields = {
+      id: data.id || data.orderId,
       orderId: data.orderId || '',
       status: data.status || 'Pendiente',
       delivery: data.delivery || '-',

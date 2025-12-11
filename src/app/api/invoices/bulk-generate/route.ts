@@ -92,7 +92,9 @@ export async function POST(request: NextRequest) {
           const invoice = await prisma.invoice.create({
             data: {
               invoiceNumber,
-              orderId: invoiceData.orderId || null,
+              ...(invoiceData.orderId && {
+                order: { connect: { id: invoiceData.orderId } }
+              }),
               customerName: invoiceData.customerName,
               customerEmail: invoiceData.customerEmail || null,
               customerPhone: invoiceData.customerPhone || null,

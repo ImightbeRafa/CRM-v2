@@ -2,10 +2,38 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
+// Helper to get Puppeteer browser
+async function getBrowser() {
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    // Production: use puppeteer-core with @sparticuz/chromium
+    const chromium = await import('@sparticuz/chromium');
+    const puppeteer = await import('puppeteer-core');
+    
+    return puppeteer.default.launch({
+      args: chromium.default.args,
+      defaultViewport: { width: 1200, height: 800 },
+      executablePath: await chromium.default.executablePath(),
+      headless: true,
+    });
+  } else {
+    // Development: use regular puppeteer
+    const puppeteer = await import('puppeteer');
+    return puppeteer.default.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+  }
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  let browser = null;
+  
   try {
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     
@@ -44,7 +72,7 @@ export async function GET(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
 
-    // Generate simple HTML invoice (for now, can be upgraded to use puppeteer later)
+    // Generate HTML for PDF
     const formatCurrency = (amount: number) => {
       return new Intl.NumberFormat('es-CR', {
         style: 'currency',
@@ -171,12 +199,34 @@ export async function GET(
 </html>
     `;
 
-    // Return HTML response (can be converted to PDF using browser's print function)
-    // TODO: Use puppeteer to generate actual PDF
-    return new NextResponse(html, {
+    // Generate PDF using Puppeteer
+    browser = await getBrowser();
+    const page = await browser.newPage();
+    
+    // Set content and wait for it to load
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    
+    // Generate PDF
+    const pdfBuffer = await page.pdf({
+      format: 'Letter',
+      printBackground: true,
+      margin: {
+        top: '20px',
+        right: '20px',
+        bottom: '20px',
+        left: '20px'
+      }
+    });
+    
+    await browser.close();
+    browser = null;
+    
+    // Return PDF response - convert Uint8Array to Buffer for NextResponse
+    return new NextResponse(Buffer.from(pdfBuffer), {
       headers: {
-        'Content-Type': 'text/html',
-        'Content-Disposition': `inline; filename="factura-${invoice.invoiceNumber}.html"`
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="factura-${invoice.invoiceNumber}.pdf"`,
+        'Content-Length': pdfBuffer.length.toString()
       }
     });
   } catch (error) {
@@ -185,6 +235,14 @@ export async function GET(
       { error: 'Failed to generate PDF' },
       { status: 500 }
     );
+  } finally {
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (e) {
+        console.error('Error closing browser:', e);
+      }
+    }
   }
 }
 

@@ -738,7 +738,7 @@ export function EnhancedProductionDashboard({
       {onInvoiceGeneratorClose && (
         <InvoiceGenerator
           orders={filteredOrders.map(order => ({
-            id: order.orderId,
+            id: order.id,
             orderId: order.orderId,
             customerName: order.customerName,
             email: order.email,

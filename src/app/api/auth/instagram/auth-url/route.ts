@@ -54,9 +54,6 @@ export async function GET() {
     scope: [
       // Instagram messaging permission (core for /chats)
       'instagram_manage_messages',          // For reading/replying to DMs
-      // Facebook Page permissions (required for IG Business API connection)
-      'pages_show_list',                    // List pages user manages
-      'pages_manage_metadata',              // Webhooks and page config
     ].join(','),
     state: 'instagram_oauth',
   })

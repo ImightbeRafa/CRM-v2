@@ -104,13 +104,32 @@ export default function ChatsPage() {
       // Extract recipient from metadata or use a placeholder
       const recipientId = msg.metadata?.from || msg.metadata?.to || 'unknown'
       
+      // Get display name - prefer username, fallback to name, then format ID nicely
+      let displayName = msg.metadata?.name || msg.metadata?.username || null
+      if (!displayName || displayName === recipientId) {
+        // If we only have the ID, make it look nicer
+        const platform = msg.metadata?.platform || selectedPlatform
+        if (platform === 'instagram') {
+          displayName = `IG User ${recipientId.slice(-6)}`
+        } else if (platform === 'whatsapp') {
+          displayName = `+${recipientId}`
+        } else {
+          displayName = `User ${recipientId.slice(-6)}`
+        }
+      }
+      
       if (!grouped[recipientId]) {
         grouped[recipientId] = {
           recipientId,
-          recipientName: msg.metadata?.name || recipientId,
+          recipientName: displayName,
           messages: [],
           lastMessageAt: msg.sentAt || msg.receivedAt || undefined,
-          lastMessage: msg.content.substring(0, 50),
+          lastMessage: msg.content.substring(0, 50) || '(mensaje vacío)',
+        }
+      } else {
+        // Update name if we found a better one (with username vs just ID)
+        if (msg.metadata?.name && msg.metadata.name !== recipientId) {
+          grouped[recipientId].recipientName = msg.metadata.name
         }
       }
       
@@ -121,7 +140,7 @@ export default function ChatsPage() {
       const thisTime = msg.sentAt || msg.receivedAt
       if (!currentLast || (thisTime && thisTime > currentLast)) {
         grouped[recipientId].lastMessageAt = thisTime || undefined
-        grouped[recipientId].lastMessage = msg.content.substring(0, 50)
+        grouped[recipientId].lastMessage = msg.content.substring(0, 50) || '(mensaje vacío)'
       }
     })
     

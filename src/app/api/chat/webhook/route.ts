@@ -195,12 +195,47 @@ export async function POST(request: NextRequest) {
       const messaging = payload.entry[0].messaging[0]
       text = messaging.message?.text || ''
       from = messaging.sender?.id || null
-      senderName = from // Instagram doesn't provide name in webhook, just ID
       timestamp = messaging.timestamp || timestamp
+      
+      // Try to fetch Instagram username using the Graph API
+      // The recipient ID is our Instagram Business account
+      const igAccountId = payload.entry[0].id
+      
+      // Find the social account to get the access token
+      const socialAccount = await db.socialAccount.findFirst({
+        where: { platform: 'instagram', accountId: String(igAccountId), isActive: true }
+      })
+      
+      if (socialAccount?.accessToken && from) {
+        try {
+          // Fetch user info from Instagram Graph API
+          const userInfoUrl = `https://graph.facebook.com/v21.0/${from}?fields=username,name&access_token=${socialAccount.accessToken}`
+          const userRes = await fetch(userInfoUrl)
+          if (userRes.ok) {
+            const userData = await userRes.json()
+            senderName = userData.username || userData.name || from
+            console.log('[chat/webhook] Instagram user info fetched', { 
+              from, 
+              username: userData.username, 
+              name: userData.name 
+            })
+          } else {
+            // If we can't fetch, just use the ID
+            senderName = `Instagram User ${from}`
+            console.warn('[chat/webhook] Could not fetch Instagram user info', await userRes.text())
+          }
+        } catch (e) {
+          senderName = `Instagram User ${from}`
+          console.warn('[chat/webhook] Error fetching Instagram user info', e)
+        }
+      } else {
+        senderName = from ? `Instagram User ${from}` : 'Unknown'
+      }
       
       console.log('[chat/webhook] Instagram message parsed', {
         text: text?.slice(0, 50),
         from,
+        senderName,
         hasMessage: !!messaging.message,
         messageKeys: messaging.message ? Object.keys(messaging.message) : []
       })
@@ -210,8 +245,26 @@ export async function POST(request: NextRequest) {
       const message = value.messages?.[0]
       text = message?.text?.body || ''
       from = message?.from || null
-      senderName = value.contacts?.[0]?.profile?.name || from
       timestamp = message?.timestamp || timestamp
+      
+      // Get sender name from contacts or format phone number nicely
+      const contactName = value.contacts?.[0]?.profile?.name
+      if (contactName) {
+        senderName = contactName
+      } else if (from) {
+        // Format phone number: +506 7033 9763
+        senderName = `+${from}`
+      } else {
+        senderName = 'Unknown'
+      }
+      
+      console.log('[chat/webhook] WhatsApp message parsed', {
+        text: text?.slice(0, 50),
+        from,
+        senderName,
+        hasMessage: !!message,
+        messageType: message?.type
+      })
     }
     try {
       console.log('[chat/webhook][POST] Incoming event', {

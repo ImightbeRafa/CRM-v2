@@ -92,8 +92,51 @@ export async function POST(request: Request) {
         dispatchResult = 'error'
       }
     } else if (account.platform === 'whatsapp') {
-      // Placeholder: implement WhatsApp Cloud or provider SDK here
-      dispatchResult = 'not_implemented'
+      try {
+        const social = await db.socialAccount.findFirst({ where: { id: account.id, tenantId } })
+        if (!social?.accessToken) {
+          throw new Error('Missing WhatsApp access token')
+        }
+
+        // WhatsApp Cloud API send message
+        // The accountId is the Phone Number ID
+        const waRes = await fetch(
+          `https://graph.facebook.com/v21.0/${social.accountId}/messages`,
+          {
+            method: 'POST',
+            headers: { 
+              'Authorization': `Bearer ${social.accessToken}`,
+              'Content-Type': 'application/json' 
+            },
+            body: JSON.stringify({
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: recipient,
+              type: 'text',
+              text: { 
+                preview_url: false,
+                body: content 
+              }
+            })
+          }
+        )
+        
+        const waData = await waRes.json()
+        
+        if (!waRes.ok) {
+          console.error('[chat/send] WhatsApp send failed', waData)
+          dispatchResult = 'failed'
+        } else {
+          console.log('[chat/send] WhatsApp message sent', { 
+            messageId: waData.messages?.[0]?.id,
+            to: recipient 
+          })
+          dispatchResult = 'sent'
+        }
+      } catch (e: any) {
+        console.error('[chat/send] WhatsApp send error', e)
+        dispatchResult = 'error'
+      }
     }
 
     return NextResponse.json({ success: true, message: saved, providerDispatch: dispatchResult })

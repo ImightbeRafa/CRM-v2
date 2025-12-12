@@ -182,12 +182,37 @@ export async function POST(request: NextRequest) {
       to = payload.entry[0].id
     }
     
-    const text = payload.text || payload.message || payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body || ''
-    const timestamp = payload.timestamp || Date.now()
+    // Extract message text based on platform
+    // WhatsApp: entry[0].changes[0].value.messages[0].text.body
+    // Instagram: entry[0].messaging[0].message.text
+    let text = payload.text || payload.message || ''
+    let from = payload.from || null
+    let senderName = null
+    let timestamp = payload.timestamp || Date.now()
     
-    // Extract sender information for conversation grouping
-    const from = payload.from || payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from || null
-    const senderName = payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.profile?.name || from
+    if (platform === 'instagram' && payload.entry?.[0]?.messaging?.[0]) {
+      // Instagram Messaging API format
+      const messaging = payload.entry[0].messaging[0]
+      text = messaging.message?.text || ''
+      from = messaging.sender?.id || null
+      senderName = from // Instagram doesn't provide name in webhook, just ID
+      timestamp = messaging.timestamp || timestamp
+      
+      console.log('[chat/webhook] Instagram message parsed', {
+        text: text?.slice(0, 50),
+        from,
+        hasMessage: !!messaging.message,
+        messageKeys: messaging.message ? Object.keys(messaging.message) : []
+      })
+    } else if (platform === 'whatsapp' && payload.entry?.[0]?.changes?.[0]?.value) {
+      // WhatsApp Cloud API format
+      const value = payload.entry[0].changes[0].value
+      const message = value.messages?.[0]
+      text = message?.text?.body || ''
+      from = message?.from || null
+      senderName = value.contacts?.[0]?.profile?.name || from
+      timestamp = message?.timestamp || timestamp
+    }
     try {
       console.log('[chat/webhook][POST] Incoming event', {
         contentType,

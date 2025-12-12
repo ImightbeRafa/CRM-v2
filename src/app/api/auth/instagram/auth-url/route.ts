@@ -52,17 +52,11 @@ export async function GET() {
     response_type: 'code',
     auth_type: 'rerequest',                 // Force re-asking for all permissions
     scope: [
-      // Instagram permissions (include both old and new names for compatibility)
-      'instagram_basic',                    // Old name - works without app review in dev mode
-      'instagram_manage_messages',          // Old name - for DMs
-      'instagram_business_basic',           // New name - may require app review
-      'instagram_business_manage_messages', // New name - may require app review
-      // Facebook Page permissions (required for IG Business API)
-      'pages_show_list',
-      'pages_read_engagement',
-      'pages_messaging',                    // Required for message webhooks
-      'pages_manage_metadata',              // Needed to read instagram_business_account
-      'business_management',
+      // Instagram messaging permission (core for /chats)
+      'instagram_manage_messages',          // For reading/replying to DMs
+      // Facebook Page permissions (required for IG Business API connection)
+      'pages_show_list',                    // List pages user manages
+      'pages_manage_metadata',              // Webhooks and page config
     ].join(','),
     state: 'instagram_oauth',
   })

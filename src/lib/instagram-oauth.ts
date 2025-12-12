@@ -12,15 +12,16 @@ export function getInstagramAuthUrl(): string {
     redirect_uri: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/auth/instagram/callback`,
     response_type: 'code',
     scope: [
-      'instagram_basic',
-      'instagram_manage_messages',
-      'instagram_manage_comments',
-      'instagram_content_publish',
+      // Core permissions for Instagram DM management
+      'instagram_business_basic',           // Required base permission
+      'instagram_business_manage_messages', // Send/receive DMs
+      // Facebook Page permissions (required for IG Business API)
       'pages_show_list',
       'pages_read_engagement',
+      'pages_messaging',                    // Required for message webhooks
       'business_management',
     ].join(','),
-    state: 'instagram_oauth', // Optional: for CSRF protection
+    state: 'instagram_oauth',
   })
   return `${baseUrl}?${params.toString()}`
 }

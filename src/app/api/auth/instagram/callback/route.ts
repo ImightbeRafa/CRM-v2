@@ -141,36 +141,132 @@ export async function GET(request: NextRequest) {
 
     // Step 3: Search ALL pages for Instagram Business Account (not just the first one)
     console.log('[instagram/callback] Found', pages.length, 'Facebook pages, checking each for Instagram Business...')
+    console.log('[instagram/callback] Pages data:', JSON.stringify(pages, null, 2))
     
     let igBusinessAccountId: string | null = null
     let pageId: string | null = null
     let pageAccessToken: string | null = null
     let pageName: string | null = null
     const pagesWithoutIG: string[] = []
+    const debugInfo: any[] = []
 
     for (const page of pages) {
-      const igAccountUrl = `https://graph.facebook.com/v21.0/${page.id}?fields=instagram_business_account,name&access_token=${page.access_token}`
+      // Try multiple fields to find Instagram account
+      const igAccountUrl = `https://graph.facebook.com/v21.0/${page.id}?fields=instagram_business_account,connected_instagram_account,instagram_accounts,name&access_token=${page.access_token}`
       const igAccountUrlWithProof = addAppSecretProofToUrl(igAccountUrl, page.access_token)
       
       try {
         const igAccountRes = await fetch(igAccountUrlWithProof)
+        const igAccountData = await igAccountRes.json()
+        
+        // Log full response for debugging
+        console.log('[instagram/callback] Full API response for page', page.id, ':', JSON.stringify(igAccountData, null, 2))
+        
+        debugInfo.push({
+          pageId: page.id,
+          pageName: igAccountData.name,
+          response: igAccountData,
+          hasIgBusiness: !!igAccountData.instagram_business_account?.id,
+          hasConnectedIg: !!igAccountData.connected_instagram_account?.id,
+          error: igAccountData.error
+        })
+        
         if (igAccountRes.ok) {
-          const igAccountData = await igAccountRes.json()
-          console.log('[instagram/callback] Page:', igAccountData.name, '- IG Business:', igAccountData.instagram_business_account?.id || 'NOT LINKED')
+          // Check multiple possible fields for Instagram account
+          const igId = igAccountData.instagram_business_account?.id 
+                    || igAccountData.connected_instagram_account?.id
+                    || igAccountData.instagram_accounts?.data?.[0]?.id
           
-          if (igAccountData.instagram_business_account?.id) {
-            igBusinessAccountId = igAccountData.instagram_business_account.id
+          console.log('[instagram/callback] Page:', igAccountData.name, '- IG ID found:', igId || 'NONE')
+          
+          if (igId) {
+            igBusinessAccountId = igId
             pageId = page.id
             pageAccessToken = page.access_token
             pageName = igAccountData.name
-            console.log('[instagram/callback] ✅ Found Instagram Business on page:', pageName)
+            console.log('[instagram/callback] ✅ Found Instagram Business on page:', pageName, 'ID:', igId)
             break // Found one, stop searching
           } else {
             pagesWithoutIG.push(igAccountData.name || page.id)
           }
+        } else {
+          console.error('[instagram/callback] API error for page', page.id, ':', igAccountData)
+          pagesWithoutIG.push(`${page.name || page.id} (API Error: ${igAccountData.error?.message || 'Unknown'})`)
         }
       } catch (e) {
         console.warn('[instagram/callback] Error checking page', page.id, e)
+        pagesWithoutIG.push(`${page.id} (Exception)`)
+      }
+    }
+    
+    // Log summary
+    console.log('[instagram/callback] Debug summary:', JSON.stringify(debugInfo, null, 2))
+
+    // If not found via Page, try using the Instagram API directly with user token
+    if (!igBusinessAccountId) {
+      console.log('[instagram/callback] Trying alternative: Instagram API with user token...')
+      try {
+        // Try to get Instagram accounts directly from the user's connected accounts
+        const igDirectUrl = `https://graph.facebook.com/v21.0/me/accounts?fields=instagram_business_account{id,username,name},name,access_token&access_token=${fbAccessToken}`
+        const igDirectRes = await fetch(igDirectUrl)
+        const igDirectData = await igDirectRes.json()
+        
+        console.log('[instagram/callback] Direct IG query response:', JSON.stringify(igDirectData, null, 2))
+        
+        if (igDirectData.data) {
+          for (const page of igDirectData.data) {
+            if (page.instagram_business_account?.id) {
+              igBusinessAccountId = page.instagram_business_account.id
+              pageId = page.id
+              pageAccessToken = page.access_token
+              pageName = page.name
+              console.log('[instagram/callback] ✅ Found via direct query:', pageName, 'IG ID:', igBusinessAccountId)
+              
+              debugInfo.push({
+                method: 'direct_query',
+                pageId: page.id,
+                pageName: page.name,
+                igBusinessAccountId,
+                igUsername: page.instagram_business_account.username
+              })
+              break
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[instagram/callback] Direct IG query failed:', e)
+      }
+    }
+
+    // Also try using me/instagram_accounts endpoint
+    if (!igBusinessAccountId) {
+      console.log('[instagram/callback] Trying alternative: /me/instagram_accounts...')
+      try {
+        const meIgUrl = `https://graph.facebook.com/v21.0/me?fields=instagram_accounts{id,username}&access_token=${fbAccessToken}`
+        const meIgRes = await fetch(meIgUrl)
+        const meIgData = await meIgRes.json()
+        
+        console.log('[instagram/callback] /me/instagram_accounts response:', JSON.stringify(meIgData, null, 2))
+        
+        if (meIgData.instagram_accounts?.data?.[0]?.id) {
+          // Found an IG account, now we need a page token
+          igBusinessAccountId = meIgData.instagram_accounts.data[0].id
+          // Use the first page's token if available
+          if (pages.length > 0) {
+            pageId = pages[0].id
+            pageAccessToken = pages[0].access_token
+            pageName = pages[0].name || 'Unknown Page'
+          }
+          console.log('[instagram/callback] ✅ Found via /me/instagram_accounts:', igBusinessAccountId)
+          
+          debugInfo.push({
+            method: 'me_instagram_accounts',
+            igBusinessAccountId,
+            igUsername: meIgData.instagram_accounts.data[0].username
+          })
+        }
+      } catch (e) {
+        console.error('[instagram/callback] /me/instagram_accounts query failed:', e)
       }
     }
 
@@ -179,8 +275,16 @@ export async function GET(request: NextRequest) {
         ? `<p><strong>Páginas encontradas sin Instagram Business:</strong></p><ul>${pagesWithoutIG.map(p => `<li>${p}</li>`).join('')}</ul>`
         : ''
       
+      // Show debug info to help troubleshoot
+      const debugHtml = debugInfo.length > 0 
+        ? `<details style="margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 5px;">
+            <summary style="cursor: pointer; font-weight: bold;">🔍 Debug Info (click to expand)</summary>
+            <pre style="overflow-x: auto; font-size: 11px; margin-top: 10px;">${JSON.stringify(debugInfo, null, 2)}</pre>
+           </details>`
+        : ''
+      
       const html = `
-        <html><body style="font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px;">
+        <html><body style="font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 20px;">
           <h2>❌ No se encontró cuenta de Instagram Business</h2>
           <p>Revisamos ${pages.length} página(s) de Facebook pero ninguna tiene una cuenta de Instagram Business vinculada.</p>
           ${pagesList}
@@ -194,7 +298,14 @@ export async function GET(request: NextRequest) {
             <li>Vuelve aquí e intenta conectar de nuevo</li>
           </ol>
           <p style="margin-top: 20px;"><strong>Nota:</strong> Las cuentas de "Creador" NO funcionan con la API de mensajes. Debe ser cuenta de <strong>Empresa/Business</strong>.</p>
-          <p><a href="/config/social">← Volver a configuración</a></p>
+          
+          <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 5px; border: 1px solid #ffc107;">
+            <strong>⚠️ Posible causa:</strong> Es posible que el permiso <code>instagram_business_basic</code> necesite aprobación de Meta antes de poder ver cuentas de Instagram Business. 
+            Verifica en tu <a href="https://developers.facebook.com/apps/${process.env.META_APP_ID}/app-review/permissions/" target="_blank">Meta Dashboard</a> si el permiso está aprobado.
+          </div>
+          
+          ${debugHtml}
+          <p style="margin-top: 20px;"><a href="/config/social">← Volver a configuración</a></p>
         </body></html>
       `
       return new NextResponse(html, { status: 400, headers: { 'Content-Type': 'text/html; charset=utf-8' } })

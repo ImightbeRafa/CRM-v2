@@ -50,14 +50,18 @@ export async function GET() {
     client_id: appId,
     redirect_uri: redirectUri,
     response_type: 'code',
+    auth_type: 'rerequest',                 // Force re-asking for all permissions
     scope: [
-      // Core permissions for Instagram DM management
-      'instagram_business_basic',           // Required base permission
-      'instagram_business_manage_messages', // Send/receive DMs
+      // Instagram permissions (include both old and new names for compatibility)
+      'instagram_basic',                    // Old name - works without app review in dev mode
+      'instagram_manage_messages',          // Old name - for DMs
+      'instagram_business_basic',           // New name - may require app review
+      'instagram_business_manage_messages', // New name - may require app review
       // Facebook Page permissions (required for IG Business API)
       'pages_show_list',
       'pages_read_engagement',
       'pages_messaging',                    // Required for message webhooks
+      'pages_manage_metadata',              // Needed to read instagram_business_account
       'business_management',
     ].join(','),
     state: 'instagram_oauth',

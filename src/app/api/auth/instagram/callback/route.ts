@@ -139,35 +139,62 @@ export async function GET(request: NextRequest) {
       return new NextResponse(html, { status: 400, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
     }
 
-    // Step 3: Get Instagram Business Account from the first page
-    const pageId = pages[0].id
-    const pageAccessToken = pages[0].access_token
-
-    const igAccountUrl = `https://graph.facebook.com/v21.0/${pageId}?fields=instagram_business_account&access_token=${pageAccessToken}`
-    const igAccountUrlWithProof = addAppSecretProofToUrl(igAccountUrl, pageAccessToken)
+    // Step 3: Search ALL pages for Instagram Business Account (not just the first one)
+    console.log('[instagram/callback] Found', pages.length, 'Facebook pages, checking each for Instagram Business...')
     
-    const igAccountRes = await fetch(igAccountUrlWithProof)
-    if (!igAccountRes.ok) {
-      const errText = await igAccountRes.text()
-      console.error('[instagram/callback] Failed to get IG account', errText)
-      const html = `
-        <html><body>
-          <h2>Error al obtener cuenta de Instagram</h2>
-          <p>No se pudo obtener la cuenta de Instagram Business vinculada a tu página.</p>
-        </body></html>
-      `
-      return new NextResponse(html, { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+    let igBusinessAccountId: string | null = null
+    let pageId: string | null = null
+    let pageAccessToken: string | null = null
+    let pageName: string | null = null
+    const pagesWithoutIG: string[] = []
+
+    for (const page of pages) {
+      const igAccountUrl = `https://graph.facebook.com/v21.0/${page.id}?fields=instagram_business_account,name&access_token=${page.access_token}`
+      const igAccountUrlWithProof = addAppSecretProofToUrl(igAccountUrl, page.access_token)
+      
+      try {
+        const igAccountRes = await fetch(igAccountUrlWithProof)
+        if (igAccountRes.ok) {
+          const igAccountData = await igAccountRes.json()
+          console.log('[instagram/callback] Page:', igAccountData.name, '- IG Business:', igAccountData.instagram_business_account?.id || 'NOT LINKED')
+          
+          if (igAccountData.instagram_business_account?.id) {
+            igBusinessAccountId = igAccountData.instagram_business_account.id
+            pageId = page.id
+            pageAccessToken = page.access_token
+            pageName = igAccountData.name
+            console.log('[instagram/callback] ✅ Found Instagram Business on page:', pageName)
+            break // Found one, stop searching
+          } else {
+            pagesWithoutIG.push(igAccountData.name || page.id)
+          }
+        }
+      } catch (e) {
+        console.warn('[instagram/callback] Error checking page', page.id, e)
+      }
     }
 
-    const igAccountData = await igAccountRes.json()
-    const igBusinessAccountId = igAccountData.instagram_business_account?.id
-
-    if (!igBusinessAccountId) {
+    if (!igBusinessAccountId || !pageId || !pageAccessToken) {
+      const pagesList = pagesWithoutIG.length > 0 
+        ? `<p><strong>Páginas encontradas sin Instagram Business:</strong></p><ul>${pagesWithoutIG.map(p => `<li>${p}</li>`).join('')}</ul>`
+        : ''
+      
       const html = `
-        <html><body>
-          <h2>No se encontró cuenta de Instagram Business</h2>
-          <p>Tu página de Facebook no tiene una cuenta de Instagram Business vinculada.</p>
-          <p>Por favor vincula una cuenta de Instagram Business a tu página de Facebook primero.</p>
+        <html><body style="font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px;">
+          <h2>❌ No se encontró cuenta de Instagram Business</h2>
+          <p>Revisamos ${pages.length} página(s) de Facebook pero ninguna tiene una cuenta de Instagram Business vinculada.</p>
+          ${pagesList}
+          <hr style="margin: 20px 0;">
+          <h3>¿Cómo vincular Instagram Business a tu página?</h3>
+          <ol>
+            <li>Abre la app de <strong>Instagram</strong> en tu celular</li>
+            <li>Ve a <strong>Configuración</strong> → <strong>Cuenta</strong> → <strong>Cambiar a cuenta profesional</strong></li>
+            <li>Selecciona <strong>"Empresa"</strong> (no "Creador")</li>
+            <li>Conecta tu <strong>Página de Facebook</strong> cuando te lo pida</li>
+            <li>Vuelve aquí e intenta conectar de nuevo</li>
+          </ol>
+          <p style="margin-top: 20px;"><strong>Nota:</strong> Las cuentas de "Creador" NO funcionan con la API de mensajes. Debe ser cuenta de <strong>Empresa/Business</strong>.</p>
+          <p><a href="/config/social">← Volver a configuración</a></p>
         </body></html>
       `
       return new NextResponse(html, { status: 400, headers: { 'Content-Type': 'text/html; charset=utf-8' } })

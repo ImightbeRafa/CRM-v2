@@ -18,12 +18,16 @@ const PUBLIC_ROUTES = [
   '/api/tilopay/webhook-repeat',
   '/api/tilopay/callback',
   '/api/stripe/webhook',
-  '/api/chat/webhook',
-  '/api/integration', // Allow external website integrations (includes /test and /orders/create)
-  '/api/bot/telegram/webhook',       // Telegram bot webhook (must be public)
-  '/api/bot/telegram/test-webhook',  // Telegram test webhook (diagnostic)
-  '/api/bot/telegram/health',        // Telegram health check (diagnostic)
-  '/api/bot/whatsapp/webhook',       // WhatsApp bot webhook (must be public for Meta verification)
+  '/api/chat/webhook',                          // Meta webhooks (Instagram/WhatsApp/Facebook)
+  '/api/integration',                           // Allow external website integrations (includes /test and /orders/create)
+  '/api/bot/telegram/webhook',                  // Telegram bot webhook (must be public)
+  '/api/bot/telegram/test-webhook',             // Telegram test webhook (diagnostic)
+  '/api/bot/telegram/health',                   // Telegram health check (diagnostic)
+  '/api/bot/whatsapp/webhook',                  // WhatsApp bot webhook (must be public for Meta verification)
+  '/api/auth/instagram/data-deletion',          // Meta data deletion callback (must be public)
+  '/privacy',                                   // Privacy policy (required for Meta verification)
+  '/terms',                                     // Terms of service (required for Meta verification)
+  '/data-deletion',                             // Data deletion instructions (required for Meta)
 ];
 
 /**

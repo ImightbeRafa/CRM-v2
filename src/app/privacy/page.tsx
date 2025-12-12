@@ -102,8 +102,45 @@ export default function PrivacyPage() {
             </p>
           </section>
 
+          <section id="instagram-facebook">
+            <h2 className="text-xl font-semibold text-gray-900 mb-3">7. Instagram & Facebook Data Usage</h2>
+            <p className="mb-2">
+              When you connect your Instagram Business or WhatsApp Business account to Betsy CRM, we access and process the following data:
+            </p>
+            
+            <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">7.1 Data We Access</h3>
+            <ul className="list-disc pl-6 space-y-2">
+              <li><strong>Instagram Business Account:</strong> Account ID, username, profile information</li>
+              <li><strong>Instagram Messages:</strong> Direct messages sent to/from your business account for CRM management</li>
+              <li><strong>Facebook Page:</strong> Page ID and page access tokens (required for Instagram API access)</li>
+              <li><strong>WhatsApp Business:</strong> Phone number ID, business account information, and messages</li>
+            </ul>
+
+            <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">7.2 How We Use This Data</h3>
+            <ul className="list-disc pl-6 space-y-2">
+              <li>Display and manage customer conversations within Betsy CRM</li>
+              <li>Send responses to customer inquiries on your behalf</li>
+              <li>Link conversations to customer profiles and orders</li>
+              <li>Generate analytics about your customer communications</li>
+            </ul>
+
+            <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">7.3 Data Retention & Deletion</h3>
+            <ul className="list-disc pl-6 space-y-2">
+              <li>Messages are stored for as long as you maintain the connection</li>
+              <li>You can disconnect your account at any time from Settings → Social Accounts</li>
+              <li>Upon disconnection, we delete access tokens and message history within 24 hours</li>
+              <li>You can request full data deletion by emailing <a href="mailto:support@betsycrm.com" className="text-blue-600 hover:underline">support@betsycrm.com</a></li>
+            </ul>
+
+            <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">7.4 Data Sharing</h3>
+            <p>
+              We do NOT share, sell, or transfer your Instagram/Facebook/WhatsApp data to third parties.
+              Your data is only accessible to you and your authorized team members within Betsy CRM.
+            </p>
+          </section>
+
           <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">7. Google OAuth Disclosure</h2>
+            <h2 className="text-xl font-semibold text-gray-900 mb-3">8. Google OAuth Disclosure</h2>
             <p className="mb-2">
               When you sign in with Google, we use Google&apos;s OAuth 2.0 service. Our use of Google user data is limited to:
             </p>
@@ -129,7 +166,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">8. Data Retention</h2>
+            <h2 className="text-xl font-semibold text-gray-900 mb-3">9. Data Retention</h2>
             <p>
               We retain your information for as long as your account is active or as needed to provide services. 
               When you delete your account, we will delete your personal information within 30 days, except for:
@@ -142,7 +179,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">9. International Data Transfers</h2>
+            <h2 className="text-xl font-semibold text-gray-900 mb-3">10. International Data Transfers</h2>
             <p>
               Your data may be stored and processed in countries other than your own. We ensure appropriate 
               safeguards are in place to protect your information in compliance with applicable data protection laws.
@@ -150,7 +187,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">10. Children&apos;s Privacy</h2>
+            <h2 className="text-xl font-semibold text-gray-900 mb-3">11. Children&apos;s Privacy</h2>
             <p>
               Our service is not intended for children under 13 years of age. We do not knowingly collect 
               personal information from children. If you believe a child has provided us with personal information, 
@@ -159,7 +196,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">11. Changes to This Privacy Policy</h2>
+            <h2 className="text-xl font-semibold text-gray-900 mb-3">12. Changes to This Privacy Policy</h2>
             <p>
               We may update this Privacy Policy from time to time. We will notify you of significant changes 
               by email or through a notice on our platform. The &quot;Last updated&quot; date at the top will reflect 
@@ -168,7 +205,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">12. Contact Us</h2>
+            <h2 className="text-xl font-semibold text-gray-900 mb-3">13. Contact Us</h2>
             <p className="mb-2">
               If you have questions or concerns about this Privacy Policy or our data practices, please contact us:
             </p>

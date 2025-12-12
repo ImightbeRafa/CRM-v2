@@ -60,7 +60,7 @@ export default function SocialConfigPage() {
           appId: META_APP_ID || '',
           autoLogAppEvents: true,
           xfbml: true,
-          version: 'v24.0',
+          version: 'v21.0',
         })
         setFbReady(true)
       }

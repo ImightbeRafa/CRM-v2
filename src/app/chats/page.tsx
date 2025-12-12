@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
+import Link from 'next/link'
 
 interface SocialAccount {
   id: string
@@ -177,8 +178,26 @@ export default function ChatsPage() {
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b px-6 py-4">
-        <h1 className="text-2xl font-bold">💬 Mensajería Social</h1>
-        <p className="text-sm text-gray-600">Gestiona tus conversaciones de WhatsApp e Instagram</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">💬 Mensajería Social</h1>
+            <p className="text-sm text-gray-600">Gestiona tus conversaciones de WhatsApp e Instagram</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/config/social"
+              className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+            >
+              ⚙️ Configurar Cuentas
+            </Link>
+            <Link
+              href="/dashboard"
+              className="text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium flex items-center gap-1"
+            >
+              ← Inicio
+            </Link>
+          </div>
+        </div>
       </div>
 
       {/* Platform Tabs */}

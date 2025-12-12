@@ -68,9 +68,9 @@ export async function POST(request: Request) {
           throw new Error('Missing Instagram access token')
         }
 
-        // Instagram Graph API send
+        // Instagram Graph API send (using Facebook Graph API for Instagram Business)
         const igRes = await fetch(
-          `https://graph.instagram.com/v19.0/me/messages?access_token=${social.accessToken}`,
+          `https://graph.facebook.com/v21.0/me/messages?access_token=${social.accessToken}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

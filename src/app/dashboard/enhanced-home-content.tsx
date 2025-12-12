@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/app
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/app/components/ui/dialog";
 import { 
   Sparkles, Zap, Settings, TrendingUp, Users, Package, 
-  ShoppingCart, Plus, BarChart3, DollarSign, ArrowUpRight, Clock, RefreshCw
+  ShoppingCart, Plus, BarChart3, DollarSign, ArrowUpRight, Clock, RefreshCw, MessageSquare
 } from "lucide-react";
 
 export default function EnhancedHomeContent() {
@@ -304,6 +304,24 @@ export default function EnhancedHomeContent() {
                   </div>
                   <h3 className="text-xl font-bold text-gray-900 mb-2">Estadísticas</h3>
                   <p className="text-sm text-gray-600 leading-relaxed">Análisis y reportes detallados</p>
+                </div>
+              </Link>
+
+              {/* Messages/Chat Card */}
+              <Link
+                href="/chats"
+                className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-gray-100 hover:border-pink-300 overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-pink-400/10 to-purple-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+                <div className="relative">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="p-4 bg-gradient-to-br from-pink-500 to-purple-600 rounded-xl shadow-lg group-hover:shadow-xl transition-shadow">
+                      <MessageSquare className="w-7 h-7 text-white" />
+                    </div>
+                    <ArrowUpRight className="w-6 h-6 text-pink-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">Mensajes</h3>
+                  <p className="text-sm text-gray-600 leading-relaxed">WhatsApp e Instagram DMs</p>
                 </div>
               </Link>
 

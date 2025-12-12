@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     if (acc.platform === 'whatsapp') {
       if (!acc.accessToken) return NextResponse.json({ error: 'Missing access token for WhatsApp account' }, { status: 400 })
       try {
-        const subscribeUrl = `https://graph.facebook.com/v18.0/${encodeURIComponent(acc.accountId)}/subscribed_apps`
+        const subscribeUrl = `https://graph.facebook.com/v21.0/${encodeURIComponent(acc.accountId)}/subscribed_apps`
         const form = new URLSearchParams({ access_token: acc.accessToken })
         const subRes = await fetch(subscribeUrl, {
           method: 'POST',

@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
  * GET /api/auth/instagram/auth-url
  */
 export async function GET() {
-  const baseUrl = 'https://www.facebook.com/v18.0/dialog/oauth'
+  const baseUrl = 'https://www.facebook.com/v21.0/dialog/oauth'
   
   const appId = process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID
   const redirectUri = `${process.env.NEXTAUTH_URL}/api/auth/instagram/callback`

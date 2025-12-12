@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
     const userId = token.sub as string
 
     // Step 1: Exchange code for Facebook access token
-    const tokenUrl = `https://graph.facebook.com/v18.0/oauth/access_token?${new URLSearchParams({
+    const tokenUrl = `https://graph.facebook.com/v21.0/oauth/access_token?${new URLSearchParams({
       client_id: process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID!,
       client_secret: process.env.INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET!,
       redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/instagram/callback`,
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Step 2: Get Facebook Pages connected to this user
-    const pagesUrl = `https://graph.facebook.com/v18.0/me/accounts?access_token=${fbAccessToken}`
+    const pagesUrl = `https://graph.facebook.com/v21.0/me/accounts?access_token=${fbAccessToken}`
     const pagesUrlWithProof = addAppSecretProofToUrl(pagesUrl, fbAccessToken)
     
     const pagesRes = await fetch(pagesUrlWithProof)
@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
     const pageId = pages[0].id
     const pageAccessToken = pages[0].access_token
 
-    const igAccountUrl = `https://graph.facebook.com/v18.0/${pageId}?fields=instagram_business_account&access_token=${pageAccessToken}`
+    const igAccountUrl = `https://graph.facebook.com/v21.0/${pageId}?fields=instagram_business_account&access_token=${pageAccessToken}`
     const igAccountUrlWithProof = addAppSecretProofToUrl(igAccountUrl, pageAccessToken)
     
     const igAccountRes = await fetch(igAccountUrlWithProof)
@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
 
     // Subscribe the Page to this app for messaging webhooks (required for IG messaging delivery)
     try {
-      const subscribeUrl = `https://graph.facebook.com/v18.0/${pageId}/subscribed_apps`
+      const subscribeUrl = `https://graph.facebook.com/v21.0/${pageId}/subscribed_apps`
       const subscribeUrlWithProof = addAppSecretProofToUrl(subscribeUrl, pageAccessToken)
       
       const subscribeParams = new URLSearchParams({

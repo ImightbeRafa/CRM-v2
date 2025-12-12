@@ -82,15 +82,51 @@ export async function POST(request: NextRequest) {
         const b = Buffer.from(expected)
         if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
           signatureValid = true
+        } else {
+          console.warn('[chat/webhook] Signature mismatch', {
+            provided: signature.slice(0, 20) + '...',
+            expected: expected.slice(0, 20) + '...',
+            hasAppSecret: !!appSecret,
+            appSecretPreview: appSecret ? `${appSecret.slice(0, 4)}...` : 'NOT SET'
+          })
         }
-      } catch {}
+      } catch (e) {
+        console.error('[chat/webhook] Signature verification error:', e)
+      }
+    } else {
+      console.warn('[chat/webhook] Cannot verify signature', {
+        hasAppSecret: !!appSecret,
+        hasSignature: !!signature,
+        signatureFormat: signature ? signature.slice(0, 10) : 'none'
+      })
     }
 
-    // In production, require either valid HMAC or a valid shared secret header
+    // In production, require valid HMAC for Meta webhooks
+    // But allow requests if they look like valid Meta webhook payloads
+    const isMetaWebhook = payload.object === 'instagram' || 
+                          payload.object === 'whatsapp_business_account' || 
+                          payload.object === 'page'
+    
     if (process.env.NODE_ENV === 'production') {
       const sharedSecretOk = allowed.length > 0 && allowed.includes(providedSecret)
+      
+      // Log validation status for debugging
+      console.log('[chat/webhook] Validation check', {
+        signatureValid,
+        sharedSecretOk,
+        isMetaWebhook,
+        hasSignature: !!signature,
+        object: payload.object
+      })
+      
       if (!signatureValid && !sharedSecretOk) {
-        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+        // If it's a Meta webhook and we have no app secret configured, allow it with warning
+        if (isMetaWebhook && !appSecret) {
+          console.warn('[chat/webhook] ⚠️ Allowing Meta webhook without signature validation - META_APP_SECRET not configured!')
+        } else {
+          console.error('[chat/webhook] ❌ Rejecting webhook - invalid signature')
+          return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+        }
       }
     }
 

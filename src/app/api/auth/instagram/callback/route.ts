@@ -52,9 +52,29 @@ export async function GET(request: NextRequest) {
     const userId = token.sub as string
 
     // Step 1: Exchange code for Facebook access token
+    // Use META_APP_ID (main BetsyCRM app) - same for WhatsApp and Instagram
+    const appId = process.env.META_APP_ID
+    const appSecret = process.env.META_APP_SECRET
+    
+    console.log('[instagram/callback] Token exchange', {
+      hasAppId: !!appId,
+      hasAppSecret: !!appSecret,
+      redirectUri: `${process.env.NEXTAUTH_URL}/api/auth/instagram/callback`,
+    })
+    
+    if (!appId || !appSecret) {
+      const html = `
+        <html><body>
+          <h2>Error de configuración</h2>
+          <p>META_APP_ID o META_APP_SECRET no están configurados.</p>
+        </body></html>
+      `
+      return new NextResponse(html, { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+    }
+    
     const tokenUrl = `https://graph.facebook.com/v21.0/oauth/access_token?${new URLSearchParams({
-      client_id: process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID!,
-      client_secret: process.env.INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET!,
+      client_id: appId,
+      client_secret: appSecret,
       redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/instagram/callback`,
       code,
     })}`

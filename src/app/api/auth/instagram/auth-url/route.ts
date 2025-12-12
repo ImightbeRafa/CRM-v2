@@ -6,16 +6,42 @@ export const dynamic = 'force-dynamic'
 /**
  * Generate Instagram OAuth URL
  * GET /api/auth/instagram/auth-url
+ * 
+ * IMPORTANT: Uses META_APP_ID (main BetsyCRM app) for both WhatsApp and Instagram
  */
 export async function GET() {
   const baseUrl = 'https://www.facebook.com/v21.0/dialog/oauth'
   
-  const appId = process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID
+  // Use the MAIN Meta App ID (same app for WhatsApp and Instagram)
+  const appId = process.env.META_APP_ID
   const redirectUri = `${process.env.NEXTAUTH_URL}/api/auth/instagram/callback`
   
+  // Debug logging
+  console.log('[instagram/auth-url] Generating OAuth URL', {
+    hasAppId: !!appId,
+    appIdPreview: appId ? `${appId.slice(0, 4)}...${appId.slice(-4)}` : 'NOT SET',
+    redirectUri,
+    nextAuthUrl: process.env.NEXTAUTH_URL,
+  })
+  
   if (!appId) {
+    console.error('[instagram/auth-url] META_APP_ID not configured!')
     return NextResponse.json(
-      { error: 'Instagram App ID not configured' },
+      { 
+        error: 'Meta App ID not configured',
+        hint: 'Set META_APP_ID environment variable to your BetsyCRM app ID (e.g., 1514613536240301)'
+      },
+      { status: 500 }
+    )
+  }
+  
+  if (!process.env.NEXTAUTH_URL) {
+    console.error('[instagram/auth-url] NEXTAUTH_URL not configured!')
+    return NextResponse.json(
+      { 
+        error: 'NEXTAUTH_URL not configured',
+        hint: 'Set NEXTAUTH_URL to your app URL (e.g., https://your-domain.com)'
+      },
       { status: 500 }
     )
   }
@@ -39,5 +65,7 @@ export async function GET() {
   
   const authUrl = `${baseUrl}?${params.toString()}`
   
-  return NextResponse.json({ authUrl })
+  console.log('[instagram/auth-url] Generated URL successfully')
+  
+  return NextResponse.json({ authUrl, appId })
 }

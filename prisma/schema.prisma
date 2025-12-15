@@ -494,7 +494,7 @@ model AuditLog {
   oldValues  Json?
   newValues  Json?
   reason     String?
-  userId     String
+  userId     String?     // Optional: null for bot/system operations
   userName   String
   userRole   String      // Changed from enum to string for flexibility
   timestamp  DateTime    @default(now())
@@ -503,7 +503,7 @@ model AuditLog {
   
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id])
+  user   User?  @relation(fields: [userId], references: [id]) // Optional for bot/system ops
   
   @@index([tenantId])
   @@index([tenantId, action])

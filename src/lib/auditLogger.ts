@@ -77,15 +77,13 @@ export async function logAuditEvent(data: AuditLogData): Promise<void> {
       userRole: data.userRole,
       ipAddress: data.ipAddress || null,
       userAgent: data.userAgent || null,
-      userId: null, // Explicitly null by default (optional field)
       tenant: {
         connect: { id: data.tenantId }
       }
     };
 
-    // Only add user relation if user exists
+    // Only add user relation if user exists (use connect, NOT direct userId field)
     if (userExists && data.userId) {
-      logData.userId = data.userId;
       logData.user = {
         connect: { id: data.userId }
       };
@@ -267,7 +265,7 @@ export async function logAudit(data: AuditLogData): Promise<void> {
       ? (data.action as PrismaAuditAction)
       : 'CREATE';
     
-    // Build base log data WITHOUT user relation first
+    // Build base log data WITHOUT userId field (use user relation instead)
     const logData: any = {
       action: actionFinal,
       entityType: data.entityType,
@@ -278,7 +276,7 @@ export async function logAudit(data: AuditLogData): Promise<void> {
       userAgent: data.userAgent?.substring(0, 255) || null,
       userRole: safeUserRole,
       userName: data.userName || 'System',
-      userId: null, // Explicitly set to null (optional field now)
+      // Note: userId is handled via user relation connect, not as direct field
       tenant: {
         connect: { id: data.tenantId }
       }
@@ -308,18 +306,17 @@ export async function logAudit(data: AuditLogData): Promise<void> {
         });
         
         if (user) {
-          // User exists - connect the relation
-          logData.userId = data.userId;
+          // User exists - connect via relation (NOT direct userId field)
           logData.user = {
             connect: { id: data.userId }
           };
         } else {
-          // User doesn't exist - keep userId as null, userName as provided
+          // User doesn't exist - log without user relation
           console.log('[AuditLogger] User not found, logging without user relation:', data.userId);
         }
       } catch (err) {
         console.warn('[AuditLogger] Failed to verify user exists:', err);
-        // Keep userId as null on error
+        // Log without user relation on error
       }
     }
 

@@ -1,22 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { getTenantPrisma } from '@/lib/prisma-tenant'
+import { authenticateAPI } from '@/lib/auth-helpers'
+import { withTenantContext } from '@/lib/tenantContext'
+import { getToken } from 'next-auth/jwt'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { logCreate, logUpdate, logDelete } from '@/lib/auditLogger'
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest) {
   try {
-    const sales = await prisma.order.findMany({
-      where: {
-        saleDate: { not: null }
-      },
-      orderBy: { saleDate: 'desc' },
-      take: 100 // Limit to last 100 sales
-    })
+    // Authenticate and get tenant context
+    const auth = await authenticateAPI(request)
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
+    const userId = (token as any)?.sub as string | undefined
+    const userName = (token as any)?.name || (token as any)?.email || 'System'
 
-    return createSuccessResponse(sales)
+    return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName }, async () => {
+      const tenantPrisma = getTenantPrisma(tenantId)
+      
+      const sales = await tenantPrisma.order.findMany({
+        where: {
+          saleDate: { not: null }
+        },
+        orderBy: { saleDate: 'desc' },
+        take: 100 // Limit to last 100 sales
+      })
+
+      return createSuccessResponse(sales)
+    })
   } catch (error) {
     return handleApiError(error)
   }
@@ -24,32 +41,45 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    // Authenticate and get tenant context
+    const auth = await authenticateAPI(request)
+    if (!auth.ok) return auth.response
     
-    // Create a new sale record
-    const sale = await prisma.order.create({
-      data: {
-        orderId: body.orderId || `SALE-${Date.now()}`,
-        orderType: body.orderType || 'EA',
-        status: 'Completado',
-        customerName: body.customerName || '',
-        product: body.product || '',
-        quantity: Number(body.quantity || 1),
-        total: Number(body.total || 0),
-        saleDate: new Date(),
-        timestamp: new Date(),
-        ...body
+    const { tenantId } = auth
+    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
+    const userId = (token as any)?.sub as string | undefined
+    const userName = (token as any)?.name || (token as any)?.email || 'System'
+
+    const body = await request.json()
+
+    return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName }, async () => {
+      const tenantPrisma = getTenantPrisma(tenantId)
+      
+      // Create a new sale record with tenant isolation
+      const sale = await tenantPrisma.order.create({
+        data: {
+          tenantId, // Ensure tenant ID is set
+          orderId: body.orderId || `SALE-${Date.now()}`,
+          orderType: body.orderType || 'EA',
+          status: 'Completado',
+          customerName: body.customerName || '',
+          product: body.product || '',
+          quantity: Number(body.quantity || 1),
+          total: Number(body.total || 0),
+          saleDate: new Date().toISOString(),
+          timestamp: new Date(),
+        }
+      })
+
+      // Log audit trail
+      try {
+        await logCreate(request, 'sale', sale.id, `Sale #${sale.orderId}`, sale)
+      } catch (auditError) {
+        console.error('Failed to log audit trail:', auditError)
       }
+
+      return createSuccessResponse(sale, 'Sale created successfully')
     })
-
-    // Log audit trail
-    try {
-      await logCreate(request, 'sale', sale.id, `Sale #${sale.orderId}`, sale)
-    } catch (auditError) {
-      console.error('Failed to log audit trail:', auditError)
-    }
-
-    return createSuccessResponse(sale, 'Sale created successfully')
   } catch (error) {
     return handleApiError(error)
   }
@@ -57,6 +87,15 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    // Authenticate and get tenant context
+    const auth = await authenticateAPI(request)
+    if (!auth.ok) return auth.response
+    
+    const { tenantId } = auth
+    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
+    const userId = (token as any)?.sub as string | undefined
+    const userName = (token as any)?.name || (token as any)?.email || 'System'
+
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     
@@ -64,21 +103,30 @@ export async function DELETE(request: NextRequest) {
       return createErrorResponse('Missing id parameter', 400)
     }
 
-    const sale = await prisma.order.findUnique({ where: { id } })
-    if (!sale) {
-      return createErrorResponse('Sale not found', 404)
-    }
+    return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName }, async () => {
+      const tenantPrisma = getTenantPrisma(tenantId)
+      
+      // Find sale with tenant isolation
+      const sale = await tenantPrisma.order.findFirst({ 
+        where: { id }
+      })
+      
+      if (!sale) {
+        return createErrorResponse('Sale not found', 404)
+      }
 
-    await prisma.order.delete({ where: { id } })
+      // Delete with tenant isolation
+      await tenantPrisma.order.delete({ where: { id } })
 
-    // Log audit trail
-    try {
-      await logDelete(request, 'sale', id, `Sale #${sale.orderId}`, sale)
-    } catch (auditError) {
-      console.error('Failed to log audit trail:', auditError)
-    }
+      // Log audit trail
+      try {
+        await logDelete(request, 'sale', id, `Sale #${sale.orderId}`, sale)
+      } catch (auditError) {
+        console.error('Failed to log audit trail:', auditError)
+      }
 
-    return createSuccessResponse(null, 'Sale deleted successfully')
+      return createSuccessResponse(null, 'Sale deleted successfully')
+    })
   } catch (error) {
     return handleApiError(error)
   }

@@ -405,7 +405,7 @@ async function performBulkDelete(
 }
 
 export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperationResult> {
-  const { ids, type, updates } = request
+  const { ids, type, updates, tenantId } = request
   const result: BulkOperationResult = {
     success: 0,
     failed: 0,
@@ -415,6 +415,18 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
   try {
     // Validate updates based on type
     const sanitizedUpdates = sanitizeUpdates(updates, type)
+    
+    // Build where clause with tenant isolation
+    const buildWhere = (additionalWhere?: any) => {
+      const where: any = { id: { in: ids } }
+      if (tenantId) {
+        where.tenantId = tenantId // Add tenant isolation
+      }
+      if (additionalWhere) {
+        Object.assign(where, additionalWhere)
+      }
+      return where
+    }
     
     switch (type) {
       case 'users':
@@ -430,6 +442,7 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
           }
         }
         
+        // Users don't have tenantId directly - they have memberships
         await prisma.user.updateMany({
           where: { id: { in: ids } },
           data: sanitizedUpdates
@@ -439,7 +452,7 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
 
       case 'orders':
         await prisma.order.updateMany({
-          where: { id: { in: ids } },
+          where: buildWhere(),
           data: sanitizedUpdates
         })
         result.success = ids.length
@@ -447,7 +460,7 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
 
       case 'fields':
         await prisma.productField.updateMany({
-          where: { id: { in: ids } },
+          where: buildWhere(),
           data: sanitizedUpdates
         })
         result.success = ids.length
@@ -455,13 +468,14 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
 
       case 'optionSets':
         await prisma.productOptionSet.updateMany({
-          where: { id: { in: ids } },
+          where: buildWhere(),
           data: sanitizedUpdates
         })
         result.success = ids.length
         break
 
       case 'options':
+        // Options don't have direct tenantId - they belong to optionSets
         await prisma.productOption.updateMany({
           where: { id: { in: ids } },
           data: sanitizedUpdates
@@ -471,7 +485,7 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
 
       case 'shipping':
         await prisma.shippingMethod.updateMany({
-          where: { id: { in: ids } },
+          where: buildWhere(),
           data: sanitizedUpdates
         })
         result.success = ids.length
@@ -479,7 +493,7 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
 
       case 'sellers':
         await prisma.seller.updateMany({
-          where: { id: { in: ids } },
+          where: buildWhere(),
           data: sanitizedUpdates
         })
         result.success = ids.length
@@ -574,11 +588,13 @@ function sanitizeUpdates(updates: Record<string, any>, type: string): Record<str
 export async function bulkToggleActive(
   ids: string[], 
   type: 'users' | 'fields' | 'optionSets' | 'options' | 'shipping' | 'sellers',
-  active: boolean
+  active: boolean,
+  tenantId?: string
 ): Promise<BulkOperationResult> {
   return bulkUpdate({
     ids,
     type,
-    updates: { active }
+    updates: { active },
+    tenantId
   })
 }

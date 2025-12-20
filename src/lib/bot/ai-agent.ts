@@ -23,6 +23,7 @@ import {
 } from './conversation-memory';
 import { formatOrderForTelegram, formatInventoryForTelegram, formatStatsForTelegram } from './telegram';
 import { z } from 'zod';
+import { getTenantPrisma } from '@/lib/prisma-tenant';
 
 // OpenAI client
 const openai = new OpenAI({
@@ -89,7 +90,79 @@ GESTIÓN DE STOCK:
 - Cuando diga "reducir stock de [producto] en Y", resta del inventario
 - Confirma los cambios realizados con el stock anterior y nuevo
 
-Recuerda: Eres una asistente profesional de ventas. Mantén el enfoque en la eficiencia y precisión.`;
+Recuerda: Eres una asistente profesional de ventas. Mantén el enfoque en la eficiencia y precisión.
+
+{{CUSTOM_FIELDS_SECTION}}`;
+
+/**
+ * Fetch tenant's custom fields configuration
+ */
+async function getTenantCustomFields(tenantId: string): Promise<string> {
+  try {
+    const tenantPrisma = getTenantPrisma(tenantId);
+    
+    // Fetch product fields (Campos Personalizados)
+    const productFields = await tenantPrisma.productField.findMany({
+      where: { active: true },
+      orderBy: { order: 'asc' },
+      include: { 
+        optionSet: { 
+          include: { options: { where: { active: true } } } 
+        } 
+      },
+    });
+    
+    // Fetch business info fields
+    const businessFields = await tenantPrisma.businessInfo.findMany({
+      where: { isActive: true },
+      orderBy: { order: 'asc' },
+    });
+    
+    if (productFields.length === 0 && businessFields.length === 0) {
+      return '';
+    }
+    
+    let section = `\nCAMPOS PERSONALIZADOS DEL NEGOCIO:
+Este negocio tiene campos personalizados configurados. Cuando crees órdenes, incluye estos campos si el usuario los menciona:\n`;
+    
+    if (productFields.length > 0) {
+      section += '\n**Campos de Producto:**\n';
+      productFields.forEach(f => {
+        let fieldDesc = `- ${f.label} (${f.key})`;
+        if (f.required) fieldDesc += ' [REQUERIDO]';
+        if (f.optionSet?.options?.length) {
+          const options = f.optionSet.options.map((o: any) => o.label).join(', ');
+          fieldDesc += ` - Opciones: ${options}`;
+        }
+        section += fieldDesc + '\n';
+      });
+    }
+    
+    if (businessFields.length > 0) {
+      section += '\n**Campos de Negocio:**\n';
+      businessFields.forEach((f: any) => {
+        let fieldDesc = `- ${f.label} (${f.name})`;
+        if (f.required) fieldDesc += ' [REQUERIDO]';
+        if (f.type === 'dropdown' && f.options) {
+          try {
+            const options = JSON.parse(f.options);
+            if (Array.isArray(options)) {
+              fieldDesc += ` - Opciones: ${options.join(', ')}`;
+            }
+          } catch {}
+        }
+        section += fieldDesc + '\n';
+      });
+    }
+    
+    section += '\nUsa el parámetro "customFields" en create_order para incluir estos campos adicionales.';
+    
+    return section;
+  } catch (error) {
+    console.error('[AI Agent] Error fetching custom fields:', error);
+    return '';
+  }
+}
 
 // Convert Zod schemas to OpenAI function definitions
 function zodToOpenAITool(name: string, schema: { description: string; parameters: z.ZodType<any> }) {
@@ -218,9 +291,13 @@ export async function processMessage(
       minute: '2-digit'
     });
     
+    // Fetch tenant's custom fields
+    const customFieldsSection = await getTenantCustomFields(context.tenantId);
+    
     const systemPromptWithDate = SYSTEM_PROMPT
       .replace('{{CURRENT_DATE}}', currentDate)
-      .replace('{{CURRENT_TIME}}', currentTime);
+      .replace('{{CURRENT_TIME}}', currentTime)
+      .replace('{{CUSTOM_FIELDS_SECTION}}', customFieldsSection);
     
     // Build messages array
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [

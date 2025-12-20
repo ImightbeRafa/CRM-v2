@@ -7,7 +7,7 @@ import {
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Textarea } from "@/app/components/ui/textarea";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Sale, SaleKeys } from '../types/sales';
 import { ScrollArea } from "@/app/components/ui/scroll-area";
 import { Pencil, X, Save } from "lucide-react";
@@ -19,6 +19,18 @@ interface OrderDetailsProps {
   onUpdateStatus: (newStatus: string) => Promise<void>;
   onUpdateOrder: (orderId: string, updatedData: Partial<Sale>) => Promise<Sale>;
 }
+
+// Core fields that are ALWAYS shown (essential order info)
+const CORE_FIELDS: Array<[string, SaleKeys, string?]> = [
+  ['Usuario', 'username'],
+  ['Cliente', 'customerName'],
+  ['Teléfono', 'phone'],
+  ['Email', 'email'],
+  ['Negocio', 'business'],
+  ['Producto', 'product'],
+  ['Cantidad', 'quantity', 'number'],
+  ['Vendedor', 'seller'],
+];
 
 export function OrderDetails({ 
   order, 
@@ -48,27 +60,44 @@ export function OrderDetails({
   const [editedOrder, setEditedOrder] = useState<Sale>(order);
   const [isSaving, setIsSaving] = useState(false);
   const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
+  const [productFields, setProductFields] = useState<any[]>([]);
   
   useEffect(() => {
     setDisplayOrder(order);
     setEditedOrder(order);
   }, [order]);
 
-  // Load tenant custom business info fields to display dynamic values on the order
+  // Load tenant custom fields (both business info and product fields)
   useEffect(() => {
-    const fetchBusinessInfo = async () => {
+    const fetchCustomFields = async () => {
       try {
-        const res = await fetch('/api/config/business-info', { credentials: 'include' });
-        const data = await res.json();
-        if (data?.status === 'success' && Array.isArray(data.data)) {
-          setBusinessInfoFields(data.data);
+        // Fetch business info fields
+        const businessRes = await fetch('/api/config/business-info', { credentials: 'include' });
+        const businessData = await businessRes.json();
+        if (businessData?.status === 'success' && Array.isArray(businessData.data)) {
+          setBusinessInfoFields(businessData.data);
+        }
+        
+        // Fetch product fields (Campos Personalizados)
+        const productRes = await fetch('/api/config/fields', { credentials: 'include' });
+        const productData = await productRes.json();
+        if (productData?.status === 'success' && Array.isArray(productData.data)) {
+          setProductFields(productData.data);
         }
       } catch (err) {
-        console.error('Error loading business info fields:', err);
+        console.error('Error loading custom fields:', err);
       }
     };
-    fetchBusinessInfo();
+    fetchCustomFields();
   }, []);
+  
+  // Build a set of configured custom field keys to know what's enabled
+  const configuredFieldKeys = useMemo(() => {
+    const keys = new Set<string>();
+    productFields.forEach(f => keys.add(f.key?.toLowerCase()));
+    businessInfoFields.forEach(f => keys.add(f.name?.toLowerCase()));
+    return keys;
+  }, [productFields, businessInfoFields]);
 
   const handleInputChange = (field: SaleKeys, value: string | number) => {
     setEditedOrder(prev => {
@@ -266,23 +295,40 @@ export function OrderDetails({
     </div>
   );
 
-  const commonFields: Array<[string, SaleKeys, string?]> = [
-    ['Usuario', 'username'],
-    ['Cliente', 'customerName'],
-    ['Teléfono', 'phone'],
-    ['Email', 'email'],
-    ['Negocio', 'business'],
-    ['Producto', 'product'],
-    ['Cantidad', 'quantity', 'number'],
-    ['Tamaño', 'size'],
-    ['Color', 'color'],
-    ['Empaque', 'packaging'],
-    ['Personalización', 'customization'],
-    ['Delivery', 'delivery'],
-    ['Canal de Ventas', 'funnel'],
-    ['Vendedor', 'seller'],
-    ['Timestamp', 'timestamp']
-  ];
+  // Build dynamic fields list based on what's configured + what has values
+  const customerInfoFields = useMemo((): Array<[string, SaleKeys, string?]> => {
+    const fields: Array<[string, SaleKeys, string?]> = [...CORE_FIELDS];
+    
+    // Optional fields that should only show if configured OR have values
+    const optionalMappings: Array<{ key: string; label: string; field: SaleKeys; type?: string }> = [
+      { key: 'size', label: 'Tamaño', field: 'size' },
+      { key: 'tamano', label: 'Tamaño', field: 'size' },
+      { key: 'color', label: 'Color', field: 'color' },
+      { key: 'packaging', label: 'Empaque', field: 'packaging' },
+      { key: 'empaque', label: 'Empaque', field: 'packaging' },
+      { key: 'customization', label: 'Personalización', field: 'customization' },
+      { key: 'personalizacion', label: 'Personalización', field: 'customization' },
+      { key: 'delivery', label: 'Delivery', field: 'delivery' },
+      { key: 'funnel', label: 'Canal de Ventas', field: 'funnel' },
+    ];
+    
+    // Only add optional fields if they're configured OR have a value in this order
+    const addedFields = new Set<SaleKeys>();
+    optionalMappings.forEach(({ key, label, field, type }) => {
+      if (addedFields.has(field)) return; // Avoid duplicates
+      
+      const isConfigured = configuredFieldKeys.has(key.toLowerCase());
+      const value = (displayOrder as any)[field];
+      const hasValue = value && String(value).trim() !== '';
+      
+      if (isConfigured || hasValue) {
+        fields.push([label, field, type]);
+        addedFields.add(field);
+      }
+    });
+    
+    return fields;
+  }, [configuredFieldKeys, displayOrder]);
 
   const renderTotal = () => {
     const total = isEditing ? editedOrder.total : displayOrder.total;
@@ -298,21 +344,62 @@ export function OrderDetails({
     );
   };
 
-  const renderShippingDetails = () => (
-    renderSection('Detalles de Envío', [
-      ['Dirección', 'address'],
-      ['Fecha Esperada', 'expectedDate'],
-      ['Fecha de Venta', 'saleDate'],
-      ['Mensajería', 'courier'],
-      ['Vendedor', 'seller'],
-      ['Provincia', 'province'],
-      ['Cantón', 'canton'],
-      ['Distrito', 'district'],
-      ['Costo de Producto', 'productCost', 'number'],
-      ['Costo de Envío', 'shippingCost', 'number'],
-      ['IVA', 'iva', 'number']
-    ])
-  );
+  // Build dynamic shipping fields - only show fields with values or configured
+  const shippingFields = useMemo((): Array<[string, SaleKeys, string?]> => {
+    const fields: Array<[string, SaleKeys, string?]> = [];
+    
+    // Core shipping fields that always show if they have values
+    const coreShippingMappings: Array<{ key: string; label: string; field: SaleKeys; type?: string }> = [
+      { key: 'address', label: 'Dirección', field: 'address' },
+      { key: 'courier', label: 'Mensajería', field: 'courier' },
+      { key: 'seller', label: 'Vendedor', field: 'seller' },
+      { key: 'province', label: 'Provincia', field: 'province' },
+      { key: 'canton', label: 'Cantón', field: 'canton' },
+      { key: 'district', label: 'Distrito', field: 'district' },
+      { key: 'productCost', label: 'Costo de Producto', field: 'productCost', type: 'number' },
+      { key: 'shippingCost', label: 'Costo de Envío', field: 'shippingCost', type: 'number' },
+    ];
+    
+    // Optional shipping fields - only show if configured OR have values
+    const optionalShippingMappings: Array<{ key: string; label: string; field: SaleKeys; type?: string }> = [
+      { key: 'expectedDate', label: 'Fecha Esperada', field: 'expectedDate' },
+      { key: 'fechaEsperada', label: 'Fecha Esperada', field: 'expectedDate' },
+      { key: 'saleDate', label: 'Fecha de Venta', field: 'saleDate' },
+      { key: 'fechaVenta', label: 'Fecha de Venta', field: 'saleDate' },
+      { key: 'iva', label: 'IVA', field: 'iva', type: 'number' },
+    ];
+    
+    // Add core fields that have values
+    coreShippingMappings.forEach(({ label, field, type }) => {
+      const value = (displayOrder as any)[field];
+      const hasValue = value !== undefined && value !== null && String(value).trim() !== '' && String(value).trim() !== '0';
+      if (hasValue) {
+        fields.push([label, field, type]);
+      }
+    });
+    
+    // Add optional fields only if configured OR have values
+    const addedFields = new Set<SaleKeys>();
+    optionalShippingMappings.forEach(({ key, label, field, type }) => {
+      if (addedFields.has(field)) return;
+      
+      const isConfigured = configuredFieldKeys.has(key.toLowerCase());
+      const value = (displayOrder as any)[field];
+      const hasValue = value !== undefined && value !== null && String(value).trim() !== '' && String(value).trim() !== '0';
+      
+      if (isConfigured || hasValue) {
+        fields.push([label, field, type]);
+        addedFields.add(field);
+      }
+    });
+    
+    return fields;
+  }, [configuredFieldKeys, displayOrder]);
+
+  const renderShippingDetails = () => {
+    if (shippingFields.length === 0) return null;
+    return renderSection('Detalles de Envío', shippingFields);
+  };
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -381,7 +468,7 @@ export function OrderDetails({
         <ScrollArea className="flex-1 h-full max-h-[calc(90vh-8rem)] bg-gray-50 dark:bg-gray-900/50">
           <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-6">
-              {renderSection('Información del Cliente', commonFields)}
+              {renderSection('Información del Cliente', customerInfoFields)}
             </div>
 
             <div className="space-y-6">
@@ -401,22 +488,68 @@ export function OrderDetails({
                 </>
               )}
 
-              {displayOrder.orderType === 'RA' && renderSection('Detalles de Retiro', [
-                ['Dirección', 'address'],
-                ['Fecha Acordada', 'agreedDate'],
-                ['Fecha de Retiro', 'pickupDate'],
-                ['Vendedor', 'seller'],
-                ['Costo de Producto', 'productCost', 'number'],
-                ['IVA', 'iva', 'number']
-              ])}
+              {displayOrder.orderType === 'RA' && (() => {
+                // Build dynamic pickup fields - only show fields with values or configured
+                const pickupFields: Array<[string, SaleKeys, string?]> = [];
+                
+                const pickupMappings: Array<{ key: string; label: string; field: SaleKeys; type?: string; optional?: boolean }> = [
+                  { key: 'address', label: 'Dirección', field: 'address' },
+                  { key: 'agreedDate', label: 'Fecha Acordada', field: 'agreedDate', optional: true },
+                  { key: 'fechaAcordada', label: 'Fecha Acordada', field: 'agreedDate', optional: true },
+                  { key: 'pickupDate', label: 'Fecha de Retiro', field: 'pickupDate', optional: true },
+                  { key: 'fechaRetiro', label: 'Fecha de Retiro', field: 'pickupDate', optional: true },
+                  { key: 'seller', label: 'Vendedor', field: 'seller' },
+                  { key: 'productCost', label: 'Costo de Producto', field: 'productCost', type: 'number' },
+                  { key: 'iva', label: 'IVA', field: 'iva', type: 'number', optional: true },
+                ];
+                
+                const addedPickupFields = new Set<SaleKeys>();
+                pickupMappings.forEach(({ key, label, field, type, optional }) => {
+                  if (addedPickupFields.has(field)) return;
+                  
+                  const value = (displayOrder as any)[field];
+                  const hasValue = value !== undefined && value !== null && String(value).trim() !== '' && String(value).trim() !== '0';
+                  const isConfigured = configuredFieldKeys.has(key.toLowerCase());
+                  
+                  // For optional fields, only show if configured OR have value
+                  // For required fields, show if have value
+                  if (optional ? (isConfigured || hasValue) : hasValue) {
+                    pickupFields.push([label, field, type]);
+                    addedPickupFields.add(field);
+                  }
+                });
+                
+                return pickupFields.length > 0 ? renderSection('Detalles de Retiro', pickupFields) : null;
+              })()}
 
-              {/* Dynamic Custom Fields (Campos personalizados) */}
-              {businessInfoFields.length > 0 && (
+              {/* Dynamic Custom Fields (Campos personalizados) - Combined product fields and business info */}
+              {(productFields.length > 0 || businessInfoFields.length > 0) && (
                 <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
                   <div className="p-4 border-b border-gray-100 dark:border-gray-800">
                     <h3 className="font-medium text-sm text-gray-600 dark:text-gray-300">Campos personalizados</h3>
                   </div>
                   <div className="p-4 space-y-2">
+                    {/* Render product custom fields */}
+                    {productFields.map((f) => {
+                      // Try to get value from various sources
+                      let value: any = (displayOrder as any)[f?.key];
+                      if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
+                        value = (displayOrder as any)?.customFields?.[f?.key];
+                      }
+                      // Skip if no value
+                      if (value === undefined || value === null || (typeof value === 'string' && String(value).trim() === '')) return null;
+                      return (
+                        <div key={`product-${f?.id || f?.key}`} className="group relative py-2 transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-md px-2 -mx-2">
+                          <div className="flex justify-between items-baseline">
+                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{f?.label || f?.key}</label>
+                          </div>
+                          <p className="text-sm text-gray-900 dark:text-gray-100 font-medium mt-1">
+                            {typeof value === 'number' ? value.toLocaleString() : String(value)}
+                          </p>
+                        </div>
+                      );
+                    })}
+                    {/* Render business info custom fields */}
                     {businessInfoFields.map((f) => {
                       let value: any = (displayOrder as any)[f?.name];
                       if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
@@ -430,7 +563,7 @@ export function OrderDetails({
                       }
                       if (value === undefined || value === null || (typeof value === 'string' && String(value).trim() === '')) return null;
                       return (
-                        <div key={`custom-${f?.id || f?.name}`} className="group relative py-2 transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-md px-2 -mx-2">
+                        <div key={`business-${f?.id || f?.name}`} className="group relative py-2 transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-md px-2 -mx-2">
                           <div className="flex justify-between items-baseline">
                             <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{f?.label || f?.name}</label>
                           </div>

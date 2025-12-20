@@ -42,8 +42,6 @@ export const toolSchemas = {
       email: z.string().email().optional().describe('Email del cliente'),
       product: z.string().describe('Nombre o descripción del producto'),
       quantity: z.number().int().min(1).default(1).describe('Cantidad del producto'),
-      size: z.string().optional().describe('Talla del producto si aplica'),
-      color: z.string().optional().describe('Color del producto si aplica'),
       total: z.number().min(0).describe('Total de la orden en colones'),
       address: z.string().optional().describe('Dirección de entrega completa'),
       province: z.string().optional().describe('Provincia de Costa Rica'),
@@ -53,6 +51,10 @@ export const toolSchemas = {
       paymentMethod: z.string().optional().describe('Método de pago (contraentrega, transferencia, etc)'),
       comments: z.string().optional().describe('Comentarios o notas adicionales'),
       orderType: z.enum(['EA', 'RA']).default('EA').describe('Tipo de orden: EA = Envío a Domicilio (se envía), RA = Retiro en Local (cliente recoge)'),
+      // Dynamic custom fields - these map to tenant-configured product fields
+      size: z.string().optional().describe('Talla o tamaño del producto (si está configurado)'),
+      color: z.string().optional().describe('Color del producto (si está configurado)'),
+      customFields: z.record(z.string(), z.any()).optional().describe('Campos personalizados adicionales configurados por el negocio (ej: {empaque: "caja", peso: "500g"})'),
     }),
   },
 
@@ -184,6 +186,21 @@ export async function createOrder(
         const timestamp = Date.now();
         const orderId = `BOT-${timestamp}`;
         
+        // Merge custom fields into the order data
+        // The Order model has columns for common fields (size, color, packaging, customization)
+        // and a customFields JSON column for any additional tenant-specific fields
+        const customFieldsData = params.customFields || {};
+        
+        // Extract known fields from customFields if they weren't provided directly
+        const size = params.size || customFieldsData.size || customFieldsData.tamano || '';
+        const color = params.color || customFieldsData.color || '';
+        const packaging = customFieldsData.packaging || customFieldsData.empaque || '';
+        const customization = customFieldsData.customization || customFieldsData.personalizacion || '';
+        
+        // Remove known fields from customFields to avoid duplication
+        const { size: _, color: __, tamano: ___, packaging: ____, empaque: _____, 
+                customization: ______, personalizacion: _______, ...remainingCustomFields } = customFieldsData;
+        
         const order = await tenantPrisma.order.create({
           data: {
             tenantId: ctx.tenantId,
@@ -195,8 +212,10 @@ export async function createOrder(
             email: params.email || '',
             product: params.product,
             quantity: params.quantity || 1,
-            size: params.size || '',
-            color: params.color || '',
+            size: size,
+            color: color,
+            packaging: packaging,
+            customization: customization,
             total: params.total || 0,
             address: params.address || '',
             province: params.province || '',
@@ -206,6 +225,8 @@ export async function createOrder(
             comments: params.comments || '',
             seller: ctx.userName,
             timestamp: new Date(),
+            // Store any remaining custom fields as JSON
+            customFields: Object.keys(remainingCustomFields).length > 0 ? remainingCustomFields : undefined,
           },
         });
         

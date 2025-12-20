@@ -108,3 +108,50 @@ export function validateEmail(email: string): boolean {
 export function sanitizeInput(input: string): string {
   return input.trim().replace(/[<>]/g, '')
 }
+
+/**
+ * Performance timing utility for API routes
+ * Use: const timer = createApiTimer('/api/orders GET'); ... timer.end();
+ */
+export function createApiTimer(routeName: string) {
+  const start = Date.now();
+  const isDev = process.env.NODE_ENV === 'development';
+  
+  return {
+    /** Log an intermediate checkpoint */
+    checkpoint(label: string) {
+      if (isDev) {
+        console.log(`[PERF] ${routeName} | ${label}: ${Date.now() - start}ms`);
+      }
+    },
+    /** End the timer and log total duration */
+    end(additionalInfo?: Record<string, any>) {
+      const duration = Date.now() - start;
+      // Log slow requests (>500ms) even in production
+      if (duration > 500 || isDev) {
+        console.log(`[PERF] ${routeName} | Total: ${duration}ms${duration > 500 ? ' ⚠️ SLOW' : ''}`, additionalInfo || '');
+      }
+      return duration;
+    }
+  };
+}
+
+/**
+ * Wrapper for API handlers that adds timing and error handling
+ */
+export function withTiming<T extends (...args: any[]) => Promise<NextResponse>>(
+  routeName: string,
+  handler: T
+): T {
+  return (async (...args: Parameters<T>) => {
+    const timer = createApiTimer(routeName);
+    try {
+      const result = await handler(...args);
+      timer.end();
+      return result;
+    } catch (error) {
+      timer.end({ error: true });
+      throw error;
+    }
+  }) as T;
+}

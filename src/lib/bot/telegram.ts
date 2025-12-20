@@ -9,6 +9,26 @@
 
 import { Bot, Context, webhookCallback, InlineKeyboard } from 'grammy';
 
+/**
+ * Convert markdown to HTML for Telegram
+ * Handles common markdown patterns that AI might generate
+ */
+function markdownToHtml(text: string): string {
+  return text
+    // Bold: **text** or __text__ -> <b>text</b>
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/__(.+?)__/g, '<b>$1</b>')
+    // Italic: *text* or _text_ -> <i>text</i>
+    .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<i>$1</i>')
+    .replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g, '<i>$1</i>')
+    // Strikethrough: ~~text~~ -> <s>text</s>
+    .replace(/~~(.+?)~~/g, '<s>$1</s>')
+    // Code: `text` -> <code>text</code>
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    // Escape special HTML characters that Telegram requires
+    .replace(/&(?!amp;|lt;|gt;|quot;|#\d+;)/g, '&amp;');
+}
+
 // Bot instance - singleton pattern for webhook mode
 let botInstance: Bot | null = null;
 
@@ -61,15 +81,21 @@ export async function sendMessage(
     throw new Error('TELEGRAM_BOT_TOKEN not set');
   }
   
+  // Convert markdown to HTML if using HTML parse mode
+  const parseMode = options?.parseMode || 'HTML';
+  const processedText = parseMode === 'HTML' ? markdownToHtml(text) : text;
+  
   const body: any = {
     chat_id: chatId,
-    text: text,
-    parse_mode: options?.parseMode || 'HTML',
+    text: processedText,
+    parse_mode: parseMode,
   };
   
   if (options?.replyMarkup) {
     body.reply_markup = options.replyMarkup;
   }
+  
+  console.log(`[Telegram] 📤 Sending message to ${chatId} (original: ${text.length} chars, processed: ${processedText.length} chars)...`);
   
   const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
@@ -79,11 +105,14 @@ export async function sendMessage(
     body: JSON.stringify(body),
   });
   
-  if (!response.ok) {
-    const error = await response.text();
-    console.error('[Telegram] sendMessage failed:', error);
-    throw new Error(`Telegram API error: ${error}`);
+  const responseData = await response.json();
+  
+  if (!response.ok || !responseData.ok) {
+    console.error('[Telegram] ❌ sendMessage failed:', JSON.stringify(responseData));
+    throw new Error(`Telegram API error: ${responseData.description || 'Unknown error'}`);
   }
+  
+  console.log(`[Telegram] ✅ Message delivered, message_id: ${responseData.result?.message_id}`);
 }
 
 /**

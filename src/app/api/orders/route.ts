@@ -228,6 +228,7 @@ export async function GET(request: NextRequest) {
           status: true,
           timestamp: true,
           customerName: true,
+          username: true, // Social media username for customer
           phone: true,
           email: true,
           business: true,
@@ -254,6 +255,7 @@ export async function GET(request: NextRequest) {
           saleDate: true,
           seller: true,
           delivery: true,
+          customFields: true, // Custom fields JSON data
           tenantId: true, // Include for security verification
           // Exclude only the heaviest field: productDetails (can be loaded separately if needed)
         }

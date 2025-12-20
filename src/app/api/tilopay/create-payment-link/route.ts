@@ -26,7 +26,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
     }
 
-    console.log('✅ User authenticated:', user.email);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ User authenticated:', user.email?.substring(0, 3) + '***');
+    }
 
     const { planId, amount } = await request.json();
     

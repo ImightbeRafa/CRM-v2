@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { bulkUpdate } from '@/lib/bulkOperations'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 
 export async function POST(request: NextRequest) {
   try {
+    // Require appropriate permission
+    const auth = await authenticateAPIWithPermission(request, 'view_config');
+    if (!auth.ok) return auth.response;
+    
+    const { tenantId, userId, role, session } = auth;
+    
     const body = await request.json()
     const { ids, type, updates } = body
 
@@ -24,7 +31,13 @@ export async function POST(request: NextRequest) {
       return createErrorResponse(`Invalid type. Must be one of: ${validTypes.join(', ')}`, 400)
     }
 
-    const result = await bulkUpdate({ ids, type: type as any, updates })
+    const result = await bulkUpdate({ 
+      ids, 
+      type: type as any, 
+      updates,
+      request: request as any,
+      tenantId: tenantId, // Pass tenant ID for isolation
+    })
     
     return createSuccessResponse(result, `Bulk update completed: ${result.success} successful, ${result.failed} failed`)
   } catch (error) {

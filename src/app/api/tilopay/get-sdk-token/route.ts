@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
+const isDev = process.env.NODE_ENV === 'development';
+
 /**
  * Generate Tilopay SDK Token
  * Based on official Tilopay documentation
@@ -8,7 +10,7 @@ import { getToken } from 'next-auth/jwt';
  */
 export async function POST(request: NextRequest) {
   try {
-    console.log('🔐 Generating Tilopay SDK token...');
+    if (isDev) console.log('🔐 Generating Tilopay SDK token...');
     
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     if (!token) {
@@ -26,7 +28,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
     }
 
-    console.log('✅ User authenticated:', user.email);
+    // Don't log email in production
+    if (isDev) console.log('✅ User authenticated:', user.email?.substring(0, 3) + '***');
 
     const { planId, amount } = await request.json();
     
@@ -39,12 +42,14 @@ export async function POST(request: NextRequest) {
       console.error('❌ Missing Tilopay credentials');
       return NextResponse.json({ 
         error: 'Tilopay not configured',
-        details: 'Missing API credentials. Check TILOPAY_API_USER, TILOPAY_API_PASSWORD, and TILOPAY_API_KEY'
+        details: 'Missing API credentials'
       }, { status: 500 });
     }
 
-    console.log('📦 API User:', apiUser);
-    console.log('📦 Base URL:', baseUrl);
+    if (isDev) {
+      console.log('📦 API User:', apiUser);
+      console.log('📦 Base URL:', baseUrl);
+    }
 
     // Create Basic Auth header
     const auth = Buffer.from(`${apiUser}:${apiPassword}`).toString('base64');
@@ -63,8 +68,11 @@ export async function POST(request: NextRequest) {
       billToLastName: token.name?.split(' ').slice(1).join(' ') || 'Customer'
     };
 
-    console.log('📤 Requesting SDK token from Tilopay...');
-    console.log('📦 Payload:', JSON.stringify(payload, null, 2));
+    if (isDev) {
+      console.log('📤 Requesting SDK token from Tilopay...');
+      // Don't log full payload - contains email
+      console.log('📦 Payload keys:', Object.keys(payload));
+    }
 
     const response = await fetch(`${baseUrl}/getTokenSdk`, {
       method: 'POST',
@@ -77,21 +85,23 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(payload)
     });
 
-    console.log('📥 Tilopay response status:', response.status);
+    if (isDev) console.log('📥 Tilopay response status:', response.status);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('❌ Tilopay SDK token error:', errorText);
+      console.error('❌ Tilopay SDK token error');
       return NextResponse.json({ 
         error: 'Failed to generate payment token',
-        details: errorText,
         status: response.status
       }, { status: 500 });
     }
 
     const data = await response.json();
-    console.log('✅ SDK token generated successfully');
-    console.log('📦 Response:', JSON.stringify(data, null, 2));
+    if (isDev) {
+      console.log('✅ SDK token generated successfully');
+      // Don't log token value
+      console.log('📦 Response keys:', Object.keys(data));
+    }
     
     return NextResponse.json({ 
       status: 'success',
@@ -102,12 +112,11 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('❌ Error generating SDK token:', error);
+    console.error('❌ Error generating SDK token:', error.message);
     return NextResponse.json({ 
       error: 'Failed to generate payment token',
-      message: error.message,
-      stack: error.stack
+      // Don't expose error message or stack in production
+      ...(isDev && { message: error.message })
     }, { status: 500 });
   }
 }
-

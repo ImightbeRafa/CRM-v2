@@ -51,7 +51,16 @@ async function handleRepeatAPIWebhook(body: any, webhookId: string, startTime: n
     const expireDate = body.expire;
     const auth = body.auth;  // Authorization code for payments
 
-    console.log('📊 [Repeat API] Webhook data:', { tilopayPlanId, suscriptorId, email, amount, nextPaymentDate, expireDate, auth });
+    // Don't log full email or auth codes
+    console.log('📊 [Repeat API] Webhook data:', { 
+      tilopayPlanId, 
+      suscriptorId, 
+      emailPrefix: email?.substring(0, 3) + '***',
+      amount, 
+      nextPaymentDate, 
+      expireDate,
+      hasAuth: !!auth
+    });
 
     // Determine event type from payload structure
     let eventType = 'unknown';

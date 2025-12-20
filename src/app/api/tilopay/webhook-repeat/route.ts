@@ -68,11 +68,10 @@ export async function POST(request: NextRequest) {
       } else if (verifyWebhookSharedSecret(request)) {
         // Fallback to x-tilopay-secret if provided
       } else {
-        // No valid authentication found
+        // No valid authentication found - don't log secret values
         console.error(`❌ [WEBHOOK-REPEAT] Unauthorized webhook - No valid authentication [${webhookId}]`);
-        console.error(`❌ [WEBHOOK-REPEAT] Expected: TILOPAY_WEBHOOK_SECRET or hash-tilopay header`);
-        console.error(`❌ [WEBHOOK-REPEAT] Provided hash-tilopay: ${hashTilopay || 'NOT PROVIDED'}`);
-        console.error(`❌ [WEBHOOK-REPEAT] Provided x-tilopay-secret: ${request.headers.get('x-tilopay-secret') || 'NOT PROVIDED'}`);
+        console.error(`❌ [WEBHOOK-REPEAT] hash-tilopay header present: ${!!hashTilopay}`);
+        console.error(`❌ [WEBHOOK-REPEAT] x-tilopay-secret header present: ${!!request.headers.get('x-tilopay-secret')}`);
         
         // For testing: Allow if hash-tilopay exists (TiloPay's method) even if secret doesn't match
         // TODO: Implement proper hash verification based on TiloPay's documentation

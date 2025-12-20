@@ -24,10 +24,11 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('📧 Sending contact form email...');
-    console.log('From:', email);
-    console.log('Name:', name);
-    console.log('Subject:', subject);
+    // Only log in development, and mask sensitive data
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📧 Sending contact form email...');
+      console.log('Subject:', subject);
+    }
 
     // Send email using Resend
     const { data, error } = await resend.emails.send({

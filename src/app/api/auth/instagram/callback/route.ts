@@ -98,12 +98,13 @@ export async function GET(request: NextRequest) {
     const fbAccessToken = tokenData.access_token
 
     if (!fbAccessToken) {
-      console.error('[instagram/callback] Invalid token response', tokenData)
+      // Don't log full token data
+      console.error('[instagram/callback] Invalid token response - error:', tokenData?.error?.message || 'No access_token')
       const html = `
         <html><body>
           <h2>Respuesta inválida</h2>
           <p>Facebook no devolvió un token válido.</p>
-          <pre>${JSON.stringify(tokenData, null, 2)}</pre>
+          <p>Error: ${tokenData?.error?.message || 'Token no recibido'}</p>
         </body></html>
       `
       return new NextResponse(html, { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
@@ -141,7 +142,10 @@ export async function GET(request: NextRequest) {
 
     // Step 3: Search ALL pages for Instagram Business Account (not just the first one)
     console.log('[instagram/callback] Found', pages.length, 'Facebook pages, checking each for Instagram Business...')
-    console.log('[instagram/callback] Pages data:', JSON.stringify(pages, null, 2))
+    // Don't log full pages data - contains access tokens
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[instagram/callback] Page names:', pages.map((p: any) => p.name || p.id))
+    }
     
     let igBusinessAccountId: string | null = null
     let pageId: string | null = null
@@ -159,8 +163,10 @@ export async function GET(request: NextRequest) {
         const igAccountRes = await fetch(igAccountUrlWithProof)
         const igAccountData = await igAccountRes.json()
         
-        // Log full response for debugging
-        console.log('[instagram/callback] Full API response for page', page.id, ':', JSON.stringify(igAccountData, null, 2))
+        // Only log in development, without sensitive data
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[instagram/callback] Page', page.id, 'has IG account:', !!igAccountData.instagram_business_account?.id)
+        }
         
         debugInfo.push({
           pageId: page.id,
@@ -199,8 +205,16 @@ export async function GET(request: NextRequest) {
       }
     }
     
-    // Log summary
-    console.log('[instagram/callback] Debug summary:', JSON.stringify(debugInfo, null, 2))
+    // Log summary (without sensitive data)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[instagram/callback] Debug summary:', debugInfo.map(d => ({
+        pageId: d.pageId,
+        pageName: d.pageName,
+        hasIgBusiness: d.hasIgBusiness,
+        hasConnectedIg: d.hasConnectedIg,
+        error: d.error?.message
+      })))
+    }
 
     // If not found via Page, try using the Instagram API directly with user token
     if (!igBusinessAccountId) {
@@ -211,7 +225,9 @@ export async function GET(request: NextRequest) {
         const igDirectRes = await fetch(igDirectUrl)
         const igDirectData = await igDirectRes.json()
         
-        console.log('[instagram/callback] Direct IG query response:', JSON.stringify(igDirectData, null, 2))
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[instagram/callback] Direct IG query - pages found:', igDirectData?.data?.length || 0)
+        }
         
         if (igDirectData.data) {
           for (const page of igDirectData.data) {
@@ -246,7 +262,9 @@ export async function GET(request: NextRequest) {
         const meIgRes = await fetch(meIgUrl)
         const meIgData = await meIgRes.json()
         
-        console.log('[instagram/callback] /me/instagram_accounts response:', JSON.stringify(meIgData, null, 2))
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[instagram/callback] /me/instagram_accounts - accounts found:', meIgData?.instagram_accounts?.data?.length || 0)
+        }
         
         if (meIgData.instagram_accounts?.data?.[0]?.id) {
           // Found an IG account, now we need a page token
@@ -275,11 +293,19 @@ export async function GET(request: NextRequest) {
         ? `<p><strong>Páginas encontradas sin Instagram Business:</strong></p><ul>${pagesWithoutIG.map(p => `<li>${p}</li>`).join('')}</ul>`
         : ''
       
-      // Show debug info to help troubleshoot
+      // Show sanitized debug info to help troubleshoot (no tokens or sensitive data)
+      const sanitizedDebugInfo = debugInfo.map(d => ({
+        pageId: d.pageId,
+        pageName: d.pageName,
+        hasIgBusiness: d.hasIgBusiness,
+        hasConnectedIg: d.hasConnectedIg,
+        method: d.method,
+        error: d.error?.message || d.error
+      }))
       const debugHtml = debugInfo.length > 0 
         ? `<details style="margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 5px;">
             <summary style="cursor: pointer; font-weight: bold;">🔍 Debug Info (click to expand)</summary>
-            <pre style="overflow-x: auto; font-size: 11px; margin-top: 10px;">${JSON.stringify(debugInfo, null, 2)}</pre>
+            <pre style="overflow-x: auto; font-size: 11px; margin-top: 10px;">${JSON.stringify(sanitizedDebugInfo, null, 2)}</pre>
            </details>`
         : ''
       

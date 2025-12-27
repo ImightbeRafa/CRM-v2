@@ -170,6 +170,77 @@ export const toolSchemas = {
 // ============================================================================
 
 /**
+ * Sanitize a value to ensure it's JSON-serializable
+ * Converts complex objects to strings and removes non-serializable values
+ */
+function sanitizeValue(value: unknown): string | number | boolean | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' && !isNaN(value) && isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    // Convert arrays to comma-separated string
+    return value.map(v => sanitizeValue(v)).filter(v => v !== null).join(', ');
+  }
+  if (typeof value === 'object') {
+    // Try to stringify objects, or extract meaningful data
+    try {
+      // Check if it's a simple object with name/value properties
+      const obj = value as Record<string, unknown>;
+      if (obj.name && typeof obj.name === 'string') {
+        return obj.name;
+      }
+      if (obj.value && typeof obj.value === 'string') {
+        return obj.value;
+      }
+      if (obj.label && typeof obj.label === 'string') {
+        return obj.label;
+      }
+      // Fallback to JSON string
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  // Fallback: convert to string
+  return String(value);
+}
+
+/**
+ * Sanitize custom fields object to ensure all values are JSON-serializable
+ */
+function sanitizeCustomFields(fields: Record<string, unknown>): Record<string, string | number | boolean | null> {
+  const sanitized: Record<string, string | number | boolean | null> = {};
+  
+  for (const [key, value] of Object.entries(fields)) {
+    // Skip null, undefined, empty strings, and keys with special characters
+    if (value === null || value === undefined || value === '') {
+      continue;
+    }
+    // Sanitize the key (remove special characters, trim)
+    const cleanKey = String(key).trim();
+    if (!cleanKey || cleanKey.length > 100) {
+      continue;
+    }
+    
+    const sanitizedValue = sanitizeValue(value);
+    if (sanitizedValue !== null && sanitizedValue !== '') {
+      sanitized[cleanKey] = sanitizedValue;
+    }
+  }
+  
+  return sanitized;
+}
+
+/**
  * Create a new order
  */
 export async function createOrder(
@@ -186,10 +257,19 @@ export async function createOrder(
         const timestamp = Date.now();
         const orderId = `BOT-${timestamp}`;
         
+        console.log('[AI Tool] createOrder - Raw params:', JSON.stringify(params, null, 2));
+        
         // Merge custom fields into the order data
         // The Order model has columns for common fields (size, color, packaging, customization)
         // and a customFields JSON column for any additional tenant-specific fields
-        const customFieldsData = params.customFields || {};
+        
+        // Safely extract customFields - ensure it's a plain object and sanitize values
+        let customFieldsData: Record<string, any> = {};
+        if (params.customFields && typeof params.customFields === 'object' && !Array.isArray(params.customFields)) {
+          // Sanitize all custom field values to ensure they're JSON-serializable
+          customFieldsData = sanitizeCustomFields(params.customFields as Record<string, unknown>);
+          console.log('[AI Tool] createOrder - Sanitized customFields:', JSON.stringify(customFieldsData, null, 2));
+        }
         
         // Extract known fields from customFields if they weren't provided directly
         const size = params.size || customFieldsData.size || customFieldsData.tamano || '';
@@ -197,9 +277,36 @@ export async function createOrder(
         const packaging = customFieldsData.packaging || customFieldsData.empaque || '';
         const customization = customFieldsData.customization || customFieldsData.personalizacion || '';
         
-        // Remove known fields from customFields to avoid duplication
-        const { size: _, color: __, tamano: ___, packaging: ____, empaque: _____, 
-                customization: ______, personalizacion: _______, ...remainingCustomFields } = customFieldsData;
+        // Handle courier/shipping - might be string or object with name/price
+        let courierName = params.courier || '';
+        let shippingCost = 0;
+        
+        const courierField = customFieldsData.courier || customFieldsData.metodoEnvio || customFieldsData.mensajeria;
+        if (courierField) {
+          if (typeof courierField === 'string') {
+            courierName = courierField;
+          } else if (typeof courierField === 'object' && courierField.name) {
+            courierName = courierField.name;
+            shippingCost = parseFloat(courierField.price || courierField.cost || 0) || 0;
+          }
+        }
+        
+        // Extract shipping cost if provided separately
+        if (customFieldsData.shippingCost || customFieldsData.costoEnvio) {
+          shippingCost = parseFloat(customFieldsData.shippingCost || customFieldsData.costoEnvio || 0) || 0;
+        }
+        
+        // Remove known fields from customFields to avoid duplication in JSON column
+        const knownFieldKeys = [
+          'size', 'color', 'tamano', 'packaging', 'empaque', 'customization', 'personalizacion',
+          'courier', 'metodoenvio', 'mensajeria', 'shippingcost', 'costoenvio'
+        ];
+        const remainingCustomFields: Record<string, any> = {};
+        for (const [key, value] of Object.entries(customFieldsData)) {
+          if (!knownFieldKeys.includes(key.toLowerCase()) && value !== undefined && value !== null && value !== '') {
+            remainingCustomFields[key] = value;
+          }
+        }
         
         const order = await tenantPrisma.order.create({
           data: {
@@ -212,21 +319,33 @@ export async function createOrder(
             email: params.email || '',
             product: params.product,
             quantity: params.quantity || 1,
-            size: size,
-            color: color,
-            packaging: packaging,
-            customization: customization,
+            size: String(size || ''),
+            color: String(color || ''),
+            packaging: String(packaging || ''),
+            customization: String(customization || ''),
             total: params.total || 0,
             address: params.address || '',
             province: params.province || '',
             canton: params.canton || '',
             district: params.district || '',
-            courier: params.courier || '',
+            courier: String(courierName || ''),
+            shippingCost: shippingCost > 0 ? shippingCost : undefined,
             comments: params.comments || '',
             seller: ctx.userName,
             timestamp: new Date(),
-            // Store any remaining custom fields as JSON
-            customFields: Object.keys(remainingCustomFields).length > 0 ? remainingCustomFields : undefined,
+            // Store any remaining custom fields as JSON - ensure it's serializable
+            customFields: Object.keys(remainingCustomFields).length > 0 
+              ? (() => {
+                  try {
+                    // Verify it's JSON-serializable by round-tripping
+                    const jsonStr = JSON.stringify(remainingCustomFields);
+                    return JSON.parse(jsonStr);
+                  } catch (e) {
+                    console.error('[AI Tool] createOrder - Failed to serialize customFields:', e);
+                    return undefined;
+                  }
+                })()
+              : undefined,
           },
         });
         
@@ -237,6 +356,13 @@ export async function createOrder(
         };
       } catch (error: any) {
         console.error('[AI Tool] createOrder error:', error);
+        console.error('[AI Tool] createOrder params:', JSON.stringify(params, null, 2));
+        console.error('[AI Tool] createOrder error details:', {
+          name: error.name,
+          message: error.message,
+          code: error.code,
+          meta: error.meta,
+        });
         return {
           success: false,
           error: error.message || 'Error al crear la orden',

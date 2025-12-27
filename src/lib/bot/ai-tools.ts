@@ -51,10 +51,10 @@ export const toolSchemas = {
       paymentMethod: z.string().optional().describe('Método de pago (contraentrega, transferencia, etc)'),
       comments: z.string().optional().describe('Comentarios o notas adicionales'),
       orderType: z.enum(['EA', 'RA']).default('EA').describe('Tipo de orden: EA = Envío a Domicilio (se envía), RA = Retiro en Local (cliente recoge)'),
-      // Dynamic custom fields - these map to tenant-configured product fields
+      // TEMPORARILY DISABLED: Custom fields removed to avoid errors
+      // TODO: Re-implement custom fields handling properly
       size: z.string().optional().describe('Talla o tamaño del producto (si está configurado)'),
       color: z.string().optional().describe('Color del producto (si está configurado)'),
-      customFields: z.record(z.string(), z.any()).optional().describe('Campos personalizados adicionales configurados por el negocio (ej: {empaque: "caja", peso: "500g"})'),
     }),
   },
 
@@ -169,76 +169,8 @@ export const toolSchemas = {
 // TOOL IMPLEMENTATIONS
 // ============================================================================
 
-/**
- * Sanitize a value to ensure it's JSON-serializable
- * Converts complex objects to strings and removes non-serializable values
- */
-function sanitizeValue(value: unknown): string | number | boolean | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === 'string') {
-    return value;
-  }
-  if (typeof value === 'number' && !isNaN(value) && isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    // Convert arrays to comma-separated string
-    return value.map(v => sanitizeValue(v)).filter(v => v !== null).join(', ');
-  }
-  if (typeof value === 'object') {
-    // Try to stringify objects, or extract meaningful data
-    try {
-      // Check if it's a simple object with name/value properties
-      const obj = value as Record<string, unknown>;
-      if (obj.name && typeof obj.name === 'string') {
-        return obj.name;
-      }
-      if (obj.value && typeof obj.value === 'string') {
-        return obj.value;
-      }
-      if (obj.label && typeof obj.label === 'string') {
-        return obj.label;
-      }
-      // Fallback to JSON string
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  }
-  // Fallback: convert to string
-  return String(value);
-}
-
-/**
- * Sanitize custom fields object to ensure all values are JSON-serializable
- */
-function sanitizeCustomFields(fields: Record<string, unknown>): Record<string, string | number | boolean | null> {
-  const sanitized: Record<string, string | number | boolean | null> = {};
-  
-  for (const [key, value] of Object.entries(fields)) {
-    // Skip null, undefined, empty strings, and keys with special characters
-    if (value === null || value === undefined || value === '') {
-      continue;
-    }
-    // Sanitize the key (remove special characters, trim)
-    const cleanKey = String(key).trim();
-    if (!cleanKey || cleanKey.length > 100) {
-      continue;
-    }
-    
-    const sanitizedValue = sanitizeValue(value);
-    if (sanitizedValue !== null && sanitizedValue !== '') {
-      sanitized[cleanKey] = sanitizedValue;
-    }
-  }
-  
-  return sanitized;
-}
+// TEMPORARILY DISABLED: Custom field sanitization functions removed
+// TODO: Re-implement custom fields handling properly
 
 /**
  * Create a new order
@@ -263,50 +195,17 @@ export async function createOrder(
         // The Order model has columns for common fields (size, color, packaging, customization)
         // and a customFields JSON column for any additional tenant-specific fields
         
-        // Safely extract customFields - ensure it's a plain object and sanitize values
-        let customFieldsData: Record<string, any> = {};
-        if (params.customFields && typeof params.customFields === 'object' && !Array.isArray(params.customFields)) {
-          // Sanitize all custom field values to ensure they're JSON-serializable
-          customFieldsData = sanitizeCustomFields(params.customFields as Record<string, unknown>);
-          console.log('[AI Tool] createOrder - Sanitized customFields:', JSON.stringify(customFieldsData, null, 2));
-        }
+        // TEMPORARILY DISABLED: Skip custom fields processing to avoid errors
+        // TODO: Re-implement custom fields handling properly
+        console.log('[AI Tool] createOrder - Custom fields temporarily disabled for bot orders');
         
-        // Extract known fields from customFields if they weren't provided directly
-        const size = params.size || customFieldsData.size || customFieldsData.tamano || '';
-        const color = params.color || customFieldsData.color || '';
-        const packaging = customFieldsData.packaging || customFieldsData.empaque || '';
-        const customization = customFieldsData.customization || customFieldsData.personalizacion || '';
-        
-        // Handle courier/shipping - might be string or object with name/price
+        // Use only basic fields without custom processing
+        const size = params.size || '';
+        const color = params.color || '';
+        const packaging = '';
+        const customization = '';
         let courierName = params.courier || '';
         let shippingCost = 0;
-        
-        const courierField = customFieldsData.courier || customFieldsData.metodoEnvio || customFieldsData.mensajeria;
-        if (courierField) {
-          if (typeof courierField === 'string') {
-            courierName = courierField;
-          } else if (typeof courierField === 'object' && courierField.name) {
-            courierName = courierField.name;
-            shippingCost = parseFloat(courierField.price || courierField.cost || 0) || 0;
-          }
-        }
-        
-        // Extract shipping cost if provided separately
-        if (customFieldsData.shippingCost || customFieldsData.costoEnvio) {
-          shippingCost = parseFloat(customFieldsData.shippingCost || customFieldsData.costoEnvio || 0) || 0;
-        }
-        
-        // Remove known fields from customFields to avoid duplication in JSON column
-        const knownFieldKeys = [
-          'size', 'color', 'tamano', 'packaging', 'empaque', 'customization', 'personalizacion',
-          'courier', 'metodoenvio', 'mensajeria', 'shippingcost', 'costoenvio'
-        ];
-        const remainingCustomFields: Record<string, any> = {};
-        for (const [key, value] of Object.entries(customFieldsData)) {
-          if (!knownFieldKeys.includes(key.toLowerCase()) && value !== undefined && value !== null && value !== '') {
-            remainingCustomFields[key] = value;
-          }
-        }
         
         const order = await tenantPrisma.order.create({
           data: {
@@ -333,19 +232,8 @@ export async function createOrder(
             comments: params.comments || '',
             seller: ctx.userName,
             timestamp: new Date(),
-            // Store any remaining custom fields as JSON - ensure it's serializable
-            customFields: Object.keys(remainingCustomFields).length > 0 
-              ? (() => {
-                  try {
-                    // Verify it's JSON-serializable by round-tripping
-                    const jsonStr = JSON.stringify(remainingCustomFields);
-                    return JSON.parse(jsonStr);
-                  } catch (e) {
-                    console.error('[AI Tool] createOrder - Failed to serialize customFields:', e);
-                    return undefined;
-                  }
-                })()
-              : undefined,
+            // TEMPORARILY DISABLED: Don't store custom fields to avoid errors
+            // TODO: Re-implement custom fields handling properly
           },
         });
         

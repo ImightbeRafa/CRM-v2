@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { format, subDays } from 'date-fns';
-import { RefreshCw } from 'lucide-react';
+import { es } from 'date-fns/locale';
+import { RefreshCw, FileText, Printer, Download } from 'lucide-react';
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 import ChartContainer from './ChartContainer';
 import DateRangePicker from './DateRangePicker';
 import RevenueChart from './RevenueChart';
-import SalesVolumeChart from './SalesVolumeChart';
 import StatusBreakdownChart from './StatusBreakdownChart';
 import TopCustomersChart from './TopCustomersChart';
 
@@ -40,6 +40,17 @@ interface StatusBreakdown {
   count: number;
   percentage: number;
   color: string;
+}
+
+interface OrderDetail {
+  id: string;
+  orderId: string;
+  orderType: string;
+  status: string;
+  customerName: string;
+  total: number;
+  saleDate: string | null;
+  timestamp: string;
 }
 
 export default function EstadisticasDashboard() {
@@ -193,10 +204,45 @@ export default function EstadisticasDashboard() {
     return value.toLocaleString('es-CR', { maximumFractionDigits: 0 });
   };
 
+  // Report state
+  const [showReport, setShowReport] = useState(false);
+  const [orderDetails, setOrderDetails] = useState<OrderDetail[]>([]);
+  const [loadingReport, setLoadingReport] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
+
+  const fetchOrderDetails = async () => {
+    setLoadingReport(true);
+    try {
+      const response = await axios.get('/api/estadisticas/order-details', {
+        params: { startDate, endDate },
+      });
+      setOrderDetails(response.data);
+    } catch (error) {
+      console.error('Error fetching order details:', error);
+    } finally {
+      setLoadingReport(false);
+    }
+  };
+
+  const handleShowReport = () => {
+    setShowReport(true);
+    fetchOrderDetails();
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const formatDateRange = () => {
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    return `${format(start, "d 'de' MMMM, yyyy", { locale: es })} - ${format(end, "d 'de' MMMM, yyyy", { locale: es })}`;
+  };
+
   return (
     <div className="space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4 print:hidden">
         <div className="flex-1">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Panel de Estadísticas</h1>
           <p className="text-sm md:text-base text-gray-600 mt-1">
@@ -204,6 +250,13 @@ export default function EstadisticasDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleShowReport}
+            className="flex items-center gap-2 px-4 py-2.5 md:py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm md:text-base min-h-[44px]"
+          >
+            <FileText className="w-4 h-4" />
+            <span className="hidden sm:inline">Reporte</span>
+          </button>
           <button
             onClick={fetchAllData}
             className="flex items-center gap-2 px-4 py-2.5 md:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm md:text-base min-h-[44px]"
@@ -216,15 +269,165 @@ export default function EstadisticasDashboard() {
       </div>
 
       {/* Date Range Picker */}
-      <DateRangePicker
-        startDate={startDate}
-        endDate={endDate}
-        onDateChange={handleDateChange}
-      />
+      <div className="print:hidden">
+        <DateRangePicker
+          startDate={startDate}
+          endDate={endDate}
+          onDateChange={handleDateChange}
+        />
+      </div>
 
-      {/* Charts Row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Revenue Chart */}
+      {/* Report Modal/View */}
+      {showReport && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 print:relative print:inset-auto print:bg-transparent print:p-0">
+          <div ref={reportRef} className="bg-white rounded-lg max-w-5xl w-full max-h-[90vh] overflow-auto print:max-h-none print:overflow-visible print:rounded-none">
+            {/* Report Header */}
+            <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between print:static print:border-b-2 print:border-black">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Reporte de Ventas</h2>
+                <p className="text-sm text-gray-600">{formatDateRange()}</p>
+              </div>
+              <div className="flex items-center gap-2 print:hidden">
+                <button
+                  onClick={handlePrint}
+                  className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                >
+                  <Printer className="w-4 h-4" />
+                  Imprimir
+                </button>
+                <button
+                  onClick={() => setShowReport(false)}
+                  className="px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+
+            {/* Report Content */}
+            <div className="p-6">
+              {/* Summary Section */}
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold mb-4 border-b pb-2">Resumen General</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-gray-50 p-4 rounded-lg print:border print:bg-transparent">
+                    <p className="text-sm text-gray-600">Total Pedidos</p>
+                    <p className="text-2xl font-bold text-gray-900">{summary?.totalSales || 0}</p>
+                  </div>
+                  <div className="bg-green-50 p-4 rounded-lg print:border print:bg-transparent">
+                    <p className="text-sm text-gray-600">Ingresos Totales</p>
+                    <p className="text-2xl font-bold text-green-600">₡{formatCurrency(summary?.totalRevenue || 0)}</p>
+                  </div>
+                  <div className="bg-blue-50 p-4 rounded-lg print:border print:bg-transparent">
+                    <p className="text-sm text-gray-600">Valor Promedio</p>
+                    <p className="text-2xl font-bold text-blue-600">₡{formatCurrency(summary?.averageOrderValue || 0)}</p>
+                  </div>
+                  <div className="bg-purple-50 p-4 rounded-lg print:border print:bg-transparent">
+                    <p className="text-sm text-gray-600">Clientes Únicos</p>
+                    <p className="text-2xl font-bold text-purple-600">{summary?.activeClients || 0}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* EA vs RA Breakdown */}
+              {typeBreakdown && (
+                <div className="mb-8">
+                  <h3 className="text-lg font-semibold mb-4 border-b pb-2">Desglose por Tipo de Pedido</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-lg font-semibold text-blue-600">Envíos (EA)</span>
+                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm font-medium">
+                          {typeBreakdown.EA.count} pedidos
+                        </span>
+                      </div>
+                      <p className="text-3xl font-bold text-gray-900">₡{formatCurrency(typeBreakdown.EA.revenue)}</p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Promedio: ₡{formatCurrency(typeBreakdown.EA.count > 0 ? typeBreakdown.EA.revenue / typeBreakdown.EA.count : 0)}
+                      </p>
+                    </div>
+                    <div className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-lg font-semibold text-orange-600">Retiros (RA)</span>
+                        <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-sm font-medium">
+                          {typeBreakdown.RA.count} pedidos
+                        </span>
+                      </div>
+                      <p className="text-3xl font-bold text-gray-900">₡{formatCurrency(typeBreakdown.RA.revenue)}</p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Promedio: ₡{formatCurrency(typeBreakdown.RA.count > 0 ? typeBreakdown.RA.revenue / typeBreakdown.RA.count : 0)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Orders Table */}
+              <div>
+                <h3 className="text-lg font-semibold mb-4 border-b pb-2">Detalle de Pedidos</h3>
+                {loadingReport ? (
+                  <div className="text-center py-8">
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-gray-400" />
+                    <p className="text-gray-500 mt-2">Cargando pedidos...</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-100 print:bg-gray-200">
+                          <th className="text-left p-2 font-semibold">Fecha</th>
+                          <th className="text-left p-2 font-semibold">ID Pedido</th>
+                          <th className="text-left p-2 font-semibold">Cliente</th>
+                          <th className="text-center p-2 font-semibold">Tipo</th>
+                          <th className="text-left p-2 font-semibold">Estado</th>
+                          <th className="text-right p-2 font-semibold">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {orderDetails.map((order, idx) => (
+                          <tr key={order.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="p-2">
+                              {format(new Date(order.saleDate || order.timestamp), 'dd/MM/yyyy')}
+                            </td>
+                            <td className="p-2 font-mono text-xs">{order.orderId}</td>
+                            <td className="p-2">{order.customerName}</td>
+                            <td className="p-2 text-center">
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                order.orderType === 'EA' 
+                                  ? 'bg-blue-100 text-blue-800' 
+                                  : 'bg-orange-100 text-orange-800'
+                              }`}>
+                                {order.orderType}
+                              </span>
+                            </td>
+                            <td className="p-2">{order.status}</td>
+                            <td className="p-2 text-right font-medium">₡{formatCurrency(order.total)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-gray-200 font-bold print:bg-gray-300">
+                          <td colSpan={5} className="p-2 text-right">TOTAL:</td>
+                          <td className="p-2 text-right">₡{formatCurrency(orderDetails.reduce((sum, o) => sum + (o.total || 0), 0))}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer for print */}
+              <div className="hidden print:block mt-8 pt-4 border-t text-center text-sm text-gray-500">
+                <p>Reporte generado el {format(new Date(), "d 'de' MMMM, yyyy 'a las' HH:mm", { locale: es })}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dashboard Content (hidden when printing report) */}
+      <div className="print:hidden">
+        {/* Revenue Chart - Full Width */}
         <ChartContainer
           title="Ingresos y Pedidos"
           subtitle="Evolución temporal"
@@ -245,73 +448,71 @@ export default function EstadisticasDashboard() {
           <RevenueChart data={revenueData} height={300} currencySymbol={settings.currencySymbol} locale={settings.locale} />
         </ChartContainer>
 
-        {/* Sales Volume Chart */}
-        <ChartContainer
-          title="Distribución por Tipo"
-          subtitle="Envíos vs Retiros"
-          loading={loadingType}
-          error={errorType}
-        >
-          {typeBreakdown && <SalesVolumeChart data={typeBreakdown} height={300} currencySymbol={settings.currencySymbol} locale={settings.locale} />}
-        </ChartContainer>
-      </div>
+        {/* Charts Row 2 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          {/* Status Breakdown Chart */}
+          <ChartContainer
+            title="Distribución por Estado"
+            subtitle="Estados de pedidos"
+            loading={loadingStatus}
+            error={errorStatus}
+          >
+            <StatusBreakdownChart data={statusBreakdown} height={300} />
+          </ChartContainer>
 
-      {/* Charts Row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Status Breakdown Chart */}
-        <ChartContainer
-          title="Distribución por Estado"
-          subtitle="Estados de pedidos"
-          loading={loadingStatus}
-          error={errorStatus}
-        >
-          <StatusBreakdownChart data={statusBreakdown} height={300} />
-        </ChartContainer>
-
-        {/* Summary Stats Card */}
-        <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Resumen del Período</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Total de Pedidos:</span>
-              <span className="font-bold text-gray-900">{summary?.totalSales || 0}</span>
+          {/* Enhanced Summary Stats Card */}
+          <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Resumen del Período</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Total de Pedidos:</span>
+                <span className="font-bold text-gray-900">{summary?.totalSales || 0}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Ingresos Totales:</span>
+                <span className="font-bold text-green-600">
+                  ₡{formatCurrency(summary?.totalRevenue || 0)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Valor Promedio:</span>
+                <span className="font-bold text-purple-600">
+                  ₡{formatCurrency(summary?.averageOrderValue || 0)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Clientes Únicos:</span>
+                <span className="font-bold text-orange-600">{summary?.activeClients || 0}</span>
+              </div>
+              {typeBreakdown && (
+                <>
+                  <hr className="my-3" />
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Envíos (EA):</span>
+                      <div className="text-right">
+                        <span className="font-bold text-blue-600">{typeBreakdown.EA.count} pedidos</span>
+                        <span className="block text-sm text-green-600 font-medium">₡{formatCurrency(typeBreakdown.EA.revenue)}</span>
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Retiros (RA):</span>
+                      <div className="text-right">
+                        <span className="font-bold text-blue-600">{typeBreakdown.RA.count} pedidos</span>
+                        <span className="block text-sm text-green-600 font-medium">₡{formatCurrency(typeBreakdown.RA.revenue)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Ingresos Totales:</span>
-              <span className="font-bold text-green-600">
-                ₡{formatCurrency(summary?.totalRevenue || 0)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Valor Promedio:</span>
-              <span className="font-bold text-purple-600">
-                ₡{formatCurrency(summary?.averageOrderValue || 0)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Clientes Únicos:</span>
-              <span className="font-bold text-orange-600">{summary?.activeClients || 0}</span>
-            </div>
-            {typeBreakdown && (
-              <>
-                <hr className="my-3" />
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Envíos (EA):</span>
-                  <span className="font-bold text-blue-600">{typeBreakdown.EA.count}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Retiros (RA):</span>
-                  <span className="font-bold text-blue-600">{typeBreakdown.RA.count}</span>
-                </div>
-              </>
-            )}
           </div>
         </div>
-      </div>
 
-      {/* Top Customers */}
-      <div>
-        <TopCustomersChart startDate={startDate} endDate={endDate} />
+        {/* Top Customers */}
+        <div className="mt-6">
+          <TopCustomersChart startDate={startDate} endDate={endDate} />
+        </div>
       </div>
     </div>
   );

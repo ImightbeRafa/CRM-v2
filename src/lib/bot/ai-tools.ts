@@ -11,6 +11,14 @@ import { z } from 'zod';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { prisma } from '@/lib/db';
+import { 
+  getTenantCustomFields, 
+  extractCustomFields, 
+  validateCustomFields,
+  formatCustomFieldsForTelegram,
+  getCustomFieldsSchema,
+  CustomFieldsData 
+} from '@/lib/customFields';
 
 // Tool execution context
 export interface ToolContext {
@@ -32,29 +40,46 @@ export interface ToolResult<T = unknown> {
 // TOOL SCHEMAS (for AI function calling)
 // ============================================================================
 
+// Base order schema without custom fields
+const baseOrderSchema = {
+  customerName: z.string().describe('Nombre completo del cliente'),
+  phone: z.string().optional().describe('Número de teléfono del cliente'),
+  email: z.string().email().optional().describe('Email del cliente'),
+  product: z.string().describe('Nombre o descripción del producto'),
+  quantity: z.number().int().min(1).default(1).describe('Cantidad del producto'),
+  total: z.number().min(0).describe('Total de la orden en colones'),
+  address: z.string().optional().describe('Dirección de entrega completa'),
+  province: z.string().optional().describe('Provincia de Costa Rica'),
+  canton: z.string().optional().describe('Cantón'),
+  district: z.string().optional().describe('Distrito'),
+  courier: z.string().optional().describe('Método de envío o courier'),
+  paymentMethod: z.string().optional().describe('Método de pago (contraentrega, transferencia, etc)'),
+  comments: z.string().optional().describe('Comentarios o notas adicionales'),
+  orderType: z.enum(['EA', 'RA']).default('EA').describe('Tipo de orden: EA = Envío a Domicilio (se envía), RA = Retiro en Local (cliente recoge)'),
+  size: z.string().optional().describe('Talla o tamaño del producto (si está configurado)'),
+  color: z.string().optional().describe('Color del producto (si está configurado)'),
+};
+
+// Dynamic schema generator that includes custom fields
+function createOrderSchemaWithCustomFields(customFieldsConfig: CustomFieldsData) {
+  const customFieldsSchema = getCustomFieldsSchema(customFieldsConfig);
+  
+  return {
+    description: 'Crear una nueva orden de venta. Úsalo cuando el usuario quiera registrar una nueva venta o pedido.',
+    parameters: z.object({
+      ...baseOrderSchema,
+      ...customFieldsSchema, // Add dynamic custom fields
+    }),
+  };
+}
+
 export const toolSchemas = {
-  // Order Management
+  // Order Management - will be dynamically updated with custom fields
   create_order: {
     description: 'Crear una nueva orden de venta. Úsalo cuando el usuario quiera registrar una nueva venta o pedido.',
     parameters: z.object({
-      customerName: z.string().describe('Nombre completo del cliente'),
-      phone: z.string().optional().describe('Número de teléfono del cliente'),
-      email: z.string().email().optional().describe('Email del cliente'),
-      product: z.string().describe('Nombre o descripción del producto'),
-      quantity: z.number().int().min(1).default(1).describe('Cantidad del producto'),
-      total: z.number().min(0).describe('Total de la orden en colones'),
-      address: z.string().optional().describe('Dirección de entrega completa'),
-      province: z.string().optional().describe('Provincia de Costa Rica'),
-      canton: z.string().optional().describe('Cantón'),
-      district: z.string().optional().describe('Distrito'),
-      courier: z.string().optional().describe('Método de envío o courier'),
-      paymentMethod: z.string().optional().describe('Método de pago (contraentrega, transferencia, etc)'),
-      comments: z.string().optional().describe('Comentarios o notas adicionales'),
-      orderType: z.enum(['EA', 'RA']).default('EA').describe('Tipo de orden: EA = Envío a Domicilio (se envía), RA = Retiro en Local (cliente recoge)'),
-      // TEMPORARILY DISABLED: Custom fields removed to avoid errors
-      // TODO: Re-implement custom fields handling properly
-      size: z.string().optional().describe('Talla o tamaño del producto (si está configurado)'),
-      color: z.string().optional().describe('Color del producto (si está configurado)'),
+      ...baseOrderSchema,
+      // Custom fields will be added dynamically based on tenant configuration
     }),
   },
 
@@ -169,15 +194,69 @@ export const toolSchemas = {
 // TOOL IMPLEMENTATIONS
 // ============================================================================
 
-// TEMPORARILY DISABLED: Custom field sanitization functions removed
-// TODO: Re-implement custom fields handling properly
+/**
+ * Update tool schemas with tenant-specific custom fields
+ * This should be called when initializing the AI tools for a specific tenant
+ */
+export async function updateToolSchemasWithCustomFields(tenantId: string) {
+  try {
+    const customFieldsConfig = await getTenantCustomFields(tenantId);
+    const dynamicSchema = createOrderSchemaWithCustomFields(customFieldsConfig);
+    
+    // Update the create_order schema dynamically
+    toolSchemas.create_order = dynamicSchema;
+    
+    console.log('[AI Tools] Updated schemas with custom fields:', {
+      tenantId,
+      productFields: customFieldsConfig.productFields.length,
+      businessInfoFields: customFieldsConfig.businessInfoFields.length,
+    });
+    
+    return customFieldsConfig;
+  } catch (error) {
+    console.error('[AI Tools] Failed to update schemas with custom fields:', error);
+    // Return empty config on error to prevent breaking the bot
+    return { productFields: [], businessInfoFields: [] };
+  }
+}
 
 /**
- * Create a new order
+ * Get formatted custom fields for order display in Telegram
+ */
+export async function getFormattedCustomFieldsForOrder(orderId: string, tenantId: string): Promise<string[]> {
+  try {
+    const customFieldsConfig = await getTenantCustomFields(tenantId);
+    const tenantPrisma = getTenantPrisma(tenantId);
+    
+    const order = await tenantPrisma.order.findFirst({
+      where: {
+        OR: [
+          { orderId },
+          { id: orderId },
+        ],
+      },
+    });
+    
+    if (!order) {
+      return [];
+    }
+    
+    // Extract custom fields from the order
+    const customFields = extractCustomFields(order, customFieldsConfig);
+    
+    return formatCustomFieldsForTelegram(customFields, customFieldsConfig);
+  } catch (error) {
+    console.error('[AI Tools] Failed to get formatted custom fields:', error);
+    return [];
+  }
+}
+
+/**
+ * Create a new order with proper custom fields support
  */
 export async function createOrder(
   ctx: ToolContext,
-  params: z.infer<typeof toolSchemas.create_order.parameters>
+  params: any // Use any to accept dynamic custom fields
 ): Promise<ToolResult> {
   return withTenantContext(
     { tenantId: ctx.tenantId, userId: ctx.userId, userName: ctx.userName, userRole: ctx.userRole },
@@ -189,58 +268,104 @@ export async function createOrder(
         const timestamp = Date.now();
         const orderId = `BOT-${timestamp}`;
         
+        console.log('[AI Tool] createOrder - Creating order with custom fields support');
         console.log('[AI Tool] createOrder - Raw params:', JSON.stringify(params, null, 2));
         
-        // Merge custom fields into the order data
-        // The Order model has columns for common fields (size, color, packaging, customization)
-        // and a customFields JSON column for any additional tenant-specific fields
+        // Get tenant custom fields configuration
+        const customFieldsConfig = await getTenantCustomFields(ctx.tenantId);
+        console.log('[AI Tool] createOrder - Custom fields config:', {
+          productFields: customFieldsConfig.productFields.length,
+          businessInfoFields: customFieldsConfig.businessInfoFields.length
+        });
         
-        // TEMPORARILY DISABLED: Skip custom fields processing to avoid errors
-        // TODO: Re-implement custom fields handling properly
-        console.log('[AI Tool] createOrder - Custom fields temporarily disabled for bot orders');
+        // Extract and validate custom fields
+        const extractedCustomFields = extractCustomFields(params, customFieldsConfig);
+        console.log('[AI Tool] createOrder - Extracted customFields:', JSON.stringify(extractedCustomFields, null, 2));
         
-        // Use only basic fields without custom processing
-        const size = params.size || '';
-        const color = params.color || '';
-        const packaging = '';
-        const customization = '';
-        let courierName = params.courier || '';
-        let shippingCost = 0;
+        // Validate required custom fields
+        const validation = validateCustomFields(extractedCustomFields, customFieldsConfig);
+        if (!validation.isValid) {
+          return {
+            success: false,
+            error: `Campos requeridos faltantes: ${validation.errors.join(', ')}`,
+          };
+        }
+        
+        // Prepare order data with proper field mapping
+        const orderData: any = {
+          tenantId: ctx.tenantId,
+          orderId,
+          orderType: params.orderType || 'EA',
+          status: 'Pendiente',
+          customerName: params.customerName,
+          phone: params.phone || '',
+          email: params.email || '',
+          product: params.product,
+          quantity: params.quantity || 1,
+          size: params.size || '',
+          color: params.color || '',
+          packaging: '', // Will be extracted from custom fields if present
+          customization: '', // Will be extracted from custom fields if present
+          total: params.total || 0,
+          address: params.address || '',
+          province: params.province || '',
+          canton: params.canton || '',
+          district: params.district || '',
+          courier: params.courier || '',
+          shippingCost: undefined, // Will be extracted from custom fields if present
+          comments: params.comments || '',
+          seller: ctx.userName,
+          timestamp: new Date(),
+          // Store custom fields as JSON
+          customFields: Object.keys(extractedCustomFields).length > 0 ? extractedCustomFields : undefined,
+        };
+        
+        // Extract known fields from custom fields if they exist
+        const knownFieldMappings = {
+          packaging: ['packaging', 'empaque'],
+          customization: ['customization', 'personalizacion'],
+          shippingCost: ['shippingCost', 'costoEnvio'],
+        };
+        
+        Object.entries(knownFieldMappings).forEach(([targetField, possibleKeys]) => {
+          for (const key of possibleKeys) {
+            if (extractedCustomFields[key] !== undefined) {
+              orderData[targetField] = extractedCustomFields[key];
+              // Remove from customFields to avoid duplication
+              delete extractedCustomFields[key];
+              break;
+            }
+          }
+        });
+        
+        // Update customFields with remaining fields
+        orderData.customFields = Object.keys(extractedCustomFields).length > 0 ? extractedCustomFields : undefined;
+        
+        console.log('[AI Tool] createOrder - Final order data:', {
+          orderId: orderData.orderId,
+          customerName: orderData.customerName,
+          customFieldsCount: Object.keys(orderData.customFields || {}).length,
+          customFieldsKeys: Object.keys(orderData.customFields || {})
+        });
         
         const order = await tenantPrisma.order.create({
-          data: {
-            tenantId: ctx.tenantId,
-            orderId,
-            orderType: params.orderType || 'EA',
-            status: 'Pendiente',
-            customerName: params.customerName,
-            phone: params.phone || '',
-            email: params.email || '',
-            product: params.product,
-            quantity: params.quantity || 1,
-            size: String(size || ''),
-            color: String(color || ''),
-            packaging: String(packaging || ''),
-            customization: String(customization || ''),
-            total: params.total || 0,
-            address: params.address || '',
-            province: params.province || '',
-            canton: params.canton || '',
-            district: params.district || '',
-            courier: String(courierName || ''),
-            shippingCost: shippingCost > 0 ? shippingCost : undefined,
-            comments: params.comments || '',
-            seller: ctx.userName,
-            timestamp: new Date(),
-            // TEMPORARILY DISABLED: Don't store custom fields to avoid errors
-            // TODO: Re-implement custom fields handling properly
-          },
+          data: orderData,
         });
+        
+        // Format custom fields for success message
+        const customFieldsLines = formatCustomFieldsForTelegram(
+          orderData.customFields || {}, 
+          customFieldsConfig
+        );
+        
+        const successMessage = customFieldsLines.length > 0
+          ? `✅ Orden #${order.orderId} creada exitosamente para ${params.customerName}\n\nCampos personalizados:\n${customFieldsLines.join('\n')}`
+          : `✅ Orden #${order.orderId} creada exitosamente para ${params.customerName}`;
         
         return {
           success: true,
           data: order,
-          message: `✅ Orden #${order.orderId} creada exitosamente para ${params.customerName}`,
+          message: successMessage,
         };
       } catch (error: any) {
         console.error('[AI Tool] createOrder error:', error);

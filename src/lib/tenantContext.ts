@@ -8,8 +8,22 @@
  * This prevents tenant context from mixing between concurrent requests.
  */
 
-import { AsyncLocalStorage } from 'async_hooks';
 import { TenantError } from './errors';
+
+// AsyncLocalStorage is only available in Node.js server environment
+let AsyncLocalStorage: any = null;
+let asyncLocalStorage: any = null;
+
+// Initialize AsyncLocalStorage only in server environment
+if (typeof window === 'undefined') {
+  try {
+    const asyncHooks = require('async_hooks');
+    AsyncLocalStorage = asyncHooks.AsyncLocalStorage;
+    asyncLocalStorage = new AsyncLocalStorage();
+  } catch (e) {
+    console.warn('AsyncLocalStorage not available, falling back to global context');
+  }
+}
 
 export interface TenantContext {
   tenantId: string;
@@ -23,17 +37,22 @@ export interface TenantContext {
   [key: string]: any; // Allow additional properties
 }
 
-// CRITICAL FIX: Use AsyncLocalStorage for request-scoped tenant context
-// This ensures each request has its own isolated context that cannot be
-// overwritten by concurrent requests from other tenants
-const asyncLocalStorage = new AsyncLocalStorage<TenantContext>();
+// Fallback global context for browser environment
+let globalContext: TenantContext | undefined = undefined;
 
 /**
  * Get the current tenant ID from context
  * @throws {TenantError} if tenant context is not set
  */
 export function getTenantId(): string {
-  const context = asyncLocalStorage.getStore();
+  let context: TenantContext | undefined;
+  
+  if (asyncLocalStorage) {
+    context = asyncLocalStorage.getStore();
+  } else {
+    context = globalContext;
+  }
+  
   if (!context?.tenantId) {
     throw new TenantError('Tenant context not set. Ensure middleware is setting tenant context.');
   }
@@ -45,15 +64,23 @@ export function getTenantId(): string {
  * @returns TenantContext or undefined
  */
 export function getTenantContext(): TenantContext | undefined {
-  return asyncLocalStorage.getStore();
+  if (asyncLocalStorage) {
+    return asyncLocalStorage.getStore();
+  } else {
+    return globalContext;
+  }
 }
 
 /**
  * Check if tenant context is set
  */
 export function hasTenantContext(): boolean {
-  const context = asyncLocalStorage.getStore();
-  return !!context?.tenantId;
+  if (asyncLocalStorage) {
+    const context = asyncLocalStorage.getStore();
+    return !!context?.tenantId;
+  } else {
+    return !!globalContext?.tenantId;
+  }
 }
 
 /**
@@ -84,7 +111,18 @@ export async function withTenantContext<T>(
   };
 
   // Run the function within AsyncLocalStorage context
-  return asyncLocalStorage.run(enhancedContext, fn);
+  if (asyncLocalStorage) {
+    return asyncLocalStorage.run(enhancedContext, fn);
+  } else {
+    // Fallback for browser - use global context
+    const previousContext = globalContext;
+    globalContext = enhancedContext;
+    try {
+      return await fn();
+    } finally {
+      globalContext = previousContext;
+    }
+  }
 }
 
 /**
@@ -117,7 +155,18 @@ export async function withRequestContext<T>(
   };
 
   // Run the function within AsyncLocalStorage context
-  return asyncLocalStorage.run(enhancedContext, fn);
+  if (asyncLocalStorage) {
+    return asyncLocalStorage.run(enhancedContext, fn);
+  } else {
+    // Fallback for browser - use global context
+    const previousContext = globalContext;
+    globalContext = enhancedContext;
+    try {
+      return await fn();
+    } finally {
+      globalContext = previousContext;
+    }
+  }
 }
 
 /**
@@ -145,7 +194,18 @@ export async function withoutTenantIsolation<T>(fn: () => Promise<T>): Promise<T
   };
   
   // Run the function with system context in AsyncLocalStorage
-  return asyncLocalStorage.run(systemContext, fn);
+  if (asyncLocalStorage) {
+    return asyncLocalStorage.run(systemContext, fn);
+  } else {
+    // Fallback for browser - use global context
+    const previousContext = globalContext;
+    globalContext = systemContext;
+    try {
+      return await fn();
+    } finally {
+      globalContext = previousContext;
+    }
+  }
 }
 
 /**

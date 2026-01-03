@@ -65,7 +65,7 @@ export async function getTenantCustomFields(tenantId: string): Promise<CustomFie
             include: { 
               options: { 
                 where: { active: true }, 
-                orderBy: { order: 'asc' } 
+                orderBy: { label: 'asc' } 
               } 
             } 
           } 

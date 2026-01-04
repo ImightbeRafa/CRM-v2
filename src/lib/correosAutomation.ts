@@ -76,8 +76,9 @@ export class CorreosAutomation {
   constructor(credentials: CorreosCredentials, senderInfo?: SenderInfo) {
     this.credentials = credentials;
     this.senderInfo = senderInfo;
-    // Enable debug mode if CORREOS_DEBUG is set to any truthy value
-    this.debugMode = process.env.CORREOS_DEBUG === 'true' || process.env.CORREOS_DEBUG === '1' || process.env.NODE_ENV !== 'production';
+    // Only enable debug mode if explicitly requested via CORREOS_DEBUG env variable
+    // This prevents screenshot clutter in both dev and production
+    this.debugMode = process.env.CORREOS_DEBUG === 'true' || process.env.CORREOS_DEBUG === '1';
   }
 
   async initialize(): Promise<void> {

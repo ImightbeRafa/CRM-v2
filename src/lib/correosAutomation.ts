@@ -257,7 +257,8 @@ export class CorreosAutomation {
         throw new Error('Could not find password field');
       }
 
-      // Find and click login button
+      // Find and click login button with navigation handling
+      // Use Promise.all to avoid "frame detached" errors - set up navigation wait BEFORE clicking
       const loginSelectors = [
         'button[type="submit"]',
         'input[type="submit"]',
@@ -266,14 +267,13 @@ export class CorreosAutomation {
         'button:has-text("Entrar")'
       ];
 
-      let loginClicked = false;
+      let loginElement = null;
       for (const selector of loginSelectors) {
         try {
           const element = await this.page.$(selector);
           if (element) {
-            await element.click();
-            console.log(`Login button clicked with selector: ${selector}`);
-            loginClicked = true;
+            loginElement = element;
+            console.log(`Found login button with selector: ${selector}`);
             break;
           }
         } catch (e) {
@@ -281,13 +281,57 @@ export class CorreosAutomation {
         }
       }
 
-      if (!loginClicked) {
-        // Try pressing Enter as fallback
-        await this.page.keyboard.press('Enter');
+      // Click and wait for navigation simultaneously to avoid frame detachment
+      try {
+        if (loginElement) {
+          // Set up navigation promise BEFORE clicking to avoid race condition
+          await Promise.all([
+            this.page.waitForNavigation({ 
+              waitUntil: 'networkidle2', 
+              timeout: 30000 
+            }).catch(e => {
+              // Handle frame detachment gracefully - navigation may have already completed
+              if (e.message.includes('frame was detached') || e.message.includes('Target closed')) {
+                console.log('Navigation completed (frame detached - this is OK)');
+                return null;
+              }
+              throw e;
+            }),
+            loginElement.click()
+          ]);
+          console.log('Login button clicked');
+        } else {
+          // Fallback: press Enter
+          await Promise.all([
+            this.page.waitForNavigation({ 
+              waitUntil: 'networkidle2', 
+              timeout: 30000 
+            }).catch(e => {
+              if (e.message.includes('frame was detached') || e.message.includes('Target closed')) {
+                console.log('Navigation completed (frame detached - this is OK)');
+                return null;
+              }
+              throw e;
+            }),
+            this.page.keyboard.press('Enter')
+          ]);
+          console.log('Login via Enter key');
+        }
+      } catch (navError: any) {
+        // If navigation times out, check if we're actually logged in
+        console.log('Navigation error, checking login status...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        const currentUrl = this.page.url();
+        if (currentUrl.includes('/sucursal') && !currentUrl.includes('/login')) {
+          console.log('Login successful (detected via URL)');
+        } else {
+          throw navError;
+        }
       }
-
-      // Wait for navigation
-      await this.page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
+      
+      // Extra wait to ensure page is fully loaded
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       console.log('Login successful');
       

@@ -104,46 +104,65 @@ export class CorreosAutomation {
       // Only allow non-headless in development with explicit debug flag
       const headlessEnv = process.env.CORREOS_HEADLESS?.toLowerCase();
       const isProduction = process.env.NODE_ENV === 'production';
-      const headless = isProduction ? true : (this.debugMode || headlessEnv === 'false') ? false : true;
+      // Use 'new' headless mode for serverless (more stable), boolean for local dev
+      const headless = isLambda ? 'new' : (isProduction ? 'new' : (this.debugMode || headlessEnv === 'false') ? false : 'new');
 
       console.log(`Launching Correos automation browser (headless: ${headless}, Lambda: ${isLambda}, Production: ${isProduction})`);
+
+      // Base args for all environments
+      const baseArgs = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--window-size=1920,1080',
+        '--disable-features=PasswordManager',
+        '--disable-password-manager-reauthentication',
+        '--disable-save-password-bubble',
+        '--disable-blink-features=AutomationControlled'
+      ];
 
       // Configure puppeteer for serverless vs local environments
       const launchOptions: any = {
         headless,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
-          '--disable-gpu',
-          '--window-size=1920,1080',
-          '--disable-features=PasswordManager',
-          '--disable-password-manager-reauthentication',
-          '--disable-save-password-bubble',
-          '--disable-blink-features=AutomationControlled'
-        ]
+        args: baseArgs,
+        // Increase protocol timeout for serverless (slower cold starts)
+        protocolTimeout: 120000
       };
 
-      // In Lambda, use chromium executable and additional args
+      // In Lambda/Vercel, use chromium executable and additional args
       if (isLambda && chromium) {
         // Set font config path for Lambda
         process.env.FONTCONFIG_PATH = '/tmp';
         
-        // Get executable path
-        launchOptions.executablePath = await chromium.executablePath();
+        // Get executable path - await the promise
+        const execPath = await chromium.executablePath();
+        launchOptions.executablePath = execPath;
         
-        // Combine chromium args with our args
+        // Note: @sparticuz/chromium handles headless/graphics mode automatically
+        
+        // Combine chromium args with our args - chromium.args already has optimal serverless settings
         launchOptions.args = [
           ...chromium.args,
-          ...launchOptions.args,
+          ...baseArgs,
           '--single-process',
-          '--disable-dev-profile'
+          '--disable-dev-profile',
+          '--disable-background-networking',
+          '--disable-default-apps',
+          '--disable-extensions',
+          '--disable-sync',
+          '--disable-translate',
+          '--hide-scrollbars',
+          '--metrics-recording-only',
+          '--mute-audio',
+          '--no-default-browser-check',
+          '--safebrowsing-disable-auto-update'
         ];
         
-        console.log('Using serverless Chrome executable:', launchOptions.executablePath);
+        console.log('Using serverless Chrome executable:', execPath);
       }
 
       this.browser = await puppeteer.launch(launchOptions) as Browser;

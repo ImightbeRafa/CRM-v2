@@ -252,6 +252,55 @@ export async function getFormattedCustomFieldsForOrder(orderId: string, tenantId
 }
 
 /**
+ * Validate base order fields and return specific errors
+ */
+function validateBaseOrderFields(params: any): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  // Required fields
+  if (!params.customerName || params.customerName.trim() === '') {
+    errors.push('Nombre del cliente es requerido');
+  }
+  
+  if (!params.product || params.product.trim() === '') {
+    errors.push('Producto es requerido');
+  }
+  
+  if (params.total === undefined || params.total === null || params.total < 0) {
+    errors.push('Total es requerido y debe ser mayor o igual a 0');
+  }
+  
+  // For EA (shipping orders), address fields are important
+  const orderType = params.orderType || 'EA';
+  if (orderType === 'EA') {
+    if (!params.province || params.province.trim() === '') {
+      errors.push('Provincia es requerida para envíos (EA)');
+    }
+    if (!params.address || params.address.trim() === '') {
+      errors.push('Dirección es requerida para envíos (EA)');
+    }
+  }
+  
+  // Phone validation (optional but should be valid format if provided)
+  if (params.phone && params.phone.trim() !== '') {
+    const cleanPhone = params.phone.replace(/\D/g, '');
+    if (cleanPhone.length < 8) {
+      errors.push('Teléfono debe tener al menos 8 dígitos');
+    }
+  }
+  
+  // Email validation (optional but should be valid format if provided)
+  if (params.email && params.email.trim() !== '') {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(params.email)) {
+      errors.push('Email tiene formato inválido');
+    }
+  }
+  
+  return { isValid: errors.length === 0, errors };
+}
+
+/**
  * Create a new order with proper custom fields support
  */
 export async function createOrder(
@@ -271,23 +320,36 @@ export async function createOrder(
         console.log('[AI Tool] createOrder - Creating order with custom fields support');
         console.log('[AI Tool] createOrder - Raw params:', JSON.stringify(params, null, 2));
         
-        // Get tenant custom fields configuration
+        // STEP 1: Validate base order fields first
+        const baseValidation = validateBaseOrderFields(params);
+        if (!baseValidation.isValid) {
+          const errorMessage = `❌ Campos faltantes o inválidos:\n${baseValidation.errors.map(e => `• ${e}`).join('\n')}`;
+          console.log('[AI Tool] createOrder - Base validation failed:', baseValidation.errors);
+          return {
+            success: false,
+            error: errorMessage,
+          };
+        }
+        
+        // STEP 2: Get tenant custom fields configuration
         const customFieldsConfig = await getTenantCustomFields(ctx.tenantId);
         console.log('[AI Tool] createOrder - Custom fields config:', {
           productFields: customFieldsConfig.productFields.length,
           businessInfoFields: customFieldsConfig.businessInfoFields.length
         });
         
-        // Extract and validate custom fields
+        // STEP 3: Extract and validate custom fields
         const extractedCustomFields = extractCustomFields(params, customFieldsConfig);
         console.log('[AI Tool] createOrder - Extracted customFields:', JSON.stringify(extractedCustomFields, null, 2));
         
         // Validate required custom fields
-        const validation = validateCustomFields(extractedCustomFields, customFieldsConfig);
-        if (!validation.isValid) {
+        const customValidation = validateCustomFields(extractedCustomFields, customFieldsConfig);
+        if (!customValidation.isValid) {
+          const errorMessage = `❌ Campos personalizados faltantes:\n${customValidation.errors.map(e => `• ${e}`).join('\n')}`;
+          console.log('[AI Tool] createOrder - Custom fields validation failed:', customValidation.errors);
           return {
             success: false,
-            error: `Campos requeridos faltantes: ${validation.errors.join(', ')}`,
+            error: errorMessage,
           };
         }
         
@@ -376,9 +438,37 @@ export async function createOrder(
           code: error.code,
           meta: error.meta,
         });
+        
+        // Parse Prisma errors to provide specific field information
+        let userFriendlyError = 'Error al crear la orden';
+        
+        if (error.code === 'P2002') {
+          // Unique constraint violation
+          const field = error.meta?.target?.[0] || 'campo';
+          userFriendlyError = `❌ Error: Ya existe una orden con este ${field}. Por favor verifica los datos.`;
+        } else if (error.code === 'P2003') {
+          // Foreign key constraint
+          userFriendlyError = `❌ Error: Referencia inválida. Verifica que todos los campos relacionados existan.`;
+        } else if (error.code === 'P2011' || error.code === 'P2012') {
+          // Null constraint violation
+          const field = error.meta?.constraint || error.meta?.column || 'campo requerido';
+          userFriendlyError = `❌ Error: El campo "${field}" es requerido y no fue proporcionado.`;
+        } else if (error.name === 'PrismaClientValidationError') {
+          // Validation error - parse the message for field info
+          const fieldMatch = error.message.match(/Argument `(\w+)` is missing/);
+          if (fieldMatch) {
+            userFriendlyError = `❌ Error: El campo "${fieldMatch[1]}" es requerido.`;
+          } else {
+            userFriendlyError = `❌ Error de validación: ${error.message.slice(0, 200)}`;
+          }
+        } else if (error.message) {
+          // General error - provide the message but keep it user-friendly
+          userFriendlyError = `❌ Error: ${error.message.slice(0, 300)}`;
+        }
+        
         return {
           success: false,
-          error: error.message || 'Error al crear la orden',
+          error: userFriendlyError,
         };
       }
     }

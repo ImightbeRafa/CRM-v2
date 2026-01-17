@@ -10,6 +10,7 @@
 
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
+import { z } from 'zod';
 
 // Types for custom fields
 export interface CustomField {
@@ -309,26 +310,28 @@ function formatFieldValueForDisplay(value: any, fieldType: string): string {
 
 /**
  * Get custom fields schema for AI tools (Telegram bot)
+ * Returns proper Zod schemas that can be spread into z.object()
  */
-export function getCustomFieldsSchema(customFieldsConfig: CustomFieldsData): Record<string, any> {
-  const schema: Record<string, any> = {};
+export function getCustomFieldsSchema(customFieldsConfig: CustomFieldsData): Record<string, z.ZodTypeAny> {
+  const schema: Record<string, z.ZodTypeAny> = {};
   
   // Add product fields to schema
   customFieldsConfig.productFields.forEach(field => {
-    let fieldSchema: any = {
-      type: 'string',
-      description: field.label || field.key
-    };
+    const description = field.type === 'date' 
+      ? `${field.label || field.key} (format: YYYY-MM-DD)`
+      : field.label || field.key;
+    
+    let fieldSchema: z.ZodTypeAny;
     
     if (field.type === 'number') {
-      fieldSchema.type = 'number';
+      fieldSchema = z.number().describe(description);
     } else if (field.type === 'boolean') {
-      fieldSchema.type = 'boolean';
-    } else if (field.type === 'date') {
-      fieldSchema.type = 'string';
-      fieldSchema.description += ' (format: YYYY-MM-DD)';
+      fieldSchema = z.boolean().describe(description);
+    } else {
+      fieldSchema = z.string().describe(description);
     }
     
+    // Make optional if not required
     if (!field.required) {
       fieldSchema = fieldSchema.optional();
     }
@@ -338,20 +341,21 @@ export function getCustomFieldsSchema(customFieldsConfig: CustomFieldsData): Rec
   
   // Add business info fields to schema
   customFieldsConfig.businessInfoFields.forEach(field => {
-    let fieldSchema: any = {
-      type: 'string',
-      description: field.label || field.name
-    };
+    const description = field.type === 'date'
+      ? `${field.label || field.name} (format: YYYY-MM-DD)`
+      : field.label || field.name;
+    
+    let fieldSchema: z.ZodTypeAny;
     
     if (field.type === 'number') {
-      fieldSchema.type = 'number';
+      fieldSchema = z.number().describe(description);
     } else if (field.type === 'boolean') {
-      fieldSchema.type = 'boolean';
-    } else if (field.type === 'date') {
-      fieldSchema.type = 'string';
-      fieldSchema.description += ' (format: YYYY-MM-DD)';
+      fieldSchema = z.boolean().describe(description);
+    } else {
+      fieldSchema = z.string().describe(description);
     }
     
+    // Make optional if not required
     if (!field.required) {
       fieldSchema = fieldSchema.optional();
     }

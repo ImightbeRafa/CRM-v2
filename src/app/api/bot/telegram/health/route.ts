@@ -16,7 +16,8 @@ export async function GET(request: NextRequest) {
 
   // Check environment variables
   checks.env.TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ? '✅ Set' : '❌ Missing';
-  checks.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing';
+  checks.env.XAI_API_KEY = process.env.XAI_API_KEY ? '✅ Set' : '❌ Missing (required for AI)';
+  checks.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY ? '✅ Set' : '⚠️ Missing (needed for voice transcription)';
   checks.env.UPSTASH_REDIS_REST_URL = process.env.UPSTASH_REDIS_REST_URL ? '✅ Set' : '❌ Missing';
   checks.env.UPSTASH_REDIS_REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN ? '✅ Set' : '❌ Missing';
 

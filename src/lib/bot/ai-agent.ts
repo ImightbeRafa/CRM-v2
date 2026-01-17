@@ -2,7 +2,9 @@
  * Betsy AI Agent
  * 
  * The main AI agent that processes user messages, decides which tools to use,
- * and generates natural Spanish responses. Uses OpenAI GPT-4o with function calling.
+ * and generates natural Spanish responses. Uses xAI Grok with function calling.
+ * 
+ * xAI API is OpenAI-compatible, using the same SDK with a different base URL.
  */
 
 import OpenAI from 'openai';
@@ -12,6 +14,8 @@ import {
   ToolContext,
   ToolResult,
   ToolName,
+  updateToolSchemasWithCustomFields,
+  getFormattedCustomFieldsForOrder,
 } from './ai-tools';
 import {
   getFormattedHistory,
@@ -24,14 +28,16 @@ import {
 import { formatOrderForTelegram, formatInventoryForTelegram, formatStatsForTelegram } from './telegram';
 import { z } from 'zod';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { getTenantCustomFields, formatCustomFieldsForTelegram } from '@/lib/customFields';
 
-// OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+// xAI client (OpenAI-compatible API)
+const xai = new OpenAI({
+  apiKey: process.env.XAI_API_KEY,
+  baseURL: 'https://api.x.ai/v1',
 });
 
 // Model configuration
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const MODEL = process.env.XAI_MODEL || 'grok-4-1-fast-reasoning';
 const MAX_TOKENS = 1000;
 const TEMPERATURE = 0.7;
 
@@ -95,71 +101,39 @@ Recuerda: Eres una asistente profesional de ventas. Mantén el enfoque en la efi
 {{CUSTOM_FIELDS_SECTION}}`;
 
 /**
- * Fetch tenant's custom fields configuration
+ * Generate custom fields section for system prompt
  */
-async function getTenantCustomFields(tenantId: string): Promise<string> {
+async function getCustomFieldsSection(tenantId: string): Promise<string> {
   try {
-    const tenantPrisma = getTenantPrisma(tenantId);
+    const customFieldsConfig = await getTenantCustomFields(tenantId);
     
-    // Fetch product fields (Campos Personalizados)
-    const productFields = await tenantPrisma.productField.findMany({
-      where: { active: true },
-      orderBy: { order: 'asc' },
-      include: { 
-        optionSet: { 
-          include: { options: { where: { active: true } } } 
-        } 
-      },
-    });
-    
-    // Fetch business info fields
-    const businessFields = await tenantPrisma.businessInfo.findMany({
-      where: { isActive: true },
-      orderBy: { order: 'asc' },
-    });
-    
-    if (productFields.length === 0 && businessFields.length === 0) {
+    if (customFieldsConfig.productFields.length === 0 && customFieldsConfig.businessInfoFields.length === 0) {
       return '';
     }
     
-    let section = `\nCAMPOS PERSONALIZADOS DEL NEGOCIO:
-Este negocio tiene campos personalizados configurados. Cuando crees órdenes, incluye estos campos si el usuario los menciona:\n`;
+    let section = '\n\nCAMPOS PERSONALIZADOS DISPONIBLES:\n';
     
-    if (productFields.length > 0) {
+    if (customFieldsConfig.productFields.length > 0) {
       section += '\n**Campos de Producto:**\n';
-      productFields.forEach(f => {
-        let fieldDesc = `- ${f.label} (${f.key})`;
-        if (f.required) fieldDesc += ' [REQUERIDO]';
-        if (f.optionSet?.options?.length) {
-          const options = f.optionSet.options.map((o: any) => o.label).join(', ');
-          fieldDesc += ` - Opciones: ${options}`;
-        }
-        section += fieldDesc + '\n';
+      customFieldsConfig.productFields.forEach(field => {
+        const required = field.required ? ' (requerido)' : ' (opcional)';
+        section += '- ' + field.label + required + ': tipo ' + field.type + '\n';
       });
     }
     
-    if (businessFields.length > 0) {
-      section += '\n**Campos de Negocio:**\n';
-      businessFields.forEach((f: any) => {
-        let fieldDesc = `- ${f.label} (${f.name})`;
-        if (f.required) fieldDesc += ' [REQUERIDO]';
-        if (f.type === 'dropdown' && f.options) {
-          try {
-            const options = JSON.parse(f.options);
-            if (Array.isArray(options)) {
-              fieldDesc += ` - Opciones: ${options.join(', ')}`;
-            }
-          } catch {}
-        }
-        section += fieldDesc + '\n';
+    if (customFieldsConfig.businessInfoFields.length > 0) {
+      section += '\n**Campos de Información del Negocio:**\n';
+      customFieldsConfig.businessInfoFields.forEach(field => {
+        const required = field.required ? ' (requerido)' : ' (opcional)';
+        section += '- ' + field.label + required + ': tipo ' + field.type + '\n';
       });
     }
     
-    section += '\nUsa el parámetro "customFields" en create_order para incluir estos campos adicionales.';
+    section += '\nIMPORTANTE: Siempre solicita los valores de los campos requeridos al crear una orden.';
     
     return section;
   } catch (error) {
-    console.error('[AI Agent] Error fetching custom fields:', error);
+    console.error('[AI Agent] Error generating custom fields section:', error);
     return '';
   }
 }
@@ -239,10 +213,12 @@ function zodToOpenAITool(name: string, schema: { description: string; parameters
   };
 }
 
-// Build tools array for OpenAI
-const openaiTools = Object.entries(toolSchemas).map(([name, schema]) =>
-  zodToOpenAITool(name, schema)
-);
+// Build tools array dynamically (must be called after schema updates)
+function buildToolsArray() {
+  return Object.entries(toolSchemas).map(([name, schema]) =>
+    zodToOpenAITool(name, schema)
+  );
+}
 
 /**
  * Process a message and get AI response
@@ -292,7 +268,13 @@ export async function processMessage(
     });
     
     // Fetch tenant's custom fields
-    const customFieldsSection = await getTenantCustomFields(context.tenantId);
+    const customFieldsSection = await getCustomFieldsSection(context.tenantId);
+    
+    // Update tool schemas with tenant-specific custom fields
+    await updateToolSchemasWithCustomFields(context.tenantId);
+    
+    // Build tools array AFTER schema updates to include custom fields
+    const currentTools = buildToolsArray();
     
     const systemPromptWithDate = SYSTEM_PROMPT
       .replace('{{CURRENT_DATE}}', currentDate)
@@ -305,11 +287,11 @@ export async function processMessage(
       ...history.slice(-20), // Keep last 20 messages for context
     ];
     
-    // Call OpenAI
-    const response = await openai.chat.completions.create({
+    // Call xAI
+    const response = await xai.chat.completions.create({
       model: MODEL,
       messages,
-      tools: openaiTools,
+      tools: currentTools,
       tool_choice: 'auto',
       max_tokens: MAX_TOKENS,
       temperature: TEMPERATURE,
@@ -336,7 +318,7 @@ export async function processMessage(
           toolArgs = {};
         }
         
-        console.log(`[AI Agent] Executing tool: ${toolName}`, toolArgs);
+        console.log('[AI Agent] Executing tool: ' + toolName, toolArgs);
         
         const result = await executeTool(toolName, context, toolArgs);
         
@@ -351,7 +333,7 @@ export async function processMessage(
           const formatted = formatToolResult(toolName, result);
           toolResults.push(formatted);
         } else {
-          toolResults.push(`❌ Error: ${result.error}`);
+          toolResults.push('❌ Error: ' + result.error);
         }
       }
       
@@ -367,49 +349,46 @@ export async function processMessage(
             function: tc.function,
           })),
         },
-        ...message.tool_calls.map((tc, i) => ({
-          role: 'tool' as const,
-          tool_call_id: tc.id,
-          content: toolResults[i] || 'Tool execution completed',
-        })),
+        {
+          role: 'tool',
+          content: toolResults.join('\n\n'),
+          tool_call_id: message.tool_calls[0]?.id || '',
+        },
       ];
       
-      const followUp = await openai.chat.completions.create({
+      const followUpResponse = await xai.chat.completions.create({
         model: MODEL,
         messages: followUpMessages,
         max_tokens: MAX_TOKENS,
         temperature: TEMPERATURE,
       });
       
-      const finalResponse = followUp.choices[0]?.message?.content || toolResults.join('\n\n');
+      const finalMessage = followUpResponse.choices[0]?.message?.content;
       
-      // Save assistant response
-      await addAssistantMessage(platform, platformId, finalResponse, toolCallsLog);
+      if (finalMessage) {
+        await addAssistantMessage(platform, platformId, finalMessage);
+        return finalMessage;
+      }
       
-      return finalResponse;
+      return 'Procesando resultados...';
     }
     
-    // No tool calls, just return the text response
-    const textResponse = message.content || 'Lo siento, no pude procesar tu mensaje.';
+    // No tool calls, just return the AI response
+    if (message.content) {
+      await addAssistantMessage(platform, platformId, message.content);
+      return message.content;
+    }
     
-    // Save assistant response
-    await addAssistantMessage(platform, platformId, textResponse);
+    return 'Lo siento, no pude procesar tu solicitud.';
     
-    return textResponse;
-  } catch (error: any) {
+  } catch (error) {
     console.error('[AI Agent] Error processing message:', error);
-    
-    // Return a friendly error message
-    if (error.code === 'insufficient_quota') {
-      return '⚠️ El servicio de AI está temporalmente no disponible. Por favor, intenta más tarde.';
-    }
-    
-    return '😅 Ups, algo salió mal al procesar tu mensaje. ¿Podrías intentar de nuevo?';
+    return 'Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo.';
   }
 }
 
 /**
- * Format tool result for display
+ * Format tool results for display
  */
 function formatToolResult(toolName: ToolName, result: ToolResult): string {
   if (!result.success) {
@@ -464,99 +443,102 @@ function formatToolResult(toolName: ToolName, result: ToolResult): string {
         const stats = result.data as any;
         let response = formatStatsForTelegram(stats);
         
-        if (stats.topProducts && stats.topProducts.length > 0) {
-          response += '\n\n🏆 **Top Productos:**\n';
-          response += stats.topProducts
-            .map((p: any, i: number) => `${i + 1}. ${p.product} (${p.count} ventas)`)
-            .join('\n');
+        // Add custom fields if available
+        if (stats.customFields && Object.keys(stats.customFields).length > 0) {
+          response += '\n\n**Campos Personalizados:**\n';
+          for (const [key, value] of Object.entries(stats.customFields)) {
+            response += `• ${key}: ${value}\n`;
+          }
         }
         
         return response;
       }
       return 'No hay estadísticas disponibles.';
       
-    case 'search_clients':
-      if (Array.isArray(result.data) && result.data.length > 0) {
-        return result.data
-          .map((client: any) =>
-            `👤 ${client.name}\n   📱 ${client.phone || 'N/A'} | 🛒 ${client.totalOrders} órdenes | ₡${(client.totalSpent || 0).toLocaleString('es-CR')}`
-          )
-          .join('\n\n');
+    case 'generate_shipping_guia':
+      if (result.data) {
+        return result.message || '✅ Guía de envío generada correctamente.';
       }
-      return 'No se encontraron clientes.';
+      return 'Error al generar la guía de envío.';
       
     default:
-      return result.message || JSON.stringify(result.data, null, 2);
+      return result.message || 'Operación completada.';
   }
 }
 
 /**
- * Check if a message is a confirmation
+ * Check if message is a confirmation
  */
 function isConfirmation(message: string): boolean {
-  const confirmWords = ['sí', 'si', 'yes', 'confirmar', 'confirmo', 'dale', 'ok', 'okay', 'claro', 'adelante', 'hazlo', 'procede'];
-  const lower = message.toLowerCase().trim();
-  return confirmWords.some((word) => lower === word || lower.startsWith(word + ' '));
+  const confirmations = [
+    'sí', 'si', 'sí!', 'si!', 'yes', 'y', 'confirmar', 'confirmado', 
+    'aceptar', 'aceptado', 'proceder', 'continuar', 'ok', 'de acuerdo'
+  ];
+  return confirmations.includes(message.toLowerCase().trim());
 }
 
 /**
- * Check if a message is a denial
+ * Check if message is a denial
  */
 function isDenial(message: string): boolean {
-  const denyWords = ['no', 'cancelar', 'cancela', 'detener', 'para', 'stop', 'mejor no', 'dejalo'];
-  const lower = message.toLowerCase().trim();
-  return denyWords.some((word) => lower === word || lower.startsWith(word + ' '));
+  const denials = [
+    'no', 'no!', 'cancelar', 'cancelado', 'anular', 'anulado',
+    'detener', 'detener', 'parar', 'alto', 'negar', 'negado'
+  ];
+  return denials.includes(message.toLowerCase().trim());
 }
 
 /**
- * Execute a pending action after confirmation
+ * Execute a pending action
  */
-async function executePendingAction(
-  pending: { type: string; data: Record<string, unknown> },
-  context: ToolContext
-): Promise<string> {
-  // This would handle confirmed destructive actions
-  // For now, we don't have any that require confirmation
-  return '✅ Acción ejecutada.';
+async function executePendingAction(pending: any, context: ToolContext): Promise<string> {
+  try {
+    const result = await executeTool(pending.toolName as ToolName, context, pending.toolArgs);
+    
+    if (result.success) {
+      const formatted = formatToolResult(pending.toolName as ToolName, result);
+      return '✅ Acción confirmada:\n\n' + formatted;
+    } else {
+      return '❌ Error al ejecutar la acción: ' + result.error;
+    }
+  } catch (error) {
+    console.error('[AI Agent] Error executing pending action:', error);
+    return '❌ Error al ejecutar la acción solicitada.';
+  }
 }
 
 /**
- * Generate a welcome message for newly connected users
+ * Generate welcome message for new users
  */
-export function generateWelcomeMessage(userName: string, tenantName: string): string {
-  return `🎉 **¡Hola ${userName}!**
+export function generateWelcomeMessage(): string {
+  return `👋 <b>¡Bienvenido a Betsy AI Assistant!</b>
 
-¡Pura vida! Ya estás conectado a **${tenantName}** en Betsy AI.
+Soy tu asistente inteligente para gestionar tu negocio.
 
-Ahora puedes gestionar tu negocio con comandos naturales. Por ejemplo:
+<b>¿Qué puedo hacer por ti?</b>
+• 📦 Crear y gestionar órdenes
+• 📊 Consultar inventario
+• 📈 Ver estadísticas de ventas
+• 🚚 Generar guías de envío
+• 👥 Buscar clientes
 
-📦 "Muéstrame las órdenes pendientes"
-➕ "Crea una orden para Juan, 2 camisetas, ₡15000"
-📊 "¿Cuánto vendí esta semana?"
-📋 "Busca el stock del producto X"
-👤 "Busca al cliente María López"
+Escribe cualquier consulta en lenguaje natural y te ayudaré.
 
-¿En qué puedo ayudarte hoy?`;
+Usa /help para ver todos los comandos disponibles.`;
 }
 
 /**
- * Generate an error message for unauthorized users
+ * Generate message for unauthorized users
  */
 export function generateUnauthorizedMessage(): string {
-  return `⚠️ <b>No estás conectado</b>
+  return `⚠️ <b>No estás conectado a Betsy</b>
 
-Para conectarte, necesitas un código de acceso de 12 caracteres.
+Para usar este bot, necesitas conectar tu cuenta.
 
 <b>¿Cómo conectarse?</b>
-
-1. Pide a tu administrador el código de acceso
+1. Pide a tu administrador el código de acceso de 12 caracteres
 2. Envía: <code>/start CODIGO123ABC</code>
-3. Proporciona tu nombre cuando te lo pida
-4. ¡Listo!
 
 <b>¿Eres administrador?</b>
-Obtén tu código en: https://www.betsycrm.com/config/ai-assistant
-
-¿Necesitas ayuda? Contacta soporte en support@betsycrm.com`;
+Encuentra tu código en: https://www.betsycrm.com/config/ai-assistant`;
 }
-

@@ -106,8 +106,32 @@ export function OrderDetails({
   
   // Extract custom fields from the order
   const extractedCustomFields = useMemo(() => {
-    return extractCustomFields(displayOrder, customFieldsConfig);
+    const extracted = extractCustomFields(displayOrder, customFieldsConfig);
+    
+    // Debug logging in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[OrderDetail] Custom fields extraction:', {
+        orderCustomFields: displayOrder.customFields,
+        configuredProductFields: customFieldsConfig.productFields.map(f => f.key),
+        configuredBusinessFields: customFieldsConfig.businessInfoFields.map(f => f.name),
+        extracted
+      });
+    }
+    
+    return extracted;
   }, [displayOrder, customFieldsConfig]);
+  
+  // Get raw custom fields from order for fallback display
+  const rawCustomFields = useMemo(() => {
+    if (!displayOrder.customFields) return {};
+    try {
+      return typeof displayOrder.customFields === 'string' 
+        ? JSON.parse(displayOrder.customFields) 
+        : displayOrder.customFields;
+    } catch {
+      return {};
+    }
+  }, [displayOrder.customFields]);
 
   const handleInputChange = (field: SaleKeys, value: string | number) => {
     setEditedOrder(prev => {
@@ -471,10 +495,41 @@ export function OrderDetails({
                 return pickupFields.length > 0 ? renderSection('Detalles de Retiro', pickupFields) : null;
               })()}
 
-              {/* Dynamic Custom Fields (Campos personalizados) - Display tenant-configured fields */}
-              {customFieldsLoaded && (customFieldsConfig.productFields.length > 0 || customFieldsConfig.businessInfoFields.length > 0) && (() => {
-                // Custom fields are stored in the customFields JSON column
-                // extractedCustomFields already contains values extracted from that column
+              {/* Dynamic Custom Fields (Campos personalizados) - Display tenant-configured fields AND raw data */}
+              {customFieldsLoaded && (() => {
+                // Collect all custom field values to display
+                const fieldsToDisplay: Array<{ key: string; label: string; value: any; type?: string }> = [];
+                
+                // 1. First add configured product fields with values
+                customFieldsConfig.productFields.forEach((field) => {
+                  const value = extractedCustomFields[field.key];
+                  if (value !== undefined && value !== null && value !== '') {
+                    fieldsToDisplay.push({ key: field.key, label: field.label, value, type: field.type });
+                  }
+                });
+                
+                // 2. Add configured business info fields with values
+                customFieldsConfig.businessInfoFields.forEach((field) => {
+                  const value = extractedCustomFields[field.name];
+                  if (value !== undefined && value !== null && value !== '') {
+                    fieldsToDisplay.push({ key: field.name, label: field.label, value, type: field.type });
+                  }
+                });
+                
+                // 3. Add any raw custom fields that weren't matched by config (fallback display)
+                const matchedKeys = new Set(fieldsToDisplay.map(f => f.key));
+                Object.entries(rawCustomFields).forEach(([key, value]) => {
+                  if (!matchedKeys.has(key) && value !== undefined && value !== null && value !== '') {
+                    // Try to find a nice label from config, otherwise use the key
+                    const productField = customFieldsConfig.productFields.find(f => f.key === key);
+                    const businessField = customFieldsConfig.businessInfoFields.find(f => f.name === key);
+                    const label = productField?.label || businessField?.label || key;
+                    fieldsToDisplay.push({ key, label, value, type: 'text' });
+                  }
+                });
+                
+                // Don't render section if no fields to display
+                if (fieldsToDisplay.length === 0) return null;
                 
                 return (
                   <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
@@ -482,50 +537,21 @@ export function OrderDetails({
                       <h3 className="font-medium text-sm text-gray-600 dark:text-gray-300">Campos personalizados</h3>
                     </div>
                     <div className="p-4 space-y-2">
-                      {/* Render product custom fields - values come from customFields JSON */}
-                      {customFieldsConfig.productFields.map((field) => {
-                        const value = extractedCustomFields[field.key];
-                        if (value === undefined || value === null || value === '') return null;
-                        
-                        return (
-                          <div key={`product-${field.id}`} className="group relative py-2 transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-md px-2 -mx-2">
-                            <div className="flex justify-between items-baseline">
-                              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                                {field.label}
-                                {field.required && <span className="text-red-500 ml-1">*</span>}
-                              </label>
-                            </div>
-                            <p className="text-sm text-gray-900 dark:text-gray-100 font-medium mt-1">
-                              {field.type === 'number' ? Number(value).toLocaleString('es-CR') : 
-                               field.type === 'boolean' ? (value ? 'Sí' : 'No') :
-                               field.type === 'date' ? new Date(value).toLocaleDateString('es-CR') :
-                               String(value)}
-                            </p>
+                      {fieldsToDisplay.map((field) => (
+                        <div key={`custom-${field.key}`} className="group relative py-2 transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-md px-2 -mx-2">
+                          <div className="flex justify-between items-baseline">
+                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                              {field.label}
+                            </label>
                           </div>
-                        );
-                      })}
-                      {/* Render business info custom fields - values come from customFields JSON */}
-                      {customFieldsConfig.businessInfoFields.map((field) => {
-                        const value = extractedCustomFields[field.name];
-                        if (value === undefined || value === null || value === '') return null;
-                        
-                        return (
-                          <div key={`business-${field.id}`} className="group relative py-2 transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-md px-2 -mx-2">
-                            <div className="flex justify-between items-baseline">
-                              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                                {field.label}
-                                {field.required && <span className="text-red-500 ml-1">*</span>}
-                              </label>
-                            </div>
-                            <p className="text-sm text-gray-900 dark:text-gray-100 font-medium mt-1">
-                              {field.type === 'number' ? Number(value).toLocaleString('es-CR') : 
-                               field.type === 'boolean' ? (value ? 'Sí' : 'No') :
-                               field.type === 'date' ? new Date(value).toLocaleDateString('es-CR') :
-                               String(value)}
-                            </p>
-                          </div>
-                        );
-                      })}
+                          <p className="text-sm text-gray-900 dark:text-gray-100 font-medium mt-1">
+                            {field.type === 'number' ? Number(field.value).toLocaleString('es-CR') : 
+                             field.type === 'boolean' ? (field.value ? 'Sí' : 'No') :
+                             field.type === 'date' ? new Date(field.value).toLocaleDateString('es-CR') :
+                             String(field.value)}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 );

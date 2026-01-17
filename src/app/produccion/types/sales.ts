@@ -19,6 +19,7 @@ export interface BaseOrder {
   comments: string;
   total: number;
   orderType: 'EA' | 'RA';
+  customFields?: Record<string, any> | string | null;
 }
 
 export interface EAOrder extends BaseOrder {

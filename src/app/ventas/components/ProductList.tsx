@@ -202,6 +202,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
           </p>
         </div>
         <Button
+          type="button"
           onClick={addProduct}
           className="bg-blue-500 hover:bg-blue-600 text-white w-full sm:w-auto"
         >
@@ -249,6 +250,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                     </span>
                     <div className="flex gap-1 ml-auto sm:ml-0">
                       <Button
+                        type="button"
                         size="sm"
                         variant="outline"
                         onClick={() => startEditing(product.id)}
@@ -257,6 +259,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                         <Edit3 className="h-4 w-4" />
                       </Button>
                       <Button
+                        type="button"
                         size="sm"
                         variant="outline"
                         onClick={() => duplicateProduct(product.id)}
@@ -265,6 +268,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                         <Copy className="h-4 w-4" />
                       </Button>
                       <Button
+                        type="button"
                         size="sm"
                         variant="outline"
                         onClick={() => removeProduct(product.id)}
@@ -317,6 +321,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                       <div className="flex justify-between items-center mb-4">
                         <h4 className="text-lg font-semibold">Editar Producto #{index + 1}</h4>
                         <Button
+                          type="button"
                           size="sm"
                           variant="outline"
                           onClick={stopEditing}
@@ -347,12 +352,14 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                       />
                       <div className="flex justify-end gap-2 mt-4">
                         <Button
+                          type="button"
                           variant="outline"
                           onClick={stopEditing}
                         >
                           Cancelar
                         </Button>
                         <Button
+                          type="button"
                           onClick={stopEditing}
                           className="bg-blue-500 hover:bg-blue-600"
                         >
@@ -456,6 +463,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
             <div className="p-4">
               <div className="flex justify-end items-center mb-4">
                 <Button
+                  type="button"
                   size="sm"
                   variant="outline"
                   onClick={() => {
@@ -488,6 +496,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
               />
               <div className="flex justify-end gap-2 mt-4">
                 <Button
+                  type="button"
                   variant="outline"
                   onClick={() => {
                     setShowAddModal(false);
@@ -497,6 +506,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                   Cancelar
                 </Button>
                 <Button
+                  type="button"
                   onClick={confirmAddDraftProduct}
                   className="bg-blue-500 hover:bg-blue-600"
                   disabled={!draftProduct || !(draftProduct.type && draftProduct.type.trim().length > 0)}

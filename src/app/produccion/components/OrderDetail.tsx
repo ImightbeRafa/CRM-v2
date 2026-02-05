@@ -557,14 +557,23 @@ export function OrderDetails({
                 );
               })()}
 
-              {/* Comentario */}
-              {displayOrder.comments && (
+              {/* Comentario - Always show when editing, or when comments exist */}
+              {(isEditing || displayOrder.comments) && (
                 <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
                   <div className="p-4 border-b border-gray-100 dark:border-gray-800">
-                    <h3 className="font-medium text-sm text-gray-600 dark:text-gray-300">Comentario</h3>
+                    <h3 className="font-medium text-sm text-gray-600 dark:text-gray-300">Comentarios</h3>
                   </div>
                   <div className="p-4">
-                    <p className="text-sm text-gray-900 dark:text-gray-100">{displayOrder.comments}</p>
+                    {isEditing ? (
+                      <Textarea
+                        value={editedOrder.comments || ''}
+                        onChange={(e) => handleInputChange('comments', e.target.value)}
+                        className="min-h-[120px] resize-none transition-colors"
+                        placeholder="Ingrese comentarios..."
+                      />
+                    ) : (
+                      <p className="text-sm text-gray-900 dark:text-gray-100">{displayOrder.comments}</p>
+                    )}
                   </div>
                 </div>
               )}

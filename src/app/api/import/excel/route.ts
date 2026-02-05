@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/db';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 interface ImportResult {
   success: boolean;
@@ -550,10 +550,29 @@ export async function POST(request: NextRequest) {
 
     // Parse Excel
     console.log('📄 Parsing Excel file...');
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const sheet = workbook.worksheets[0];
+    const sheetName = sheet.name;
+    // Convert exceljs worksheet to array of objects (like xlsx sheet_to_json)
+    const headerRow = sheet.getRow(1);
+    const headers: string[] = [];
+    headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      headers[colNumber - 1] = cell.value?.toString() || '';
+    });
+    const rows: Record<string, any>[] = [];
+    for (let i = 2; i <= sheet.rowCount; i++) {
+      const row = sheet.getRow(i);
+      const rowData: Record<string, any> = {};
+      let hasData = false;
+      headers.forEach((header, idx) => {
+        const cell = row.getCell(idx + 1);
+        const value = cell.value;
+        rowData[header] = value !== null && value !== undefined ? value : '';
+        if (value !== null && value !== undefined && value !== '') hasData = true;
+      });
+      if (hasData) rows.push(rowData);
+    }
 
     console.log(`📊 Found ${rows.length} rows in sheet "${sheetName}"`);
 

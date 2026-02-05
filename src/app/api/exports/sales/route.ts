@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { Parser } from 'json2csv';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 export async function GET(request: NextRequest) {
   try {
@@ -137,19 +137,27 @@ export async function GET(request: NextRequest) {
         
       case 'xlsx':
         // Create workbook with multiple sheets
-        const workbook = XLSX.utils.book_new();
+        const workbook = new ExcelJS.Workbook();
         
         // Sales data sheet
-        const salesSheet = XLSX.utils.json_to_sheet(exportData);
-        XLSX.utils.book_append_sheet(workbook, salesSheet, 'Sales');
+        const salesWs = workbook.addWorksheet('Sales');
+        if (exportData.length > 0) {
+          salesWs.columns = Object.keys(exportData[0]).map(key => ({ header: key, key, width: 15 }));
+          exportData.forEach((row: any) => salesWs.addRow(row));
+          salesWs.getRow(1).font = { bold: true };
+        }
         
         // Summary sheet
         const summaryData = generateSalesSummary(exportData);
-        const summarySheet = XLSX.utils.json_to_sheet(summaryData);
-        XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
+        const summaryWs = workbook.addWorksheet('Summary');
+        if (summaryData.length > 0) {
+          summaryWs.columns = Object.keys(summaryData[0]).map(key => ({ header: key, key, width: 15 }));
+          summaryData.forEach((row: any) => summaryWs.addRow(row));
+          summaryWs.getRow(1).font = { bold: true };
+        }
         
         // Generate buffer
-        exportContent = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+        exportContent = Buffer.from(await workbook.xlsx.writeBuffer());
         contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         filename = `sales-export-${timestamp}.xlsx`;
         break;

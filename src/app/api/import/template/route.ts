@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 // Template definitions with examples
 const templates = {
@@ -54,24 +54,19 @@ export async function GET(request: NextRequest) {
     const template = templates[type];
 
     // Create workbook
-    const wb = XLSX.utils.book_new();
+    const wb = new ExcelJS.Workbook();
     
-    // Create data with headers and example row
-    const data = [
-      template.headers,
-      template.example
-    ];
-
     // Create worksheet
-    const ws = XLSX.utils.aoa_to_sheet(data);
+    const ws = wb.addWorksheet('Datos');
 
     // Set column widths
-    const colWidths = template.headers.map(() => ({ wch: 15 }));
-    ws['!cols'] = colWidths;
+    ws.columns = template.headers.map((header: string) => ({ header, width: 15 }));
 
-    // Style header row (make bold if possible - note: XLSX doesn't support styling in free version)
-    // But we can add instructions sheet
-    XLSX.utils.book_append_sheet(wb, ws, 'Datos');
+    // Add example row
+    ws.addRow(template.example);
+
+    // Style header row (bold)
+    ws.getRow(1).font = { bold: true };
 
     // Add instructions sheet
     const instructions = [
@@ -291,12 +286,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const wsInstructions = XLSX.utils.aoa_to_sheet(instructions);
-    wsInstructions['!cols'] = [{ wch: 60 }];
-    XLSX.utils.book_append_sheet(wb, wsInstructions, 'Instrucciones');
+    const wsInstructions = wb.addWorksheet('Instrucciones');
+    wsInstructions.getColumn(1).width = 60;
+    instructions.forEach((row: string[]) => wsInstructions.addRow(row));
 
     // Generate buffer
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = await wb.xlsx.writeBuffer();
 
     // Return file
     return new NextResponse(buffer, {

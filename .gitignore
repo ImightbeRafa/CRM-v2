@@ -62,7 +62,7 @@ next-env.d.ts
 *.db-shm
 *.db-wal
 *.db-journal
-database/
+/database/
 prisma/dev.db*
 prisma/schema-backup-*.prisma
 prisma/migrations/

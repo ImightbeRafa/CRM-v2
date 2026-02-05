@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { Parser } from 'json2csv';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 export async function GET(request: NextRequest) {
   try {
@@ -161,21 +161,32 @@ export async function GET(request: NextRequest) {
         
       case 'xlsx':
         // Create workbook with multiple sheets
-        const workbook = XLSX.utils.book_new();
+        const workbook = new ExcelJS.Workbook();
         
         // Clients data sheet
-        const clientsSheet = XLSX.utils.json_to_sheet(exportData);
-        XLSX.utils.book_append_sheet(workbook, clientsSheet, 'Clients');
+        const clientsWs = workbook.addWorksheet('Clients');
+        if (exportData.length > 0) {
+          clientsWs.columns = Object.keys(exportData[0]).filter(k => k !== 'orders').map(key => ({ header: key, key, width: 15 }));
+          exportData.forEach((row: any) => {
+            const { orders, ...rest } = row;
+            clientsWs.addRow(rest);
+          });
+          clientsWs.getRow(1).font = { bold: true };
+        }
         
         // Summary sheet
         const summaryData = generateClientsSummary(exportData);
-        const summarySheet = XLSX.utils.json_to_sheet(summaryData);
-        XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
+        const summaryWs = workbook.addWorksheet('Summary');
+        if (summaryData.length > 0) {
+          summaryWs.columns = Object.keys(summaryData[0]).map(key => ({ header: key, key, width: 15 }));
+          summaryData.forEach((row: any) => summaryWs.addRow(row));
+          summaryWs.getRow(1).font = { bold: true };
+        }
         
         // Orders sheet (if included)
         if (includeOrders) {
-          const allOrders = exportData.flatMap(client => 
-            client.orders?.map(order => ({
+          const allOrders = exportData.flatMap((client: any) => 
+            client.orders?.map((order: any) => ({
               clientName: client.name,
               clientEmail: client.email,
               ...order
@@ -183,13 +194,15 @@ export async function GET(request: NextRequest) {
           );
           
           if (allOrders.length > 0) {
-            const ordersSheet = XLSX.utils.json_to_sheet(allOrders);
-            XLSX.utils.book_append_sheet(workbook, ordersSheet, 'Orders');
+            const ordersWs = workbook.addWorksheet('Orders');
+            ordersWs.columns = Object.keys(allOrders[0]).map(key => ({ header: key, key, width: 15 }));
+            allOrders.forEach((row: any) => ordersWs.addRow(row));
+            ordersWs.getRow(1).font = { bold: true };
           }
         }
         
         // Generate buffer
-        exportContent = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+        exportContent = Buffer.from(await workbook.xlsx.writeBuffer());
         contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         filename = `clients-export-${timestamp}.xlsx`;
         break;

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { Parser } from 'json2csv';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 export async function GET(request: NextRequest) {
   try {
@@ -128,50 +128,52 @@ export async function GET(request: NextRequest) {
         
       case 'xlsx':
         // Create workbook with multiple sheets
-        const workbook = XLSX.utils.book_new();
+        const workbook = new ExcelJS.Workbook();
+        
+        // Helper to add a JSON array as a worksheet
+        const addJsonSheet = (name: string, data: any[]) => {
+          const ws = workbook.addWorksheet(name);
+          if (data.length > 0) {
+            ws.columns = Object.keys(data[0]).map(key => ({ header: key, key, width: 15 }));
+            data.forEach((row: any) => ws.addRow(row));
+            ws.getRow(1).font = { bold: true };
+          }
+        };
         
         // Metadata sheet
-        const metadataSheet = XLSX.utils.json_to_sheet([exportData.metadata]);
-        XLSX.utils.book_append_sheet(workbook, metadataSheet, 'Metadata');
+        addJsonSheet('Metadata', [exportData.metadata]);
         
         // Orders sheet
-        const ordersSheet = XLSX.utils.json_to_sheet(exportData.data.orders);
-        XLSX.utils.book_append_sheet(workbook, ordersSheet, 'Orders');
+        addJsonSheet('Orders', exportData.data.orders);
         
         // Clients sheet
-        const clientsSheet = XLSX.utils.json_to_sheet(exportData.data.clients);
-        XLSX.utils.book_append_sheet(workbook, clientsSheet, 'Clients');
+        addJsonSheet('Clients', exportData.data.clients);
         
         // Sellers sheet
-        const sellersSheet = XLSX.utils.json_to_sheet(exportData.data.sellers);
-        XLSX.utils.book_append_sheet(workbook, sellersSheet, 'Sellers');
+        addJsonSheet('Sellers', exportData.data.sellers);
         
         // Products sheet
-        const productsSheet = XLSX.utils.json_to_sheet(exportData.data.products);
-        XLSX.utils.book_append_sheet(workbook, productsSheet, 'Products');
+        addJsonSheet('Products', exportData.data.products);
         
         // Order Items sheet
-        const orderItemsSheet = XLSX.utils.json_to_sheet(exportData.data.orderItems);
-        XLSX.utils.book_append_sheet(workbook, orderItemsSheet, 'Order Items');
+        addJsonSheet('Order Items', exportData.data.orderItems);
         
         // Users sheet (if included)
         if (includeUsers && exportData.data.users) {
-          const usersSheet = XLSX.utils.json_to_sheet(exportData.data.users);
-          XLSX.utils.book_append_sheet(workbook, usersSheet, 'Users');
+          addJsonSheet('Users', exportData.data.users);
         }
         
         // System sheet (if included)
         if (includeSystemData && exportData.data.system) {
-          const systemSheet = XLSX.utils.json_to_sheet([
+          addJsonSheet('System Data', [
             exportData.data.system.orderStatuses,
             exportData.data.system.customFields,
             exportData.data.system.optionSets
           ].flat());
-          XLSX.utils.book_append_sheet(workbook, systemSheet, 'System Data');
         }
         
         // Generate buffer
-        exportContent = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+        exportContent = Buffer.from(await workbook.xlsx.writeBuffer());
         contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         filename = `database-export-${timestamp}.xlsx`;
         break;

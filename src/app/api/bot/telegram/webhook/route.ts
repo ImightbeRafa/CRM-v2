@@ -11,6 +11,7 @@ console.log('🚀🚀🚀 WEBHOOK MODULE LOADING 🚀🚀🚀', new Date().toISO
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getTelegramBot, sendMessage, sendTypingAction } from '@/lib/bot/telegram';
+import { timingSafeEqual } from 'crypto';
 import { 
   findBotSession, 
   getBotSessionWithContext,
@@ -74,8 +75,23 @@ function verifyWebhookSecret(request: NextRequest): boolean {
     return false;
   }
   
-  if (providedSecret !== secret) {
-    console.warn('[Telegram Webhook] ⚠️ Invalid secret token received');
+  // SECURITY: Use timing-safe comparison to prevent timing attacks
+  try {
+    const providedBuffer = Buffer.from(providedSecret, 'utf8');
+    const secretBuffer = Buffer.from(secret, 'utf8');
+    
+    // Lengths must match for timingSafeEqual
+    if (providedBuffer.length !== secretBuffer.length) {
+      console.warn('[Telegram Webhook] ⚠️ Invalid secret token received (length mismatch)');
+      return false;
+    }
+    
+    if (!timingSafeEqual(providedBuffer, secretBuffer)) {
+      console.warn('[Telegram Webhook] ⚠️ Invalid secret token received');
+      return false;
+    }
+  } catch {
+    console.warn('[Telegram Webhook] ⚠️ Error comparing secret tokens');
     return false;
   }
   

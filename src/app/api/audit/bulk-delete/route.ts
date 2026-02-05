@@ -18,13 +18,23 @@ export async function POST(request: NextRequest) {
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
       return createErrorResponse('No IDs provided for deletion', 400)
     }
+    
+    // SECURITY: Validate and sanitize ids to prevent query injection
+    // Each id must be a string (not an object that could contain operators like $ne)
+    const sanitizedIds = ids.filter((id): id is string => 
+      typeof id === 'string' && id.length > 0 && id.length < 100
+    );
+    
+    if (sanitizedIds.length !== ids.length) {
+      return createErrorResponse('Invalid IDs format - all IDs must be non-empty strings', 400)
+    }
 
-    console.log(`🗑️ Bulk deleting ${ids.length} audit logs for tenant ${tenantId}`)
+    console.log(`🗑️ Bulk deleting ${sanitizedIds.length} audit logs for tenant ${tenantId}`)
 
     // Delete audit logs (auto-filtered by tenantPrisma)
     const result = await prisma.auditLog.deleteMany({
       where: {
-        id: { in: ids }
+        id: { in: sanitizedIds }
       }
     })
 
@@ -34,6 +44,7 @@ export async function POST(request: NextRequest) {
     try {
       await prisma.auditLog.create({
         data: {
+          tenantId: tenantId,
           userId: userId,
           userName: auth.session?.user?.email || 'Unknown',
           userRole: auth.role,
@@ -43,8 +54,8 @@ export async function POST(request: NextRequest) {
           entityName: `${result.count} audit logs`,
           reason: `Bulk deletion of ${result.count} audit log records`,
           oldValues: {
-            requestedIds: ids.length,
-            idsToDelete: ids
+            requestedIds: sanitizedIds.length,
+            idsToDelete: sanitizedIds
           },
           newValues: {
             deletedCount: result.count

@@ -1,13 +1,13 @@
 'use client'
 
 import { signIn } from "next-auth/react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { Button } from "@/app/components/ui/button"
 import BetsyLogo from "@/BetsyLogo.png"
 
-export default function SignInPage() {
+function SignInPageInner() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [name, setName] = useState("")
@@ -279,8 +279,25 @@ export default function SignInPage() {
         </form>
       </div>
       <footer className="mt-8 text-center text-gray-500 text-sm">
-        © {new Date().getFullYear()}BetsyCRM los derechos reservados.
+        {new Date().getFullYear()}BetsyCRM los derechos reservados.
       </footer>
     </div>
+  )
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100">
+        <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-6 shadow-md">
+          <div className="text-center">
+            <div className="animate-pulse h-16 w-16 bg-gray-200 rounded mx-auto mb-6"></div>
+            <div className="animate-pulse h-8 bg-gray-200 rounded w-3/4 mx-auto"></div>
+          </div>
+        </div>
+      </div>
+    }>
+      <SignInPageInner />
+    </Suspense>
   )
 }

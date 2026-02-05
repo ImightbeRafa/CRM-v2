@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { setWebhook, deleteWebhook, getWebhookInfo, getTelegramBot } from '@/lib/bot/telegram';
+import { timingSafeEqual } from 'crypto';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -35,7 +36,24 @@ function verifySecret(request: NextRequest): boolean {
     return true;
   }
   
-  return secret === WEBHOOK_SECRET;
+  // SECURITY: Use timing-safe comparison to prevent timing attacks
+  if (!secret || !WEBHOOK_SECRET) {
+    return false;
+  }
+  
+  try {
+    const secretBuffer = Buffer.from(secret, 'utf8');
+    const webhookSecretBuffer = Buffer.from(WEBHOOK_SECRET, 'utf8');
+    
+    // Lengths must match for timingSafeEqual
+    if (secretBuffer.length !== webhookSecretBuffer.length) {
+      return false;
+    }
+    
+    return timingSafeEqual(secretBuffer, webhookSecretBuffer);
+  } catch {
+    return false;
+  }
 }
 
 /**

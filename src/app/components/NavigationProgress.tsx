@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 
-export function NavigationProgress() {
+function NavigationProgressInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isNavigating, setIsNavigating] = useState(false);
@@ -39,5 +39,13 @@ export function NavigationProgress() {
         }
       `}</style>
     </div>
+  );
+}
+
+export function NavigationProgress() {
+  return (
+    <Suspense fallback={null}>
+      <NavigationProgressInner />
+    </Suspense>
   );
 }

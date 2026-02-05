@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { BulkOperations } from '../components/ui/bulk-operations'
 import { SimpleAuditDashboard } from '../components/SimpleAuditDashboard'
@@ -16,7 +16,7 @@ import { useConfig } from '../contexts/ConfigContext'
 import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck, Bot, Building2 } from 'lucide-react'
 import { BusinessProfileSettings } from './components/BusinessProfileSettings'
 
-export default function ConfigPage() {
+function ConfigPageInner() {
   const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState('fields')
   const [newFieldType, setNewFieldType] = useState('text') // Track type for validation
@@ -1762,5 +1762,23 @@ export default function ConfigPage() {
       {/* Tenant Settings Gear (only visible on config page) */}
       <TenantSettingsPanel />
     </div>
+  )
+}
+
+export default function ConfigPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+        <div className="max-w-7xl mx-auto p-4 md:p-6">
+          <div className="animate-pulse space-y-4">
+            <div className="h-24 bg-gray-200 rounded-xl"></div>
+            <div className="h-16 bg-gray-200 rounded-xl"></div>
+            <div className="h-96 bg-gray-200 rounded-xl"></div>
+          </div>
+        </div>
+      </div>
+    }>
+      <ConfigPageInner />
+    </Suspense>
   )
 }

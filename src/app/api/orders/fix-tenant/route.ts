@@ -26,6 +26,19 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
+    // SECURITY: Validate and sanitize orderIds to prevent query injection
+    // Each orderIds must be a string (not an object that could contain operators like $ne)
+    const sanitizedOrderIds = orderIds.filter((id): id is string => 
+      typeof id === 'string' && id.length > 0 && id.length < 100
+    );
+    
+    if (sanitizedOrderIds.length !== orderIds.length) {
+      return NextResponse.json({
+        status: 'error',
+        error: 'Invalid orderIds format - all IDs must be non-empty strings'
+      }, { status: 400 });
+    }
+    
     if (!targetTenantId || typeof targetTenantId !== 'string') {
       return NextResponse.json({
         status: 'error',
@@ -56,7 +69,7 @@ export async function POST(request: NextRequest) {
     // Get orders to verify they exist
     const orders = await prismaRaw.order.findMany({
       where: {
-        orderId: { in: orderIds }
+        orderId: { in: sanitizedOrderIds }
       },
       select: {
         id: true,
@@ -83,7 +96,7 @@ export async function POST(request: NextRequest) {
     // Update all orders to the new tenant
     const result = await prismaRaw.order.updateMany({
       where: {
-        orderId: { in: orderIds }
+        orderId: { in: sanitizedOrderIds }
       },
       data: {
         tenantId: targetTenantId

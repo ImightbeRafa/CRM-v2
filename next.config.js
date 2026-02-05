@@ -22,18 +22,15 @@ const nextConfig = {
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     // Add other environment variables here
   },
-  // Add global polyfills for server-side rendering
-  experimental: {
-    serverComponentsExternalPackages: [
-      'puppeteer',
-      'puppeteer-core',
-      '@sparticuz/chromium',
-    ],
-  },
+  // Server-side packages that should not be bundled
+  serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium'],
 
-  // Domain configuration
+  // Image configuration
   images: {
-    domains: ['lh3.googleusercontent.com', 'laplacelab.xyz'],
+    remotePatterns: [
+      { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
+      { protocol: 'https', hostname: 'laplacelab.xyz' },
+    ],
     unoptimized: true,
   },
 

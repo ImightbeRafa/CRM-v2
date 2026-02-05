@@ -4,10 +4,10 @@ import bcrypt from 'bcryptjs'
 import { createSuccessResponse, createErrorResponse, handleApiError, validatePassword } from '@/lib/apiUtils'
 
 // PUT /api/users/[id] - Update user (master only)
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { username, password, role, active } = await request.json()
-    const userId = params.id
+    const { id: userId } = await params
     
     const updateData: any = {}
     
@@ -56,9 +56,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 // DELETE /api/users/[id] - Delete user (master only)
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const userId = params.id
+    const { id: userId } = await params
     
     // Don't allow deleting the master user
     const user = await prisma.user.findUnique({

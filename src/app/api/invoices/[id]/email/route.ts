@@ -4,9 +4,10 @@ import { prisma } from '@/lib/db';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: invoiceId } = await params;
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     
     if (!token) {
@@ -34,7 +35,7 @@ export async function POST(
     // Get invoice
     const invoice = await prisma.invoice.findFirst({
       where: {
-        id: params.id,
+        id: invoiceId,
         tenantId: tenantId
       },
       include: {

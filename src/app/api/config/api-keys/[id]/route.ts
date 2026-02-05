@@ -4,15 +4,16 @@ import { revokeApiKey } from '@/lib/integration-auth';
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: keyId } = await params;
     const auth = await authenticateAPI(req);
     if (!auth.ok) {
       return auth.response;
     }
 
-    const success = await revokeApiKey(params.id, auth.tenantId);
+    const success = await revokeApiKey(keyId, auth.tenantId);
     
     if (!success) {
       return NextResponse.json(

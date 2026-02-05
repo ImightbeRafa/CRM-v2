@@ -5,9 +5,10 @@ import { withTenantContext } from '@/lib/tenantContext';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: guiaId } = await params;
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     
     if (!token) {
@@ -22,8 +23,6 @@ export async function GET(
     const userId = (token as any)?.sub as string | undefined;
     const userName = (token as any)?.name || (token as any)?.email || 'System';
     const userRole = (token as any)?.membershipRole;
-
-    const guiaId = params.id;
 
     return await withTenantContext({ tenantId, userId, role: userRole, userRole, userName }, async () => {
       const prisma = getTenantPrisma(tenantId);

@@ -30,9 +30,10 @@ async function getBrowser() {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   let browser = null;
+  const { id: invoiceId } = await params;
   
   try {
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
@@ -56,7 +57,7 @@ export async function GET(
     // Get invoice
     const invoice = await prisma.invoice.findFirst({
       where: {
-        id: params.id,
+        id: invoiceId,
         tenantId: tenantId
       },
       include: {

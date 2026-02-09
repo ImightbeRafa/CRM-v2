@@ -52,7 +52,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(true);
-  
+
   // Resolve expected date from either the canonical field (fechaEsperada)
   // or from any business info date field (prefer one whose name/label mentions "esperada" or "expected")
   const resolveExpectedDate = (): string => {
@@ -73,12 +73,12 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
   // Auto-assign vendedor to products that don't have one
   useEffect(() => {
-    if (user && orderInfo.products.some(p => !p.vendedor.trim())) {
+    if (user && orderInfo.products.some(p => !p.vendedor || !p.vendedor.trim())) {
       setOrderInfo(prev => ({
         ...prev,
         products: prev.products.map(product => ({
           ...product,
-          vendedor: product.vendedor || user.username
+          vendedor: (!product.vendedor || !product.vendedor.trim()) ? user.username : product.vendedor
         }))
       }));
     }
@@ -131,7 +131,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   // Auto-save functionality
   const autoSave = useCallback(async () => {
     if (!isClient || (orderInfo.products.length === 0 && !orderInfo.customerInfo.name)) return;
-    
+
     setAutoSaveStatus('saving');
     try {
       const autoSaveData = {
@@ -139,7 +139,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         products: orderInfo.products,
         timestamp: new Date().toISOString()
       };
-      
+
       // Save to localStorage for now (can be enhanced to save to server)
       if (typeof window !== 'undefined') {
         localStorage.setItem('betsy_autosave', JSON.stringify(autoSaveData));
@@ -166,7 +166,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   // Load auto-saved data on component mount
   useEffect(() => {
     if (!isClient) return;
-    
+
     const savedData = localStorage.getItem('betsy_autosave');
     if (savedData) {
       try {
@@ -214,7 +214,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
     // Location and shipping info (ONLY required for EA - shipping orders)
     const isShippingOrder = orderInfo.customerInfo.orderType === 'EA';
-    
+
     if (isShippingOrder) {
       if (!orderInfo.customerInfo.province.trim()) {
         return 'La provincia es requerida para pedidos de envío';
@@ -271,7 +271,18 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
+
+    // Auto-assign vendedor before validation if user is loaded and products are missing vendedor
+    if (user && orderInfo.products.some(p => !p.vendedor || !p.vendedor.trim())) {
+      const updatedProducts = orderInfo.products.map(product => ({
+        ...product,
+        vendedor: (!product.vendedor || !product.vendedor.trim()) ? user.username : product.vendedor
+      }));
+      setOrderInfo(prev => ({ ...prev, products: updatedProducts }));
+      // Update orderInfo for validation
+      orderInfo.products = updatedProducts;
+    }
+
     // Validate form before submission
     const validationError = validateForm();
     if (validationError) {
@@ -288,7 +299,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     try {
       // Create order data for database
       // Prefer a custom comment field from business info if defined (robust detection)
-      const commentKeywords = ['comentario','comentarios','comment','comments','observacion','observaciones','nota','notas','note','notes','descripcion','description']
+      const commentKeywords = ['comentario', 'comentarios', 'comment', 'comments', 'observacion', 'observaciones', 'nota', 'notas', 'note', 'notes', 'descripcion', 'description']
       const matchedField = businessInfoFields.find(f => {
         const nameL = (f?.name || '').toLowerCase()
         const labelL = (f?.label || '').toLowerCase()
@@ -328,7 +339,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               }
             }
           }
-        } catch {}
+        } catch { }
       }
 
       // Absolute last resort: read explicit order-level field 'comentarios'
@@ -345,7 +356,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         console.log('[SalesForm] matchedField:', matchedField?.name, 'customComment:', customComment)
         // eslint-disable-next-line no-console
         console.log('[SalesForm] customerInfo keys:', Object.keys(orderInfo.customerInfo as any))
-      } catch {}
+      } catch { }
 
       // Gather dynamic custom fields from customerInfo
       const dynamicFields = businessInfoFields.reduce((acc: any, f: any) => {
@@ -377,7 +388,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         console.log('[SalesForm] customFieldsToSend comment:', Object.entries(customFieldsToSend).find(([k]) => k.toLowerCase().includes('coment'))?.[0], '=>', Object.entries(customFieldsToSend).find(([k]) => k.toLowerCase().includes('coment'))?.[1])
         // eslint-disable-next-line no-console
         console.log('[SalesForm] final customComment used:', customComment)
-      } catch {}
+      } catch { }
 
       const orderData = {
         orderId: `ORDER-${Date.now()}`,
@@ -432,7 +443,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         console.log('[SalesForm] orderData.comments:', (orderData as any).comments)
         // eslint-disable-next-line no-console
         console.log('[SalesForm] orderData.customFields keys:', Object.keys((orderData as any).customFields || {}))
-      } catch {}
+      } catch { }
 
       const response = await fetch('/api/orders', {
         method: 'POST',
@@ -482,7 +493,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
           },
           credentials: 'include'
         });
-        
+
         if (syncResponse.ok) {
           console.log('Client sync completed successfully');
         } else {
@@ -496,26 +507,26 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         type: 'success',
         message: `✅ Pedido guardado exitosamente con ${orderInfo.products.length} producto(s) - ID: ${result.data.orderId}`
       });
-      
+
       // Clear auto-save data after successful submission
       localStorage.removeItem('betsy_autosave');
-      
+
       // Auto-hide success message after 5 seconds
       const timeoutId = setTimeout(() => {
         if (isMounted) {
           setSubmitStatus({ type: '', message: '' });
         }
       }, 5000);
-      
+
       // Store timeout ID for cleanup
       (window as any).__betsy_success_timeout = timeoutId;
-      
+
       resetForm();
 
     } catch (error) {
       setSubmitStatus({
         type: 'error',
-        message: error instanceof Error 
+        message: error instanceof Error
           ? `❌ Error: ${error.message}`
           : '❌ Error al guardar el pedido. Por favor intente de nuevo.'
       });
@@ -548,12 +559,12 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       orderSubtotal: 0,
       orderShipping: 0,
     });
-    
+
     setRawCustomerText('');
     setAutoSaveStatus('saved');
     setLastAutoSave(null);
     setSelectedCustomerId(null);
-    
+
     // Clear localStorage
     if (typeof window !== 'undefined') {
       localStorage.removeItem('betsy_autosave');
@@ -597,7 +608,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   const handleCustomerSelect = (customerSuggestion: CustomerSuggestion) => {
     // Store the selected customer ID so we can update the right record
     setSelectedCustomerId(customerSuggestion.id);
-    
+
     setOrderInfo(prev => ({
       ...prev,
       customerInfo: {
@@ -617,22 +628,22 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
   return (
     <>
-        <Card role="main" aria-label="Formulario de Ventas Optimizado">
+      <Card role="main" aria-label="Formulario de Ventas Optimizado">
         <CardHeader>
           <div className="flex justify-between items-start">
             <div className="flex-1">
               <div className="flex items-center gap-3">
                 <CardTitle className="flex items-center gap-2">
                   Betsy - Sistema de Ventas Optimizado
-                {autoSaveStatus === 'saving' && (
-                  <Clock className="h-4 w-4 text-blue-500 animate-spin" />
-                )}
-                {autoSaveStatus === 'saved' && lastAutoSave && (
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                )}
-                {autoSaveStatus === 'unsaved' && (
-                  <AlertCircle className="h-4 w-4 text-orange-500" />
-                )}
+                  {autoSaveStatus === 'saving' && (
+                    <Clock className="h-4 w-4 text-blue-500 animate-spin" />
+                  )}
+                  {autoSaveStatus === 'saved' && lastAutoSave && (
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                  )}
+                  {autoSaveStatus === 'unsaved' && (
+                    <AlertCircle className="h-4 w-4 text-orange-500" />
+                  )}
                 </CardTitle>
                 <Button
                   onClick={() => onToggleForm(false)}
@@ -644,7 +655,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                 </Button>
               </div>
               <p className="text-sm text-gray-600 mt-1">
-                {autoSaveStatus === 'saved' && lastAutoSave && 
+                {autoSaveStatus === 'saved' && lastAutoSave &&
                   `Guardado automáticamente: ${lastAutoSave.toLocaleTimeString()}`
                 }
                 {autoSaveStatus === 'unsaved' && 'Cambios sin guardar'}
@@ -653,22 +664,21 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
             </div>
             <OrderTypeToggle
               orderType={orderInfo.customerInfo.orderType}
-              onOrderTypeChange={(type) => 
-                setOrderInfo(prev => ({ 
-                  ...prev, 
+              onOrderTypeChange={(type) =>
+                setOrderInfo(prev => ({
+                  ...prev,
                   customerInfo: { ...prev.customerInfo, orderType: type }
                 }))
               }
             />
           </div>
         </CardHeader>
-        
+
         <CardContent>
           {submitStatus.message && (
-            <Alert 
-              className={`mb-4 ${
-                submitStatus.type === 'success' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-              }`}
+            <Alert
+              className={`mb-4 ${submitStatus.type === 'success' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                }`}
             >
               <AlertTitle className={submitStatus.type === 'success' ? 'text-green-800' : 'text-red-800'}>
                 {submitStatus.type === 'success' ? 'Éxito' : 'Error'}
@@ -685,13 +695,13 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               <h3 className="text-lg font-semibold text-blue-800 mb-4">
                 👤 Información del Cliente
               </h3>
-              
+
               {/* Recurring Customers - At top of customer form */}
               <RecurringCustomers
                 onCustomerSelect={handleCustomerSelect}
                 currentCustomerName={orderInfo.customerInfo.name}
               />
-              
+
               <CustomerForm
                 customerInfo={orderInfo.customerInfo}
                 onCustomerInfoChange={handleCustomerInfoChange}
@@ -773,7 +783,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                 </div>
               </div>
             )}
-            
+
             {/* Product Selection - Quick Pick */}
             <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-4 rounded-lg">
               <h3 className="text-lg font-semibold text-indigo-800 mb-4 flex items-center gap-2">
@@ -804,14 +814,13 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               >
                 Limpiar Formulario
               </Button>
-              <Button 
+              <Button
                 type="submit"
                 disabled={isSubmitting || orderInfo.products.length === 0}
-                className={`px-4 sm:px-8 py-2 flex items-center justify-center gap-2 w-full sm:w-auto transition-all duration-200 ${
-                  isSubmitting 
-                    ? 'bg-blue-400 cursor-not-allowed' 
+                className={`px-4 sm:px-8 py-2 flex items-center justify-center gap-2 w-full sm:w-auto transition-all duration-200 ${isSubmitting
+                    ? 'bg-blue-400 cursor-not-allowed'
                     : 'bg-blue-500 hover:bg-blue-600 hover:shadow-lg'
-                } text-white`}
+                  } text-white`}
               >
                 {isSubmitting ? (
                   <>

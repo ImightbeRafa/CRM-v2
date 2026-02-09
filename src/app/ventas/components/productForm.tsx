@@ -24,7 +24,8 @@ const ProductForm: React.FC<ProductFormProps> = ({
 
   // Auto-assign vendedor when user is loaded
   useEffect(() => {
-    if (user && !productInfo.vendedor) {
+    // Check if vendedor is empty string (not just falsy) to properly auto-assign
+    if (user && (!productInfo.vendedor || productInfo.vendedor.trim() === '')) {
       onProductInfoChange({
         ...productInfo,
         vendedor: user.username
@@ -91,7 +92,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
         // Defensive fix: some select fields might be missing linked optionSet
         if (setsJson?.status === 'success') {
           const setByKey: Record<string, any> = {}
-          ;(setsJson.data || []).forEach((set: any) => { setByKey[set.key] = set })
+            ; (setsJson.data || []).forEach((set: any) => { setByKey[set.key] = set })
           nextFields = nextFields.map((fld: any) => {
             if ((fld.type === 'select' || fld.type === 'multiselect') && (!fld.optionSet || (fld.optionSet.options || []).length === 0)) {
               const guess = setByKey[fld.key]
@@ -125,7 +126,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
         loadData()
       }
     }
-    
+
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -232,12 +233,12 @@ const ProductForm: React.FC<ProductFormProps> = ({
               // Avoid duplicating comments if a dynamic field is configured with key 'comments'
               if (field.key === 'comments') return null
               // Exclude shipping method field as it's handled separately in order summary
-              if (field.key === 'metodoEnvio' || field.key === 'metodo_envio' || field.key === 'shipping_method' || 
-                  field.key === 'metodoEnvio' || field.key === 'metodo_envio' || field.key === 'shipping_method' ||
-                  field.label?.toLowerCase().includes('método de envío') || 
-                  field.label?.toLowerCase().includes('metodo de envio') ||
-                  field.label?.toLowerCase().includes('shipping') ||
-                  field.key?.toLowerCase().includes('envio') && field.key?.toLowerCase().includes('metodo')) return null
+              if (field.key === 'metodoEnvio' || field.key === 'metodo_envio' || field.key === 'shipping_method' ||
+                field.key === 'metodoEnvio' || field.key === 'metodo_envio' || field.key === 'shipping_method' ||
+                field.label?.toLowerCase().includes('método de envío') ||
+                field.label?.toLowerCase().includes('metodo de envio') ||
+                field.label?.toLowerCase().includes('shipping') ||
+                field.key?.toLowerCase().includes('envio') && field.key?.toLowerCase().includes('metodo')) return null
               const name = field.key as keyof ProductInfo
               if (field.type === 'text' || field.type === 'number') {
                 return (
@@ -260,14 +261,14 @@ const ProductForm: React.FC<ProductFormProps> = ({
               if (field.type === 'boolean') {
                 return (
                   <div key={field.id} className="flex items-center gap-2 p-2 bg-white rounded border">
-                    <input 
-                      type="checkbox" 
-                      name={name as string} 
-                      checked={Boolean((productInfo as any)[name])} 
+                    <input
+                      type="checkbox"
+                      name={name as string}
+                      checked={Boolean((productInfo as any)[name])}
                       onChange={(e) => {
                         const next = { ...productInfo, [name]: e.target.checked ? 'Sí' : '' } as unknown as ProductInfo
                         onProductInfoChange(recalcProduct(next))
-                      }} 
+                      }}
                       className="w-4 h-4"
                     />
                     <label className="font-medium text-sm text-gray-700">{field.label}</label>
@@ -305,7 +306,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
         </div>
       ) : null}
 
-      
+
 
 
       {/* Vendor Information - Only show in edit mode, not in add modal */}

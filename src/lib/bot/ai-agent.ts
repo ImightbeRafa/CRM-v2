@@ -41,6 +41,34 @@ const MODEL = process.env.XAI_MODEL || 'grok-4-1-fast-reasoning';
 const MAX_TOKENS = 1000;
 const TEMPERATURE = 0.7;
 
+// Action keywords that require tool calls (to prevent AI hallucination)
+// When these keywords are detected, we force tool_choice: 'required'
+const ACTION_KEYWORDS = [
+  // Order creation
+  'crear', 'crea', 'creame', 'créame', 'nueva orden', 'nuevo pedido', 'recrear',
+  'registrar', 'registra', 'agregar orden', 'añadir orden', 'hacer orden',
+  // Order updates
+  'actualizar', 'actualiza', 'modificar', 'modifica', 'cambiar', 'cambia',
+  'editar', 'edita', 'corregir', 'corrige',
+  // Status updates
+  'marcar como', 'cambiar estado', 'actualizar estado', 'pasar a',
+  // Deletion
+  'eliminar', 'elimina', 'borrar', 'borra', 'cancelar orden',
+  // Inventory
+  'agregar stock', 'añadir stock', 'reducir stock', 'aumentar stock',
+  'descontar', 'restar', 'sumar al inventario',
+  // Shipping
+  'generar guía', 'genera guía', 'crear guía', 'guía de envío',
+];
+
+/**
+ * Check if a message looks like an action request that requires tool execution
+ */
+function isActionRequest(message: string): boolean {
+  const normalized = message.toLowerCase().trim();
+  return ACTION_KEYWORDS.some(keyword => normalized.includes(keyword));
+}
+
 // System prompt in Spanish
 const SYSTEM_PROMPT = `Eres Betsy, una asistente virtual profesional para Betsy CRM, una plataforma de gestión de pedidos para negocios en Costa Rica.
 
@@ -106,13 +134,13 @@ Recuerda: Eres una asistente profesional de ventas. Mantén el enfoque en la efi
 async function getCustomFieldsSection(tenantId: string): Promise<string> {
   try {
     const customFieldsConfig = await getTenantCustomFields(tenantId);
-    
+
     if (customFieldsConfig.productFields.length === 0 && customFieldsConfig.businessInfoFields.length === 0) {
       return '';
     }
-    
+
     let section = '\n\nCAMPOS PERSONALIZADOS DISPONIBLES:\n';
-    
+
     if (customFieldsConfig.productFields.length > 0) {
       section += '\n**Campos de Producto:**\n';
       customFieldsConfig.productFields.forEach(field => {
@@ -120,7 +148,7 @@ async function getCustomFieldsSection(tenantId: string): Promise<string> {
         section += '- ' + field.label + required + ': tipo ' + field.type + '\n';
       });
     }
-    
+
     if (customFieldsConfig.businessInfoFields.length > 0) {
       section += '\n**Campos de Información del Negocio:**\n';
       customFieldsConfig.businessInfoFields.forEach(field => {
@@ -128,9 +156,9 @@ async function getCustomFieldsSection(tenantId: string): Promise<string> {
         section += '- ' + field.label + required + ': tipo ' + field.type + '\n';
       });
     }
-    
+
     section += '\nIMPORTANTE: Siempre solicita los valores de los campos requeridos al crear una orden.';
-    
+
     return section;
   } catch (error) {
     console.error('[AI Agent] Error generating custom fields section:', error);
@@ -141,23 +169,23 @@ async function getCustomFieldsSection(tenantId: string): Promise<string> {
 // Convert Zod schemas to OpenAI function definitions
 function zodToOpenAITool(name: string, schema: { description: string; parameters: z.ZodType<any> }) {
   const zodSchema = schema.parameters;
-  
+
   // Convert Zod to JSON Schema manually for the fields we use
   const jsonSchema: any = {
     type: 'object',
     properties: {},
     required: [],
   };
-  
+
   if (zodSchema instanceof z.ZodObject) {
     const shape = zodSchema.shape;
-    
+
     for (const [key, value] of Object.entries(shape)) {
       const zodField = value as z.ZodTypeAny;
       const fieldDef = zodField._def;
-      
+
       let fieldSchema: any = { type: 'string' };
-      
+
       // Get the inner type if it's optional
       let innerType = zodField;
       if (fieldDef.typeName === 'ZodOptional') {
@@ -165,9 +193,9 @@ function zodToOpenAITool(name: string, schema: { description: string; parameters
       } else {
         jsonSchema.required.push(key);
       }
-      
+
       const innerDef = innerType._def;
-      
+
       // Determine the type
       if (innerDef.typeName === 'ZodString') {
         fieldSchema = { type: 'string' };
@@ -193,16 +221,16 @@ function zodToOpenAITool(name: string, schema: { description: string; parameters
         // Nested object
         fieldSchema = { type: 'object', properties: {} };
       }
-      
+
       // Add description if available
       if (zodField.description) {
         fieldSchema.description = zodField.description;
       }
-      
+
       jsonSchema.properties[key] = fieldSchema;
     }
   }
-  
+
   return {
     type: 'function' as const,
     function: {
@@ -235,7 +263,7 @@ export async function processMessage(
     if (pending) {
       const confirmed = isConfirmation(userMessage);
       const denied = isDenial(userMessage);
-      
+
       if (confirmed) {
         // Execute the pending action
         const result = await executePendingAction(pending, context);
@@ -247,87 +275,131 @@ export async function processMessage(
       }
       // If neither, continue with normal processing
     }
-    
+
     // Add user message to history
     await addUserMessage(platform, platformId, userMessage);
-    
+
     // Get conversation history
     const history = await getFormattedHistory(platform, platformId);
-    
+
     // Inject current date and time into system prompt
     const now = new Date();
-    const currentDate = now.toLocaleDateString('es-CR', { 
+    const currentDate = now.toLocaleDateString('es-CR', {
       weekday: 'long',
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
     const currentTime = now.toLocaleTimeString('es-CR', {
       hour: '2-digit',
       minute: '2-digit'
     });
-    
+
     // Fetch tenant's custom fields
     const customFieldsSection = await getCustomFieldsSection(context.tenantId);
-    
+
     // Update tool schemas with tenant-specific custom fields
     await updateToolSchemasWithCustomFields(context.tenantId);
-    
+
     // Build tools array AFTER schema updates to include custom fields
     const currentTools = buildToolsArray();
-    
+
     const systemPromptWithDate = SYSTEM_PROMPT
       .replace('{{CURRENT_DATE}}', currentDate)
       .replace('{{CURRENT_TIME}}', currentTime)
       .replace('{{CUSTOM_FIELDS_SECTION}}', customFieldsSection);
-    
+
     // Build messages array
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPromptWithDate },
       ...history.slice(-20), // Keep last 20 messages for context
     ];
-    
-    // Call xAI
+
+    // Detect if this is an action request that should require tool execution
+    const requiresToolCall = isActionRequest(userMessage);
+
+    if (requiresToolCall) {
+      console.log('[AI Agent] 🔧 Action request detected, forcing tool_choice: required');
+    }
+
+    // Call xAI with dynamic tool_choice
     const response = await xai.chat.completions.create({
       model: MODEL,
       messages,
       tools: currentTools,
-      tool_choice: 'auto',
+      // Force tool calls for action requests to prevent hallucinated responses
+      tool_choice: requiresToolCall ? 'required' : 'auto',
       max_tokens: MAX_TOKENS,
       temperature: TEMPERATURE,
     });
-    
+
     const message = response.choices[0]?.message;
-    
+
     if (!message) {
       throw new Error('No response from AI');
     }
-    
+
+    // SECURITY CHECK: Detect when AI should have called a tool but didn't
+    // This prevents the AI from hallucinating success without executing tools
+    if (requiresToolCall && (!message.tool_calls || message.tool_calls.length === 0)) {
+      console.warn('[AI Agent] ⚠️ ACTION REQUEST BUT NO TOOL CALLS!');
+      console.warn('[AI Agent] User message:', userMessage);
+      console.warn('[AI Agent] AI response (text only):', message.content?.slice(0, 300));
+
+      // Return a message that asks for more details instead of allowing hallucinated success
+      const safeResponse = `Para ejecutar esta acción, necesito más información. Por favor proporciona en un solo mensaje:
+
+📦 **Para crear orden:**
+• Nombre del cliente
+• Producto y cantidad
+• Precio total
+• Dirección de entrega (si es envío)
+
+📊 **Para otras acciones:**
+• ID de la orden o producto
+• Detalles específicos de lo que deseas hacer
+
+¿Puedes proporcionar estos datos?`;
+
+      await addAssistantMessage(platform, platformId, safeResponse);
+      return safeResponse;
+    }
+
     // Handle tool calls
     if (message.tool_calls && message.tool_calls.length > 0) {
       const toolResults: string[] = [];
       const toolCallsLog: any[] = [];
-      
+
       for (const toolCall of message.tool_calls) {
         const toolName = toolCall.function.name as ToolName;
         let toolArgs: any;
-        
+
         try {
           toolArgs = JSON.parse(toolCall.function.arguments);
         } catch {
           toolArgs = {};
         }
-        
+
         console.log('[AI Agent] Executing tool: ' + toolName, toolArgs);
-        
+
         const result = await executeTool(toolName, context, toolArgs);
-        
+
+        // Enhanced logging for debugging
+        if (result.success) {
+          console.log(`[AI Agent] ✅ Tool ${toolName} executed successfully`);
+          if (result.data && typeof result.data === 'object' && 'orderId' in result.data) {
+            console.log(`[AI Agent] 📦 Order created with ID: ${(result.data as any).orderId}`);
+          }
+        } else {
+          console.error(`[AI Agent] ❌ Tool ${toolName} failed:`, result.error);
+        }
+
         toolCallsLog.push({
           name: toolName,
           args: toolArgs,
           result: result.success ? 'success' : 'error',
         });
-        
+
         if (result.success) {
           // Format the result based on tool type
           const formatted = formatToolResult(toolName, result);
@@ -336,7 +408,7 @@ export async function processMessage(
           toolResults.push('❌ Error: ' + result.error);
         }
       }
-      
+
       // Get a natural language response about the tool results
       const followUpMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         ...messages,
@@ -355,32 +427,32 @@ export async function processMessage(
           tool_call_id: message.tool_calls[0]?.id || '',
         },
       ];
-      
+
       const followUpResponse = await xai.chat.completions.create({
         model: MODEL,
         messages: followUpMessages,
         max_tokens: MAX_TOKENS,
         temperature: TEMPERATURE,
       });
-      
+
       const finalMessage = followUpResponse.choices[0]?.message?.content;
-      
+
       if (finalMessage) {
         await addAssistantMessage(platform, platformId, finalMessage);
         return finalMessage;
       }
-      
+
       return 'Procesando resultados...';
     }
-    
+
     // No tool calls, just return the AI response
     if (message.content) {
       await addAssistantMessage(platform, platformId, message.content);
       return message.content;
     }
-    
+
     return 'Lo siento, no pude procesar tu solicitud.';
-    
+
   } catch (error) {
     console.error('[AI Agent] Error processing message:', error);
     return 'Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo.';
@@ -394,7 +466,7 @@ function formatToolResult(toolName: ToolName, result: ToolResult): string {
   if (!result.success) {
     return result.error || 'Error desconocido';
   }
-  
+
   switch (toolName) {
     case 'get_orders':
       if (Array.isArray(result.data) && result.data.length > 0) {
@@ -405,29 +477,29 @@ function formatToolResult(toolName: ToolName, result: ToolResult): string {
           .join('\n\n');
       }
       return 'No se encontraron órdenes con esos criterios.';
-      
+
     case 'get_order_details':
       if (result.data) {
         return formatOrderForTelegram(result.data);
       }
       return 'Orden no encontrada.';
-      
+
     case 'create_order':
       if (result.data) {
         return result.message || `✅ Orden creada: #${(result.data as any).orderId}`;
       }
       return 'Error al crear la orden.';
-      
+
     case 'update_order':
     case 'update_order_status':
       return result.message || '✅ Orden actualizada.';
-      
+
     case 'get_inventory_item':
       if (result.data) {
         return formatInventoryForTelegram(result.data);
       }
       return 'Producto no encontrado.';
-      
+
     case 'search_inventory':
       if (Array.isArray(result.data) && result.data.length > 0) {
         return result.data
@@ -437,12 +509,12 @@ function formatToolResult(toolName: ToolName, result: ToolResult): string {
           .join('\n\n');
       }
       return 'No se encontraron productos.';
-      
+
     case 'get_statistics_summary':
       if (result.data) {
         const stats = result.data as any;
         let response = formatStatsForTelegram(stats);
-        
+
         // Add custom fields if available
         if (stats.customFields && Object.keys(stats.customFields).length > 0) {
           response += '\n\n**Campos Personalizados:**\n';
@@ -450,17 +522,17 @@ function formatToolResult(toolName: ToolName, result: ToolResult): string {
             response += `• ${key}: ${value}\n`;
           }
         }
-        
+
         return response;
       }
       return 'No hay estadísticas disponibles.';
-      
+
     case 'generate_shipping_guia':
       if (result.data) {
         return result.message || '✅ Guía de envío generada correctamente.';
       }
       return 'Error al generar la guía de envío.';
-      
+
     default:
       return result.message || 'Operación completada.';
   }
@@ -471,7 +543,7 @@ function formatToolResult(toolName: ToolName, result: ToolResult): string {
  */
 function isConfirmation(message: string): boolean {
   const confirmations = [
-    'sí', 'si', 'sí!', 'si!', 'yes', 'y', 'confirmar', 'confirmado', 
+    'sí', 'si', 'sí!', 'si!', 'yes', 'y', 'confirmar', 'confirmado',
     'aceptar', 'aceptado', 'proceder', 'continuar', 'ok', 'de acuerdo'
   ];
   return confirmations.includes(message.toLowerCase().trim());
@@ -494,7 +566,7 @@ function isDenial(message: string): boolean {
 async function executePendingAction(pending: any, context: ToolContext): Promise<string> {
   try {
     const result = await executeTool(pending.toolName as ToolName, context, pending.toolArgs);
-    
+
     if (result.success) {
       const formatted = formatToolResult(pending.toolName as ToolName, result);
       return '✅ Acción confirmada:\n\n' + formatted;

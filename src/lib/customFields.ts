@@ -56,20 +56,20 @@ export async function getTenantCustomFields(tenantId: string): Promise<CustomFie
     { tenantId, userId: 'system', userName: 'system', userRole: 'system' },
     async () => {
       const tenantPrisma = getTenantPrisma(tenantId);
-      
+
       // Fetch product fields (Campos Personalizados)
       const productFields = await tenantPrisma.productField.findMany({
         where: { active: true },
         orderBy: [{ order: 'asc' }, { key: 'asc' }],
-        include: { 
-          optionSet: { 
-            include: { 
-              options: { 
-                where: { active: true }, 
-                orderBy: { label: 'asc' } 
-              } 
-            } 
-          } 
+        include: {
+          optionSet: {
+            include: {
+              options: {
+                where: { active: true },
+                orderBy: { label: 'asc' }
+              }
+            }
+          }
         },
       });
 
@@ -104,7 +104,7 @@ export async function getTenantCustomFields(tenantId: string): Promise<CustomFie
  */
 export function extractCustomFields(data: any, customFieldsConfig: CustomFieldsData): Record<string, any> {
   const customFields: Record<string, any> = {};
-  
+
   // Process product fields
   customFieldsConfig.productFields.forEach(field => {
     const value = getFieldValue(data, field.key);
@@ -112,7 +112,7 @@ export function extractCustomFields(data: any, customFieldsConfig: CustomFieldsD
       customFields[field.key] = sanitizeFieldValue(value, field.type);
     }
   });
-  
+
   // Process business info fields
   customFieldsConfig.businessInfoFields.forEach(field => {
     const value = getFieldValue(data, field.name);
@@ -120,7 +120,7 @@ export function extractCustomFields(data: any, customFieldsConfig: CustomFieldsD
       customFields[field.name] = sanitizeFieldValue(value, field.type);
     }
   });
-  
+
   return customFields;
 }
 
@@ -132,10 +132,10 @@ function getFieldValue(data: any, fieldKey: string): any {
   // 1. Primary source: customFields JSON column
   if (data.customFields) {
     try {
-      const customFieldsData = typeof data.customFields === 'string' 
-        ? JSON.parse(data.customFields) 
+      const customFieldsData = typeof data.customFields === 'string'
+        ? JSON.parse(data.customFields)
         : data.customFields;
-      
+
       if (customFieldsData[fieldKey] !== undefined && customFieldsData[fieldKey] !== null && customFieldsData[fieldKey] !== '') {
         return customFieldsData[fieldKey];
       }
@@ -143,29 +143,29 @@ function getFieldValue(data: any, fieldKey: string): any {
       // Ignore parsing errors
     }
   }
-  
+
   // 2. Direct property on order (for legacy storage or product-level fields)
   if (data[fieldKey] !== undefined && data[fieldKey] !== null && data[fieldKey] !== '') {
     return data[fieldKey];
   }
-  
+
   // 3. Fallback: productDetails JSON (legacy storage)
   if (data.productDetails) {
     try {
-      const productDetails = typeof data.productDetails === 'string' 
-        ? JSON.parse(data.productDetails) 
+      const productDetails = typeof data.productDetails === 'string'
+        ? JSON.parse(data.productDetails)
         : data.productDetails;
-      
+
       // Check customFields within productDetails
       if (productDetails.customFields && productDetails.customFields[fieldKey] !== undefined) {
         return productDetails.customFields[fieldKey];
       }
-      
+
       // Check direct property in productDetails
       if (productDetails[fieldKey] !== undefined) {
         return productDetails[fieldKey];
       }
-      
+
       // Check if productDetails is an array (multiple products)
       if (Array.isArray(productDetails) && productDetails.length > 0) {
         // Get values from all products and join them
@@ -180,7 +180,7 @@ function getFieldValue(data: any, fieldKey: string): any {
       // Ignore parsing errors
     }
   }
-  
+
   return undefined;
 }
 
@@ -191,19 +191,19 @@ function sanitizeFieldValue(value: any, fieldType: string): any {
   if (value === null || value === undefined) {
     return null;
   }
-  
+
   switch (fieldType) {
     case 'number':
       const num = Number(value);
       return isNaN(num) ? null : num;
-    
+
     case 'boolean':
       if (typeof value === 'boolean') return value;
       if (typeof value === 'string') {
         return value.toLowerCase() === 'true' || value === '1';
       }
       return Boolean(value);
-    
+
     case 'date':
       if (value instanceof Date) return value.toISOString();
       if (typeof value === 'string') {
@@ -211,7 +211,7 @@ function sanitizeFieldValue(value: any, fieldType: string): any {
         return isNaN(date.getTime()) ? null : date.toISOString();
       }
       return null;
-    
+
     case 'select':
     case 'text':
     default:
@@ -223,11 +223,11 @@ function sanitizeFieldValue(value: any, fieldType: string): any {
  * Validate custom fields against their configuration
  */
 export function validateCustomFields(
-  customFields: Record<string, any>, 
+  customFields: Record<string, any>,
   customFieldsConfig: CustomFieldsData
 ): { isValid: boolean; errors: string[] } {
   const errors: string[] = [];
-  
+
   // Check required product fields
   customFieldsConfig.productFields.forEach(field => {
     if (field.required) {
@@ -237,7 +237,7 @@ export function validateCustomFields(
       }
     }
   });
-  
+
   // Check required business info fields
   customFieldsConfig.businessInfoFields.forEach(field => {
     if (field.required) {
@@ -247,7 +247,7 @@ export function validateCustomFields(
       }
     }
   });
-  
+
   return {
     isValid: errors.length === 0,
     errors
@@ -258,11 +258,11 @@ export function validateCustomFields(
  * Format custom fields for Telegram bot display
  */
 export function formatCustomFieldsForTelegram(
-  customFields: Record<string, any>, 
+  customFields: Record<string, any>,
   customFieldsConfig: CustomFieldsData
 ): string[] {
   const lines: string[] = [];
-  
+
   // Add product fields
   customFieldsConfig.productFields.forEach(field => {
     const value = customFields[field.key];
@@ -271,7 +271,7 @@ export function formatCustomFieldsForTelegram(
       lines.push(`${field.label}: ${displayValue}`);
     }
   });
-  
+
   // Add business info fields
   customFieldsConfig.businessInfoFields.forEach(field => {
     const value = customFields[field.name];
@@ -280,7 +280,7 @@ export function formatCustomFieldsForTelegram(
       lines.push(`${field.label}: ${displayValue}`);
     }
   });
-  
+
   return lines;
 }
 
@@ -291,7 +291,7 @@ function formatFieldValueForDisplay(value: any, fieldType: string): string {
   switch (fieldType) {
     case 'boolean':
       return value ? 'Sí' : 'No';
-    
+
     case 'date':
       try {
         const date = new Date(value);
@@ -299,10 +299,10 @@ function formatFieldValueForDisplay(value: any, fieldType: string): string {
       } catch {
         return String(value);
       }
-    
+
     case 'number':
       return Number(value).toLocaleString('es-CR');
-    
+
     default:
       return String(value);
   }
@@ -314,39 +314,47 @@ function formatFieldValueForDisplay(value: any, fieldType: string): string {
  */
 export function getCustomFieldsSchema(customFieldsConfig: CustomFieldsData): Record<string, z.ZodTypeAny> {
   const schema: Record<string, z.ZodTypeAny> = {};
-  
+
   // Add product fields to schema
   customFieldsConfig.productFields.forEach(field => {
-    const description = field.type === 'date' 
+    const description = field.type === 'date'
       ? `${field.label || field.key} (format: YYYY-MM-DD)`
       : field.label || field.key;
-    
+
     let fieldSchema: z.ZodTypeAny;
-    
+
     if (field.type === 'number') {
       fieldSchema = z.number().describe(description);
     } else if (field.type === 'boolean') {
       fieldSchema = z.boolean().describe(description);
+    } else if ((field.type === 'select' || field.type === 'multiselect') && field.options && field.options.length > 0) {
+      // Use z.enum for select fields so the AI knows valid values
+      const optionValues = field.options.map((o: any) => String(o.value || o.label));
+      if (optionValues.length > 0) {
+        fieldSchema = z.enum(optionValues as [string, ...string[]]).describe(description);
+      } else {
+        fieldSchema = z.string().describe(description);
+      }
     } else {
       fieldSchema = z.string().describe(description);
     }
-    
+
     // Make optional if not required
     if (!field.required) {
       fieldSchema = fieldSchema.optional();
     }
-    
+
     schema[field.key] = fieldSchema;
   });
-  
+
   // Add business info fields to schema
   customFieldsConfig.businessInfoFields.forEach(field => {
     const description = field.type === 'date'
       ? `${field.label || field.name} (format: YYYY-MM-DD)`
       : field.label || field.name;
-    
+
     let fieldSchema: z.ZodTypeAny;
-    
+
     if (field.type === 'number') {
       fieldSchema = z.number().describe(description);
     } else if (field.type === 'boolean') {
@@ -354,15 +362,15 @@ export function getCustomFieldsSchema(customFieldsConfig: CustomFieldsData): Rec
     } else {
       fieldSchema = z.string().describe(description);
     }
-    
+
     // Make optional if not required
     if (!field.required) {
       fieldSchema = fieldSchema.optional();
     }
-    
+
     schema[field.name] = fieldSchema;
   });
-  
+
   return schema;
 }
 
@@ -371,7 +379,7 @@ export function getCustomFieldsSchema(customFieldsConfig: CustomFieldsData): Rec
  * Custom fields are tenant-defined - no hardcoded mappings
  */
 export function shouldDisplayField(
-  fieldKey: string, 
+  fieldKey: string,
   customFieldsConfig: CustomFieldsData
 ): boolean {
   // Check if it's a configured product field (exact key match)
@@ -381,7 +389,7 @@ export function shouldDisplayField(
   if (productField && productField.active) {
     return true;
   }
-  
+
   // Check if it's a configured business info field
   const businessField = customFieldsConfig.businessInfoFields.find(
     f => f.name === fieldKey
@@ -389,7 +397,7 @@ export function shouldDisplayField(
   if (businessField && businessField.isActive) {
     return true;
   }
-  
+
   return false;
 }
 
@@ -397,7 +405,7 @@ export function shouldDisplayField(
  * Get the label for a field
  */
 export function getFieldLabel(
-  fieldKey: string, 
+  fieldKey: string,
   customFieldsConfig: CustomFieldsData
 ): string {
   // Check product fields first
@@ -407,7 +415,7 @@ export function getFieldLabel(
   if (productField) {
     return productField.label || productField.key;
   }
-  
+
   // Check business info fields
   const businessField = customFieldsConfig.businessInfoFields.find(
     f => f.name.toLowerCase() === fieldKey.toLowerCase()
@@ -415,6 +423,6 @@ export function getFieldLabel(
   if (businessField) {
     return businessField.label || businessField.name;
   }
-  
+
   return fieldKey;
 }

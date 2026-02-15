@@ -50,6 +50,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
+  const [productFieldConfigs, setProductFieldConfigs] = useState<any[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(true);
 
@@ -84,23 +85,24 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     }
   }, [user, orderInfo.products]);
 
-  // Fetch business info fields (non-blocking with cache)
+  // Fetch business info fields and product field configs (non-blocking with cache)
   useEffect(() => {
-    // Check cache first
+    // Check cache first for business info
     const cached = sessionStorage.getItem('businessInfoFields');
     if (cached) {
       try {
         const { data, timestamp } = JSON.parse(cached);
         if (Date.now() - timestamp < 300000) { // 5 minutes
           setBusinessInfoFields(data);
-          return;
+        } else {
+          sessionStorage.removeItem('businessInfoFields');
         }
       } catch (e) {
         sessionStorage.removeItem('businessInfoFields');
       }
     }
 
-    // Fetch in background, don't await
+    // Fetch business info fields
     fetch('/api/config/business-info', { credentials: 'include' })
       .then(res => res.json())
       .then(data => {
@@ -113,6 +115,16 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         }
       })
       .catch(error => console.error('Error fetching business info fields:', error));
+
+    // Fetch product field configs (ProductField)
+    fetch('/api/config/fields', { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success') {
+          setProductFieldConfigs(data.data);
+        }
+      })
+      .catch(error => console.error('Error fetching product field configs:', error));
   }, []);
 
   // Initialize client-side state
@@ -297,98 +309,54 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     setSubmitStatus({ type: '', message: '' });
 
     try {
-      // Create order data for database
-      // Prefer a custom comment field from business info if defined (robust detection)
-      const commentKeywords = ['comentario', 'comentarios', 'comment', 'comments', 'observacion', 'observaciones', 'nota', 'notas', 'note', 'notes', 'descripcion', 'description']
-      const matchedField = businessInfoFields.find(f => {
+      // --- Detect comment from business info fields ---
+      const commentKeywords = ['comentario', 'comentarios', 'comment', 'comments', 'observacion', 'observaciones', 'nota', 'notas']
+      let customComment = ''
+      for (const f of businessInfoFields) {
         const nameL = (f?.name || '').toLowerCase()
         const labelL = (f?.label || '').toLowerCase()
-        return commentKeywords.some(k => nameL.includes(k) || labelL.includes(k))
-      })
-      let customComment = ''
-      if (matchedField?.name) {
-        const raw = (orderInfo.customerInfo as any)[matchedField.name]
-        if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
-          customComment = String(raw).trim()
-        }
-      } else {
-        const keys = Object.keys(orderInfo.customerInfo as any)
-        for (const key of keys) {
-          const keyL = key.toLowerCase()
-          if (commentKeywords.some(k => keyL.includes(k))) {
-            const raw = (orderInfo.customerInfo as any)[key]
-            if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
-              customComment = String(raw).trim()
-              break
-            }
+        if (commentKeywords.some(k => nameL.includes(k) || labelL.includes(k))) {
+          const raw = (orderInfo.customerInfo as any)[f.name]
+          if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
+            customComment = String(raw).trim()
+            break
           }
         }
       }
 
-      // Final fallback: try to parse from rawCustomerText
-      if (!customComment && rawCustomerText) {
-        try {
-          const lines = rawCustomerText.split(/\r?\n/)
-          for (const line of lines) {
-            const lower = line.toLowerCase()
-            if (commentKeywords.some(k => lower.startsWith(k))) {
-              const parts = line.split(':')
-              if (parts.length > 1) {
-                const val = parts.slice(1).join(':').trim()
-                if (val) { customComment = val; break }
-              }
-            }
-          }
-        } catch { }
-      }
-
-      // Absolute last resort: read explicit order-level field 'comentarios'
-      if (!customComment) {
-        const direct = (orderInfo.customerInfo as any)['comentarios']
-        if (direct !== undefined && direct !== null && String(direct).trim() !== '') {
-          customComment = String(direct).trim()
-        }
-      }
-
-      // Debug: show comment detection context
-      try {
-        // eslint-disable-next-line no-console
-        console.log('[SalesForm] matchedField:', matchedField?.name, 'customComment:', customComment)
-        // eslint-disable-next-line no-console
-        console.log('[SalesForm] customerInfo keys:', Object.keys(orderInfo.customerInfo as any))
-      } catch { }
-
-      // Gather dynamic custom fields from customerInfo
-      const dynamicFields = businessInfoFields.reduce((acc: any, f: any) => {
-        if (!f?.name) return acc;
+      // --- Gather BusinessInfo custom fields from customerInfo ---
+      const customFieldsToSend: Record<string, any> = {}
+      businessInfoFields.forEach((f: any) => {
+        if (!f?.name) return;
         const val = (orderInfo.customerInfo as any)[f.name];
         if (val !== undefined && val !== null && String(val).trim() !== '') {
-          acc[f.name] = val;
+          customFieldsToSend[f.name] = val;
         }
-        return acc;
-      }, {} as Record<string, any>);
+      });
 
-      // If we detected a comment but couldn't match a Business Info field, persist it under a safe default key
-      if (customComment && !matchedField?.name) {
-        dynamicFields['comentarios'] = customComment;
+      // --- Gather ProductField custom fields from products ---
+      // Known standard keys on ProductInfo that should NOT go into customFields
+      const standardProductKeys = new Set(['id', 'type', 'color', 'packaging', 'comments', 'cantidad', 'productCost', 'shippingCost', 'iva', 'total', 'vendedor', 'mensajeria', 'tamano', 'personalizado', 'optionDeltas']);
+      const productFieldKeys = productFieldConfigs.map((f: any) => f.key).filter(Boolean);
+
+      orderInfo.products.forEach((p: any) => {
+        for (const key of productFieldKeys) {
+          if (standardProductKeys.has(key)) continue;
+          const val = p[key];
+          if (val !== undefined && val !== null && String(val).trim() !== '') {
+            // If multiple products have the same field, join values
+            if (customFieldsToSend[key] && customFieldsToSend[key] !== val) {
+              customFieldsToSend[key] = `${customFieldsToSend[key]}, ${val}`;
+            } else {
+              customFieldsToSend[key] = val;
+            }
+          }
+        }
+      });
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[SalesForm] customFieldsToSend:', customFieldsToSend)
       }
-
-      // Build a customFields object mirroring Campos Personalizados for server-side mapping
-      const customFieldsToSend = { ...dynamicFields } as Record<string, any>
-      if (customComment && !Object.keys(customFieldsToSend).some(k => k.toLowerCase().includes('coment'))) {
-        customFieldsToSend['comentarios'] = customComment
-      }
-
-      try {
-        // eslint-disable-next-line no-console
-        console.log('[SalesForm] dynamicFields keys:', Object.keys(dynamicFields))
-        // eslint-disable-next-line no-console
-        console.log('[SalesForm] customFieldsToSend keys:', Object.keys(customFieldsToSend))
-        // eslint-disable-next-line no-console
-        console.log('[SalesForm] customFieldsToSend comment:', Object.entries(customFieldsToSend).find(([k]) => k.toLowerCase().includes('coment'))?.[0], '=>', Object.entries(customFieldsToSend).find(([k]) => k.toLowerCase().includes('coment'))?.[1])
-        // eslint-disable-next-line no-console
-        console.log('[SalesForm] final customComment used:', customComment)
-      } catch { }
 
       const orderData = {
         orderId: `ORDER-${Date.now()}`,
@@ -408,7 +376,6 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         canton: orderInfo.customerInfo.canton || '',
         district: orderInfo.customerInfo.district || '',
         courier: orderInfo.orderShippingMethod,
-        // MISSING FIELDS - Add them here
         funnel: orderInfo.customerInfo.funnel || '',
         seller: orderInfo.products.length > 0 ? orderInfo.products[0].vendedor || user?.username || '' : '',
         expectedDate: resolveExpectedDate() || '',
@@ -419,31 +386,35 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         color: orderInfo.products.map(p => p.color).join(', '),
         packaging: orderInfo.products.map(p => p.packaging).join(', '),
         customization: orderInfo.products.length > 0 ? orderInfo.products[0].personalizado || '' : '',
-        comments: customComment && customComment.length > 0 ? customComment : '',
-        // Store detailed product information for inventory updates
-        productDetails: JSON.stringify(orderInfo.products.map(p => ({
-          type: p.type,
-          cantidad: p.cantidad,
-          color: p.color,
-          tamano: p.tamano,
-          productCost: p.productCost
-        }))),
+        comments: customComment || '',
+        // Store detailed product information including custom field values
+        productDetails: JSON.stringify(orderInfo.products.map((p: any) => {
+          const details: any = {
+            type: p.type,
+            cantidad: p.cantidad,
+            color: p.color,
+            tamano: p.tamano,
+            productCost: p.productCost
+          };
+          // Include ProductField custom values in productDetails
+          for (const key of productFieldKeys) {
+            if (standardProductKeys.has(key)) continue;
+            if (p[key] !== undefined && p[key] !== null && String(p[key]).trim() !== '') {
+              details[key] = p[key];
+            }
+          }
+          return details;
+        })),
         timestamp: new Date(),
         saleDate: new Date().toISOString(),
-        // include dynamic custom fields
-        ...dynamicFields,
-        // also include explicit customFields object for server mapping
-        customFields: customFieldsToSend
+        // Custom fields object for server-side storage in customFields JSON column
+        customFields: Object.keys(customFieldsToSend).length > 0 ? customFieldsToSend : undefined
       };
 
-      try {
-        // eslint-disable-next-line no-console
-        console.log('[SalesForm] Submitting orderData keys:', Object.keys(orderData))
-        // eslint-disable-next-line no-console
-        console.log('[SalesForm] orderData.comments:', (orderData as any).comments)
-        // eslint-disable-next-line no-console
-        console.log('[SalesForm] orderData.customFields keys:', Object.keys((orderData as any).customFields || {}))
-      } catch { }
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[SalesForm] orderData.customFields:', orderData.customFields);
+        console.log('[SalesForm] orderData.comments:', orderData.comments);
+      }
 
       const response = await fetch('/api/orders', {
         method: 'POST',
@@ -818,8 +789,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                 type="submit"
                 disabled={isSubmitting || orderInfo.products.length === 0}
                 className={`px-4 sm:px-8 py-2 flex items-center justify-center gap-2 w-full sm:w-auto transition-all duration-200 ${isSubmitting
-                    ? 'bg-blue-400 cursor-not-allowed'
-                    : 'bg-blue-500 hover:bg-blue-600 hover:shadow-lg'
+                  ? 'bg-blue-400 cursor-not-allowed'
+                  : 'bg-blue-500 hover:bg-blue-600 hover:shadow-lg'
                   } text-white`}
               >
                 {isSubmitting ? (

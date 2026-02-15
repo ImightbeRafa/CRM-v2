@@ -139,25 +139,42 @@ async function getCustomFieldsSection(tenantId: string): Promise<string> {
       return '';
     }
 
-    let section = '\n\nCAMPOS PERSONALIZADOS DISPONIBLES:\n';
+    let section = '\n\nCAMPOS PERSONALIZADOS DISPONIBLES:\nCuando crees una orden, DEBES incluir estos campos (especialmente los requeridos).\n';
 
     if (customFieldsConfig.productFields.length > 0) {
       section += '\n**Campos de Producto:**\n';
       customFieldsConfig.productFields.forEach(field => {
-        const required = field.required ? ' (requerido)' : ' (opcional)';
-        section += '- ' + field.label + required + ': tipo ' + field.type + '\n';
+        const required = field.required ? ' (REQUERIDO)' : ' (opcional)';
+        let line = '- ' + field.label + ' (key: ' + field.key + ')' + required + ': tipo ' + field.type;
+        // Include options for select fields so AI knows valid values
+        if ((field.type === 'select' || field.type === 'multiselect') && field.options && field.options.length > 0) {
+          const optionValues = field.options.map((o: any) => o.value || o.label).join(', ');
+          line += ' — opciones válidas: [' + optionValues + ']';
+        }
+        section += line + '\n';
       });
     }
 
     if (customFieldsConfig.businessInfoFields.length > 0) {
       section += '\n**Campos de Información del Negocio:**\n';
       customFieldsConfig.businessInfoFields.forEach(field => {
-        const required = field.required ? ' (requerido)' : ' (opcional)';
-        section += '- ' + field.label + required + ': tipo ' + field.type + '\n';
+        const required = field.required ? ' (REQUERIDO)' : ' (opcional)';
+        let line = '- ' + field.label + ' (key: ' + field.name + ')' + required + ': tipo ' + field.type;
+        // Include options for select fields
+        if ((field.type === 'select' || field.type === 'multiselect') && field.options) {
+          try {
+            const opts = typeof field.options === 'string' ? JSON.parse(field.options) : field.options;
+            if (Array.isArray(opts) && opts.length > 0) {
+              const optionValues = opts.map((o: any) => typeof o === 'string' ? o : (o.value || o.label)).join(', ');
+              line += ' — opciones válidas: [' + optionValues + ']';
+            }
+          } catch { }
+        }
+        section += line + '\n';
       });
     }
 
-    section += '\nIMPORTANTE: Siempre solicita los valores de los campos requeridos al crear una orden.';
+    section += '\nIMPORTANTE: Siempre pregunta por los valores de los campos requeridos al crear una orden. Para campos de tipo select, usa SOLO los valores de las opciones listadas arriba.';
 
     return section;
   } catch (error) {

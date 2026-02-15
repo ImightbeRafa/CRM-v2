@@ -5,15 +5,15 @@ import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Checkbox } from "@/app/components/ui/checkbox";
 import { Sale } from '../types/sales';
-import { 
-  Clock, 
-  User, 
-  Phone, 
-  Package, 
-  MapPin, 
-  Calendar, 
-  Truck, 
-  Eye, 
+import {
+  Clock,
+  User,
+  Phone,
+  Package,
+  MapPin,
+  Calendar,
+  Truck,
+  Eye,
   Edit,
   AlertCircle,
   CheckCircle,
@@ -30,34 +30,37 @@ interface EnhancedOrderCardProps {
   onStatusUpdate: (orderId: string, newStatus: string) => Promise<void>;
   isSelected: boolean;
   onToggleSelection: (orderId: string) => void;
-  availableStatuses?: Array<{key: string; label: string; color?: string | null}>;
+  availableStatuses?: Array<{ key: string; label: string; color?: string | null }>;
   businessInfoFields?: any[];
+  productFieldConfigs?: any[];
 }
 
-export function EnhancedOrderCard({ 
-  order, 
-  onSelectOrder, 
+export function EnhancedOrderCard({
+  order,
+  onSelectOrder,
   onStatusUpdate,
   isSelected,
   onToggleSelection,
   availableStatuses: statusesProp,
-  businessInfoFields: businessInfoProp
+  businessInfoFields: businessInfoProp,
+  productFieldConfigs: productFieldProp
 }: EnhancedOrderCardProps) {
-  const [availableStatuses, setAvailableStatuses] = useState<Array<{key: string; label: string; color?: string | null}>>(statusesProp || []);
+  const [availableStatuses, setAvailableStatuses] = useState<Array<{ key: string; label: string; color?: string | null }>>(statusesProp || []);
   const [businessInfoFields, setBusinessInfoFields] = useState<any[]>(businessInfoProp || []);
+  const [productFieldConfigs, setProductFieldConfigs] = useState<any[]>(productFieldProp || []);
   const [isUpdating, setIsUpdating] = useState(false);
-  
+
   // Only load statuses if not provided as prop
   useEffect(() => {
     if (statusesProp) {
       setAvailableStatuses(statusesProp);
       return;
     }
-    
+
     const abortController = new AbortController();
     const loadStatuses = async () => {
       try {
-        const response = await fetch('/api/config/status', { 
+        const response = await fetch('/api/config/status', {
           credentials: 'include',
           signal: abortController.signal
         });
@@ -72,7 +75,7 @@ export function EnhancedOrderCard({
       }
     };
     loadStatuses();
-    
+
     return () => abortController.abort();
   }, [statusesProp]);
 
@@ -82,11 +85,11 @@ export function EnhancedOrderCard({
       setBusinessInfoFields(businessInfoProp);
       return;
     }
-    
+
     const abortController = new AbortController();
     const fetchBusinessInfo = async () => {
       try {
-        const res = await fetch('/api/config/business-info', { 
+        const res = await fetch('/api/config/business-info', {
           credentials: 'include',
           signal: abortController.signal
         });
@@ -101,18 +104,47 @@ export function EnhancedOrderCard({
       }
     };
     fetchBusinessInfo();
-    
+
     return () => abortController.abort();
   }, [businessInfoProp]);
+
+  // Only load product field configs if not provided as prop
+  useEffect(() => {
+    if (productFieldProp) {
+      setProductFieldConfigs(productFieldProp);
+      return;
+    }
+
+    const abortController = new AbortController();
+    const fetchProductFields = async () => {
+      try {
+        const res = await fetch('/api/config/fields', {
+          credentials: 'include',
+          signal: abortController.signal
+        });
+        const data = await res.json();
+        if (data?.status === 'success' && Array.isArray(data.data)) {
+          setProductFieldConfigs(data.data);
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name !== 'AbortError') {
+          console.error('Error loading product field configs:', err);
+        }
+      }
+    };
+    fetchProductFields();
+
+    return () => abortController.abort();
+  }, [productFieldProp]);
 
   const getStatusInfo = (status: string) => {
     // First, try to find the status in the configured statuses with custom colors
     const configuredStatus = availableStatuses.find(s => s.label === status);
-    
+
     if (configuredStatus && configuredStatus.color) {
       // Check if color is a hex value or a Tailwind class
       const isHexColor = configuredStatus.color.startsWith('#');
-      
+
       if (isHexColor) {
         // For hex colors, use inline styles with proper contrast
         // Calculate text color based on brightness
@@ -122,7 +154,7 @@ export function EnhancedOrderCard({
         const b = parseInt(hex.substr(4, 2), 16);
         const brightness = (r * 299 + g * 587 + b * 114) / 1000;
         const textColor = brightness > 128 ? 'text-gray-900' : 'text-white';
-        
+
         return {
           color: `border-transparent ${textColor}`,
           colorStyle: { backgroundColor: configuredStatus.color },
@@ -141,68 +173,68 @@ export function EnhancedOrderCard({
         };
       }
     }
-    
+
     // Fallback to hardcoded colors if status not configured
-    const statusMap: Record<string, { 
-      color: string; 
+    const statusMap: Record<string, {
+      color: string;
       colorStyle?: React.CSSProperties;
-      icon: React.ReactNode; 
+      icon: React.ReactNode;
       label: string;
       priority: 'low' | 'medium' | 'high' | 'urgent';
     }> = {
-      'Pendiente': { 
-        color: 'bg-yellow-100 text-yellow-800 border-yellow-200', 
-        icon: <Clock className="h-3 w-3" />, 
+      'Pendiente': {
+        color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+        icon: <Clock className="h-3 w-3" />,
         label: 'Pendiente',
         priority: 'high'
       },
-      'En Proceso': { 
-        color: 'bg-blue-100 text-blue-800 border-blue-200', 
-        icon: <Package className="h-3 w-3" />, 
+      'En Proceso': {
+        color: 'bg-blue-100 text-blue-800 border-blue-200',
+        icon: <Package className="h-3 w-3" />,
         label: 'En Proceso',
         priority: 'medium'
       },
-      'Completado': { 
-        color: 'bg-green-100 text-green-800 border-green-200', 
-        icon: <CheckCircle className="h-3 w-3" />, 
+      'Completado': {
+        color: 'bg-green-100 text-green-800 border-green-200',
+        icon: <CheckCircle className="h-3 w-3" />,
         label: 'Completado',
         priority: 'low'
       },
-      'Enviado': { 
-        color: 'bg-purple-100 text-purple-800 border-purple-200', 
-        icon: <Truck className="h-3 w-3" />, 
+      'Enviado': {
+        color: 'bg-purple-100 text-purple-800 border-purple-200',
+        icon: <Truck className="h-3 w-3" />,
         label: 'Enviado',
         priority: 'low'
       },
-      'Entregado': { 
-        color: 'bg-emerald-100 text-emerald-800 border-emerald-200', 
-        icon: <CheckCircle className="h-3 w-3" />, 
+      'Entregado': {
+        color: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+        icon: <CheckCircle className="h-3 w-3" />,
         label: 'Entregado',
         priority: 'low'
       },
-      'Drive': { 
-        color: 'bg-indigo-100 text-indigo-800 border-indigo-200', 
-        icon: <TruckIcon className="h-3 w-3" />, 
+      'Drive': {
+        color: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+        icon: <TruckIcon className="h-3 w-3" />,
         label: 'Drive',
         priority: 'medium'
       },
-      'Impreso': { 
-        color: 'bg-cyan-100 text-cyan-800 border-cyan-200', 
-        icon: <Printer className="h-3 w-3" />, 
+      'Impreso': {
+        color: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+        icon: <Printer className="h-3 w-3" />,
         label: 'Impreso',
         priority: 'medium'
       },
-      'PendienteDiseño': { 
-        color: 'bg-orange-100 text-orange-800 border-orange-200', 
-        icon: <AlertCircle className="h-3 w-3" />, 
+      'PendienteDiseño': {
+        color: 'bg-orange-100 text-orange-800 border-orange-200',
+        icon: <AlertCircle className="h-3 w-3" />,
         label: 'Pendiente Diseño',
         priority: 'urgent'
       }
     };
-    
-    return statusMap[status] || { 
-      color: 'bg-gray-100 text-gray-800 border-gray-200', 
-      icon: <Clock className="h-3 w-3" />, 
+
+    return statusMap[status] || {
+      color: 'bg-gray-100 text-gray-800 border-gray-200',
+      icon: <Clock className="h-3 w-3" />,
       label: status,
       priority: 'low'
     };
@@ -243,13 +275,13 @@ export function EnhancedOrderCard({
       'bg-rose-500': 'bg-rose-50/50 border-rose-200',
       'bg-amber-500': 'bg-amber-50/50 border-amber-200',
     };
-    
+
     // Extract the main color class (e.g., "bg-blue-500 text-white" -> "bg-blue-500")
     const colorMatch = statusColor.match(/bg-\w+-\d+/);
     if (colorMatch && colorHazeMap[colorMatch[0]]) {
       return colorHazeMap[colorMatch[0]];
     }
-    
+
     // Fallback for unknown colors
     return 'bg-gray-50/50 border-gray-200';
   };
@@ -258,7 +290,7 @@ export function EnhancedOrderCard({
     const orderDate = new Date(order.timestamp);
     const now = new Date();
     const diffInHours = (now.getTime() - orderDate.getTime()) / (1000 * 60 * 60);
-    
+
     if (diffInHours < 1) return { label: 'Recién creado', color: 'text-green-600' };
     if (diffInHours < 24) return { label: `${Math.floor(diffInHours)}h`, color: 'text-blue-600' };
     if (diffInHours < 48) return { label: `${Math.floor(diffInHours / 24)}d`, color: 'text-orange-600' };
@@ -271,7 +303,7 @@ export function EnhancedOrderCard({
 
   const handleStatusChange = async (newStatus: string) => {
     if (newStatus === order.status) return;
-    
+
     setIsUpdating(true);
     try {
       await onStatusUpdate(order.orderId, newStatus);
@@ -283,9 +315,8 @@ export function EnhancedOrderCard({
   };
 
   return (
-    <Card className={`transition-all duration-200 hover:shadow-lg cursor-pointer ${
-      isSelected ? 'ring-2 ring-blue-500 bg-blue-100/50' : statusBackgroundHaze
-    }`}>
+    <Card className={`transition-all duration-200 hover:shadow-lg cursor-pointer ${isSelected ? 'ring-2 ring-blue-500 bg-blue-100/50' : statusBackgroundHaze
+      }`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">
@@ -299,8 +330,8 @@ export function EnhancedOrderCard({
               <p className="text-xs text-gray-500">{orderAge.label}</p>
             </div>
           </div>
-          
-          <Badge 
+
+          <Badge
             className={`${statusInfo.color} border flex items-center gap-1`}
             style={statusInfo.colorStyle}
           >
@@ -317,19 +348,19 @@ export function EnhancedOrderCard({
             <User className="h-3 w-3 text-gray-500" />
             <span className="font-medium">{order.customerName}</span>
           </div>
-          
+
           <div className="flex items-center gap-2 text-sm text-gray-600">
             <Phone className="h-3 w-3" />
             <span>{order.phone}</span>
           </div>
-          
+
           {order.email && (
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <span className="text-xs">Email:</span>
               <span className="text-xs">{order.email}</span>
             </div>
           )}
-          
+
           {order.business && (
             <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
               {order.business}
@@ -343,20 +374,20 @@ export function EnhancedOrderCard({
             <Package className="h-3 w-3 text-gray-500" />
             <span className="font-medium">{order.product}</span>
           </div>
-          
+
           <div className="flex items-center gap-4 text-xs text-gray-600">
             <span>Cant: {order.quantity}</span>
             {order.size && <span>Talla: {order.size}</span>}
             {order.color && <span>Color: {order.color}</span>}
           </div>
-          
+
           {order.packaging && (
             <div className="flex items-center gap-2 text-xs text-gray-600">
               <span>Empaque:</span>
               <span>{order.packaging}</span>
             </div>
           )}
-          
+
           {order.customization && (
             <div className="flex items-center gap-2 text-xs text-gray-600">
               <span>Personalización:</span>
@@ -381,7 +412,7 @@ export function EnhancedOrderCard({
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <MapPin className="h-3 w-3" />
               <span className="text-xs">
-                {(order as any).province && (order as any).canton 
+                {(order as any).province && (order as any).canton
                   ? `${(order as any).province}, ${(order as any).canton}`
                   : 'Ubicación no especificada'
                 }
@@ -436,7 +467,7 @@ export function EnhancedOrderCard({
               <span>Esperado: {(order as any).expectedDate}</span>
             </div>
           )}
-          
+
           {order.orderType === 'RA' && (order as any).agreedDate && (
             <div className="flex items-center gap-2 text-xs text-gray-600">
               <Calendar className="h-3 w-3" />
@@ -488,31 +519,43 @@ export function EnhancedOrderCard({
           <span className="text-green-600">₡{order.total.toLocaleString()}</span>
         </div>
 
-        {/* Custom Business Fields */}
-        {businessInfoFields.length > 0 && (
-          <div className="space-y-1 text-xs border-t pt-2">
-            {businessInfoFields.map((f) => {
-              // Try flat key, then customFields, then productDetails.customFields
-              let value: any = (order as any)[f?.name];
-              if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
-                value = (order as any)?.customFields?.[f?.name];
-              }
-              if ((value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) && (order as any)?.productDetails) {
-                try {
-                  const pd = JSON.parse((order as any).productDetails);
-                  value = pd?.customFields?.[f?.name];
-                } catch {}
-              }
-              if (value === undefined || value === null || (typeof value === 'string' && String(value).trim() === '')) return null;
-              return (
-                <div key={`custom-${f?.id || f?.name}`} className="flex items-start gap-2 text-gray-600">
-                  <span className="font-medium">{f?.label || f?.name}:</span>
+        {/* Custom Fields (ProductField + BusinessInfo) */}
+        {(() => {
+          // Parse order.customFields JSON
+          let cfData: Record<string, any> = {};
+          try {
+            const raw = (order as any).customFields;
+            cfData = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
+          } catch { cfData = {}; }
+
+          if (Object.keys(cfData).length === 0) return null;
+
+          // Build labels from configs
+          const labelMap: Record<string, string> = {};
+          businessInfoFields.forEach((f: any) => {
+            if (f?.name) labelMap[f.name] = f.label || f.name;
+          });
+          productFieldConfigs.forEach((f: any) => {
+            if (f?.key) labelMap[f.key] = f.label || f.key;
+          });
+
+          const entries = Object.entries(cfData).filter(
+            ([, v]) => v !== undefined && v !== null && String(v).trim() !== ''
+          );
+
+          if (entries.length === 0) return null;
+
+          return (
+            <div className="space-y-1 text-xs border-t pt-2">
+              {entries.map(([key, value]) => (
+                <div key={`custom-${key}`} className="flex items-start gap-2 text-gray-600">
+                  <span className="font-medium">{labelMap[key] || key}:</span>
                   <span className="break-words">{typeof value === 'number' ? value.toLocaleString() : String(value)}</span>
                 </div>
-              );
-            })}
-          </div>
-        )}
+              ))}
+            </div>
+          );
+        })()}
 
         {/* Comments */}
         {order.comments && (
@@ -533,7 +576,7 @@ export function EnhancedOrderCard({
             <Eye className="h-3 w-3 mr-1" />
             Ver
           </Button>
-          
+
           <Button
             variant="outline"
             size="sm"
@@ -555,8 +598,8 @@ export function EnhancedOrderCard({
           >
             {availableStatuses.length > 0
               ? availableStatuses.map((s: any) => (
-                  <option key={s.key || s.label} value={s.label}>{s.label}</option>
-                ))
+                <option key={s.key || s.label} value={s.label}>{s.label}</option>
+              ))
               : <option value={order.status}>{order.status}</option>
             }
           </select>

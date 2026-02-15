@@ -5,13 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Badge } from '@/app/components/ui/badge';
-import { 
-  Key, 
-  Plus, 
-  Copy, 
-  Trash2, 
-  Eye, 
-  EyeOff, 
+import {
+  Key,
+  Plus,
+  Copy,
+  Trash2,
+  Eye,
+  EyeOff,
   ExternalLink,
   Activity,
   AlertCircle,
@@ -46,7 +46,7 @@ export default function IntegrationsPage() {
   const [showKey, setShowKey] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string>('');
   const [testing, setTesting] = useState(false);
-  
+
   // Get the current domain for API endpoint URL
   const apiBaseUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
@@ -124,7 +124,7 @@ export default function IntegrationsPage() {
   const testConnection = async () => {
     setTesting(true);
     setTestResult('');
-    
+
     try {
       const response = await fetch('/api/integration/test', {
         method: 'POST',
@@ -136,9 +136,9 @@ export default function IntegrationsPage() {
           timestamp: new Date().toISOString(),
         }),
       });
-      
+
       const data = await response.json();
-      
+
       if (response.ok) {
         setTestResult(`✅ Conexión exitosa! El endpoint está funcionando correctamente.\n\nRespuesta: ${JSON.stringify(data, null, 2)}`);
       } else {
@@ -270,8 +270,8 @@ export default function IntegrationsPage() {
               <Button onClick={createApiKey} disabled={!newKeyName.trim()}>
                 Crear API Key
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setShowNewKeyDialog(false)}
               >
                 Cancelar
@@ -392,8 +392,8 @@ export default function IntegrationsPage() {
             Verifica que el endpoint de integración esté funcionando correctamente.
           </p>
           <div className="flex items-center gap-4">
-            <Button 
-              onClick={testConnection} 
+            <Button
+              onClick={testConnection}
               disabled={testing}
               className="flex items-center gap-2"
             >
@@ -427,12 +427,13 @@ export default function IntegrationsPage() {
             Instrucciones de Integración
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6">
           <div className="prose max-w-none">
+            {/* Endpoint URL */}
             <h4 className="text-lg font-semibold">URL del Endpoint:</h4>
             <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
               <code className="flex-1 text-sm font-mono text-blue-900">
-                {apiBaseUrl}/api/integration/orders/create
+                POST {apiBaseUrl}/api/integration/orders/create
               </code>
               <Button
                 size="sm"
@@ -443,18 +444,49 @@ export default function IntegrationsPage() {
                 <Copy className="h-4 w-4" />
               </Button>
             </div>
-            
+
+            {/* Setup Steps */}
             <h4 className="text-lg font-semibold">Cómo conectar tu sitio web:</h4>
             <ol className="list-decimal list-inside space-y-2 text-sm">
-              <li>Crea una API Key usando el botón "Nueva API Key"</li>
+              <li>Crea una API Key usando el botón &quot;Nueva API Key&quot;</li>
               <li>Guarda la clave de forma segura en las variables de entorno de tu sitio</li>
-              <li>Configura tu sitio para enviar pedidos a la URL mostrada arriba</li>
+              <li>Configura tu sitio para enviar pedidos con <code className="bg-gray-100 px-2 py-1 rounded">Content-Type: application/json</code></li>
               <li>Incluye la API Key en el header: <code className="bg-gray-100 px-2 py-1 rounded">x-api-key: tu-api-key-aqui</code></li>
             </ol>
-            
-            <h4 className="text-lg font-semibold mt-6">Formato de datos requerido:</h4>
+
+            {/* Request Headers */}
+            <h4 className="text-lg font-semibold mt-6">Headers requeridos:</h4>
+            <div className="bg-gray-100 p-4 rounded text-xs overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-gray-300">
+                    <th className="py-1 pr-4">Header</th>
+                    <th className="py-1 pr-4">Requerido</th>
+                    <th className="py-1">Descripción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-gray-200">
+                    <td className="py-1 pr-4 font-mono">Content-Type</td>
+                    <td className="py-1 pr-4">✅ Sí</td>
+                    <td className="py-1">application/json</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-4 font-mono">x-api-key</td>
+                    <td className="py-1 pr-4">✅ Sí</td>
+                    <td className="py-1">Tu API key de Betsy (empieza con bts_)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Request Body */}
+            <h4 className="text-lg font-semibold mt-6">Formato del body (JSON):</h4>
+            <p className="text-sm text-gray-600 mb-2">
+              Todos los campos son <strong>requeridos</strong> salvo los marcados como <em>// opcional</em>.
+            </p>
             <pre className="bg-gray-100 p-4 rounded text-xs overflow-x-auto">
-{`{
+              {`{
   "orderId": "799360",
   "customer": {
     "name": "Ian Kupfer",
@@ -468,6 +500,7 @@ export default function IntegrationsPage() {
   },
   "shipping": {
     "cost": "GRATIS",
+    "courier": "Correos de Costa Rica",       // opcional
     "address": {
       "province": "San José",
       "canton": "Escazú",
@@ -475,14 +508,117 @@ export default function IntegrationsPage() {
       "fullAddress": "Condominio Riverside Edificio B Apto 604"
     }
   },
-  "total": "₡9 900",
+  "total": "₡9.900",
   "payment": {
     "method": "Tilopay",
     "transactionId": "3739128",
     "status": "PAGADO",
     "date": "12/11/2025, 8:33:00 p.m."
+  },
+  "source": "mi-tienda-online.com",            // opcional - identifica tu sitio
+  "salesChannel": "Website",                   // opcional - canal de venta
+  "seller": "Ana López",                       // opcional - vendedor asignado
+  "metadata": {                                // opcional - datos adicionales
+    "comments": "Entregar después de las 5pm", // se guarda como comentario del pedido
+    "cualquierCampo": "cualquier valor"
   }
 }`}
+            </pre>
+
+            {/* Field Reference */}
+            <h4 className="text-lg font-semibold mt-6">Referencia de campos:</h4>
+            <div className="bg-gray-100 p-4 rounded text-xs overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-gray-300">
+                    <th className="py-1 pr-4">Campo</th>
+                    <th className="py-1 pr-4">Tipo</th>
+                    <th className="py-1 pr-4">Req.</th>
+                    <th className="py-1">Nota</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  <tr><td className="py-1 pr-4 font-mono">orderId</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">ID único de tu sistema</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">customer.name</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Nombre del cliente</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">customer.phone</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Teléfono del cliente</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">customer.email</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Email válido del cliente</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">product.name</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Nombre del producto</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">product.quantity</td><td className="py-1 pr-4">number</td><td className="py-1 pr-4">✅</td><td className="py-1">Debe ser positivo</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">product.unitPrice</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Acepta &quot;₡9.900&quot; o &quot;GRATIS&quot;</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">shipping.cost</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Acepta &quot;GRATIS&quot; para envío gratis</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">shipping.courier</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">❌</td><td className="py-1">Nombre del courier</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">shipping.address.*</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">province, canton, district, fullAddress</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">total</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Total del pedido (ej: &quot;₡9.900&quot;)</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">payment.method</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Método de pago</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">payment.transactionId</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">ID de transacción</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">payment.status</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Estado del pago</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">payment.date</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Fecha del pago</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">source</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">❌</td><td className="py-1">Nombre/URL de tu sitio</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">salesChannel</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">❌</td><td className="py-1">Canal de venta</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">seller</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">❌</td><td className="py-1">Vendedor asignado</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">metadata</td><td className="py-1 pr-4">object</td><td className="py-1 pr-4">❌</td><td className="py-1">metadata.comments se guarda como comentario</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Response Formats */}
+            <h4 className="text-lg font-semibold mt-6">Respuestas del API:</h4>
+
+            <p className="text-sm font-medium text-green-700 mt-3 mb-1">✅ Éxito (200)</p>
+            <pre className="bg-green-50 border border-green-200 p-3 rounded text-xs overflow-x-auto">
+              {`{
+  "success": true,
+  "message": "Order created successfully",
+  "crmOrderId": "clxyz123abc",
+  "orderId": "799360",
+  "processingTime": 245
+}`}
+            </pre>
+
+            <p className="text-sm font-medium text-red-700 mt-3 mb-1">❌ Error de validación (400)</p>
+            <pre className="bg-red-50 border border-red-200 p-3 rounded text-xs overflow-x-auto">
+              {`{
+  "error": "Invalid order data",
+  "details": [
+    { "code": "invalid_type", "path": ["customer", "email"], "message": "Invalid email" }
+  ]
+}`}
+            </pre>
+
+            <p className="text-sm font-medium text-red-700 mt-3 mb-1">🔑 Error de autenticación (401)</p>
+            <pre className="bg-red-50 border border-red-200 p-3 rounded text-xs overflow-x-auto">
+              {`{ "error": "Missing API key. Include x-api-key header." }
+// o
+{ "error": "Invalid API key" }`}
+            </pre>
+
+            <p className="text-sm font-medium text-yellow-700 mt-3 mb-1">⚠️ Pedido duplicado (409)</p>
+            <pre className="bg-yellow-50 border border-yellow-200 p-3 rounded text-xs overflow-x-auto">
+              {`{ "error": "Order already exists", "orderId": "799360" }`}
+            </pre>
+
+            <p className="text-sm font-medium text-red-700 mt-3 mb-1">💥 Error del servidor (500)</p>
+            <pre className="bg-red-50 border border-red-200 p-3 rounded text-xs overflow-x-auto">
+              {`{ "error": "Internal server error", "message": "...", "processingTime": 150 }`}
+            </pre>
+
+            {/* cURL Example */}
+            <h4 className="text-lg font-semibold mt-6">Ejemplo con cURL:</h4>
+            <pre className="bg-gray-900 text-green-400 p-4 rounded text-xs overflow-x-auto">
+              {`curl -X POST ${apiBaseUrl}/api/integration/orders/create \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: bts_tu_api_key_aqui" \\
+  -d '{
+    "orderId": "799360",
+    "customer": { "name": "Ian Kupfer", "phone": "88390944", "email": "ian@example.com" },
+    "product": { "name": "Producto", "quantity": 1, "unitPrice": "₡9.900" },
+    "shipping": {
+      "cost": "GRATIS",
+      "address": { "province": "San José", "canton": "Escazú", "district": "San Rafael", "fullAddress": "Dirección completa" }
+    },
+    "total": "₡9.900",
+    "payment": { "method": "Tilopay", "transactionId": "123", "status": "PAGADO", "date": "14/02/2026" }
+  }'`}
             </pre>
           </div>
         </CardContent>

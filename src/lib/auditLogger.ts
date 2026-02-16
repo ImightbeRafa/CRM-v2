@@ -15,6 +15,58 @@ function isPrismaAuditAction(action: string): action is PrismaAuditAction {
   return validActions.includes(action);
 }
 
+// === Circuit breaker to prevent cascading failures during connection exhaustion ===
+let consecutiveFailures = 0;
+let circuitOpenUntil = 0;
+const CIRCUIT_BREAKER_THRESHOLD = 3;   // Trip after 3 consecutive failures
+const CIRCUIT_BREAKER_RESET_MS = 30000; // Auto-recover after 30s
+
+function isCircuitOpen(): boolean {
+  if (consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
+    if (Date.now() < circuitOpenUntil) {
+      return true; // Circuit still open
+    }
+    // Reset after cooldown
+    consecutiveFailures = 0;
+  }
+  return false;
+}
+
+function recordAuditSuccess(): void {
+  consecutiveFailures = 0;
+}
+
+function recordAuditFailure(): void {
+  consecutiveFailures++;
+  if (consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
+    circuitOpenUntil = Date.now() + CIRCUIT_BREAKER_RESET_MS;
+    console.warn(`[AuditLogger] ⚡ Circuit breaker OPEN — skipping audit logs for ${CIRCUIT_BREAKER_RESET_MS / 1000}s after ${consecutiveFailures} consecutive failures`);
+  }
+}
+
+// === User existence cache to avoid repeated findUnique queries ===
+const userExistsCache = new Map<string, { exists: boolean; expiry: number }>();
+const USER_CACHE_TTL_MS = 300000; // 5 minutes
+
+async function checkUserExists(userId: string): Promise<boolean> {
+  const cached = userExistsCache.get(userId);
+  if (cached && Date.now() < cached.expiry) {
+    return cached.exists;
+  }
+  try {
+    const user = await prismaRaw.user.findUnique({
+      where: { id: userId },
+      select: { id: true }
+    });
+    const exists = !!user;
+    userExistsCache.set(userId, { exists, expiry: Date.now() + USER_CACHE_TTL_MS });
+    return exists;
+  } catch (err) {
+    console.warn('[AuditLogger] Failed to verify user exists:', err);
+    return false;
+  }
+}
+
 export interface AuditLogData {
   action: ExtendedAuditAction;
   entityType: string;
@@ -33,24 +85,16 @@ export interface AuditLogData {
 }
 
 export async function logAuditEvent(data: AuditLogData): Promise<void> {
+  // Circuit breaker: skip audit logging during connection exhaustion
+  if (isCircuitOpen()) return;
+
   try {
-    // Validate that user exists before attempting to create audit log
-    let userExists = false;
-    if (data.userId) {
-      try {
-        const user = await prismaRaw.user.findUnique({
-          where: { id: data.userId },
-          select: { id: true }
-        });
-        userExists = !!user;
-      } catch (err) {
-        console.warn('[AuditLogger] Failed to verify user exists:', err);
-      }
-    }
+    // Use cached user existence check instead of hitting DB every time
+    const userExists = data.userId ? await checkUserExists(data.userId) : false;
 
     // Ensure the action is a valid Prisma audit action
-    const action: PrismaAuditAction = isPrismaAuditAction(data.action) 
-      ? data.action 
+    const action: PrismaAuditAction = isPrismaAuditAction(data.action)
+      ? data.action
       : 'CREATE';
 
     // Prepare the log data - userId is now optional
@@ -93,11 +137,13 @@ export async function logAuditEvent(data: AuditLogData): Promise<void> {
     await prismaRaw.auditLog.create({
       data: logData
     });
-    
+
+    recordAuditSuccess();
     if (!userExists) {
       console.log(`[AuditLogger] ⚠️  Audit log created without user reference: ${data.action} on ${data.entityType} by ${data.userName || 'System'}`);
     }
   } catch (error) {
+    recordAuditFailure();
     console.error('[AuditLogger] ❌ Failed to log audit event:', error);
     // Don't throw error to avoid breaking the main operation
   }
@@ -106,7 +152,7 @@ export async function logAuditEvent(data: AuditLogData): Promise<void> {
 export async function getAuditContext(request: NextRequest) {
   try {
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
-    
+
     if (!token) {
       console.warn('⚠️ No token found for audit context');
       return null
@@ -115,8 +161,8 @@ export async function getAuditContext(request: NextRequest) {
     // Get user details from database using the token's sub (user ID)
     const user = await prismaRaw.user.findUnique({
       where: { id: token.sub },
-      select: { 
-        id: true, 
+      select: {
+        id: true,
         username: true,
         defaultTenantId: true,
         memberships: {
@@ -165,7 +211,7 @@ export async function logApiAction(
   reason?: string
 ) {
   const context = await getAuditContext(request)
-  
+
   // Only log if we have a valid user context
   if (!context) {
     console.warn(`⚠️ Skipping audit log for ${action} on ${entityType} - no context`);
@@ -248,6 +294,9 @@ export async function logBulkUpdate(request: NextRequest, entityType: string, en
  * Log an audit event with tenant context
  */
 export async function logAudit(data: AuditLogData): Promise<void> {
+  // Circuit breaker: skip audit logging during connection exhaustion
+  if (isCircuitOpen()) return;
+
   // Ensure required fields are present (userId is NOW optional for bot/system operations)
   if (!data.entityType || !data.entityId || !data.tenantId) {
     console.error('❌ Missing required fields for audit log:', {
@@ -257,14 +306,14 @@ export async function logAudit(data: AuditLogData): Promise<void> {
     });
     return;
   }
-  
+
   try {
     // Prepare the data with proper JSON handling
     const safeUserRole = data.userRole || 'SYSTEM';
     const actionFinal: PrismaAuditAction = isPrismaAuditAction(String(data.action))
       ? (data.action as PrismaAuditAction)
       : 'CREATE';
-    
+
     // Build base log data WITHOUT userId field (use user relation instead)
     const logData: any = {
       action: actionFinal,
@@ -286,7 +335,7 @@ export async function logAudit(data: AuditLogData): Promise<void> {
     if (data.oldValues) {
       logData.oldValues = data.oldValues;
     }
-    
+
     if (data.newValues) {
       let newVals: any = typeof data.newValues === 'object' ? { ...data.newValues } : data.newValues;
       if (data.details && typeof newVals === 'object') {
@@ -299,24 +348,11 @@ export async function logAudit(data: AuditLogData): Promise<void> {
 
     // Only add user relation if userId is provided and user exists
     if (data.userId) {
-      try {
-        const user = await prismaRaw.user.findUnique({
-          where: { id: data.userId },
-          select: { id: true }
-        });
-        
-        if (user) {
-          // User exists - connect via relation (NOT direct userId field)
-          logData.user = {
-            connect: { id: data.userId }
-          };
-        } else {
-          // User doesn't exist - log without user relation
-          console.log('[AuditLogger] User not found, logging without user relation:', data.userId);
-        }
-      } catch (err) {
-        console.warn('[AuditLogger] Failed to verify user exists:', err);
-        // Log without user relation on error
+      const exists = await checkUserExists(data.userId);
+      if (exists) {
+        logData.user = {
+          connect: { id: data.userId }
+        };
       }
     }
 
@@ -324,8 +360,10 @@ export async function logAudit(data: AuditLogData): Promise<void> {
     await prismaRaw.auditLog.create({
       data: logData
     });
-    
+
+    recordAuditSuccess();
   } catch (error) {
+    recordAuditFailure();
     console.error('[AuditLogger] Failed to log audit event:', error);
     // Don't throw - audit logging should not break the main operation
   }

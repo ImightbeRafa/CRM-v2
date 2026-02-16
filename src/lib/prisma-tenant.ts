@@ -90,22 +90,21 @@ const TENANT_MODELS_LOWER: readonly string[] = TENANT_MODELS.map((m) => m.toLowe
 const getDatabaseUrl = () => {
   const baseUrl = process.env.DATABASE_URL;
   if (!baseUrl) return baseUrl;
-  
+
   const hasParams = baseUrl.includes('?');
   const separator = hasParams ? '&' : '?';
-  
+
   if (!baseUrl.includes('connection_limit')) {
     return `${baseUrl}${separator}connection_limit=20&pool_timeout=20`;
   }
-  
+
   return baseUrl;
 };
 
-// Create a clean base Prisma client for tenant-scoped operations (without global middleware)
-const basePrismaClient = new PrismaClient({
-  log: ['error', 'warn'],
-  datasourceUrl: getDatabaseUrl(),
-});
+// Reuse the singleton Prisma client from db.ts for tenant-scoped operations.
+// IMPORTANT: Do NOT create a second PrismaClient here — it doubles connection pool usage
+// and was the primary cause of Supabase "Max client connections reached" errors.
+const basePrismaClient = globalPrisma;
 
 // Export raw Prisma client without ANY middleware for system operations
 export const prismaRaw = basePrismaClient;
@@ -138,7 +137,7 @@ function createTenantPrismaUncached(tenantId: string) {
           if (!isTenantModel) {
             return query(args);
           }
-          
+
           // IMPORTANT: Do NOT JSON-clone args (breaks Buffers for Bytes fields)
           // Make a shallow copy to avoid mutating the original while preserving Buffer types
           const originalArgs: any = args || {};
@@ -152,11 +151,11 @@ function createTenantPrismaUncached(tenantId: string) {
           const context = getTenantContext();
           const contextTenantId = context?.tenantId || tenantId;
           const userId = context?.userId || 'system';
-          
+
           // Helper to add tenant ID to where clause
           const addTenantToWhere = (where: any) => {
             if (!where) return { tenantId: contextTenantId };
-            
+
             // If where has OR conditions, we need to handle them
             if (where.OR) {
               return {
@@ -168,7 +167,7 @@ function createTenantPrismaUncached(tenantId: string) {
                 tenantId: contextTenantId // Also add at the top level for safety
               };
             }
-            
+
             // If where has AND conditions, we need to handle them
             if (where.AND) {
               return {
@@ -180,7 +179,7 @@ function createTenantPrismaUncached(tenantId: string) {
                 tenantId: contextTenantId // Also add at the top level for safety
               };
             }
-            
+
             // Simple case - just add tenantId
             return { ...where, tenantId: contextTenantId };
           };
@@ -192,12 +191,12 @@ function createTenantPrismaUncached(tenantId: string) {
               case 'findFirst':
                 modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
                 break;
-                
+
               case 'findMany':
                 // ALWAYS add tenant filter for data isolation
                 modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
                 break;
-                
+
               case 'create':
                 // Only inject tenantId if tenant relation is not already set
                 if (!modifiedArgs.data?.tenant) {
@@ -207,7 +206,7 @@ function createTenantPrismaUncached(tenantId: string) {
                   };
                 }
                 break;
-                
+
               case 'update':
               case 'updateMany':
                 modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
@@ -216,12 +215,12 @@ function createTenantPrismaUncached(tenantId: string) {
                   delete modifiedArgs.data.tenantId;
                 }
                 break;
-                
+
               case 'delete':
               case 'deleteMany':
                 modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
                 break;
-                
+
               case 'upsert':
                 modifiedArgs.where = addTenantToWhere(modifiedArgs.where);
                 // Only inject tenantId in create if tenant relation is not already set
@@ -235,7 +234,7 @@ function createTenantPrismaUncached(tenantId: string) {
                   delete modifiedArgs.update.tenantId;
                 }
                 break;
-                
+
               default:
                 // For other operations, ensure tenantId is in the where clause
                 if (modifiedArgs.where) {
@@ -244,16 +243,16 @@ function createTenantPrismaUncached(tenantId: string) {
             }
 
             if (DEBUG) {
-              console.log(`[${model}.${operation}] Tenant ${contextTenantId}:`, 
+              console.log(`[${model}.${operation}] Tenant ${contextTenantId}:`,
                 JSON.stringify(modifiedArgs, null, 2));
             }
-            
+
             // Execute the query
             const result = await query(modifiedArgs);
-            
+
             // Log only mutating operations to avoid invalid enum values for reads
             try {
-              const mutatingOps = new Set(['create','createMany','update','updateMany','delete','deleteMany','upsert']);
+              const mutatingOps = new Set(['create', 'createMany', 'update', 'updateMany', 'delete', 'deleteMany', 'upsert']);
               if (mutatingOps.has(operation)) {
                 let entityId = 'unknown';
                 if (result && typeof result === 'object' && 'id' in result) {
@@ -296,32 +295,13 @@ function createTenantPrismaUncached(tenantId: string) {
               console.error('Failed to log audit:', auditError);
               // Don't fail the main operation if audit logging fails
             }
-            
+
             return result;
-            
+
           } catch (error) {
             console.error(`Error in tenant-isolated query (${model}.${operation}):`, error);
-            // Log the error for audit (non-critical, don't fail if logging fails)
-            try {
-              await logAudit({
-                action: 'UPDATE',
-                entityType: modelName || 'unknown',
-                entityId: 'error',
-                userId: userId,
-                tenantId: contextTenantId,
-                userRole: (context?.role as any) || 'SYSTEM',
-                userName: context?.userName || 'System',
-                description: `Error in ${operation}: ${error instanceof Error ? error.message : String(error)}`,
-                details: {
-                  operation,
-                  model: modelName,
-                  error: error instanceof Error ? error.message : String(error),
-                  args: modifiedArgs
-                }
-              });
-            } catch (auditError) {
-              console.error('Failed to log error audit:', auditError);
-            }
+            // DO NOT try to audit-log errors here — during connection exhaustion,
+            // this creates cascading failures (logging opens more DB connections).
             throw error;
           }
         }
@@ -339,7 +319,7 @@ export function getTenantPrisma(tenantId: string, bypassIsolation: boolean = fal
   if (!tenantId && !bypassIsolation) {
     throw new TenantError('Tenant ID is required for tenant-isolated queries');
   }
-  
+
   // ⚠️ SECURITY CRITICAL: Super admin bypass - return base client without tenant isolation
   // WARNING: This bypasses ALL tenant filtering. Only use for authorized accounts.
   if (bypassIsolation) {
@@ -349,11 +329,11 @@ export function getTenantPrisma(tenantId: string, bypassIsolation: boolean = fal
       timestamp: new Date().toISOString(),
       stackTrace: new Error().stack?.split('\n')[2]?.trim() // Log caller
     });
-    
+
     // Return global prisma client without ANY tenant filtering
     return globalPrisma;
   }
-  
+
   // Check cache first for performance
   const cached = tenantPrismaCache.get(tenantId);
   if (cached) {
@@ -365,7 +345,7 @@ export function getTenantPrisma(tenantId: string, bypassIsolation: boolean = fal
     tenantAccessOrder.push(tenantId);
     return cached;
   }
-  
+
   // Log the creation of a tenant-scoped Prisma client (only on first creation)
   const context = getTenantContext();
   if (context?.tenantId && context.tenantId !== tenantId) {
@@ -393,7 +373,7 @@ export function getTenantPrisma(tenantId: string, bypassIsolation: boolean = fal
   const client = createTenantPrismaUncached(tenantId);
   tenantPrismaCache.set(tenantId, client);
   tenantAccessOrder.push(tenantId);
-  
+
   return client;
 }
 

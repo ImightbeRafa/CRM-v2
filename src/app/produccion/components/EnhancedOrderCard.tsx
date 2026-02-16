@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -45,97 +45,13 @@ export function EnhancedOrderCard({
   businessInfoFields: businessInfoProp,
   productFieldConfigs: productFieldProp
 }: EnhancedOrderCardProps) {
-  const [availableStatuses, setAvailableStatuses] = useState<Array<{ key: string; label: string; color?: string | null }>>(statusesProp || []);
-  const [businessInfoFields, setBusinessInfoFields] = useState<any[]>(businessInfoProp || []);
-  const [productFieldConfigs, setProductFieldConfigs] = useState<any[]>(productFieldProp || []);
+  // All config data comes from props — NO independent API fetches.
+  // The parent dashboard (EnhancedProductionDashboard) fetches once via ConfigContext
+  // and passes the data down, avoiding 50+ duplicate API calls per page load.
+  const availableStatuses = statusesProp || [];
+  const businessInfoFields = businessInfoProp || [];
+  const productFieldConfigs = productFieldProp || [];
   const [isUpdating, setIsUpdating] = useState(false);
-
-  // Only load statuses if not provided as prop
-  useEffect(() => {
-    if (statusesProp) {
-      setAvailableStatuses(statusesProp);
-      return;
-    }
-
-    const abortController = new AbortController();
-    const loadStatuses = async () => {
-      try {
-        const response = await fetch('/api/config/status', {
-          credentials: 'include',
-          signal: abortController.signal
-        });
-        const data = await response.json();
-        if (data.status === 'success' && data.data.length > 0) {
-          setAvailableStatuses(data.data);
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name !== 'AbortError') {
-          console.error('Error loading statuses:', error);
-        }
-      }
-    };
-    loadStatuses();
-
-    return () => abortController.abort();
-  }, [statusesProp]);
-
-  // Only load business info if not provided as prop
-  useEffect(() => {
-    if (businessInfoProp) {
-      setBusinessInfoFields(businessInfoProp);
-      return;
-    }
-
-    const abortController = new AbortController();
-    const fetchBusinessInfo = async () => {
-      try {
-        const res = await fetch('/api/config/business-info', {
-          credentials: 'include',
-          signal: abortController.signal
-        });
-        const data = await res.json();
-        if (data?.status === 'success' && Array.isArray(data.data)) {
-          setBusinessInfoFields(data.data);
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name !== 'AbortError') {
-          console.error('Error loading business info fields:', err);
-        }
-      }
-    };
-    fetchBusinessInfo();
-
-    return () => abortController.abort();
-  }, [businessInfoProp]);
-
-  // Only load product field configs if not provided as prop
-  useEffect(() => {
-    if (productFieldProp) {
-      setProductFieldConfigs(productFieldProp);
-      return;
-    }
-
-    const abortController = new AbortController();
-    const fetchProductFields = async () => {
-      try {
-        const res = await fetch('/api/config/fields', {
-          credentials: 'include',
-          signal: abortController.signal
-        });
-        const data = await res.json();
-        if (data?.status === 'success' && Array.isArray(data.data)) {
-          setProductFieldConfigs(data.data);
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name !== 'AbortError') {
-          console.error('Error loading product field configs:', err);
-        }
-      }
-    };
-    fetchProductFields();
-
-    return () => abortController.abort();
-  }, [productFieldProp]);
 
   const getStatusInfo = (status: string) => {
     // First, try to find the status in the configured statuses with custom colors

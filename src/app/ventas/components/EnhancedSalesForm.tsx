@@ -11,6 +11,7 @@ import EnhancedSmartSuggestions from './EnhancedSmartSuggestions';
 import RecurringCustomers from './RecurringCustomers';
 import { CustomerInfo, ProductInfo, OrderInfo, SubmitStatus, ProductTemplate, CustomerSuggestion } from './types';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { useConfig } from '@/app/contexts/ConfigContext';
 
 interface EnhancedSalesFormProps {
   showOrderForm: boolean;
@@ -19,6 +20,9 @@ interface EnhancedSalesFormProps {
 
 const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, onToggleForm }) => {
   const { user } = useCurrentUser();
+  const { getState } = useConfig();
+  const fieldsState = getState<any[]>('fields');
+  const productFieldConfigs = fieldsState.data ?? [];
   const [orderInfo, setOrderInfo] = useState<OrderInfo>({
     customerInfo: {
       name: '',
@@ -50,7 +54,6 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
-  const [productFieldConfigs, setProductFieldConfigs] = useState<any[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(true);
 
@@ -115,16 +118,6 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         }
       })
       .catch(error => console.error('Error fetching business info fields:', error));
-
-    // Fetch product field configs (ProductField)
-    fetch('/api/config/fields', { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => {
-        if (data.status === 'success') {
-          setProductFieldConfigs(data.data);
-        }
-      })
-      .catch(error => console.error('Error fetching product field configs:', error));
   }, []);
 
   // Initialize client-side state

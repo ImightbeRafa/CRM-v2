@@ -55,9 +55,9 @@ const StatusFilterSelect = ({ value, onValueChange }: { value: string; onValueCh
 
 // Enhanced filter function with more options
 const filterOrders = (
-  orders: Sale[], 
-  statusFilter: string, 
-  searchTerm: string, 
+  orders: Sale[],
+  statusFilter: string,
+  searchTerm: string,
   dateRange: { from: string; to: string },
   priorityFilter: string,
   courierFilter: string
@@ -68,7 +68,7 @@ const filterOrders = (
     if (statusFilter !== 'all' && order.status.toLowerCase() !== statusFilter.toLowerCase()) {
       return false;
     }
-    
+
     // Search filter
     const matchesSearch = (
       order.customerName.toLowerCase().includes(searchLower) ||
@@ -77,27 +77,27 @@ const filterOrders = (
       order.phone.toLowerCase().includes(searchLower) ||
       order.business.toLowerCase().includes(searchLower)
     );
-    
+
     if (!matchesSearch) return false;
-    
+
     // Date range filter
     if (dateRange.from || dateRange.to) {
       const orderDate = new Date(order.timestamp);
       if (dateRange.from && orderDate < new Date(dateRange.from)) return false;
       if (dateRange.to && orderDate > new Date(dateRange.to)) return false;
     }
-    
+
     // Priority filter (based on order age and status)
     if (priorityFilter !== 'all') {
       const orderAge = Date.now() - new Date(order.timestamp).getTime();
       const isUrgent = orderAge > 24 * 60 * 60 * 1000 && order.status === 'Pendiente';
       const isHigh = orderAge > 12 * 60 * 60 * 1000 && order.status === 'En Proceso';
-      
+
       if (priorityFilter === 'urgent' && !isUrgent) return false;
       if (priorityFilter === 'high' && !isHigh) return false;
       if (priorityFilter === 'normal' && (isUrgent || isHigh)) return false;
     }
-    
+
     // Courier filter
     if (courierFilter !== 'all' && order.orderType === 'EA') {
       const eaOrder = order as any;
@@ -105,7 +105,7 @@ const filterOrders = (
         return false;
       }
     }
-    
+
     return true;
   });
 };
@@ -113,61 +113,61 @@ const filterOrders = (
 // Get status color and icon
 const getStatusInfo = (status: string) => {
   const statusMap: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
-    'Pendiente': { 
-      color: 'bg-yellow-100 text-yellow-800 border-yellow-200', 
-      icon: <Clock className="h-3 w-3" />, 
-      label: 'Pendiente' 
+    'Pendiente': {
+      color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      icon: <Clock className="h-3 w-3" />,
+      label: 'Pendiente'
     },
-    'En Proceso': { 
-      color: 'bg-blue-100 text-blue-800 border-blue-200', 
-      icon: <Package className="h-3 w-3" />, 
-      label: 'En Proceso' 
+    'En Proceso': {
+      color: 'bg-blue-100 text-blue-800 border-blue-200',
+      icon: <Package className="h-3 w-3" />,
+      label: 'En Proceso'
     },
-    'Completado': { 
-      color: 'bg-green-100 text-green-800 border-green-200', 
-      icon: <CheckCircle className="h-3 w-3" />, 
-      label: 'Completado' 
+    'Completado': {
+      color: 'bg-green-100 text-green-800 border-green-200',
+      icon: <CheckCircle className="h-3 w-3" />,
+      label: 'Completado'
     },
-    'Enviado': { 
-      color: 'bg-purple-100 text-purple-800 border-purple-200', 
-      icon: <Truck className="h-3 w-3" />, 
-      label: 'Enviado' 
+    'Enviado': {
+      color: 'bg-purple-100 text-purple-800 border-purple-200',
+      icon: <Truck className="h-3 w-3" />,
+      label: 'Enviado'
     },
-    'Entregado': { 
-      color: 'bg-emerald-100 text-emerald-800 border-emerald-200', 
-      icon: <CheckCircle className="h-3 w-3" />, 
-      label: 'Entregado' 
+    'Entregado': {
+      color: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      icon: <CheckCircle className="h-3 w-3" />,
+      label: 'Entregado'
     },
-    'Drive': { 
-      color: 'bg-indigo-100 text-indigo-800 border-indigo-200', 
-      icon: <Truck className="h-3 w-3" />, 
-      label: 'Drive' 
+    'Drive': {
+      color: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+      icon: <Truck className="h-3 w-3" />,
+      label: 'Drive'
     },
-    'Impreso': { 
-      color: 'bg-cyan-100 text-cyan-800 border-cyan-200', 
-      icon: <Printer className="h-3 w-3" />, 
-      label: 'Impreso' 
+    'Impreso': {
+      color: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+      icon: <Printer className="h-3 w-3" />,
+      label: 'Impreso'
     },
-    'PendienteDiseño': { 
-      color: 'bg-orange-100 text-orange-800 border-orange-200', 
-      icon: <AlertCircle className="h-3 w-3" />, 
-      label: 'Pendiente Diseño' 
+    'PendienteDiseño': {
+      color: 'bg-orange-100 text-orange-800 border-orange-200',
+      icon: <AlertCircle className="h-3 w-3" />,
+      label: 'Pendiente Diseño'
     }
   };
-  
-  return statusMap[status] || { 
-    color: 'bg-gray-100 text-gray-800 border-gray-200', 
-    icon: <Clock className="h-3 w-3" />, 
-    label: status 
+
+  return statusMap[status] || {
+    color: 'bg-gray-100 text-gray-800 border-gray-200',
+    icon: <Clock className="h-3 w-3" />,
+    label: status
   };
 };
 
 // Compact header component
-const EnhancedHeader = React.memo(({ 
-  loading, 
-  searchTerm, 
-  onSearchChange, 
-  statusFilter, 
+const EnhancedHeader = React.memo(({
+  loading,
+  searchTerm,
+  onSearchChange,
+  statusFilter,
   onStatusChange,
   onGenerateGuias,
   onGenerateInvoices,
@@ -208,7 +208,7 @@ const EnhancedHeader = React.memo(({
           {filteredCount}/{totalOrders}
         </Badge>
       </div>
-      
+
       {/* Compact Action Buttons */}
       <div className="flex flex-wrap gap-1">
         <Button onClick={onBulkOperations} variant="outline" size="sm" className="text-xs px-2 py-1">
@@ -241,27 +241,27 @@ const EnhancedHeader = React.memo(({
           className="pl-7 h-8 text-sm"
         />
       </div>
-      
+
       <StatusFilterSelect value={statusFilter} onValueChange={onStatusChange} />
-      
+
       <Button variant="outline" size="sm" className="justify-start h-8 text-xs">
         <Filter className="h-3 w-3 mr-1" />
         Filtros
       </Button>
-      
-      <Button 
-        variant="outline" 
-        size="sm" 
+
+      <Button
+        variant="outline"
+        size="sm"
         className="justify-start h-8 text-xs"
         onClick={onShowStats}
       >
         <TrendingUp className="h-3 w-3 mr-1" />
         Stats
       </Button>
-      
+
       {/* Compact View Mode Toggle */}
       <div className="flex gap-1 border rounded-md p-1 h-8">
-        <Button 
+        <Button
           variant={viewMode === 'table' ? 'default' : 'ghost'}
           size="sm"
           className="px-2 h-6"
@@ -270,7 +270,7 @@ const EnhancedHeader = React.memo(({
         >
           <LayoutGrid className="h-3 w-3" />
         </Button>
-        <Button 
+        <Button
           variant={viewMode === 'kanban' ? 'default' : 'ghost'}
           size="sm"
           className="px-2 h-6"
@@ -279,7 +279,7 @@ const EnhancedHeader = React.memo(({
         >
           <Kanban className="h-3 w-3" />
         </Button>
-        <Button 
+        <Button
           variant={viewMode === 'mobile' ? 'default' : 'ghost'}
           size="sm"
           className="px-2 h-6"
@@ -304,9 +304,9 @@ export interface EnhancedProductionDashboardProps {
   onInvoiceGeneratorClose?: () => void;
 }
 
-export function EnhancedProductionDashboard({ 
-  onGenerateGuias, 
-  isGuiaGeneratorOpen, 
+export function EnhancedProductionDashboard({
+  onGenerateGuias,
+  isGuiaGeneratorOpen,
   onGuiaGeneratorClose,
   onGenerateInvoices,
   isInvoiceGeneratorOpen = false,
@@ -321,6 +321,8 @@ export function EnhancedProductionDashboard({
   const statuses = statusesState.data ?? [];
   const businessInfoFieldsState = getState<any[]>('businessInfoFields');
   const businessInfoFields = businessInfoFieldsState.data ?? [];
+  const fieldsState = getState<any[]>('fields');
+  const productFieldConfigs = fieldsState.data ?? [];
 
   // Define handleStatsFilter callback at the top level
   const handleStatsFilter = React.useCallback((filter: 'all' | 'EA' | 'RA' | 'urgent') => {
@@ -361,7 +363,7 @@ export function EnhancedProductionDashboard({
 
   const filteredOrders = useMemo(() => {
     let filtered = filterOrders(orders, statusFilter, searchTerm, dateRange, priorityFilter, courierFilter);
-    
+
     // Apply order type filter from stat cards
     if (orderTypeFilter === 'EA') {
       filtered = filtered.filter(o => o.orderType === 'EA');
@@ -371,15 +373,15 @@ export function EnhancedProductionDashboard({
       filtered = filtered.filter(o => {
         // Check if status is manually set to "Urgente" (case-insensitive)
         const isMarkedUrgent = o.status.toLowerCase() === 'urgente' || o.status.toLowerCase() === 'urgent';
-        
+
         // Check if order is old and pending
         const orderAge = Date.now() - new Date(o.timestamp).getTime();
         const isOldAndPending = orderAge > 24 * 60 * 60 * 1000 && o.status === 'Pendiente';
-        
+
         return isMarkedUrgent || isOldAndPending;
       });
     }
-    
+
     return filtered;
   }, [orders, statusFilter, searchTerm, dateRange, priorityFilter, courierFilter, orderTypeFilter]);
 
@@ -455,7 +457,7 @@ export function EnhancedProductionDashboard({
       const responseData = await response.json();
       // API returns { status: 'success', data: order, message: '...' }
       const updatedOrder: Sale = responseData.data || responseData;
-      
+
       refresh();
       toast({
         title: "Orden actualizada",
@@ -477,7 +479,7 @@ export function EnhancedProductionDashboard({
   const handleBulkStatusUpdate = async (orderIds: string[], newStatus: string) => {
     let successCount = 0;
     let failCount = 0;
-    
+
     try {
       toast({
         title: "Procesando...",
@@ -489,7 +491,7 @@ export function EnhancedProductionDashboard({
         try {
           await updateOrderStatus(orderIds[i], newStatus, true); // Skip individual refreshes
           successCount++;
-          
+
           // Show progress every 10 orders
           if ((i + 1) % 10 === 0 || i === orderIds.length - 1) {
             console.log(`Progress: ${i + 1}/${orderIds.length} orders updated`);
@@ -499,7 +501,7 @@ export function EnhancedProductionDashboard({
           failCount++;
         }
       }
-      
+
       // Show final result
       if (failCount === 0) {
         toast({
@@ -513,7 +515,7 @@ export function EnhancedProductionDashboard({
           description: `${successCount} exitosos, ${failCount} fallidos.`,
         });
       }
-      
+
       setSelectedOrders([]);
       refresh(); // Refresh data
     } catch (error) {
@@ -547,8 +549,8 @@ export function EnhancedProductionDashboard({
         <div className="flex items-center gap-2 text-xs text-gray-600">
           <Clock className="h-3 w-3" />
           <span>
-            Sincronizado: {lastSync.toLocaleTimeString('es-CR', { 
-              hour: '2-digit', 
+            Sincronizado: {lastSync.toLocaleTimeString('es-CR', {
+              hour: '2-digit',
               minute: '2-digit'
             })}
           </span>
@@ -581,22 +583,22 @@ export function EnhancedProductionDashboard({
       </div>
 
       {/* Stats Overview */}
-      <ProductionStats 
-        orders={orders} 
+      <ProductionStats
+        orders={orders}
         onFilterChange={handleStatsFilter}
       />
-      
+
       {/* Main Dashboard */}
       <Card>
         <CardHeader>
-          <EnhancedHeader 
+          <EnhancedHeader
             loading={loading}
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
             statusFilter={statusFilter}
             onStatusChange={setStatusFilter}
             onGenerateGuias={onGenerateGuias}
-            onGenerateInvoices={onGenerateInvoices || (() => {})}
+            onGenerateInvoices={onGenerateInvoices || (() => { })}
             onExport={() => setShowExport(true)}
             onBulkOperations={() => setShowBulkOperations(true)}
             onShowStats={() => setShowStats(true)}
@@ -641,7 +643,7 @@ export function EnhancedProductionDashboard({
                   </Badge>
                 </TabsTrigger>
               </TabsList>
-              
+
               {['EA', 'RA'].map((type) => (
                 <TabsContent key={type} value={type} className="mt-2">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
@@ -653,18 +655,19 @@ export function EnhancedProductionDashboard({
                         onStatusUpdate={updateOrderStatus}
                         isSelected={selectedOrders.includes(order.orderId)}
                         onToggleSelection={(orderId: string) => {
-                          setSelectedOrders(prev => 
-                            prev.includes(orderId) 
+                          setSelectedOrders(prev =>
+                            prev.includes(orderId)
                               ? prev.filter(id => id !== orderId)
                               : [...prev, orderId]
                           );
                         }}
                         availableStatuses={statuses}
                         businessInfoFields={businessInfoFields}
+                        productFieldConfigs={productFieldConfigs}
                       />
                     ))}
                   </div>
-                  
+
                   {groupedOrders[type as keyof typeof groupedOrders].length === 0 && (
                     <div className="text-center py-12 text-gray-500">
                       <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -715,8 +718,8 @@ export function EnhancedProductionDashboard({
       )}
 
       {showStats && (
-        <ProductionStats 
-          orders={orders} 
+        <ProductionStats
+          orders={orders}
           onClose={() => setShowStats(false)}
           detailed={true}
         />

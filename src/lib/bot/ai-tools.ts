@@ -44,7 +44,7 @@ export interface ToolResult<T = unknown> {
 const baseOrderSchema = {
   customerName: z.string().describe('Nombre completo del cliente'),
   phone: z.string().optional().describe('Número de teléfono del cliente'),
-  email: z.string().email().optional().describe('Email del cliente'),
+  email: z.union([z.string().email(), z.literal('')]).optional().describe('Email del cliente'),
   product: z.string().describe('Nombre o descripción del producto'),
   quantity: z.number().int().min(1).default(1).describe('Cantidad del producto'),
   total: z.number().min(0).describe('Total de la orden en colones'),
@@ -110,7 +110,7 @@ export const toolSchemas = {
       updates: z.object({
         customerName: z.string().optional(),
         phone: z.string().optional(),
-        email: z.string().email().optional(),
+        email: z.union([z.string().email(), z.literal('')]).optional(),
         product: z.string().optional(),
         quantity: z.number().int().min(1).optional(),
         size: z.string().optional(),

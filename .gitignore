@@ -79,6 +79,9 @@ debug-vercel-api.ps1
 .cursor/
 .cursorrules
 
+# Reference/scratch projects (not part of CRM-v2)
+holama/
+
 # PWA files
 **/public/sw.js
 **/public/workbox-*.js

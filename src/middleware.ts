@@ -41,34 +41,34 @@ export default async function middleware(request: Request) {
   // CORS Configuration - Allow integration API from external websites
   if (origin && pathname.startsWith('/api/integration')) {
     console.log(`[Middleware] Integration API request from origin: ${origin}, path: ${pathname}, method: ${request.method}`);
-    
+
     // For integration endpoints, allow any origin (API key auth provides security)
     const response = NextResponse.next();
     response.headers.set('Access-Control-Allow-Origin', origin);
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
     response.headers.set('Access-Control-Allow-Credentials', 'true');
-    
+
     // Handle preflight requests
     if (request.method === 'OPTIONS') {
       console.log(`[Middleware] Handling OPTIONS preflight for ${pathname}`);
       return new Response(null, { status: 200, headers: response.headers });
     }
-    
+
     console.log(`[Middleware] Allowing integration request to proceed`);
   } else if (origin) {
     // For other endpoints, restrict to allowed origins
-    const allowedOrigins = process.env.NODE_ENV === 'production' 
-      ? ['https://your-production-domain.com'] // Update with actual production domain
+    const allowedOrigins = process.env.NODE_ENV === 'production'
+      ? ['https://betsycrm.com']
       : ['http://localhost:3000', 'https://gaynell-nonparental-marlin.ngrok-free.dev']; // Allow ngrok for development
-    
+
     if (allowedOrigins.includes(origin)) {
       const response = NextResponse.next();
       response.headers.set('Access-Control-Allow-Origin', origin);
       response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
       response.headers.set('Access-Control-Allow-Credentials', 'true');
-      
+
       // Handle preflight requests
       if (request.method === 'OPTIONS') {
         return new Response(null, { status: 200, headers: response.headers });
@@ -114,9 +114,24 @@ export default async function middleware(request: Request) {
       return redirectToLogin(url);
     }
 
+    // Logistics dashboard — check early before tenant validation
+    if (pathname.startsWith('/logistics') || pathname.startsWith('/api/logistics/')) {
+      const isLogisticsAdmin = (token as any)?.isLogisticsAdmin === true;
+      if (!isLogisticsAdmin) {
+        if (pathname.startsWith('/api/logistics/')) {
+          return new NextResponse(
+            JSON.stringify({ error: 'Forbidden', message: 'Logistics admin access required' }),
+            { status: 403, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return NextResponse.redirect(new URL('/dashboard', url.origin));
+      }
+      return NextResponse.next(); // skip all tenant/subscription checks
+    }
+
     // Handle tenant-specific routes
     if (pathname.startsWith('/api/')) {
-      return handleApiRequest(request, { tenantId, userId, role });
+      return handleApiRequest(request, { tenantId, userId, role }, token);
     }
 
     // Handle app routes
@@ -147,7 +162,7 @@ function isPublicRoute(pathname: string): boolean {
     }
     return pathname === route || pathname.startsWith(`${route}/`);
   });
-  
+
   return isPublic;
 }
 
@@ -157,7 +172,7 @@ function isPublicRoute(pathname: string): boolean {
  */
 function redirectToLogin(url: URL): NextResponse {
   const pathname = url.pathname;
-  
+
   // For API routes, return JSON error instead of HTML redirect
   if (pathname.startsWith('/api/')) {
     return NextResponse.json(
@@ -165,7 +180,7 @@ function redirectToLogin(url: URL): NextResponse {
       { status: 401, headers: { 'Content-Type': 'application/json' } }
     );
   }
-  
+
   // For app routes, redirect to login page
   const loginUrl = new URL('/auth/signin', url.origin);
   loginUrl.searchParams.set('callbackUrl', url.pathname);
@@ -177,7 +192,8 @@ function redirectToLogin(url: URL): NextResponse {
  */
 async function handleApiRequest(
   request: Request,
-  context: { tenantId?: string | null; userId: string; role: string }
+  context: { tenantId?: string | null; userId: string; role: string },
+  token?: any
 ): Promise<NextResponse> {
   const { tenantId, userId, role } = context;
   const url = new URL(request.url);
@@ -190,6 +206,18 @@ async function handleApiRequest(
 
   // Allow auth-related routes
   if (pathname.startsWith('/api/auth/')) {
+    return NextResponse.next();
+  }
+
+  // Logistics admin routes — only require isLogisticsAdmin flag, no tenant needed
+  if (pathname.startsWith('/api/logistics/')) {
+    const isLogisticsAdmin = (token as any)?.isLogisticsAdmin === true;
+    if (!isLogisticsAdmin) {
+      return new NextResponse(
+        JSON.stringify({ error: 'Forbidden', message: 'Logistics admin access required' }),
+        { status: 403, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
     return NextResponse.next();
   }
 
@@ -206,12 +234,12 @@ async function handleApiRequest(
 
   // Allow other setup-related routes for MASTER users without tenant
   if (!tenantId) {
-    if (role === 'MASTER' && 
-        (pathname.startsWith('/api/setup') || 
-         pathname.startsWith('/api/tenant'))) {
+    if (role === 'MASTER' &&
+      (pathname.startsWith('/api/setup') ||
+        pathname.startsWith('/api/tenant'))) {
       return NextResponse.next();
     }
-    
+
     // For other API routes, return a 400 error instead of throwing
     return new NextResponse(
       JSON.stringify({ error: 'Tenant setup required. Please complete the setup process.' }),
@@ -252,13 +280,13 @@ async function handleAppRoute(
   // Handle tenant setup flow - allow access to setup/auth pages without tenant
   const setupRoutes = ['/setup-tenant', '/setup-wizard', '/auth/verify-email', '/auth/signin', '/auth/error'];
   const isSetupRoute = setupRoutes.some(route => pathname === route || pathname.startsWith(route));
-  
+
   if (!tenantId) {
     // Allow access to setup routes, auth routes, and public routes
     if (isSetupRoute || pathname.startsWith('/api/auth/') || pathname.startsWith('/landing')) {
       return NextResponse.next();
     }
-    
+
     // If email not verified, redirect to verify email
     if (email_verified === false) {
       const secret = process.env.NEXTAUTH_SECRET;
@@ -271,12 +299,12 @@ async function handleAppRoute(
       });
       return NextResponse.redirect(new URL(`/auth/verify-email?email=${token?.email || ''}`, url.origin));
     }
-    
+
     // Otherwise redirect to setup-tenant (which will redirect to setup-wizard)
     if (pathname !== '/setup-tenant') {
       return NextResponse.redirect(new URL('/setup-tenant', url.origin));
     }
-    
+
     return NextResponse.next();
   }
 
@@ -290,9 +318,9 @@ async function handleAppRoute(
 
   // Check trial/subscription status and enforce restrictions
   // Allow billing-related routes for expired trials
-  const isBillingApiRoute = pathname.startsWith('/api/billing') || 
-                             pathname.startsWith('/api/tilopay/checkout') || 
-                             pathname.startsWith('/api/tilopay/create-payment-link');
+  const isBillingApiRoute = pathname.startsWith('/api/billing') ||
+    pathname.startsWith('/api/tilopay/checkout') ||
+    pathname.startsWith('/api/tilopay/create-payment-link');
   const isConfigPage = pathname === '/config';
   const isBillingTab = isConfigPage && url.searchParams.get('tab') === 'billing';
 
@@ -313,11 +341,11 @@ async function handleAppRoute(
       const plan = currentTenant?.plan || 'FREE';
       const subscriptionStatus = currentTenant?.subscriptionStatus || null;
       const trialEndsAt = currentTenant?.trialEndsAt ? new Date(currentTenant.trialEndsAt) : null;
-      
+
       // Normalize plan (handle enum/string)
       const normalizedPlan = plan ? String(plan).trim().toUpperCase() : 'FREE';
       const normalizedStatus = subscriptionStatus ? String(subscriptionStatus).trim().toLowerCase() : null;
-      
+
       // Check if trial expired (only for FREE plan)
       let trialExpired = false;
       if (normalizedPlan === 'FREE') {
@@ -325,7 +353,7 @@ async function handleAppRoute(
         const trialEnd = trialEndsAt || new Date(Date.now() + 15 * 24 * 60 * 60 * 1000); // Default 15 days
         trialExpired = now >= trialEnd;
       }
-      
+
       // Check if subscription is active
       // For paid plans (BASIC, PRO), allow unless explicitly blocked
       let subscriptionActive = false;
@@ -338,16 +366,16 @@ async function handleAppRoute(
         // FREE plan - check if trial is active
         subscriptionActive = !trialExpired;
       }
-      
+
       // CRITICAL: Only restrict if trial expired OR subscription inactive
       const shouldRestrict = trialExpired || !subscriptionActive;
-      
+
       if (shouldRestrict) {
         // Allow billing API routes
         if (isBillingApiRoute) {
           // Allow API routes to proceed
           // Continue to normal flow below
-        } 
+        }
         // Allow /config with billing tab
         else if (isBillingTab) {
           // Allow billing page to proceed
@@ -372,10 +400,10 @@ async function handleAppRoute(
     { tenantId, userId, role },
     async () => {
       const response = NextResponse.next();
-      
+
       // Add tenant ID to response headers for client-side use
       response.headers.set('x-tenant-id', tenantId);
-      
+
       // Content Security Policy (Report-Only for monitoring)
       // Adjust to your needs; switch to enforced by removing '-Report-Only' once stable
       const csp = [
@@ -392,7 +420,7 @@ async function handleAppRoute(
         "upgrade-insecure-requests",
       ].join('; ');
       response.headers.set('Content-Security-Policy-Report-Only', csp);
-      
+
       return response;
     }
   );

@@ -24,12 +24,21 @@ export async function GET(req: NextRequest) {
         const courier = url.searchParams.get('courier');
         const lmCarrierFilter = url.searchParams.get('lmCarrier');
         const search = url.searchParams.get('search');
+        const dateFrom = url.searchParams.get('dateFrom');
+        const dateTo = url.searchParams.get('dateTo');
         const page = parseInt(url.searchParams.get('page') || '1', 10);
         const limit = parseInt(url.searchParams.get('limit') || '200', 10);
         const skip = (page - 1) * limit;
 
+        // Default: only show orders from Feb 22 2026 onwards (cutoff date when LM went live)
+        const DEFAULT_CUTOFF = new Date('2026-02-22T00:00:00.000Z');
+
         const where: any = {
             tenantId: tenantId ? tenantId : { in: MANAGED_TENANT_IDS },
+            timestamp: {
+                gte: dateFrom ? new Date(dateFrom) : DEFAULT_CUTOFF,
+                ...(dateTo ? { lte: new Date(dateTo + 'T23:59:59.999Z') } : {}),
+            },
         };
 
         if (status) where.status = status;

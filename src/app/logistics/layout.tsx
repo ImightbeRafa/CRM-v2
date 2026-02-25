@@ -8,6 +8,8 @@ import {
     BookOpen,
     LogOut,
     Package,
+    BarChart2,
+    FileText,
 } from 'lucide-react';
 
 export default async function LogisticsLayout({ children }: { children: React.ReactNode }) {
@@ -19,6 +21,8 @@ export default async function LogisticsLayout({ children }: { children: React.Re
         { href: '/logistics/carriers', label: 'Tablero de Envíos', icon: Layers },
         { href: '/logistics/config', label: 'Costos y Tarifas', icon: Settings },
         { href: '/logistics/accounting', label: 'Contabilidad', icon: BookOpen },
+        { href: '/logistics/reports', label: 'Reportes', icon: BarChart2 },
+        { href: '/logistics/guias', label: 'Guías', icon: FileText },
     ];
 
     return (

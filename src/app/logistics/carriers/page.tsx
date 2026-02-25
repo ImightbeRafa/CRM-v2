@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Package, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter } from 'lucide-react';
+import { Package, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 
 interface Order {
@@ -50,14 +50,81 @@ async function patchOrder(orderId: string, patch: object) {
 async function syncCrm(orderId: string, lmStatus: string) {
     await fetch('/api/logistics/sync-crm-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, lmStatus }) });
 }
+async function logEvent(orderId: string, eventType: string, payload: object = {}) {
+    try {
+        await fetch('/api/logistics/order-events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, eventType, payload }) });
+    } catch { }
+}
+
+// ─── Historial Panel ──────────────────────────────────────────────────────────
+function HistorialPanel({ orderId }: { orderId: string }) {
+    const [events, setEvents] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [note, setNote] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        fetch(`/api/logistics/order-events?orderId=${orderId}`)
+            .then(r => r.json())
+            .then(d => { setEvents(d.events || []); setLoading(false); });
+    }, [orderId]);
+
+    async function addNote() {
+        if (!note.trim()) return;
+        setSaving(true);
+        await logEvent(orderId, 'note', { text: note });
+        const fresh = await (await fetch(`/api/logistics/order-events?orderId=${orderId}`)).json();
+        setEvents(fresh.events || []);
+        setNote('');
+        setSaving(false);
+    }
+
+    const eventIcon: Record<string, string> = { carrier_assigned: '🚚', status_change: '🔄', ce_confirmed: '💵', guia_generated: '🖨', note: '📝', bulk_update: '⚡' };
+    const timeAgo = (ts: string) => { const s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000); if (s < 60) return 'hace un momento'; if (s < 3600) return `hace ${Math.floor(s / 60)}m`; if (s < 86400) return `hace ${Math.floor(s / 3600)}h`; return new Date(ts).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' }); };
+
+    return (
+        <div style={{ padding: '10px 12px', background: 'rgba(0,0,0,0.25)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', marginBottom: 8 }}>
+            {loading ? <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11, margin: 0, textAlign: 'center' }}>...</p> : (
+                events.length === 0 ? (
+                    <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11, margin: '0 0 8px', textAlign: 'center' }}>Sin historial aún</p>
+                ) : (
+                    <div style={{ maxHeight: 160, overflowY: 'auto', marginBottom: 8 }}>
+                        {events.map((e) => (
+                            <div key={e.id} style={{ display: 'flex', gap: 7, marginBottom: 6, alignItems: 'flex-start' }}>
+                                <span style={{ fontSize: 12, flexShrink: 0 }}>{eventIcon[e.event_type] || '•'}</span>
+                                <div style={{ flex: 1 }}>
+                                    <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10.5 }}>
+                                        {e.event_type === 'note' ? e.payload?.text
+                                            : e.event_type === 'status_change' ? `${e.payload?.from} → ${e.payload?.to}`
+                                                : e.event_type === 'guia_generated' ? `Guía generada (${e.payload?.carrier})`
+                                                    : e.event_type === 'bulk_update' ? `Actualización masiva (${e.payload?.lmStatus || e.payload?.lmCarrier})`
+                                                        : e.event_type}
+                                    </span>
+                                    <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 9.5, display: 'block' }}>{timeAgo(e.created_at)} · {e.actor?.split('@')[0] || 'sistema'}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )
+            )}
+            <div style={{ display: 'flex', gap: 5 }}>
+                <input value={note} onChange={e => setNote(e.target.value)} placeholder="Agregar nota..." onKeyDown={e => e.key === 'Enter' && !e.shiftKey && addNote()}
+                    style={{ flex: 1, padding: '4px 9px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: '#F2F2F2', fontSize: 11, outline: 'none' }} />
+                <button onClick={addNote} disabled={!note.trim() || saving} style={{ padding: '4px 9px', borderRadius: 6, border: '1px solid rgba(139,135,255,0.3)', background: 'rgba(139,135,255,0.08)', color: '#8b87ff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><PlusCircle size={11} /></button>
+            </div>
+        </div>
+    );
+}
 
 // ─── Order Card (kanban) ──────────────────────────────────────────────────────
-function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCollected, carrier, getTenantName, getTenantColor }: {
+function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCollected, carrier, getTenantName, getTenantColor, bulkMode, selected, onToggleSelect }: {
     order: Order; onMoveStatus: (id: string, s: string, c: string) => void; onMoveCarrier: (id: string, c: string) => void;
     onToggleCOD: (id: string, v: boolean) => void; onToggleCollected: (id: string, v: boolean) => void;
     carrier: string; getTenantName: (id: string) => string; getTenantColor: (id: string) => string;
+    bulkMode: boolean; selected: boolean; onToggleSelect: (id: string) => void;
 }) {
     const [expanded, setExpanded] = useState(false);
+    const [showHistorial, setShowHistorial] = useState(false);
     const [syncing, setSyncing] = useState(false); const [synced, setSynced] = useState(false);
     const color = getTenantColor(order.tenantId);
     const idx = STATUSES.indexOf(order.lmStatus || 'Pendiente');
@@ -70,12 +137,14 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
     async function handleSync() { setSyncing(true); await syncCrm(order.id, order.lmStatus || 'Pendiente'); setSyncing(false); setSynced(true); setTimeout(() => setSynced(false), 2500); }
 
     return (
-        <div style={{
-            background: order.isContraEntrega ? 'rgba(251,191,36,0.06)' : 'rgba(255,255,255,0.04)',
-            backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-            border: `1px solid ${order.isContraEntrega ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.08)'}`,
-            borderRadius: 10, marginBottom: 6, overflow: 'hidden', transition: 'border-color 0.15s',
-        }} className="lm-order-card">
+        <div
+            onClick={bulkMode ? () => onToggleSelect(order.id) : undefined}
+            style={{
+                background: selected ? 'rgba(139,135,255,0.1)' : order.isContraEntrega ? 'rgba(251,191,36,0.06)' : 'rgba(255,255,255,0.04)',
+                backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                border: selected ? '1px solid rgba(139,135,255,0.4)' : `1px solid ${order.isContraEntrega ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.08)'}`,
+                borderRadius: 10, marginBottom: 6, overflow: 'hidden', transition: 'border-color 0.15s', cursor: bulkMode ? 'pointer' : 'default',
+            }} className="lm-order-card">
             {order.isContraEntrega && (
                 <div style={{ background: 'rgba(251,191,36,0.1)', padding: '4px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(251,191,36,0.15)' }}>
                     <span style={{ color: '#fbbf24', fontSize: 10, fontWeight: 700 }}>💵 CONTRA ENTREGA</span>
@@ -87,13 +156,23 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
             )}
             <div style={{ padding: '10px 12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 5 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ color: '#F2F2F2', fontWeight: 600, margin: 0, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customerName}</p>
-                        <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 10 }}>#{order.orderId} · {new Date(order.timestamp).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                        {bulkMode && (
+                            <div style={{ flexShrink: 0, color: selected ? '#8b87ff' : 'rgba(255,255,255,0.2)' }}>
+                                {selected ? <CheckSquare size={13} /> : <Square size={13} />}
+                            </div>
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ color: '#F2F2F2', fontWeight: 600, margin: 0, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customerName}</p>
+                            <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 10 }}>#{order.orderId} · {new Date(order.timestamp).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}</p>
+                        </div>
                     </div>
                     <div style={{ display: 'flex', gap: 5, flexShrink: 0, marginLeft: 6 }}>
                         <span style={{ padding: '1px 7px', borderRadius: 20, background: `${color}22`, color, fontSize: 9.5, fontWeight: 700 }}>{getTenantName(order.tenantId)}</span>
-                        <button onClick={() => setExpanded(!expanded)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}>
+                        <button onClick={e => { e.stopPropagation(); setShowHistorial(!showHistorial); }} style={{ background: 'none', border: 'none', color: showHistorial ? '#8b87ff' : 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }} title="Historial">
+                            <Clock size={11} />
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); setExpanded(!expanded); }} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}>
                             {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                         </button>
                     </div>
@@ -103,6 +182,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                     {order.product && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100 }}>{order.product}{order.quantity && order.quantity > 1 ? ` ×${order.quantity}` : ''}</span>}
                     <span style={{ color: '#34d399', fontWeight: 700, fontSize: 11, marginLeft: 'auto' }}>₡{order.total.toLocaleString('es-CR')}</span>
                 </div>
+                {showHistorial && <HistorialPanel orderId={order.id} />}
                 {expanded && (
                     <div style={{ padding: '10px 12px', background: 'rgba(0,0,0,0.25)', borderRadius: 8, marginBottom: 8, border: '1px solid rgba(255,255,255,0.06)', fontSize: 11 }}>
                         {order.phone && <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}><span style={{ color: 'rgba(255,255,255,0.3)', minWidth: 56 }}>Teléfono</span><span style={{ color: 'rgba(255,255,255,0.7)' }}>{order.phone}</span></div>}
@@ -113,7 +193,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                             <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, margin: '0 0 2px', textTransform: 'uppercase' }}>Comentarios</p>
                             <p style={{ color: 'rgba(255,255,255,0.6)', margin: 0, fontSize: 11, lineHeight: 1.5 }}>{order.comments}</p>
                         </div>}
-                        <button onClick={() => onToggleCOD(order.id, !order.isContraEntrega)} style={{ marginTop: 8, padding: '4px 10px', borderRadius: 6, border: `1px solid ${order.isContraEntrega ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.12)'}`, background: order.isContraEntrega ? 'rgba(251,191,36,0.08)' : 'transparent', color: order.isContraEntrega ? '#fbbf24' : 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>
+                        <button onClick={e => { e.stopPropagation(); onToggleCOD(order.id, !order.isContraEntrega); }} style={{ marginTop: 8, padding: '4px 10px', borderRadius: 6, border: `1px solid ${order.isContraEntrega ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.12)'}`, background: order.isContraEntrega ? 'rgba(251,191,36,0.08)' : 'transparent', color: order.isContraEntrega ? '#fbbf24' : 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>
                             {order.isContraEntrega ? '💵 Quitar Contra Entrega' : '+ Marcar Contra Entrega'}
                         </button>
                     </div>
@@ -134,11 +214,12 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
 }
 
 // ─── Kanban Board (single carrier) ───────────────────────────────────────────
-function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCOD, onToggleCollected, accentColor, getTenantName, getTenantColor }: {
+function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCOD, onToggleCollected, accentColor, getTenantName, getTenantColor, bulkMode, selectedIds, onToggleSelect }: {
     title: string; icon: React.ReactNode; carrier: string; orders: Order[]; accentColor: string;
     onMove: (id: string, s: string, c: string) => void; onMoveCarrier: (id: string, c: string) => void;
     onToggleCOD: (id: string, v: boolean) => void; onToggleCollected: (id: string, v: boolean) => void;
     getTenantName: (id: string) => string; getTenantColor: (id: string) => string;
+    bulkMode: boolean; selectedIds: Set<string>; onToggleSelect: (id: string) => void;
 }) {
     const cols = STATUSES.map(s => ({ status: s, orders: orders.filter(o => (o.lmStatus || 'Pendiente') === s) }));
     const cod = orders.filter(o => o.isContraEntrega).length;
@@ -175,7 +256,8 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
                                 {col.map(o => (
                                     <OrderCard key={o.id} order={o} onMoveStatus={onMove} onMoveCarrier={onMoveCarrier}
                                         onToggleCOD={onToggleCOD} onToggleCollected={onToggleCollected} carrier={carrier}
-                                        getTenantName={getTenantName} getTenantColor={getTenantColor} />
+                                        getTenantName={getTenantName} getTenantColor={getTenantColor}
+                                        bulkMode={bulkMode} selected={selectedIds.has(o.id)} onToggleSelect={onToggleSelect} />
                                 ))}
                                 {col.length === 0 && (
                                     <div style={{ textAlign: 'center', padding: '20px 8px', color: 'rgba(255,255,255,0.15)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 11 }}>
@@ -199,6 +281,11 @@ export default function CarriersPage() {
     const [search, setSearch] = useState('');
     const [provinceFilter, setProvinceFilter] = useState('');
     const [dateFilter, setDateFilter] = useState('');
+    const [bulkMode, setBulkMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [bulkStatus, setBulkStatus] = useState('');
+    const [bulkCarrier, setBulkCarrier] = useState('');
+    const [applying, setApplying] = useState(false);
 
     const load = useCallback(async () => {
         try {
@@ -211,11 +298,27 @@ export default function CarriersPage() {
 
     useEffect(() => { load(); }, [load]);
 
-    const onMove = useCallback((id: string, s: string, c: string) => { setOrders(p => p.map(o => o.id === id ? { ...o, lmStatus: s, lmCarrier: c } : o)); patchOrder(id, { lmCarrier: c, lmStatus: s }); }, []);
-    const onMoveC = useCallback((id: string, c: string) => { setOrders(p => p.map(o => o.id === id ? { ...o, lmCarrier: c, lmStatus: o.lmStatus || 'Pendiente' } : o)); patchOrder(id, { lmCarrier: c }); }, []);
-    const onAssign = useCallback((id: string, c: string) => { setOrders(p => p.map(o => o.id === id ? { ...o, lmCarrier: c, lmStatus: 'Pendiente' } : o)); patchOrder(id, { lmCarrier: c, lmStatus: 'Pendiente' }); }, []);
+    const onMove = useCallback((id: string, s: string, c: string) => { setOrders(p => p.map(o => o.id === id ? { ...o, lmStatus: s, lmCarrier: c } : o)); patchOrder(id, { lmCarrier: c, lmStatus: s }); logEvent(id, 'status_change', { to: s }); }, []);
+    const onMoveC = useCallback((id: string, c: string) => { setOrders(p => p.map(o => o.id === id ? { ...o, lmCarrier: c, lmStatus: o.lmStatus || 'Pendiente' } : o)); patchOrder(id, { lmCarrier: c }); logEvent(id, 'carrier_assigned', { carrier: c }); }, []);
+    const onAssign = useCallback((id: string, c: string) => { setOrders(p => p.map(o => o.id === id ? { ...o, lmCarrier: c, lmStatus: 'Pendiente' } : o)); patchOrder(id, { lmCarrier: c, lmStatus: 'Pendiente' }); logEvent(id, 'carrier_assigned', { carrier: c }); }, []);
     const onCOD = useCallback((id: string, v: boolean) => { setOrders(p => p.map(o => o.id === id ? { ...o, isContraEntrega: v } : o)); patchOrder(id, { isContraEntrega: v }); }, []);
-    const onColl = useCallback((id: string, v: boolean) => { setOrders(p => p.map(o => o.id === id ? { ...o, contraEntregaCollected: v } : o)); patchOrder(id, { contraEntregaCollected: v }); }, []);
+    const onColl = useCallback((id: string, v: boolean) => { setOrders(p => p.map(o => o.id === id ? { ...o, contraEntregaCollected: v } : o)); patchOrder(id, { contraEntregaCollected: v }); if (v) logEvent(id, 'ce_confirmed', {}); }, []);
+    const onToggleSelect = useCallback((id: string) => { setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; }); }, []);
+
+    const applyBulk = useCallback(async () => {
+        const ids = [...selectedIds];
+        if (!ids.length || (!bulkStatus && !bulkCarrier)) return;
+        setApplying(true);
+        const patch: any = {};
+        if (bulkStatus) patch.lmStatus = bulkStatus;
+        if (bulkCarrier) patch.lmCarrier = bulkCarrier;
+        await fetch('/api/logistics/bulk-patch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderIds: ids, patch }) });
+        setOrders(p => p.map(o => selectedIds.has(o.id) ? { ...o, ...{ lmStatus: bulkStatus || o.lmStatus, lmCarrier: bulkCarrier || o.lmCarrier } } : o));
+        setSelectedIds(new Set());
+        setBulkStatus('');
+        setBulkCarrier('');
+        setApplying(false);
+    }, [selectedIds, bulkStatus, bulkCarrier]);
 
     const applyFilters = (list: Order[]) => {
         if (provinceFilter) list = list.filter(o => o.province?.toLowerCase().includes(provinceFilter.toLowerCase()));
@@ -251,6 +354,10 @@ export default function CarriersPage() {
                             {mensajeria.length} Mensajería · {correos.length} Correos · <span style={{ color: unassigned.length > 0 ? '#fbbf24' : 'rgba(255,255,255,0.35)' }}>{unassigned.length} por asignar</span>
                         </p>
                     </div>
+                    <button onClick={() => { setBulkMode(b => !b); setSelectedIds(new Set()); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 16px', borderRadius: 9, border: `1px solid ${bulkMode ? 'rgba(139,135,255,0.5)' : 'rgba(255,255,255,0.1)'}`, background: bulkMode ? 'rgba(139,135,255,0.12)' : 'transparent', color: bulkMode ? '#8b87ff' : 'rgba(255,255,255,0.45)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, transition: 'all 0.15s' }}>
+                        <Layers size={13} /> {bulkMode ? 'Salir Selección' : 'Selección Múltiple'}
+                    </button>
                 </div>
 
                 {/* Filters row */}
@@ -273,6 +380,29 @@ export default function CarriersPage() {
                         </div>
                     ))}
                 </div>
+
+                {/* Bulk action bar */}
+                {bulkMode && selectedIds.size > 0 && (
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 14px', background: 'rgba(139,135,255,0.1)', border: '1px solid rgba(139,135,255,0.3)', borderRadius: 10, marginTop: 10, flexWrap: 'wrap' }}>
+                        <span style={{ color: '#8b87ff', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap' }}>{selectedIds.size} seleccionados</span>
+                        <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} style={{ padding: '5px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: '#F2F2F2', fontSize: 12, outline: 'none', cursor: 'pointer' }}>
+                            <option value=''>— Estado —</option>
+                            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        <select value={bulkCarrier} onChange={e => setBulkCarrier(e.target.value)} style={{ padding: '5px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: '#F2F2F2', fontSize: 12, outline: 'none', cursor: 'pointer' }}>
+                            <option value=''>— Carrier —</option>
+                            <option value='mensajeria'>Mensajería</option>
+                            <option value='correos'>Correos</option>
+                        </select>
+                        <button onClick={applyBulk} disabled={applying || (!bulkStatus && !bulkCarrier)}
+                            style={{ padding: '5px 16px', borderRadius: 7, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.1)', color: '#34d399', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
+                            {applying ? 'Aplicando...' : '✓ Aplicar'}
+                        </button>
+                        <button onClick={() => setSelectedIds(new Set())} style={{ marginLeft: 'auto', padding: '5px 10px', background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                            <X size={11} /> Limpiar
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* ── Body: 2-column split ──────────────────────────────────── */}
@@ -282,10 +412,12 @@ export default function CarriersPage() {
                 <div style={{ flex: 1, overflowY: 'auto', minWidth: 0, paddingRight: 4 }}>
                     <Board title="Mensajería Privada" icon={<Truck size={17} />} carrier="mensajeria" orders={mensajeria}
                         onMove={onMove} onMoveCarrier={onMoveC} onToggleCOD={onCOD} onToggleCollected={onColl}
-                        accentColor="#8b87ff" getTenantName={getTenantName} getTenantColor={getTenantColor} />
+                        accentColor="#8b87ff" getTenantName={getTenantName} getTenantColor={getTenantColor}
+                        bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} />
                     <Board title="Correos de Costa Rica" icon={<Mail size={17} />} carrier="correos" orders={correos}
                         onMove={onMove} onMoveCarrier={onMoveC} onToggleCOD={onCOD} onToggleCollected={onColl}
-                        accentColor="#60a5fa" getTenantName={getTenantName} getTenantColor={getTenantColor} />
+                        accentColor="#60a5fa" getTenantName={getTenantName} getTenantColor={getTenantColor}
+                        bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} />
                 </div>
 
                 {/* RIGHT: Sin Asignar inbox */}

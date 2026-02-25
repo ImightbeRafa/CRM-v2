@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Save, RefreshCw } from 'lucide-react';
 import { useTenantConfig, type TenantConfig } from '@/hooks/useTenantConfig';
 
-interface Rates { mensajeria_rate: number; correos_rate: number; handling_rate: number; }
+interface Rates { mensajeria_rate: number; correos_rate: number; handling_rate: number; salary_daily_rate: number; gd_recoleccion_cost: number; }
 
 const PRESETS = ['#6c63ff', '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#8b5cf6'];
 
@@ -73,7 +73,7 @@ function TenantRow({ tenant, onSave }: { tenant: TenantConfig; onSave: (id: stri
 
 export default function ConfigPage() {
     const { tenants } = useTenantConfig();
-    const [rates, setRates] = useState<Rates>({ mensajeria_rate: 2600, correos_rate: 2500, handling_rate: 600 });
+    const [rates, setRates] = useState<Rates>({ mensajeria_rate: 2600, correos_rate: 2500, handling_rate: 600, salary_daily_rate: 10000, gd_recoleccion_cost: 2700 });
     const [ratesLoaded, setRatesLoaded] = useState(false);
     const [tab, setTab] = useState<'rates' | 'tenants'>('rates');
 
@@ -112,10 +112,12 @@ export default function ConfigPage() {
                             <RateCard label="Mensajería Privada" desc="Costo plano por paquete vía mensajería" rateKey="mensajeria_rate" value={rates.mensajeria_rate} onSave={saveRate} color="#8b87ff" />
                             <RateCard label="Correos de Costa Rica" desc="Costo plano por paquete vía Correos CR" rateKey="correos_rate" value={rates.correos_rate} onSave={saveRate} color="#60a5fa" />
                             <RateCard label="Costo de Manejo" desc="Costo de gestión por paquete (todos)" rateKey="handling_rate" value={rates.handling_rate} onSave={saveRate} color="#34d399" />
+                            <RateCard label="Salario Diario" desc="Tarifa diaria del colaborador (usado en reportes y contabilidad)" rateKey="salary_daily_rate" value={rates.salary_daily_rate} onSave={saveRate} color="#fbbf24" />
+                            <RateCard label="Costo Recolección GD" desc="Costo plano de recolección por viaje de Green Delivery" rateKey="gd_recoleccion_cost" value={rates.gd_recoleccion_cost} onSave={saveRate} color="#c084fc" />
                             <div style={{ ...glass, padding: '14px 18px' }}>
                                 <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: 0, lineHeight: 1.7 }}>
-                                    <strong style={{ color: 'rgba(255,255,255,0.55)' }}>Fórmula:</strong><br />
-                                    Total = (# Mensajería × ₡{rates.mensajeria_rate.toLocaleString()}) + (# Correos × ₡{rates.correos_rate.toLocaleString()}) + (Total paquetes × ₡{rates.handling_rate.toLocaleString()})
+                                    <strong style={{ color: 'rgba(255,255,255,0.55)' }}>Fórmula costo semanal:</strong><br />
+                                    Total = Correos + Mensajería + Manejo + Salario ({(rates.salary_daily_rate ?? 0).toLocaleString()} × días trabajados)
                                 </p>
                             </div>
                         </div>

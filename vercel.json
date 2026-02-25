@@ -1,40 +1,57 @@
 {
-    "version": 2,
-    "buildCommand": "npm run build",
-    "devCommand": "npm run dev",
-    "installCommand": "npm install",
-    "framework": "nextjs",
-    "regions": ["sfo1"],
-    "env": {
+  "version": 2,
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "regions": [
+    "sfo1"
+  ],
+  "env": {},
+  "functions": {
+    "src/app/api/**/*.ts": {
+      "maxDuration": 30
     },
-    "functions": {
-      "src/app/api/**/*.ts": {
-        "maxDuration": 30
-      },
-      "src/app/api/shipping/generate-guia/route.ts": {
-        "maxDuration": 300,
-        "memory": 1024
-      }
+    "src/app/api/shipping/generate-guia/route.ts": {
+      "maxDuration": 300,
+      "memory": 1024
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/backup",
+      "schedule": "0 2 * * *"
     },
-    "crons": [
-      {
-        "path": "/api/cron/backup",
-        "schedule": "0 2 * * *"
-      },
-      {
-        "path": "/api/cron/process-subscription-expiry",
-        "schedule": "0 2 * * *"
-      }
-    ],
-    "headers": [
-      {
-        "source": "/api/(.*)",
-        "headers": [
-          { "key": "Access-Control-Allow-Credentials", "value": "true" },
-          { "key": "Access-Control-Allow-Origin", "value": "https://betsycrm.com" },
-          { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS" },
-          { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version" }
-        ]
-      }
-    ]
-  }
+    {
+      "path": "/api/cron/process-subscription-expiry",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/logistics-report",
+      "schedule": "0 5 * * *"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Credentials",
+          "value": "true"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "https://betsycrm.com"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET,POST,PUT,DELETE,OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version"
+        }
+      ]
+    }
+  ]
+}

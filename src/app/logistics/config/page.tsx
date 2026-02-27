@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, RefreshCw } from 'lucide-react';
+import { Save, RefreshCw, Mail, Eye, EyeOff } from 'lucide-react';
 import { useTenantConfig, type TenantConfig } from '@/hooks/useTenantConfig';
 
 interface Rates { mensajeria_rate: number; correos_rate: number; handling_rate: number; salary_daily_rate: number; gd_recoleccion_cost: number; }
@@ -75,10 +75,21 @@ export default function ConfigPage() {
     const { tenants } = useTenantConfig();
     const [rates, setRates] = useState<Rates>({ mensajeria_rate: 2600, correos_rate: 2500, handling_rate: 600, salary_daily_rate: 10000, gd_recoleccion_cost: 2700 });
     const [ratesLoaded, setRatesLoaded] = useState(false);
-    const [tab, setTab] = useState<'rates' | 'tenants'>('rates');
+    const [tab, setTab] = useState<'rates' | 'tenants' | 'correos'>('rates');
+    const [correosEmail, setCorreosEmail] = useState('');
+    const [correosPassword, setCorreosPassword] = useState('');
+    const [correosHasCredentials, setCorreosHasCredentials] = useState(false);
+    const [correosLoaded, setCorreosLoaded] = useState(false);
+    const [correosSaving, setCorreosSaving] = useState(false);
+    const [correosSaved, setCorreosSaved] = useState(false);
+    const [showCorreosPassword, setShowCorreosPassword] = useState(false);
 
     useEffect(() => {
         fetch('/api/logistics/rates').then(r => r.json()).then(d => { if (d.rates) setRates(d.rates); }).finally(() => setRatesLoaded(true));
+        fetch('/api/logistics/correos-config').then(r => r.json()).then(d => {
+            setCorreosEmail(d.email || '');
+            setCorreosHasCredentials(d.hasCredentials || false);
+        }).finally(() => setCorreosLoaded(true));
     }, []);
 
     async function saveRate(key: keyof Rates, value: number) {
@@ -87,6 +98,20 @@ export default function ConfigPage() {
     }
     async function saveTenant(id: string, name: string, color: string) {
         await fetch('/api/logistics/tenant-config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenantId: id, name, color }) });
+    }
+    async function saveCorreosConfig() {
+        if (!correosEmail.trim()) return;
+        setCorreosSaving(true);
+        const payload: any = { email: correosEmail.trim() };
+        if (correosPassword) payload.password = correosPassword;
+        const res = await fetch('/api/logistics/correos-config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (res.ok) {
+            setCorreosHasCredentials(true);
+            setCorreosPassword('');
+            setCorreosSaved(true);
+            setTimeout(() => setCorreosSaved(false), 2500);
+        }
+        setCorreosSaving(false);
     }
 
     return (
@@ -98,7 +123,7 @@ export default function ConfigPage() {
 
             {/* Tabs */}
             <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-                {[{ id: 'rates' as const, label: 'Tarifas de Envío' }, { id: 'tenants' as const, label: 'Cuentas y Colores' }].map(t => (
+                {[{ id: 'rates' as const, label: 'Tarifas de Envío' }, { id: 'tenants' as const, label: 'Cuentas y Colores' }, { id: 'correos' as const, label: '📮 Correos CR' }].map(t => (
                     <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: '9px 20px', borderRadius: '8px 8px 0 0', border: 'none', borderBottom: tab === t.id ? '2px solid #8b87ff' : '2px solid transparent', background: tab === t.id ? 'rgba(139,135,255,0.08)' : 'transparent', color: tab === t.id ? '#F2F2F2' : 'rgba(255,255,255,0.35)', fontWeight: tab === t.id ? 700 : 400, fontSize: 13, cursor: 'pointer', marginBottom: -1, transition: 'all 0.15s' }}>
                         {t.label}
                     </button>
@@ -122,6 +147,51 @@ export default function ConfigPage() {
                             </div>
                         </div>
                     )}
+                </div>
+            )}
+
+            {tab === 'correos' && (
+                <div style={{ maxWidth: 560 }}>
+                    <div style={{ ...glass, padding: '22px 26px', borderColor: 'rgba(96,165,250,0.25)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+                            <Mail size={20} style={{ color: '#60a5fa' }} />
+                            <div>
+                                <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 16, margin: 0 }}>Correos de Costa Rica</p>
+                                <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: '2px 0 0' }}>Credenciales globales para generación automática de guías</p>
+                            </div>
+                            {correosHasCredentials && <span style={{ marginLeft: 'auto', color: '#34d399', fontSize: 12, fontWeight: 600 }}>✓ Configurado</span>}
+                        </div>
+                        {!correosLoaded ? <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>Cargando...</p> : (
+                            <div style={{ display: 'grid', gap: 14 }}>
+                                <div>
+                                    <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Email de acceso</label>
+                                    <input type="email" value={correosEmail} onChange={e => setCorreosEmail(e.target.value)}
+                                        placeholder="usuario@correos.go.cr"
+                                        style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(96,165,250,0.3)', background: 'rgba(0,0,0,0.25)', color: '#F2F2F2', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+                                </div>
+                                <div>
+                                    <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Contraseña {correosHasCredentials && <span style={{ color: 'rgba(255,255,255,0.25)', fontWeight: 400 }}>(dejar vacío para mantener actual)</span>}</label>
+                                    <div style={{ position: 'relative' }}>
+                                        <input type={showCorreosPassword ? 'text' : 'password'} value={correosPassword} onChange={e => setCorreosPassword(e.target.value)}
+                                            placeholder={correosHasCredentials ? '••••••••' : 'Contraseña de acceso'}
+                                            style={{ width: '100%', padding: '10px 42px 10px 14px', borderRadius: 8, border: '1px solid rgba(96,165,250,0.3)', background: 'rgba(0,0,0,0.25)', color: '#F2F2F2', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+                                        <button onClick={() => setShowCorreosPassword(p => !p)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 4 }}>
+                                            {showCorreosPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                                        </button>
+                                    </div>
+                                </div>
+                                <button onClick={saveCorreosConfig} disabled={correosSaving || !correosEmail.trim()}
+                                    style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid rgba(96,165,250,0.4)', background: 'rgba(96,165,250,0.12)', color: '#60a5fa', fontWeight: 700, fontSize: 13, cursor: correosEmail.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, transition: 'all 0.2s', opacity: correosEmail.trim() ? 1 : 0.4 }} className="lm-save-btn">
+                                    {correosSaving ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> : correosSaved ? '✓ Guardado' : <><Save size={13} /> Guardar Credenciales</>}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                    <div style={{ ...glass, padding: '14px 18px', marginTop: 14 }}>
+                        <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: 0, lineHeight: 1.7 }}>
+                            <strong style={{ color: 'rgba(255,255,255,0.55)' }}>Nota:</strong> Estas credenciales se usan para la generación automática de guías en la sección <strong style={{ color: '#60a5fa' }}>Guías → Correos de Costa Rica</strong>. Una sola cuenta se aplica a todas las órdenes de todos los clientes.
+                        </p>
+                    </div>
                 </div>
             )}
 

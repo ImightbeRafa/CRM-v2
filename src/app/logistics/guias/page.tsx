@@ -220,8 +220,13 @@ export default function GuiasPage() {
                                     </div>
                                     <div style={{ marginBottom: 6 }}>
                                         <div style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', color: '#666' }}>Contenido</div>
-                                        <div style={{ fontSize: 10 }}>{o.product || 'Paquete'}{o.quantity > 1 ? ` × ${o.quantity}` : ''}</div>
-                                        {o.comments && <div style={{ fontSize: 8, color: '#666', fontStyle: 'italic' }}>Nota: {o.comments}</div>}
+                                        <div style={{ fontSize: 10 }}>{o.product || 'Paquete'}</div>
+                                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 1 }}>
+                                            {o.quantity > 1 && <span style={{ fontSize: 9, color: '#444' }}>Cant: {o.quantity}</span>}
+                                            {o.color && <span style={{ fontSize: 9, color: '#444' }}>Color: {o.color}</span>}
+                                            {o.size && <span style={{ fontSize: 9, color: '#444' }}>Talla: {o.size}</span>}
+                                        </div>
+                                        {o.comments && <div style={{ fontSize: 8, color: '#666', fontStyle: 'italic', marginTop: 1 }}>Nota: {o.comments}</div>}
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: 5, borderTop: '1px solid #ddd' }}>
                                         <div>

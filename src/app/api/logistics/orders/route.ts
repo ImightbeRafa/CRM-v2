@@ -67,6 +67,8 @@ export async function GET(req: NextRequest) {
                     email: true,
                     product: true,
                     quantity: true,
+                    size: true,
+                    color: true,
                     total: true,
                     shippingCost: true,
                     address: true,

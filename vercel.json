@@ -15,6 +15,10 @@
     "src/app/api/shipping/generate-guia/route.ts": {
       "maxDuration": 300,
       "memory": 1024
+    },
+    "src/app/api/logistics/guias/generate-bulk/route.ts": {
+      "maxDuration": 300,
+      "memory": 1024
     }
   },
   "crons": [

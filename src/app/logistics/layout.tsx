@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { requireLogisticsAdmin } from '@/lib/logistics-auth';
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import {
     LayoutDashboard,
     Layers,
@@ -11,6 +12,13 @@ import {
     BarChart2,
     FileText,
 } from 'lucide-react';
+
+export const metadata: Metadata = {
+    title: 'HolaMA · Logistics Manager',
+    icons: {
+        icon: '/favicon-logistics.svg',
+    },
+};
 
 export default async function LogisticsLayout({ children }: { children: React.ReactNode }) {
     const session = await requireLogisticsAdmin();

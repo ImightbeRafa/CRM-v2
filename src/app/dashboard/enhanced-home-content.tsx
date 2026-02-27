@@ -10,7 +10,7 @@ import { Button } from "@/app/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/app/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/app/components/ui/dialog";
 import { 
-  Sparkles, Zap, Settings, TrendingUp, Users, Package, 
+  Sparkles, Zap, Settings, TrendingUp, Users, Package, Truck,
   ShoppingCart, Plus, BarChart3, DollarSign, ArrowUpRight, Clock, RefreshCw, MessageSquare
 } from "lucide-react";
 
@@ -341,6 +341,26 @@ export default function EnhancedHomeContent() {
                     </div>
                     <h3 className="text-xl font-bold text-gray-900 mb-2">Configuración</h3>
                     <p className="text-sm text-gray-600 leading-relaxed">Ajustes del sistema</p>
+                  </div>
+                </Link>
+              )}
+
+              {/* Logistics Card — only for logistics admins */}
+              {(session.user as any)?.isLogisticsAdmin && (
+                <Link
+                  href="/logistics"
+                  className="group relative bg-gradient-to-br from-[#0D0D0D] to-[#1a1a2e] p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-indigo-900/40 hover:border-indigo-500/60 overflow-hidden"
+                >
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-indigo-500/20 to-blue-500/20 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+                  <div className="relative">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="p-4 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl shadow-lg group-hover:shadow-xl transition-shadow" style={{ boxShadow: '0 0 18px rgba(108,63,255,0.4)' }}>
+                        <Truck className="w-7 h-7 text-white" />
+                      </div>
+                      <ArrowUpRight className="w-6 h-6 text-indigo-400 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">Logística</h3>
+                    <p className="text-sm text-gray-400 leading-relaxed">Envíos, guías y carriers</p>
                   </div>
                 </Link>
               )}

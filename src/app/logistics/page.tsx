@@ -56,7 +56,7 @@ export default function LogisticsDashboardPage() {
     const delivered = orders.filter(o => o.lmStatus === 'Entregado').length;
     const unassigned = orders.filter(o => !o.lmCarrier).length;
 
-    const MANAGED_IDS = ['cmh32z0ol0000k004hvx9tg3p', 'cmhsibjue0004js04gie724nx', 'cmhutd1th0000jp04oqibtz54', 'cmigornmw0000lb04kl75262e', 'cmjdabz4d0000il04dyc5qmcc', 'cmln5u7k70000ld042qify2og', 'cmh44aerw0006vijg0640vfl0'];
+    const MANAGED_IDS = ['cmh32z0ol0000k004hvx9tg3p', 'cmhsibjue0004js04gie724nx', 'cmhutd1th0000jp04oqibtz54', 'cmigornmw0000lb04kl75262e', 'cmjdabz4d0000il04dyc5qmcc', 'cmln5u7k70000ld042qify2og', 'cmh44aerw0006vijg0640vfl0', 'cmm4pv8fl0000jr045en1nik9'];
 
     if (loading) return (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>

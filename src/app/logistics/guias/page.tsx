@@ -34,6 +34,8 @@ interface VerifiedOrder {
     orderId: string; id: string; customerName: string;
     province: string; canton: string; district: string; address: string;
     deliveryType: 'Domicilio' | 'Sucursal' | 'Punto de correo'; valid: boolean;
+    // Original values from DB (read-only reference)
+    originalProvince: string; originalCanton: string; originalDistrict: string; originalAddress: string;
 }
 
 interface GuiaHistoryItem {
@@ -51,33 +53,54 @@ function LocationRow({ order, onChange }: { order: VerifiedOrder; onChange: (upd
     const province = useMemo(() => findProvince(order.province), [order.province]);
     const canton = useMemo(() => findCanton(province, order.canton), [province, order.canton]);
 
+    // Canton results: ALWAYS scoped to selected province
     const cantonResults = useMemo(() => {
+        if (!province) return [];
         const s = normalizeText(cantonSearch);
-        if (!s) return province?.cantones.map(c => ({ province: province!.nombre, canton: c.nombre })).slice(0, 15) || [];
-        return costaRicaLocations.flatMap(p => p.cantones.map(c => ({ province: p.nombre, canton: c.nombre })))
-            .filter(item => normalizeText(item.canton).includes(s)).slice(0, 12);
+        const list = province.cantones.map(c => ({ province: province.nombre, canton: c.nombre }));
+        if (!s) return list.slice(0, 20);
+        return list.filter(item => normalizeText(item.canton).includes(s)).slice(0, 15);
     }, [cantonSearch, province]);
 
+    // District results: ALWAYS scoped to selected canton
     const districtResults = useMemo(() => {
+        if (!canton || !province) return [];
         const s = normalizeText(districtSearch);
-        if (!s) return canton?.distritos.map(d => ({ province: province?.nombre || '', canton: canton!.nombre, district: d })).slice(0, 15) || [];
-        return costaRicaLocations.flatMap(p => p.cantones.flatMap(c => c.distritos.map(d => ({ province: p.nombre, canton: c.nombre, district: d }))))
-            .filter(item => normalizeText(item.district).includes(s)).slice(0, 12);
+        const list = canton.distritos.map(d => ({ province: province.nombre, canton: canton.nombre, district: d }));
+        if (!s) return list.slice(0, 20);
+        return list.filter(item => normalizeText(item.district).includes(s)).slice(0, 15);
     }, [districtSearch, canton, province]);
 
     useEffect(() => { setCantonSearch(order.canton); }, [order.canton]);
     useEffect(() => { setDistrictSearch(order.district); }, [order.district]);
 
     const isValid = !!province && !!canton && canton.distritos.some(d => normalizeText(d) === normalizeText(order.district));
+    const hasChanges = order.province !== order.originalProvince || order.canton !== order.originalCanton || order.district !== order.originalDistrict || order.address !== order.originalAddress;
 
     return (
-        <div style={{ ...glass, padding: '14px 16px', marginBottom: 8, borderColor: isValid ? 'rgba(52,211,153,0.25)' : 'rgba(251,191,36,0.35)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div style={{ ...glass, padding: '14px 16px', marginBottom: 10, borderColor: isValid ? 'rgba(52,211,153,0.25)' : 'rgba(251,191,36,0.35)' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                 {isValid ? <CheckCircle size={14} style={{ color: '#34d399', flexShrink: 0 }} /> : <AlertTriangle size={14} style={{ color: '#fbbf24', flexShrink: 0 }} />}
                 <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13 }}>{order.customerName}</span>
                 <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>#{order.orderId}</span>
+                {hasChanges && <span style={{ marginLeft: 'auto', color: '#fbbf24', fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 10, background: 'rgba(251,191,36,0.12)' }}>Modificado</span>}
             </div>
+
+            {/* Original values reference (read-only) */}
+            <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', marginBottom: 10 }}>
+                <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', marginBottom: 4, letterSpacing: 0.5 }}>Datos guardados en sistema</div>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 11.5 }}>
+                    <span style={{ color: 'rgba(255,255,255,0.5)' }}><strong style={{ color: 'rgba(255,255,255,0.25)' }}>Prov:</strong> {order.originalProvince || '—'}</span>
+                    <span style={{ color: 'rgba(255,255,255,0.5)' }}><strong style={{ color: 'rgba(255,255,255,0.25)' }}>Cantón:</strong> {order.originalCanton || '—'}</span>
+                    <span style={{ color: 'rgba(255,255,255,0.5)' }}><strong style={{ color: 'rgba(255,255,255,0.25)' }}>Distrito:</strong> {order.originalDistrict || '—'}</span>
+                </div>
+                {order.originalAddress && <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 3 }}><strong style={{ color: 'rgba(255,255,255,0.25)' }}>Dir:</strong> {order.originalAddress}</div>}
+            </div>
+
+            {/* Editable fields */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                {/* Provincia */}
                 <div>
                     <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Provincia</label>
                     <select value={province?.nombre || order.province}
@@ -87,10 +110,11 @@ function LocationRow({ order, onChange }: { order: VerifiedOrder; onChange: (upd
                         {provinceNames.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
                 </div>
+                {/* Cantón — scoped to province */}
                 <div style={{ position: 'relative' }}>
-                    <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Cantón</label>
-                    <input value={cantonSearch} onChange={e => { setCantonSearch(e.target.value); setCantonOpen(true); }} onFocus={() => setCantonOpen(true)} onBlur={() => setTimeout(() => setCantonOpen(false), 150)} placeholder="Buscar cantón"
-                        style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: canton ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(251,191,36,0.4)', background: 'rgba(0,0,0,0.3)', color: '#F2F2F2', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                    <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Cantón {!province && <span style={{ color: 'rgba(255,255,255,0.2)', fontWeight: 400, textTransform: 'none' }}>(elige provincia)</span>}</label>
+                    <input value={cantonSearch} onChange={e => { setCantonSearch(e.target.value); setCantonOpen(true); }} onFocus={() => setCantonOpen(true)} onBlur={() => setTimeout(() => setCantonOpen(false), 150)} placeholder={province ? 'Buscar cantón' : 'Elige provincia primero'} disabled={!province}
+                        style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: canton ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(251,191,36,0.4)', background: 'rgba(0,0,0,0.3)', color: province ? '#F2F2F2' : 'rgba(255,255,255,0.2)', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
                     {cantonOpen && cantonResults.length > 0 && (
                         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, maxHeight: 200, overflowY: 'auto', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: '#1a1a2e', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
                             {cantonResults.map(r => (
@@ -98,30 +122,30 @@ function LocationRow({ order, onChange }: { order: VerifiedOrder; onChange: (upd
                                     onMouseDown={e => { e.preventDefault(); onChange({ province: r.province, canton: r.canton, district: '' }); setCantonSearch(r.canton); setDistrictSearch(''); setCantonOpen(false); }}
                                     style={{ width: '100%', textAlign: 'left', padding: '7px 10px', border: 'none', background: 'transparent', color: '#F2F2F2', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)' }} className="lm-table-row">
                                     <div style={{ fontWeight: 600 }}>{r.canton}</div>
-                                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>{r.province}</div>
                                 </button>
                             ))}
                         </div>
                     )}
                 </div>
+                {/* Distrito — scoped to canton */}
                 <div style={{ position: 'relative' }}>
-                    <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Distrito</label>
-                    <input value={districtSearch} onChange={e => { setDistrictSearch(e.target.value); setDistrictOpen(true); }} onFocus={() => setDistrictOpen(true)} onBlur={() => setTimeout(() => setDistrictOpen(false), 150)} placeholder="Buscar distrito"
-                        style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: (canton && canton.distritos.some(d => normalizeText(d) === normalizeText(order.district))) ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(251,191,36,0.4)', background: 'rgba(0,0,0,0.3)', color: '#F2F2F2', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                    <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Distrito {!canton && <span style={{ color: 'rgba(255,255,255,0.2)', fontWeight: 400, textTransform: 'none' }}>(elige cantón)</span>}</label>
+                    <input value={districtSearch} onChange={e => { setDistrictSearch(e.target.value); setDistrictOpen(true); }} onFocus={() => setDistrictOpen(true)} onBlur={() => setTimeout(() => setDistrictOpen(false), 150)} placeholder={canton ? 'Buscar distrito' : 'Elige cantón primero'} disabled={!canton}
+                        style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: (canton && canton.distritos.some(d => normalizeText(d) === normalizeText(order.district))) ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(251,191,36,0.4)', background: 'rgba(0,0,0,0.3)', color: canton ? '#F2F2F2' : 'rgba(255,255,255,0.2)', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
                     {districtOpen && districtResults.length > 0 && (
                         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, maxHeight: 200, overflowY: 'auto', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: '#1a1a2e', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
                             {districtResults.map(r => (
                                 <button key={`${r.province}-${r.canton}-${r.district}`} type="button"
-                                    onMouseDown={e => { e.preventDefault(); onChange({ province: r.province, canton: r.canton, district: r.district }); setCantonSearch(r.canton); setDistrictSearch(r.district); setDistrictOpen(false); }}
+                                    onMouseDown={e => { e.preventDefault(); onChange({ district: r.district }); setDistrictSearch(r.district); setDistrictOpen(false); }}
                                     style={{ width: '100%', textAlign: 'left', padding: '7px 10px', border: 'none', background: 'transparent', color: '#F2F2F2', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)' }} className="lm-table-row">
                                     <div style={{ fontWeight: 600 }}>{r.district}</div>
-                                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>{r.canton} · {r.province}</div>
                                 </button>
                             ))}
                         </div>
                     )}
                 </div>
             </div>
+            {/* Dirección */}
             <div>
                 <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Dirección exacta</label>
                 <input value={order.address} onChange={e => onChange({ address: e.target.value })} placeholder="Señas exactas de dirección"
@@ -217,6 +241,8 @@ export default function GuiasPage() {
             id: o.id, orderId: o.orderId, customerName: o.customerName || '',
             province: o.province || '', canton: o.canton || '', district: o.district || '',
             address: o.address || '', deliveryType, valid: false,
+            originalProvince: o.province || '', originalCanton: o.canton || '',
+            originalDistrict: o.district || '', originalAddress: o.address || '',
         })));
         setGenerationResults(null);
         setShowVerification(true);

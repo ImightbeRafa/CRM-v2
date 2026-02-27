@@ -208,6 +208,48 @@ export class CorreosAutomation {
     }
   }
 
+  /**
+   * Resilient goto that handles frame detachment from redirects.
+   * Falls back through progressively simpler waitUntil strategies.
+   */
+  private async resilientGoto(url: string, timeout = 30000): Promise<void> {
+    if (!this.page) throw new Error('Browser not initialized');
+
+    const strategies: Array<'networkidle2' | 'domcontentloaded' | 'load'> = [
+      'domcontentloaded',
+      'load',
+    ];
+
+    for (const waitUntil of strategies) {
+      try {
+        console.log(`goto ${url} (waitUntil: ${waitUntil})`);
+        await this.page.goto(url, { waitUntil, timeout });
+        console.log(`Navigation OK (${waitUntil})`);
+        return;
+      } catch (err: any) {
+        const msg = err?.message || '';
+        if (msg.includes('frame was detached') || msg.includes('Target closed') || msg.includes('ERR_ABORTED')) {
+          console.log(`Frame detached during goto (${waitUntil}) — likely a redirect, recovering...`);
+          // The browser has navigated somewhere; give it a moment to settle
+          await new Promise(r => setTimeout(r, 3000));
+
+          // Re-acquire page reference in case original tab was replaced
+          if (this.browser) {
+            const pages = await this.browser.pages();
+            if (pages.length > 0) {
+              this.page = pages[pages.length - 1] as Page;
+              console.log(`Re-acquired page, current URL: ${this.page.url()}`);
+            }
+          }
+          return; // Navigation happened, continue with whatever page we're on
+        }
+        // For non-detachment errors on last strategy, throw
+        if (waitUntil === strategies[strategies.length - 1]) throw err;
+        console.log(`Strategy ${waitUntil} failed: ${msg}, trying next...`);
+      }
+    }
+  }
+
   async login(): Promise<boolean> {
     if (!this.page) {
       throw new Error('Browser not initialized');
@@ -215,12 +257,35 @@ export class CorreosAutomation {
 
     try {
       console.log('Navigating to login page...');
-      await this.page.goto('https://sucursal.correos.go.cr/login', {
-        waitUntil: 'networkidle2',
-        timeout: 30000
-      });
+      await this.resilientGoto('https://sucursal.correos.go.cr/login');
 
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Wait for the page to settle after any redirects
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Log the final URL after redirects to aid debugging
+      const landingUrl = this.page.url();
+      console.log(`Landed on: ${landingUrl}`);
+
+      // If we're already logged in (redirected to dashboard), skip login form
+      if (landingUrl.includes('/sucursal') && !landingUrl.includes('/login')) {
+        console.log('Already logged in (redirected to dashboard)');
+        return true;
+      }
+
+      // Wait for any login form element to appear
+      try {
+        await this.page.waitForSelector(
+          'input[id="login"], input[name="login"], input[type="email"], input[type="password"]',
+          { timeout: 10000 }
+        );
+        console.log('Login form detected');
+      } catch {
+        console.log('No login form found, capturing page state...');
+        await this.captureScreenshot('login-no-form');
+        // Try to get page content for debugging
+        const title = await this.page.title().catch(() => 'unknown');
+        console.log(`Page title: ${title}`);
+      }
 
       // Find and fill email field
       const emailSelectors = [
@@ -237,6 +302,8 @@ export class CorreosAutomation {
         try {
           const element = await this.page.$(selector);
           if (element) {
+            // Clear any existing value first
+            await element.click({ clickCount: 3 });
             await element.type(this.credentials.email, { delay: 50 });
             console.log(`Email filled with selector: ${selector}`);
             emailFilled = true;
@@ -263,6 +330,7 @@ export class CorreosAutomation {
         try {
           const element = await this.page.$(selector);
           if (element) {
+            await element.click({ clickCount: 3 });
             await element.type(this.credentials.password, { delay: 50 });
             console.log(`Password filled with selector: ${selector}`);
             passwordFilled = true;
@@ -277,14 +345,12 @@ export class CorreosAutomation {
         throw new Error('Could not find password field');
       }
 
-      // Find and click login button with navigation handling
-      // Use Promise.all to avoid "frame detached" errors - set up navigation wait BEFORE clicking
+      // Find login button
       const loginSelectors = [
         'button[type="submit"]',
         'input[type="submit"]',
-        'button:has-text("Iniciar")',
-        'button:has-text("Login")',
-        'button:has-text("Entrar")'
+        '.btn-primary[type="submit"]',
+        'button.btn-primary',
       ];
 
       let loginElement = null;
@@ -301,53 +367,61 @@ export class CorreosAutomation {
         }
       }
 
-      // Click and wait for navigation simultaneously to avoid frame detachment
+      // Click and handle post-login navigation (frame may detach on redirect)
+      console.log('Clicking login button...');
       try {
         if (loginElement) {
-          // Set up navigation promise BEFORE clicking to avoid race condition
           await Promise.all([
             this.page.waitForNavigation({ 
-              waitUntil: 'networkidle2', 
+              waitUntil: 'domcontentloaded', 
               timeout: 30000 
             }).catch(e => {
-              // Handle frame detachment gracefully - navigation may have already completed
-              if (e.message.includes('frame was detached') || e.message.includes('Target closed')) {
-                console.log('Navigation completed (frame detached - this is OK)');
+              const msg = e?.message || '';
+              if (msg.includes('frame was detached') || msg.includes('Target closed')) {
+                console.log('Post-login navigation: frame detached (OK — redirect)');
                 return null;
               }
               throw e;
             }),
             loginElement.click()
           ]);
-          console.log('Login button clicked');
         } else {
-          // Fallback: press Enter
           await Promise.all([
             this.page.waitForNavigation({ 
-              waitUntil: 'networkidle2', 
+              waitUntil: 'domcontentloaded', 
               timeout: 30000 
             }).catch(e => {
-              if (e.message.includes('frame was detached') || e.message.includes('Target closed')) {
-                console.log('Navigation completed (frame detached - this is OK)');
+              const msg = e?.message || '';
+              if (msg.includes('frame was detached') || msg.includes('Target closed')) {
+                console.log('Post-login navigation: frame detached (OK — redirect)');
                 return null;
               }
               throw e;
             }),
             this.page.keyboard.press('Enter')
           ]);
-          console.log('Login via Enter key');
         }
       } catch (navError: any) {
-        // If navigation times out, check if we're actually logged in
-        console.log('Navigation error, checking login status...');
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        const currentUrl = this.page.url();
-        if (currentUrl.includes('/sucursal') && !currentUrl.includes('/login')) {
-          console.log('Login successful (detected via URL)');
-        } else {
-          throw navError;
+        console.log(`Post-login nav error: ${navError.message}`);
+      }
+
+      // Re-acquire page after login redirect
+      await new Promise(resolve => setTimeout(resolve, 4000));
+      if (this.browser) {
+        const pages = await this.browser.pages();
+        if (pages.length > 0) {
+          this.page = pages[pages.length - 1] as Page;
         }
+      }
+
+      // Verify login by checking URL
+      const postLoginUrl = this.page.url();
+      console.log(`Post-login URL: ${postLoginUrl}`);
+
+      if (postLoginUrl.includes('/login')) {
+        // Still on login page — login may have failed
+        await this.captureScreenshot('login-still-on-login');
+        throw new Error(`Still on login page after submit: ${postLoginUrl}`);
       }
       
       // Extra wait to ensure page is fully loaded
@@ -392,10 +466,7 @@ export class CorreosAutomation {
     try {
       console.log('Navigating to guía creation page...');
       
-      await this.page.goto('https://sucursal.correos.go.cr/sucursal/guide/create', {
-        waitUntil: 'networkidle0',
-        timeout: 20000
-      });
+      await this.resilientGoto('https://sucursal.correos.go.cr/sucursal/guide/create', 20000);
       
       await new Promise(resolve => setTimeout(resolve, 1500));
       console.log('Navigated to guía creation page');

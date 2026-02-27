@@ -19,6 +19,7 @@ export const FALLBACK_TENANT_CONFIG: TenantConfig[] = [
     { id: 'cmjdabz4d0000il04dyc5qmcc', name: 'SimplePatch', color: '#ef4444', defaultName: 'SimplePatch', defaultColor: '#ef4444' },
     { id: 'cmln5u7k70000ld042qify2og', name: 'DeepCLean', color: '#a855f7', defaultName: 'DeepCLean', defaultColor: '#a855f7' },
     { id: 'cmh44aerw0006vijg0640vfl0', name: 'PeterTesting', color: '#06b6d4', defaultName: 'PeterTesting', defaultColor: '#06b6d4' },
+    { id: 'cmm4pv8fl0000jr045en1nik9', name: 'Bloom', color: '#ec4899', defaultName: 'Bloom', defaultColor: '#ec4899' },
 ];
 
 export function useTenantConfig() {

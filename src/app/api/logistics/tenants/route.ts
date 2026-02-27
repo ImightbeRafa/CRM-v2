@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
         'cmjdabz4d0000il04dyc5qmcc',
         'cmln5u7k70000ld042qify2og',
         'cmh44aerw0006vijg0640vfl0',
+        'cmm4pv8fl0000jr045en1nik9',
     ];
 
     try {

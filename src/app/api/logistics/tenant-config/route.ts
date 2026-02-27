@@ -14,6 +14,7 @@ const MANAGED_TENANTS = [
     { id: 'cmjdabz4d0000il04dyc5qmcc', defaultName: 'SimplePatch', defaultColor: '#ef4444' },
     { id: 'cmln5u7k70000ld042qify2og', defaultName: 'DeepCLean', defaultColor: '#a855f7' },
     { id: 'cmh44aerw0006vijg0640vfl0', defaultName: 'PeterTesting', defaultColor: '#06b6d4' },
+    { id: 'cmm4pv8fl0000jr045en1nik9', defaultName: 'Bloom', defaultColor: '#ec4899' },
 ];
 
 // GET /api/logistics/tenant-config — returns display config for all managed tenants

@@ -3,13 +3,20 @@ import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { CorreosAutomation, convertOrderToCorreosFormat } from '@/lib/correosAutomation';
-import fs from 'fs';
-import path from 'path';
+import { CorreosWebService } from '@/lib/correos';
+import type { CorreosWSCredentials } from '@/lib/correos';
+
+const DEFAULT_SENDER = {
+  name: 'Pymexpress',
+  address: 'San José, Costa Rica',
+  zip: '10101',
+  phone: '00000000',
+};
 
 export async function POST(request: NextRequest) {
   try {
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-    
+
     if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -27,150 +34,163 @@ export async function POST(request: NextRequest) {
     const { orderIds, carrier = 'correos_cr', deliveryType = 'Domicilio' } = body;
 
     if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
-      return NextResponse.json(
-        { error: 'Order IDs are required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Order IDs are required' }, { status: 400 });
     }
 
     console.log(`[Generate Guía] Tenant ${tenantId}`, 'Generating guías for orders:', orderIds);
 
     return await withTenantContext({ tenantId, userId, role: userRole, userRole, userName }, async () => {
-      // SECURITY: Always use tenant-isolated client
-      const prisma = getTenantPrisma(tenantId)
-      
-      // Validate shipping configuration exists
+      const prisma = getTenantPrisma(tenantId);
+
+      // Check for WS credentials in ShippingConfig.settings
       const shippingConfig = await prisma.shippingConfig.findFirst({
-        where: { 
-          carrier,
-          isActive: true,
-          tenantId: tenantId
-        }
+        where: { carrier, isActive: true, tenantId },
       });
 
-      if (!shippingConfig || !shippingConfig.email || !shippingConfig.password) {
-        return NextResponse.json(
-          { error: 'Shipping configuration is incomplete' },
-          { status: 400 }
-        );
+      if (!shippingConfig) {
+        return NextResponse.json({ error: 'Shipping configuration not found' }, { status: 400 });
       }
 
-      // Sender information no longer required; Correos pre-fills remitente
+      const settings = (shippingConfig.settings as Record<string, any>) ?? {};
+      const useWebService =
+        settings.integrationMode === 'webservice' &&
+        settings.ws_username &&
+        settings.ws_password;
 
-      // Get orders (super admin can access all tenants' orders)
-      const whereClause: any = {
-        orderId: { in: orderIds },
-        orderType: 'EA'
-      };
-      
-      // Regular users only see their tenant's orders (auto-filtered by middleware)
-      // Super admin sees all orders (no filter applied)
-      
       const orders = await prisma.order.findMany({
-        where: whereClause
+        where: { orderId: { in: orderIds }, orderType: 'EA' },
       });
 
       if (orders.length === 0) {
-        return NextResponse.json(
-          { error: 'No valid orders found for shipping' },
-          { status: 404 }
-        );
+        return NextResponse.json({ error: 'No valid orders found for shipping' }, { status: 404 });
       }
 
-      // Initialize automation (only credentials required)
-      // Password is stored in plain text for automation
-      const automation = new CorreosAutomation({
-        email: shippingConfig.email,
-        password: shippingConfig.password
-      });
+      let results: { success: boolean; orderId: string; guiaNumber?: string; trackingNumber?: string; error?: string; pdfBuffer?: Buffer; pdfFileName?: string }[];
 
-      // Convert orders to Correos format
-      const ordersData = orders.map(order => convertOrderToCorreosFormat(order, deliveryType));
+      // ─── Web Service path ──────────────────────────────────────────
+      if (useWebService) {
+        const wsCreds: CorreosWSCredentials = {
+          username: settings.ws_username,
+          password: settings.ws_password,
+          sistema: settings.ws_sistema || 'PYMEXPRESS',
+          usuarioId: Number(settings.ws_usuario_id) || 0,
+          servicioId: Number(settings.ws_servicio_id) || 0,
+          codCliente: settings.ws_cod_cliente || '',
+        };
 
-      // Generate guías
-      const results = await automation.generateMultipleGuias(ordersData);
+        const ws = new CorreosWebService(wsCreds);
+        results = [];
 
-      // Save guía records (without PDF storage)
+        for (const order of orders) {
+          try {
+            let destZip = '00000';
+            try {
+              if (order.province && order.canton && order.district) {
+                destZip = await ws.getPostalCode(order.province, order.canton, order.district);
+              }
+            } catch { /* use fallback */ }
+
+            const res = await ws.generateAndRegisterGuia({
+              customerName: order.customerName || 'Destinatario',
+              customerPhone: order.phone || '00000000',
+              customerAddress: order.address || 'Sin dirección',
+              customerZip: destZip,
+              customerApartado: destZip,
+              senderName: DEFAULT_SENDER.name,
+              senderAddress: DEFAULT_SENDER.address,
+              senderZip: DEFAULT_SENDER.zip,
+              senderPhone: DEFAULT_SENDER.phone,
+              weight: 500,
+              description: (order as any).product || (order as any).comments || 'Paquete',
+            });
+
+            results.push({
+              success: res.success,
+              orderId: order.orderId,
+              guiaNumber: res.guiaNumber || undefined,
+              trackingNumber: res.guiaNumber || undefined,
+              error: res.error,
+              pdfBuffer: res.pdfBuffer,
+              pdfFileName: res.guiaNumber ? `guia-${res.guiaNumber}.pdf` : undefined,
+            });
+          } catch (err: any) {
+            results.push({ success: false, orderId: order.orderId, error: err.message });
+          }
+        }
+      } else {
+        // ─── Browser automation path (legacy) ────────────────────────
+        if (!shippingConfig.email || !shippingConfig.password) {
+          return NextResponse.json({ error: 'Shipping configuration is incomplete' }, { status: 400 });
+        }
+
+        const automation = new CorreosAutomation({
+          email: shippingConfig.email,
+          password: shippingConfig.password,
+        });
+
+        const ordersData = orders.map((order) => convertOrderToCorreosFormat(order, deliveryType));
+        const raw = await automation.generateMultipleGuias(ordersData);
+        results = raw.map((r) => ({
+          success: r.success,
+          orderId: r.orderId,
+          guiaNumber: r.guiaNumber,
+          trackingNumber: r.trackingNumber,
+          error: r.error,
+          pdfBuffer: r.pdfBuffer,
+          pdfFileName: r.pdfFileName,
+        }));
+      }
+
+      // ─── Persist results ───────────────────────────────────────────
       const savedGuias = [];
 
       for (const result of results) {
         if (result.success && result.guiaNumber) {
           try {
-            // Save to database with PDF if available
             const guiaData: any = {
               orderId: result.orderId,
-              carrier: carrier,
+              carrier,
               guiaNumber: result.guiaNumber,
-              trackingNumber: result.trackingNumber,
+              trackingNumber: result.trackingNumber || result.guiaNumber,
               status: 'completed',
               serviceType: 'standard',
-              tenant: { connect: { id: tenantId } }
+              tenant: { connect: { id: tenantId } },
             };
 
-            // Add PDF data if available (normalize to Node Buffer)
-            if (result.pdfBuffer && result.pdfFileName) {
-              const asAny: any = result.pdfBuffer as any;
-              const normalizedBuffer = Buffer.isBuffer(result.pdfBuffer)
-                ? result.pdfBuffer
-                : (asAny && Array.isArray(asAny.data))
-                  ? Buffer.from(asAny.data)
-                  : (asAny instanceof Uint8Array)
-                    ? Buffer.from(asAny)
-                    : undefined;
-
-              if (normalizedBuffer) {
-                guiaData.pdfData = normalizedBuffer;
-                guiaData.pdfFileName = result.pdfFileName;
-                console.log(`✓ Saving PDF to database: ${result.pdfFileName} (${normalizedBuffer.length} bytes)`);
-              } else {
-                console.warn('Skipping PDF save: pdfBuffer not a Buffer/Uint8Array or { data: number[] } object');
-              }
+            if (result.pdfBuffer) {
+              const buf = Buffer.isBuffer(result.pdfBuffer) ? result.pdfBuffer : Buffer.from(result.pdfBuffer as any);
+              guiaData.pdfData = buf;
+              guiaData.pdfFileName = result.pdfFileName || `guia-${result.guiaNumber}.pdf`;
             }
 
-            const guia = await prisma.shippingGuia.create({
-              data: guiaData
-            });
+            const guia = await prisma.shippingGuia.create({ data: guiaData });
             savedGuias.push(guia);
 
-            // Update order status - find the actual order to get its correct tenantId
             try {
-              const order = orders.find(o => o.orderId === result.orderId);
+              const order = orders.find((o) => o.orderId === result.orderId);
               if (order) {
-                const orderTenantId = order.tenantId || tenantId;
                 await prisma.order.update({
-                  where: {
-                    tenantId_orderId: {
-                      tenantId: orderTenantId,
-                      orderId: result.orderId
-                    }
-                  },
-                  data: {
-                    status: 'Enviado',
-                    courier: carrier
-                  }
+                  where: { tenantId_orderId: { tenantId: order.tenantId || tenantId, orderId: result.orderId } },
+                  data: { status: 'Enviado', courier: carrier },
                 });
-                console.log(`✓ Updated order ${result.orderId} status to Enviado`);
-              } else {
-                console.warn(`⚠ Order ${result.orderId} not found in original orders list`);
               }
             } catch (updateError) {
-              console.error(`❌ Failed to update order ${result.orderId}:`, updateError);
+              console.error(`Failed to update order ${result.orderId}:`, updateError);
             }
           } catch (error) {
             console.error(`Failed to save guía for order ${result.orderId}:`, error);
           }
         } else {
-          // Failed guía - persist placeholder so it appears in history
           await prisma.shippingGuia.create({
             data: {
               orderId: result.orderId,
-              carrier: carrier,
+              carrier,
               guiaNumber: `PENDING-${result.orderId}`,
-              trackingNumber: null,
               status: 'failed',
+              errorMessage: result.error || 'Failed to create guía',
               serviceType: 'standard',
-              tenant: { connect: { id: tenantId } }
-            }
+              tenant: { connect: { id: tenantId } },
+            },
           });
         }
       }
@@ -178,24 +198,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         status: 'success',
         data: {
-          results,
-          savedGuias: savedGuias.map(g => ({
-            id: g.id,
-            orderId: g.orderId,
-            guiaNumber: g.guiaNumber,
-            hasPdf: false
+          results: results.map((r) => ({
+            success: r.success,
+            orderId: r.orderId,
+            guiaNumber: r.guiaNumber,
+            error: r.error,
+            pdfDownloaded: !!r.pdfBuffer,
           })),
-          successful: results.filter(r => r.success).length,
-          failed: results.filter(r => !r.success).length
-        }
+          savedGuias: savedGuias.map((g) => ({ id: g.id, orderId: g.orderId, guiaNumber: g.guiaNumber, hasPdf: !!g.pdfData })),
+          successful: results.filter((r) => r.success).length,
+          failed: results.filter((r) => !r.success).length,
+        },
       });
     });
   } catch (error) {
     console.error('Error generating guías:', error);
-    return NextResponse.json(
-      { error: 'Failed to generate guías' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to generate guías' }, { status: 500 });
   }
 }
 

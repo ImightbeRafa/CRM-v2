@@ -83,12 +83,31 @@ export default function ConfigPage() {
     const [correosSaving, setCorreosSaving] = useState(false);
     const [correosSaved, setCorreosSaved] = useState(false);
     const [showCorreosPassword, setShowCorreosPassword] = useState(false);
+    // Web Service credentials
+    const [wsUsername, setWsUsername] = useState('');
+    const [wsPassword, setWsPassword] = useState('');
+    const [wsSistema, setWsSistema] = useState('');
+    const [wsUsuarioId, setWsUsuarioId] = useState('');
+    const [wsServicioId, setWsServicioId] = useState('');
+    const [wsCodCliente, setWsCodCliente] = useState('');
+    const [hasWsCredentials, setHasWsCredentials] = useState(false);
+    const [wsSaving, setWsSaving] = useState(false);
+    const [wsSaved, setWsSaved] = useState(false);
+    const [showWsPassword, setShowWsPassword] = useState(false);
+    const [integrationMode, setIntegrationMode] = useState<'browser' | 'webservice'>('browser');
 
     useEffect(() => {
         fetch('/api/logistics/rates').then(r => r.json()).then(d => { if (d.rates) setRates(d.rates); }).finally(() => setRatesLoaded(true));
         fetch('/api/logistics/correos-config').then(r => r.json()).then(d => {
             setCorreosEmail(d.email || '');
             setCorreosHasCredentials(d.hasCredentials || false);
+            setWsUsername(d.ws_username || '');
+            setWsSistema(d.ws_sistema || '');
+            setWsUsuarioId(d.ws_usuario_id || '');
+            setWsServicioId(d.ws_servicio_id || '');
+            setWsCodCliente(d.ws_cod_cliente || '');
+            setHasWsCredentials(d.hasWsCredentials || false);
+            setIntegrationMode(d.integrationMode || 'browser');
         }).finally(() => setCorreosLoaded(true));
     }, []);
 
@@ -112,6 +131,24 @@ export default function ConfigPage() {
             setTimeout(() => setCorreosSaved(false), 2500);
         }
         setCorreosSaving(false);
+    }
+    async function saveWsConfig() {
+        if (!wsUsername.trim()) return;
+        setWsSaving(true);
+        const payload: Record<string, string> = { ws_username: wsUsername.trim(), ws_sistema: wsSistema.trim(), ws_usuario_id: wsUsuarioId.trim(), ws_servicio_id: wsServicioId.trim(), ws_cod_cliente: wsCodCliente.trim() };
+        if (wsPassword) payload.ws_password = wsPassword;
+        const res = await fetch('/api/logistics/correos-config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (res.ok) {
+            setHasWsCredentials(true);
+            setWsPassword('');
+            setWsSaved(true);
+            setTimeout(() => setWsSaved(false), 2500);
+        }
+        setWsSaving(false);
+    }
+    async function toggleIntegrationMode(mode: 'browser' | 'webservice') {
+        setIntegrationMode(mode);
+        await fetch('/api/logistics/correos-config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ integrationMode: mode }) });
     }
 
     return (
@@ -151,13 +188,91 @@ export default function ConfigPage() {
             )}
 
             {tab === 'correos' && (
-                <div style={{ maxWidth: 560 }}>
-                    <div style={{ ...glass, padding: '22px 26px', borderColor: 'rgba(96,165,250,0.25)' }}>
+                <div style={{ maxWidth: 560, display: 'grid', gap: 14 }}>
+                    {/* ── Integration Mode Toggle ── */}
+                    <div style={{ ...glass, padding: '18px 22px', borderColor: 'rgba(96,165,250,0.25)' }}>
+                        <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 14, margin: '0 0 12px' }}>Modo de Integración</p>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            {([['webservice', 'Web Service (API)'], ['browser', 'Automatización (Puppeteer)']] as const).map(([mode, label]) => (
+                                <button key={mode} onClick={() => toggleIntegrationMode(mode)}
+                                    style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: `1px solid ${integrationMode === mode ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.1)'}`, background: integrationMode === mode ? 'rgba(96,165,250,0.15)' : 'rgba(0,0,0,0.2)', color: integrationMode === mode ? '#60a5fa' : 'rgba(255,255,255,0.4)', fontWeight: integrationMode === mode ? 700 : 400, fontSize: 13, cursor: 'pointer', transition: 'all 0.15s' }}>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                        <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, margin: '10px 0 0', lineHeight: 1.6 }}>
+                            {integrationMode === 'webservice'
+                                ? 'Usa el Web Service SOAP de Correos CR para generar guías de forma rápida y confiable.'
+                                : 'Usa automatización con navegador headless (más lento, puede fallar si Correos cambia su portal).'}
+                        </p>
+                    </div>
+
+                    {/* ── Web Service Credentials ── */}
+                    <div style={{ ...glass, padding: '22px 26px', borderColor: integrationMode === 'webservice' ? 'rgba(52,211,153,0.3)' : 'rgba(255,255,255,0.08)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+                            <span style={{ fontSize: 18 }}>🔗</span>
+                            <div>
+                                <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 15, margin: 0 }}>Web Service (SOAP API)</p>
+                                <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: '2px 0 0' }}>Credenciales del Web Service proporcionadas por Correos CR</p>
+                            </div>
+                            {hasWsCredentials && <span style={{ marginLeft: 'auto', color: '#34d399', fontSize: 12, fontWeight: 600 }}>✓ Configurado</span>}
+                        </div>
+                        {!correosLoaded ? <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>Cargando...</p> : (
+                            <div style={{ display: 'grid', gap: 12 }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                    <div>
+                                        <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Username</label>
+                                        <input value={wsUsername} onChange={e => setWsUsername(e.target.value)} placeholder="ccrWS..."
+                                            style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(0,0,0,0.25)', color: '#F2F2F2', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                    </div>
+                                    <div>
+                                        <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Password {hasWsCredentials && <span style={{ color: 'rgba(255,255,255,0.25)', fontWeight: 400 }}>(vacío = mantener)</span>}</label>
+                                        <div style={{ position: 'relative' }}>
+                                            <input type={showWsPassword ? 'text' : 'password'} value={wsPassword} onChange={e => setWsPassword(e.target.value)} placeholder={hasWsCredentials ? '••••••••' : 'Password'}
+                                                style={{ width: '100%', padding: '10px 42px 10px 14px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(0,0,0,0.25)', color: '#F2F2F2', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                            <button onClick={() => setShowWsPassword(p => !p)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 4 }}>
+                                                {showWsPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Sistema</label>
+                                    <input value={wsSistema} onChange={e => setWsSistema(e.target.value)} placeholder="PYMEXPRESS"
+                                        style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(0,0,0,0.25)', color: '#F2F2F2', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                                    <div>
+                                        <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Usuario ID</label>
+                                        <input value={wsUsuarioId} onChange={e => setWsUsuarioId(e.target.value)} placeholder="117960921"
+                                            style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(0,0,0,0.25)', color: '#F2F2F2', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                    </div>
+                                    <div>
+                                        <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Servicio ID</label>
+                                        <input value={wsServicioId} onChange={e => setWsServicioId(e.target.value)} placeholder="1564"
+                                            style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(0,0,0,0.25)', color: '#F2F2F2', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                    </div>
+                                    <div>
+                                        <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Código Cliente</label>
+                                        <input value={wsCodCliente} onChange={e => setWsCodCliente(e.target.value)} placeholder="7362097"
+                                            style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(0,0,0,0.25)', color: '#F2F2F2', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                    </div>
+                                </div>
+                                <button onClick={saveWsConfig} disabled={wsSaving || !wsUsername.trim()}
+                                    style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.12)', color: '#34d399', fontWeight: 700, fontSize: 13, cursor: wsUsername.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, transition: 'all 0.2s', opacity: wsUsername.trim() ? 1 : 0.4 }} className="lm-save-btn">
+                                    {wsSaving ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> : wsSaved ? '✓ Guardado' : <><Save size={13} /> Guardar Credenciales WS</>}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* ── Browser Automation Credentials (legacy) ── */}
+                    <div style={{ ...glass, padding: '22px 26px', borderColor: integrationMode === 'browser' ? 'rgba(96,165,250,0.25)' : 'rgba(255,255,255,0.08)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
                             <Mail size={20} style={{ color: '#60a5fa' }} />
                             <div>
-                                <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 16, margin: 0 }}>Correos de Costa Rica</p>
-                                <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: '2px 0 0' }}>Credenciales globales para generación automática de guías</p>
+                                <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 15, margin: 0 }}>Automatización (Portal Web)</p>
+                                <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: '2px 0 0' }}>Credenciales de sucursal.correos.go.cr para modo navegador</p>
                             </div>
                             {correosHasCredentials && <span style={{ marginLeft: 'auto', color: '#34d399', fontSize: 12, fontWeight: 600 }}>✓ Configurado</span>}
                         </div>
@@ -187,9 +302,10 @@ export default function ConfigPage() {
                             </div>
                         )}
                     </div>
-                    <div style={{ ...glass, padding: '14px 18px', marginTop: 14 }}>
+
+                    <div style={{ ...glass, padding: '14px 18px' }}>
                         <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: 0, lineHeight: 1.7 }}>
-                            <strong style={{ color: 'rgba(255,255,255,0.55)' }}>Nota:</strong> Estas credenciales se usan para la generación automática de guías en la sección <strong style={{ color: '#60a5fa' }}>Guías → Correos de Costa Rica</strong>. Una sola cuenta se aplica a todas las órdenes de todos los clientes.
+                            <strong style={{ color: 'rgba(255,255,255,0.55)' }}>Nota:</strong> El modo <strong style={{ color: '#34d399' }}>Web Service</strong> es más rápido y confiable. El modo <strong style={{ color: '#60a5fa' }}>Automatización</strong> se mantiene como respaldo. Configure las credenciales del modo activo.
                         </p>
                     </div>
                 </div>

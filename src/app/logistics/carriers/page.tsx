@@ -162,12 +162,12 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
         <div
             onClick={bulkMode ? () => onToggleSelect(order.id) : undefined}
             style={{
-                background: selected ? 'rgba(139,135,255,0.1)' : order.isContraEntrega ? 'rgba(251,191,36,0.06)' : 'rgba(255,255,255,0.04)',
+                background: selected ? 'rgba(139,135,255,0.1)' : (order.isContraEntrega && carrier === 'mensajeria') ? 'rgba(251,191,36,0.06)' : 'rgba(255,255,255,0.04)',
                 backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-                border: selected ? '1px solid rgba(139,135,255,0.4)' : `1px solid ${order.isContraEntrega ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.08)'}`,
+                border: selected ? '1px solid rgba(139,135,255,0.4)' : `1px solid ${(order.isContraEntrega && carrier === 'mensajeria') ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.08)'}`,
                 borderRadius: 10, marginBottom: 6, overflow: 'hidden', transition: 'border-color 0.15s', cursor: bulkMode ? 'pointer' : 'default',
             }} className="lm-order-card">
-            {order.isContraEntrega && (
+            {order.isContraEntrega && carrier === 'mensajeria' && (
                 <div style={{ background: 'rgba(251,191,36,0.1)', padding: '4px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(251,191,36,0.15)' }}>
                     <span style={{ color: '#fbbf24', fontSize: 10, fontWeight: 700 }}>💵 CONTRA ENTREGA</span>
                     <button onClick={() => onToggleCollected(order.id, !order.contraEntregaCollected)}
@@ -228,9 +228,11 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                             <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, margin: '0 0 2px', textTransform: 'uppercase' }}>Comentarios</p>
                             <p style={{ color: 'rgba(255,255,255,0.6)', margin: 0, fontSize: 11, lineHeight: 1.5 }}>{order.comments}</p>
                         </div>}
-                        <button onClick={e => { e.stopPropagation(); onToggleCOD(order.id, !order.isContraEntrega); }} style={{ marginTop: 8, padding: '4px 10px', borderRadius: 6, border: `1px solid ${order.isContraEntrega ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.12)'}`, background: order.isContraEntrega ? 'rgba(251,191,36,0.08)' : 'transparent', color: order.isContraEntrega ? '#fbbf24' : 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>
-                            {order.isContraEntrega ? '💵 Quitar Contra Entrega' : '+ Marcar Contra Entrega'}
-                        </button>
+                        {carrier === 'mensajeria' && (
+                            <button onClick={e => { e.stopPropagation(); onToggleCOD(order.id, !order.isContraEntrega); }} style={{ marginTop: 8, padding: '4px 10px', borderRadius: 6, border: `1px solid ${order.isContraEntrega ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.12)'}`, background: order.isContraEntrega ? 'rgba(251,191,36,0.08)' : 'transparent', color: order.isContraEntrega ? '#fbbf24' : 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>
+                                {order.isContraEntrega ? '💵 Quitar Contra Entrega' : '+ Marcar Contra Entrega'}
+                            </button>
+                        )}
                     </div>
                 )}
                 {/* Action buttons */}
@@ -264,8 +266,9 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
     bulkMode: boolean; selectedIds: Set<string>; onToggleSelect: (id: string) => void;
 }) {
     const cols = STATUSES.map(s => ({ status: s, orders: orders.filter(o => (o.lmStatus || 'Pendiente') === s) }));
-    const cod = orders.filter(o => o.isContraEntrega).length;
-    const cobrado = orders.filter(o => o.isContraEntrega && o.contraEntregaCollected).length;
+    const isMens = carrier === 'mensajeria';
+    const cod = isMens ? orders.filter(o => o.isContraEntrega).length : 0;
+    const cobrado = isMens ? orders.filter(o => o.isContraEntrega && o.contraEntregaCollected).length : 0;
 
     return (
         <div style={{ marginBottom: 14 }}>
@@ -615,7 +618,7 @@ export default function CarriersPage() {
                                 {g.orders.map(o => {
                                     const tc = getTenantColor(o.tenantId);
                                     return (
-                                        <div key={o.id} style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: `1px solid ${o.isContraEntrega ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.08)'}`, borderRadius: 10, padding: '10px 12px', marginBottom: 6, fontSize: 12 }}>
+                                        <div key={o.id} style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', marginBottom: 6, fontSize: 12 }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 5 }}>
                                                 <div>
                                                     <p style={{ color: '#F2F2F2', fontWeight: 600, margin: 0, fontSize: 12 }}>{o.customerName}</p>
@@ -623,7 +626,6 @@ export default function CarriersPage() {
                                                 </div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end' }}>
                                                     <span style={{ padding: '1px 7px', borderRadius: 20, background: `${tc}20`, color: tc, fontSize: 9.5, fontWeight: 700 }}>{getTenantName(o.tenantId)}</span>
-                                                    {o.isContraEntrega && <span style={{ padding: '1px 6px', borderRadius: 20, background: 'rgba(251,191,36,0.12)', color: '#fbbf24', fontSize: 9, fontWeight: 700 }}>💵 CE</span>}
                                                 </div>
                                             </div>
                                             {o.phone && <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '0 0 2px' }}>📞 {o.phone}</p>}

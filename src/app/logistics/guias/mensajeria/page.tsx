@@ -7,11 +7,13 @@ import { useTenantConfig } from '@/hooks/useTenantConfig';
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12 } as const;
 
 export default function GuiaMensajeriaPage() {
-    const { getTenantName } = useTenantConfig();
+    const { tenants, getTenantName } = useTenantConfig();
     const [orders, setOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [search, setSearch] = useState('');
+    const [ceFilter, setCeFilter] = useState(false);
+    const [tenantFilter, setTenantFilter] = useState('');
     const [printing, setPrinting] = useState(false);
 
     const load = useCallback(async () => {
@@ -27,8 +29,13 @@ export default function GuiaMensajeriaPage() {
 
     useEffect(() => { load(); }, [load]);
 
+    const afterTenant = tenantFilter ? orders.filter(o => o.tenantId === tenantFilter) : orders;
+    const visible = ceFilter ? afterTenant.filter(o => o.isContraEntrega) : afterTenant;
+    const ceCount = orders.filter(o => o.isContraEntrega).length;
+    const activeTenantIds = Array.from(new Set(orders.map(o => o.tenantId)));
+
     function toggle(id: string) { setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; }); }
-    function selectAll() { setSelected(new Set(orders.map(o => o.id))); }
+    function selectAll() { setSelected(new Set(visible.map(o => o.id))); }
     function clearAll() { setSelected(new Set()); }
 
     async function printGuias() {
@@ -68,6 +75,18 @@ export default function GuiaMensajeriaPage() {
                         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar cliente, orden..."
                             style={{ width: '100%', padding: '8px 12px 8px 33px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
                     </div>
+                    <button onClick={() => setCeFilter(f => !f)}
+                        style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${ceFilter ? 'rgba(251,191,36,0.6)' : 'rgba(255,255,255,0.08)'}`, background: ceFilter ? 'rgba(251,191,36,0.14)' : 'transparent', color: ceFilter ? '#fbbf24' : 'rgba(255,255,255,0.35)', fontSize: 12.5, fontWeight: ceFilter ? 700 : 400, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
+                        💵 Contra Entrega
+                        <span style={{ padding: '1px 6px', borderRadius: 20, background: ceFilter ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)', fontSize: 10.5 }}>{ceCount}</span>
+                    </button>
+                    <select value={tenantFilter} onChange={e => setTenantFilter(e.target.value)}
+                        style={{ padding: '8px 12px', ...glass, color: tenantFilter ? '#F2F2F2' : 'rgba(255,255,255,0.35)', fontSize: 12, outline: 'none', cursor: 'pointer', minWidth: 130 }}>
+                        <option value="">Todas las cuentas</option>
+                        {activeTenantIds.map(id => (
+                            <option key={id} value={id}>{getTenantName(id)}</option>
+                        ))}
+                    </select>
                     <button onClick={selectAll} style={{ padding: '8px 14px', ...glass, color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 12 }}>Seleccionar Todo</button>
                     <button onClick={clearAll} style={{ padding: '8px 14px', ...glass, color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 12 }}>Limpiar</button>
                     <button onClick={load} style={{ padding: '8px 12px', ...glass, color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}><RefreshCw size={13} /></button>
@@ -83,8 +102,8 @@ export default function GuiaMensajeriaPage() {
                     <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)' }}><Package size={28} style={{ display: 'block', margin: '0 auto 10px', opacity: 0.3 }} />Cargando...</div>
                 ) : (
                     <div style={{ ...glass, overflow: 'hidden' }}>
-                        {orders.length === 0 ? (
-                            <div style={{ textAlign: 'center', padding: 48, color: 'rgba(255,255,255,0.2)' }}>No hay órdenes de Mensajería activas</div>
+                        {visible.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: 48, color: 'rgba(255,255,255,0.2)' }}>{ceFilter ? 'No hay órdenes Contra Entrega' : 'No hay órdenes de Mensajería activas'}</div>
                         ) : (
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                                 <thead>
@@ -95,8 +114,8 @@ export default function GuiaMensajeriaPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {orders.map((o, idx) => (
-                                        <tr key={o.id} onClick={() => toggle(o.id)} style={{ borderBottom: idx < orders.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', cursor: 'pointer', background: selected.has(o.id) ? 'rgba(139,135,255,0.07)' : 'transparent', transition: 'background 0.1s' }} className="lm-table-row">
+                                    {visible.map((o, idx) => (
+                                        <tr key={o.id} onClick={() => toggle(o.id)} style={{ borderBottom: idx < visible.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', cursor: 'pointer', background: selected.has(o.id) ? 'rgba(139,135,255,0.07)' : 'transparent', transition: 'background 0.1s' }} className="lm-table-row">
                                             <td style={{ padding: '9px 12px', width: 32 }}>
                                                 {selected.has(o.id) ? <CheckSquare size={14} style={{ color: '#8b87ff' }} /> : <Square size={14} style={{ color: 'rgba(255,255,255,0.2)' }} />}
                                             </td>

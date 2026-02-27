@@ -15,12 +15,14 @@ type CarrierKey = keyof typeof CARRIER_CFG;
 type TabFilter = 'all' | CarrierKey;
 
 export default function GuiasPage() {
-    const { getTenantName } = useTenantConfig();
+    const { tenants, getTenantName } = useTenantConfig();
     const [orders, setOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [search, setSearch] = useState('');
     const [tab, setTab] = useState<TabFilter>('all');
+    const [ceFilter, setCeFilter] = useState(false);
+    const [tenantFilter, setTenantFilter] = useState('');
     const [printing, setPrinting] = useState(false);
 
     const load = useCallback(async () => {
@@ -41,7 +43,10 @@ export default function GuiasPage() {
 
     useEffect(() => { load(); }, [load]);
 
-    const visible = tab === 'all' ? orders : orders.filter(o => o.lmCarrier === tab);
+    const afterTab = tab === 'all' ? orders : orders.filter(o => o.lmCarrier === tab);
+    const afterTenant = tenantFilter ? afterTab.filter(o => o.tenantId === tenantFilter) : afterTab;
+    const visible = ceFilter ? afterTenant.filter(o => o.isContraEntrega) : afterTenant;
+    const activeTenantIds = Array.from(new Set(orders.map(o => o.tenantId)));
 
     function toggle(id: string) {
         setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -69,6 +74,7 @@ export default function GuiasPage() {
     const fmt = (n: number) => `₡${(n || 0).toLocaleString('es-CR')}`;
     const mensajeriaCount = orders.filter(o => o.lmCarrier === 'mensajeria').length;
     const correosCount = orders.filter(o => o.lmCarrier === 'correos').length;
+    const ceCount = orders.filter(o => o.isContraEntrega && o.lmCarrier === 'mensajeria').length;
 
     return (
         <div>
@@ -103,7 +109,21 @@ export default function GuiasPage() {
                                 <span style={{ padding: '1px 6px', borderRadius: 20, background: tab === id ? color + '25' : 'rgba(255,255,255,0.06)', fontSize: 10.5 }}>{count}</span>
                             </button>
                         ))}
+                        <button onClick={() => setCeFilter(f => !f)}
+                            style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${ceFilter ? 'rgba(251,191,36,0.6)' : 'rgba(255,255,255,0.08)'}`, background: ceFilter ? 'rgba(251,191,36,0.14)' : 'transparent', color: ceFilter ? '#fbbf24' : 'rgba(255,255,255,0.35)', fontSize: 12.5, fontWeight: ceFilter ? 700 : 400, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
+                            💵 Contra Entrega
+                            <span style={{ padding: '1px 6px', borderRadius: 20, background: ceFilter ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)', fontSize: 10.5 }}>{ceCount}</span>
+                        </button>
                     </div>
+
+                    {/* Tenant filter */}
+                    <select value={tenantFilter} onChange={e => setTenantFilter(e.target.value)}
+                        style={{ padding: '7px 12px', ...glass, color: tenantFilter ? '#F2F2F2' : 'rgba(255,255,255,0.35)', fontSize: 12, outline: 'none', cursor: 'pointer', minWidth: 130 }}>
+                        <option value="">Todas las cuentas</option>
+                        {activeTenantIds.map(id => (
+                            <option key={id} value={id}>{getTenantName(id)}</option>
+                        ))}
+                    </select>
 
                     <button onClick={selectVisible} style={{ padding: '7px 12px', ...glass, color: 'rgba(255,255,255,0.45)', cursor: 'pointer', fontSize: 11.5, whiteSpace: 'nowrap' }}>Sel. vista</button>
                     <button onClick={clearVisible} style={{ padding: '7px 12px', ...glass, color: 'rgba(255,255,255,0.45)', cursor: 'pointer', fontSize: 11.5 }}>Limpiar</button>

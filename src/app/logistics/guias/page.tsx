@@ -187,70 +187,61 @@ export default function GuiasPage() {
                 )}
             </div>
 
-            {/* ── PRINTABLE GUÍAS ─────────────────────────────────────────── */}
+            {/* ── PRINTABLE GUÍAS (2-up compact) ────────────────────────── */}
             <div className="print-only" style={{ display: 'none' }}>
-                {selectedOrders.map((o, idx) => {
-                    const isMens = o.lmCarrier === 'mensajeria';
-                    const addr = [o.address, o.district, o.canton, o.province].filter(Boolean).join(', ');
-                    const isLast = idx === selectedOrders.length - 1;
-
-                    return (
-                        <div key={o.id} style={{ width: '100%', maxWidth: 420, margin: '0 auto 32px', fontFamily: 'Arial, sans-serif', pageBreakAfter: isLast ? 'auto' : 'always' }}>
-                            {/* Carrier banner */}
-                            <div style={{ background: isMens ? '#3730a3' : '#1e40af', color: '#fff', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '8px 8px 0 0' }}>
-                                <span style={{ fontWeight: 900, fontSize: 13, letterSpacing: 0.5 }}>
-                                    {isMens ? '🚚  MENSAJERÍA PRIVADA' : '📮  CORREOS DE COSTA RICA'}
-                                </span>
-                                <span style={{ fontSize: 11, opacity: 0.8 }}>{getTenantName(o.tenantId)}</span>
-                            </div>
-
-                            <div style={{ border: '2px solid #333', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '14px 18px' }}>
-                                {/* Reference + Date */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid #ddd' }}>
-                                    <div>
-                                        <div style={{ fontSize: 9, color: '#666', textTransform: 'uppercase', fontWeight: 700 }}>N° Referencia</div>
-                                        <div style={{ fontWeight: 900, fontSize: 16, letterSpacing: 1 }}>{o.orderId}</div>
-                                    </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontSize: 9, color: '#666', textTransform: 'uppercase', fontWeight: 700 }}>Fecha</div>
-                                        <div style={{ fontSize: 11 }}>{new Date(o.timestamp).toLocaleDateString('es-CR')}</div>
-                                    </div>
+                <div className="guia-grid">
+                    {selectedOrders.map(o => {
+                        const isMens = o.lmCarrier === 'mensajeria';
+                        const addr = [o.address, o.district, o.canton, o.province].filter(Boolean).join(', ');
+                        return (
+                            <div key={o.id} className="guia-ticket">
+                                <div style={{ background: isMens ? '#3730a3' : '#1e40af', color: '#fff', padding: '5px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <span style={{ fontWeight: 900, fontSize: 10, letterSpacing: 0.3 }}>
+                                        {isMens ? '🚚 MENSAJERÍA' : '📮 CORREOS CR'}
+                                    </span>
+                                    <span style={{ fontSize: 9, opacity: 0.85 }}>{getTenantName(o.tenantId)}</span>
                                 </div>
-
-                                {/* Destinatario */}
-                                <div style={{ background: '#f5f5f5', padding: '10px 12px', borderRadius: 6, marginBottom: 10 }}>
-                                    <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', color: '#555', marginBottom: 4 }}>Destinatario</div>
-                                    <div style={{ fontWeight: 900, fontSize: 15 }}>{o.customerName}</div>
-                                    {o.phone && <div style={{ fontSize: 11, marginTop: 3 }}>📞 {o.phone}</div>}
-                                    {addr && <div style={{ fontSize: 11, marginTop: 3, color: '#333' }}>📍 {addr}</div>}
-                                </div>
-
-                                {/* Contenido */}
-                                <div style={{ marginBottom: 10 }}>
-                                    <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', color: '#555', marginBottom: 3 }}>Contenido</div>
-                                    <div style={{ fontSize: 12 }}>{o.product || 'Paquete'}{o.quantity > 1 ? ` × ${o.quantity}` : ''}</div>
-                                    {o.comments && <div style={{ fontSize: 10, color: '#666', marginTop: 3, fontStyle: 'italic' }}>Nota: {o.comments}</div>}
-                                </div>
-
-                                {/* Footer */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: 10, borderTop: '1px solid #ddd' }}>
-                                    <div>
-                                        {o.isContraEntrega && (
-                                            <div style={{ border: '2px solid #d97706', borderRadius: 5, padding: '5px 10px', textAlign: 'center' }}>
-                                                <div style={{ fontWeight: 900, fontSize: 11, color: '#92400e' }}>CONTRA ENTREGA</div>
-                                                <div style={{ fontWeight: 900, fontSize: 15, color: '#92400e' }}>{fmt(o.total)}</div>
-                                            </div>
-                                        )}
+                                <div style={{ padding: '8px 10px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid #ddd' }}>
+                                        <div>
+                                            <div style={{ fontSize: 7, color: '#888', textTransform: 'uppercase', fontWeight: 700 }}>Ref</div>
+                                            <div style={{ fontWeight: 900, fontSize: 13, letterSpacing: 0.5 }}>{o.orderId}</div>
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontSize: 7, color: '#888', textTransform: 'uppercase', fontWeight: 700 }}>Fecha</div>
+                                            <div style={{ fontSize: 9 }}>{new Date(o.timestamp).toLocaleDateString('es-CR')}</div>
+                                        </div>
                                     </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontSize: 9, color: '#666' }}>Valor declarado</div>
-                                        <div style={{ fontWeight: 900, fontSize: 17 }}>{fmt(o.total)}</div>
+                                    <div style={{ background: '#f5f5f5', padding: '6px 8px', borderRadius: 4, marginBottom: 6 }}>
+                                        <div style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', color: '#666', marginBottom: 2 }}>Destinatario</div>
+                                        <div style={{ fontWeight: 900, fontSize: 12 }}>{o.customerName}</div>
+                                        {o.phone && <div style={{ fontSize: 9, marginTop: 1 }}>📞 {o.phone}</div>}
+                                        {addr && <div style={{ fontSize: 9, marginTop: 1, color: '#444' }}>📍 {addr}</div>}
+                                    </div>
+                                    <div style={{ marginBottom: 6 }}>
+                                        <div style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', color: '#666' }}>Contenido</div>
+                                        <div style={{ fontSize: 10 }}>{o.product || 'Paquete'}{o.quantity > 1 ? ` × ${o.quantity}` : ''}</div>
+                                        {o.comments && <div style={{ fontSize: 8, color: '#666', fontStyle: 'italic' }}>Nota: {o.comments}</div>}
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: 5, borderTop: '1px solid #ddd' }}>
+                                        <div>
+                                            {o.isContraEntrega && (
+                                                <div style={{ border: '2px solid #d97706', borderRadius: 4, padding: '3px 7px', textAlign: 'center' }}>
+                                                    <div style={{ fontWeight: 900, fontSize: 8, color: '#92400e' }}>CONTRA ENTREGA</div>
+                                                    <div style={{ fontWeight: 900, fontSize: 12, color: '#92400e' }}>{fmt(o.total)}</div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontSize: 7, color: '#888' }}>Valor declarado</div>
+                                            <div style={{ fontWeight: 900, fontSize: 14 }}>{fmt(o.total)}</div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })}
+                </div>
             </div>
 
             <style>{`
@@ -259,7 +250,17 @@ export default function GuiasPage() {
                 @media print {
                     .no-print  { display: none !important; }
                     .print-only { display: block !important; }
-                    body { background: white !important; margin: 0; }
+                    body { background: white !important; margin: 0; padding: 0; }
+                    .guia-grid {
+                        display: flex; flex-wrap: wrap; gap: 8px;
+                        font-family: Arial, Helvetica, sans-serif;
+                    }
+                    .guia-ticket {
+                        width: 48%; box-sizing: border-box;
+                        border: 1.5px solid #333; border-radius: 6px; overflow: hidden;
+                        break-inside: avoid; page-break-inside: avoid;
+                        margin-bottom: 4px;
+                    }
                 }
             `}</style>
         </div>

@@ -135,55 +135,58 @@ export default function GuiaMensajeriaPage() {
                 )}
             </div>
 
-            {/* ── PRINTABLE GUÍAS ──────────────────────────────────── */}
+            {/* ── PRINTABLE GUÍAS (2-up compact) ──────────────────── */}
             <div className="print-only" style={{ display: 'none' }}>
-                {selectedOrders.map((o, idx) => (
-                    <div key={o.id} style={{ width: '100%', maxWidth: 400, margin: '0 auto 32px', padding: '20px 24px', border: '2px solid #333', borderRadius: 12, pageBreakAfter: idx < selectedOrders.length - 1 ? 'always' : 'auto', fontFamily: 'Arial, sans-serif' }}>
-                        {/* Header */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 10, borderBottom: '2px solid #333' }}>
-                            <div>
-                                <div style={{ fontWeight: 900, fontSize: 16, letterSpacing: 1 }}>MENSAJERÍA PRIVADA</div>
-                                <div style={{ fontSize: 11, color: '#555' }}>{getTenantName(o.tenantId)}</div>
-                            </div>
-                            <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontWeight: 700, fontSize: 12 }}>Guía #{o.orderId}</div>
-                                <div style={{ fontSize: 10, color: '#555' }}>{new Date(o.timestamp).toLocaleDateString('es-CR')}</div>
-                            </div>
-                        </div>
-
-                        {/* Recipient */}
-                        <div style={{ marginBottom: 12 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#555', marginBottom: 4 }}>Destinatario</div>
-                            <div style={{ fontWeight: 700, fontSize: 15 }}>{o.customerName}</div>
-                            {o.phone && <div style={{ fontSize: 12, marginTop: 2 }}>📞 {o.phone}</div>}
-                            {[o.address, o.district, o.canton, o.province].filter(Boolean).length > 0 && (
-                                <div style={{ fontSize: 12, marginTop: 4, color: '#333' }}>📍 {[o.address, o.district, o.canton, o.province].filter(Boolean).join(', ')}</div>
-                            )}
-                        </div>
-
-                        {/* Product */}
-                        <div style={{ background: '#f5f5f5', padding: '10px 12px', borderRadius: 8, marginBottom: 12 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#555', marginBottom: 4 }}>Contenido</div>
-                            <div style={{ fontWeight: 600, fontSize: 13 }}>{o.product || 'Paquete'}{o.quantity && o.quantity > 1 ? ` × ${o.quantity}` : ''}</div>
-                            {o.comments && <div style={{ fontSize: 11, color: '#555', marginTop: 4 }}>Nota: {o.comments}</div>}
-                        </div>
-
-                        {/* Footer */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
-                                {o.isContraEntrega && (
-                                    <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 6, padding: '4px 10px', fontWeight: 700, fontSize: 12, color: '#92400e' }}>
-                                        💵 CONTRA ENTREGA: {fmt(o.total)}
+                <div className="guia-grid">
+                    {selectedOrders.map(o => {
+                        const addr = [o.address, o.district, o.canton, o.province].filter(Boolean).join(', ');
+                        return (
+                            <div key={o.id} className="guia-ticket">
+                                <div style={{ background: '#3730a3', color: '#fff', padding: '5px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <span style={{ fontWeight: 900, fontSize: 10, letterSpacing: 0.3 }}>🚚 MENSAJERÍA PRIVADA</span>
+                                    <span style={{ fontSize: 9, opacity: 0.85 }}>{getTenantName(o.tenantId)}</span>
+                                </div>
+                                <div style={{ padding: '8px 10px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid #ddd' }}>
+                                        <div>
+                                            <div style={{ fontSize: 7, color: '#888', textTransform: 'uppercase', fontWeight: 700 }}>Guía</div>
+                                            <div style={{ fontWeight: 900, fontSize: 13, letterSpacing: 0.5 }}>#{o.orderId}</div>
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontSize: 7, color: '#888', textTransform: 'uppercase', fontWeight: 700 }}>Fecha</div>
+                                            <div style={{ fontSize: 9 }}>{new Date(o.timestamp).toLocaleDateString('es-CR')}</div>
+                                        </div>
                                     </div>
-                                )}
+                                    <div style={{ background: '#f5f5f5', padding: '6px 8px', borderRadius: 4, marginBottom: 6 }}>
+                                        <div style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', color: '#666', marginBottom: 2 }}>Destinatario</div>
+                                        <div style={{ fontWeight: 900, fontSize: 12 }}>{o.customerName}</div>
+                                        {o.phone && <div style={{ fontSize: 9, marginTop: 1 }}>📞 {o.phone}</div>}
+                                        {addr && <div style={{ fontSize: 9, marginTop: 1, color: '#444' }}>📍 {addr}</div>}
+                                    </div>
+                                    <div style={{ marginBottom: 6 }}>
+                                        <div style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', color: '#666' }}>Contenido</div>
+                                        <div style={{ fontSize: 10 }}>{o.product || 'Paquete'}{o.quantity && o.quantity > 1 ? ` × ${o.quantity}` : ''}</div>
+                                        {o.comments && <div style={{ fontSize: 8, color: '#666', fontStyle: 'italic' }}>Nota: {o.comments}</div>}
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: 5, borderTop: '1px solid #ddd' }}>
+                                        <div>
+                                            {o.isContraEntrega && (
+                                                <div style={{ border: '2px solid #d97706', borderRadius: 4, padding: '3px 7px', textAlign: 'center' }}>
+                                                    <div style={{ fontWeight: 900, fontSize: 8, color: '#92400e' }}>CONTRA ENTREGA</div>
+                                                    <div style={{ fontWeight: 900, fontSize: 12, color: '#92400e' }}>{fmt(o.total)}</div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontSize: 7, color: '#888' }}>Total</div>
+                                            <div style={{ fontWeight: 900, fontSize: 14 }}>{fmt(o.total)}</div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: 10, color: '#555' }}>Total</div>
-                                <div style={{ fontWeight: 900, fontSize: 16 }}>{fmt(o.total)}</div>
-                            </div>
-                        </div>
-                    </div>
-                ))}
+                        );
+                    })}
+                </div>
             </div>
 
             <style>{`
@@ -192,7 +195,17 @@ export default function GuiaMensajeriaPage() {
                 @media print {
                     .no-print { display: none !important; }
                     .print-only { display: block !important; }
-                    body { background: white !important; margin: 0; }
+                    body { background: white !important; margin: 0; padding: 0; }
+                    .guia-grid {
+                        display: flex; flex-wrap: wrap; gap: 8px;
+                        font-family: Arial, Helvetica, sans-serif;
+                    }
+                    .guia-ticket {
+                        width: 48%; box-sizing: border-box;
+                        border: 1.5px solid #333; border-radius: 6px; overflow: hidden;
+                        break-inside: avoid; page-break-inside: avoid;
+                        margin-bottom: 4px;
+                    }
                 }
             `}</style>
         </div>

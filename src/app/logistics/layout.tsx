@@ -9,6 +9,7 @@ import {
     BookOpen,
     LogOut,
     Package,
+    PackageCheck,
     BarChart2,
     FileText,
 } from 'lucide-react';
@@ -27,6 +28,7 @@ export default async function LogisticsLayout({ children }: { children: React.Re
     const navItems = [
         { href: '/logistics', label: 'Dashboard', icon: LayoutDashboard },
         { href: '/logistics/carriers', label: 'Tablero de Envíos', icon: Layers },
+        { href: '/logistics/retiros', label: 'Retiros', icon: PackageCheck },
         { href: '/logistics/config', label: 'Costos y Tarifas', icon: Settings },
         { href: '/logistics/accounting', label: 'Contabilidad', icon: BookOpen },
         { href: '/logistics/reports', label: 'Reportes', icon: BarChart2 },

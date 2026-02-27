@@ -1,8 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Truck, Mail, Printer, CheckSquare, Square, Search, RefreshCw, Package } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Truck, Mail, Printer, CheckSquare, Square, Search, RefreshCw, Package, Zap, CheckCircle, AlertTriangle, X, Download, Clock, FileText } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
+import {
+    costaRicaLocations,
+    provinceNames,
+    type ProvinceData,
+    type CantonData,
+} from '@/app/ventas/components/costaRicaLocations';
 
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12 } as const;
 
@@ -14,6 +20,117 @@ const CARRIER_CFG = {
 type CarrierKey = keyof typeof CARRIER_CFG;
 type TabFilter = 'all' | CarrierKey;
 
+// ─── Location helpers ─────────────────────────────────────
+const normalizeText = (value: string | undefined | null) => {
+    const safeValue = (value ?? '').toString();
+    return safeValue.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+};
+const findProvince = (name: string): ProvinceData | undefined =>
+    costaRicaLocations.find(p => normalizeText(p.nombre) === normalizeText(name));
+const findCanton = (province: ProvinceData | undefined, name: string): CantonData | undefined =>
+    province?.cantones.find(c => normalizeText(c.nombre) === normalizeText(name));
+
+interface VerifiedOrder {
+    orderId: string; id: string; customerName: string;
+    province: string; canton: string; district: string; address: string;
+    deliveryType: 'Domicilio' | 'Sucursal' | 'Punto de correo'; valid: boolean;
+}
+
+interface GuiaHistoryItem {
+    id: string; orderId: string; guiaNumber: string; status: string;
+    tenantName: string; hasPdf: boolean; createdAt: string; errorMessage?: string;
+}
+
+// ─── Location Row Component ───────────────────────────────
+function LocationRow({ order, onChange }: { order: VerifiedOrder; onChange: (updated: Partial<VerifiedOrder>) => void }) {
+    const [cantonSearch, setCantonSearch] = useState(order.canton);
+    const [districtSearch, setDistrictSearch] = useState(order.district);
+    const [cantonOpen, setCantonOpen] = useState(false);
+    const [districtOpen, setDistrictOpen] = useState(false);
+
+    const province = useMemo(() => findProvince(order.province), [order.province]);
+    const canton = useMemo(() => findCanton(province, order.canton), [province, order.canton]);
+
+    const cantonResults = useMemo(() => {
+        const s = normalizeText(cantonSearch);
+        if (!s) return province?.cantones.map(c => ({ province: province!.nombre, canton: c.nombre })).slice(0, 15) || [];
+        return costaRicaLocations.flatMap(p => p.cantones.map(c => ({ province: p.nombre, canton: c.nombre })))
+            .filter(item => normalizeText(item.canton).includes(s)).slice(0, 12);
+    }, [cantonSearch, province]);
+
+    const districtResults = useMemo(() => {
+        const s = normalizeText(districtSearch);
+        if (!s) return canton?.distritos.map(d => ({ province: province?.nombre || '', canton: canton!.nombre, district: d })).slice(0, 15) || [];
+        return costaRicaLocations.flatMap(p => p.cantones.flatMap(c => c.distritos.map(d => ({ province: p.nombre, canton: c.nombre, district: d }))))
+            .filter(item => normalizeText(item.district).includes(s)).slice(0, 12);
+    }, [districtSearch, canton, province]);
+
+    useEffect(() => { setCantonSearch(order.canton); }, [order.canton]);
+    useEffect(() => { setDistrictSearch(order.district); }, [order.district]);
+
+    const isValid = !!province && !!canton && canton.distritos.some(d => normalizeText(d) === normalizeText(order.district));
+
+    return (
+        <div style={{ ...glass, padding: '14px 16px', marginBottom: 8, borderColor: isValid ? 'rgba(52,211,153,0.25)' : 'rgba(251,191,36,0.35)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                {isValid ? <CheckCircle size={14} style={{ color: '#34d399', flexShrink: 0 }} /> : <AlertTriangle size={14} style={{ color: '#fbbf24', flexShrink: 0 }} />}
+                <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13 }}>{order.customerName}</span>
+                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>#{order.orderId}</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <div>
+                    <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Provincia</label>
+                    <select value={province?.nombre || order.province}
+                        onChange={e => { const p = costaRicaLocations.find(pr => pr.nombre === e.target.value); onChange({ province: p?.nombre || e.target.value, canton: '', district: '' }); setCantonSearch(''); setDistrictSearch(''); }}
+                        style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: province ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(251,191,36,0.4)', background: 'rgba(0,0,0,0.3)', color: '#F2F2F2', fontSize: 12, outline: 'none' }}>
+                        <option value="">Seleccione</option>
+                        {provinceNames.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                </div>
+                <div style={{ position: 'relative' }}>
+                    <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Cantón</label>
+                    <input value={cantonSearch} onChange={e => { setCantonSearch(e.target.value); setCantonOpen(true); }} onFocus={() => setCantonOpen(true)} onBlur={() => setTimeout(() => setCantonOpen(false), 150)} placeholder="Buscar cantón"
+                        style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: canton ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(251,191,36,0.4)', background: 'rgba(0,0,0,0.3)', color: '#F2F2F2', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                    {cantonOpen && cantonResults.length > 0 && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, maxHeight: 200, overflowY: 'auto', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: '#1a1a2e', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                            {cantonResults.map(r => (
+                                <button key={`${r.province}-${r.canton}`} type="button"
+                                    onMouseDown={e => { e.preventDefault(); onChange({ province: r.province, canton: r.canton, district: '' }); setCantonSearch(r.canton); setDistrictSearch(''); setCantonOpen(false); }}
+                                    style={{ width: '100%', textAlign: 'left', padding: '7px 10px', border: 'none', background: 'transparent', color: '#F2F2F2', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)' }} className="lm-table-row">
+                                    <div style={{ fontWeight: 600 }}>{r.canton}</div>
+                                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>{r.province}</div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+                <div style={{ position: 'relative' }}>
+                    <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Distrito</label>
+                    <input value={districtSearch} onChange={e => { setDistrictSearch(e.target.value); setDistrictOpen(true); }} onFocus={() => setDistrictOpen(true)} onBlur={() => setTimeout(() => setDistrictOpen(false), 150)} placeholder="Buscar distrito"
+                        style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: (canton && canton.distritos.some(d => normalizeText(d) === normalizeText(order.district))) ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(251,191,36,0.4)', background: 'rgba(0,0,0,0.3)', color: '#F2F2F2', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                    {districtOpen && districtResults.length > 0 && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, maxHeight: 200, overflowY: 'auto', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: '#1a1a2e', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                            {districtResults.map(r => (
+                                <button key={`${r.province}-${r.canton}-${r.district}`} type="button"
+                                    onMouseDown={e => { e.preventDefault(); onChange({ province: r.province, canton: r.canton, district: r.district }); setCantonSearch(r.canton); setDistrictSearch(r.district); setDistrictOpen(false); }}
+                                    style={{ width: '100%', textAlign: 'left', padding: '7px 10px', border: 'none', background: 'transparent', color: '#F2F2F2', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)' }} className="lm-table-row">
+                                    <div style={{ fontWeight: 600 }}>{r.district}</div>
+                                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>{r.canton} · {r.province}</div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div>
+                <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Dirección exacta</label>
+                <input value={order.address} onChange={e => onChange({ address: e.target.value })} placeholder="Señas exactas de dirección"
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: order.address.trim() ? '1px solid rgba(52,211,153,0.2)' : '1px solid rgba(251,191,36,0.3)', background: 'rgba(0,0,0,0.3)', color: '#F2F2F2', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+        </div>
+    );
+}
+
 export default function GuiasPage() {
     const { tenants, getTenantName } = useTenantConfig();
     const [orders, setOrders] = useState<any[]>([]);
@@ -24,6 +141,18 @@ export default function GuiasPage() {
     const [ceFilter, setCeFilter] = useState(false);
     const [tenantFilter, setTenantFilter] = useState('');
     const [printing, setPrinting] = useState(false);
+
+    // Correos automation state
+    const [showVerification, setShowVerification] = useState(false);
+    const [verifiedOrders, setVerifiedOrders] = useState<VerifiedOrder[]>([]);
+    const [deliveryType, setDeliveryType] = useState<'Domicilio' | 'Sucursal' | 'Punto de correo'>('Domicilio');
+    const [generating, setGenerating] = useState(false);
+    const [generationResults, setGenerationResults] = useState<any>(null);
+
+    // History state
+    const [showHistory, setShowHistory] = useState(false);
+    const [history, setHistory] = useState<GuiaHistoryItem[]>([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -40,6 +169,14 @@ export default function GuiasPage() {
         } catch (e) { console.error(e); }
         finally { setLoading(false); }
     }, [search]);
+
+    const loadHistory = useCallback(async () => {
+        setHistoryLoading(true);
+        try {
+            const data = await (await fetch('/api/logistics/guias/history?carrier=correos_cr&limit=50')).json();
+            setHistory(data.guias || []);
+        } catch (e) { console.error(e); } finally { setHistoryLoading(false); }
+    }, []);
 
     useEffect(() => { load(); }, [load]);
 
@@ -68,6 +205,60 @@ export default function GuiasPage() {
         );
         setPrinting(false);
         window.print();
+    }
+
+    // ─── Correos automation functions ─────────────────────
+    const selectedCorreosCount = orders.filter(o => selected.has(o.id) && o.lmCarrier === 'correos').length;
+
+    function openVerification() {
+        const correosSelected = orders.filter(o => selected.has(o.id) && o.lmCarrier === 'correos');
+        if (correosSelected.length === 0) return;
+        setVerifiedOrders(correosSelected.map(o => ({
+            id: o.id, orderId: o.orderId, customerName: o.customerName || '',
+            province: o.province || '', canton: o.canton || '', district: o.district || '',
+            address: o.address || '', deliveryType, valid: false,
+        })));
+        setGenerationResults(null);
+        setShowVerification(true);
+    }
+
+    function updateVerifiedOrder(idx: number, updates: Partial<VerifiedOrder>) {
+        setVerifiedOrders(prev => {
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...updates };
+            const prov = findProvince(next[idx].province);
+            const cant = findCanton(prov, next[idx].canton);
+            next[idx].valid = !!(prov && cant && cant.distritos.some(d => normalizeText(d) === normalizeText(next[idx].district)) && next[idx].address.trim());
+            return next;
+        });
+    }
+
+    const allValid = verifiedOrders.length > 0 && verifiedOrders.every(o => o.valid);
+
+    async function generateGuias() {
+        setGenerating(true);
+        setGenerationResults(null);
+        try {
+            const payload = {
+                orders: verifiedOrders.map(o => ({
+                    orderId: o.orderId, province: o.province, canton: o.canton,
+                    district: o.district, address: o.address, deliveryType: o.deliveryType,
+                })),
+            };
+            const res = await fetch('/api/logistics/guias/generate-bulk', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setGenerationResults({ error: data.error || 'Error generating guías' });
+            } else {
+                setGenerationResults(data.data);
+                load();
+            }
+        } catch (e: any) {
+            setGenerationResults({ error: e.message || 'Network error' });
+        } finally { setGenerating(false); }
     }
 
     const selectedOrders = orders.filter(o => selected.has(o.id));
@@ -129,6 +320,21 @@ export default function GuiasPage() {
                     <button onClick={clearVisible} style={{ padding: '7px 12px', ...glass, color: 'rgba(255,255,255,0.45)', cursor: 'pointer', fontSize: 11.5 }}>Limpiar</button>
                     <button onClick={load} style={{ padding: '7px 10px', ...glass, color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}><RefreshCw size={13} /></button>
 
+                    {/* Generar Correos — only when Correos orders are selected */}
+                    {selectedCorreosCount > 0 && (
+                        <button onClick={openVerification}
+                            style={{ padding: '7px 20px', borderRadius: 9, border: '1px solid rgba(52,211,153,0.5)', background: 'rgba(52,211,153,0.12)', color: '#34d399', cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
+                            <Zap size={13} />
+                            Generar Correos ({selectedCorreosCount})
+                        </button>
+                    )}
+
+                    {/* History */}
+                    <button onClick={() => { setShowHistory(true); loadHistory(); }}
+                        style={{ padding: '7px 12px', ...glass, color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+                        <Clock size={12} /> Historial
+                    </button>
+
                     {/* Print */}
                     <button onClick={printGuias} disabled={selected.size === 0 || printing}
                         style={{ padding: '7px 20px', borderRadius: 9, border: `1px solid ${selected.size > 0 ? 'rgba(139,135,255,0.5)' : 'rgba(255,255,255,0.07)'}`, background: selected.size > 0 ? 'rgba(139,135,255,0.14)' : 'transparent', color: selected.size > 0 ? '#8b87ff' : 'rgba(255,255,255,0.18)', cursor: selected.size > 0 ? 'pointer' : 'default', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
@@ -183,6 +389,155 @@ export default function GuiasPage() {
                                 </tbody>
                             </table>
                         )}
+                    </div>
+                )}
+                {/* ─── VERIFICATION MODAL ──────────────────── */}
+                {showVerification && (
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
+                        onClick={e => { if (e.target === e.currentTarget && !generating) setShowVerification(false); }}>
+                        <div style={{ width: '90%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', background: '#12121a', borderRadius: 16, border: '1px solid rgba(255,255,255,0.1)', padding: '24px 28px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                                <div>
+                                    <h2 style={{ color: '#F2F2F2', fontSize: 18, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <Zap size={18} style={{ color: '#34d399' }} /> Verificar Ubicaciones — Correos CR
+                                    </h2>
+                                    <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: '4px 0 0' }}>
+                                        Verifica provincia, cantón y distrito antes de generar. {verifiedOrders.filter(o => o.valid).length}/{verifiedOrders.length} verificadas.
+                                    </p>
+                                </div>
+                                {!generating && (
+                                    <button onClick={() => setShowVerification(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 4 }}>
+                                        <X size={20} />
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Delivery type selector */}
+                            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600 }}>Tipo de envío:</label>
+                                <select value={deliveryType}
+                                    onChange={e => { const val = e.target.value as typeof deliveryType; setDeliveryType(val); setVerifiedOrders(prev => prev.map(o => ({ ...o, deliveryType: val }))); }}
+                                    style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(96,165,250,0.3)', background: 'rgba(0,0,0,0.3)', color: '#F2F2F2', fontSize: 12, outline: 'none' }}>
+                                    <option value="Domicilio">Domicilio</option>
+                                    <option value="Sucursal">Sucursal</option>
+                                    <option value="Punto de correo">Punto de correo</option>
+                                </select>
+                            </div>
+
+                            {/* Order verification rows */}
+                            <div style={{ maxHeight: 450, overflowY: 'auto', marginBottom: 16 }}>
+                                {verifiedOrders.map((o, idx) => (
+                                    <LocationRow key={o.id} order={o} onChange={updates => updateVerifiedOrder(idx, updates)} />
+                                ))}
+                            </div>
+
+                            {/* Generation results */}
+                            {generationResults && (
+                                <div style={{ marginBottom: 16, ...glass, padding: '14px 18px', borderColor: generationResults.error ? 'rgba(239,68,68,0.3)' : 'rgba(52,211,153,0.3)' }}>
+                                    {generationResults.error ? (
+                                        <p style={{ color: '#ef4444', margin: 0, fontSize: 13 }}>{generationResults.error}</p>
+                                    ) : (
+                                        <div>
+                                            <p style={{ color: '#34d399', fontWeight: 700, fontSize: 14, margin: '0 0 8px' }}>
+                                                {generationResults.successful} exitosa{generationResults.successful !== 1 ? 's' : ''}, {generationResults.failed} fallida{generationResults.failed !== 1 ? 's' : ''}
+                                            </p>
+                                            {generationResults.results?.map((r: any, i: number) => (
+                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12 }}>
+                                                    {r.success ? <CheckCircle size={12} style={{ color: '#34d399' }} /> : <AlertTriangle size={12} style={{ color: '#ef4444' }} />}
+                                                    <span style={{ color: '#F2F2F2' }}>{r.orderId}</span>
+                                                    {r.guiaNumber && <span style={{ color: '#60a5fa', fontWeight: 700 }}>#{r.guiaNumber}</span>}
+                                                    {r.error && <span style={{ color: 'rgba(239,68,68,0.7)' }}>— {r.error}</span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Action buttons */}
+                            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                                {!generating && !generationResults && (
+                                    <button onClick={() => setShowVerification(false)}
+                                        style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.5)', fontSize: 13, cursor: 'pointer' }}>
+                                        Cancelar
+                                    </button>
+                                )}
+                                {generationResults ? (
+                                    <button onClick={() => { setShowVerification(false); setSelected(new Set()); setShowHistory(true); loadHistory(); }}
+                                        style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid rgba(96,165,250,0.4)', background: 'rgba(96,165,250,0.12)', color: '#60a5fa', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                                        Ver Historial
+                                    </button>
+                                ) : (
+                                    <button onClick={generateGuias} disabled={!allValid || generating}
+                                        style={{ padding: '10px 24px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.5)', background: allValid ? 'rgba(52,211,153,0.15)' : 'transparent', color: allValid ? '#34d399' : 'rgba(255,255,255,0.2)', fontWeight: 700, fontSize: 13, cursor: allValid ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 7, opacity: allValid ? 1 : 0.5 }}>
+                                        {generating ? <><RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> Generando...</> : <><Zap size={13} /> Confirmar y Generar ({verifiedOrders.length})</>}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ─── HISTORY MODAL ──────────────────────────── */}
+                {showHistory && (
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
+                        onClick={e => { if (e.target === e.currentTarget) setShowHistory(false); }}>
+                        <div style={{ width: '90%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', background: '#12121a', borderRadius: 16, border: '1px solid rgba(255,255,255,0.1)', padding: '24px 28px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                                <h2 style={{ color: '#F2F2F2', fontSize: 18, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <FileText size={18} style={{ color: '#60a5fa' }} /> Historial de Guías — Correos CR
+                                </h2>
+                                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                    <button onClick={loadHistory} style={{ padding: '6px 10px', ...glass, color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}><RefreshCw size={12} /></button>
+                                    <button onClick={() => setShowHistory(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 4 }}><X size={20} /></button>
+                                </div>
+                            </div>
+                            {historyLoading ? (
+                                <div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)' }}><Clock size={20} style={{ display: 'block', margin: '0 auto 8px', opacity: 0.3 }} />Cargando...</div>
+                            ) : history.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)' }}>No hay guías generadas aún</div>
+                            ) : (
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                                            {['Orden', 'Cuenta', '# Guía', 'Estado', 'Fecha', 'PDF'].map(h => (
+                                                <th key={h} style={{ padding: '9px 11px', textAlign: 'left', color: 'rgba(255,255,255,0.3)', fontWeight: 600, fontSize: 10.5, textTransform: 'uppercase' }}>{h}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {history.map((g, idx) => (
+                                            <tr key={g.id} style={{ borderBottom: idx < history.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                                                <td style={{ padding: '9px 11px', color: '#F2F2F2', fontWeight: 600 }}>{g.orderId}</td>
+                                                <td style={{ padding: '9px 11px', color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>{g.tenantName}</td>
+                                                <td style={{ padding: '9px 11px', color: '#60a5fa', fontWeight: 700, fontSize: 13 }}>{g.guiaNumber || '—'}</td>
+                                                <td style={{ padding: '9px 11px' }}>
+                                                    <span style={{
+                                                        padding: '2px 8px', borderRadius: 20, fontSize: 10.5, fontWeight: 600,
+                                                        background: g.status === 'completed' ? 'rgba(52,211,153,0.12)' : g.status === 'failed' ? 'rgba(239,68,68,0.12)' : 'rgba(251,191,36,0.12)',
+                                                        color: g.status === 'completed' ? '#34d399' : g.status === 'failed' ? '#ef4444' : '#fbbf24',
+                                                    }}>
+                                                        {g.status === 'completed' ? 'Completada' : g.status === 'failed' ? 'Fallida' : g.status}
+                                                    </span>
+                                                    {g.errorMessage && <div style={{ color: 'rgba(239,68,68,0.7)', fontSize: 10, marginTop: 2 }}>{g.errorMessage}</div>}
+                                                </td>
+                                                <td style={{ padding: '9px 11px', color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>{new Date(g.createdAt).toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                                                <td style={{ padding: '9px 11px' }}>
+                                                    {g.hasPdf ? (
+                                                        <a href={`/api/logistics/guias/download/${g.id}`} target="_blank" rel="noopener noreferrer"
+                                                            style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(96,165,250,0.3)', background: 'rgba(96,165,250,0.08)', color: '#60a5fa', fontSize: 11, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                            <Download size={11} /> PDF
+                                                        </a>
+                                                    ) : (
+                                                        <span style={{ color: 'rgba(255,255,255,0.15)', fontSize: 11 }}>—</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>

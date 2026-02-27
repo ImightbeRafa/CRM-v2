@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
         const status = url.searchParams.get('status');
         const courier = url.searchParams.get('courier');
         const lmCarrierFilter = url.searchParams.get('lmCarrier');
+        const archivedFilter = url.searchParams.get('archived'); // 'true' | 'all' | null (default: exclude archived)
         const search = url.searchParams.get('search');
         const dateFrom = url.searchParams.get('dateFrom');
         const dateTo = url.searchParams.get('dateTo');
@@ -89,11 +90,11 @@ export async function GET(req: NextRequest) {
 
         // Enrich with lm_orders data (logistics carrier + logistics status)
         const orderIds = orders.map((o) => o.id);
-        const lmData: Record<string, { lmCarrier: string | null; lmStatus: string | null; isContraEntrega: boolean; contraEntregaCollected: boolean }> = {};
+        const lmData: Record<string, { lmCarrier: string | null; lmStatus: string | null; isContraEntrega: boolean; contraEntregaCollected: boolean; archivedAt: string | null }> = {};
         if (orderIds.length > 0) {
             try {
-                const lmRows = await prisma.$queryRaw<{ crm_order_id: string; carrier: string | null; status: string | null; is_contra_entrega: boolean; contraentrega_collected: boolean }[]>`
-                    SELECT crm_order_id, carrier, status, is_contra_entrega, contraentrega_collected FROM lm_orders
+                const lmRows = await prisma.$queryRaw<{ crm_order_id: string; carrier: string | null; status: string | null; is_contra_entrega: boolean; contraentrega_collected: boolean; archived_at: string | null }[]>`
+                    SELECT crm_order_id, carrier, status, is_contra_entrega, contraentrega_collected, archived_at FROM lm_orders
                     WHERE crm_order_id = ANY(${orderIds}::text[])
                 `;
                 for (const row of lmRows) {
@@ -102,6 +103,7 @@ export async function GET(req: NextRequest) {
                         lmStatus: row.status,
                         isContraEntrega: row.is_contra_entrega ?? false,
                         contraEntregaCollected: row.contraentrega_collected ?? false,
+                        archivedAt: row.archived_at ?? null,
                     };
                 }
             } catch {
@@ -115,11 +117,21 @@ export async function GET(req: NextRequest) {
             isContraEntrega: lmData[o.id]?.isContraEntrega ?? false,
             contraEntregaCollected: lmData[o.id]?.contraEntregaCollected ?? false,
             lmStatus: lmData[o.id]?.lmStatus ?? null,
+            archivedAt: lmData[o.id]?.archivedAt ?? null,
         }));
 
-        const filtered = lmCarrierFilter
+        // Filter by carrier
+        let filtered = lmCarrierFilter
             ? enriched.filter((o) => o.lmCarrier === lmCarrierFilter)
             : enriched;
+
+        // Filter by archive status
+        if (archivedFilter === 'true') {
+            filtered = filtered.filter((o) => o.archivedAt !== null);
+        } else if (archivedFilter !== 'all') {
+            // Default: exclude archived orders from the active board
+            filtered = filtered.filter((o) => o.archivedAt === null);
+        }
 
         return NextResponse.json({
             orders: filtered,
@@ -137,7 +149,7 @@ export async function PATCH(req: NextRequest) {
     if (guard) return guard;
 
     const body = await req.json();
-    const { orderId, lmCarrier, lmStatus, isContraEntrega, contraEntregaCollected } = body;
+    const { orderId, lmCarrier, lmStatus, isContraEntrega, contraEntregaCollected, archivedAt } = body;
 
     if (!orderId) return NextResponse.json({ error: 'orderId required' }, { status: 400 });
 
@@ -154,6 +166,7 @@ export async function PATCH(req: NextRequest) {
             if (lmStatus !== undefined) { params.push(lmStatus); sets.unshift(`status=$${params.length}`); }
             if (isContraEntrega !== undefined) { params.push(isContraEntrega); sets.unshift(`is_contra_entrega=$${params.length}`); }
             if (contraEntregaCollected !== undefined) { params.push(contraEntregaCollected); sets.unshift(`contraentrega_collected=$${params.length}`); }
+            if (archivedAt !== undefined) { params.push(archivedAt); sets.unshift(`archived_at=$${params.length}`); }
             params.push(orderId);
             const sql = `UPDATE lm_orders SET ${sets.join(',')} WHERE crm_order_id=$${params.length}`;
             await prisma.$executeRawUnsafe(sql, ...params);

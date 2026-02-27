@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Package, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X } from 'lucide-react';
+import { Package, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2 } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 
 interface Order {
@@ -10,6 +10,7 @@ interface Order {
     quantity: number | null; province: string | null; canton: string | null; district: string | null;
     address: string | null; total: number; comments: string | null; delivery: string | null;
     lmCarrier: string | null; lmStatus: string | null; isContraEntrega: boolean; contraEntregaCollected: boolean;
+    archivedAt: string | null;
 }
 
 const STATUSES = ['Pendiente', 'En Proceso', 'En Tránsito', 'Entregado', 'Devuelto'];
@@ -47,6 +48,13 @@ function groupByDate(orders: Order[]) {
 async function patchOrder(orderId: string, patch: object) {
     await fetch('/api/logistics/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, ...patch }) });
 }
+async function archiveOrder(orderId: string) {
+    await fetch('/api/logistics/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, archivedAt: new Date().toISOString() }) });
+}
+async function restoreOrder(orderId: string) {
+    await fetch('/api/logistics/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, archivedAt: null }) });
+}
+
 async function syncCrm(orderId: string, lmStatus: string) {
     await fetch('/api/logistics/sync-crm-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, lmStatus }) });
 }
@@ -116,16 +124,26 @@ function HistorialPanel({ orderId }: { orderId: string }) {
     );
 }
 
+// ─── Order age helper ────────────────────────────────────────────────────────
+function orderAge(ts: string) {
+    const h = Math.floor((Date.now() - new Date(ts).getTime()) / 3600000);
+    if (h < 24) return null;
+    const d = Math.floor(h / 24);
+    return `${d}d`;
+}
+
 // ─── Order Card (kanban) ──────────────────────────────────────────────────────
-function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCollected, carrier, getTenantName, getTenantColor, bulkMode, selected, onToggleSelect }: {
+function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCollected, onArchive, carrier, getTenantName, getTenantColor, bulkMode, selected, onToggleSelect }: {
     order: Order; onMoveStatus: (id: string, s: string, c: string) => void; onMoveCarrier: (id: string, c: string) => void;
     onToggleCOD: (id: string, v: boolean) => void; onToggleCollected: (id: string, v: boolean) => void;
+    onArchive: (id: string) => void;
     carrier: string; getTenantName: (id: string) => string; getTenantColor: (id: string) => string;
     bulkMode: boolean; selected: boolean; onToggleSelect: (id: string) => void;
 }) {
     const [expanded, setExpanded] = useState(false);
     const [showHistorial, setShowHistorial] = useState(false);
     const [syncing, setSyncing] = useState(false); const [synced, setSynced] = useState(false);
+    const [copied, setCopied] = useState(false);
     const color = getTenantColor(order.tenantId);
     const idx = STATUSES.indexOf(order.lmStatus || 'Pendiente');
     const next = idx < STATUSES.length - 1 ? STATUSES[idx + 1] : null;
@@ -133,8 +151,12 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
     const other = carrier === 'mensajeria' ? 'correos' : 'mensajeria';
     const otherLabel = carrier === 'mensajeria' ? 'Correos' : 'Mensajería';
     const addr = [order.address, order.district, order.canton, order.province].filter(Boolean).join(', ');
+    const age = orderAge(order.timestamp);
+    const canArchive = order.lmStatus === 'Entregado' || order.lmStatus === 'Devuelto';
+    const location = [order.province, order.canton].filter(Boolean).join(', ');
 
     async function handleSync() { setSyncing(true); await syncCrm(order.id, order.lmStatus || 'Pendiente'); setSyncing(false); setSynced(true); setTimeout(() => setSynced(false), 2500); }
+    function handleCopyPhone(e: React.MouseEvent) { e.stopPropagation(); if (order.phone) { navigator.clipboard.writeText(order.phone); setCopied(true); setTimeout(() => setCopied(false), 1500); } }
 
     return (
         <div
@@ -155,6 +177,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                 </div>
             )}
             <div style={{ padding: '10px 12px' }}>
+                {/* Row 1: Name + badges */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 5 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
                         {bulkMode && (
@@ -164,7 +187,10 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                         )}
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <p style={{ color: '#F2F2F2', fontWeight: 600, margin: 0, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customerName}</p>
-                            <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 10 }}>#{order.orderId} · {new Date(order.timestamp).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}</p>
+                            <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 10 }}>
+                                #{order.orderId} · {new Date(order.timestamp).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}
+                                {age && <span style={{ color: '#fbbf24', fontWeight: 600 }}> · {age}</span>}
+                            </p>
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: 5, flexShrink: 0, marginLeft: 6 }}>
@@ -177,15 +203,24 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                         </button>
                     </div>
                 </div>
+                {/* Row 2: Phone (always visible) + copy */}
+                {order.phone && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                        <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>📞 {order.phone}</span>
+                        <button onClick={handleCopyPhone} style={{ background: 'none', border: 'none', color: copied ? '#34d399' : 'rgba(255,255,255,0.25)', cursor: 'pointer', padding: 1, display: 'flex', alignItems: 'center' }} title="Copiar teléfono">
+                            {copied ? <CheckCircle2 size={10} /> : <Copy size={10} />}
+                        </button>
+                    </div>
+                )}
+                {/* Row 3: Location, product, total */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                    {order.province && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>📍 {order.province}</span>}
-                    {order.product && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100 }}>{order.product}{order.quantity && order.quantity > 1 ? ` ×${order.quantity}` : ''}</span>}
+                    {location && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>📍 {location}</span>}
+                    {order.product && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{order.product}{order.quantity && order.quantity > 1 ? ` ×${order.quantity}` : ''}</span>}
                     <span style={{ color: '#34d399', fontWeight: 700, fontSize: 11, marginLeft: 'auto' }}>₡{order.total.toLocaleString('es-CR')}</span>
                 </div>
                 {showHistorial && <HistorialPanel orderId={order.id} />}
                 {expanded && (
                     <div style={{ padding: '10px 12px', background: 'rgba(0,0,0,0.25)', borderRadius: 8, marginBottom: 8, border: '1px solid rgba(255,255,255,0.06)', fontSize: 11 }}>
-                        {order.phone && <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}><span style={{ color: 'rgba(255,255,255,0.3)', minWidth: 56 }}>Teléfono</span><span style={{ color: 'rgba(255,255,255,0.7)' }}>{order.phone}</span></div>}
                         {order.product && <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}><span style={{ color: 'rgba(255,255,255,0.3)', minWidth: 56 }}>Producto</span><span style={{ color: 'rgba(255,255,255,0.7)' }}>{order.product}{order.quantity ? ` × ${order.quantity}` : ''}</span></div>}
                         {addr && <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}><span style={{ color: 'rgba(255,255,255,0.3)', minWidth: 56 }}>Dirección</span><span style={{ color: 'rgba(255,255,255,0.7)' }}>{addr}</span></div>}
                         {order.delivery && <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}><span style={{ color: 'rgba(255,255,255,0.3)', minWidth: 56 }}>Entrega</span><span style={{ color: 'rgba(255,255,255,0.7)' }}>{order.delivery}</span></div>}
@@ -198,6 +233,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                         </button>
                     </div>
                 )}
+                {/* Action buttons */}
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     {prev && <button onClick={() => onMoveStatus(order.id, prev, carrier)} style={{ padding: '3px 7px', borderRadius: 5, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 10, cursor: 'pointer' }}>← {prev.replace('En ', '')}</button>}
                     {next && <button onClick={() => onMoveStatus(order.id, next, carrier)} style={{ padding: '3px 7px', borderRadius: 5, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.5)', fontSize: 10, cursor: 'pointer' }}>{next.replace('En ', '')} →</button>}
@@ -207,6 +243,11 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                     <button onClick={handleSync} disabled={syncing} style={{ padding: '3px 7px', borderRadius: 5, border: `1px solid ${synced ? 'rgba(52,211,153,0.4)' : 'rgba(52,211,153,0.18)'}`, background: synced ? 'rgba(52,211,153,0.1)' : 'transparent', color: synced ? '#34d399' : 'rgba(255,255,255,0.35)', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }} title={`→ Betsy: ${LM_TO_CRM[order.lmStatus || 'Pendiente']}`}>
                         <RefreshCcw size={9} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} /> {synced ? '✓ Betsy' : '→ Betsy'}
                     </button>
+                    {canArchive && (
+                        <button onClick={e => { e.stopPropagation(); onArchive(order.id); }} style={{ padding: '3px 7px', borderRadius: 5, border: '1px solid rgba(52,211,153,0.35)', background: 'rgba(52,211,153,0.08)', color: '#34d399', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <Archive size={9} /> Terminar
+                        </button>
+                    )}
                 </div>
             </div>
         </div>
@@ -214,10 +255,11 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
 }
 
 // ─── Kanban Board (single carrier) ───────────────────────────────────────────
-function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCOD, onToggleCollected, accentColor, getTenantName, getTenantColor, bulkMode, selectedIds, onToggleSelect }: {
+function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCOD, onToggleCollected, onArchive, accentColor, getTenantName, getTenantColor, bulkMode, selectedIds, onToggleSelect }: {
     title: string; icon: React.ReactNode; carrier: string; orders: Order[]; accentColor: string;
     onMove: (id: string, s: string, c: string) => void; onMoveCarrier: (id: string, c: string) => void;
     onToggleCOD: (id: string, v: boolean) => void; onToggleCollected: (id: string, v: boolean) => void;
+    onArchive: (id: string) => void;
     getTenantName: (id: string) => string; getTenantColor: (id: string) => string;
     bulkMode: boolean; selectedIds: Set<string>; onToggleSelect: (id: string) => void;
 }) {
@@ -245,17 +287,17 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
                 {cols.map(({ status, orders: col }) => {
                     const sc = STATUS_CFG[status];
                     return (
-                        <div key={status} style={{ minWidth: 190, flex: '0 0 190px', display: 'flex', flexDirection: 'column' }}>
+                        <div key={status} style={{ minWidth: 270, flex: '0 0 270px', display: 'flex', flexDirection: 'column' }}>
                             {/* Column header */}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, padding: '5px 10px', borderRadius: 7, background: sc.glow, border: `1px solid ${sc.color}35`, flexShrink: 0 }}>
                                 <span style={{ color: sc.color, fontWeight: 600, fontSize: 11 }}>{status}</span>
                                 <span style={{ background: `${sc.color}30`, color: sc.color, padding: '1px 7px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{col.length}</span>
                             </div>
                             {/* Scrollable cards */}
-                            <div style={{ overflowY: 'auto', maxHeight: 420, paddingRight: 2 }}>
+                            <div style={{ overflowY: 'auto', maxHeight: 520, paddingRight: 2 }}>
                                 {col.map(o => (
                                     <OrderCard key={o.id} order={o} onMoveStatus={onMove} onMoveCarrier={onMoveCarrier}
-                                        onToggleCOD={onToggleCOD} onToggleCollected={onToggleCollected} carrier={carrier}
+                                        onToggleCOD={onToggleCOD} onToggleCollected={onToggleCollected} onArchive={onArchive} carrier={carrier}
                                         getTenantName={getTenantName} getTenantColor={getTenantColor}
                                         bulkMode={bulkMode} selected={selectedIds.has(o.id)} onToggleSelect={onToggleSelect} />
                                 ))}
@@ -286,6 +328,10 @@ export default function CarriersPage() {
     const [bulkStatus, setBulkStatus] = useState('');
     const [bulkCarrier, setBulkCarrier] = useState('');
     const [applying, setApplying] = useState(false);
+    const [showArchive, setShowArchive] = useState(false);
+    const [archivedOrders, setArchivedOrders] = useState<Order[]>([]);
+    const [archiveLoading, setArchiveLoading] = useState(false);
+    const [archiveSearch, setArchiveSearch] = useState('');
 
     const load = useCallback(async () => {
         try {
@@ -304,6 +350,41 @@ export default function CarriersPage() {
     const onCOD = useCallback((id: string, v: boolean) => { setOrders(p => p.map(o => o.id === id ? { ...o, isContraEntrega: v } : o)); patchOrder(id, { isContraEntrega: v }); }, []);
     const onColl = useCallback((id: string, v: boolean) => { setOrders(p => p.map(o => o.id === id ? { ...o, contraEntregaCollected: v } : o)); patchOrder(id, { contraEntregaCollected: v }); if (v) logEvent(id, 'ce_confirmed', {}); }, []);
     const onToggleSelect = useCallback((id: string) => { setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; }); }, []);
+    const onArchiveOrder = useCallback(async (id: string) => {
+        setOrders(p => p.filter(o => o.id !== id));
+        await archiveOrder(id);
+        logEvent(id, 'archived', {});
+    }, []);
+    const onRestoreOrder = useCallback(async (id: string) => {
+        const restored = archivedOrders.find(o => o.id === id);
+        if (restored) {
+            setArchivedOrders(p => p.filter(o => o.id !== id));
+            setOrders(p => [...p, { ...restored, archivedAt: null }]);
+        }
+        await restoreOrder(id);
+        logEvent(id, 'restored', {});
+    }, [archivedOrders]);
+    const loadArchived = useCallback(async () => {
+        setArchiveLoading(true);
+        try {
+            const p = new URLSearchParams({ limit: '200', archived: 'true' });
+            if (archiveSearch) p.set('search', archiveSearch);
+            const data = await (await fetch(`/api/logistics/orders?${p}`)).json();
+            setArchivedOrders(data.orders || []);
+        } catch (e) { console.error(e); } finally { setArchiveLoading(false); }
+    }, [archiveSearch]);
+    const bulkArchive = useCallback(async () => {
+        const ids = [...selectedIds];
+        if (!ids.length) return;
+        setApplying(true);
+        for (const id of ids) {
+            await archiveOrder(id);
+            logEvent(id, 'archived', { bulk: true });
+        }
+        setOrders(p => p.filter(o => !selectedIds.has(o.id)));
+        setSelectedIds(new Set());
+        setApplying(false);
+    }, [selectedIds]);
 
     const applyBulk = useCallback(async () => {
         const ids = [...selectedIds];
@@ -354,10 +435,16 @@ export default function CarriersPage() {
                             {mensajeria.length} Mensajería · {correos.length} Correos · <span style={{ color: unassigned.length > 0 ? '#fbbf24' : 'rgba(255,255,255,0.35)' }}>{unassigned.length} por asignar</span>
                         </p>
                     </div>
-                    <button onClick={() => { setBulkMode(b => !b); setSelectedIds(new Set()); }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 16px', borderRadius: 9, border: `1px solid ${bulkMode ? 'rgba(139,135,255,0.5)' : 'rgba(255,255,255,0.1)'}`, background: bulkMode ? 'rgba(139,135,255,0.12)' : 'transparent', color: bulkMode ? '#8b87ff' : 'rgba(255,255,255,0.45)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, transition: 'all 0.15s' }}>
-                        <Layers size={13} /> {bulkMode ? 'Salir Selección' : 'Selección Múltiple'}
-                    </button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={() => { setShowArchive(a => { if (!a) loadArchived(); return !a; }); }}
+                            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 16px', borderRadius: 9, border: `1px solid ${showArchive ? 'rgba(52,211,153,0.5)' : 'rgba(255,255,255,0.1)'}`, background: showArchive ? 'rgba(52,211,153,0.12)' : 'transparent', color: showArchive ? '#34d399' : 'rgba(255,255,255,0.45)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, transition: 'all 0.15s' }}>
+                            <Archive size={13} /> Archivo {archivedOrders.length > 0 && <span style={{ background: 'rgba(52,211,153,0.2)', color: '#34d399', padding: '0 6px', borderRadius: 10, fontSize: 10 }}>{archivedOrders.length}</span>}
+                        </button>
+                        <button onClick={() => { setBulkMode(b => !b); setSelectedIds(new Set()); }}
+                            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 16px', borderRadius: 9, border: `1px solid ${bulkMode ? 'rgba(139,135,255,0.5)' : 'rgba(255,255,255,0.1)'}`, background: bulkMode ? 'rgba(139,135,255,0.12)' : 'transparent', color: bulkMode ? '#8b87ff' : 'rgba(255,255,255,0.45)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, transition: 'all 0.15s' }}>
+                            <Layers size={13} /> {bulkMode ? 'Salir Selección' : 'Selección Múltiple'}
+                        </button>
+                    </div>
                 </div>
 
                 {/* Filters row */}
@@ -398,12 +485,79 @@ export default function CarriersPage() {
                             style={{ padding: '5px 16px', borderRadius: 7, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.1)', color: '#34d399', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
                             {applying ? 'Aplicando...' : '✓ Aplicar'}
                         </button>
+                        <button onClick={bulkArchive} disabled={applying}
+                            style={{ padding: '5px 16px', borderRadius: 7, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: 'pointer', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Archive size={11} /> Terminar
+                        </button>
                         <button onClick={() => setSelectedIds(new Set())} style={{ marginLeft: 'auto', padding: '5px 10px', background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
                             <X size={11} /> Limpiar
                         </button>
                     </div>
                 )}
             </div>
+
+            {/* ── Archive panel (collapsible) ────────────────────────────── */}
+            {showArchive && (
+                <div style={{ flexShrink: 0, marginBottom: 14, ...glass, padding: '14px 16px', maxHeight: 320, display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <Archive size={14} style={{ color: '#34d399' }} />
+                            <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13 }}>Órdenes Archivadas</span>
+                            <span style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399', padding: '1px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{archivedOrders.length}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <div style={{ position: 'relative' }}>
+                                <Search size={11} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.25)', pointerEvents: 'none' }} />
+                                <input value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && loadArchived()}
+                                    placeholder="Buscar en archivo..."
+                                    style={{ padding: '5px 10px 5px 26px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: '#F2F2F2', fontSize: 11, outline: 'none', width: 180 }} />
+                            </div>
+                            <button onClick={loadArchived} disabled={archiveLoading}
+                                style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.08)', color: '#34d399', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>
+                                {archiveLoading ? '...' : 'Buscar'}
+                            </button>
+                            <button onClick={() => setShowArchive(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}>
+                                <X size={14} />
+                            </button>
+                        </div>
+                    </div>
+                    <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                        {archiveLoading ? (
+                            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, textAlign: 'center', margin: '20px 0' }}>Cargando archivo...</p>
+                        ) : archivedOrders.length === 0 ? (
+                            <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 12, textAlign: 'center', margin: '20px 0' }}>No hay órdenes archivadas</p>
+                        ) : (
+                            <div style={{ display: 'grid', gap: 6 }}>
+                                {archivedOrders.map(o => {
+                                    const tc = getTenantColor(o.tenantId);
+                                    return (
+                                        <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8 }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                                                    <span style={{ color: '#F2F2F2', fontWeight: 600, fontSize: 12 }}>{o.customerName}</span>
+                                                    <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>#{o.orderId}</span>
+                                                    <span style={{ padding: '1px 6px', borderRadius: 20, background: `${tc}20`, color: tc, fontSize: 9, fontWeight: 700 }}>{getTenantName(o.tenantId)}</span>
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11 }}>
+                                                    <span style={{ color: 'rgba(255,255,255,0.35)' }}>{o.lmCarrier === 'mensajeria' ? '🚚 Mensajería' : o.lmCarrier === 'correos' ? '📮 Correos' : '—'}</span>
+                                                    <span style={{ color: 'rgba(255,255,255,0.3)' }}>{o.lmStatus}</span>
+                                                    <span style={{ color: '#34d399', fontWeight: 700 }}>₡{o.total.toLocaleString('es-CR')}</span>
+                                                    {o.archivedAt && <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>Archivado {new Date(o.archivedAt).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}</span>}
+                                                </div>
+                                            </div>
+                                            <button onClick={() => onRestoreOrder(o.id)}
+                                                style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid rgba(139,135,255,0.35)', background: 'rgba(139,135,255,0.08)', color: '#8b87ff', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                                                <ArchiveRestore size={11} /> Restaurar
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* ── Body: 2-column split ──────────────────────────────────── */}
             <div style={{ display: 'flex', gap: 14, flex: 1, overflow: 'hidden', minHeight: 0 }}>
@@ -412,16 +566,18 @@ export default function CarriersPage() {
                 <div style={{ flex: 1, overflowY: 'auto', minWidth: 0, paddingRight: 4 }}>
                     <Board title="Mensajería Privada" icon={<Truck size={17} />} carrier="mensajeria" orders={mensajeria}
                         onMove={onMove} onMoveCarrier={onMoveC} onToggleCOD={onCOD} onToggleCollected={onColl}
+                        onArchive={onArchiveOrder}
                         accentColor="#8b87ff" getTenantName={getTenantName} getTenantColor={getTenantColor}
                         bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} />
                     <Board title="Correos de Costa Rica" icon={<Mail size={17} />} carrier="correos" orders={correos}
                         onMove={onMove} onMoveCarrier={onMoveC} onToggleCOD={onCOD} onToggleCollected={onColl}
+                        onArchive={onArchiveOrder}
                         accentColor="#60a5fa" getTenantName={getTenantName} getTenantColor={getTenantColor}
                         bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} />
                 </div>
 
                 {/* RIGHT: Sin Asignar inbox */}
-                <div style={{ width: 310, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     {/* Panel header */}
                     <div style={{
                         padding: '10px 14px', background: 'rgba(251,191,36,0.06)',

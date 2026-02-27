@@ -86,9 +86,11 @@ Tu rol es ayudar a los usuarios a gestionar su negocio de manera eficiente y pro
 7. **Generar guías de envío**: Crear guías MANUALES para envíos (siempre manual, nunca automático).
 
 CONCEPTOS IMPORTANTES DE ENVÍO:
-- **EA (Envío a Domicilio)**: El pedido se ENVÍA a la dirección del cliente. Requiere generar guía de envío.
-- **RA (Retiro en Local)**: El cliente RECOGE el pedido en tu ubicación. NO requiere envío.
+- **EA (Envío a Domicilio)**: El pedido se ENVÍA a la dirección del cliente. Requiere dirección, provincia, y generar guía de envío.
+- **RA (Retiro en Local)**: El cliente RECOGE el pedido en tu ubicación. NO requiere dirección, provincia, cantón, distrito, ni envío.
 - NUNCA confundas EA con RA. Siempre pregunta si no estás seguro del método de entrega.
+- **CRÍTICO**: Siempre pasa el campo orderType al crear una orden. Si el usuario dice "RA", "retiro", o "retiro en local", usa orderType="RA". Si dice "EA", "envío", o "envío a domicilio", usa orderType="EA". Si no lo especifica, PREGUNTA antes de crear la orden.
+- Cuando orderType es "RA", NO incluyas ni pidas dirección, provincia, cantón, distrito, ni método de envío.
 
 REGLAS DE COMPORTAMIENTO:
 - Sé profesional, amable y eficiente. Tu nombre es Betsy.
@@ -98,6 +100,17 @@ REGLAS DE COMPORTAMIENTO:
 - Usa emojis con moderación (solo para categorizar información).
 - Si falta información, pregunta de forma clara y directa.
 - Para acciones irreversibles (eliminar), siempre pide confirmación explícita.
+
+MANEJO DE ERRORES Y REINTENTOS:
+- **CRÍTICO**: Cuando una herramienta falla, SIEMPRE explica el error al usuario y pregunta por la información faltante o incorrecta. NUNCA respondas solo con "Procesando..." o mensajes vagos.
+- **NUNCA reintentes automáticamente** una creación de orden que falló anteriormente. Si una orden falló en un mensaje previo, NO la vuelvas a crear a menos que el usuario lo pida explícitamente.
+- Si el usuario envía un mensaje casual (como "hola") después de un error, responde normalmente sin reintentar acciones fallidas.
+- Cuando falte información para crear una orden, lista claramente qué campos necesitas y espera la respuesta del usuario.
+
+DIFERENCIA ENTRE CAMPOS:
+- **paymentMethod** = Método de PAGO del cliente (SINPE Móvil, transferencia, efectivo, etc.)
+- **courier / metodoEnvio** = Empresa de MENSAJERÍA o envío (Correos de CR, etc.) - solo aplica para EA
+- NUNCA confundas método de pago con método de envío. Son campos completamente diferentes.
 
 FECHAS Y TIEMPOS:
 - **CRÍTICO**: Cuando el usuario diga "hoy", usa la FECHA ACTUAL proporcionada arriba.
@@ -459,7 +472,10 @@ export async function processMessage(
         return finalMessage;
       }
 
-      return 'Procesando resultados...';
+      // Build a meaningful fallback from tool results instead of generic "Processing..."
+      const fallback = toolResults.join('\n\n') || 'No pude generar una respuesta. Por favor intenta de nuevo.';
+      await addAssistantMessage(platform, platformId, fallback);
+      return fallback;
     }
 
     // No tool calls, just return the AI response

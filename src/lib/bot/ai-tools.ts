@@ -53,9 +53,9 @@ const baseOrderSchema = {
   canton: z.string().optional().describe('Cantón'),
   district: z.string().optional().describe('Distrito'),
   courier: z.string().optional().describe('Método de envío o courier'),
-  paymentMethod: z.string().optional().describe('Método de pago (contraentrega, transferencia, etc)'),
+  paymentMethod: z.string().optional().describe('Método de pago del cliente (SINPE Móvil, transferencia, efectivo, etc). NO es el método de envío/courier.'),
   comments: z.string().optional().describe('Comentarios o notas adicionales'),
-  orderType: z.enum(['EA', 'RA']).default('EA').describe('Tipo de orden: EA = Envío a Domicilio (se envía), RA = Retiro en Local (cliente recoge)'),
+  orderType: z.enum(['EA', 'RA']).describe('REQUERIDO: Tipo de orden. EA = Envío a Domicilio (requiere dirección), RA = Retiro en Local (NO requiere dirección). SIEMPRE debe especificarse.'),
   size: z.string().optional().describe('Talla o tamaño del producto (si está configurado)'),
   color: z.string().optional().describe('Color del producto (si está configurado)'),
 };
@@ -270,14 +270,19 @@ function validateBaseOrderFields(params: any): { isValid: boolean; errors: strin
     errors.push('Total es requerido y debe ser mayor o igual a 0');
   }
   
+  // Validate orderType is explicitly provided
+  if (!params.orderType) {
+    errors.push('Tipo de orden no especificado. Pregunta al usuario: ¿Es envío a domicilio (EA) o retiro en local (RA)?');
+  }
+  
   // For EA (shipping orders), address fields are important
-  const orderType = params.orderType || 'EA';
+  const orderType = params.orderType;
   if (orderType === 'EA') {
     if (!params.province || params.province.trim() === '') {
-      errors.push('Provincia es requerida para envíos (EA)');
+      errors.push('Provincia es requerida para envío a domicilio (EA). Pregunta la provincia al cliente.');
     }
     if (!params.address || params.address.trim() === '') {
-      errors.push('Dirección es requerida para envíos (EA)');
+      errors.push('Dirección es requerida para envío a domicilio (EA). Pregunta la dirección al cliente.');
     }
   }
   
@@ -357,7 +362,7 @@ export async function createOrder(
         const orderData: any = {
           tenantId: ctx.tenantId,
           orderId,
-          orderType: params.orderType || 'EA',
+          orderType: params.orderType,
           status: 'Pendiente',
           customerName: params.customerName,
           phone: params.phone || '',

@@ -20,6 +20,7 @@ import {
 } from '@/lib/bot/bot-session';
 import { processMessage, generateWelcomeMessage, generateUnauthorizedMessage } from '@/lib/bot/ai-agent';
 import { clearConversationHistory } from '@/lib/bot/conversation-memory';
+import { escapeHtml } from '@/lib/validation';
 
 console.log('🚀 WEBHOOK MODULE LOADED SUCCESSFULLY 🚀');
 
@@ -31,6 +32,49 @@ export const runtime = 'nodejs';
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_MAX = 30; // messages per window
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+
+// Deduplication - track recently processed update_ids to prevent Telegram retries
+const processedUpdates = new Map<number, number>(); // update_id -> timestamp
+const DEDUP_WINDOW = 5 * 60 * 1000; // 5 minutes
+const DEDUP_CLEANUP_INTERVAL = 60 * 1000; // cleanup every 1 minute
+const DEDUP_MAX_SIZE = 10000; // max entries to prevent unbounded memory growth
+let lastDedupCleanup = Date.now();
+
+// Max message length to prevent excessive AI token costs
+const MAX_MESSAGE_LENGTH = 4000;
+
+/**
+ * Check if an update_id was already processed (deduplication)
+ */
+function isDuplicateUpdate(updateId: number): boolean {
+  const now = Date.now();
+  
+  // Periodic cleanup of old entries
+  if (now - lastDedupCleanup > DEDUP_CLEANUP_INTERVAL) {
+    lastDedupCleanup = now;
+    for (const [id, timestamp] of processedUpdates.entries()) {
+      if (now - timestamp > DEDUP_WINDOW) {
+        processedUpdates.delete(id);
+      }
+    }
+  }
+  
+  if (processedUpdates.has(updateId)) {
+    return true;
+  }
+  
+  // Prevent unbounded growth
+  if (processedUpdates.size >= DEDUP_MAX_SIZE) {
+    const oldest = processedUpdates.entries().next().value;
+    if (oldest) processedUpdates.delete(oldest[0]);
+  }
+  
+  processedUpdates.set(updateId, now);
+  return false;
+}
+
+// Per-chat processing lock to prevent concurrent processing for the same chat
+const chatProcessingLocks = new Map<string, Promise<void>>();
 
 /**
  * Check if a chat is rate limited
@@ -115,11 +159,36 @@ export async function POST(request: NextRequest) {
     
     console.log('[Telegram Webhook] ✅ Received update:', JSON.stringify(body).slice(0, 500));
     
+    // Deduplication: skip if this update_id was already processed
+    if (body.update_id && isDuplicateUpdate(body.update_id)) {
+      console.log(`[Telegram Webhook] ⚠️ Duplicate update_id ${body.update_id}, skipping`);
+      return NextResponse.json({ ok: true });
+    }
+    
     // Handle different update types
     if (body.message) {
       console.log('[Telegram Webhook] 📨 Processing message...');
-      await handleMessage(body.message);
-      console.log('[Telegram Webhook] ✅ Message handled successfully');
+      const chatId = String(body.message.chat?.id || '');
+      
+      // Per-chat lock: wait for any ongoing processing for this chat to finish
+      const existingLock = chatProcessingLocks.get(chatId);
+      if (existingLock) {
+        console.log(`[Telegram Webhook] ⏳ Waiting for existing processing on chat ${chatId}`);
+        await existingLock.catch(() => {}); // Wait but ignore errors from previous processing
+      }
+      
+      // Create a new lock for this chat
+      let resolveLock: () => void;
+      const lockPromise = new Promise<void>((resolve) => { resolveLock = resolve; });
+      chatProcessingLocks.set(chatId, lockPromise);
+      
+      try {
+        await handleMessage(body.message);
+        console.log('[Telegram Webhook] ✅ Message handled successfully');
+      } finally {
+        resolveLock!();
+        chatProcessingLocks.delete(chatId);
+      }
     } else if (body.callback_query) {
       console.log('[Telegram Webhook] 🔘 Processing callback query...');
       await handleCallbackQuery(body.callback_query);
@@ -251,6 +320,13 @@ async function handleMessage(message: any) {
     
     console.log(`[Telegram] 📩 Message from ${displayName} (${chatId}): ${text.slice(0, 100)}`);
     
+    // Input length validation - prevent excessively long messages
+    if (text.length > MAX_MESSAGE_LENGTH) {
+      console.log(`[Telegram] ⚠️ Message too long (${text.length} chars) from ${chatId}`);
+      await sendMessage(chatId, `⚠️ Tu mensaje es demasiado largo (${text.length} caracteres). El máximo es ${MAX_MESSAGE_LENGTH}. Por favor acorta tu mensaje.`);
+      return;
+    }
+    
     // Rate limiting
     if (isRateLimited(chatId)) {
       console.log(`[Telegram] ⏳ Rate limited: ${chatId}`);
@@ -346,13 +422,16 @@ async function handleMessage(message: any) {
     await clearConversationState('telegram', chatId);
     
     // Send welcome message
-    const welcomeMsg = `🎉 <b>¡Configuración completa, ${text.trim()}!</b>
+    const safeName = escapeHtml(text.trim());
+    const safeTenantName = escapeHtml(state.tenantName);
+    const safeUsername = username ? escapeHtml(username) : null;
+    const welcomeMsg = `🎉 <b>¡Configuración completa, ${safeName}!</b>
 
 ✅ <b>Tu bot está listo para usar</b>
 
-Conectado a: <b>${state.tenantName}</b>
-Tu nombre: <b>${text.trim()}</b>
-Usuario: ${username ? `@${username}` : 'Telegram'}
+Conectado a: <b>${safeTenantName}</b>
+Tu nombre: <b>${safeName}</b>
+Usuario: ${safeUsername ? `@${safeUsername}` : 'Telegram'}
 
 ━━━━━━━━━━━━━━━━━━━━
 
@@ -483,7 +562,7 @@ async function handleStartCommand(
     if (!tenant) {
       await sendMessage(chatId, `⚠️ <b>Código inválido</b>
 
-El código <code>${code}</code> no existe o ha expirado.
+El código <code>${escapeHtml(code)}</code> no existe o ha expirado.
 
 Por favor verifica el código e intenta de nuevo.`);
       return;
@@ -499,7 +578,7 @@ Por favor verifica el código e intenta de nuevo.`);
     
     await sendMessage(chatId, `✅ <b>Código válido!</b>
 
-Estás conectando a: <b>${tenant.name}</b>
+Estás conectando a: <b>${escapeHtml(tenant.name)}</b>
 
 Para el registro de auditoría, ¿cuál es tu nombre completo?
 
@@ -521,11 +600,11 @@ Para el registro de auditoría, ¿cuál es tu nombre completo?
     
     const userName = existingSession.providedName || existingSession.displayName || userInfo.displayName;
     
-    await sendMessage(chatId, `👋 <b>¡Hola de nuevo, ${userName}!</b>
+    await sendMessage(chatId, `👋 <b>¡Hola de nuevo, ${escapeHtml(userName)}!</b>
 
 ✅ <b>Tu sesión está activa y lista</b>
 
-Conectado a: <b>${tenant?.name || 'Betsy'}</b>
+Conectado a: <b>${escapeHtml(tenant?.name || 'Betsy')}</b>
 
 ━━━━━━━━━━━━━━━━━━━━
 
@@ -624,7 +703,7 @@ Pide el código a tu administrador y envía:
     return;
   }
   
-  const userName = session.user.name || session.user.email;
+  const userName = escapeHtml(session.user.name || session.user.email);
   const connectedDate = session.session.connectedAt.toLocaleDateString('es-CR', {
     year: 'numeric',
     month: 'long',
@@ -636,9 +715,9 @@ Pide el código a tu administrador y envía:
 ━━━━━━━━━━━━━━━━━━━━
 
 👤 <b>Usuario:</b> ${userName}
-🏢 <b>Empresa:</b> ${session.tenant.name}
-📊 <b>Plan:</b> ${session.tenant.plan}
-🔑 <b>Rol:</b> ${session.role}
+🏢 <b>Empresa:</b> ${escapeHtml(session.tenant.name)}
+📊 <b>Plan:</b> ${escapeHtml(session.tenant.plan)}
+🔑 <b>Rol:</b> ${escapeHtml(session.role)}
 ⏰ <b>Conectado:</b> ${connectedDate}
 
 ━━━━━━━━━━━━━━━━━━━━

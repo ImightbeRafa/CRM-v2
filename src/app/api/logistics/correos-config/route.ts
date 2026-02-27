@@ -51,7 +51,7 @@ export async function PATCH(req: NextRequest) {
             await prisma.$executeRaw`
                 INSERT INTO lm_carrier_configs (carrier, key, value, description)
                 VALUES ('correos', 'correos_email', ${email}, 'Global Correos de Costa Rica login email')
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
             `;
         }
 
@@ -59,7 +59,7 @@ export async function PATCH(req: NextRequest) {
             await prisma.$executeRaw`
                 INSERT INTO lm_carrier_configs (carrier, key, value, description)
                 VALUES ('correos', 'correos_password', ${password}, 'Global Correos de Costa Rica login password')
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
             `;
         }
 

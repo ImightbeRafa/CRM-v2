@@ -2,6 +2,7 @@ import * as soap from 'soap';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
+import { correosHttp } from './http';
 import { CorreosTokenManager } from './tokenManager';
 import type {
   CorreosWSCredentials,
@@ -100,6 +101,7 @@ export class CorreosSoapClient {
           forceSoap12Headers: false,
           endpoint: SOAP_ENDPOINT,
           wsdl_options: { timeout: SOAP_TIMEOUT_MS },
+          request: correosHttp as any,
         })
         .then((client) => {
           client.setEndpoint(SOAP_ENDPOINT);

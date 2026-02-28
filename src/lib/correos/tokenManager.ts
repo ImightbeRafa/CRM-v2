@@ -1,11 +1,72 @@
+import https from 'https';
 import type { CorreosWSCredentials, TokenRequest } from './types';
-import { correosTokenHttp } from './http';
 
-const TOKEN_URL = 'https://servicios.correos.go.cr:442/Token/authenticate';
+const TOKEN_URL = new URL('https://servicios.correos.go.cr:442/Token/authenticate');
 const TOKEN_TTL_MS = 4 * 60 * 1000; // 4 minutes (tokens expire at 5 min)
+const REQUEST_TIMEOUT_MS = 60_000;
 
 // Per-username token cache so different tenants/credentials don't share tokens
 const tokenCache = new Map<string, { token: string; exp: number }>();
+
+/**
+ * Perform an HTTPS POST using Node.js native `https.request()`.
+ * Bypasses axios entirely to avoid webpack bundling issues on Vercel
+ * where the bundled http adapter hangs on non-standard ports.
+ */
+function httpsPost(url: URL, body: string): Promise<{ statusCode: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const options: https.RequestOptions = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+      timeout: REQUEST_TIMEOUT_MS,
+      servername: url.hostname, // explicit SNI
+    };
+
+    const req = https.request(options, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        resolve({
+          statusCode: res.statusCode ?? 0,
+          body: Buffer.concat(chunks).toString('utf-8'),
+        });
+      });
+    });
+
+    req.on('timeout', () => {
+      req.destroy(new Error(`Correos token request timed out after ${REQUEST_TIMEOUT_MS}ms`));
+    });
+
+    req.on('socket', (socket) => {
+      socket.on('connect', () => {
+        console.log('[CorreosToken] TCP connected');
+      });
+      if ('on' in socket && typeof (socket as any).on === 'function') {
+        (socket as any).on('secureConnect', () => {
+          const tlsSock = socket as import('tls').TLSSocket;
+          console.log(
+            `[CorreosToken] TLS handshake complete — ` +
+            `protocol=${tlsSock.getProtocol()}, ` +
+            `cipher=${tlsSock.getCipher()?.name}`
+          );
+        });
+      }
+    });
+
+    req.on('error', (err) => {
+      reject(new Error(`Correos token auth network error: ${err.message}`));
+    });
+
+    req.write(body);
+    req.end();
+  });
+}
 
 export class CorreosTokenManager {
   private credentials: CorreosWSCredentials;
@@ -29,22 +90,15 @@ export class CorreosTokenManager {
       Sistema: this.credentials.sistema,
     };
 
-    let rawBody: string;
-    try {
-      const res = await correosTokenHttp.post(TOKEN_URL, payload, {
-        transformResponse: [(data: any) => data], // keep raw string, don't auto-parse JSON
-      });
-      rawBody = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
-    } catch (err: any) {
-      if (err.response) {
-        throw new Error(`Correos token auth failed (${err.response.status})`);
-      }
-      throw new Error(`Correos token auth network error: ${err.message}`);
+    const res = await httpsPost(TOKEN_URL, JSON.stringify(payload));
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw new Error(`Correos token auth failed (${res.statusCode})`);
     }
 
     let token: string | undefined;
 
-    const trimmed = rawBody.trim();
+    const trimmed = res.body.trim();
     if (trimmed.startsWith('{')) {
       try {
         const data = JSON.parse(trimmed);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import net from 'net';
+import tls from 'tls';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { CorreosWebService } from '@/lib/correos';
@@ -11,7 +12,6 @@ export const maxDuration = 120;
 
 /**
  * Attempt a raw TCP connection to host:port with a timeout.
- * Returns { reachable, ms, error? }.
  */
 function tcpProbe(host: string, port: number, timeoutMs = 10_000): Promise<{ reachable: boolean; ms: number; error?: string }> {
     return new Promise((resolve) => {
@@ -37,12 +37,39 @@ function tcpProbe(host: string, port: number, timeoutMs = 10_000): Promise<{ rea
 }
 
 /**
+ * Attempt a TLS handshake to host:port and report negotiated protocol/cipher.
+ */
+function tlsProbe(host: string, port: number, timeoutMs = 15_000): Promise<{ ok: boolean; ms: number; protocol?: string; cipher?: string; error?: string }> {
+    return new Promise((resolve) => {
+        const t0 = Date.now();
+        const socket = tls.connect(
+            { host, port, servername: host, timeout: timeoutMs, rejectUnauthorized: true },
+            () => {
+                const proto = socket.getProtocol();
+                const cipher = socket.getCipher()?.name;
+                socket.destroy();
+                resolve({ ok: true, ms: Date.now() - t0, protocol: proto ?? undefined, cipher });
+            }
+        );
+
+        socket.on('timeout', () => {
+            socket.destroy();
+            resolve({ ok: false, ms: Date.now() - t0, error: 'TLS handshake timeout' });
+        });
+        socket.on('error', (err: any) => {
+            socket.destroy();
+            resolve({ ok: false, ms: Date.now() - t0, error: err.code || err.message });
+        });
+    });
+}
+
+/**
  * GET /api/logistics/correos-test
  *
  * Diagnostic endpoint that validates Correos connectivity from the server.
- * Phase 1: Raw TCP port reachability (standard + non-standard).
- * Phase 2: Token auth + SOAP call (only if ports are reachable).
- * Protected by logistics admin guard.
+ * Phase 1: Raw TCP port reachability.
+ * Phase 2: TLS handshake probe for the token endpoint.
+ * Phase 3: Token auth + SOAP call (only if reachable).
  */
 export async function GET(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
@@ -51,13 +78,13 @@ export async function GET(req: NextRequest) {
     const results: { step: string; ok: boolean; ms: number; detail?: string }[] = [];
 
     try {
-        // Phase 1: Raw TCP connectivity probes (run all in parallel)
+        // Phase 1: Raw TCP connectivity probes (all in parallel)
         const probes = [
-            { label: 'tcp_token_442',  host: 'servicios.correos.go.cr', port: 442 },
-            { label: 'tcp_token_443',  host: 'servicios.correos.go.cr', port: 443 },
-            { label: 'tcp_soap_84',    host: 'amistad.correos.go.cr',   port: 84 },
-            { label: 'tcp_soap_80',    host: 'amistad.correos.go.cr',   port: 80 },
-            { label: 'tcp_control_443', host: 'google.com',             port: 443 },
+            { label: 'tcp_token_442',   host: 'servicios.correos.go.cr', port: 442 },
+            { label: 'tcp_token_443',   host: 'servicios.correos.go.cr', port: 443 },
+            { label: 'tcp_soap_84',     host: 'amistad.correos.go.cr',   port: 84 },
+            { label: 'tcp_soap_80',     host: 'amistad.correos.go.cr',   port: 80 },
+            { label: 'tcp_control_443', host: 'google.com',              port: 443 },
         ];
 
         console.log('[correos-test] Phase 1: TCP port reachability probes...');
@@ -73,16 +100,36 @@ export async function GET(req: NextRequest) {
         const tokenPortOpen = probeResults.find((r) => r.step === 'tcp_token_442')?.ok;
         const soapPortOpen = probeResults.find((r) => r.step === 'tcp_soap_84')?.ok;
 
-        // Phase 2: Actual API calls (skip if ports are blocked)
         if (!tokenPortOpen && !soapPortOpen) {
             console.warn('[correos-test] Both Correos ports blocked — skipping API tests');
             return NextResponse.json({
                 ok: false,
                 results,
-                diagnosis: 'Correos uses non-standard ports (442, 84) which are unreachable from this server. A proxy or different hosting environment is needed.',
+                diagnosis: 'Correos uses non-standard ports (442, 84) which are unreachable from this server.',
             });
         }
 
+        // Phase 2: TLS handshake probe (isolates TLS from HTTP)
+        if (tokenPortOpen) {
+            console.log('[correos-test] Phase 2: TLS handshake probe to servicios.correos.go.cr:442...');
+            const tlsResult = await tlsProbe('servicios.correos.go.cr', 442);
+            console.log(
+                `[correos-test] tls_token_442: ${tlsResult.ok ? 'OK' : 'FAILED'} (${tlsResult.ms}ms` +
+                `${tlsResult.protocol ? ', ' + tlsResult.protocol : ''}` +
+                `${tlsResult.cipher ? ', ' + tlsResult.cipher : ''}` +
+                `${tlsResult.error ? ', ' + tlsResult.error : ''})`
+            );
+            results.push({
+                step: 'tls_token_442',
+                ok: tlsResult.ok,
+                ms: tlsResult.ms,
+                detail: tlsResult.ok
+                    ? `${tlsResult.protocol}, ${tlsResult.cipher}`
+                    : tlsResult.error,
+            });
+        }
+
+        // Phase 3: Actual API calls
         const credRows = await prisma.$queryRaw<{ key: string; value: string }[]>`
             SELECT key, value FROM lm_carrier_configs WHERE key LIKE 'correos_ws_%'
         `;
@@ -110,7 +157,7 @@ export async function GET(req: NextRequest) {
 
         // Step: Token
         if (tokenPortOpen) {
-            console.log('[correos-test] Step: requesting token...');
+            console.log('[correos-test] Step: requesting token (native https)...');
             const t = Date.now();
             try {
                 await ws.getSoapClient().getTokenManager().getToken();

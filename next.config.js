@@ -15,6 +15,7 @@ const nextConfig = {
     '/api/shipping/generate-guia': ['./src/lib/correos/wsdl/**/*'],
     '/api/logistics/tracking': ['./src/lib/correos/wsdl/**/*'],
     '/api/logistics/tarifa': ['./src/lib/correos/wsdl/**/*'],
+    '/api/logistics/correos-test': ['./src/lib/correos/wsdl/**/*'],
   },
   compress: true,
   reactStrictMode: true,

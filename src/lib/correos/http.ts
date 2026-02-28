@@ -24,7 +24,7 @@ export const correosHttp = axios.create({
 
 /** Used by the token manager for JSON calls on port 442 (HTTPS). */
 export const correosTokenHttp = axios.create({
-  timeout: 30_000,
+  timeout: 60_000,
   adapter: 'http',
   httpsAgent: new https.Agent({ keepAlive: true }),
   headers: { 'Content-Type': 'application/json' },

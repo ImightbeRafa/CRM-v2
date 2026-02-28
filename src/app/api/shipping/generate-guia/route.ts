@@ -83,13 +83,17 @@ export async function POST(request: NextRequest) {
 
         for (const order of orders) {
           try {
-            let destZip = '00000';
+            let destZip = '10101';
             try {
               if (order.province && order.canton && order.district) {
                 destZip = await ws.getPostalCode(order.province, order.canton, order.district);
+                console.log(`[WS] Postal code for ${order.orderId}: ${order.province}/${order.canton}/${order.district} → ${destZip}`);
               }
-            } catch { /* use fallback */ }
+            } catch (geoErr: any) {
+              console.warn(`[WS] Could not resolve postal code for ${order.orderId}: ${geoErr.message}`);
+            }
 
+            console.log(`[WS] Generating guía for ${order.orderId} (zip: ${destZip})...`);
             const res = await ws.generateAndRegisterGuia({
               customerName: order.customerName || 'Destinatario',
               customerPhone: order.phone || '00000000',

@@ -101,13 +101,15 @@ export async function POST(req: NextRequest) {
                 if (!dbOrder) continue;
 
                 try {
-                    // Resolve postal code from the geographic names
-                    let destZip = '00000';
+                    let destZip = '10101';
                     try {
                         destZip = await ws.getPostalCode(verified.province, verified.canton, verified.district);
-                    } catch {
-                        console.warn(`[WS] Could not resolve postal code for ${verified.province}/${verified.canton}/${verified.district}`);
+                        console.log(`[WS] Postal code resolved: ${verified.province}/${verified.canton}/${verified.district} → ${destZip}`);
+                    } catch (geoErr: any) {
+                        console.warn(`[WS] Could not resolve postal code for ${verified.province}/${verified.canton}/${verified.district}: ${geoErr.message}`);
                     }
+
+                    console.log(`[WS] Generating guía for ${verified.orderId} (zip: ${destZip})...`);
 
                     const result = await ws.generateAndRegisterGuia({
                         customerName: dbOrder.customerName || 'Destinatario',
@@ -123,6 +125,8 @@ export async function POST(req: NextRequest) {
                         description: dbOrder.product || dbOrder.comments || 'Paquete',
                     });
 
+                    console.log(`[WS] Guía result for ${verified.orderId}: success=${result.success}, guia=${result.guiaNumber}, msg=${result.responseMessage}`);
+
                     results.push({
                         success: result.success,
                         orderId: verified.orderId,
@@ -131,6 +135,7 @@ export async function POST(req: NextRequest) {
                         pdfBuffer: result.pdfBuffer,
                     });
                 } catch (err: any) {
+                    console.error(`[WS] Exception generating guía for ${verified.orderId}:`, err.message);
                     results.push({
                         success: false,
                         orderId: verified.orderId,

@@ -18,6 +18,27 @@ import type {
 const WSDL_URL =
   'http://amistad.correos.go.cr:84/wsAppCorreos.wsAppCorreos.svc?wsdl';
 
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1_000;
+
+const TRANSIENT_ERRORS = [
+  'socket hang up',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'EPIPE',
+  'EAI_AGAIN',
+];
+
+function isTransientError(err: any): boolean {
+  const msg = String(err?.message ?? err ?? '');
+  return TRANSIENT_ERRORS.some((e) => msg.includes(e));
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 type SoapClient = soap.Client;
 
 export class CorreosSoapClient {
@@ -34,8 +55,8 @@ export class CorreosSoapClient {
     if (!this.clientPromise) {
       this.clientPromise = soap
         .createClientAsync(WSDL_URL, {
-          // WCF endpoints sometimes need explicit binding
           forceSoap12Headers: false,
+          wsdl_options: { timeout: 30_000 },
         })
         .catch((err) => {
           this.clientPromise = null;
@@ -45,30 +66,52 @@ export class CorreosSoapClient {
     return this.clientPromise;
   }
 
-  // ─── Generic invoke with auto-token & retry on 20 ─────────────────────────
+  /** Discard the cached SOAP client so the next call creates a fresh connection. */
+  private resetClient(): void {
+    this.clientPromise = null;
+  }
+
+  // ─── Generic invoke with retry for transient errors + token refresh ────────
 
   private async invoke<T>(method: string, args: Record<string, unknown>): Promise<T> {
-    const client = await this.getClient();
-    const token = await this.tokenManager.getToken();
+    let lastError: any;
 
-    // Token is sent as an HTTP Authorization header, not a SOAP body param
-    client.addHttpHeader('Authorization', `Bearer ${token}`);
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const client = await this.getClient();
+        const token = await this.tokenManager.getToken();
 
-    const [result] = await client[`${method}Async`](args);
+        client.addHttpHeader('Authorization', `Bearer ${token}`);
 
-    const body: T =
-      result?.[`${method}Result`] ?? result;
+        const [result] = await client[`${method}Async`](args);
 
-    const code = (body as any)?.CodRespuesta;
-    if (code === '20') {
-      this.tokenManager.invalidate();
-      const freshToken = await this.tokenManager.getToken();
-      client.addHttpHeader('Authorization', `Bearer ${freshToken}`);
-      const [retryResult] = await client[`${method}Async`](args);
-      return retryResult?.[`${method}Result`] ?? retryResult;
+        const body: T = result?.[`${method}Result`] ?? result;
+
+        const code = (body as any)?.CodRespuesta;
+        if (code === '20') {
+          this.tokenManager.invalidate();
+          const freshToken = await this.tokenManager.getToken();
+          client.addHttpHeader('Authorization', `Bearer ${freshToken}`);
+          const [retryResult] = await client[`${method}Async`](args);
+          return retryResult?.[`${method}Result`] ?? retryResult;
+        }
+
+        return body;
+      } catch (err: any) {
+        lastError = err;
+        if (isTransientError(err) && attempt < MAX_RETRIES) {
+          console.warn(
+            `[CorreosSoap] Transient error on ${method} (attempt ${attempt}/${MAX_RETRIES}): ${err.message}. Retrying in ${RETRY_DELAY_MS}ms...`
+          );
+          this.resetClient();
+          await sleep(RETRY_DELAY_MS * attempt);
+          continue;
+        }
+        throw err;
+      }
     }
 
-    return body;
+    throw lastError;
   }
 
   // ─── Helpers to unwrap SOAP array containers ───────────────────────────────

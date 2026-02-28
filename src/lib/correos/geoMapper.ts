@@ -31,22 +31,38 @@ function normalize(s: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
     .trim();
 }
 
 function findBestMatch(items: GeoEntry[], name: string): GeoEntry | null {
   const needle = normalize(name);
+  if (!needle) return items[0] ?? null;
+
   const exact = items.find((i) => normalize(i.name) === needle);
   if (exact) return exact;
 
   const startsWith = items.find((i) => normalize(i.name).startsWith(needle));
   if (startsWith) return startsWith;
 
+  const needleStartsWith = items.find((i) => needle.startsWith(normalize(i.name)));
+  if (needleStartsWith) return needleStartsWith;
+
   const contains = items.find((i) => normalize(i.name).includes(needle));
   if (contains) return contains;
 
   const reverseContains = items.find((i) => needle.includes(normalize(i.name)));
   if (reverseContains) return reverseContains;
+
+  // Try matching individual words (e.g., "San Antonio" might be listed as "SAN ANTONIO")
+  const needleWords = needle.split(/\s+/);
+  if (needleWords.length > 1) {
+    const multiWordMatch = items.find((i) => {
+      const normalized = normalize(i.name);
+      return needleWords.every((w) => normalized.includes(w));
+    });
+    if (multiWordMatch) return multiWordMatch;
+  }
 
   return null;
 }
@@ -143,6 +159,9 @@ export class CorreosGeoMapper {
     const distritos = await this.loadDistritos(codProvincia, codCanton);
     const match = findBestMatch(distritos, distritoName);
     if (!match) {
+      console.warn(
+        `[GeoMapper] Distrito not found: "${distritoName}" (normalized: "${normalize(distritoName)}") in prov=${codProvincia}/canton=${codCanton}. Available: ${distritos.map((d) => `${d.code}:${d.name}`).join(', ')}`
+      );
       throw new Error(
         `Distrito not found: "${distritoName}" in ${codProvincia}/${codCanton}. Available: ${distritos.map((d) => d.name).join(', ')}`
       );

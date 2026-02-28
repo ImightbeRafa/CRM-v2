@@ -6,6 +6,7 @@ import type { CorreosWSCredentials } from '@/lib/correos';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
 /**
  * GET /api/logistics/correos-test
@@ -47,22 +48,32 @@ export async function GET(req: NextRequest) {
         const ws = new CorreosWebService(wsCreds);
 
         // Step 1: Token
+        console.log('[correos-test] Step 1: requesting token...');
         let t = Date.now();
         try {
             await ws.getSoapClient().getTokenManager().getToken();
-            results.push({ step: 'token', ok: true, ms: Date.now() - t });
+            const elapsed = Date.now() - t;
+            console.log(`[correos-test] Step 1: token OK (${elapsed}ms)`);
+            results.push({ step: 'token', ok: true, ms: elapsed });
         } catch (e: any) {
-            results.push({ step: 'token', ok: false, ms: Date.now() - t, detail: e.message });
+            const elapsed = Date.now() - t;
+            console.error(`[correos-test] Step 1: token FAILED (${elapsed}ms): ${e.message}`);
+            results.push({ step: 'token', ok: false, ms: elapsed, detail: e.message });
         }
 
         // Step 2: SOAP — list provinces (lightest call)
+        console.log('[correos-test] Step 2: calling SOAP ccrCodProvincia...');
         t = Date.now();
         try {
             const prov = await ws.getSoapClient().getProvincias();
             const count = prov.Provincias?.length ?? 0;
-            results.push({ step: 'soap_provincias', ok: prov.CodRespuesta === '00', ms: Date.now() - t, detail: `${count} provinces` });
+            const elapsed = Date.now() - t;
+            console.log(`[correos-test] Step 2: provinces OK (${elapsed}ms, ${count} items)`);
+            results.push({ step: 'soap_provincias', ok: prov.CodRespuesta === '00', ms: elapsed, detail: `${count} provinces` });
         } catch (e: any) {
-            results.push({ step: 'soap_provincias', ok: false, ms: Date.now() - t, detail: e.message });
+            const elapsed = Date.now() - t;
+            console.error(`[correos-test] Step 2: provinces FAILED (${elapsed}ms): ${e.message}`);
+            results.push({ step: 'soap_provincias', ok: false, ms: elapsed, detail: e.message });
         }
 
         const allOk = results.every((r) => r.ok);

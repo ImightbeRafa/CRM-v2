@@ -28,6 +28,9 @@
     },
     "src/app/api/logistics/correos-config/route.ts": {
       "maxDuration": 15
+    },
+    "src/app/api/logistics/correos-test/route.ts": {
+      "maxDuration": 120
     }
   },
   "crons": [

@@ -40,6 +40,7 @@ const TRANSIENT_PATTERNS = [
   'timeout',
   'network error',
   'ENOTFOUND',
+  'fetch failed',
 ];
 
 function isTransientError(err: any): boolean {

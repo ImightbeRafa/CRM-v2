@@ -1,4 +1,5 @@
 import type { CorreosWSCredentials, TokenRequest } from './types';
+import { correosTokenHttp } from './http';
 
 const TOKEN_URL = 'https://servicios.correos.go.cr:442/Token/authenticate';
 const TOKEN_TTL_MS = 4 * 60 * 1000; // 4 minutes (tokens expire at 5 min)
@@ -28,16 +29,17 @@ export class CorreosTokenManager {
       Sistema: this.credentials.sistema,
     };
 
-    const res = await fetch(TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    const rawBody = await res.text();
-
-    if (!res.ok) {
-      throw new Error(`Correos token auth failed (${res.status})`);
+    let rawBody: string;
+    try {
+      const res = await correosTokenHttp.post(TOKEN_URL, payload, {
+        transformResponse: [(data: any) => data], // keep raw string, don't auto-parse JSON
+      });
+      rawBody = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+    } catch (err: any) {
+      if (err.response) {
+        throw new Error(`Correos token auth failed (${err.response.status})`);
+      }
+      throw new Error(`Correos token auth network error: ${err.message}`);
     }
 
     let token: string | undefined;

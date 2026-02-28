@@ -10,6 +10,12 @@ const bundleAnalyzer = withBundleAnalyzer({
 const nextConfig = {
   output: 'standalone',
   poweredByHeader: false,
+  outputFileTracingIncludes: {
+    '/api/logistics/guias/generate-bulk': ['./src/lib/correos/wsdl/**/*'],
+    '/api/shipping/generate-guia': ['./src/lib/correos/wsdl/**/*'],
+    '/api/logistics/tracking': ['./src/lib/correos/wsdl/**/*'],
+    '/api/logistics/tarifa': ['./src/lib/correos/wsdl/**/*'],
+  },
   compress: true,
   reactStrictMode: true,
   eslint: {
@@ -23,7 +29,7 @@ const nextConfig = {
     // Add other environment variables here
   },
   // Server-side packages that should not be bundled
-  serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium'],
+  serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium', 'soap'],
 
   // Image configuration
   images: {

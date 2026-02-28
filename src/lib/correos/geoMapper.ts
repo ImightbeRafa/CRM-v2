@@ -37,7 +37,7 @@ function normalize(s: string): string {
 
 function findBestMatch(items: GeoEntry[], name: string): GeoEntry | null {
   const needle = normalize(name);
-  if (!needle) return items[0] ?? null;
+  if (!needle) return null;
 
   const exact = items.find((i) => normalize(i.name) === needle);
   if (exact) return exact;

@@ -1,4 +1,7 @@
 import * as soap from 'soap';
+import * as path from 'path';
+import * as fs from 'fs';
+import { fileURLToPath } from 'url';
 import { CorreosTokenManager } from './tokenManager';
 import type {
   CorreosWSCredentials,
@@ -15,28 +18,62 @@ import type {
   CcrRespuestaTracking,
 } from './types';
 
-const WSDL_URL =
+const SOAP_ENDPOINT =
+  'http://amistad.correos.go.cr:84/wsAppCorreos.wsAppCorreos.svc';
+
+// Remote WSDL URL — only used as fallback when local bundle is unavailable
+const REMOTE_WSDL =
   'http://amistad.correos.go.cr:84/wsAppCorreos.wsAppCorreos.svc?wsdl';
 
 const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 1_000;
+const RETRY_DELAY_MS = 2_000;
+const SOAP_TIMEOUT_MS = 120_000;
 
-const TRANSIENT_ERRORS = [
+const TRANSIENT_PATTERNS = [
   'socket hang up',
   'ECONNRESET',
   'ECONNREFUSED',
   'ETIMEDOUT',
   'EPIPE',
   'EAI_AGAIN',
+  'timeout',
+  'network error',
+  'ENOTFOUND',
 ];
 
 function isTransientError(err: any): boolean {
-  const msg = String(err?.message ?? err ?? '');
-  return TRANSIENT_ERRORS.some((e) => msg.includes(e));
+  const msg = String(err?.message ?? err ?? '').toLowerCase();
+  return TRANSIENT_PATTERNS.some((p) => msg.includes(p));
 }
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Resolve the local WSDL path. Tries multiple locations so it works in:
+ *  - Local dev (process.cwd() = project root)
+ *  - Vercel standalone (files traced via outputFileTracingIncludes)
+ *  - ESM import.meta.url fallback
+ */
+function resolveWsdlPath(): string | null {
+  let esmDir: string | undefined;
+  try {
+    esmDir = path.dirname(fileURLToPath(import.meta.url));
+  } catch { /* not available in all bundlers */ }
+
+  const candidates = [
+    path.join(process.cwd(), 'src', 'lib', 'correos', 'wsdl', 'correos.wsdl'),
+    esmDir ? path.join(esmDir, 'wsdl', 'correos.wsdl') : '',
+    path.join(process.cwd(), 'wsdl', 'correos.wsdl'),
+  ].filter(Boolean);
+
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch { /* ignore */ }
+  }
+  return null;
 }
 
 type SoapClient = soap.Client;
@@ -53,10 +90,20 @@ export class CorreosSoapClient {
 
   private getClient(): Promise<SoapClient> {
     if (!this.clientPromise) {
+      const localWsdl = resolveWsdlPath();
+      const wsdlSource = localWsdl || REMOTE_WSDL;
+
+      console.log(`[CorreosSoap] Loading WSDL from ${localWsdl ? 'local bundle' : 'remote URL'}`);
+
       this.clientPromise = soap
-        .createClientAsync(WSDL_URL, {
+        .createClientAsync(wsdlSource, {
           forceSoap12Headers: false,
-          wsdl_options: { timeout: 30_000 },
+          endpoint: SOAP_ENDPOINT,
+          wsdl_options: { timeout: SOAP_TIMEOUT_MS },
+        })
+        .then((client) => {
+          client.setEndpoint(SOAP_ENDPOINT);
+          return client;
         })
         .catch((err) => {
           this.clientPromise = null;
@@ -83,16 +130,21 @@ export class CorreosSoapClient {
 
         client.addHttpHeader('Authorization', `Bearer ${token}`);
 
-        const [result] = await client[`${method}Async`](args);
+        const [result] = await (client as any)[`${method}Async`](args, {
+          timeout: SOAP_TIMEOUT_MS,
+        });
 
         const body: T = result?.[`${method}Result`] ?? result;
 
+        // Code 20 = expired token → refresh and retry once
         const code = (body as any)?.CodRespuesta;
         if (code === '20') {
           this.tokenManager.invalidate();
           const freshToken = await this.tokenManager.getToken();
           client.addHttpHeader('Authorization', `Bearer ${freshToken}`);
-          const [retryResult] = await client[`${method}Async`](args);
+          const [retryResult] = await (client as any)[`${method}Async`](args, {
+            timeout: SOAP_TIMEOUT_MS,
+          });
           return retryResult?.[`${method}Result`] ?? retryResult;
         }
 
@@ -100,11 +152,12 @@ export class CorreosSoapClient {
       } catch (err: any) {
         lastError = err;
         if (isTransientError(err) && attempt < MAX_RETRIES) {
+          const delay = RETRY_DELAY_MS * attempt;
           console.warn(
-            `[CorreosSoap] Transient error on ${method} (attempt ${attempt}/${MAX_RETRIES}): ${err.message}. Retrying in ${RETRY_DELAY_MS}ms...`
+            `[CorreosSoap] Transient error on ${method} (attempt ${attempt}/${MAX_RETRIES}): ${err.message}. Retrying in ${delay}ms...`
           );
           this.resetClient();
-          await sleep(RETRY_DELAY_MS * attempt);
+          await sleep(delay);
           continue;
         }
         throw err;
@@ -115,9 +168,6 @@ export class CorreosSoapClient {
   }
 
   // ─── Helpers to unwrap SOAP array containers ───────────────────────────────
-  // The SOAP response nests arrays inside container objects, e.g.:
-  //   Provincias: { ccrItemGeografico: [...] }
-  // We normalize these to flat arrays for consumer convenience.
 
   private static unwrapArray<T>(container: any, innerKey: string): T[] | null {
     if (!container) return null;

@@ -23,11 +23,16 @@ export async function POST(req: NextRequest) {
         const body = await req.json();
         const { provinciaOrigen, cantonOrigen, distritoOrigen, provinciaDestino, cantonDestino, distritoDestino, peso } = body;
 
-        if (!provinciaOrigen || !cantonOrigen || !distritoOrigen || !provinciaDestino || !cantonDestino || !distritoDestino || peso == null) {
-            return NextResponse.json(
-                { error: 'Required fields: provinciaOrigen, cantonOrigen, distritoOrigen, provinciaDestino, cantonDestino, distritoDestino, peso' },
-                { status: 400 }
-            );
+        const locationFields = { provinciaOrigen, cantonOrigen, distritoOrigen, provinciaDestino, cantonDestino, distritoDestino };
+        for (const [key, val] of Object.entries(locationFields)) {
+            if (!val || typeof val !== 'string' || val.length > 100) {
+                return NextResponse.json({ error: `Invalid or missing field: ${key}` }, { status: 400 });
+            }
+        }
+
+        const numPeso = Number(peso);
+        if (!Number.isFinite(numPeso) || numPeso <= 0 || numPeso > 100_000) {
+            return NextResponse.json({ error: 'peso must be a positive number (max 100000g)' }, { status: 400 });
         }
 
         const credRows = await prisma.$queryRaw<{ key: string; value: string }[]>`
@@ -61,12 +66,12 @@ export async function POST(req: NextRequest) {
             provinciaDestino,
             cantonDestino,
             distritoDestino,
-            peso: Number(peso),
+            peso: numPeso,
         });
 
         return NextResponse.json(result);
     } catch (e: any) {
         console.error('[logistics/tarifa]', e);
-        return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+        return NextResponse.json({ success: false, error: 'Rate quote request failed. Please try again.' }, { status: 500 });
     }
 }

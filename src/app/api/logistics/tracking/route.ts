@@ -16,9 +16,9 @@ export async function GET(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
     if (guard) return guard;
 
-    const envioId = req.nextUrl.searchParams.get('envioId');
-    if (!envioId) {
-        return NextResponse.json({ error: 'envioId query parameter is required' }, { status: 400 });
+    const envioId = req.nextUrl.searchParams.get('envioId')?.trim();
+    if (!envioId || envioId.length > 30 || !/^[A-Za-z0-9-]+$/.test(envioId)) {
+        return NextResponse.json({ error: 'envioId must be a valid tracking number (alphanumeric, max 30 chars)' }, { status: 400 });
     }
 
     try {
@@ -51,6 +51,6 @@ export async function GET(req: NextRequest) {
         return NextResponse.json(result);
     } catch (e: any) {
         console.error('[logistics/tracking]', e);
-        return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+        return NextResponse.json({ success: false, error: 'Tracking request failed. Please try again.' }, { status: 500 });
     }
 }

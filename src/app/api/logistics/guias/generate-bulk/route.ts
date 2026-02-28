@@ -17,7 +17,11 @@ interface VerifiedOrder {
     deliveryType: 'Domicilio' | 'Sucursal' | 'Punto de correo';
 }
 
-// Sender defaults (used by WS mode when no explicit sender is configured)
+/** Messages from the Correos API are safe to surface to admin users. */
+function isCorreosError(msg: string): boolean {
+    return /^ccr(GenerarGuia|RegistroEnvio|Tarifa) failed:/.test(msg);
+}
+
 const DEFAULT_SENDER = {
     name: 'Pymexpress',
     address: 'San José, Costa Rica',
@@ -136,10 +140,13 @@ export async function POST(req: NextRequest) {
                     });
                 } catch (err: any) {
                     console.error(`[WS] Exception generating guía for ${verified.orderId}:`, err.message);
+                    const safeMsg = isCorreosError(err.message)
+                        ? err.message
+                        : 'Guía generation failed due to a connection or service error';
                     results.push({
                         success: false,
                         orderId: verified.orderId,
-                        error: err.message,
+                        error: safeMsg,
                     });
                 }
             }
@@ -249,7 +256,7 @@ export async function POST(req: NextRequest) {
         const processingTime = Date.now() - startTime;
         console.error('[Logistics Guía Bulk] Error:', error);
         return NextResponse.json(
-            { error: 'Failed to generate guías', message: error.message || 'Unknown error', processingTime },
+            { error: 'Failed to generate guías', processingTime },
             { status: 500 }
         );
     }
@@ -299,7 +306,7 @@ async function persistGuiaResults(
 
                 try {
                     await prisma.$executeRaw`
-                        INSERT INTO lm_order_events (order_id, event_type, payload)
+                        INSERT INTO lm_order_events (crm_order_id, event_type, payload)
                         VALUES (${dbOrder.id}, 'guia_generated', ${JSON.stringify({
                             carrier: 'correos',
                             guiaNumber: result.guiaNumber,

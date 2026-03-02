@@ -96,11 +96,11 @@ export async function GET(req: NextRequest) {
 
         // Enrich with lm_orders data (logistics carrier + logistics status)
         const orderIds = orders.map((o) => o.id);
-        const lmData: Record<string, { lmCarrier: string | null; lmStatus: string | null; isContraEntrega: boolean; contraEntregaCollected: boolean; archivedAt: string | null }> = {};
+        const lmData: Record<string, { lmCarrier: string | null; lmStatus: string | null; isContraEntrega: boolean; contraEntregaCollected: boolean; archivedAt: string | null; correosShippingCost: number | null }> = {};
         if (orderIds.length > 0) {
             try {
-                const lmRows = await prisma.$queryRaw<{ crm_order_id: string; carrier: string | null; status: string | null; is_contra_entrega: boolean; contraentrega_collected: boolean; archived_at: string | null }[]>`
-                    SELECT crm_order_id, carrier, status, is_contra_entrega, contraentrega_collected, archived_at FROM lm_orders
+                const lmRows = await prisma.$queryRaw<{ crm_order_id: string; carrier: string | null; status: string | null; is_contra_entrega: boolean; contraentrega_collected: boolean; archived_at: string | null; correos_shipping_cost: number | null }[]>`
+                    SELECT crm_order_id, carrier, status, is_contra_entrega, contraentrega_collected, archived_at, correos_shipping_cost FROM lm_orders
                     WHERE crm_order_id = ANY(${orderIds}::text[])
                 `;
                 for (const row of lmRows) {
@@ -110,6 +110,7 @@ export async function GET(req: NextRequest) {
                         isContraEntrega: row.is_contra_entrega ?? false,
                         contraEntregaCollected: row.contraentrega_collected ?? false,
                         archivedAt: row.archived_at ?? null,
+                        correosShippingCost: row.correos_shipping_cost != null ? Number(row.correos_shipping_cost) : null,
                     };
                 }
             } catch {
@@ -124,6 +125,7 @@ export async function GET(req: NextRequest) {
             contraEntregaCollected: lmData[o.id]?.contraEntregaCollected ?? false,
             lmStatus: lmData[o.id]?.lmStatus ?? null,
             archivedAt: lmData[o.id]?.archivedAt ?? null,
+            correosShippingCost: lmData[o.id]?.correosShippingCost ?? null,
         }));
 
         // Filter by carrier

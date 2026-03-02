@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { FileDown, Printer, TrendingUp, Package, Truck, Mail, Calendar, DollarSign, RefreshCw } from 'lucide-react';
+import { FileDown, Printer, TrendingUp, Package, Truck, Mail, Calendar, DollarSign, RefreshCw, AlertTriangle } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14 } as const;
@@ -46,8 +46,8 @@ export default function ReportsPage() {
             [`Cuenta: ${getTenantName(tenantId)}`, '', '', ''],
             ['', '', '', ''],
             ['=== CORREOS DE COSTA RICA ===', '', '', ''],
-            ['Paquetes', 'Tarifa x paq', 'Costo Envío', 'Manejo', 'Total'],
-            [r.correos.packages, fmt(r.correos.ratePerPackage), fmt(r.correos.shippingCost), fmt(r.correos.handlingCost), fmt(r.correos.montoTotal)],
+            ['Paquetes', 'Costo Envío (por orden)', 'Manejo', 'Total'],
+            [r.correos.packages, fmt(r.correos.shippingCost), fmt(r.correos.handlingCost), fmt(r.correos.montoTotal)],
             ['', '', '', ''],
             ['=== GREEN DELIVERY (MENSAJERÍA) ===', '', '', ''],
             ['Fecha', 'Paquetes', 'Colones', 'Contra Entrega'],
@@ -137,6 +137,25 @@ export default function ReportsPage() {
                         </div>
                     </div>
 
+                    {/* Entregado-only notice */}
+                    <div style={{ ...glass, padding: '10px 18px', marginBottom: 14, borderColor: 'rgba(96,165,250,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Mail size={13} style={{ color: '#60a5fa', flexShrink: 0 }} />
+                        <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, margin: 0 }}>Este reporte solo refleja órdenes con estado <strong style={{ color: '#34d399' }}>Entregado</strong>. Los costos de envío se contabilizan únicamente al completar la entrega.</p>
+                    </div>
+
+                    {/* Warning: Correos orders missing shipping cost */}
+                    {report.correos.pendingCostCount > 0 && (
+                        <div style={{ padding: '14px 20px', marginBottom: 16, borderRadius: 12, background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.35)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                            <AlertTriangle size={18} style={{ color: '#fbbf24', flexShrink: 0, marginTop: 1 }} />
+                            <div>
+                                <p style={{ color: '#fbbf24', fontWeight: 700, fontSize: 13, margin: '0 0 4px' }}>Costos de Correos CR incompletos</p>
+                                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12.5, margin: 0, lineHeight: 1.5 }}>
+                                    Hay <strong style={{ color: '#fbbf24' }}>{report.correos.pendingCostCount}</strong> {report.correos.pendingCostCount === 1 ? 'orden de Correos de Costa Rica que no tiene' : 'órdenes de Correos de Costa Rica que no tienen'} un costo de envío asignado en la sección de <strong style={{ color: '#60a5fa' }}>Contabilidad → Correos de Costa Rica</strong>. Los totales de este reporte pueden no reflejar los costos reales hasta que se ingresen todos los montos.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Grand total KPIs */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 22 }}>
                         {[
@@ -165,7 +184,7 @@ export default function ReportsPage() {
                             </div>
                             {[
                                 { label: 'Paquetes enviados', value: `${report.correos.packages} paq` },
-                                { label: `Tarifa (${fmt(report.correos.ratePerPackage)} × ${report.correos.packages})`, value: fmt(report.correos.shippingCost) },
+                                { label: `Costo envío (por orden)`, value: fmt(report.correos.shippingCost) },
                                 { label: `Manejo (${fmt(report.correos.handlingRate)} × ${report.correos.packages})`, value: fmt(report.correos.handlingCost) },
                             ].map(({ label, value }) => (
                                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
@@ -173,6 +192,11 @@ export default function ReportsPage() {
                                     <span style={{ color: '#F2F2F2', fontWeight: 600, fontSize: 13 }}>{value}</span>
                                 </div>
                             ))}
+                            {report.correos.pendingCostCount > 0 && (
+                                <div style={{ padding: '8px 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ color: '#fbbf24', fontSize: 12 }}>⚠ {report.correos.pendingCostCount} {report.correos.pendingCostCount === 1 ? 'orden sin' : 'órdenes sin'} costo de envío asignado</span>
+                                </div>
+                            )}
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 0', marginTop: 4 }}>
                                 <span style={{ color: '#60a5fa', fontWeight: 700, fontSize: 13 }}>Monto Total</span>
                                 <span style={{ color: '#60a5fa', fontWeight: 700, fontSize: 16 }}>{fmt(report.correos.montoTotal)}</span>

@@ -40,10 +40,12 @@ export async function GET(req: NextRequest) {
         const orders = await prisma.$queryRawUnsafe<any[]>(`
             SELECT
                 o.id, o."orderId", o."customerName", o.total, o.timestamp, o.province,
-                lm.carrier, lm.status, lm.is_contra_entrega, lm.contraentrega_collected
+                lm.carrier, lm.status, lm.is_contra_entrega, lm.contraentrega_collected,
+                lm.correos_shipping_cost
             FROM "Order" o
             INNER JOIN lm_orders lm ON lm.crm_order_id = o.id
             WHERE o."tenantId" = $1
+              AND lm.status = 'Entregado'
             ${dateSql}
             ORDER BY o.timestamp ASC
         `, ...params);
@@ -76,7 +78,9 @@ export async function GET(req: NextRequest) {
         `, staffName);
 
         // 6. Cost calculations
-        const correosCost = correoOrders.length * correosRate;
+        // Correos: use per-order correos_shipping_cost (manually entered in Contabilidad)
+        const correosCost = correoOrders.reduce((s, o) => s + (o.correos_shipping_cost != null ? Number(o.correos_shipping_cost) : 0), 0);
+        const correosPendingCost = correoOrders.filter(o => o.correos_shipping_cost == null).length;
         const correosMontoCrmTotal = correoOrders.reduce((s, o) => s + Number(o.total), 0);
         const correosHandling = correoOrders.length * handlingRate;
         const correosMontoTotal = correosCost + correosHandling;
@@ -98,6 +102,7 @@ export async function GET(req: NextRequest) {
                 packages: correoOrders.length,
                 ratePerPackage: correosRate,
                 shippingCost: correosCost,
+                pendingCostCount: correosPendingCost,
                 handlingRate,
                 handlingCost: correosHandling,
                 crmTotal: correosMontoCrmTotal,

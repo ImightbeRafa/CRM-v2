@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Package, TrendingUp, Truck, Mail, FileDown, CheckCircle, Calendar, DollarSign, PlusCircle, Trash2, AlertCircle, Wallet } from 'lucide-react';
+import { Package, TrendingUp, Truck, Mail, FileDown, CheckCircle, Calendar, DollarSign, PlusCircle, Trash2, AlertCircle, Wallet, Save, RefreshCw } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 
 interface Rates { mensajeria_rate: number; correos_rate: number; handling_rate: number; salary_daily_rate: number; }
@@ -10,7 +10,7 @@ const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px
 const glassHi = { background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 14 } as const;
 const fmt = (n: number) => `₡${n.toLocaleString('es-CR')}`;
 
-type Tab = 'resumen' | 'contra-entregas' | 'dias-trabajados' | 'gd-balance';
+type Tab = 'resumen' | 'correos-cr' | 'contra-entregas' | 'dias-trabajados' | 'gd-balance';
 
 // ─── Resumen Tab ──────────────────────────────────────────────────────────────
 function ResumenTab({ rates }: { rates: Rates }) {
@@ -21,7 +21,7 @@ function ResumenTab({ rates }: { rates: Rates }) {
 
     interface Row { tenantId: string; tenantName: string; total: number; mensajeria: number; correos: number; unassigned: number; mensajeriaCost: number; correosCost: number; handling: number; contraEntrega: number; }
     const [rows, setRows] = useState<Row[]>([]);
-    const [totals, setTotals] = useState({ orders: 0, mensajeria: 0, correos: 0, unassigned: 0, mensajeriaCost: 0, correosCost: 0, handling: 0 });
+    const [totals, setTotals] = useState({ orders: 0, mensajeria: 0, correos: 0, unassigned: 0, mensajeriaCost: 0, correosCost: 0, handling: 0, pendingCorreosCost: 0 });
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -30,19 +30,22 @@ function ResumenTab({ rates }: { rates: Rates }) {
             if (dateFrom) p.set('dateFrom', new Date(dateFrom).toISOString());
             if (dateTo) { const d = new Date(dateTo); d.setHours(23, 59, 59); p.set('dateTo', d.toISOString()); }
             const orders = ((await (await fetch(`/api/logistics/orders?${p}`)).json()).orders) || [];
+            // Only count orders that have reached Entregado status
+            const entregados = orders.filter((o: any) => o.lmStatus === 'Entregado');
             const byTenant: Record<string, Row> = {};
-            for (const o of orders) {
+            for (const o of entregados) {
                 if (!byTenant[o.tenantId]) byTenant[o.tenantId] = { tenantId: o.tenantId, tenantName: getTenantName(o.tenantId), total: 0, mensajeria: 0, correos: 0, unassigned: 0, mensajeriaCost: 0, correosCost: 0, handling: 0, contraEntrega: 0 };
                 const row = byTenant[o.tenantId];
                 row.total++;
                 if (o.lmCarrier === 'mensajeria') { row.mensajeria++; row.mensajeriaCost += rates.mensajeria_rate; row.handling += rates.handling_rate; }
-                else if (o.lmCarrier === 'correos') { row.correos++; row.correosCost += rates.correos_rate; row.handling += rates.handling_rate; }
+                else if (o.lmCarrier === 'correos') { row.correos++; row.correosCost += (o.correosShippingCost != null ? Number(o.correosShippingCost) : 0); row.handling += rates.handling_rate; }
                 else { row.unassigned++; }
                 if (o.isContraEntrega) row.contraEntrega++;
             }
             const rowList = Object.values(byTenant).sort((a, b) => b.total - a.total);
             setRows(rowList);
-            setTotals({ orders: orders.length, mensajeria: rowList.reduce((s, r) => s + r.mensajeria, 0), correos: rowList.reduce((s, r) => s + r.correos, 0), unassigned: rowList.reduce((s, r) => s + r.unassigned, 0), mensajeriaCost: rowList.reduce((s, r) => s + r.mensajeriaCost, 0), correosCost: rowList.reduce((s, r) => s + r.correosCost, 0), handling: rowList.reduce((s, r) => s + r.handling, 0) });
+            const pendingCorreosCost = entregados.filter((o: any) => o.lmCarrier === 'correos' && o.correosShippingCost == null).length;
+            setTotals({ orders: entregados.length, mensajeria: rowList.reduce((s, r) => s + r.mensajeria, 0), correos: rowList.reduce((s, r) => s + r.correos, 0), unassigned: rowList.reduce((s, r) => s + r.unassigned, 0), mensajeriaCost: rowList.reduce((s, r) => s + r.mensajeriaCost, 0), correosCost: rowList.reduce((s, r) => s + r.correosCost, 0), handling: rowList.reduce((s, r) => s + r.handling, 0), pendingCorreosCost });
         } catch (e) { console.error(e); } finally { setLoading(false); }
     }, [dateFrom, dateTo, rates, tenants]);
 
@@ -80,6 +83,22 @@ function ResumenTab({ rates }: { rates: Rates }) {
 
             {loading ? <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)' }}>Cargando...</div> : (
                 <>
+                    {/* Entregado-only notice */}
+                    <div style={{ ...glass, padding: '10px 18px', marginBottom: 12, borderColor: 'rgba(96,165,250,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Mail size={13} style={{ color: '#60a5fa', flexShrink: 0 }} />
+                        <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, margin: 0 }}>Solo se reflejan órdenes con estado <strong style={{ color: '#34d399' }}>Entregado</strong>. Los costos se contabilizan únicamente al completar la entrega.</p>
+                    </div>
+
+                    {/* Warning: Correos orders missing shipping cost */}
+                    {totals.pendingCorreosCost > 0 && (
+                        <div style={{ padding: '12px 18px', marginBottom: 14, borderRadius: 12, background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.35)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <AlertCircle size={16} style={{ color: '#fbbf24', flexShrink: 0 }} />
+                            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, margin: 0 }}>
+                                <strong style={{ color: '#fbbf24' }}>{totals.pendingCorreosCost}</strong> {totals.pendingCorreosCost === 1 ? 'orden de Correos CR sin' : 'órdenes de Correos CR sin'} costo de envío asignado. Ingrese los montos en la pestaña <strong style={{ color: '#60a5fa' }}>Correos de Costa Rica</strong> para que los totales sean correctos.
+                            </p>
+                        </div>
+                    )}
+
                     {/* KPI Cards */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 22 }}>
                         {[{ label: 'Total Paquetes', value: totals.orders, color: '#8b87ff', icon: <Package size={17} /> },
@@ -100,7 +119,7 @@ function ResumenTab({ rates }: { rates: Rates }) {
                     {/* Cost breakdown */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 22 }}>
                         {[{ label: 'Costo Mensajería', value: totals.mensajeriaCost, color: '#8b87ff', note: `${totals.mensajeria} × ${fmt(rates.mensajeria_rate)}` },
-                        { label: 'Costo Correos', value: totals.correosCost, color: '#60a5fa', note: `${totals.correos} × ${fmt(rates.correos_rate)}` },
+                        { label: 'Costo Correos', value: totals.correosCost, color: '#60a5fa', note: `${totals.correos} paq (costo individual)` },
                         { label: 'Total Manejo', value: totals.handling, color: '#34d399', note: `${totals.mensajeria + totals.correos} × ${fmt(rates.handling_rate)}` },
                         ].map(({ label, value, color, note }) => (
                             <div key={label} style={{ ...glass, padding: '14px 18px', borderColor: `${color}20` }}>
@@ -172,6 +191,196 @@ function ResumenTab({ rates }: { rates: Rates }) {
                         </table>
                     </div>
                 </>
+            )}
+        </div>
+    );
+}
+
+// ─── Correos de Costa Rica Tab ────────────────────────────────────────────────
+function CorreosCRTab() {
+    const { tenants, getTenantName, getTenantColor } = useTenantConfig();
+    const [orders, setOrders] = useState<any[]>([]);
+    const [summary, setSummary] = useState({ totalOrders: 0, withCostCount: 0, pendingCostCount: 0, totalCost: 0 });
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState<string | null>(null);
+    const [costInputs, setCostInputs] = useState<Record<string, string>>({});
+    const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+    const [filterTenant, setFilterTenant] = useState('');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        try {
+            const p = new URLSearchParams();
+            if (filterTenant) p.set('tenantId', filterTenant);
+            if (dateFrom) p.set('dateFrom', new Date(dateFrom).toISOString());
+            if (dateTo) { const d = new Date(dateTo); d.setHours(23, 59, 59); p.set('dateTo', d.toISOString()); }
+            const d = await (await fetch(`/api/logistics/correos-costs?${p}`)).json();
+            setOrders(d.orders || []);
+            setSummary(d.summary || { totalOrders: 0, withCostCount: 0, pendingCostCount: 0, totalCost: 0 });
+            // Initialize cost inputs with existing values
+            const inputs: Record<string, string> = {};
+            for (const o of (d.orders || [])) {
+                inputs[o.id] = o.correos_shipping_cost != null ? String(Number(o.correos_shipping_cost)) : '';
+            }
+            setCostInputs(inputs);
+        } catch (e) { console.error(e); } finally { setLoading(false); }
+    }, [filterTenant, dateFrom, dateTo]);
+
+    useEffect(() => { load(); }, [load]);
+
+    async function saveCost(orderId: string) {
+        const val = costInputs[orderId];
+        if (val === '' || isNaN(Number(val)) || Number(val) < 0) return;
+        setSaving(orderId);
+        try {
+            const res = await fetch('/api/logistics/correos-costs', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderId, cost: Number(val) }),
+            });
+            if (res.ok) {
+                setSavedIds(prev => new Set(prev).add(orderId));
+                setTimeout(() => setSavedIds(prev => { const n = new Set(prev); n.delete(orderId); return n; }), 2000);
+                // Update local summary
+                const order = orders.find(o => o.id === orderId);
+                if (order && order.correos_shipping_cost == null) {
+                    setSummary(prev => ({
+                        ...prev,
+                        withCostCount: prev.withCostCount + 1,
+                        pendingCostCount: prev.pendingCostCount - 1,
+                        totalCost: prev.totalCost + Number(val),
+                    }));
+                } else if (order) {
+                    setSummary(prev => ({
+                        ...prev,
+                        totalCost: prev.totalCost - Number(order.correos_shipping_cost) + Number(val),
+                    }));
+                }
+                // Update order locally
+                setOrders(prev => prev.map(o => o.id === orderId ? { ...o, correos_shipping_cost: Number(val) } : o));
+            }
+        } finally { setSaving(null); }
+    }
+
+    // Group by tenant
+    const byTenant: Record<string, any[]> = {};
+    for (const o of orders) {
+        if (!byTenant[o.tenantId]) byTenant[o.tenantId] = [];
+        byTenant[o.tenantId].push(o);
+    }
+    const tenantGroups = Object.entries(byTenant).sort((a, b) => b[1].length - a[1].length);
+
+    return (
+        <div>
+            {/* KPI Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
+                {[{ label: 'Total Entregados', value: summary.totalOrders, color: '#60a5fa' },
+                { label: 'Con Costo', value: summary.withCostCount, color: '#34d399' },
+                { label: 'Sin Costo', value: summary.pendingCostCount, color: '#fbbf24' },
+                { label: 'Costo Total', value: fmt(summary.totalCost), color: '#8b87ff' },
+                ].map(({ label, value, color }) => (
+                    <div key={label} style={{ ...glassHi, padding: '16px 18px' }}>
+                        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</p>
+                        <p style={{ color, fontSize: 24, fontWeight: 700, margin: 0 }}>{value}</p>
+                    </div>
+                ))}
+            </div>
+
+            {/* Filters */}
+            <div style={{ display: 'flex', gap: 10, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Mail size={14} style={{ color: 'rgba(255,255,255,0.3)' }} />
+                <select value={filterTenant} onChange={e => setFilterTenant(e.target.value)}
+                    style={{ padding: '7px 14px', ...glass, color: filterTenant ? '#F2F2F2' : 'rgba(255,255,255,0.3)', fontSize: 13, outline: 'none', cursor: 'pointer' }}>
+                    <option value="">Todas las cuentas</option>
+                    {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                    style={{ padding: '7px 12px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', borderRadius: 8 }} />
+                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>→</span>
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                    style={{ padding: '7px 12px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', borderRadius: 8 }} />
+                <button onClick={load} style={{ padding: '7px 16px', ...glass, color: '#60a5fa', cursor: 'pointer', fontSize: 13, borderColor: 'rgba(96,165,250,0.2)' }}>
+                    Aplicar
+                </button>
+                {(filterTenant || dateFrom || dateTo) && <button onClick={() => { setFilterTenant(''); setDateFrom(''); setDateTo(''); }} style={{ padding: '7px 12px', background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 12 }}>✕ Limpiar</button>}
+            </div>
+
+            {summary.pendingCostCount > 0 && (
+                <div style={{ ...glass, padding: '12px 18px', marginBottom: 18, borderColor: 'rgba(251,191,36,0.3)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <AlertCircle size={16} style={{ color: '#fbbf24', flexShrink: 0 }} />
+                    <p style={{ color: '#fbbf24', fontSize: 12.5, margin: 0 }}>
+                        <strong>{summary.pendingCostCount}</strong> {summary.pendingCostCount === 1 ? 'orden necesita' : 'órdenes necesitan'} que se ingrese el costo de envío de Correos CR para reflejarse correctamente en los reportes.
+                    </p>
+                </div>
+            )}
+
+            {loading ? <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)' }}>Cargando...</div> : (
+                orders.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)' }}>
+                        <Mail size={32} style={{ display: 'block', margin: '0 auto 12px', opacity: 0.3 }} />
+                        <p style={{ margin: 0, fontSize: 13 }}>No hay órdenes de Correos CR con estado Entregado</p>
+                    </div>
+                ) : tenantGroups.map(([tid, tOrders]) => {
+                    const tc = getTenantColor(tid);
+                    const tPending = tOrders.filter(o => o.correos_shipping_cost == null).length;
+                    const tTotal = tOrders.reduce((s, o) => s + (o.correos_shipping_cost != null ? Number(o.correos_shipping_cost) : 0), 0);
+                    return (
+                        <div key={tid} style={{ ...glass, overflow: 'hidden', marginBottom: 16 }}>
+                            <div style={{ padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: tc, boxShadow: `0 0 6px ${tc}` }} />
+                                    <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 14, margin: 0 }}>{getTenantName(tid)}</p>
+                                    <span style={{ padding: '2px 8px', borderRadius: 20, background: 'rgba(96,165,250,0.15)', color: '#60a5fa', fontSize: 11, fontWeight: 600 }}>{tOrders.length} paq</span>
+                                    {tPending > 0 && <span style={{ padding: '2px 8px', borderRadius: 20, background: 'rgba(251,191,36,0.12)', color: '#fbbf24', fontSize: 11, fontWeight: 600 }}>{tPending} sin costo</span>}
+                                </div>
+                                <span style={{ color: '#60a5fa', fontWeight: 700, fontSize: 14 }}>{fmt(tTotal)}</span>
+                            </div>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                                <thead>
+                                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                                        {['Cliente', 'Ref', 'Fecha', 'Provincia', 'Monto Orden', 'Costo Envío', ''].map(h => (
+                                            <th key={h} style={{ padding: '9px 14px', textAlign: 'left', color: 'rgba(255,255,255,0.3)', fontWeight: 600, fontSize: 10.5, textTransform: 'uppercase' }}>{h}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {tOrders.map((o, idx) => (
+                                        <tr key={o.id} style={{ borderBottom: idx < tOrders.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', background: o.correos_shipping_cost == null ? 'rgba(251,191,36,0.02)' : 'transparent' }} className="lm-table-row">
+                                            <td style={{ padding: '10px 14px', color: '#F2F2F2', fontWeight: 500 }}>{o.customerName}</td>
+                                            <td style={{ padding: '10px 14px', color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>#{o.orderId}</td>
+                                            <td style={{ padding: '10px 14px', color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>{new Date(o.timestamp).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}</td>
+                                            <td style={{ padding: '10px 14px', color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>{o.province || '—'}</td>
+                                            <td style={{ padding: '10px 14px', color: 'rgba(255,255,255,0.5)' }}>{fmt(Number(o.total))}</td>
+                                            <td style={{ padding: '10px 14px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                    <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>₡</span>
+                                                    <input
+                                                        type="number"
+                                                        value={costInputs[o.id] ?? ''}
+                                                        onChange={e => setCostInputs(prev => ({ ...prev, [o.id]: e.target.value }))}
+                                                        placeholder="0"
+                                                        style={{ width: 90, padding: '5px 8px', borderRadius: 6, border: `1px solid ${o.correos_shipping_cost != null ? 'rgba(52,211,153,0.3)' : 'rgba(251,191,36,0.4)'}`, background: 'rgba(0,0,0,0.25)', color: o.correos_shipping_cost != null ? '#34d399' : '#fbbf24', fontSize: 13, fontWeight: 700, outline: 'none' }}
+                                                    />
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '10px 14px' }}>
+                                                <button
+                                                    onClick={() => saveCost(o.id)}
+                                                    disabled={saving === o.id || !costInputs[o.id] || isNaN(Number(costInputs[o.id]))}
+                                                    style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid rgba(96,165,250,0.35)', background: 'rgba(96,165,250,0.08)', color: savedIds.has(o.id) ? '#34d399' : '#60a5fa', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                                                    {saving === o.id ? <RefreshCw size={10} style={{ animation: 'spin 1s linear infinite' }} /> : savedIds.has(o.id) ? <CheckCircle size={10} /> : <Save size={10} />}
+                                                    {savedIds.has(o.id) ? 'Guardado' : 'Guardar'}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    );
+                })
             )}
         </div>
     );
@@ -548,6 +757,7 @@ export default function AccountingPage() {
 
     const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
         { id: 'resumen', label: 'Resumen', icon: <TrendingUp size={13} /> },
+        { id: 'correos-cr', label: 'Correos de Costa Rica', icon: <Mail size={13} /> },
         { id: 'contra-entregas', label: 'Contra Entregas', icon: <DollarSign size={13} /> },
         { id: 'dias-trabajados', label: 'Días Trabajados', icon: <Calendar size={13} /> },
         { id: 'gd-balance', label: 'Saldo Green Delivery', icon: <Wallet size={13} /> },
@@ -572,6 +782,7 @@ export default function AccountingPage() {
             </div>
 
             {tab === 'resumen' && <ResumenTab rates={rates} />}
+            {tab === 'correos-cr' && <CorreosCRTab />}
             {tab === 'contra-entregas' && <ContraEntregasTab />}
             {tab === 'dias-trabajados' && <DiasTrabajadosTab dailyRate={rates.salary_daily_rate} />}
             {tab === 'gd-balance' && <GdBalanceTab />}

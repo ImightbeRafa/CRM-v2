@@ -1,5 +1,6 @@
 import https from 'https';
 import type { CorreosWSCredentials, TokenRequest } from './types';
+import { getCorreosProxyAgent } from './proxy';
 
 const TOKEN_URL = new URL('https://servicios.correos.go.cr:447/Token/authenticate');
 const TOKEN_TTL_MS = 4 * 60 * 1000; // 4 minutes (tokens expire at 5 min)
@@ -15,17 +16,19 @@ const tokenCache = new Map<string, { token: string; exp: number }>();
  */
 function httpsPost(url: URL, body: string): Promise<{ statusCode: number; body: string }> {
   return new Promise((resolve, reject) => {
+    const agent = getCorreosProxyAgent();
     const options: https.RequestOptions = {
       hostname: url.hostname,
       port: url.port || 443,
       path: url.pathname + url.search,
       method: 'POST',
+      agent,
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(body),
       },
       timeout: REQUEST_TIMEOUT_MS,
-      servername: url.hostname, // explicit SNI
+      servername: url.hostname,
     };
 
     const req = https.request(options, (res) => {

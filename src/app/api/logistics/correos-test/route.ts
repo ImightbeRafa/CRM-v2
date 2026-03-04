@@ -78,62 +78,79 @@ export async function GET(req: NextRequest) {
     const results: { step: string; ok: boolean; ms: number; detail?: string }[] = [];
 
     try {
-        // Phase 1: TCP connectivity probes (production endpoints)
-        const probes = [
-            { label: 'tcp_token_447',   host: 'servicios.correos.go.cr',  port: 447 },
-            { label: 'tcp_soap_444',    host: 'amistadpro.correos.go.cr', port: 444 },
-            { label: 'tcp_control_443', host: 'google.com',               port: 443 },
-        ];
+        // Phase 0: Proxy configuration check
+        const proxyConfigured = !!process.env.FIXIE_URL;
+        results.push({
+            step: 'proxy_configured',
+            ok: proxyConfigured,
+            ms: 0,
+            detail: proxyConfigured ? 'FIXIE_URL is set' : 'FIXIE_URL not set — direct connections will be used',
+        });
+        console.log(`[correos-test] Proxy: ${proxyConfigured ? 'CONFIGURED (Fixie)' : 'NOT CONFIGURED (direct)'}`);
 
-        console.log('[correos-test] Phase 1: TCP port reachability probes...');
-        const probeResults = await Promise.all(
-            probes.map(async (p) => {
-                const r = await tcpProbe(p.host, p.port);
-                console.log(`[correos-test] ${p.label} (${p.host}:${p.port}): ${r.reachable ? 'OPEN' : 'BLOCKED'} (${r.ms}ms${r.error ? ', ' + r.error : ''})`);
-                return { step: p.label, ok: r.reachable, ms: r.ms, detail: r.reachable ? `${p.host}:${p.port} open` : `${p.host}:${p.port} ${r.error}` };
-            })
-        );
-        results.push(...probeResults);
+        // When proxy is configured, traffic goes through Fixie so direct
+        // TCP/TLS probes are irrelevant. Skip to API calls.
+        let tokenReachable = proxyConfigured;
+        let soapReachable = proxyConfigured;
 
-        const tokenPortOpen = probeResults.find((r) => r.step === 'tcp_token_447')?.ok;
-        const soapPortOpen = probeResults.find((r) => r.step === 'tcp_soap_444')?.ok;
+        if (!proxyConfigured) {
+            // Phase 1: TCP connectivity probes (only without proxy)
+            const probes = [
+                { label: 'tcp_token_447',   host: 'servicios.correos.go.cr',  port: 447 },
+                { label: 'tcp_soap_444',    host: 'amistadpro.correos.go.cr', port: 444 },
+                { label: 'tcp_control_443', host: 'google.com',               port: 443 },
+            ];
 
-        if (!tokenPortOpen && !soapPortOpen) {
-            console.warn('[correos-test] Both Correos production ports blocked — skipping API tests');
-            return NextResponse.json({
-                ok: false,
-                results,
-                diagnosis: 'Correos production ports (447, 444) are unreachable from this server.',
-            });
-        }
-
-        // Phase 2: TLS handshake probes (both endpoints use HTTPS)
-        const tlsTargets = [
-            { label: 'tls_token_447', host: 'servicios.correos.go.cr', port: 447, portOpen: tokenPortOpen },
-            { label: 'tls_soap_444', host: 'amistadpro.correos.go.cr', port: 444, portOpen: soapPortOpen },
-        ];
-
-        for (const t of tlsTargets) {
-            if (!t.portOpen) continue;
-            console.log(`[correos-test] Phase 2: TLS probe to ${t.host}:${t.port}...`);
-            const tlsResult = await tlsProbe(t.host, t.port);
-            console.log(
-                `[correos-test] ${t.label}: ${tlsResult.ok ? 'OK' : 'FAILED'} (${tlsResult.ms}ms` +
-                `${tlsResult.protocol ? ', ' + tlsResult.protocol : ''}` +
-                `${tlsResult.cipher ? ', ' + tlsResult.cipher : ''}` +
-                `${tlsResult.error ? ', ' + tlsResult.error : ''})`
+            console.log('[correos-test] Phase 1: TCP port reachability probes...');
+            const probeResults = await Promise.all(
+                probes.map(async (p) => {
+                    const r = await tcpProbe(p.host, p.port);
+                    console.log(`[correos-test] ${p.label} (${p.host}:${p.port}): ${r.reachable ? 'OPEN' : 'BLOCKED'} (${r.ms}ms${r.error ? ', ' + r.error : ''})`);
+                    return { step: p.label, ok: r.reachable, ms: r.ms, detail: r.reachable ? `${p.host}:${p.port} open` : `${p.host}:${p.port} ${r.error}` };
+                })
             );
-            results.push({
-                step: t.label,
-                ok: tlsResult.ok,
-                ms: tlsResult.ms,
-                detail: tlsResult.ok
-                    ? `${tlsResult.protocol}, ${tlsResult.cipher}`
-                    : tlsResult.error,
-            });
+            results.push(...probeResults);
+
+            tokenReachable = probeResults.find((r) => r.step === 'tcp_token_447')?.ok ?? false;
+            soapReachable = probeResults.find((r) => r.step === 'tcp_soap_444')?.ok ?? false;
+
+            if (!tokenReachable && !soapReachable) {
+                console.warn('[correos-test] Both Correos production ports blocked and no proxy configured');
+                return NextResponse.json({
+                    ok: false,
+                    results,
+                    diagnosis: 'Correos production ports (447, 444) are unreachable. Configure FIXIE_URL proxy.',
+                });
+            }
+
+            // Phase 2: TLS handshake probes
+            const tlsTargets = [
+                { label: 'tls_token_447', host: 'servicios.correos.go.cr', port: 447, portOpen: tokenReachable },
+                { label: 'tls_soap_444', host: 'amistadpro.correos.go.cr', port: 444, portOpen: soapReachable },
+            ];
+
+            for (const t of tlsTargets) {
+                if (!t.portOpen) continue;
+                console.log(`[correos-test] Phase 2: TLS probe to ${t.host}:${t.port}...`);
+                const tlsResult = await tlsProbe(t.host, t.port);
+                console.log(
+                    `[correos-test] ${t.label}: ${tlsResult.ok ? 'OK' : 'FAILED'} (${tlsResult.ms}ms` +
+                    `${tlsResult.protocol ? ', ' + tlsResult.protocol : ''}` +
+                    `${tlsResult.cipher ? ', ' + tlsResult.cipher : ''}` +
+                    `${tlsResult.error ? ', ' + tlsResult.error : ''})`
+                );
+                results.push({
+                    step: t.label,
+                    ok: tlsResult.ok,
+                    ms: tlsResult.ms,
+                    detail: tlsResult.ok
+                        ? `${tlsResult.protocol}, ${tlsResult.cipher}`
+                        : tlsResult.error,
+                });
+            }
         }
 
-        // Phase 3: Actual API calls
+        // Phase 3: Actual API calls (via proxy when configured, direct otherwise)
         const credRows = await prisma.$queryRaw<{ key: string; value: string }[]>`
             SELECT key, value FROM lm_carrier_configs WHERE key LIKE 'correos_ws_%'
         `;
@@ -160,7 +177,7 @@ export async function GET(req: NextRequest) {
         const ws = new CorreosWebService(wsCreds);
 
         // Step: Token
-        if (tokenPortOpen) {
+        if (tokenReachable) {
             console.log('[correos-test] Step: requesting token (native https)...');
             const t = Date.now();
             try {
@@ -178,7 +195,7 @@ export async function GET(req: NextRequest) {
         }
 
         // Step: SOAP provinces
-        if (soapPortOpen) {
+        if (soapReachable) {
             console.log('[correos-test] Step: calling SOAP ccrCodProvincia...');
             const t = Date.now();
             try {

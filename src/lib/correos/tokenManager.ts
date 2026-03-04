@@ -1,7 +1,7 @@
 import https from 'https';
 import type { CorreosWSCredentials, TokenRequest } from './types';
 
-const TOKEN_URL = new URL('https://servicios.correos.go.cr:442/Token/authenticate');
+const TOKEN_URL = new URL('https://servicios.correos.go.cr:447/Token/authenticate');
 const TOKEN_TTL_MS = 4 * 60 * 1000; // 4 minutes (tokens expire at 5 min)
 const REQUEST_TIMEOUT_MS = 60_000;
 

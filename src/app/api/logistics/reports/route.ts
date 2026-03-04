@@ -40,8 +40,7 @@ export async function GET(req: NextRequest) {
         const orders = await prisma.$queryRawUnsafe<any[]>(`
             SELECT
                 o.id, o."orderId", o."customerName", o.total, o.timestamp, o.province,
-                lm.carrier, lm.status, lm.is_contra_entrega, lm.contraentrega_collected,
-                lm.correos_shipping_cost
+                lm.carrier, lm.status, lm.is_contra_entrega, lm.contraentrega_collected
             FROM "Order" o
             INNER JOIN lm_orders lm ON lm.crm_order_id = o.id
             WHERE o."tenantId" = $1
@@ -49,6 +48,25 @@ export async function GET(req: NextRequest) {
             ${dateSql}
             ORDER BY o.timestamp ASC
         `, ...params);
+
+        // Fetch correos_shipping_cost separately — column may not exist if migration 006 hasn't run
+        try {
+            const costRows = await prisma.$queryRawUnsafe<{ crm_order_id: string; correos_shipping_cost: number | null }[]>(`
+                SELECT lm.crm_order_id, lm.correos_shipping_cost
+                FROM lm_orders lm
+                INNER JOIN "Order" o ON o.id = lm.crm_order_id
+                WHERE o."tenantId" = $1 AND lm.status = 'Entregado' AND lm.carrier = 'correos'
+                ${dateSql}
+            `, ...params);
+            const costMap: Record<string, number | null> = {};
+            for (const r of costRows) costMap[r.crm_order_id] = r.correos_shipping_cost;
+            for (const o of orders) {
+                o.correos_shipping_cost = costMap[o.id] ?? null;
+            }
+        } catch {
+            // correos_shipping_cost column doesn't exist yet; all orders get null
+            for (const o of orders) o.correos_shipping_cost = null;
+        }
 
         // 3. Segment by carrier
         const correoOrders = orders.filter(o => o.carrier === 'correos');

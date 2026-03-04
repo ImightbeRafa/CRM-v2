@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Package, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2 } from 'lucide-react';
+import { Package, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2, DollarSign } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 
 interface Order {
@@ -10,7 +10,7 @@ interface Order {
     quantity: number | null; province: string | null; canton: string | null; district: string | null;
     address: string | null; total: number; comments: string | null; delivery: string | null;
     lmCarrier: string | null; lmStatus: string | null; isContraEntrega: boolean; contraEntregaCollected: boolean;
-    archivedAt: string | null;
+    archivedAt: string | null; correosShippingCost: number | null;
 }
 
 const STATUSES = ['Pendiente', 'En Proceso', 'En Tránsito', 'Entregado', 'Devuelto'];
@@ -335,6 +335,9 @@ export default function CarriersPage() {
     const [archivedOrders, setArchivedOrders] = useState<Order[]>([]);
     const [archiveLoading, setArchiveLoading] = useState(false);
     const [archiveSearch, setArchiveSearch] = useState('');
+    const [costModal, setCostModal] = useState<{ orderId: string; customerName: string; ordRef: string } | null>(null);
+    const [costValue, setCostValue] = useState('');
+    const [costSaving, setCostSaving] = useState(false);
 
     const load = useCallback(async () => {
         try {
@@ -354,10 +357,33 @@ export default function CarriersPage() {
     const onColl = useCallback((id: string, v: boolean) => { setOrders(p => p.map(o => o.id === id ? { ...o, contraEntregaCollected: v } : o)); patchOrder(id, { contraEntregaCollected: v }); if (v) logEvent(id, 'ce_confirmed', {}); }, []);
     const onToggleSelect = useCallback((id: string) => { setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; }); }, []);
     const onArchiveOrder = useCallback(async (id: string) => {
+        const order = orders.find(o => o.id === id);
+        // Correos CR + Entregado: require shipping cost before archiving
+        if (order && order.lmCarrier === 'correos' && order.lmStatus === 'Entregado' && order.correosShippingCost == null) {
+            setCostModal({ orderId: id, customerName: order.customerName, ordRef: order.orderId });
+            setCostValue('');
+            return;
+        }
         setOrders(p => p.filter(o => o.id !== id));
         await archiveOrder(id);
         logEvent(id, 'archived', {});
-    }, []);
+    }, [orders]);
+    const confirmCorreosCostAndArchive = useCallback(async () => {
+        if (!costModal || !costValue || isNaN(Number(costValue)) || Number(costValue) < 0) return;
+        setCostSaving(true);
+        try {
+            await fetch('/api/logistics/correos-costs', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderId: costModal.orderId, cost: Number(costValue) }),
+            });
+            setOrders(p => p.filter(o => o.id !== costModal.orderId));
+            await archiveOrder(costModal.orderId);
+            logEvent(costModal.orderId, 'archived', { correosCost: Number(costValue) });
+            setCostModal(null);
+            setCostValue('');
+        } finally { setCostSaving(false); }
+    }, [costModal, costValue]);
     const onRestoreOrder = useCallback(async (id: string) => {
         const restored = archivedOrders.find(o => o.id === id);
         if (restored) {
@@ -379,6 +405,12 @@ export default function CarriersPage() {
     const bulkArchive = useCallback(async () => {
         const ids = [...selectedIds];
         if (!ids.length) return;
+        // Check if any selected Correos CR Entregado orders are missing shipping cost
+        const correosPending = orders.filter(o => ids.includes(o.id) && o.lmCarrier === 'correos' && o.lmStatus === 'Entregado' && o.correosShippingCost == null);
+        if (correosPending.length > 0) {
+            alert(`${correosPending.length} orden(es) de Correos CR necesitan costo de envío antes de terminar. Por favor, archívelas individualmente usando el botón Terminar de cada tarjeta.`);
+            return;
+        }
         setApplying(true);
         for (const id of ids) {
             await archiveOrder(id);
@@ -387,7 +419,7 @@ export default function CarriersPage() {
         setOrders(p => p.filter(o => !selectedIds.has(o.id)));
         setSelectedIds(new Set());
         setApplying(false);
-    }, [selectedIds]);
+    }, [selectedIds, orders]);
 
     const applyBulk = useCallback(async () => {
         const ids = [...selectedIds];
@@ -652,6 +684,55 @@ export default function CarriersPage() {
                 </div>
 
             </div>{/* end body split */}
+
+            {/* Correos CR Cost Modal */}
+            {costModal && (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+                    onClick={() => setCostModal(null)}>
+                    <div onClick={e => e.stopPropagation()} style={{ width: 380, background: '#1a1a2e', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 16, padding: '28px 28px 22px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(96,165,250,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <DollarSign size={18} style={{ color: '#60a5fa' }} />
+                            </div>
+                            <div>
+                                <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 15, margin: 0 }}>Costo de Envío — Correos CR</p>
+                                <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11.5, margin: '2px 0 0' }}>Requerido antes de terminar la orden</p>
+                            </div>
+                        </div>
+
+                        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '12px 14px', marginBottom: 18 }}>
+                            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, margin: '0 0 3px' }}>#{costModal.ordRef}</p>
+                            <p style={{ color: '#F2F2F2', fontWeight: 600, fontSize: 13, margin: 0 }}>{costModal.customerName}</p>
+                        </div>
+
+                        <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Costo de envío Correos CR</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+                            <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 16, fontWeight: 700 }}>₡</span>
+                            <input
+                                type="number"
+                                value={costValue}
+                                onChange={e => setCostValue(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && confirmCorreosCostAndArchive()}
+                                placeholder="0"
+                                autoFocus
+                                style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(96,165,250,0.4)', background: 'rgba(0,0,0,0.3)', color: '#60a5fa', fontSize: 18, fontWeight: 700, outline: 'none' }}
+                            />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 10 }}>
+                            <button onClick={() => setCostModal(null)}
+                                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(255,255,255,0.45)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                                Cancelar
+                            </button>
+                            <button onClick={confirmCorreosCostAndArchive}
+                                disabled={costSaving || !costValue || isNaN(Number(costValue)) || Number(costValue) < 0}
+                                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.12)', color: '#34d399', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                <Archive size={13} /> {costSaving ? 'Guardando...' : 'Guardar y Terminar'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <style>{`.lm-order-card:hover{border-color:rgba(255,255,255,0.18)!important} @keyframes spin{to{transform:rotate(360deg)}} ::-webkit-scrollbar{width:4px;height:4px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}`}</style>
         </div>

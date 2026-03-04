@@ -99,8 +99,8 @@ export async function GET(req: NextRequest) {
         const lmData: Record<string, { lmCarrier: string | null; lmStatus: string | null; isContraEntrega: boolean; contraEntregaCollected: boolean; archivedAt: string | null; correosShippingCost: number | null }> = {};
         if (orderIds.length > 0) {
             try {
-                const lmRows = await prisma.$queryRaw<{ crm_order_id: string; carrier: string | null; status: string | null; is_contra_entrega: boolean; contraentrega_collected: boolean; archived_at: string | null; correos_shipping_cost: number | null }[]>`
-                    SELECT crm_order_id, carrier, status, is_contra_entrega, contraentrega_collected, archived_at, correos_shipping_cost FROM lm_orders
+                const lmRows = await prisma.$queryRaw<{ crm_order_id: string; carrier: string | null; status: string | null; is_contra_entrega: boolean; contraentrega_collected: boolean; archived_at: string | null }[]>`
+                    SELECT crm_order_id, carrier, status, is_contra_entrega, contraentrega_collected, archived_at FROM lm_orders
                     WHERE crm_order_id = ANY(${orderIds}::text[])
                 `;
                 for (const row of lmRows) {
@@ -110,11 +110,26 @@ export async function GET(req: NextRequest) {
                         isContraEntrega: row.is_contra_entrega ?? false,
                         contraEntregaCollected: row.contraentrega_collected ?? false,
                         archivedAt: row.archived_at ?? null,
-                        correosShippingCost: row.correos_shipping_cost != null ? Number(row.correos_shipping_cost) : null,
+                        correosShippingCost: null,
                     };
                 }
             } catch {
                 // lm_orders table may not be accessible; continue without lm data
+            }
+
+            // Fetch correos_shipping_cost separately — column may not exist if migration 006 hasn't run
+            try {
+                const costRows = await prisma.$queryRaw<{ crm_order_id: string; correos_shipping_cost: number | null }[]>`
+                    SELECT crm_order_id, correos_shipping_cost FROM lm_orders
+                    WHERE crm_order_id = ANY(${orderIds}::text[]) AND correos_shipping_cost IS NOT NULL
+                `;
+                for (const row of costRows) {
+                    if (lmData[row.crm_order_id]) {
+                        lmData[row.crm_order_id].correosShippingCost = row.correos_shipping_cost != null ? Number(row.correos_shipping_cost) : null;
+                    }
+                }
+            } catch {
+                // correos_shipping_cost column may not exist yet; ignore
             }
         }
 

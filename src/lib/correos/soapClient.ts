@@ -20,11 +20,11 @@ import type {
 } from './types';
 
 const SOAP_ENDPOINT =
-  'http://amistad.correos.go.cr:84/wsAppCorreos.wsAppCorreos.svc';
+  'https://amistadpro.correos.go.cr:444/wsAppCorreos.wsAppCorreos.svc';
 
 // Remote WSDL URL — only used as fallback when local bundle is unavailable
 const REMOTE_WSDL =
-  'http://amistad.correos.go.cr:84/wsAppCorreos.wsAppCorreos.svc?wsdl';
+  'https://amistadpro.correos.go.cr:444/wsAppCorreos.wsAppCorreos.svc?wsdl';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2_000;

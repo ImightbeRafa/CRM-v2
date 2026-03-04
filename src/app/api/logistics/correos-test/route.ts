@@ -66,10 +66,10 @@ function tlsProbe(host: string, port: number, timeoutMs = 15_000): Promise<{ ok:
 /**
  * GET /api/logistics/correos-test
  *
- * Diagnostic endpoint that validates Correos connectivity from the server.
- * Phase 1: Raw TCP port reachability.
- * Phase 2: TLS handshake probe for the token endpoint.
- * Phase 3: Token auth + SOAP call (only if reachable).
+ * Diagnostic endpoint — validates Correos production connectivity.
+ * Phase 1: TCP reachability to production endpoints.
+ * Phase 2: TLS handshake probes (both token and SOAP use HTTPS).
+ * Phase 3: Token auth + SOAP province lookup.
  */
 export async function GET(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
@@ -78,13 +78,11 @@ export async function GET(req: NextRequest) {
     const results: { step: string; ok: boolean; ms: number; detail?: string }[] = [];
 
     try {
-        // Phase 1: Raw TCP connectivity probes (all in parallel)
+        // Phase 1: TCP connectivity probes (production endpoints)
         const probes = [
-            { label: 'tcp_token_442',   host: 'servicios.correos.go.cr', port: 442 },
-            { label: 'tcp_token_443',   host: 'servicios.correos.go.cr', port: 443 },
-            { label: 'tcp_soap_84',     host: 'amistad.correos.go.cr',   port: 84 },
-            { label: 'tcp_soap_80',     host: 'amistad.correos.go.cr',   port: 80 },
-            { label: 'tcp_control_443', host: 'google.com',              port: 443 },
+            { label: 'tcp_token_447',   host: 'servicios.correos.go.cr',  port: 447 },
+            { label: 'tcp_soap_444',    host: 'amistadpro.correos.go.cr', port: 444 },
+            { label: 'tcp_control_443', host: 'google.com',               port: 443 },
         ];
 
         console.log('[correos-test] Phase 1: TCP port reachability probes...');
@@ -97,30 +95,36 @@ export async function GET(req: NextRequest) {
         );
         results.push(...probeResults);
 
-        const tokenPortOpen = probeResults.find((r) => r.step === 'tcp_token_442')?.ok;
-        const soapPortOpen = probeResults.find((r) => r.step === 'tcp_soap_84')?.ok;
+        const tokenPortOpen = probeResults.find((r) => r.step === 'tcp_token_447')?.ok;
+        const soapPortOpen = probeResults.find((r) => r.step === 'tcp_soap_444')?.ok;
 
         if (!tokenPortOpen && !soapPortOpen) {
-            console.warn('[correos-test] Both Correos ports blocked — skipping API tests');
+            console.warn('[correos-test] Both Correos production ports blocked — skipping API tests');
             return NextResponse.json({
                 ok: false,
                 results,
-                diagnosis: 'Correos uses non-standard ports (442, 84) which are unreachable from this server.',
+                diagnosis: 'Correos production ports (447, 444) are unreachable from this server.',
             });
         }
 
-        // Phase 2: TLS handshake probe (isolates TLS from HTTP)
-        if (tokenPortOpen) {
-            console.log('[correos-test] Phase 2: TLS handshake probe to servicios.correos.go.cr:442...');
-            const tlsResult = await tlsProbe('servicios.correos.go.cr', 442);
+        // Phase 2: TLS handshake probes (both endpoints use HTTPS)
+        const tlsTargets = [
+            { label: 'tls_token_447', host: 'servicios.correos.go.cr', port: 447, portOpen: tokenPortOpen },
+            { label: 'tls_soap_444', host: 'amistadpro.correos.go.cr', port: 444, portOpen: soapPortOpen },
+        ];
+
+        for (const t of tlsTargets) {
+            if (!t.portOpen) continue;
+            console.log(`[correos-test] Phase 2: TLS probe to ${t.host}:${t.port}...`);
+            const tlsResult = await tlsProbe(t.host, t.port);
             console.log(
-                `[correos-test] tls_token_442: ${tlsResult.ok ? 'OK' : 'FAILED'} (${tlsResult.ms}ms` +
+                `[correos-test] ${t.label}: ${tlsResult.ok ? 'OK' : 'FAILED'} (${tlsResult.ms}ms` +
                 `${tlsResult.protocol ? ', ' + tlsResult.protocol : ''}` +
                 `${tlsResult.cipher ? ', ' + tlsResult.cipher : ''}` +
                 `${tlsResult.error ? ', ' + tlsResult.error : ''})`
             );
             results.push({
-                step: 'tls_token_442',
+                step: t.label,
                 ok: tlsResult.ok,
                 ms: tlsResult.ms,
                 detail: tlsResult.ok
@@ -170,7 +174,7 @@ export async function GET(req: NextRequest) {
                 results.push({ step: 'token', ok: false, ms: elapsed, detail: e.message });
             }
         } else {
-            results.push({ step: 'token', ok: false, ms: 0, detail: 'skipped — port 442 unreachable' });
+            results.push({ step: 'token', ok: false, ms: 0, detail: 'skipped — port 447 unreachable' });
         }
 
         // Step: SOAP provinces
@@ -189,7 +193,7 @@ export async function GET(req: NextRequest) {
                 results.push({ step: 'soap_provincias', ok: false, ms: elapsed, detail: e.message });
             }
         } else {
-            results.push({ step: 'soap_provincias', ok: false, ms: 0, detail: 'skipped — port 84 unreachable' });
+            results.push({ step: 'soap_provincias', ok: false, ms: 0, detail: 'skipped — port 444 unreachable' });
         }
 
         const allOk = results.every((r) => r.ok);

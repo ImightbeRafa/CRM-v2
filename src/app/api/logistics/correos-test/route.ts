@@ -5,14 +5,13 @@ import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { CorreosWebService } from '@/lib/correos';
 import type { CorreosWSCredentials } from '@/lib/correos';
+import { getProxyDescription } from '@/lib/correos/proxy';
+import { testProxyConnectivity, testProxyToCorreos } from '@/lib/correos/tokenManager';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-/**
- * Attempt a raw TCP connection to host:port with a timeout.
- */
 function tcpProbe(host: string, port: number, timeoutMs = 10_000): Promise<{ reachable: boolean; ms: number; error?: string }> {
     return new Promise((resolve) => {
         const t0 = Date.now();
@@ -36,9 +35,6 @@ function tcpProbe(host: string, port: number, timeoutMs = 10_000): Promise<{ rea
     });
 }
 
-/**
- * Attempt a TLS handshake to host:port and report negotiated protocol/cipher.
- */
 function tlsProbe(host: string, port: number, timeoutMs = 15_000): Promise<{ ok: boolean; ms: number; protocol?: string; cipher?: string; error?: string }> {
     return new Promise((resolve) => {
         const t0 = Date.now();
@@ -67,9 +63,8 @@ function tlsProbe(host: string, port: number, timeoutMs = 15_000): Promise<{ ok:
  * GET /api/logistics/correos-test
  *
  * Diagnostic endpoint — validates Correos production connectivity.
- * Phase 1: TCP reachability to production endpoints.
- * Phase 2: TLS handshake probes (both token and SOAP use HTTPS).
- * Phase 3: Token auth + SOAP province lookup.
+ * When proxy is configured: tests proxy first, then API calls.
+ * When no proxy: tests TCP/TLS directly, then API calls.
  */
 export async function GET(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
@@ -80,20 +75,53 @@ export async function GET(req: NextRequest) {
     try {
         // Phase 0: Proxy configuration check
         const proxyConfigured = !!process.env.FIXIE_URL;
+        const proxyDesc = getProxyDescription();
         results.push({
             step: 'proxy_configured',
             ok: proxyConfigured,
             ms: 0,
-            detail: proxyConfigured ? 'FIXIE_URL is set' : 'FIXIE_URL not set — direct connections will be used',
+            detail: proxyConfigured ? `FIXIE_URL set (${proxyDesc})` : 'FIXIE_URL not set — direct connections',
         });
-        console.log(`[correos-test] Proxy: ${proxyConfigured ? 'CONFIGURED (Fixie)' : 'NOT CONFIGURED (direct)'}`);
+        console.log(`[correos-test] Proxy: ${proxyConfigured ? `CONFIGURED (${proxyDesc})` : 'NOT CONFIGURED (direct)'}`);
 
-        // When proxy is configured, traffic goes through Fixie so direct
-        // TCP/TLS probes are irrelevant. Skip to API calls.
-        let tokenReachable = proxyConfigured;
-        let soapReachable = proxyConfigured;
+        let tokenReachable = false;
+        let soapReachable = false;
 
-        if (!proxyConfigured) {
+        if (proxyConfigured) {
+            // Phase 1a: Test proxy connectivity to a known-good host
+            console.log('[correos-test] Phase 1a: Testing proxy connectivity to google.com...');
+            const proxyTest = await testProxyConnectivity();
+            console.log(`[correos-test] Proxy→google: ${proxyTest.ok ? 'OK' : 'FAILED'} (${proxyTest.ms}ms) ${proxyTest.detail}`);
+            results.push({
+                step: 'proxy_test_google',
+                ok: proxyTest.ok,
+                ms: proxyTest.ms,
+                detail: proxyTest.detail,
+            });
+
+            if (!proxyTest.ok) {
+                return NextResponse.json({
+                    ok: false,
+                    results,
+                    diagnosis: 'Fixie proxy is not reachable or not working. Check FIXIE_URL.',
+                });
+            }
+
+            // Phase 1b: Test proxy CONNECT tunnel to Correos token port
+            console.log('[correos-test] Phase 1b: Testing proxy CONNECT to servicios.correos.go.cr:447...');
+            const proxyCorreosTest = await testProxyToCorreos();
+            console.log(`[correos-test] Proxy→Correos:447: ${proxyCorreosTest.ok ? 'OK' : 'FAILED'} (${proxyCorreosTest.ms}ms) ${proxyCorreosTest.detail}`);
+            results.push({
+                step: 'proxy_test_correos_447',
+                ok: proxyCorreosTest.ok,
+                ms: proxyCorreosTest.ms,
+                detail: proxyCorreosTest.detail,
+            });
+
+            tokenReachable = proxyCorreosTest.ok;
+            soapReachable = proxyCorreosTest.ok; // if 447 works through proxy, 444 should too
+
+        } else {
             // Phase 1: TCP connectivity probes (only without proxy)
             const probes = [
                 { label: 'tcp_token_447',   host: 'servicios.correos.go.cr',  port: 447 },
@@ -178,7 +206,7 @@ export async function GET(req: NextRequest) {
 
         // Step: Token
         if (tokenReachable) {
-            console.log('[correos-test] Step: requesting token (native https)...');
+            console.log('[correos-test] Step: requesting token...');
             const t = Date.now();
             try {
                 await ws.getSoapClient().getTokenManager().getToken();
@@ -191,7 +219,7 @@ export async function GET(req: NextRequest) {
                 results.push({ step: 'token', ok: false, ms: elapsed, detail: e.message });
             }
         } else {
-            results.push({ step: 'token', ok: false, ms: 0, detail: 'skipped — port 447 unreachable' });
+            results.push({ step: 'token', ok: false, ms: 0, detail: 'skipped — Correos unreachable' });
         }
 
         // Step: SOAP provinces
@@ -210,7 +238,7 @@ export async function GET(req: NextRequest) {
                 results.push({ step: 'soap_provincias', ok: false, ms: elapsed, detail: e.message });
             }
         } else {
-            results.push({ step: 'soap_provincias', ok: false, ms: 0, detail: 'skipped — port 444 unreachable' });
+            results.push({ step: 'soap_provincias', ok: false, ms: 0, detail: 'skipped — Correos unreachable' });
         }
 
         const allOk = results.every((r) => r.ok);

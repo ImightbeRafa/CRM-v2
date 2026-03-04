@@ -30,7 +30,7 @@ const nextConfig = {
     // Add other environment variables here
   },
   // Server-side packages that should not be bundled
-  serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium', 'soap', 'axios', 'https-proxy-agent', 'agent-base'],
+  serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium', 'soap', 'axios'],
 
   // Image configuration
   images: {

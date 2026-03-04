@@ -1,70 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import net from 'net';
-import tls from 'tls';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { CorreosWebService } from '@/lib/correos';
 import type { CorreosWSCredentials } from '@/lib/correos';
-import { getProxyDescription } from '@/lib/correos/proxy';
-import { testProxyConnectivity, testProxyToCorreos } from '@/lib/correos/tokenManager';
+import { isWorkerConfigured, getWorkerUrl } from '@/lib/correos/worker';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
-
-function tcpProbe(host: string, port: number, timeoutMs = 10_000): Promise<{ reachable: boolean; ms: number; error?: string }> {
-    return new Promise((resolve) => {
-        const t0 = Date.now();
-        const socket = new net.Socket();
-        socket.setTimeout(timeoutMs);
-
-        socket.on('connect', () => {
-            socket.destroy();
-            resolve({ reachable: true, ms: Date.now() - t0 });
-        });
-        socket.on('timeout', () => {
-            socket.destroy();
-            resolve({ reachable: false, ms: Date.now() - t0, error: 'timeout' });
-        });
-        socket.on('error', (err: any) => {
-            socket.destroy();
-            resolve({ reachable: false, ms: Date.now() - t0, error: err.code || err.message });
-        });
-
-        socket.connect(port, host);
-    });
-}
-
-function tlsProbe(host: string, port: number, timeoutMs = 15_000): Promise<{ ok: boolean; ms: number; protocol?: string; cipher?: string; error?: string }> {
-    return new Promise((resolve) => {
-        const t0 = Date.now();
-        const socket = tls.connect(
-            { host, port, servername: host, timeout: timeoutMs, rejectUnauthorized: true },
-            () => {
-                const proto = socket.getProtocol();
-                const cipher = socket.getCipher()?.name;
-                socket.destroy();
-                resolve({ ok: true, ms: Date.now() - t0, protocol: proto ?? undefined, cipher });
-            }
-        );
-
-        socket.on('timeout', () => {
-            socket.destroy();
-            resolve({ ok: false, ms: Date.now() - t0, error: 'TLS handshake timeout' });
-        });
-        socket.on('error', (err: any) => {
-            socket.destroy();
-            resolve({ ok: false, ms: Date.now() - t0, error: err.code || err.message });
-        });
-    });
-}
+export const maxDuration = 30;
 
 /**
  * GET /api/logistics/correos-test
  *
- * Diagnostic endpoint — validates Correos production connectivity.
- * When proxy is configured: tests proxy first, then API calls.
- * When no proxy: tests TCP/TLS directly, then API calls.
+ * Diagnostic endpoint — validates Correos connectivity.
+ * Tests: Worker config -> Worker health -> Token auth -> SOAP province lookup.
  */
 export async function GET(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
@@ -73,112 +22,45 @@ export async function GET(req: NextRequest) {
     const results: { step: string; ok: boolean; ms: number; detail?: string }[] = [];
 
     try {
-        // Phase 0: Proxy configuration check
-        const proxyConfigured = !!process.env.FIXIE_URL;
-        const proxyDesc = getProxyDescription();
+        // Step 1: Check Worker configuration
+        const workerConfigured = isWorkerConfigured();
+        const workerUrl = getWorkerUrl();
         results.push({
-            step: 'proxy_configured',
-            ok: proxyConfigured,
+            step: 'worker_configured',
+            ok: workerConfigured,
             ms: 0,
-            detail: proxyConfigured ? `FIXIE_URL set (${proxyDesc})` : 'FIXIE_URL not set — direct connections',
+            detail: workerConfigured
+                ? `CORREOS_WORKER_URL = ${workerUrl}`
+                : 'CORREOS_WORKER_URL or CORREOS_WORKER_SECRET not set — using direct connection',
         });
-        console.log(`[correos-test] Proxy: ${proxyConfigured ? `CONFIGURED (${proxyDesc})` : 'NOT CONFIGURED (direct)'}`);
+        console.log(`[correos-test] Worker: ${workerConfigured ? `CONFIGURED (${workerUrl})` : 'NOT CONFIGURED (direct)'}`);
 
-        let tokenReachable = false;
-        let soapReachable = false;
-
-        if (proxyConfigured) {
-            // Phase 1a: Test proxy connectivity to a known-good host
-            console.log('[correos-test] Phase 1a: Testing proxy connectivity to google.com...');
-            const proxyTest = await testProxyConnectivity();
-            console.log(`[correos-test] Proxy→google: ${proxyTest.ok ? 'OK' : 'FAILED'} (${proxyTest.ms}ms) ${proxyTest.detail}`);
-            results.push({
-                step: 'proxy_test_google',
-                ok: proxyTest.ok,
-                ms: proxyTest.ms,
-                detail: proxyTest.detail,
-            });
-
-            if (!proxyTest.ok) {
-                return NextResponse.json({
-                    ok: false,
-                    results,
-                    diagnosis: 'Fixie proxy is not reachable or not working. Check FIXIE_URL.',
+        // Step 2: Worker health check (only when Worker is configured)
+        if (workerConfigured) {
+            console.log('[correos-test] Step 2: Worker health check...');
+            const t0 = Date.now();
+            try {
+                const healthRes = await fetch(`${workerUrl}/health`, {
+                    signal: AbortSignal.timeout(10_000),
                 });
-            }
-
-            // Phase 1b: Test proxy CONNECT tunnel to Correos token port
-            console.log('[correos-test] Phase 1b: Testing proxy CONNECT to servicios.correos.go.cr:447...');
-            const proxyCorreosTest = await testProxyToCorreos();
-            console.log(`[correos-test] Proxy→Correos:447: ${proxyCorreosTest.ok ? 'OK' : 'FAILED'} (${proxyCorreosTest.ms}ms) ${proxyCorreosTest.detail}`);
-            results.push({
-                step: 'proxy_test_correos_447',
-                ok: proxyCorreosTest.ok,
-                ms: proxyCorreosTest.ms,
-                detail: proxyCorreosTest.detail,
-            });
-
-            tokenReachable = proxyCorreosTest.ok;
-            soapReachable = proxyCorreosTest.ok; // if 447 works through proxy, 444 should too
-
-        } else {
-            // Phase 1: TCP connectivity probes (only without proxy)
-            const probes = [
-                { label: 'tcp_token_447',   host: 'servicios.correos.go.cr',  port: 447 },
-                { label: 'tcp_soap_444',    host: 'amistadpro.correos.go.cr', port: 444 },
-                { label: 'tcp_control_443', host: 'google.com',               port: 443 },
-            ];
-
-            console.log('[correos-test] Phase 1: TCP port reachability probes...');
-            const probeResults = await Promise.all(
-                probes.map(async (p) => {
-                    const r = await tcpProbe(p.host, p.port);
-                    console.log(`[correos-test] ${p.label} (${p.host}:${p.port}): ${r.reachable ? 'OPEN' : 'BLOCKED'} (${r.ms}ms${r.error ? ', ' + r.error : ''})`);
-                    return { step: p.label, ok: r.reachable, ms: r.ms, detail: r.reachable ? `${p.host}:${p.port} open` : `${p.host}:${p.port} ${r.error}` };
-                })
-            );
-            results.push(...probeResults);
-
-            tokenReachable = probeResults.find((r) => r.step === 'tcp_token_447')?.ok ?? false;
-            soapReachable = probeResults.find((r) => r.step === 'tcp_soap_444')?.ok ?? false;
-
-            if (!tokenReachable && !soapReachable) {
-                console.warn('[correos-test] Both Correos production ports blocked and no proxy configured');
-                return NextResponse.json({
-                    ok: false,
-                    results,
-                    diagnosis: 'Correos production ports (447, 444) are unreachable. Configure FIXIE_URL proxy.',
-                });
-            }
-
-            // Phase 2: TLS handshake probes
-            const tlsTargets = [
-                { label: 'tls_token_447', host: 'servicios.correos.go.cr', port: 447, portOpen: tokenReachable },
-                { label: 'tls_soap_444', host: 'amistadpro.correos.go.cr', port: 444, portOpen: soapReachable },
-            ];
-
-            for (const t of tlsTargets) {
-                if (!t.portOpen) continue;
-                console.log(`[correos-test] Phase 2: TLS probe to ${t.host}:${t.port}...`);
-                const tlsResult = await tlsProbe(t.host, t.port);
-                console.log(
-                    `[correos-test] ${t.label}: ${tlsResult.ok ? 'OK' : 'FAILED'} (${tlsResult.ms}ms` +
-                    `${tlsResult.protocol ? ', ' + tlsResult.protocol : ''}` +
-                    `${tlsResult.cipher ? ', ' + tlsResult.cipher : ''}` +
-                    `${tlsResult.error ? ', ' + tlsResult.error : ''})`
-                );
-                results.push({
-                    step: t.label,
-                    ok: tlsResult.ok,
-                    ms: tlsResult.ms,
-                    detail: tlsResult.ok
-                        ? `${tlsResult.protocol}, ${tlsResult.cipher}`
-                        : tlsResult.error,
-                });
+                const elapsed = Date.now() - t0;
+                if (healthRes.ok) {
+                    console.log(`[correos-test] Worker health: OK (${elapsed}ms)`);
+                    results.push({ step: 'worker_health', ok: true, ms: elapsed, detail: 'Worker is alive' });
+                } else {
+                    console.error(`[correos-test] Worker health: BAD STATUS ${healthRes.status} (${elapsed}ms)`);
+                    results.push({ step: 'worker_health', ok: false, ms: elapsed, detail: `Worker returned ${healthRes.status}` });
+                    return NextResponse.json({ ok: false, results, diagnosis: 'Worker is not responding correctly.' });
+                }
+            } catch (e: any) {
+                const elapsed = Date.now() - t0;
+                console.error(`[correos-test] Worker health: FAILED (${elapsed}ms): ${e.message}`);
+                results.push({ step: 'worker_health', ok: false, ms: elapsed, detail: e.message });
+                return NextResponse.json({ ok: false, results, diagnosis: 'Cannot reach Cloudflare Worker.' });
             }
         }
 
-        // Phase 3: Actual API calls (via proxy when configured, direct otherwise)
+        // Step 3: Load credentials
         const credRows = await prisma.$queryRaw<{ key: string; value: string }[]>`
             SELECT key, value FROM lm_carrier_configs WHERE key LIKE 'correos_ws_%'
         `;
@@ -204,41 +86,33 @@ export async function GET(req: NextRequest) {
 
         const ws = new CorreosWebService(wsCreds);
 
-        // Step: Token
-        if (tokenReachable) {
-            console.log('[correos-test] Step: requesting token...');
-            const t = Date.now();
-            try {
-                await ws.getSoapClient().getTokenManager().getToken();
-                const elapsed = Date.now() - t;
-                console.log(`[correos-test] Step: token OK (${elapsed}ms)`);
-                results.push({ step: 'token', ok: true, ms: elapsed });
-            } catch (e: any) {
-                const elapsed = Date.now() - t;
-                console.error(`[correos-test] Step: token FAILED (${elapsed}ms): ${e.message}`);
-                results.push({ step: 'token', ok: false, ms: elapsed, detail: e.message });
-            }
-        } else {
-            results.push({ step: 'token', ok: false, ms: 0, detail: 'skipped — Correos unreachable' });
+        // Step 4: Token auth
+        console.log('[correos-test] Step 4: requesting token...');
+        const tToken = Date.now();
+        try {
+            await ws.getSoapClient().getTokenManager().getToken();
+            const elapsed = Date.now() - tToken;
+            console.log(`[correos-test] Token: OK (${elapsed}ms)`);
+            results.push({ step: 'token', ok: true, ms: elapsed });
+        } catch (e: any) {
+            const elapsed = Date.now() - tToken;
+            console.error(`[correos-test] Token: FAILED (${elapsed}ms): ${e.message}`);
+            results.push({ step: 'token', ok: false, ms: elapsed, detail: e.message });
         }
 
-        // Step: SOAP provinces
-        if (soapReachable) {
-            console.log('[correos-test] Step: calling SOAP ccrCodProvincia...');
-            const t = Date.now();
-            try {
-                const prov = await ws.getSoapClient().getProvincias();
-                const count = prov.Provincias?.length ?? 0;
-                const elapsed = Date.now() - t;
-                console.log(`[correos-test] Step: provinces OK (${elapsed}ms, ${count} items)`);
-                results.push({ step: 'soap_provincias', ok: prov.CodRespuesta === '00', ms: elapsed, detail: `${count} provinces` });
-            } catch (e: any) {
-                const elapsed = Date.now() - t;
-                console.error(`[correos-test] Step: provinces FAILED (${elapsed}ms): ${e.message}`);
-                results.push({ step: 'soap_provincias', ok: false, ms: elapsed, detail: e.message });
-            }
-        } else {
-            results.push({ step: 'soap_provincias', ok: false, ms: 0, detail: 'skipped — Correos unreachable' });
+        // Step 5: SOAP province lookup
+        console.log('[correos-test] Step 5: calling SOAP ccrCodProvincia...');
+        const tSoap = Date.now();
+        try {
+            const prov = await ws.getSoapClient().getProvincias();
+            const count = prov.Provincias?.length ?? 0;
+            const elapsed = Date.now() - tSoap;
+            console.log(`[correos-test] Provinces: OK (${elapsed}ms, ${count} items)`);
+            results.push({ step: 'soap_provincias', ok: prov.CodRespuesta === '00', ms: elapsed, detail: `${count} provinces` });
+        } catch (e: any) {
+            const elapsed = Date.now() - tSoap;
+            console.error(`[correos-test] Provinces: FAILED (${elapsed}ms): ${e.message}`);
+            results.push({ step: 'soap_provincias', ok: false, ms: elapsed, detail: e.message });
         }
 
         const allOk = results.every((r) => r.ok);

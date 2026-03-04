@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { correosHttp } from './http';
 import { CorreosTokenManager } from './tokenManager';
+import { getSoapEndpoint, getRemoteWsdlUrl } from './worker';
 import type {
   CorreosWSCredentials,
   CcrRespuestaProvincia,
@@ -18,13 +19,6 @@ import type {
   CcrRespuestaEnvio,
   CcrRespuestaTracking,
 } from './types';
-
-const SOAP_ENDPOINT =
-  'https://amistadpro.correos.go.cr:444/wsAppCorreos.wsAppCorreos.svc';
-
-// Remote WSDL URL — only used as fallback when local bundle is unavailable
-const REMOTE_WSDL =
-  'https://amistadpro.correos.go.cr:444/wsAppCorreos.wsAppCorreos.svc?wsdl';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2_000;
@@ -93,19 +87,22 @@ export class CorreosSoapClient {
   private getClient(): Promise<SoapClient> {
     if (!this.clientPromise) {
       const localWsdl = resolveWsdlPath();
-      const wsdlSource = localWsdl || REMOTE_WSDL;
+      const remoteWsdl = getRemoteWsdlUrl();
+      const wsdlSource = localWsdl || remoteWsdl;
+      const endpoint = getSoapEndpoint();
 
       console.log(`[CorreosSoap] Loading WSDL from ${localWsdl ? 'local bundle' : 'remote URL'}`);
+      console.log(`[CorreosSoap] SOAP endpoint: ${endpoint}`);
 
       this.clientPromise = soap
         .createClientAsync(wsdlSource, {
           forceSoap12Headers: false,
-          endpoint: SOAP_ENDPOINT,
+          endpoint,
           wsdl_options: { timeout: SOAP_TIMEOUT_MS },
           request: correosHttp as any,
         })
         .then((client) => {
-          client.setEndpoint(SOAP_ENDPOINT);
+          client.setEndpoint(endpoint);
           return client;
         })
         .catch((err) => {

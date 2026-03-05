@@ -34,11 +34,13 @@ export async function GET(request: NextRequest) {
         orderBy: { name: 'asc' }
       });
 
-      // Remove sensitive data from response
-      const safeConfigs = configs.map(config => ({
-        ...config,
-        password: config.password ? '***' : null
-      }));
+      const safeConfigs = configs.map(config => {
+        const safe: any = { ...config, password: config.password ? '***' : null };
+        if (safe.settings && typeof safe.settings === 'object' && safe.settings.ws_password) {
+          safe.settings = { ...safe.settings, ws_password: '***' };
+        }
+        return safe;
+      });
 
       return NextResponse.json({
         status: 'success',
@@ -205,6 +207,19 @@ export async function PUT(request: NextRequest) {
       // Handle password update
       const passwordToStore = (password && password !== '***') ? password : undefined;
 
+      let mergedSettings = settings || null;
+      if (mergedSettings && typeof mergedSettings === 'object') {
+        if (!mergedSettings.ws_password || mergedSettings.ws_password === '***') {
+          const existing = await prisma.shippingConfig.findUnique({ where: { id }, select: { settings: true } });
+          const existingSettings = (existing?.settings as Record<string, any>) ?? {};
+          if (existingSettings.ws_password) {
+            mergedSettings = { ...mergedSettings, ws_password: existingSettings.ws_password };
+          } else {
+            delete mergedSettings.ws_password;
+          }
+        }
+      }
+
       const updateData: any = {
         carrier,
         name,
@@ -212,11 +227,10 @@ export async function PUT(request: NextRequest) {
         apiKey,
         baseUrl,
         isDefault,
-        settings: settings || null,
+        settings: mergedSettings,
         updatedAt: new Date()
       };
 
-      // Only update password if a new one is provided
       if (passwordToStore !== undefined) {
         updateData.password = passwordToStore;
       }

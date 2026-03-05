@@ -12,11 +12,7 @@ import {
   Edit, 
   Trash2, 
   Truck, 
-  Settings, 
-  Eye, 
-  EyeOff,
   CheckCircle,
-  AlertCircle
 } from 'lucide-react';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 
@@ -41,7 +37,6 @@ export function ShippingConfigManagement() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingConfig, setEditingConfig] = useState<ShippingConfig | null>(null);
-  const [showPassword, setShowPassword] = useState<{ [key: string]: boolean }>({});
 
   // Form state
   const [formData, setFormData] = useState({
@@ -52,8 +47,17 @@ export function ShippingConfigManagement() {
     apiKey: '',
     baseUrl: '',
     isDefault: false,
-    settings: {}
+    settings: {} as Record<string, any>,
   });
+
+  const isCorreos = formData.carrier.toLowerCase() === 'correos_cr';
+
+  const updateSetting = (key: string, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      settings: { ...prev.settings, [key]: value },
+    }));
+  };
 
   useEffect(() => {
     loadConfigs();
@@ -133,20 +137,13 @@ export function ShippingConfigManagement() {
       carrier: config.carrier,
       name: config.name,
       email: config.email || '',
-      password: config.password || '',
+      password: '',
       apiKey: config.apiKey || '',
       baseUrl: config.baseUrl || '',
       isDefault: config.isDefault,
-      settings: config.settings || {}
+      settings: config.settings || {},
     });
     setShowForm(true);
-  };
-
-  const togglePasswordVisibility = (configId: string) => {
-    setShowPassword(prev => ({
-      ...prev,
-      [configId]: !prev[configId]
-    }));
   };
 
   const getCarrierIcon = (carrier: string) => {
@@ -258,50 +255,86 @@ export function ShippingConfigManagement() {
                     required
                   />
                 </div>
-                <div>
-                  <Label htmlFor="email">Email de Acceso</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="usuario@correos.go.cr"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="password">Contraseña</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    placeholder="Contraseña de acceso"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="apiKey">API Key (Opcional)</Label>
-                  <Input
-                    id="apiKey"
-                    value={formData.apiKey}
-                    onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                    placeholder="API Key si está disponible"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="baseUrl">URL Base</Label>
-                  <Input
-                    id="baseUrl"
-                    value={formData.baseUrl}
-                    onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
-                    placeholder="https://sucursal.correos.go.cr"
-                  />
-                </div>
               </div>
 
-              {/* Note: Sender (remitente) information is NOT required for Correos de Costa Rica.
-                  The system automatically handles sender information through the logged-in account. 
-                  Only email and password credentials are needed above. */}
-              
+              {isCorreos ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/20 p-4 space-y-3">
+                    <h4 className="font-semibold text-sm text-emerald-800 dark:text-emerald-300">Credenciales Web Service (SOAP API)</h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="ws_username">Username</Label>
+                        <Input id="ws_username" value={formData.settings.ws_username || ''} onChange={(e) => updateSetting('ws_username', e.target.value)} placeholder="ccrWS..." />
+                      </div>
+                      <div>
+                        <Label htmlFor="ws_password">Password {editingConfig && <span className="text-xs text-gray-400">(vacío = mantener)</span>}</Label>
+                        <Input id="ws_password" type="password" value={formData.settings.ws_password || ''} onChange={(e) => updateSetting('ws_password', e.target.value)} placeholder={editingConfig ? '••••••••' : 'Password'} />
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="ws_sistema">Sistema</Label>
+                      <Input id="ws_sistema" value={formData.settings.ws_sistema || ''} onChange={(e) => updateSetting('ws_sistema', e.target.value)} placeholder="PYMEXPRESS" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <Label htmlFor="ws_usuario_id">Usuario ID</Label>
+                        <Input id="ws_usuario_id" value={formData.settings.ws_usuario_id || ''} onChange={(e) => updateSetting('ws_usuario_id', e.target.value)} placeholder="117960921" />
+                      </div>
+                      <div>
+                        <Label htmlFor="ws_servicio_id">Servicio ID</Label>
+                        <Input id="ws_servicio_id" value={formData.settings.ws_servicio_id || ''} onChange={(e) => updateSetting('ws_servicio_id', e.target.value)} placeholder="1564" />
+                      </div>
+                      <div>
+                        <Label htmlFor="ws_cod_cliente">Código Cliente</Label>
+                        <Input id="ws_cod_cliente" value={formData.settings.ws_cod_cliente || ''} onChange={(e) => updateSetting('ws_cod_cliente', e.target.value)} placeholder="7362097" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20 p-4 space-y-3">
+                    <h4 className="font-semibold text-sm text-amber-800 dark:text-amber-300">Datos del Remitente</h4>
+                    <p className="text-xs text-gray-500">Información que aparece como remitente en cada guía generada</p>
+                    <div>
+                      <Label htmlFor="ws_sender_name">Nombre del Remitente</Label>
+                      <Input id="ws_sender_name" value={formData.settings.ws_sender_name || ''} onChange={(e) => updateSetting('ws_sender_name', e.target.value)} placeholder="Mi Empresa S.A." />
+                    </div>
+                    <div>
+                      <Label htmlFor="ws_sender_address">Dirección del Remitente</Label>
+                      <Input id="ws_sender_address" value={formData.settings.ws_sender_address || ''} onChange={(e) => updateSetting('ws_sender_address', e.target.value)} placeholder="Barrio Los Yoses, San Pedro, San José" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="ws_sender_zip">Código Postal</Label>
+                        <Input id="ws_sender_zip" value={formData.settings.ws_sender_zip || ''} onChange={(e) => updateSetting('ws_sender_zip', e.target.value)} placeholder="10107" />
+                      </div>
+                      <div>
+                        <Label htmlFor="ws_sender_phone">Teléfono</Label>
+                        <Input id="ws_sender_phone" value={formData.settings.ws_sender_phone || ''} onChange={(e) => updateSetting('ws_sender_phone', e.target.value)} placeholder="22345678" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="email">Email de Acceso</Label>
+                    <Input id="email" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="usuario@ejemplo.com" />
+                  </div>
+                  <div>
+                    <Label htmlFor="password">Contraseña</Label>
+                    <Input id="password" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Contraseña de acceso" />
+                  </div>
+                  <div>
+                    <Label htmlFor="apiKey">API Key (Opcional)</Label>
+                    <Input id="apiKey" value={formData.apiKey} onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })} placeholder="API Key si está disponible" />
+                  </div>
+                  <div>
+                    <Label htmlFor="baseUrl">URL Base</Label>
+                    <Input id="baseUrl" value={formData.baseUrl} onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })} placeholder="https://api.example.com" />
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="isDefault"
@@ -352,34 +385,20 @@ export function ShippingConfigManagement() {
                         <Badge variant="outline">{getCarrierName(config.carrier)}</Badge>
                       </div>
                       <div className="text-sm text-gray-600 space-y-1">
-                        {config.email && (
-                          <p>📧 {config.email}</p>
-                        )}
-                        {config.baseUrl && (
-                          <p>🌐 {config.baseUrl}</p>
-                        )}
-                        {config.apiKey && (
-                          <p>🔑 API Key configurada</p>
-                        )}
-                        {config.password && (
-                          <div className="flex items-center gap-2">
-                            <span>🔒 Contraseña:</span>
-                            <span className="font-mono">
-                              {showPassword[config.id] ? config.password : '••••••••'}
-                            </span>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => togglePasswordVisibility(config.id)}
-                              className="h-6 w-6 p-0"
-                            >
-                              {showPassword[config.id] ? (
-                                <EyeOff className="h-3 w-3" />
-                              ) : (
-                                <Eye className="h-3 w-3" />
-                              )}
-                            </Button>
-                          </div>
+                        {config.carrier.toLowerCase() === 'correos_cr' && config.settings ? (
+                          <>
+                            {config.settings.ws_username && <p>🔗 WS: {config.settings.ws_username}</p>}
+                            {config.settings.ws_sender_name && <p>📦 Remitente: {config.settings.ws_sender_name}</p>}
+                            {config.settings.ws_sender_phone && <p>📞 {config.settings.ws_sender_phone}</p>}
+                            {config.settings.ws_password && <p>🔒 Credenciales WS configuradas</p>}
+                          </>
+                        ) : (
+                          <>
+                            {config.email && <p>📧 {config.email}</p>}
+                            {config.baseUrl && <p>🌐 {config.baseUrl}</p>}
+                            {config.apiKey && <p>🔑 API Key configurada</p>}
+                            {config.password && <p>🔒 Contraseña configurada</p>}
+                          </>
                         )}
                       </div>
                     </div>

@@ -2,16 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
-import { CorreosAutomation, convertOrderToCorreosFormat } from '@/lib/correosAutomation';
 import { CorreosWebService } from '@/lib/correos';
 import type { CorreosWSCredentials } from '@/lib/correos';
-
-const DEFAULT_SENDER = {
-  name: 'Pymexpress',
-  address: 'San José, Costa Rica',
-  zip: '10101',
-  phone: '00000000',
-};
 
 export async function POST(request: NextRequest) {
   try {
@@ -52,10 +44,13 @@ export async function POST(request: NextRequest) {
       }
 
       const settings = (shippingConfig.settings as Record<string, any>) ?? {};
-      const useWebService =
-        settings.integrationMode === 'webservice' &&
-        settings.ws_username &&
-        settings.ws_password;
+
+      if (!settings.ws_username || !settings.ws_password) {
+        return NextResponse.json(
+          { error: 'Correos Web Service credentials not configured. Go to Configuración → Envíos to set them up.' },
+          { status: 400 }
+        );
+      }
 
       const orders = await prisma.order.findMany({
         where: { orderId: { in: orderIds }, orderType: 'EA' },
@@ -65,84 +60,64 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'No valid orders found for shipping' }, { status: 404 });
       }
 
-      let results: { success: boolean; orderId: string; guiaNumber?: string; trackingNumber?: string; error?: string; pdfBuffer?: Buffer; pdfFileName?: string }[];
+      const wsCreds: CorreosWSCredentials = {
+        username: settings.ws_username,
+        password: settings.ws_password,
+        sistema: settings.ws_sistema || 'PYMEXPRESS',
+        usuarioId: Number(settings.ws_usuario_id) || 0,
+        servicioId: Number(settings.ws_servicio_id) || 0,
+        codCliente: settings.ws_cod_cliente || '',
+      };
 
-      // ─── Web Service path ──────────────────────────────────────────
-      if (useWebService) {
-        const wsCreds: CorreosWSCredentials = {
-          username: settings.ws_username,
-          password: settings.ws_password,
-          sistema: settings.ws_sistema || 'PYMEXPRESS',
-          usuarioId: Number(settings.ws_usuario_id) || 0,
-          servicioId: Number(settings.ws_servicio_id) || 0,
-          codCliente: settings.ws_cod_cliente || '',
-        };
+      const sender = {
+        name: settings.ws_sender_name || '',
+        address: settings.ws_sender_address || '',
+        zip: settings.ws_sender_zip || '10101',
+        phone: settings.ws_sender_phone || '00000000',
+      };
 
-        const ws = new CorreosWebService(wsCreds);
-        results = [];
+      const ws = new CorreosWebService(wsCreds);
+      const results: { success: boolean; orderId: string; guiaNumber?: string; trackingNumber?: string; error?: string; pdfBuffer?: Buffer; pdfFileName?: string }[] = [];
 
-        for (const order of orders) {
+      for (const order of orders) {
+        try {
+          let destZip = '10101';
           try {
-            let destZip = '10101';
-            try {
-              if (order.province && order.canton && order.district) {
-                destZip = await ws.getPostalCode(order.province, order.canton, order.district);
-                console.log(`[WS] Postal code for ${order.orderId}: ${order.province}/${order.canton}/${order.district} → ${destZip}`);
-              }
-            } catch (geoErr: any) {
-              console.warn(`[WS] Could not resolve postal code for ${order.orderId}: ${geoErr.message}`);
+            if (order.province && order.canton && order.district) {
+              destZip = await ws.getPostalCode(order.province, order.canton, order.district);
+              console.log(`[WS] Postal code for ${order.orderId}: ${order.province}/${order.canton}/${order.district} → ${destZip}`);
             }
-
-            console.log(`[WS] Generating guía for ${order.orderId} (zip: ${destZip})...`);
-            const res = await ws.generateAndRegisterGuia({
-              customerName: order.customerName || 'Destinatario',
-              customerPhone: order.phone || '00000000',
-              customerAddress: order.address || 'Sin dirección',
-              customerZip: destZip,
-              customerApartado: destZip,
-              senderName: DEFAULT_SENDER.name,
-              senderAddress: DEFAULT_SENDER.address,
-              senderZip: DEFAULT_SENDER.zip,
-              senderPhone: DEFAULT_SENDER.phone,
-              weight: 500,
-              description: (order as any).product || (order as any).comments || 'Paquete',
-            });
-
-            results.push({
-              success: res.success,
-              orderId: order.orderId,
-              guiaNumber: res.guiaNumber || undefined,
-              trackingNumber: res.guiaNumber || undefined,
-              error: res.error,
-              pdfBuffer: res.pdfBuffer,
-              pdfFileName: res.guiaNumber ? `guia-${res.guiaNumber}.pdf` : undefined,
-            });
-          } catch (err: any) {
-            results.push({ success: false, orderId: order.orderId, error: err.message });
+          } catch (geoErr: any) {
+            console.warn(`[WS] Could not resolve postal code for ${order.orderId}: ${geoErr.message}`);
           }
-        }
-      } else {
-        // ─── Browser automation path (legacy) ────────────────────────
-        if (!shippingConfig.email || !shippingConfig.password) {
-          return NextResponse.json({ error: 'Shipping configuration is incomplete' }, { status: 400 });
-        }
 
-        const automation = new CorreosAutomation({
-          email: shippingConfig.email,
-          password: shippingConfig.password,
-        });
+          console.log(`[WS] Generating guía for ${order.orderId} (zip: ${destZip})...`);
+          const res = await ws.generateAndRegisterGuia({
+            customerName: order.customerName || 'Destinatario',
+            customerPhone: order.phone || '00000000',
+            customerAddress: order.address || 'Sin dirección',
+            customerZip: destZip,
+            customerApartado: destZip,
+            senderName: sender.name,
+            senderAddress: sender.address,
+            senderZip: sender.zip,
+            senderPhone: sender.phone,
+            weight: 500,
+            description: (order as any).product || (order as any).comments || 'Paquete',
+          });
 
-        const ordersData = orders.map((order) => convertOrderToCorreosFormat(order, deliveryType));
-        const raw = await automation.generateMultipleGuias(ordersData);
-        results = raw.map((r) => ({
-          success: r.success,
-          orderId: r.orderId,
-          guiaNumber: r.guiaNumber,
-          trackingNumber: r.trackingNumber,
-          error: r.error,
-          pdfBuffer: r.pdfBuffer,
-          pdfFileName: r.pdfFileName,
-        }));
+          results.push({
+            success: res.success,
+            orderId: order.orderId,
+            guiaNumber: res.guiaNumber || undefined,
+            trackingNumber: res.guiaNumber || undefined,
+            error: res.error,
+            pdfBuffer: res.pdfBuffer,
+            pdfFileName: res.guiaNumber ? `guia-${res.guiaNumber}.pdf` : undefined,
+          });
+        } catch (err: any) {
+          results.push({ success: false, orderId: order.orderId, error: err.message });
+        }
       }
 
       // ─── Persist results ───────────────────────────────────────────

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { validateApiKey } from '@/lib/integration-auth';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
-import { CorreosAutomation, convertOrderToCorreosFormat } from '@/lib/correosAutomation';
+import { CorreosWebService } from '@/lib/correos';
+import type { CorreosWSCredentials } from '@/lib/correos';
 import { logIntegrationActivity } from '@/lib/integration-logs';
 
 // Configure route for Vercel deployment
@@ -102,18 +103,19 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      if (!shippingConfig || !shippingConfig.email || !shippingConfig.password) {
+      const settings = (shippingConfig?.settings as Record<string, any>) ?? {};
+
+      if (!settings.ws_username || !settings.ws_password) {
         await logIntegrationActivity(tenantId, 'GUIA_GENERATION_FAILED', {
-          error: 'Shipping configuration incomplete',
+          error: 'WS credentials not configured',
           orderIds
         });
         return NextResponse.json(
-          { error: 'Shipping configuration is incomplete. Please configure Correos de Costa Rica credentials in settings.' },
+          { error: 'Correos Web Service credentials not configured. Please configure them in shipping settings.' },
           { status: 400 }
         );
       }
 
-      // Get orders (tenant-isolated automatically)
       const orders = await prisma.order.findMany({
         where: {
           orderId: { in: orderIds },
@@ -133,20 +135,66 @@ export async function POST(req: NextRequest) {
         console.warn(`[Guia API] Only found ${orders.length} of ${orderIds.length} requested orders`);
       }
 
-      // Initialize automation (headless mode enforced in production)
-      const automation = new CorreosAutomation({
-        email: shippingConfig.email,
-        password: shippingConfig.password
-      });
+      const wsCreds: CorreosWSCredentials = {
+        username: settings.ws_username,
+        password: settings.ws_password,
+        sistema: settings.ws_sistema || 'PYMEXPRESS',
+        usuarioId: Number(settings.ws_usuario_id) || 0,
+        servicioId: Number(settings.ws_servicio_id) || 0,
+        codCliente: settings.ws_cod_cliente || '',
+      };
 
-      // Convert orders to Correos format
-      const ordersData = orders.map(order => convertOrderToCorreosFormat(order, deliveryType));
+      const sender = {
+        name: settings.ws_sender_name || '',
+        address: settings.ws_sender_address || '',
+        zip: settings.ws_sender_zip || '10101',
+        phone: settings.ws_sender_phone || '00000000',
+      };
 
-      // Generate guías (headless, no popups)
-      console.log(`[Guia API] Starting headless guia generation for ${ordersData.length} orders...`);
-      const results = await automation.generateMultipleGuias(ordersData);
+      const ws = new CorreosWebService(wsCreds);
+      const results: { success: boolean; orderId: string; guiaNumber?: string; trackingNumber?: string; error?: string; pdfBuffer?: Buffer; pdfFileName?: string }[] = [];
 
-      // Save guía records
+      console.log(`[Guia API] Starting WS guia generation for ${orders.length} orders...`);
+
+      for (const order of orders) {
+        try {
+          let destZip = '10101';
+          try {
+            if (order.province && order.canton && order.district) {
+              destZip = await ws.getPostalCode(order.province, order.canton, order.district);
+            }
+          } catch (geoErr: any) {
+            console.warn(`[Guia API] Could not resolve postal code for ${order.orderId}: ${geoErr.message}`);
+          }
+
+          const res = await ws.generateAndRegisterGuia({
+            customerName: order.customerName || 'Destinatario',
+            customerPhone: order.phone || '00000000',
+            customerAddress: order.address || 'Sin dirección',
+            customerZip: destZip,
+            customerApartado: destZip,
+            senderName: sender.name,
+            senderAddress: sender.address,
+            senderZip: sender.zip,
+            senderPhone: sender.phone,
+            weight: 500,
+            description: (order as any).product || (order as any).comments || 'Paquete',
+          });
+
+          results.push({
+            success: res.success,
+            orderId: order.orderId,
+            guiaNumber: res.guiaNumber || undefined,
+            trackingNumber: res.guiaNumber || undefined,
+            error: res.error,
+            pdfBuffer: res.pdfBuffer,
+            pdfFileName: res.guiaNumber ? `guia-${res.guiaNumber}.pdf` : undefined,
+          });
+        } catch (err: any) {
+          results.push({ success: false, orderId: order.orderId, error: err.message });
+        }
+      }
+
       const savedGuias = [];
 
       for (const result of results) {
@@ -154,44 +202,27 @@ export async function POST(req: NextRequest) {
           try {
             const guiaData: any = {
               orderId: result.orderId,
-              carrier: carrier,
+              carrier,
               guiaNumber: result.guiaNumber,
-              trackingNumber: result.trackingNumber,
+              trackingNumber: result.trackingNumber || result.guiaNumber,
               status: 'completed',
               serviceType: 'standard',
               tenant: { connect: { id: tenantId } }
             };
 
-            // Add PDF data if available
-            if (result.pdfBuffer && result.pdfFileName) {
-              const normalizedBuffer = Buffer.isBuffer(result.pdfBuffer)
-                ? result.pdfBuffer
-                : Buffer.from(result.pdfBuffer as any);
-              
-              if (normalizedBuffer) {
-                guiaData.pdfData = normalizedBuffer;
-                guiaData.pdfFileName = result.pdfFileName;
-              }
+            if (result.pdfBuffer) {
+              const buf = Buffer.isBuffer(result.pdfBuffer) ? result.pdfBuffer : Buffer.from(result.pdfBuffer as any);
+              guiaData.pdfData = buf;
+              guiaData.pdfFileName = result.pdfFileName || `guia-${result.guiaNumber}.pdf`;
             }
 
-            const guia = await prisma.shippingGuia.create({
-              data: guiaData
-            });
+            const guia = await prisma.shippingGuia.create({ data: guiaData });
             savedGuias.push(guia);
 
-            // Update order status
             try {
               await prisma.order.update({
-                where: {
-                  tenantId_orderId: {
-                    tenantId: tenantId,
-                    orderId: result.orderId
-                  }
-                },
-                data: {
-                  status: 'Enviado',
-                  courier: carrier
-                }
+                where: { tenantId_orderId: { tenantId: tenantId, orderId: result.orderId } },
+                data: { status: 'Enviado', courier: carrier }
               });
             } catch (updateError) {
               console.error(`[Guia API] Failed to update order ${result.orderId}:`, updateError);
@@ -200,14 +231,13 @@ export async function POST(req: NextRequest) {
             console.error(`[Guia API] Failed to save guía for order ${result.orderId}:`, error);
           }
         } else {
-          // Failed guía - persist placeholder
           await prisma.shippingGuia.create({
             data: {
               orderId: result.orderId,
-              carrier: carrier,
+              carrier,
               guiaNumber: `PENDING-${result.orderId}`,
-              trackingNumber: null,
               status: 'failed',
+              errorMessage: result.error || 'Failed to create guía',
               serviceType: 'standard',
               tenant: { connect: { id: tenantId } }
             }
@@ -236,7 +266,7 @@ export async function POST(req: NextRequest) {
             guiaNumber: r.guiaNumber,
             trackingNumber: r.trackingNumber,
             error: r.error,
-            pdfDownloaded: r.pdfDownloaded || false
+            pdfDownloaded: !!r.pdfBuffer,
           })),
           savedGuias: savedGuias.map(g => ({
             id: g.id,
@@ -264,7 +294,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { 
         error: 'Failed to generate guías',
-        message: error.message || 'Unknown error',
         processingTime
       },
       { status: 500 }

@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { CorreosWebService } from '@/lib/correos';
 import type { CorreosWSCredentials } from '@/lib/correos';
-import { isWorkerConfigured, getWorkerUrl } from '@/lib/correos/worker';
+import { isProxyConfigured, getProxyUrl } from '@/lib/correos/proxy';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ export const maxDuration = 30;
  * GET /api/logistics/correos-test
  *
  * Diagnostic endpoint — validates Correos connectivity.
- * Tests: Worker config -> Worker health -> Token auth -> SOAP province lookup.
+ * Tests: Proxy config -> Proxy health -> Token auth -> SOAP province lookup.
  */
 export async function GET(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
@@ -22,45 +22,43 @@ export async function GET(req: NextRequest) {
     const results: { step: string; ok: boolean; ms: number; detail?: string }[] = [];
 
     try {
-        // Step 1: Check Worker configuration
-        const workerConfigured = isWorkerConfigured();
-        const workerUrl = getWorkerUrl();
+        const proxyConfigured = isProxyConfigured();
+        const proxyUrl = getProxyUrl();
         results.push({
-            step: 'worker_configured',
-            ok: workerConfigured,
+            step: 'proxy_configured',
+            ok: proxyConfigured,
             ms: 0,
-            detail: workerConfigured
-                ? `CORREOS_WORKER_URL = ${workerUrl}`
-                : 'CORREOS_WORKER_URL or CORREOS_WORKER_SECRET not set — using direct connection',
+            detail: proxyConfigured
+                ? `CORREOS_PROXY_URL = ${proxyUrl}`
+                : 'CORREOS_PROXY_URL or CORREOS_PROXY_SECRET not set — using direct connection',
         });
-        console.log(`[correos-test] Worker: ${workerConfigured ? `CONFIGURED (${workerUrl})` : 'NOT CONFIGURED (direct)'}`);
+        console.log(`[correos-test] Proxy: ${proxyConfigured ? `CONFIGURED (${proxyUrl})` : 'NOT CONFIGURED (direct)'}`);
 
-        // Step 2: Worker health check (only when Worker is configured)
-        if (workerConfigured) {
-            console.log('[correos-test] Step 2: Worker health check...');
+        if (proxyConfigured) {
+            console.log('[correos-test] Step 2: Proxy health check...');
             const t0 = Date.now();
             try {
-                const healthRes = await fetch(`${workerUrl}/health`, {
+                const healthRes = await fetch(`${proxyUrl}/health`, {
                     signal: AbortSignal.timeout(10_000),
                 });
                 const elapsed = Date.now() - t0;
                 if (healthRes.ok) {
-                    console.log(`[correos-test] Worker health: OK (${elapsed}ms)`);
-                    results.push({ step: 'worker_health', ok: true, ms: elapsed, detail: 'Worker is alive' });
+                    const body = await healthRes.text();
+                    console.log(`[correos-test] Proxy health: OK (${elapsed}ms)`);
+                    results.push({ step: 'proxy_health', ok: true, ms: elapsed, detail: `Proxy is alive — ${body}` });
                 } else {
-                    console.error(`[correos-test] Worker health: BAD STATUS ${healthRes.status} (${elapsed}ms)`);
-                    results.push({ step: 'worker_health', ok: false, ms: elapsed, detail: `Worker returned ${healthRes.status}` });
-                    return NextResponse.json({ ok: false, results, diagnosis: 'Worker is not responding correctly.' });
+                    console.error(`[correos-test] Proxy health: BAD STATUS ${healthRes.status} (${elapsed}ms)`);
+                    results.push({ step: 'proxy_health', ok: false, ms: elapsed, detail: `Proxy returned ${healthRes.status}` });
+                    return NextResponse.json({ ok: false, results, diagnosis: 'Proxy is not responding correctly.' });
                 }
             } catch (e: any) {
                 const elapsed = Date.now() - t0;
-                console.error(`[correos-test] Worker health: FAILED (${elapsed}ms): ${e.message}`);
-                results.push({ step: 'worker_health', ok: false, ms: elapsed, detail: e.message });
-                return NextResponse.json({ ok: false, results, diagnosis: 'Cannot reach Cloudflare Worker.' });
+                console.error(`[correos-test] Proxy health: FAILED (${elapsed}ms): ${e.message}`);
+                results.push({ step: 'proxy_health', ok: false, ms: elapsed, detail: e.message });
+                return NextResponse.json({ ok: false, results, diagnosis: 'Cannot reach proxy server.' });
             }
         }
 
-        // Step 3: Load credentials
         const credRows = await prisma.$queryRaw<{ key: string; value: string }[]>`
             SELECT key, value FROM lm_carrier_configs WHERE key LIKE 'correos_ws_%'
         `;
@@ -86,8 +84,7 @@ export async function GET(req: NextRequest) {
 
         const ws = new CorreosWebService(wsCreds);
 
-        // Step 4: Token auth
-        console.log('[correos-test] Step 4: requesting token...');
+        console.log('[correos-test] Step: requesting token...');
         const tToken = Date.now();
         try {
             await ws.getSoapClient().getTokenManager().getToken();
@@ -100,8 +97,7 @@ export async function GET(req: NextRequest) {
             results.push({ step: 'token', ok: false, ms: elapsed, detail: e.message });
         }
 
-        // Step 5: SOAP province lookup
-        console.log('[correos-test] Step 5: calling SOAP ccrCodProvincia...');
+        console.log('[correos-test] Step: calling SOAP ccrCodProvincia...');
         const tSoap = Date.now();
         try {
             const prov = await ws.getSoapClient().getProvincias();

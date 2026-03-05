@@ -1,5 +1,5 @@
 import type { CorreosWSCredentials, TokenRequest } from './types';
-import { getTokenUrl, getWorkerSecret, isWorkerConfigured } from './worker';
+import { getTokenUrl, getProxySecret, isProxyConfigured } from './proxy';
 
 const TOKEN_TTL_MS = 4 * 60 * 1000; // 4 minutes (tokens expire at 5 min)
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -20,21 +20,21 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 /**
- * POST to the token endpoint. When CORREOS_WORKER_URL is set, the request
- * goes through the Cloudflare Worker (standard HTTPS, port 443).
+ * POST to the token endpoint. When CORREOS_PROXY_URL is set, the request
+ * goes through the Jetson proxy via Cloudflare Tunnel (standard HTTPS, port 443).
  * When not set (local dev), it goes directly to Correos :447.
  */
 async function tokenPost(body: string): Promise<{ statusCode: number; body: string }> {
   const url = getTokenUrl();
-  const secret = getWorkerSecret();
-  const usingWorker = isWorkerConfigured();
+  const secret = getProxySecret();
+  const usingProxy = isProxyConfigured();
 
-  console.log(`[CorreosToken] POST ${url} (via ${usingWorker ? 'CF Worker' : 'direct'})`);
+  console.log(`[CorreosToken] POST ${url} (via ${usingProxy ? 'proxy' : 'direct'})`);
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  if (usingWorker && secret) {
+  if (usingProxy && secret) {
     headers['X-Correos-Secret'] = secret;
   }
 

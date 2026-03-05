@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { correosHttp } from './http';
 import { CorreosTokenManager } from './tokenManager';
-import { getSoapEndpoint, getRemoteWsdlUrl } from './worker';
+import { getSoapEndpoint, getRemoteWsdlUrl } from './proxy';
 import type {
   CorreosWSCredentials,
   CcrRespuestaProvincia,

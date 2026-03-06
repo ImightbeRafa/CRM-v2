@@ -177,6 +177,8 @@ export default function GuiasPage() {
     const [showHistory, setShowHistory] = useState(false);
     const [history, setHistory] = useState<GuiaHistoryItem[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
+    const [selectedHistoryIds, setSelectedHistoryIds] = useState<Set<string>>(new Set());
+    const [downloadingBulkHistoryPdf, setDownloadingBulkHistoryPdf] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -198,7 +200,16 @@ export default function GuiasPage() {
         setHistoryLoading(true);
         try {
             const data = await (await fetch('/api/logistics/guias/history?carrier=correos_cr&limit=50')).json();
-            setHistory(data.guias || []);
+            const guias = data.guias || [];
+            setHistory(guias);
+            setSelectedHistoryIds(prev => {
+                const next = new Set<string>();
+                const availableIds = new Set(guias.filter((g: GuiaHistoryItem) => g.hasPdf).map((g: GuiaHistoryItem) => g.id));
+                prev.forEach(id => {
+                    if (availableIds.has(id)) next.add(id);
+                });
+                return next;
+            });
         } catch (e) { console.error(e); } finally { setHistoryLoading(false); }
     }, []);
 
@@ -294,11 +305,65 @@ export default function GuiasPage() {
         } finally { setGenerating(false); }
     }
 
+    function toggleHistorySelection(id: string) {
+        setSelectedHistoryIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    }
+
+    function selectAllHistoryWithPdf() {
+        setSelectedHistoryIds(new Set(history.filter(g => g.hasPdf).map(g => g.id)));
+    }
+
+    function clearHistorySelection() {
+        setSelectedHistoryIds(new Set());
+    }
+
+    async function downloadBulkHistoryPdf() {
+        if (selectedHistoryIds.size === 0) return;
+
+        setDownloadingBulkHistoryPdf(true);
+        try {
+            const response = await fetch('/api/logistics/guias/download-bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: [...selectedHistoryIds] }),
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                throw new Error(data?.error || 'No se pudo generar el PDF combinado');
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="([^"]+)"/i);
+
+            anchor.href = url;
+            anchor.download = match?.[1] || 'guias-bulk.pdf';
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error(error);
+            alert(error instanceof Error ? error.message : 'Error descargando PDF combinado');
+        } finally {
+            setDownloadingBulkHistoryPdf(false);
+        }
+    }
+
     const selectedOrders = orders.filter(o => selected.has(o.id));
     const fmt = (n: number) => `₡${(n || 0).toLocaleString('es-CR')}`;
     const mensajeriaCount = orders.filter(o => o.lmCarrier === 'mensajeria').length;
     const correosCount = orders.filter(o => o.lmCarrier === 'correos').length;
     const ceCount = orders.filter(o => o.isContraEntrega && o.lmCarrier === 'mensajeria').length;
+    const selectableHistoryCount = history.filter(g => g.hasPdf).length;
 
     return (
         <div>
@@ -521,6 +586,55 @@ export default function GuiasPage() {
                                     <FileText size={18} style={{ color: '#60a5fa' }} /> Historial de Guías — Correos CR
                                 </h2>
                                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                    <button
+                                        onClick={selectAllHistoryWithPdf}
+                                        disabled={selectableHistoryCount === 0 || historyLoading}
+                                        style={{
+                                            padding: '6px 10px',
+                                            ...glass,
+                                            color: selectableHistoryCount > 0 ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.2)',
+                                            cursor: selectableHistoryCount > 0 ? 'pointer' : 'default',
+                                            fontSize: 11.5,
+                                            opacity: selectableHistoryCount > 0 ? 1 : 0.5
+                                        }}
+                                    >
+                                        Seleccionar PDF
+                                    </button>
+                                    <button
+                                        onClick={clearHistorySelection}
+                                        disabled={selectedHistoryIds.size === 0}
+                                        style={{
+                                            padding: '6px 10px',
+                                            ...glass,
+                                            color: selectedHistoryIds.size > 0 ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.2)',
+                                            cursor: selectedHistoryIds.size > 0 ? 'pointer' : 'default',
+                                            fontSize: 11.5,
+                                            opacity: selectedHistoryIds.size > 0 ? 1 : 0.5
+                                        }}
+                                    >
+                                        Limpiar
+                                    </button>
+                                    <button
+                                        onClick={downloadBulkHistoryPdf}
+                                        disabled={selectedHistoryIds.size === 0 || downloadingBulkHistoryPdf}
+                                        style={{
+                                            padding: '6px 12px',
+                                            borderRadius: 8,
+                                            border: '1px solid rgba(52,211,153,0.35)',
+                                            background: selectedHistoryIds.size > 0 ? 'rgba(52,211,153,0.12)' : 'transparent',
+                                            color: selectedHistoryIds.size > 0 ? '#34d399' : 'rgba(255,255,255,0.2)',
+                                            fontSize: 11.5,
+                                            fontWeight: 700,
+                                            cursor: selectedHistoryIds.size > 0 ? 'pointer' : 'default',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 6,
+                                            opacity: selectedHistoryIds.size > 0 ? 1 : 0.5
+                                        }}
+                                    >
+                                        {downloadingBulkHistoryPdf ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={12} />}
+                                        Descargar combinados {selectedHistoryIds.size > 0 ? `(${selectedHistoryIds.size})` : ''}
+                                    </button>
                                     <button onClick={loadHistory} style={{ padding: '6px 10px', ...glass, color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}><RefreshCw size={12} /></button>
                                     <button onClick={() => setShowHistory(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 4 }}><X size={20} /></button>
                                 </div>
@@ -533,7 +647,7 @@ export default function GuiasPage() {
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                                     <thead>
                                         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-                                            {['Orden', 'Cuenta', '# Guía', 'Estado', 'Fecha', 'PDF'].map(h => (
+                                            {['', 'Orden', 'Cuenta', '# Guía', 'Estado', 'Fecha', 'PDF'].map(h => (
                                                 <th key={h} style={{ padding: '9px 11px', textAlign: 'left', color: 'rgba(255,255,255,0.3)', fontWeight: 600, fontSize: 10.5, textTransform: 'uppercase' }}>{h}</th>
                                             ))}
                                         </tr>
@@ -541,6 +655,22 @@ export default function GuiasPage() {
                                     <tbody>
                                         {history.map((g, idx) => (
                                             <tr key={g.id} style={{ borderBottom: idx < history.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                                                <td style={{ padding: '9px 11px', width: 34 }}>
+                                                    {g.hasPdf ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleHistorySelection(g.id)}
+                                                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
+                                                            aria-label={selectedHistoryIds.has(g.id) ? 'Deseleccionar guía' : 'Seleccionar guía'}
+                                                        >
+                                                            {selectedHistoryIds.has(g.id)
+                                                                ? <CheckSquare size={14} style={{ color: '#34d399' }} />
+                                                                : <Square size={14} style={{ color: 'rgba(255,255,255,0.2)' }} />}
+                                                        </button>
+                                                    ) : (
+                                                        <span style={{ color: 'rgba(255,255,255,0.12)' }}>—</span>
+                                                    )}
+                                                </td>
                                                 <td style={{ padding: '9px 11px', color: '#F2F2F2', fontWeight: 600 }}>{g.orderId}</td>
                                                 <td style={{ padding: '9px 11px', color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>{g.tenantName}</td>
                                                 <td style={{ padding: '9px 11px', color: '#60a5fa', fontWeight: 700, fontSize: 13 }}>{g.guiaNumber || '—'}</td>

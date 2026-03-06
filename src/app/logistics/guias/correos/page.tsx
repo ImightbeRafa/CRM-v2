@@ -240,17 +240,24 @@ export default function GuiaCorreosPage() {
     // ─── Automation functions ─────────────────────────────
     function openVerification() {
         const selectedList = orders.filter(o => selected.has(o.id));
-        setVerifiedOrders(selectedList.map(o => ({
-            id: o.id,
-            orderId: o.orderId,
-            customerName: o.customerName || '',
-            province: o.province || '',
-            canton: o.canton || '',
-            district: o.district || '',
-            address: o.address || '',
-            deliveryType,
-            valid: false,
-        })));
+        setVerifiedOrders(selectedList.map(o => {
+            const prov = findProvince(o.province || '');
+            const cant = findCanton(prov, o.canton || '');
+            const dist = o.district || '';
+            const addr = o.address || '';
+            const valid = !!(prov && cant && cant.distritos.some(d => normalizeText(d) === normalizeText(dist)) && addr.trim());
+            return {
+                id: o.id,
+                orderId: o.orderId,
+                customerName: o.customerName || '',
+                province: o.province || '',
+                canton: o.canton || '',
+                district: dist,
+                address: addr,
+                deliveryType,
+                valid,
+            };
+        }));
         setGenerationResults(null);
         setShowVerification(true);
     }

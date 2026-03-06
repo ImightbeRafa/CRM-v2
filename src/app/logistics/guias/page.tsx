@@ -237,13 +237,20 @@ export default function GuiasPage() {
     function openVerification() {
         const correosSelected = orders.filter(o => selected.has(o.id) && o.lmCarrier === 'correos');
         if (correosSelected.length === 0) return;
-        setVerifiedOrders(correosSelected.map(o => ({
-            id: o.id, orderId: o.orderId, customerName: o.customerName || '',
-            province: o.province || '', canton: o.canton || '', district: o.district || '',
-            address: o.address || '', deliveryType, valid: false,
-            originalProvince: o.province || '', originalCanton: o.canton || '',
-            originalDistrict: o.district || '', originalAddress: o.address || '',
-        })));
+        setVerifiedOrders(correosSelected.map(o => {
+            const prov = findProvince(o.province || '');
+            const cant = findCanton(prov, o.canton || '');
+            const dist = o.district || '';
+            const addr = o.address || '';
+            const valid = !!(prov && cant && cant.distritos.some(d => normalizeText(d) === normalizeText(dist)) && addr.trim());
+            return {
+                id: o.id, orderId: o.orderId, customerName: o.customerName || '',
+                province: o.province || '', canton: o.canton || '', district: dist,
+                address: addr, deliveryType, valid,
+                originalProvince: o.province || '', originalCanton: o.canton || '',
+                originalDistrict: o.district || '', originalAddress: addr,
+            };
+        }));
         setGenerationResults(null);
         setShowVerification(true);
     }

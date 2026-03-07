@@ -85,15 +85,13 @@ export async function GET(req: NextRequest) {
         }
         const dailyBreakdown = Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date));
 
-        // 5. Work days in date range
-        const workDays = await prisma.$queryRawUnsafe<any[]>(`
-            SELECT id, staff_name, work_date, notes
-            FROM lm_work_days
-            WHERE staff_name = $1
-            ${dateFrom ? `AND work_date >= '${dateFrom}'` : ''}
-            ${dateTo ? `AND work_date <= '${dateTo}'` : ''}
-            ORDER BY work_date ASC
-        `, staffName);
+        // 5. Work days in date range (parameterized to prevent SQL injection)
+        let workDaySql = 'SELECT id, staff_name, work_date, notes FROM lm_work_days WHERE staff_name = $1';
+        const workDayParams: any[] = [staffName];
+        if (dateFrom) { workDayParams.push(dateFrom); workDaySql += ` AND work_date >= $${workDayParams.length}::date`; }
+        if (dateTo) { workDayParams.push(dateTo); workDaySql += ` AND work_date <= $${workDayParams.length}::date`; }
+        workDaySql += ' ORDER BY work_date ASC';
+        const workDays = await prisma.$queryRawUnsafe<any[]>(workDaySql, ...workDayParams);
 
         // 6. Cost calculations
         // Correos: use per-order correos_shipping_cost (manually entered in Contabilidad)

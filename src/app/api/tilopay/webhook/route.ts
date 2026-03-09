@@ -129,7 +129,7 @@ async function handleRepeatAPIWebhook(body: any, webhookId: string, startTime: n
     const processingTime = Date.now() - startTime;
     console.error('❌ [Repeat API] Webhook error:', error);
     return NextResponse.json({
-      error: error.message,
+      error: 'Webhook processing failed',
       webhookId,
       processingTime: `${processingTime}ms`
     }, { status: 500 });
@@ -611,9 +611,8 @@ export async function POST(req: NextRequest) {
     });
     
     return NextResponse.json({ 
-      error: e?.message || 'Webhook error',
+      error: 'Webhook processing failed',
       webhookId,
-      details: e?.stack,
       processingTime: `${processingTime}ms`
     }, { status: 500 });
   }

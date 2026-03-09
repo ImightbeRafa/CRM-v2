@@ -27,6 +27,11 @@ import {
   RefreshCw
 } from 'lucide-react';
 
+function escapeHtml(str: string): string {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
 interface GuiaGeneratorProps {
   open: boolean;
   orders: Sale[];
@@ -321,47 +326,47 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
         <div class="guia-container page-break">
           <div class="header">
             <h1>Guía de Envío</h1>
-            <h2>Número de Guía: ${og.guiaNumber}</h2>
+            <h2>Número de Guía: ${escapeHtml(og.guiaNumber)}</h2>
           </div>
           <div class="info-row">
             <span class="info-label">Orden:</span>
-            <span class="info-value">${order.orderId}</span>
+            <span class="info-value">${escapeHtml(order.orderId)}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Teléfono:</span>
-            <span class="info-value">${order.phone}</span>
+            <span class="info-value">${escapeHtml(order.phone || '')}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Cliente:</span>
-            <span class="info-value">${order.customerName}</span>
+            <span class="info-value">${escapeHtml(order.customerName || '')}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Producto:</span>
-            <span class="info-value">${order.product}</span>
+            <span class="info-value">${escapeHtml(order.product || '')}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Cantidad:</span>
-            <span class="info-value">${order.quantity}</span>
+            <span class="info-value">${escapeHtml(String(order.quantity ?? ''))}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Provincia:</span>
-            <span class="info-value">${order.orderType === 'EA' ? order.province : 'N/A'}</span>
+            <span class="info-value">${escapeHtml(order.orderType === 'EA' ? (order.province || 'N/A') : 'N/A')}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Cantón:</span>
-            <span class="info-value">${order.orderType === 'EA' ? order.canton : 'N/A'}</span>
+            <span class="info-value">${escapeHtml(order.orderType === 'EA' ? (order.canton || 'N/A') : 'N/A')}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Distrito:</span>
-            <span class="info-value">${order.orderType === 'EA' ? (order.district || 'N/A') : 'N/A'}</span>
+            <span class="info-value">${escapeHtml(order.orderType === 'EA' ? (order.district || 'N/A') : 'N/A')}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Dirección:</span>
-            <span class="info-value">${order.address}</span>
+            <span class="info-value">${escapeHtml(order.address || '')}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Comentarios:</span>
-            <span class="info-value">${order.comments}</span>
+            <span class="info-value">${escapeHtml(order.comments || '')}</span>
           </div>
         </div>
       `;

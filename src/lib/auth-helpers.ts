@@ -108,6 +108,22 @@ export async function getSessionWithTenant() {
  * const { session, tenantId, role } = auth;
  */
 export async function authenticateAPI(request: NextRequest) {
+  // Fast path: read middleware-injected headers (avoids redundant JWT decode)
+  const headerUserId = request.headers.get('x-user-id');
+  const headerRole = request.headers.get('x-user-role');
+  const headerTenantId = request.headers.get('x-tenant-id');
+
+  if (headerUserId && headerTenantId) {
+    return {
+      ok: true as const,
+      session: null,
+      tenantId: headerTenantId,
+      role: (headerRole || 'VIEWER') as Role,
+      userId: headerUserId,
+    };
+  }
+
+  // Fallback: full session check (for routes where middleware didn't inject headers)
   const session = await getServerSession(authOptions);
 
   if (!session || !session.user) {

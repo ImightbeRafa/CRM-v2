@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
     };
 
     if (!orderIds?.length) return NextResponse.json({ error: 'orderIds required' }, { status: 400 });
+    if (orderIds.length > 200) return NextResponse.json({ error: 'Maximum 200 orders per batch' }, { status: 400 });
     if (!patch || (!patch.lmCarrier && !patch.lmStatus)) {
         return NextResponse.json({ error: 'At least one field to patch required' }, { status: 400 });
     }
@@ -36,11 +37,13 @@ export async function POST(req: NextRequest) {
         // Update existing
         if (existingIds.size > 0) {
             const sets: string[] = ['updated_at=NOW()'];
-            if (patch.lmCarrier !== undefined) sets.push(`carrier='${patch.lmCarrier.replace(/'/g, "''")}'`);
-            if (patch.lmStatus !== undefined) sets.push(`status='${patch.lmStatus.replace(/'/g, "''")}'`);
+            const params: any[] = [];
+            if (patch.lmCarrier !== undefined) { params.push(patch.lmCarrier); sets.push(`carrier=$${params.length}`); }
+            if (patch.lmStatus !== undefined) { params.push(patch.lmStatus); sets.push(`status=$${params.length}`); }
+            params.push([...existingIds]);
             await prisma.$executeRawUnsafe(
-                `UPDATE lm_orders SET ${sets.join(',')} WHERE crm_order_id = ANY($1::text[])`,
-                [...existingIds]
+                `UPDATE lm_orders SET ${sets.join(',')} WHERE crm_order_id = ANY($${params.length}::text[])`,
+                ...params
             );
         }
 

@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('[Telegram Webhook] Error setting webhook:', error);
     return NextResponse.json(
-      { error: 'Server error', message: error.message },
+      { error: 'Server error' },
       { status: 500 }
     );
   }
@@ -143,7 +143,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('[Telegram Webhook] Error getting info:', error);
     return NextResponse.json(
-      { error: 'Server error', message: error.message },
+      { error: 'Server error' },
       { status: 500 }
     );
   }
@@ -178,7 +178,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error: any) {
     console.error('[Telegram Webhook] Error deleting:', error);
     return NextResponse.json(
-      { error: 'Server error', message: error.message },
+      { error: 'Server error' },
       { status: 500 }
     );
   }

@@ -38,8 +38,7 @@ export async function POST() {
       const errorText = await response.text();
       console.error('❌ Tilopay auth failed:', response.status, errorText);
       return NextResponse.json({ 
-        error: 'Authentication failed',
-        details: errorText
+        error: 'Authentication failed'
       }, { status: 500 });
     }
 
@@ -64,8 +63,7 @@ export async function POST() {
   } catch (error: any) {
     console.error('❌ [tilopay-auth] Error:', error);
     return NextResponse.json({ 
-      error: 'Auth error',
-      message: error.message 
+      error: 'Auth error'
     }, { status: 500 });
   }
 }

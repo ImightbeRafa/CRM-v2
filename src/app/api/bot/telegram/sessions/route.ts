@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('[Bot Sessions] Error:', error);
     return NextResponse.json(
-      { error: 'Server error', message: error.message },
+      { error: 'Server error' },
       { status: 500 }
     );
   }
@@ -133,7 +133,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error: any) {
     console.error('[Bot Sessions] Error:', error);
     return NextResponse.json(
-      { error: 'Server error', message: error.message },
+      { error: 'Server error' },
       { status: 500 }
     );
   }

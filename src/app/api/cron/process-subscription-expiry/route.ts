@@ -165,7 +165,6 @@ async function processExpiredSubscriptions(request: NextRequest) {
       message: 'Subscription expiry processing completed',
       processed: results.success.length,
       errors: results.errors.length,
-      errorDetails: results.errors.length > 0 ? results.errors : undefined,
       processingTime: `${processingTime}ms`,
       timestamp: now.toISOString()
     });
@@ -176,7 +175,6 @@ async function processExpiredSubscriptions(request: NextRequest) {
     
     return NextResponse.json({
       error: 'Failed to process subscription expiry',
-      details: error.message || 'Unknown error',
       processingTime: `${processingTime}ms`
     }, { status: 500 });
   }

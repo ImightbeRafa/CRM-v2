@@ -24,6 +24,11 @@ import {
 } from 'lucide-react';
 import { useToast } from "@/app/hooks/use-toast";
 
+function escapeHtml(str: string): string {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
 // Dynamic Status Filter Component for Export
 const StatusFilterExport = ({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) => {
   const [statuses, setStatuses] = useState<Array<{key: string; label: string}>>([]);
@@ -242,22 +247,22 @@ export function ExportManager({ orders, onClose }: ExportManagerProps) {
 
     const orderElements = filteredOrders.map(order => `
       <div class="order-item" style="border: 1px solid #ddd; margin: 10px 0; padding: 15px; page-break-inside: avoid;">
-        <h3>Orden #${order.orderId}</h3>
+        <h3>Orden #${escapeHtml(order.orderId)}</h3>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
           <div>
-            <strong>Cliente:</strong> ${order.customerName}<br>
-            <strong>Teléfono:</strong> ${order.phone}<br>
-            <strong>Producto:</strong> ${order.product}<br>
-            <strong>Cantidad:</strong> ${order.quantity}
+            <strong>Cliente:</strong> ${escapeHtml(order.customerName || '')}<br>
+            <strong>Teléfono:</strong> ${escapeHtml(order.phone || '')}<br>
+            <strong>Producto:</strong> ${escapeHtml(order.product || '')}<br>
+            <strong>Cantidad:</strong> ${escapeHtml(String(order.quantity ?? ''))}
           </div>
           <div>
-            <strong>Estado:</strong> ${order.status}<br>
-            <strong>Tipo:</strong> ${order.orderType}<br>
+            <strong>Estado:</strong> ${escapeHtml(order.status || '')}<br>
+            <strong>Tipo:</strong> ${escapeHtml(order.orderType || '')}<br>
             <strong>Total:</strong> ₡${order.total.toLocaleString()}<br>
             <strong>Fecha:</strong> ${new Date(order.timestamp).toLocaleDateString()}
           </div>
         </div>
-        ${order.comments ? `<p><strong>Comentarios:</strong> ${order.comments}</p>` : ''}
+        ${order.comments ? `<p><strong>Comentarios:</strong> ${escapeHtml(order.comments)}</p>` : ''}
       </div>
     `).join('');
 

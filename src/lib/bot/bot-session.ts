@@ -8,10 +8,18 @@
 import { prisma } from '@/lib/db';
 import { SignJWT, jwtVerify } from 'jose';
 
-// JWT secret for magic link tokens
-const BOT_JWT_SECRET = new TextEncoder().encode(
-  process.env.BOT_JWT_SECRET || process.env.NEXTAUTH_SECRET || 'betsy-bot-secret-key'
-);
+// JWT secret for magic link tokens (lazy-initialized to avoid crashing unrelated imports)
+let _botJwtSecret: Uint8Array | null = null;
+function getBotJwtSecret(): Uint8Array {
+  if (!_botJwtSecret) {
+    const val = process.env.BOT_JWT_SECRET || process.env.NEXTAUTH_SECRET || '';
+    if (!val && process.env.NODE_ENV === 'production') {
+      throw new Error('BOT_JWT_SECRET or NEXTAUTH_SECRET must be set in production');
+    }
+    _botJwtSecret = new TextEncoder().encode(val || 'dev-only-bot-secret');
+  }
+  return _botJwtSecret;
+}
 
 // Token expiration time (15 minutes)
 const TOKEN_EXPIRATION = '15m';
@@ -56,7 +64,7 @@ export async function generateConnectionToken(
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(TOKEN_EXPIRATION)
-    .sign(BOT_JWT_SECRET);
+    .sign(getBotJwtSecret());
   
   return token;
 }
@@ -69,7 +77,7 @@ export async function verifyConnectionToken(
   token: string
 ): Promise<ConnectionTokenPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, BOT_JWT_SECRET);
+    const { payload } = await jwtVerify(token, getBotJwtSecret());
     return payload as ConnectionTokenPayload;
   } catch (error) {
     console.error('[BotSession] Token verification failed:', error);

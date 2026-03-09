@@ -3,7 +3,7 @@ import { z } from 'zod'
 // Common validation schemas
 export const emailSchema = z.string().email('Invalid email format')
 export const phoneSchema = z.string().regex(/^[\+]?[1-9][\d]{0,15}$/, 'Invalid phone number format')
-export const passwordSchema = z.string().min(6, 'Password must be at least 6 characters')
+export const passwordSchema = z.string().min(8, 'Password must be at least 8 characters')
 export const usernameSchema = z.string().min(3, 'Username must be at least 3 characters').max(50, 'Username too long')
 export const nameSchema = z.string().min(1, 'Name is required').max(100, 'Name too long')
 

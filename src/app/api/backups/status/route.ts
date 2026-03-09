@@ -84,10 +84,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching backup status:', error);
     return NextResponse.json(
-      { 
-        error: 'Failed to fetch backup status',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: 'Failed to fetch backup status' },
       { status: 500 }
     );
   }

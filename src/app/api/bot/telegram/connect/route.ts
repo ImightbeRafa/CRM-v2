@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('[Bot Connect] Error:', error);
     return NextResponse.json(
-      { error: 'Server error', message: error.message || 'Error al generar enlace' },
+      { error: 'Server error' },
       { status: 500 }
     );
   }
@@ -162,7 +162,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('[Bot Connect] Error getting status:', error);
     return NextResponse.json(
-      { error: 'Server error', message: error.message },
+      { error: 'Server error' },
       { status: 500 }
     );
   }
@@ -226,7 +226,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error: any) {
     console.error('[Bot Connect] Error disconnecting:', error);
     return NextResponse.json(
-      { error: 'Server error', message: error.message },
+      { error: 'Server error' },
       { status: 500 }
     );
   }

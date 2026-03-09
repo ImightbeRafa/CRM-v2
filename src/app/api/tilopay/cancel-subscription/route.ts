@@ -177,8 +177,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('❌ [cancel-subscription] Error:', error);
     return NextResponse.json({
-      error: error.message || 'Failed to cancel subscription',
-      details: error.toString()
+      error: 'Failed to cancel subscription'
     }, { status: 500 });
   }
 }

@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { createSuccessResponse, createErrorResponse, handleApiError, validatePassword } from '@/lib/apiUtils'
+import { requireAdmin } from '@/lib/apiAuth'
 
 // PUT /api/users/[id] - Update user (master only)
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireAdmin(request)
+  if (!auth.authorized) {
+    return createErrorResponse('Unauthorized', 401)
+  }
+
   try {
     const { username, password, role, active } = await request.json()
     const { id: userId } = await params
@@ -57,6 +63,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
 // DELETE /api/users/[id] - Delete user (master only)
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireAdmin(request)
+  if (!auth.authorized) {
+    return createErrorResponse('Unauthorized', 401)
+  }
+
   try {
     const { id: userId } = await params
     

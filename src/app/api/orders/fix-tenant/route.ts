@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
     console.error('[fix-tenant] Error:', error);
     return NextResponse.json({
       status: 'error',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Failed to fix tenant'
     }, { status: 500 });
   }
 }

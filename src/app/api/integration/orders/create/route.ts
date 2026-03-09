@@ -160,7 +160,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { 
         error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
         processingTime
       },
       { status: 500 }

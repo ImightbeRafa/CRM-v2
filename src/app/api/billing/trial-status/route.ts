@@ -80,8 +80,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('❌ Error getting trial status:', error);
     return NextResponse.json({ 
-      error: 'Failed to get trial status',
-      message: error.message 
+      error: 'Failed to get trial status'
     }, { status: 500 });
   }
 }

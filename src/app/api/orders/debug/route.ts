@@ -100,8 +100,7 @@ export async function GET(request: NextRequest) {
     console.error('[DEBUG] Error:', error);
     return NextResponse.json({
       status: 'error',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
+      error: 'An error occurred'
     }, { status: 500 });
   }
 }

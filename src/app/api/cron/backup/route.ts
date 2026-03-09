@@ -37,7 +37,6 @@ export async function GET(request: NextRequest) {
       {
         success: false,
         error: 'Backup failed',
-        details: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString(),
       },
       { status: 500 }
@@ -72,7 +71,6 @@ export async function POST(request: NextRequest) {
       {
         success: false,
         error: 'Manual backup failed',
-        details: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString(),
       },
       { status: 500 }

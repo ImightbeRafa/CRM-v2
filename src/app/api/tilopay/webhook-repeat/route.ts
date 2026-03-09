@@ -541,10 +541,8 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json({ 
       error: 'Webhook processing failed',
-      message: error.message,
       webhookId,
-      processingTime: `${processingTime}ms`,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      processingTime: `${processingTime}ms`
     }, { status: 500 });
   }
 }

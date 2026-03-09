@@ -1624,10 +1624,7 @@ function ConfigPageInner() {
             {!editingUser && (
               <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-700">
-                  <strong>Nota:</strong> Los nuevos usuarios tendrán la contraseña por defecto: <code className="bg-blue-100 px-1 rounded">password123</code>
-                </p>
-                <p className="text-sm text-blue-600 mt-1">
-                  El usuario podrá cambiar su contraseña después de iniciar sesión.
+                  <strong>Nota:</strong> Por favor establezca una contraseña segura de al menos 8 caracteres para el nuevo usuario.
                 </p>
               </div>
             )}

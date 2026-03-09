@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import crypto from 'crypto'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -39,16 +40,29 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse the signed request (format: signature.base64_payload)
-    const [signature, payload] = signedRequest.split('.')
-    if (!payload) {
+    const [encodedSig, payload] = signedRequest.split('.')
+    if (!payload || !encodedSig) {
       console.error('[instagram/data-deletion] Invalid signed_request format')
       return NextResponse.json({ error: 'Invalid request format' }, { status: 400 })
     }
 
-    // Decode the payload
+    // Verify HMAC signature using Meta app secret
+    const appSecret = (process.env.META_APP_SECRET || '').trim()
+    if (!appSecret) {
+      console.error('[instagram/data-deletion] META_APP_SECRET not configured')
+      return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
+    }
+    const expectedSig = crypto.createHmac('sha256', appSecret).update(payload).digest('hex')
+    const providedSig = Buffer.from(encodedSig, 'base64url').toString('hex')
+    if (!crypto.timingSafeEqual(Buffer.from(expectedSig, 'hex'), Buffer.from(providedSig, 'hex'))) {
+      console.error('[instagram/data-deletion] Signature verification failed')
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
+    }
+
+    // Decode the verified payload
     const decodedPayload = Buffer.from(payload, 'base64').toString('utf-8')
     const data = JSON.parse(decodedPayload)
-    const userId = data.user_id // Instagram user ID
+    const userId = data.user_id
 
     console.log('[instagram/data-deletion] Processing deletion for user:', userId)
 

@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
         data: {
           tenantId: tenantId,
           userId: userId,
-          userName: auth.session?.user?.email || 'Unknown',
+          userName: auth.session?.user?.email || auth.userId || 'Unknown',
           userRole: auth.role,
           action: 'BULK_DELETE',
           entityType: 'audit_log',

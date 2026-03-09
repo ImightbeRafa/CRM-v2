@@ -180,7 +180,7 @@ export async function GET(request: NextRequest) {
       const { searchParams } = new URL(request.url)
       const page = parseInt(searchParams.get('page') || '1')
       const limitParam = searchParams.get('limit')
-      const limit = limitParam === 'all' ? undefined : Math.min(parseInt(limitParam || '100'), 500) // Support 'all' for unlimited results
+      const limit = limitParam === 'all' ? 5000 : Math.min(parseInt(limitParam || '100'), 500)
       const skip = limit ? (page - 1) * limit : 0
       const status = searchParams.get('status')
       const orderType = searchParams.get('orderType')

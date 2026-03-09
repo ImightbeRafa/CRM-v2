@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
+function escapeHtml(str: string): string {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request: Request) {
@@ -99,23 +104,23 @@ export async function POST(request: Request) {
             <div class="content">
               <div class="field">
                 <div class="label">Name:</div>
-                <div class="value">${name}</div>
+                <div class="value">${escapeHtml(name)}</div>
               </div>
               <div class="field">
                 <div class="label">Email:</div>
-                <div class="value"><a href="mailto:${email}">${email}</a></div>
+                <div class="value"><a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a></div>
               </div>
               <div class="field">
                 <div class="label">Subject:</div>
-                <div class="value">${subject}</div>
+                <div class="value">${escapeHtml(subject)}</div>
               </div>
               <div class="field">
                 <div class="label">Message:</div>
-                <div class="message-box">${message.replace(/\n/g, '<br>')}</div>
+                <div class="message-box">${escapeHtml(message).replace(/\n/g, '<br>')}</div>
               </div>
               <div class="footer">
                 This email was sent from the Betsy CRM contact form.<br>
-                Reply directly to this email to respond to ${name}.
+                Reply directly to this email to respond to ${escapeHtml(name)}.
               </div>
             </div>
           </body>

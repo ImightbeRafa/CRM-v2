@@ -98,12 +98,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'success', data: created })
   } catch (e) {
     console.error('Error creating field:', e)
-    console.error('Error stack:', e instanceof Error ? e.stack : 'No stack trace')
     return NextResponse.json({ 
       status: 'error', 
-      error: 'Failed to create or enable field',
-      details: e instanceof Error ? e.message : 'Unknown error',
-      stack: e instanceof Error ? e.stack : undefined
+      error: 'Failed to create or enable field'
     }, { status: 500 })
   }
 }

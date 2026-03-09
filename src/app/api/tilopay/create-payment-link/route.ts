@@ -38,8 +38,7 @@ export async function POST(request: NextRequest) {
     if (!apiKey) {
       console.error('❌ Missing Tilopay API key');
       return NextResponse.json({ 
-        error: 'Tilopay not configured',
-        details: 'Missing TILOPAY_API_KEY'
+        error: 'Payment service not configured'
       }, { status: 500 });
     }
 
@@ -105,27 +104,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ 
         status: 'success',
         paymentUrl: successfulResponse.paymentUrl,
-        endpoint: successfulResponse.endpoint,
         orderNumber
       });
     } else {
       console.error('❌ All endpoints failed');
       
-      // Return detailed error for debugging
       return NextResponse.json({ 
-        error: 'Could not create payment link',
-        details: 'All Tilopay endpoints returned errors',
-        triedEndpoints: endpoints,
-        suggestion: 'Contact Tilopay support for correct endpoint documentation'
+        error: 'Could not create payment link'
       }, { status: 500 });
     }
 
   } catch (error: any) {
     console.error('❌ Error creating payment link:', error);
     return NextResponse.json({ 
-      error: 'Failed to create payment link',
-      message: error.message,
-      stack: error.stack
+      error: 'Failed to create payment link'
     }, { status: 500 });
   }
 }

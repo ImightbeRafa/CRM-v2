@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
           createdInvoices.push(invoice);
         } catch (error) {
           console.error(`Error creating invoice ${i}:`, error);
-          errors.push({ index: i, error: error instanceof Error ? error.message : 'Unknown error' });
+          errors.push({ index: i, error: 'Invoice generation failed' });
         }
       }
 

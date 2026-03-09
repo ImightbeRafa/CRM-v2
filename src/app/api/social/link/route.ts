@@ -96,7 +96,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, account: result })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

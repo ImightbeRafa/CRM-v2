@@ -179,10 +179,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error exporting sales:', error);
     return NextResponse.json(
-      { 
-        error: 'Failed to export sales',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: 'Failed to export sales' },
       { status: 500 }
     );
   }

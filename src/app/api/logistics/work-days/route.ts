@@ -13,15 +13,13 @@ export async function GET(req: NextRequest) {
     const dateTo = url.searchParams.get('dateTo');
 
     try {
-        const rows = await prisma.$queryRawUnsafe<any[]>(`
-            SELECT id, staff_name, work_date, notes, created_at
-            FROM lm_work_days
-            WHERE 1=1
-            ${staffName ? `AND staff_name = '${staffName.replace(/'/g, "''")}'` : ''}
-            ${dateFrom ? `AND work_date >= '${dateFrom}'` : ''}
-            ${dateTo ? `AND work_date <= '${dateTo}'` : ''}
-            ORDER BY work_date DESC
-        `);
+        let sql = 'SELECT id, staff_name, work_date, notes, created_at FROM lm_work_days WHERE 1=1';
+        const params: any[] = [];
+        if (staffName) { params.push(staffName); sql += ` AND staff_name = $${params.length}`; }
+        if (dateFrom) { params.push(dateFrom); sql += ` AND work_date >= $${params.length}::date`; }
+        if (dateTo) { params.push(dateTo); sql += ` AND work_date <= $${params.length}::date`; }
+        sql += ' ORDER BY work_date DESC';
+        const rows = await prisma.$queryRawUnsafe<any[]>(sql, ...params);
 
         return NextResponse.json({ workDays: rows });
     } catch (error) {

@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     console.error('🔥 ERROR:', error.message);
     return NextResponse.json({ 
       ok: false, 
-      error: error.message 
+      error: 'Test webhook failed' 
     });
   }
 }

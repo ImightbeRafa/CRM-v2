@@ -537,6 +537,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: 'El archivo excede el tamaño máximo de 10MB' }, { status: 400 });
+    }
+
+    const allowedTypes = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+    ];
+    if (file.type && !allowedTypes.includes(file.type)) {
+      return NextResponse.json({ error: 'Solo se permiten archivos Excel (.xlsx, .xls)' }, { status: 400 });
+    }
+
     // Validate import type
     if (importType !== 'orders' && importType !== 'inventory' && importType !== 'products') {
       return NextResponse.json({ 
@@ -620,8 +633,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Excel import error:', error);
     return NextResponse.json({ 
-      error: 'Error procesando el archivo Excel',
-      details: error.message 
+      error: 'Error procesando el archivo Excel'
     }, { status: 500 });
   }
 }

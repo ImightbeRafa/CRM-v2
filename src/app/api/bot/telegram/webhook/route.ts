@@ -104,9 +104,11 @@ function isRateLimited(chatId: string): boolean {
 function verifyWebhookSecret(request: NextRequest): boolean {
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
   
-  // If no secret is configured, allow all requests (for easier initial setup)
   if (!secret || secret === '') {
-    console.log('[Telegram Webhook] ℹ️ Secret verification disabled (TELEGRAM_WEBHOOK_SECRET not set)');
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[Telegram Webhook] TELEGRAM_WEBHOOK_SECRET must be set in production');
+      return false;
+    }
     return true;
   }
   

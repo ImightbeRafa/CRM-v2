@@ -202,10 +202,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error exporting database:', error);
     return NextResponse.json(
-      { 
-        error: 'Failed to export database',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: 'Failed to export database' },
       { status: 500 }
     );
   }

@@ -3,6 +3,21 @@ import { getToken } from 'next-auth/jwt';
 import { withTenantContext } from '@/lib/tenantContext';
 import { TenantError } from '@/lib/errors';
 
+const CSP_HEADER = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://vercel.live https://app.tilopay.com https://accounts.google.com https://www.googletagmanager.com https://api.tokenex.com https://storage.googleapis.com https://connect.facebook.net https://staticxx.facebook.com https://www.facebook.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "img-src 'self' data: https: blob: https://*.facebook.com https://*.fbcdn.net https://storage.googleapis.com https://vercel.com https://vercel.live https://*.vercel.app https://*.vercel-storage.com",
+  "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://api.tokenex.com https://vercel.live https://*.vercel-storage.com https://accounts.google.com https://connect.facebook.net https://graph.facebook.com https://www.facebook.com",
+  "frame-src 'self' https://app.tilopay.com https://api.tokenex.com https://accounts.google.com https://www.facebook.com https://web.facebook.com",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'self'",
+  "upgrade-insecure-requests",
+].join('; ');
+
 const PUBLIC_ROUTES = [
   '/auth/signin',
   '/auth/error',
@@ -25,6 +40,7 @@ const PUBLIC_ROUTES = [
   '/api/bot/telegram/health',                   // Telegram health check (diagnostic)
   '/api/bot/whatsapp/webhook',                  // WhatsApp bot webhook (must be public for Meta verification)
   '/api/auth/instagram/data-deletion',          // Meta data deletion callback (must be public)
+  '/api/cron',                                  // Vercel cron jobs (authenticated via CRON_SECRET in handler)
   '/privacy',                                   // Privacy policy (required for Meta verification)
   '/terms',                                     // Terms of service (required for Meta verification)
   '/data-deletion',                             // Data deletion instructions (required for Meta)
@@ -36,31 +52,45 @@ const PUBLIC_ROUTES = [
 export default async function middleware(request: Request) {
   const url = new URL(request.url);
   const { pathname } = url;
-  const origin = request.headers.get('origin');
 
-  // CORS Configuration - Allow integration API from external websites
+  // Strip internal auth headers to prevent client-side spoofing.
+  // Only middleware may set these after JWT validation.
+  const sanitizedHeaders = new Headers(request.headers);
+  sanitizedHeaders.delete('x-user-id');
+  sanitizedHeaders.delete('x-user-role');
+  sanitizedHeaders.delete('x-tenant-id');
+  const cleanFwd = { request: { headers: sanitizedHeaders } };
+
+  const origin = sanitizedHeaders.get('origin');
+
+  // Integration CORS must run before public route early-return (preflight needs headers)
   if (origin && pathname.startsWith('/api/integration')) {
-    console.log(`[Middleware] Integration API request from origin: ${origin}, path: ${pathname}, method: ${request.method}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[Middleware] Integration API request from origin: ${origin}, path: ${pathname}`);
+    }
 
-    // For integration endpoints, allow any origin (API key auth provides security)
-    const response = NextResponse.next();
+    const response = NextResponse.next(cleanFwd);
     response.headers.set('Access-Control-Allow-Origin', origin);
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
     response.headers.set('Access-Control-Allow-Credentials', 'true');
 
-    // Handle preflight requests
     if (request.method === 'OPTIONS') {
-      console.log(`[Middleware] Handling OPTIONS preflight for ${pathname}`);
       return new Response(null, { status: 200, headers: response.headers });
     }
 
-    console.log(`[Middleware] Allowing integration request to proceed`);
-  } else if (origin) {
-    // For other endpoints, restrict to allowed origins
+    return response;
+  }
+
+  // Fast path: skip all work for public routes (no CORS, no auth)
+  if (isPublicRoute(pathname)) {
+    return NextResponse.next(cleanFwd);
+  }
+
+  if (origin) {
     const allowedOrigins = process.env.NODE_ENV === 'production'
       ? ['https://betsycrm.com']
-      : ['http://localhost:3000', 'https://gaynell-nonparental-marlin.ngrok-free.dev']; // Allow ngrok for development
+      : ['http://localhost:3000', 'https://gaynell-nonparental-marlin.ngrok-free.dev'];
 
     if (allowedOrigins.includes(origin)) {
       const response = NextResponse.next();
@@ -69,16 +99,10 @@ export default async function middleware(request: Request) {
       response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
       response.headers.set('Access-Control-Allow-Credentials', 'true');
 
-      // Handle preflight requests
       if (request.method === 'OPTIONS') {
         return new Response(null, { status: 200, headers: response.headers });
       }
     }
-  }
-
-  // Skip middleware for public routes
-  if (isPublicRoute(pathname)) {
-    return NextResponse.next();
   }
 
   try {
@@ -114,6 +138,12 @@ export default async function middleware(request: Request) {
       return redirectToLogin(url);
     }
 
+    // Inject auth context as request headers so route handlers can skip getToken()
+    const requestHeaders = new Headers(sanitizedHeaders);
+    requestHeaders.set('x-user-id', userId);
+    requestHeaders.set('x-user-role', role);
+    if (tenantId) requestHeaders.set('x-tenant-id', tenantId);
+
     // Logistics dashboard — check early before tenant validation
     if (pathname.startsWith('/logistics') || pathname.startsWith('/api/logistics/')) {
       const isLogisticsAdmin = (token as any)?.isLogisticsAdmin === true;
@@ -126,16 +156,16 @@ export default async function middleware(request: Request) {
         }
         return NextResponse.redirect(new URL('/dashboard', url.origin));
       }
-      return NextResponse.next(); // skip all tenant/subscription checks
+      return NextResponse.next({ request: { headers: requestHeaders } });
     }
 
     // Handle tenant-specific routes
     if (pathname.startsWith('/api/')) {
-      return handleApiRequest(request, { tenantId, userId, role }, token);
+      return handleApiRequest(request, { tenantId, userId, role }, token, requestHeaders);
     }
 
     // Handle app routes
-    return handleAppRoute(request, { tenantId, userId, role, email_verified });
+    return handleAppRoute(request, { tenantId, userId, role, email_verified }, token, requestHeaders);
   } catch (error) {
     // Don't expose internal errors to the client
     if (error instanceof TenantError) {
@@ -193,38 +223,33 @@ function redirectToLogin(url: URL): NextResponse {
 async function handleApiRequest(
   request: Request,
   context: { tenantId?: string | null; userId: string; role: string },
-  token?: any
+  token: any,
+  requestHeaders: Headers
 ): Promise<NextResponse> {
   const { tenantId, userId, role } = context;
   const url = new URL(request.url);
   const pathname = url.pathname;
+  const fwd = { request: { headers: requestHeaders } };
 
   // Allow public routes
   if (isPublicRoute(pathname)) {
-    return NextResponse.next();
+    return NextResponse.next(fwd);
   }
 
   // Allow auth-related routes
   if (pathname.startsWith('/api/auth/')) {
-    return NextResponse.next();
+    return NextResponse.next(fwd);
   }
 
-  // Logistics admin routes — only require isLogisticsAdmin flag, no tenant needed
+  // Logistics admin routes — already checked in main middleware, just forward
   if (pathname.startsWith('/api/logistics/')) {
-    const isLogisticsAdmin = (token as any)?.isLogisticsAdmin === true;
-    if (!isLogisticsAdmin) {
-      return new NextResponse(
-        JSON.stringify({ error: 'Forbidden', message: 'Logistics admin access required' }),
-        { status: 403, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-    return NextResponse.next();
+    return NextResponse.next(fwd);
   }
 
   // Allow tenant setup routes for MASTER users
   if (pathname.startsWith('/api/tenant/setup')) {
     if (role === 'MASTER') {
-      return NextResponse.next();
+      return NextResponse.next(fwd);
     }
     return new NextResponse(
       JSON.stringify({ error: 'Unauthorized' }),
@@ -237,10 +262,9 @@ async function handleApiRequest(
     if (role === 'MASTER' &&
       (pathname.startsWith('/api/setup') ||
         pathname.startsWith('/api/tenant'))) {
-      return NextResponse.next();
+      return NextResponse.next(fwd);
     }
 
-    // For other API routes, return a 400 error instead of throwing
     return new NextResponse(
       JSON.stringify({ error: 'Tenant setup required. Please complete the setup process.' }),
       { status: 400, headers: { 'Content-Type': 'application/json' } }
@@ -252,8 +276,7 @@ async function handleApiRequest(
     return await withTenantContext(
       { tenantId, userId, role },
       async () => {
-        const response = NextResponse.next();
-        // Add tenant ID to response headers for client-side use
+        const response = NextResponse.next(fwd);
         response.headers.set('x-tenant-id', tenantId);
         return response;
       }
@@ -271,11 +294,14 @@ async function handleApiRequest(
  */
 async function handleAppRoute(
   request: Request,
-  context: { tenantId?: string; userId: string; role: string; email_verified?: boolean }
+  context: { tenantId?: string; userId: string; role: string; email_verified?: boolean },
+  token: any,
+  requestHeaders: Headers
 ): Promise<NextResponse> {
   const { tenantId, userId, role, email_verified } = context;
   const url = new URL(request.url);
   const pathname = url.pathname;
+  const fwd = { request: { headers: requestHeaders } };
 
   // Handle tenant setup flow - allow access to setup/auth pages without tenant
   const setupRoutes = ['/setup-tenant', '/setup-wizard', '/auth/verify-email', '/auth/signin', '/auth/error'];
@@ -284,19 +310,11 @@ async function handleAppRoute(
   if (!tenantId) {
     // Allow access to setup routes, auth routes, and public routes
     if (isSetupRoute || pathname.startsWith('/api/auth/') || pathname.startsWith('/landing')) {
-      return NextResponse.next();
+      return NextResponse.next(fwd);
     }
 
     // If email not verified, redirect to verify email
     if (email_verified === false) {
-      const secret = process.env.NEXTAUTH_SECRET;
-      if (!secret && process.env.NODE_ENV === 'production') {
-        throw new Error('NEXTAUTH_SECRET must be set in production');
-      }
-      const token = await getToken({
-        req: request as any,
-        secret: secret || 'dev-secret-localhost-only',
-      });
       return NextResponse.redirect(new URL(`/auth/verify-email?email=${token?.email || ''}`, url.origin));
     }
 
@@ -305,7 +323,7 @@ async function handleAppRoute(
       return NextResponse.redirect(new URL('/setup-tenant', url.origin));
     }
 
-    return NextResponse.next();
+    return NextResponse.next(fwd);
   }
 
   // Restrict admin routes to MASTER role
@@ -325,18 +343,9 @@ async function handleAppRoute(
   const isBillingTab = isConfigPage && url.searchParams.get('tab') === 'billing';
 
   // Check if trial has expired or subscription is inactive
-  // Use JWT token data to avoid Prisma queries in Edge runtime
+  // Use JWT token data (already decoded, no extra getToken() call needed)
   if (tenantId) {
     try {
-      // Get plan and subscription status from JWT token (set in auth-options.ts)
-      const secret = process.env.NEXTAUTH_SECRET;
-      if (!secret && process.env.NODE_ENV === 'production') {
-        throw new Error('NEXTAUTH_SECRET must be set in production');
-      }
-      const token = await getToken({
-        req: request as any,
-        secret: secret || 'dev-secret-localhost-only',
-      });
       const currentTenant = (token as any)?.currentTenant;
       const plan = currentTenant?.plan || 'FREE';
       const subscriptionStatus = currentTenant?.subscriptionStatus || null;
@@ -399,28 +408,9 @@ async function handleAppRoute(
   return withTenantContext(
     { tenantId, userId, role },
     async () => {
-      const response = NextResponse.next();
-
-      // Add tenant ID to response headers for client-side use
+      const response = NextResponse.next(fwd);
       response.headers.set('x-tenant-id', tenantId);
-
-      // Content Security Policy (Report-Only for monitoring)
-      // Adjust to your needs; switch to enforced by removing '-Report-Only' once stable
-      const csp = [
-        "default-src 'self'",
-        "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://vercel.live https://app.tilopay.com",
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-        "font-src 'self' https://fonts.gstatic.com",
-        "img-src 'self' data: blob: https://vercel.com https://vercel.live https://*.vercel.app https://*.vercel-storage.com",
-        "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://vercel.live https://*.vercel-storage.com",
-        "frame-src 'self' https://app.tilopay.com",
-        "object-src 'none'",
-        "base-uri 'self'",
-        "form-action 'self'",
-        "upgrade-insecure-requests",
-      ].join('; ');
-      response.headers.set('Content-Security-Policy-Report-Only', csp);
-
+      response.headers.set('Content-Security-Policy-Report-Only', CSP_HEADER);
       return response;
     }
   );

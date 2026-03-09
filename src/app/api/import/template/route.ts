@@ -41,6 +41,11 @@ const templates = {
 };
 
 export async function GET(request: NextRequest) {
+  // Middleware injects x-user-id for authenticated requests
+  if (!request.headers.get('x-user-id')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') as 'orders' | 'customers' | 'products';
@@ -304,8 +309,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('Template generation error:', error);
     return NextResponse.json({ 
-      error: 'Error generando plantilla',
-      details: error.message 
+      error: 'Error generando plantilla'
     }, { status: 500 });
   }
 }

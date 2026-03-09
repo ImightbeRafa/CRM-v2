@@ -3,11 +3,15 @@ import { prisma } from '@/lib/db';
 import { hashPassword } from '@/lib/password';
 import { sendVerificationEmail } from '@/lib/email';
 import { withoutTenantIsolation } from '@/lib/tenantContext';
+import { authRateLimit } from '@/lib/rate-limit';
 
 // Disable body parsing since we need the raw body for webhook verification
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+  const rateLimitResult = authRateLimit(request);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+
   try {
     const { name, email, password, businessName, phone, country, province } = await request.json();
     console.log('📝 Registration request received:', { name, email: email.substring(0, 3) + '***', hasPhone: !!phone });

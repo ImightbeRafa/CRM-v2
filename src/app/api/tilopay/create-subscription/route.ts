@@ -102,8 +102,7 @@ export async function POST(request: NextRequest) {
       const errorText = await paymentResponse.text();
       console.error('❌ Payment processing error:', paymentResponse.status, errorText);
       return NextResponse.json({ 
-        error: 'Payment processing failed',
-        details: errorText
+        error: 'Payment processing failed'
       }, { status: 500 });
     }
 
@@ -199,8 +198,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('❌ Error creating subscription:', error);
     return NextResponse.json({
-      error: 'Failed to create subscription',
-      message: error.message
+      error: 'Failed to create subscription'
     }, { status: 500 });
   }
 }

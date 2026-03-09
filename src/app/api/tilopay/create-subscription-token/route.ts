@@ -138,9 +138,7 @@ export async function POST(request: NextRequest) {
     console.error('❌ [create-subscription-token] Error message:', error.message);
     console.error('❌ [create-subscription-token] Error stack:', error.stack);
     return NextResponse.json({
-      error: 'Failed to initialize payment',
-      message: error.message,
-      details: error.toString()
+      error: 'Failed to initialize payment'
     }, { status: 500 });
   }
 }

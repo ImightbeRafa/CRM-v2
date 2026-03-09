@@ -146,8 +146,7 @@ export async function GET(request: NextRequest) {
     console.error('Error exporting orders:', error);
     return NextResponse.json(
       { 
-        error: 'Failed to export orders',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        error: 'Failed to export orders'
       },
       { status: 500 }
     );

@@ -154,20 +154,8 @@ export async function POST(request: NextRequest) {
     if (!planResponse.ok) {
       const planError = await planResponse.text();
       console.error('❌ Plan creation failed:', planResponse.status, planError);
-      
-      // Try to parse error details
-      let errorDetails = planError;
-      try {
-        const errorJson = JSON.parse(planError);
-        errorDetails = errorJson.message || errorJson.error || planError;
-      } catch (e) {
-        // Keep original error text
-      }
-      
       return NextResponse.json({ 
-        error: 'Failed to create subscription plan',
-        details: errorDetails,
-        hint: 'Check if /createPlanRepeat endpoint exists and requires different parameters'
+        error: 'Failed to create subscription plan'
       }, { status: 500 });
     }
 
@@ -205,9 +193,7 @@ export async function POST(request: NextRequest) {
       // Unexpected response format
       console.error('❌ Unexpected plan response format:', planData);
       return NextResponse.json({
-        error: 'Plan created but unexpected response format',
-        details: planData,
-        hint: 'Check if /createPlanRepeat endpoint and parameters are correct'
+        error: 'Plan created but unexpected response format'
       }, { status: 500 });
     }
 
@@ -216,9 +202,7 @@ export async function POST(request: NextRequest) {
     console.error('❌ [create-plan-repeat] Error message:', error.message);
     console.error('❌ [create-plan-repeat] Error stack:', error.stack);
     return NextResponse.json({
-      error: 'Failed to create subscription plan',
-      message: error.message,
-      details: error.toString()
+      error: 'Failed to create subscription plan'
     }, { status: 500 });
   }
 }

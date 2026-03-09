@@ -14,6 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { 
   sendWhatsAppMessage, 
   sendWhatsAppButtonMessage,
@@ -91,9 +92,31 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const rawBody = await request.text();
+
+    // Verify Meta HMAC signature
+    const appSecret = (process.env.META_APP_SECRET || '').trim();
+    const signature = request.headers.get('x-hub-signature-256') || '';
+    if (process.env.NODE_ENV === 'production' && !appSecret) {
+      console.error('[WhatsApp Webhook] META_APP_SECRET not configured in production');
+      return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+    }
+    if (appSecret && signature.startsWith('sha256=')) {
+      const expected = 'sha256=' + crypto.createHmac('sha256', appSecret).update(rawBody, 'utf8').digest('hex');
+      const expectedBuf = Buffer.from(expected);
+      const providedBuf = Buffer.from(signature.trim());
+      if (expectedBuf.length !== providedBuf.length || !crypto.timingSafeEqual(expectedBuf, providedBuf)) {
+        console.error('[WhatsApp Webhook] Signature verification failed');
+        return NextResponse.json({ error: 'Invalid signature' }, { status: 403 });
+      }
+    } else if (process.env.NODE_ENV === 'production') {
+      console.error('[WhatsApp Webhook] Missing signature header');
+      return NextResponse.json({ error: 'Missing signature' }, { status: 403 });
+    }
+
+    const body = JSON.parse(rawBody);
     
-    console.log('[WhatsApp Webhook] 📨 Received:', JSON.stringify(body).slice(0, 500));
+    console.log('[WhatsApp Webhook] Received:', JSON.stringify(body).slice(0, 500));
     
     // Parse the webhook payload
     const message = parseWhatsAppWebhook(body);
@@ -113,7 +136,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('[WhatsApp Webhook] ❌ Error:', error);
     // Still return 200 to prevent retries
-    return NextResponse.json({ status: 'error', message: error.message });
+    return NextResponse.json({ status: 'error' });
   }
 }
 

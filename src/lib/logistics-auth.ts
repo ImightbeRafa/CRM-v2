@@ -21,9 +21,21 @@ export async function requireLogisticsAdmin() {
 /**
  * API route guard — returns a 403 Response if the user is not a logistics admin;
  * returns null if the user IS allowed (caller proceeds normally).
+ * Middleware already blocks non-admins for /api/logistics/* so this is a
+ * lightweight double-check that reads the middleware-injected header.
  */
 export async function guardLogisticsApi(req: NextRequest): Promise<NextResponse | null> {
+    // Middleware already verified logistics admin and injected headers;
+    // if x-user-id is present, auth was done in middleware — skip getToken()
+    if (req.headers.get('x-user-id')) {
+        return null;
+    }
+
+    // Fallback: full JWT check (should only fire if middleware was bypassed)
     const secret = process.env.NEXTAUTH_SECRET;
+    if (!secret && process.env.NODE_ENV === 'production') {
+        return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+    }
     const token = await getToken({ req, secret: secret || 'dev-secret-localhost-only' });
 
     if (!token || !token.isLogisticsAdmin) {

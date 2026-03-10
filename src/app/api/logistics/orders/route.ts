@@ -54,6 +54,29 @@ export async function GET(req: NextRequest) {
             ];
         }
 
+        // Pre-filter by lm_orders at DB level to avoid pagination holes.
+        // When a carrier or archive filter is specified, we first resolve matching
+        // order IDs from lm_orders so the main Prisma query only returns relevant rows.
+        if (lmCarrierFilter) {
+            try {
+                const lmFilterRows = await prisma.$queryRaw<{ crm_order_id: string }[]>`
+                    SELECT crm_order_id FROM lm_orders WHERE carrier = ${lmCarrierFilter}
+                `;
+                where.id = { in: lmFilterRows.map((r) => r.crm_order_id) };
+            } catch {
+                // lm_orders table may not exist; fall back to post-query filtering
+            }
+        } else if (archivedFilter === 'true') {
+            try {
+                const archivedRows = await prisma.$queryRaw<{ crm_order_id: string }[]>`
+                    SELECT crm_order_id FROM lm_orders WHERE archived_at IS NOT NULL
+                `;
+                where.id = { in: archivedRows.map((r) => r.crm_order_id) };
+            } catch {
+                // fall back to post-query filtering
+            }
+        }
+
         const [orders, total] = await Promise.all([
             prisma.order.findMany({
                 where,

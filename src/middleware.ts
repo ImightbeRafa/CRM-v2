@@ -5,11 +5,11 @@ import { TenantError } from '@/lib/errors';
 
 const CSP_HEADER = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://vercel.live https://app.tilopay.com https://accounts.google.com https://www.googletagmanager.com https://api.tokenex.com https://storage.googleapis.com https://connect.facebook.net https://staticxx.facebook.com https://www.facebook.com",
+  "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://vercel.live https://app.tilopay.com https://accounts.google.com https://www.googletagmanager.com https://api.tokenex.com https://storage.googleapis.com https://connect.facebook.net https://staticxx.facebook.com https://www.facebook.com https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: https: blob: https://*.facebook.com https://*.fbcdn.net https://storage.googleapis.com https://vercel.com https://vercel.live https://*.vercel.app https://*.vercel-storage.com",
-  "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://api.tokenex.com https://vercel.live https://*.vercel-storage.com https://accounts.google.com https://connect.facebook.net https://graph.facebook.com https://www.facebook.com",
+  "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://api.tokenex.com https://vercel.live https://*.vercel-storage.com https://accounts.google.com https://connect.facebook.net https://graph.facebook.com https://www.facebook.com https://static.cloudflareinsights.com",
   "frame-src 'self' https://app.tilopay.com https://api.tokenex.com https://accounts.google.com https://www.facebook.com https://web.facebook.com",
   "object-src 'none'",
   "base-uri 'self'",
@@ -123,7 +123,9 @@ export default async function middleware(request: Request) {
 
     const tenantId = token.tenantId as string | undefined;
     const userId = token.sub;
-    const role = (token.role as string) || 'VIEWER';
+    const legacyRole = (token.role as string) || 'VIEWER';
+    const role = (token as any).currentTenant?.role
+      || (legacyRole === 'MASTER' ? 'OWNER' : 'VIEWER');
     const email_verified = (token.email_verified as boolean) !== false; // Default to true if not set
 
     // Validate required fields
@@ -161,11 +163,11 @@ export default async function middleware(request: Request) {
 
     // Handle tenant-specific routes
     if (pathname.startsWith('/api/')) {
-      return handleApiRequest(request, { tenantId, userId, role }, token, requestHeaders);
+      return handleApiRequest(request, { tenantId, userId, role, legacyRole }, token, requestHeaders);
     }
 
     // Handle app routes
-    return handleAppRoute(request, { tenantId, userId, role, email_verified }, token, requestHeaders);
+    return handleAppRoute(request, { tenantId, userId, role, legacyRole, email_verified }, token, requestHeaders);
   } catch (error) {
     // Don't expose internal errors to the client
     if (error instanceof TenantError) {
@@ -222,11 +224,11 @@ function redirectToLogin(url: URL): NextResponse {
  */
 async function handleApiRequest(
   request: Request,
-  context: { tenantId?: string | null; userId: string; role: string },
+  context: { tenantId?: string | null; userId: string; role: string; legacyRole: string },
   token: any,
   requestHeaders: Headers
 ): Promise<NextResponse> {
-  const { tenantId, userId, role } = context;
+  const { tenantId, userId, role, legacyRole } = context;
   const url = new URL(request.url);
   const pathname = url.pathname;
   const fwd = { request: { headers: requestHeaders } };
@@ -248,7 +250,7 @@ async function handleApiRequest(
 
   // Allow tenant setup routes for MASTER users
   if (pathname.startsWith('/api/tenant/setup')) {
-    if (role === 'MASTER') {
+    if (legacyRole === 'MASTER') {
       return NextResponse.next(fwd);
     }
     return new NextResponse(
@@ -259,7 +261,7 @@ async function handleApiRequest(
 
   // Allow other setup-related routes for MASTER users without tenant
   if (!tenantId) {
-    if (role === 'MASTER' &&
+    if (legacyRole === 'MASTER' &&
       (pathname.startsWith('/api/setup') ||
         pathname.startsWith('/api/tenant'))) {
       return NextResponse.next(fwd);
@@ -294,11 +296,11 @@ async function handleApiRequest(
  */
 async function handleAppRoute(
   request: Request,
-  context: { tenantId?: string; userId: string; role: string; email_verified?: boolean },
+  context: { tenantId?: string; userId: string; role: string; legacyRole: string; email_verified?: boolean },
   token: any,
   requestHeaders: Headers
 ): Promise<NextResponse> {
-  const { tenantId, userId, role, email_verified } = context;
+  const { tenantId, userId, role, legacyRole, email_verified } = context;
   const url = new URL(request.url);
   const pathname = url.pathname;
   const fwd = { request: { headers: requestHeaders } };
@@ -326,8 +328,8 @@ async function handleAppRoute(
     return NextResponse.next(fwd);
   }
 
-  // Restrict admin routes to MASTER role
-  if (pathname.startsWith('/admin') && role !== 'MASTER') {
+  // Restrict admin routes to MASTER role (legacy check)
+  if (pathname.startsWith('/admin') && role !== 'OWNER') {
     return NextResponse.redirect(new URL('/', url.origin));
   }
 

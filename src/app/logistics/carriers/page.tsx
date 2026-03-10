@@ -344,7 +344,7 @@ export default function CarriersPage() {
 
     const load = useCallback(async () => {
         try {
-            const p = new URLSearchParams({ limit: '500' });
+            const p = new URLSearchParams({ limit: '2000' });
             if (search) p.set('search', search);
             const data = await (await fetch(`/api/logistics/orders?${p}`)).json();
             setOrders(data.orders || []);

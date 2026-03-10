@@ -196,7 +196,7 @@ export default function GuiaCorreosPage() {
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const p = new URLSearchParams({ limit: '300', lmCarrier: 'correos' });
+            const p = new URLSearchParams({ limit: '1000', lmCarrier: 'correos' });
             if (search) p.set('search', search);
             const data = await (await fetch(`/api/logistics/orders?${p}`)).json();
             const active = (data.orders || []).filter((o: any) => !['Entregado', 'Devuelto'].includes(o.lmStatus || ''));

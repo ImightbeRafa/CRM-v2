@@ -212,11 +212,13 @@ async function persistGuiaResults(
 
                 try {
                     await prisma.$executeRaw`
-                        UPDATE lm_orders SET status = 'Guía Creada', updated_at = NOW()
-                        WHERE crm_order_id = ${dbOrder.id}
+                        INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status)
+                        VALUES (${dbOrder.id}, ${dbOrder.tenantId}, 'correos', 'Guía Creada')
+                        ON CONFLICT (crm_order_id) DO UPDATE
+                        SET carrier = 'correos', status = 'Guía Creada', updated_at = NOW()
                     `;
                 } catch (e) {
-                    console.warn(`[Guía Persist] Failed to update lm_orders for ${dbOrder.id}:`, e);
+                    console.warn(`[Guía Persist] Failed to upsert lm_orders for ${dbOrder.id}:`, e);
                 }
 
                 try {

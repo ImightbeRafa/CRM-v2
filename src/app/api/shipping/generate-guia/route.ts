@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { prisma as globalPrisma } from '@/lib/db';
 import { withTenantContext } from '@/lib/tenantContext';
 import { CorreosWebService } from '@/lib/correos';
 import type { CorreosWSCredentials } from '@/lib/correos';
@@ -152,6 +153,29 @@ export async function POST(request: NextRequest) {
                   where: { tenantId_orderId: { tenantId: order.tenantId || tenantId, orderId: result.orderId } },
                   data: { status: 'Enviado', courier: carrier },
                 });
+
+                // Upsert lm_orders so the order appears in the logistics tablero
+                try {
+                  const crmOrderId = (order as any).id;
+                  if (crmOrderId) {
+                    const existing = await globalPrisma.$queryRaw<{ id: string }[]>`
+                      SELECT id FROM lm_orders WHERE crm_order_id = ${crmOrderId} LIMIT 1
+                    `;
+                    if (existing.length > 0) {
+                      await globalPrisma.$executeRaw`
+                        UPDATE lm_orders SET carrier = 'correos', status = 'Guía Creada', updated_at = NOW()
+                        WHERE crm_order_id = ${crmOrderId}
+                      `;
+                    } else {
+                      await globalPrisma.$executeRaw`
+                        INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status)
+                        VALUES (${crmOrderId}, ${order.tenantId || tenantId}, 'correos', 'Guía Creada')
+                      `;
+                    }
+                  }
+                } catch (lmErr) {
+                  console.warn(`[Generate Guía] Failed to upsert lm_orders for ${result.orderId}:`, lmErr);
+                }
               }
             } catch (updateError) {
               console.error(`Failed to update order ${result.orderId}:`, updateError);

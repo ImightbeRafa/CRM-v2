@@ -13,17 +13,18 @@ interface Order {
     archivedAt: string | null; correosShippingCost: number | null;
 }
 
-const STATUSES = ['Pendiente', 'En Proceso', 'En Tránsito', 'Entregado', 'Devuelto'];
+const STATUSES = ['Pendiente', 'En Proceso', 'Guía Creada', 'En Tránsito', 'Entregado', 'Devuelto'];
 const STATUS_CFG: Record<string, { color: string; glow: string }> = {
     'Pendiente': { color: '#94a3b8', glow: 'rgba(148,163,184,0.15)' },
     'En Proceso': { color: '#8b87ff', glow: 'rgba(139,135,255,0.15)' },
+    'Guía Creada': { color: '#60a5fa', glow: 'rgba(96,165,250,0.15)' },
     'En Tránsito': { color: '#c084fc', glow: 'rgba(192,132,252,0.15)' },
     'Entregado': { color: '#34d399', glow: 'rgba(52,211,153,0.15)' },
     'Devuelto': { color: '#fbbf24', glow: 'rgba(251,191,36,0.15)' },
 };
 const LM_TO_CRM: Record<string, string> = {
     'Pendiente': 'Pendiente', 'En Proceso': 'En Proceso',
-    'En Tránsito': 'Enviado', 'Entregado': 'Completado', 'Devuelto': 'Devuelto',
+    'Guía Creada': 'Enviado', 'En Tránsito': 'Enviado', 'Entregado': 'Completado', 'Devuelto': 'Devuelto',
 };
 
 const glass = {

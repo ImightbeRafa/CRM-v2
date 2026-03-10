@@ -6,6 +6,7 @@ import { guardLogisticsApi } from '@/lib/logistics-auth';
 const LM_TO_CRM_STATUS: Record<string, string> = {
     'Pendiente': 'Pendiente',
     'En Proceso': 'En Proceso',
+    'Guía Creada': 'Enviado',
     'En Tránsito': 'Enviado',
     'Entregado': 'Completado',
     'Devuelto': 'Devuelto',

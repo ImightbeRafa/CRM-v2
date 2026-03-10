@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiKey } from '@/lib/integration-auth';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { prisma as globalPrisma } from '@/lib/db';
 import { withTenantContext } from '@/lib/tenantContext';
 import { CorreosWebService } from '@/lib/correos';
 import type { CorreosWSCredentials } from '@/lib/correos';
@@ -220,10 +221,24 @@ export async function POST(req: NextRequest) {
             savedGuias.push(guia);
 
             try {
+              const order = orders.find(o => o.orderId === result.orderId);
               await prisma.order.update({
                 where: { tenantId_orderId: { tenantId: tenantId, orderId: result.orderId } },
                 data: { status: 'Enviado', courier: carrier }
               });
+
+              if (order) {
+                try {
+                  await globalPrisma.$executeRaw`
+                    INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status)
+                    VALUES (${(order as any).id}, ${tenantId}, 'correos', 'Guía Creada')
+                    ON CONFLICT (crm_order_id) DO UPDATE
+                    SET carrier = 'correos', status = 'Guía Creada', updated_at = NOW()
+                  `;
+                } catch (lmErr) {
+                  console.warn(`[Guia API] Failed to upsert lm_orders for ${result.orderId}:`, lmErr);
+                }
+              }
             } catch (updateError) {
               console.error(`[Guia API] Failed to update order ${result.orderId}:`, updateError);
             }

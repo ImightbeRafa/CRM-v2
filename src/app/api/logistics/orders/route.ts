@@ -189,7 +189,7 @@ export async function PATCH(req: NextRequest) {
             if (lmStatus !== undefined) { params.push(lmStatus); sets.unshift(`status=$${params.length}`); }
             if (isContraEntrega !== undefined) { params.push(isContraEntrega); sets.unshift(`is_contra_entrega=$${params.length}`); }
             if (contraEntregaCollected !== undefined) { params.push(contraEntregaCollected); sets.unshift(`contraentrega_collected=$${params.length}`); }
-            if (archivedAt !== undefined) { params.push(archivedAt); sets.unshift(`archived_at=$${params.length}`); }
+            if (archivedAt !== undefined) { params.push(archivedAt ? new Date(archivedAt) : null); sets.unshift(`archived_at=$${params.length}`); }
             params.push(orderId);
             const sql = `UPDATE lm_orders SET ${sets.join(',')} WHERE crm_order_id=$${params.length}`;
             await prisma.$executeRawUnsafe(sql, ...params);
@@ -201,7 +201,8 @@ export async function PATCH(req: NextRequest) {
             const s = lmStatus ?? 'Pendiente';
             const ce = isContraEntrega ?? false;
             const cc = contraEntregaCollected ?? false;
-            await prisma.$executeRaw`INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status, is_contra_entrega, contraentrega_collected) VALUES (${orderId},${crm_tenant_id},${c},${s},${ce},${cc})`;
+            const archVal = archivedAt ? new Date(archivedAt) : null;
+            await prisma.$executeRaw`INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status, is_contra_entrega, contraentrega_collected, archived_at) VALUES (${orderId},${crm_tenant_id},${c},${s},${ce},${cc},${archVal})`;
         }
 
         return NextResponse.json({ success: true });

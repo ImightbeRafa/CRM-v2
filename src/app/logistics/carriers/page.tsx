@@ -46,13 +46,16 @@ function groupByDate(orders: Order[]) {
 }
 
 async function patchOrder(orderId: string, patch: object) {
-    await fetch('/api/logistics/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, ...patch }) });
+    const res = await fetch('/api/logistics/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, ...patch }) });
+    if (!res.ok) throw new Error(`PATCH failed: ${res.status}`);
 }
 async function archiveOrder(orderId: string) {
-    await fetch('/api/logistics/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, archivedAt: new Date().toISOString() }) });
+    const res = await fetch('/api/logistics/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, archivedAt: new Date().toISOString() }) });
+    if (!res.ok) throw new Error(`Archive failed: ${res.status}`);
 }
 async function restoreOrder(orderId: string) {
-    await fetch('/api/logistics/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, archivedAt: null }) });
+    const res = await fetch('/api/logistics/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, archivedAt: null }) });
+    if (!res.ok) throw new Error(`Restore failed: ${res.status}`);
 }
 
 async function syncCrm(orderId: string, lmStatus: string) {
@@ -358,30 +361,37 @@ export default function CarriersPage() {
     const onToggleSelect = useCallback((id: string) => { setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; }); }, []);
     const onArchiveOrder = useCallback(async (id: string) => {
         const order = orders.find(o => o.id === id);
-        // Correos CR + Entregado: require shipping cost before archiving
         if (order && order.lmCarrier === 'correos' && order.lmStatus === 'Entregado' && order.correosShippingCost == null) {
             setCostModal({ orderId: id, customerName: order.customerName, ordRef: order.orderId });
             setCostValue('');
             return;
         }
         setOrders(p => p.filter(o => o.id !== id));
-        await archiveOrder(id);
-        logEvent(id, 'archived', {});
+        try {
+            await archiveOrder(id);
+            logEvent(id, 'archived', {});
+        } catch {
+            if (order) setOrders(p => [...p, order]);
+            alert('Error al archivar la orden. Por favor intente de nuevo.');
+        }
     }, [orders]);
     const confirmCorreosCostAndArchive = useCallback(async () => {
         if (!costModal || !costValue || isNaN(Number(costValue)) || Number(costValue) < 0) return;
         setCostSaving(true);
         try {
-            await fetch('/api/logistics/correos-costs', {
+            const costRes = await fetch('/api/logistics/correos-costs', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ orderId: costModal.orderId, cost: Number(costValue) }),
             });
+            if (!costRes.ok) throw new Error(`Cost save failed: ${costRes.status}`);
             setOrders(p => p.filter(o => o.id !== costModal.orderId));
             await archiveOrder(costModal.orderId);
             logEvent(costModal.orderId, 'archived', { correosCost: Number(costValue) });
             setCostModal(null);
             setCostValue('');
+        } catch {
+            alert('Error al guardar costo y archivar. Por favor intente de nuevo.');
         } finally { setCostSaving(false); }
     }, [costModal, costValue]);
     const onRestoreOrder = useCallback(async (id: string) => {
@@ -390,8 +400,16 @@ export default function CarriersPage() {
             setArchivedOrders(p => p.filter(o => o.id !== id));
             setOrders(p => [...p, { ...restored, archivedAt: null }]);
         }
-        await restoreOrder(id);
-        logEvent(id, 'restored', {});
+        try {
+            await restoreOrder(id);
+            logEvent(id, 'restored', {});
+        } catch {
+            if (restored) {
+                setOrders(p => p.filter(o => o.id !== id));
+                setArchivedOrders(p => [...p, restored]);
+            }
+            alert('Error al restaurar la orden. Por favor intente de nuevo.');
+        }
     }, [archivedOrders]);
     const loadArchived = useCallback(async () => {
         setArchiveLoading(true);
@@ -405,20 +423,28 @@ export default function CarriersPage() {
     const bulkArchive = useCallback(async () => {
         const ids = [...selectedIds];
         if (!ids.length) return;
-        // Check if any selected Correos CR Entregado orders are missing shipping cost
         const correosPending = orders.filter(o => ids.includes(o.id) && o.lmCarrier === 'correos' && o.lmStatus === 'Entregado' && o.correosShippingCost == null);
         if (correosPending.length > 0) {
             alert(`${correosPending.length} orden(es) de Correos CR necesitan costo de envío antes de terminar. Por favor, archívelas individualmente usando el botón Terminar de cada tarjeta.`);
             return;
         }
         setApplying(true);
+        const failed: string[] = [];
         for (const id of ids) {
-            await archiveOrder(id);
-            logEvent(id, 'archived', { bulk: true });
+            try {
+                await archiveOrder(id);
+                logEvent(id, 'archived', { bulk: true });
+            } catch {
+                failed.push(id);
+            }
         }
-        setOrders(p => p.filter(o => !selectedIds.has(o.id)));
-        setSelectedIds(new Set());
+        const archivedSet = new Set(ids.filter(id => !failed.includes(id)));
+        setOrders(p => p.filter(o => !archivedSet.has(o.id)));
+        setSelectedIds(new Set(failed));
         setApplying(false);
+        if (failed.length > 0) {
+            alert(`${failed.length} de ${ids.length} órdenes no se pudieron archivar. Por favor intente de nuevo.`);
+        }
     }, [selectedIds, orders]);
 
     const applyBulk = useCallback(async () => {

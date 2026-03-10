@@ -15,6 +15,7 @@ interface Order {
 const STATUS_COLORS: Record<string, string> = {
     'Pendiente': '#94a3b8', 'En Proceso': '#8b87ff', 'Urgente': '#f87171',
     'Completado': '#34d399', 'Enviado': '#c084fc', 'Entregado': '#10b981', 'Devuelto': '#fbbf24',
+    'En Tránsito': '#c084fc', 'Guía Creada': '#60a5fa',
 };
 const CARRIER_COLORS: Record<string, string> = { 'mensajeria': '#8b87ff', 'correos': '#60a5fa' };
 

@@ -10,9 +10,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check if user is MASTER
     if ((token as any).membershipRole !== 'OWNER' && (token as any).membershipRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const tenantId = (token as any).tenantId as string;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'No tenant context' }, { status: 400 });
     }
 
     // Create sample inventory items (replaces frequent products)
@@ -116,17 +120,15 @@ export async function POST(request: NextRequest) {
       }
     ];
 
-    // Clear existing data
-    await prisma.inventoryItem.deleteMany();
-    await prisma.client.deleteMany();
+    await prisma.inventoryItem.deleteMany({ where: { tenantId } });
+    await prisma.client.deleteMany({ where: { tenantId } });
 
-    // Create new data
     await prisma.inventoryItem.createMany({
-      data: sampleProducts
+      data: sampleProducts.map(p => ({ ...p, tenantId }))
     });
 
     await prisma.client.createMany({
-      data: sampleCustomers
+      data: sampleCustomers.map(c => ({ ...c, tenantId }))
     });
 
     return NextResponse.json({

@@ -81,10 +81,25 @@ export async function GET(req: NextRequest) {
         const tenantNames: Record<string, string> = {};
         for (const t of tenants) tenantNames[t.id] = t.name || t.id;
 
+        // Get customer names by looking up orders
+        const orderIds = [...new Set(guias.map(g => g.orderId))];
+        const orders = orderIds.length > 0
+            ? await prisma.order.findMany({
+                where: {
+                    orderId: { in: orderIds },
+                    tenantId: { in: MANAGED_TENANT_IDS },
+                },
+                select: { orderId: true, tenantId: true, customerName: true },
+            })
+            : [];
+        const customerNameMap: Record<string, string> = {};
+        for (const o of orders) customerNameMap[`${o.tenantId}:${o.orderId}`] = o.customerName;
+
         return NextResponse.json({
             guias: guiasWithPdfCheck.map(g => ({
                 ...g,
                 tenantName: tenantNames[g.tenantId] || g.tenantId,
+                customerName: customerNameMap[`${g.tenantId}:${g.orderId}`] || '',
             })),
         });
     } catch (error) {

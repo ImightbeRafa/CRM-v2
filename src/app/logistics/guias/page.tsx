@@ -40,7 +40,7 @@ interface VerifiedOrder {
 
 interface GuiaHistoryItem {
     id: string; orderId: string; guiaNumber: string; status: string;
-    tenantName: string; hasPdf: boolean; createdAt: string; errorMessage?: string;
+    tenantName: string; customerName?: string; hasPdf: boolean; createdAt: string; errorMessage?: string;
 }
 
 // ─── Location Row Component ───────────────────────────────
@@ -647,7 +647,7 @@ export default function GuiasPage() {
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                                     <thead>
                                         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-                                            {['', 'Orden', 'Cuenta', '# Guía', 'Estado', 'Fecha', 'PDF'].map(h => (
+                                            {['', 'Orden', 'Cliente', 'Cuenta', '# Guía', 'Estado', 'Fecha', 'PDF'].map(h => (
                                                 <th key={h} style={{ padding: '9px 11px', textAlign: 'left', color: 'rgba(255,255,255,0.3)', fontWeight: 600, fontSize: 10.5, textTransform: 'uppercase' }}>{h}</th>
                                             ))}
                                         </tr>
@@ -672,6 +672,7 @@ export default function GuiasPage() {
                                                     )}
                                                 </td>
                                                 <td style={{ padding: '9px 11px', color: '#F2F2F2', fontWeight: 600 }}>{g.orderId}</td>
+                                                <td style={{ padding: '9px 11px', color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>{g.customerName || '—'}</td>
                                                 <td style={{ padding: '9px 11px', color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>{g.tenantName}</td>
                                                 <td style={{ padding: '9px 11px', color: '#60a5fa', fontWeight: 700, fontSize: 13 }}>{g.guiaNumber || '—'}</td>
                                                 <td style={{ padding: '9px 11px' }}>

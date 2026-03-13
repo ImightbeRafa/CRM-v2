@@ -44,8 +44,9 @@ export async function GET(req: NextRequest) {
     }
 }
 
-// POST /api/logistics/billing-weeks  — finalize a week
+// POST /api/logistics/billing-weeks  — finalize a billing period
 // Body: { weekStart: string (YYYY-MM-DD), weekEnd: string, orderIds: string[] }
+// weekStart/weekEnd can be any valid date range (no longer requires Monday)
 export async function POST(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
     if (guard) return guard;
@@ -67,10 +68,6 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Invalid date range' }, { status: 400 });
         }
 
-        if (start.getDay() !== 1) {
-            return NextResponse.json({ error: 'weekStart must be a Monday' }, { status: 400 });
-        }
-
         if (orderIds.length > 500) {
             return NextResponse.json({ error: 'Max 500 orders per finalization' }, { status: 400 });
         }
@@ -83,18 +80,19 @@ export async function POST(req: NextRequest) {
 
         if (existing.length > 0 && existing[0].finalized_at) {
             return NextResponse.json({
-                error: 'Esta semana ya fue finalizada',
+                error: 'Este periodo ya fue finalizado',
                 weekId: existing[0].id
             }, { status: 409 });
         }
 
-        // Validate all orders are Entregado and unbilled
+        // Validate all orders are Entregado, completed, and unbilled
         const placeholders = orderIds.map((_: string, i: number) => `$${i + 1}`).join(',');
         const eligibleOrders = await prisma.$queryRawUnsafe<{ crm_order_id: string }[]>(`
             SELECT crm_order_id FROM lm_orders
             WHERE crm_order_id IN (${placeholders})
               AND status = 'Entregado'
               AND billed_week_id IS NULL
+              AND completed_at IS NOT NULL
         `, ...orderIds);
 
         const eligibleIds = new Set(eligibleOrders.map(o => o.crm_order_id));

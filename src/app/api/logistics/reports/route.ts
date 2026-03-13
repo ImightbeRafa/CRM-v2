@@ -32,17 +32,33 @@ export async function GET(req: NextRequest) {
         const salaryRate = cfg['salary_daily_rate'] ?? 10000;
         const gdRecoleccionCost = cfg['gd_recoleccion_cost'] ?? 2700;
 
-        // 2. Build date filters with proper CR timezone handling
+        // 2. Build date filters using completed_at (billing anchor) with CR timezone
         let dateSql = '';
         const params: any[] = [tenantId];
 
-        if (dateFrom) {
+        if (dateFrom && dateTo) {
             params.push(dateFrom);
-            dateSql += ` AND o.timestamp >= ($${params.length}::date AT TIME ZONE '${CR_TZ}')`;
-        }
-        if (dateTo) {
+            const pFrom = params.length;
             params.push(dateTo);
-            dateSql += ` AND o.timestamp < (($${params.length}::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}')`;
+            const pTo = params.length;
+            dateSql += ` AND (
+                (lm.completed_at IS NOT NULL
+                 AND lm.completed_at >= ($${pFrom}::date AT TIME ZONE '${CR_TZ}')
+                 AND lm.completed_at < (($${pTo}::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}'))
+                OR (lm.completed_at IS NULL)
+            )`;
+        } else if (dateFrom) {
+            params.push(dateFrom);
+            dateSql += ` AND (
+                (lm.completed_at IS NOT NULL AND lm.completed_at >= ($${params.length}::date AT TIME ZONE '${CR_TZ}'))
+                OR (lm.completed_at IS NULL)
+            )`;
+        } else if (dateTo) {
+            params.push(dateTo);
+            dateSql += ` AND (
+                (lm.completed_at IS NOT NULL AND lm.completed_at < (($${params.length}::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}'))
+                OR (lm.completed_at IS NULL)
+            )`;
         }
 
         let billedFilter = '';
@@ -60,7 +76,7 @@ export async function GET(req: NextRequest) {
                 o.province, o.product, o."shippingCost",
                 lm.carrier, lm.status AS lm_status,
                 lm.is_contra_entrega, lm.contraentrega_collected,
-                lm.correos_shipping_cost, lm.billed_week_id,
+                lm.correos_shipping_cost, lm.billed_week_id, lm.completed_at,
                 sg."guiaNumber", sg."trackingNumber"
             FROM "Order" o
             INNER JOIN lm_orders lm ON lm.crm_order_id = o.id
@@ -139,6 +155,7 @@ export async function GET(req: NextRequest) {
             guiaNumber: o.guiaNumber ?? null,
             trackingNumber: o.trackingNumber ?? null,
             billedWeekId: o.billed_week_id,
+            completedAt: o.completed_at ?? null,
         }));
 
         return NextResponse.json({

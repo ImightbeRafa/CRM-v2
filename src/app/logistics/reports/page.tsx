@@ -45,6 +45,7 @@ interface ReportOrder {
     guiaNumber: string | null;
     trackingNumber: string | null;
     billedWeekId: number | null;
+    completedAt: string | null;
 }
 
 interface ReportData {
@@ -81,7 +82,14 @@ interface BillingWeek {
     order_count: number; total_amount: number;
 }
 
-/* ─── Week utility ────────────────────────────────────── */
+/* ─── Date utility ────────────────────────────────────── */
+function toLocalDateStr(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
 function getMonday(d: Date): Date {
     const day = d.getDay();
     const diff = d.getDate() - day + (day === 0 ? -6 : 1);
@@ -91,33 +99,29 @@ function getMonday(d: Date): Date {
     return mon;
 }
 
-function toLocalDateStr(d: Date): string {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-}
-
-function generateWeekOptions(count: number): { weekStart: string; weekEnd: string; label: string }[] {
-    const weeks: { weekStart: string; weekEnd: string; label: string }[] = [];
+function getDatePresets(): { label: string; from: string; to: string }[] {
     const today = new Date();
-    let monday = getMonday(today);
+    const monday = getMonday(today);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const lastMonday = new Date(monday);
+    lastMonday.setDate(monday.getDate() - 7);
+    const lastSunday = new Date(lastMonday);
+    lastSunday.setDate(lastMonday.getDate() + 6);
+    const d7 = new Date(today);
+    d7.setDate(today.getDate() - 6);
+    const d30 = new Date(today);
+    d30.setDate(today.getDate() - 29);
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
-    for (let i = 0; i < count; i++) {
-        const sunday = new Date(monday);
-        sunday.setDate(monday.getDate() + 6);
-
-        const ws = toLocalDateStr(monday);
-        const we = toLocalDateStr(sunday);
-
-        const label = `${fmtDate(ws)} — ${fmtDate(we)}`;
-        weeks.push({ weekStart: ws, weekEnd: we, label });
-
-        monday = new Date(monday);
-        monday.setDate(monday.getDate() - 7);
-    }
-
-    return weeks;
+    return [
+        { label: 'Esta semana', from: toLocalDateStr(monday), to: toLocalDateStr(sunday) },
+        { label: 'Semana pasada', from: toLocalDateStr(lastMonday), to: toLocalDateStr(lastSunday) },
+        { label: 'Últimos 7 días', from: toLocalDateStr(d7), to: toLocalDateStr(today) },
+        { label: 'Últimos 30 días', from: toLocalDateStr(d30), to: toLocalDateStr(today) },
+        { label: 'Este mes', from: toLocalDateStr(monthStart), to: toLocalDateStr(monthEnd) },
+    ];
 }
 
 function csvEscape(field: string): string {
@@ -143,9 +147,10 @@ export default function ReportsPage() {
 
     // Report controls
     const [selectedTenants, setSelectedTenants] = useState<string[]>([]);
-    const weekOptions = useMemo(() => generateWeekOptions(16), []);
-    const [selectedWeekIdx, setSelectedWeekIdx] = useState<number>(-1);
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
     const [staffName, setStaffName] = useState('Marlenn');
+    const datePresets = useMemo(() => getDatePresets(), []);
 
     // Report data
     const [reports, setReports] = useState<ReportEntry[]>([]);
@@ -170,10 +175,10 @@ export default function ReportsPage() {
     const [revertToken, setRevertToken] = useState('');
     const [reverting, setReverting] = useState(false);
 
-    // Finalized weeks lookup (to mark in dropdown)
-    const [finalizedWeekStarts, setFinalizedWeekStarts] = useState<Set<string>>(new Set());
+    // Finalized periods lookup
+    const [finalizedPeriods, setFinalizedPeriods] = useState<Set<string>>(new Set());
 
-    const selectedWeek = selectedWeekIdx >= 0 ? weekOptions[selectedWeekIdx] : null;
+    const dateRangeLabel = dateFrom && dateTo ? `${fmtDate(dateFrom)} — ${fmtDate(dateTo)}` : '';
 
     // ─── Tenant toggles ────────────────────────────────
     const toggleTenant = (id: string) => {
@@ -186,24 +191,25 @@ export default function ReportsPage() {
         setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
-    // ─── Load finalized weeks on mount ─────────────────
-    const loadFinalizedWeeks = useCallback(async () => {
+    // ─── Load finalized periods on mount ────────────────
+    const loadFinalizedPeriods = useCallback(async () => {
         try {
             const res = await fetch('/api/logistics/billing-weeks?status=finalized&limit=100');
             if (!res.ok) return;
             const data = await res.json();
-            const starts = new Set<string>(data.weeks.map((w: BillingWeek) => w.week_start.slice(0, 10)));
-            setFinalizedWeekStarts(starts);
+            const keys = new Set<string>(data.weeks.map((w: BillingWeek) =>
+                `${w.week_start.slice(0, 10)}:${w.week_end.slice(0, 10)}`
+            ));
+            setFinalizedPeriods(keys);
         } catch { /* ignore */ }
     }, []);
 
-    // Load finalized weeks on mount
-    useEffect(() => { loadFinalizedWeeks(); }, [loadFinalizedWeeks]);
+    useEffect(() => { loadFinalizedPeriods(); }, [loadFinalizedPeriods]);
 
     // ─── Generate Report ───────────────────────────────
     const generate = useCallback(async () => {
-        if (selectedTenants.length === 0 || !selectedWeek) {
-            setError('Selecciona al menos una cuenta y una semana');
+        if (selectedTenants.length === 0 || !dateFrom || !dateTo) {
+            setError('Selecciona al menos una cuenta y un rango de fechas');
             return;
         }
         setLoading(true); setError(''); setReports([]); setExcludedOrders(new Set());
@@ -212,8 +218,8 @@ export default function ReportsPage() {
                 selectedTenants.map(async (tenantId) => {
                     const p = new URLSearchParams({
                         tenantId,
-                        dateFrom: selectedWeek.weekStart,
-                        dateTo: selectedWeek.weekEnd,
+                        dateFrom,
+                        dateTo,
                         staffName,
                     });
                     const res = await fetch(`/api/logistics/reports?${p}`);
@@ -241,10 +247,10 @@ export default function ReportsPage() {
             if (failed.length > 0) {
                 setError(`Reportes generados, pero fallaron: ${failed.join(', ')}`);
             }
-            await loadFinalizedWeeks();
+            await loadFinalizedPeriods();
         } catch (e: any) { setError(e.message || 'Error generando reportes'); }
         finally { setLoading(false); }
-    }, [selectedTenants, selectedWeek, staffName, getTenantName, loadFinalizedWeeks]);
+    }, [selectedTenants, dateFrom, dateTo, staffName, getTenantName, loadFinalizedPeriods]);
 
     // ─── Get all orders across all reports ──────────────
     const allOrders = useMemo(() => {
@@ -256,13 +262,13 @@ export default function ReportsPage() {
         return orders;
     }, [reports]);
 
-    const selectedOrders = useMemo(() => allOrders.filter(o => !excludedOrders.has(o.id)), [allOrders, excludedOrders]);
+    const selectedOrders = useMemo(() => allOrders.filter(o => !excludedOrders.has(o.id) && o.completedAt), [allOrders, excludedOrders]);
 
     // ─── Compute selected totals per tenant ─────────────
     const computeTenantTotals = useCallback((entry: ReportEntry) => {
         const hRate = entry.data.correos.handlingRate;
         const allTenantOrders = [...entry.data.correos.orders, ...entry.data.mensajeria.orders];
-        const selected = allTenantOrders.filter(o => !excludedOrders.has(o.id));
+        const selected = allTenantOrders.filter(o => !excludedOrders.has(o.id) && o.completedAt);
         const selectedCorreos = selected.filter(o => o.carrier === 'correos');
         const selectedMensajeria = selected.filter(o => o.carrier === 'mensajeria');
 
@@ -322,7 +328,7 @@ export default function ReportsPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     orderIds: [orderId],
-                    reason: 'Excluido del reporte semanal por el administrador',
+                    reason: 'Excluido del reporte por el administrador',
                 }),
             });
             if (!res.ok) {
@@ -337,9 +343,9 @@ export default function ReportsPage() {
         }
     };
 
-    // ─── Finalize week ──────────────────────────────────
+    // ─── Finalize period ─────────────────────────────────
     const handleFinalize = async () => {
-        if (!selectedWeek) return;
+        if (!dateFrom || !dateTo) return;
         setFinalizing(true);
         try {
             const orderIds = selectedOrders.map(o => o.id);
@@ -347,8 +353,8 @@ export default function ReportsPage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    weekStart: selectedWeek.weekStart,
-                    weekEnd: selectedWeek.weekEnd,
+                    weekStart: dateFrom,
+                    weekEnd: dateTo,
                     orderIds,
                 }),
             });
@@ -357,9 +363,9 @@ export default function ReportsPage() {
                 showToast(data.error || 'Error al finalizar', 'error');
                 return;
             }
-            showToast(`Semana finalizada. ${data.billedCount} órdenes facturadas.`, 'success');
+            showToast(`Periodo finalizado. ${data.billedCount} órdenes facturadas.`, 'success');
             setFinalizeConfirm(false);
-            await loadFinalizedWeeks();
+            await loadFinalizedPeriods();
             await generate();
         } catch {
             showToast('Error de conexión', 'error');
@@ -426,12 +432,12 @@ export default function ReportsPage() {
                 showToast(data.error || 'Error al revertir', 'error');
                 return;
             }
-            showToast(`Semana revertida. ${data.revertedOrders} órdenes desbloqueadas.`, 'success');
+            showToast(`Periodo revertido. ${data.revertedOrders} órdenes desbloqueadas.`, 'success');
             setRevertConfirm(null);
             setRevertToken('');
             setHistoryDetail(null);
             await loadHistory();
-            await loadFinalizedWeeks();
+            await loadFinalizedPeriods();
         } catch {
             showToast('Error de conexión', 'error');
         } finally {
@@ -447,9 +453,9 @@ export default function ReportsPage() {
 
     // ─── CSV Export ─────────────────────────────────────
     function exportAllCSV() {
-        if (reports.length === 0 || !selectedWeek) return;
+        if (reports.length === 0 || !dateFrom || !dateTo) return;
         const rows: string[][] = [];
-        rows.push(['REPORTE SEMANAL DE LOGÍSTICA'], [`Semana: ${selectedWeek.label}`], []);
+        rows.push(['REPORTE DE LOGÍSTICA'], [`Periodo: ${dateRangeLabel}`], []);
 
         for (const entry of reports) {
             const name = getTenantName(entry.tenantId);
@@ -479,12 +485,12 @@ export default function ReportsPage() {
         ]);
 
         const csv = rows.map(r => r.map(csvEscape).join(',')).join('\n');
-        downloadCSV(csv, `reporte_semana_${selectedWeek.weekStart}_${selectedWeek.weekEnd}.csv`);
+        downloadCSV(csv, `reporte_${dateFrom}_${dateTo}.csv`);
     }
 
     const allSelected = selectedTenants.length === MANAGED_IDS.length;
     const hasReports = reports.length > 0;
-    const isWeekFinalized = selectedWeek ? finalizedWeekStarts.has(selectedWeek.weekStart) : false;
+    const isPeriodFinalized = dateFrom && dateTo ? finalizedPeriods.has(`${dateFrom}:${dateTo}`) : false;
 
     return (
         <div>
@@ -506,7 +512,7 @@ export default function ReportsPage() {
             <div style={{ marginBottom: 28 }}>
                 <h1 style={{ color: '#F2F2F2', fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>Reportes de Envíos</h1>
                 <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, margin: 0 }}>
-                    Reportes semanales por cuenta · Selecciona, verifica y finaliza cada semana
+                    Reportes por cuenta · Selecciona fechas, verifica y finaliza cada periodo
                 </p>
             </div>
 
@@ -561,55 +567,71 @@ export default function ReportsPage() {
                             </div>
                         </div>
 
-                        {/* Week selector + staff + generate */}
-                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 16 }}>
-                            <div style={{ flex: '1 1 280px' }}>
-                                <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.05em' }}>
-                                    Semana (Lun — Dom)
-                                </label>
-                                <select value={selectedWeekIdx} onChange={e => setSelectedWeekIdx(Number(e.target.value))}
-                                    style={{ padding: '9px 14px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', cursor: 'pointer', width: '100%', borderRadius: 8 }}>
-                                    <option value={-1} style={{ background: '#1a1a2e' }}>— Seleccionar semana —</option>
-                                    {weekOptions.map((w, i) => (
-                                        <option key={w.weekStart} value={i} style={{ background: '#1a1a2e' }}>
-                                            {finalizedWeekStarts.has(w.weekStart) ? '✓ ' : '○ '}{w.label}
-                                        </option>
-                                    ))}
-                                </select>
+                        {/* Date range + presets + staff + generate */}
+                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 16 }}>
+                            {/* Quick presets */}
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                                {datePresets.map(p => {
+                                    const isActive = dateFrom === p.from && dateTo === p.to;
+                                    return (
+                                        <button key={p.label} onClick={() => { setDateFrom(p.from); setDateTo(p.to); }}
+                                            style={{
+                                                padding: '5px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 11.5, fontWeight: isActive ? 700 : 400,
+                                                background: isActive ? 'rgba(139,135,255,0.14)' : 'rgba(255,255,255,0.03)',
+                                                border: `1px solid ${isActive ? 'rgba(139,135,255,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                                                color: isActive ? '#8b87ff' : 'rgba(255,255,255,0.4)', transition: 'all 0.15s',
+                                            }}>
+                                            {p.label}
+                                        </button>
+                                    );
+                                })}
                             </div>
-                            <div>
-                                <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.05em' }}>Colaborador</label>
-                                <select value={staffName} onChange={e => setStaffName(e.target.value)}
-                                    style={{ padding: '9px 14px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', cursor: 'pointer' }}>
-                                    {['Marlenn', 'Otro'].map(n => <option key={n} value={n} style={{ background: '#1a1a2e' }}>{n}</option>)}
-                                </select>
+                            {/* Date inputs + staff + generate */}
+                            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                                <div>
+                                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.05em' }}>Desde</label>
+                                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                                        style={{ padding: '9px 14px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', borderRadius: 8, colorScheme: 'dark' }} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.05em' }}>Hasta</label>
+                                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                                        style={{ padding: '9px 14px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', borderRadius: 8, colorScheme: 'dark' }} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.05em' }}>Colaborador</label>
+                                    <select value={staffName} onChange={e => setStaffName(e.target.value)}
+                                        style={{ padding: '9px 14px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', cursor: 'pointer' }}>
+                                        {['Marlenn', 'Otro'].map(n => <option key={n} value={n} style={{ background: '#1a1a2e' }}>{n}</option>)}
+                                    </select>
+                                </div>
+                                <button onClick={generate} disabled={loading}
+                                    style={{ padding: '9px 24px', borderRadius: 10, border: '1px solid rgba(139,135,255,0.5)', background: 'rgba(139,135,255,0.12)', color: '#8b87ff', cursor: loading ? 'wait' : 'pointer', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.2s', whiteSpace: 'nowrap', alignSelf: 'flex-end', opacity: loading ? 0.6 : 1 }}>
+                                    {loading ? <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <TrendingUp size={15} />}
+                                    {loading ? 'Generando...' : 'Generar Reporte'}
+                                </button>
+                                {selectedTenants.length > 0 && dateFrom && dateTo && (
+                                    <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, alignSelf: 'flex-end', paddingBottom: 10 }}>
+                                        {selectedTenants.length} cuenta{selectedTenants.length !== 1 ? 's' : ''} · {dateRangeLabel}
+                                    </span>
+                                )}
                             </div>
-                            <button onClick={generate} disabled={loading}
-                                style={{ padding: '9px 24px', borderRadius: 10, border: '1px solid rgba(139,135,255,0.5)', background: 'rgba(139,135,255,0.12)', color: '#8b87ff', cursor: loading ? 'wait' : 'pointer', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.2s', whiteSpace: 'nowrap', alignSelf: 'flex-end', opacity: loading ? 0.6 : 1 }}>
-                                {loading ? <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <TrendingUp size={15} />}
-                                {loading ? 'Generando...' : 'Generar Reporte'}
-                            </button>
-                            {selectedTenants.length > 0 && selectedWeek && (
-                                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, alignSelf: 'flex-end', paddingBottom: 10 }}>
-                                    {selectedTenants.length} cuenta{selectedTenants.length !== 1 ? 's' : ''} · {selectedWeek.label}
-                                </span>
-                            )}
                         </div>
                         {error && <p style={{ color: '#f87171', fontSize: 12, marginTop: 10, margin: '10px 0 0' }}>{error}</p>}
                     </div>
 
-                    {/* Finalized week notice */}
-                    {hasReports && isWeekFinalized && (
+                    {/* Finalized period notice */}
+                    {hasReports && isPeriodFinalized && (
                         <div style={{ ...glass, padding: '10px 18px', marginBottom: 20, borderColor: 'rgba(52,211,153,0.3)', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <Lock size={13} style={{ color: '#34d399', flexShrink: 0 }} />
                             <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, margin: 0 }}>
-                                Esta semana ya fue <strong style={{ color: '#34d399' }}>finalizada</strong>. Las órdenes están bloqueadas. Para modificar, revierta desde el Historial.
+                                Este periodo ya fue <strong style={{ color: '#34d399' }}>finalizado</strong>. Las órdenes están bloqueadas. Para modificar, revierta desde el Historial.
                             </p>
                         </div>
                     )}
 
                     {/* Entregado-only notice */}
-                    {hasReports && !isWeekFinalized && (
+                    {hasReports && !isPeriodFinalized && (
                         <div style={{ ...glass, padding: '10px 18px', marginBottom: 20, borderColor: 'rgba(96,165,250,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <Mail size={13} style={{ color: '#60a5fa', flexShrink: 0 }} />
                             <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, margin: 0 }}>
@@ -712,7 +734,7 @@ export default function ReportsPage() {
                                                                 <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 12.5 }}>Detalle de Órdenes</span>
                                                             </div>
                                                             <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>
-                                                                {t.packages} de {allTenantOrders.length} seleccionadas
+                                                                {t.packages} completadas de {allTenantOrders.length} total
                                                             </span>
                                                         </div>
                                                         <div style={{ overflowX: 'auto' }}>
@@ -727,27 +749,31 @@ export default function ReportsPage() {
                                                                 <tbody>
                                                                     {allTenantOrders.map((o, idx) => {
                                                                         const isExcluded = excludedOrders.has(o.id);
+                                                                        const isCompleted = !!o.completedAt;
                                                                         return (
                                                                             <tr key={o.id}
                                                                                 style={{
                                                                                     borderBottom: idx < allTenantOrders.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
-                                                                                    opacity: isExcluded ? 0.3 : 1,
+                                                                                    opacity: isExcluded ? 0.3 : (!isCompleted ? 0.55 : 1),
                                                                                     textDecoration: isExcluded ? 'line-through' : 'none',
                                                                                 }}
                                                                                 className="lm-table-row">
                                                                                 <td style={{ padding: '6px 8px' }}>
-                                                                                    {!isExcluded && !isWeekFinalized && (
+                                                                                    {isCompleted && !isExcluded && !isPeriodFinalized && (
                                                                                         <button onClick={() => setPendingConfirm({ orderId: o.id, orderDisplayId: o.orderId })}
                                                                                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#34d399', padding: 2 }}>
                                                                                             <CheckSquare size={14} />
                                                                                         </button>
+                                                                                    )}
+                                                                                    {!isCompleted && !isExcluded && (
+                                                                                        <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 8.5, fontWeight: 700, background: 'rgba(251,191,36,0.12)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.25)', whiteSpace: 'nowrap' }}>Pendiente</span>
                                                                                     )}
                                                                                     {isExcluded && (
                                                                                         <span style={{ color: 'rgba(255,255,255,0.15)', padding: 2 }}>
                                                                                             <Square size={14} />
                                                                                         </span>
                                                                                     )}
-                                                                                    {isWeekFinalized && !isExcluded && (
+                                                                                    {isPeriodFinalized && !isExcluded && (
                                                                                         <Lock size={12} style={{ color: 'rgba(255,255,255,0.2)' }} />
                                                                                     )}
                                                                                 </td>
@@ -810,7 +836,7 @@ export default function ReportsPage() {
                                                     <Layers size={18} style={{ color: '#8b87ff' }} />
                                                     <h2 style={{ color: '#F2F2F2', fontSize: 18, fontWeight: 700, margin: 0 }}>Resumen Combinado</h2>
                                                     <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>
-                                                        {reports.length} cuenta{reports.length !== 1 ? 's' : ''} · {selectedWeek?.label}
+                                                        {reports.length} cuenta{reports.length !== 1 ? 's' : ''} · {dateRangeLabel}
                                                     </span>
                                                 </div>
                                                 <div style={{ display: 'flex', gap: 8 }}>
@@ -915,7 +941,7 @@ export default function ReportsPage() {
                                             </div>
 
                                             {/* Finalize button */}
-                                            {!isWeekFinalized && selectedOrders.length > 0 && (
+                                            {!isPeriodFinalized && selectedOrders.length > 0 && (
                                                 <div style={{ marginTop: 20, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
                                                     <button onClick={() => setFinalizeConfirm(true)}
                                                         style={{
@@ -924,7 +950,7 @@ export default function ReportsPage() {
                                                             background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.4)', color: '#34d399',
                                                         }}>
                                                         <Lock size={15} />
-                                                        Finalizar Semana ({selectedOrders.length} órdenes)
+                                                        Finalizar Periodo ({selectedOrders.length} órdenes)
                                                     </button>
                                                 </div>
                                             )}
@@ -945,7 +971,7 @@ export default function ReportsPage() {
                     {!historyLoading && billingWeeks.length === 0 && (
                         <div style={{ ...glass, padding: 40, textAlign: 'center' }}>
                             <History size={32} style={{ color: 'rgba(255,255,255,0.15)', marginBottom: 12 }} />
-                            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, margin: 0 }}>No hay semanas finalizadas aún</p>
+                            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, margin: 0 }}>No hay periodos finalizados aún</p>
                         </div>
                     )}
 
@@ -953,13 +979,13 @@ export default function ReportsPage() {
                         <div style={{ ...glass, overflow: 'hidden' }}>
                             <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.02)' }}>
                                 <History size={14} style={{ color: '#8b87ff' }} />
-                                <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13 }}>Semanas Facturadas</span>
+                                <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13 }}>Periodos Facturados</span>
                                 <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>({billingWeeks.length})</span>
                             </div>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                                        {['Semana', 'Finalizada', 'Órdenes', 'Monto', 'Acciones'].map(h => (
+                                        {['Periodo', 'Finalizada', 'Órdenes', 'Monto', 'Acciones'].map(h => (
                                             <th key={h} style={{ padding: '10px 16px', textAlign: 'left', color: 'rgba(255,255,255,0.3)', fontWeight: 600, fontSize: 10, textTransform: 'uppercase' }}>{h}</th>
                                         ))}
                                     </tr>
@@ -1002,7 +1028,7 @@ export default function ReportsPage() {
                     {historyDetail && (
                         <div style={{ marginTop: 20 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                                <h3 style={{ color: '#F2F2F2', fontSize: 16, fontWeight: 700, margin: 0 }}>Detalle de Semana Facturada</h3>
+                                <h3 style={{ color: '#F2F2F2', fontSize: 16, fontWeight: 700, margin: 0 }}>Detalle de Periodo Facturado</h3>
                                 <button onClick={() => setHistoryDetail(null)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: 4 }}>
                                     <X size={16} />
                                 </button>
@@ -1088,20 +1114,20 @@ export default function ReportsPage() {
             )}
 
             {/* Finalize confirmation */}
-            {finalizeConfirm && selectedWeek && (
+            {finalizeConfirm && dateFrom && dateTo && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
                     onClick={() => !finalizing && setFinalizeConfirm(false)}>
                     <div style={{ ...glassHi, padding: '28px 32px', maxWidth: 500, width: '90%', borderColor: 'rgba(52,211,153,0.3)' }}
                         onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                             <Lock size={20} style={{ color: '#34d399' }} />
-                            <h3 style={{ color: '#F2F2F2', fontSize: 16, fontWeight: 700, margin: 0 }}>Finalizar Semana</h3>
+                            <h3 style={{ color: '#F2F2F2', fontSize: 16, fontWeight: 700, margin: 0 }}>Finalizar Periodo</h3>
                         </div>
                         <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, lineHeight: 1.6, margin: '0 0 16px' }}>
-                            Vas a facturar <strong style={{ color: '#34d399' }}>{selectedOrders.length}</strong> órdenes para la semana:
+                            Vas a facturar <strong style={{ color: '#34d399' }}>{selectedOrders.length}</strong> órdenes para el periodo:
                         </p>
                         <div style={{ padding: '12px 16px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', marginBottom: 16 }}>
-                            <p style={{ color: '#F2F2F2', fontSize: 14, fontWeight: 600, margin: '0 0 8px' }}>{selectedWeek.label}</p>
+                            <p style={{ color: '#F2F2F2', fontSize: 14, fontWeight: 600, margin: '0 0 8px' }}>{dateRangeLabel}</p>
                             {(() => {
                                 const combined = computeCombined();
                                 return (
@@ -1129,7 +1155,7 @@ export default function ReportsPage() {
                             <button onClick={handleFinalize} disabled={finalizing}
                                 style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.12)', color: '#34d399', cursor: finalizing ? 'wait' : 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, opacity: finalizing ? 0.6 : 1 }}>
                                 {finalizing ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Lock size={13} />}
-                                {finalizing ? 'Finalizando...' : 'Finalizar Semana'}
+                                {finalizing ? 'Finalizando...' : 'Finalizar Periodo'}
                             </button>
                         </div>
                     </div>
@@ -1144,10 +1170,10 @@ export default function ReportsPage() {
                         onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                             <AlertTriangle size={20} style={{ color: '#f87171' }} />
-                            <h3 style={{ color: '#F2F2F2', fontSize: 16, fontWeight: 700, margin: 0 }}>Revertir Semana</h3>
+                            <h3 style={{ color: '#F2F2F2', fontSize: 16, fontWeight: 700, margin: 0 }}>Revertir Periodo</h3>
                         </div>
                         <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, lineHeight: 1.6, margin: '0 0 12px' }}>
-                            Esto desbloqueará <strong style={{ color: '#f87171' }}>{revertConfirm.order_count}</strong> órdenes de la semana <strong style={{ color: '#F2F2F2' }}>{fmtDate(revertConfirm.week_start.slice(0, 10))} — {fmtDate(revertConfirm.week_end.slice(0, 10))}</strong>.
+                            Esto desbloqueará <strong style={{ color: '#f87171' }}>{revertConfirm.order_count}</strong> órdenes del periodo <strong style={{ color: '#F2F2F2' }}>{fmtDate(revertConfirm.week_start.slice(0, 10))} — {fmtDate(revertConfirm.week_end.slice(0, 10))}</strong>.
                         </p>
                         <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, margin: '0 0 16px' }}>
                             Escribe <strong style={{ color: '#f87171' }}>REVERTIR</strong> para confirmar:
@@ -1163,7 +1189,7 @@ export default function ReportsPage() {
                             <button onClick={handleRevert} disabled={reverting || revertToken !== 'REVERTIR'}
                                 style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.4)', background: 'rgba(248,113,113,0.12)', color: '#f87171', cursor: (reverting || revertToken !== 'REVERTIR') ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, opacity: (reverting || revertToken !== 'REVERTIR') ? 0.5 : 1 }}>
                                 {reverting ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Unlock size={13} />}
-                                {reverting ? 'Revirtiendo...' : 'Revertir Semana'}
+                                {reverting ? 'Revirtiendo...' : 'Revertir Periodo'}
                             </button>
                         </div>
                     </div>

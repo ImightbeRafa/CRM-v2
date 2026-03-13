@@ -2,12 +2,6 @@ import { Resend } from 'resend';
 import { prisma } from './db';
 import { v4 as uuidv4 } from 'uuid';
 
-console.log('Resend API Key:', process.env.RESEND_API_KEY ? 'Set' : 'Not set');
-
-if (!process.env.RESEND_API_KEY) {
-  console.error('Error: RESEND_API_KEY is not set in environment variables');
-}
-
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 interface SendVerificationEmailParams {

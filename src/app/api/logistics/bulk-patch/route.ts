@@ -40,6 +40,17 @@ export async function POST(req: NextRequest) {
             const params: any[] = [];
             if (patch.lmCarrier !== undefined) { params.push(patch.lmCarrier); sets.push(`carrier=$${params.length}`); }
             if (patch.lmStatus !== undefined) { params.push(patch.lmStatus); sets.push(`status=$${params.length}`); }
+
+            if (patch.lmStatus !== undefined) {
+                if (patch.lmStatus === 'Entregado') {
+                    sets.push('completed_at=NOW()');
+                    params.push(actor); sets.push(`completed_by=$${params.length}`);
+                } else {
+                    sets.push('completed_at=NULL');
+                    sets.push('completed_by=NULL');
+                }
+            }
+
             params.push([...existingIds]);
             await prisma.$executeRawUnsafe(
                 `UPDATE lm_orders SET ${sets.join(',')} WHERE crm_order_id = ANY($${params.length}::text[])`,
@@ -49,14 +60,16 @@ export async function POST(req: NextRequest) {
 
         // Create missing rows
         if (toCreate.length > 0) {
+            const completedAt = patch.lmStatus === 'Entregado' ? new Date() : null;
+            const completedBy = patch.lmStatus === 'Entregado' ? actor : null;
             const crmOrders = await prisma.order.findMany({
                 where: { id: { in: toCreate } },
                 select: { id: true, tenantId: true },
             });
             for (const o of crmOrders) {
                 await prisma.$executeRaw`
-                    INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status)
-                    VALUES (${o.id}, ${o.tenantId}, ${patch.lmCarrier ?? null}, ${patch.lmStatus ?? 'Pendiente'})
+                    INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status, completed_at, completed_by)
+                    VALUES (${o.id}, ${o.tenantId}, ${patch.lmCarrier ?? null}, ${patch.lmStatus ?? 'Pendiente'}, ${completedAt}, ${completedBy})
                     ON CONFLICT (crm_order_id) DO NOTHING
                 `;
             }

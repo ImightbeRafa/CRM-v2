@@ -1,6 +1,5 @@
 // next.config.js
 /** @type {import('next').NextConfig} */
-// import CompressionPlugin from 'compression-webpack-plugin';
 import withBundleAnalyzer from '@next/bundle-analyzer';
 
 const bundleAnalyzer = withBundleAnalyzer({
@@ -116,16 +115,6 @@ const nextConfig = {
           })
         )
       }
-      // Enable compression - temporarily disabled for build issues
-      // config.plugins.push(
-      //   new CompressionPlugin({
-      //     test: /\.(js|css|html|svg)$/,
-      //     algorithm: 'gzip',
-      //     threshold: 10240,
-      //     minRatio: 0.8,
-      //   })
-      // );
-
       // Optimize chunks only for client builds to avoid SSR runtime issues
       if (!isServer) {
         config.optimization = {

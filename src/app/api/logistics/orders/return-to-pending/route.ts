@@ -39,10 +39,10 @@ export async function POST(req: NextRequest) {
             }, { status: 400 });
         }
 
-        // Update status to Pendiente
+        // Update status to Pendiente and clear completion flag
         await prisma.$executeRawUnsafe(`
             UPDATE lm_orders
-            SET status = 'Pendiente'
+            SET status = 'Pendiente', completed_at = NULL, completed_by = NULL
             WHERE crm_order_id IN (${placeholders})
               AND billed_week_id IS NULL
         `, ...orderIds);

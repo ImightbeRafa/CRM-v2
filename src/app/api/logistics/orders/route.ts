@@ -204,6 +204,8 @@ export async function PATCH(req: NextRequest) {
             SELECT id FROM lm_orders WHERE crm_order_id = ${orderId} LIMIT 1
         `;
 
+        const actor = req.headers.get('x-user-email') ?? 'system';
+
         if (existing.length > 0) {
             // Build dynamic SET clauses
             const sets: string[] = ['updated_at=NOW()'];
@@ -213,6 +215,17 @@ export async function PATCH(req: NextRequest) {
             if (isContraEntrega !== undefined) { params.push(isContraEntrega); sets.unshift(`is_contra_entrega=$${params.length}`); }
             if (contraEntregaCollected !== undefined) { params.push(contraEntregaCollected); sets.unshift(`contraentrega_collected=$${params.length}`); }
             if (archivedAt !== undefined) { params.push(archivedAt ? new Date(archivedAt) : null); sets.unshift(`archived_at=$${params.length}`); }
+
+            if (lmStatus !== undefined) {
+                if (lmStatus === 'Entregado') {
+                    sets.push('completed_at=NOW()');
+                    params.push(actor); sets.push(`completed_by=$${params.length}`);
+                } else {
+                    sets.push('completed_at=NULL');
+                    sets.push('completed_by=NULL');
+                }
+            }
+
             params.push(orderId);
             const sql = `UPDATE lm_orders SET ${sets.join(',')} WHERE crm_order_id=$${params.length}`;
             await prisma.$executeRawUnsafe(sql, ...params);
@@ -225,7 +238,9 @@ export async function PATCH(req: NextRequest) {
             const ce = isContraEntrega ?? false;
             const cc = contraEntregaCollected ?? false;
             const archVal = archivedAt ? new Date(archivedAt) : null;
-            await prisma.$executeRaw`INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status, is_contra_entrega, contraentrega_collected, archived_at) VALUES (${orderId},${crm_tenant_id},${c},${s},${ce},${cc},${archVal})`;
+            const completedAt = s === 'Entregado' ? new Date() : null;
+            const completedBy = s === 'Entregado' ? actor : null;
+            await prisma.$executeRaw`INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status, is_contra_entrega, contraentrega_collected, archived_at, completed_at, completed_by) VALUES (${orderId},${crm_tenant_id},${c},${s},${ce},${cc},${archVal},${completedAt},${completedBy})`;
         }
 
         return NextResponse.json({ success: true });

@@ -1,8 +1,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, RefreshCw, Eye, EyeOff } from 'lucide-react';
+import { Save, RefreshCw, Eye, EyeOff, MessageSquare, Megaphone } from 'lucide-react';
 import { useTenantConfig, type TenantConfig } from '@/hooks/useTenantConfig';
+
+interface FeedbackTicket {
+  id: string; tenantId: string; userId: string; category: string; subject: string;
+  description: string; status: string; adminNotes: string | null; priority: string;
+  createdAt: string; resolvedAt: string | null;
+  tenant?: { name: string; businessName: string | null };
+  user?: { name: string | null; email: string };
+}
+
+interface ChangelogEntryType {
+  id: string; title: string; description: string; category: string; createdAt: string;
+}
 
 interface Rates { mensajeria_rate: number; correos_rate: number; handling_rate: number; salary_daily_rate: number; gd_recoleccion_cost: number; }
 
@@ -75,7 +87,7 @@ export default function ConfigPage() {
     const { tenants } = useTenantConfig();
     const [rates, setRates] = useState<Rates>({ mensajeria_rate: 2600, correos_rate: 2500, handling_rate: 600, salary_daily_rate: 10000, gd_recoleccion_cost: 2700 });
     const [ratesLoaded, setRatesLoaded] = useState(false);
-    const [tab, setTab] = useState<'rates' | 'tenants' | 'correos'>('rates');
+    const [tab, setTab] = useState<'rates' | 'tenants' | 'correos' | 'feedback' | 'changelog'>('rates');
     const [correosLoaded, setCorreosLoaded] = useState(false);
     const [wsUsername, setWsUsername] = useState('');
     const [wsPassword, setWsPassword] = useState('');
@@ -91,6 +103,72 @@ export default function ConfigPage() {
     const [wsSenderAddress, setWsSenderAddress] = useState('');
     const [wsSenderZip, setWsSenderZip] = useState('');
     const [wsSenderPhone, setWsSenderPhone] = useState('');
+
+    // Feedback state
+    const [feedbackTickets, setFeedbackTickets] = useState<FeedbackTicket[]>([]);
+    const [feedbackLoading, setFeedbackLoading] = useState(false);
+    const [feedbackFilter, setFeedbackFilter] = useState<string>('');
+    const [editingTicket, setEditingTicket] = useState<string | null>(null);
+    const [editNotes, setEditNotes] = useState('');
+    const [editStatus, setEditStatus] = useState('');
+    const [editPriority, setEditPriority] = useState('');
+    const [ticketSaving, setTicketSaving] = useState(false);
+
+    // Changelog state
+    const [changelogEntries, setChangelogEntries] = useState<ChangelogEntryType[]>([]);
+    const [changelogLoading, setChangelogLoading] = useState(false);
+    const [clTitle, setClTitle] = useState('');
+    const [clDesc, setClDesc] = useState('');
+    const [clCategory, setClCategory] = useState('improvement');
+    const [clSaving, setClSaving] = useState(false);
+
+    async function loadFeedback() {
+        setFeedbackLoading(true);
+        try {
+            const params = new URLSearchParams();
+            if (feedbackFilter) params.set('status', feedbackFilter);
+            const res = await fetch(`/api/logistics/feedback?${params}`);
+            const data = await res.json();
+            if (data.status === 'success') setFeedbackTickets(data.data || []);
+        } catch (e) { console.error('loadFeedback:', e); }
+        setFeedbackLoading(false);
+    }
+
+    async function updateTicket(id: string) {
+        setTicketSaving(true);
+        const body: any = {};
+        if (editStatus) body.status = editStatus;
+        if (editPriority) body.priority = editPriority;
+        if (editNotes !== undefined) body.adminNotes = editNotes;
+        body.id = id;
+        await fetch('/api/logistics/feedback', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        setEditingTicket(null);
+        setTicketSaving(false);
+        loadFeedback();
+    }
+
+    async function loadChangelog() {
+        setChangelogLoading(true);
+        try {
+            const res = await fetch('/api/logistics/changelog');
+            const data = await res.json();
+            if (data.status === 'success') setChangelogEntries(data.data || []);
+        } catch (e) { console.error('loadChangelog:', e); }
+        setChangelogLoading(false);
+    }
+
+    async function createChangelog() {
+        if (!clTitle.trim() || !clDesc.trim()) return;
+        setClSaving(true);
+        await fetch('/api/logistics/changelog', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: clTitle.trim(), description: clDesc.trim(), category: clCategory }) });
+        setClTitle(''); setClDesc(''); setClSaving(false);
+        loadChangelog();
+    }
+
+    useEffect(() => {
+        if (tab === 'feedback') loadFeedback();
+        if (tab === 'changelog') loadChangelog();
+    }, [tab]);
 
     useEffect(() => {
         fetch('/api/logistics/rates').then(r => r.json()).then(d => { if (d.rates) setRates(d.rates); }).finally(() => setRatesLoaded(true));
@@ -144,7 +222,7 @@ export default function ConfigPage() {
 
             {/* Tabs */}
             <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-                {[{ id: 'rates' as const, label: 'Tarifas de Envío' }, { id: 'tenants' as const, label: 'Cuentas y Colores' }, { id: 'correos' as const, label: '📮 Correos CR' }].map(t => (
+                {[{ id: 'rates' as const, label: 'Tarifas de Envío' }, { id: 'tenants' as const, label: 'Cuentas y Colores' }, { id: 'correos' as const, label: '📮 Correos CR' }, { id: 'feedback' as const, label: '💬 Feedback' }, { id: 'changelog' as const, label: '📋 Changelog' }].map(t => (
                     <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: '9px 20px', borderRadius: '8px 8px 0 0', border: 'none', borderBottom: tab === t.id ? '2px solid #8b87ff' : '2px solid transparent', background: tab === t.id ? 'rgba(139,135,255,0.08)' : 'transparent', color: tab === t.id ? '#F2F2F2' : 'rgba(255,255,255,0.35)', fontWeight: tab === t.id ? 700 : 400, fontSize: 13, cursor: 'pointer', marginBottom: -1, transition: 'all 0.15s' }}>
                         {t.label}
                     </button>
@@ -290,6 +368,163 @@ export default function ConfigPage() {
                     </p>
                 </div>
             )}
+            {tab === 'feedback' && (
+                <div style={{ maxWidth: 800 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                            {['', 'open', 'in_progress', 'resolved', 'closed'].map(f => (
+                                <button key={f} onClick={() => { setFeedbackFilter(f); setTimeout(loadFeedback, 0); }}
+                                    style={{ padding: '6px 12px', borderRadius: 6, border: feedbackFilter === f ? '1px solid #8b87ff' : '1px solid rgba(255,255,255,0.1)', background: feedbackFilter === f ? 'rgba(139,135,255,0.15)' : 'transparent', color: feedbackFilter === f ? '#F2F2F2' : 'rgba(255,255,255,0.4)', fontSize: 12, fontWeight: feedbackFilter === f ? 600 : 400, cursor: 'pointer' }}>
+                                    {f === '' ? 'Todos' : f === 'open' ? 'Abiertos' : f === 'in_progress' ? 'En Progreso' : f === 'resolved' ? 'Resueltos' : 'Cerrados'}
+                                </button>
+                            ))}
+                        </div>
+                        <button onClick={loadFeedback} style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.5)', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <RefreshCw size={12} /> Recargar
+                        </button>
+                    </div>
+                    {feedbackLoading ? <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>Cargando tickets...</p> : feedbackTickets.length === 0 ? (
+                        <div style={{ ...glass, padding: '40px 20px', textAlign: 'center' }}>
+                            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>No hay tickets de feedback{feedbackFilter ? ` con estado "${feedbackFilter}"` : ''}.</p>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'grid', gap: 8 }}>
+                            {feedbackTickets.map(t => {
+                                const isEditing = editingTicket === t.id;
+                                const priorityColors: Record<string, string> = { low: '#60a5fa', normal: '#F2F2F2', high: '#fbbf24', critical: '#ef4444' };
+                                const statusColors: Record<string, string> = { open: '#60a5fa', in_progress: '#fbbf24', resolved: '#34d399', closed: '#6b7280' };
+                                return (
+                                    <div key={t.id} style={{ ...glass, padding: '14px 18px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                                    <span style={{ color: priorityColors[t.priority] || '#F2F2F2', fontWeight: 700, fontSize: 14 }}>{t.subject}</span>
+                                                    <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: `${statusColors[t.status] || '#6b7280'}20`, color: statusColors[t.status] || '#6b7280', border: `1px solid ${statusColors[t.status] || '#6b7280'}40` }}>
+                                                        {t.status === 'open' ? 'Abierto' : t.status === 'in_progress' ? 'En Progreso' : t.status === 'resolved' ? 'Resuelto' : 'Cerrado'}
+                                                    </span>
+                                                    <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 10, background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)' }}>{t.category}</span>
+                                                </div>
+                                                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, margin: '0 0 6px', lineHeight: 1.5 }}>{t.description}</p>
+                                                <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>
+                                                    <span>🏢 {t.tenant?.businessName || t.tenant?.name || t.tenantId.slice(0, 8)}</span>
+                                                    <span>👤 {t.user?.name || t.user?.email || 'N/A'}</span>
+                                                    <span>📅 {new Date(t.createdAt).toLocaleDateString('es-CR')}</span>
+                                                </div>
+                                            </div>
+                                            <button onClick={() => { if (isEditing) { setEditingTicket(null); } else { setEditingTicket(t.id); setEditStatus(t.status); setEditPriority(t.priority); setEditNotes(t.adminNotes || ''); } }}
+                                                style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: isEditing ? 'rgba(139,135,255,0.15)' : 'transparent', color: isEditing ? '#8b87ff' : 'rgba(255,255,255,0.4)', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                                {isEditing ? 'Cancelar' : 'Editar'}
+                                            </button>
+                                        </div>
+                                        {t.adminNotes && !isEditing && (
+                                            <div style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)', borderRadius: 8, padding: '8px 12px', marginTop: 8 }}>
+                                                <p style={{ color: '#34d399', fontSize: 11, fontWeight: 600, margin: '0 0 3px' }}>Nota admin:</p>
+                                                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, margin: 0 }}>{t.adminNotes}</p>
+                                            </div>
+                                        )}
+                                        {isEditing && (
+                                            <div style={{ marginTop: 12, display: 'grid', gap: 10, padding: '12px', borderRadius: 8, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                                                    <div>
+                                                        <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, display: 'block', marginBottom: 4 }}>Estado</label>
+                                                        <select value={editStatus} onChange={e => setEditStatus(e.target.value)}
+                                                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(0,0,0,0.3)', color: '#F2F2F2', fontSize: 12 }}>
+                                                            <option value="open">Abierto</option>
+                                                            <option value="in_progress">En Progreso</option>
+                                                            <option value="resolved">Resuelto</option>
+                                                            <option value="closed">Cerrado</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, display: 'block', marginBottom: 4 }}>Prioridad</label>
+                                                        <select value={editPriority} onChange={e => setEditPriority(e.target.value)}
+                                                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(0,0,0,0.3)', color: '#F2F2F2', fontSize: 12 }}>
+                                                            <option value="low">Baja</option>
+                                                            <option value="normal">Normal</option>
+                                                            <option value="high">Alta</option>
+                                                            <option value="critical">Crítica</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, display: 'block', marginBottom: 4 }}>Nota / Respuesta</label>
+                                                    <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={3}
+                                                        style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(0,0,0,0.3)', color: '#F2F2F2', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }}
+                                                        placeholder="Escribe una respuesta o nota interna..." />
+                                                </div>
+                                                <button onClick={() => updateTicket(t.id)} disabled={ticketSaving}
+                                                    style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.12)', color: '#34d399', fontWeight: 600, fontSize: 12, cursor: 'pointer' }} className="lm-save-btn">
+                                                    {ticketSaving ? 'Guardando...' : '✓ Guardar Cambios'}
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {tab === 'changelog' && (
+                <div style={{ maxWidth: 680 }}>
+                    {/* Create new entry */}
+                    <div style={{ ...glass, padding: '18px 22px', marginBottom: 20 }}>
+                        <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 15, margin: '0 0 14px' }}>Nueva Entrada de Changelog</p>
+                        <div style={{ display: 'grid', gap: 10 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10 }}>
+                                <input value={clTitle} onChange={e => setClTitle(e.target.value)} placeholder="Título del cambio"
+                                    style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(0,0,0,0.25)', color: '#F2F2F2', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                <select value={clCategory} onChange={e => setClCategory(e.target.value)}
+                                    style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(0,0,0,0.25)', color: '#F2F2F2', fontSize: 13 }}>
+                                    <option value="feature">Nueva Función</option>
+                                    <option value="fix">Corrección</option>
+                                    <option value="improvement">Mejora</option>
+                                    <option value="announcement">Anuncio</option>
+                                </select>
+                            </div>
+                            <textarea value={clDesc} onChange={e => setClDesc(e.target.value)} placeholder="Descripción detallada..." rows={3}
+                                style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(0,0,0,0.25)', color: '#F2F2F2', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                            <button onClick={createChangelog} disabled={clSaving || !clTitle.trim() || !clDesc.trim()}
+                                style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid rgba(139,135,255,0.4)', background: 'rgba(139,135,255,0.12)', color: '#8b87ff', fontWeight: 700, fontSize: 13, cursor: clTitle.trim() && clDesc.trim() ? 'pointer' : 'default', opacity: clTitle.trim() && clDesc.trim() ? 1 : 0.4 }} className="lm-save-btn">
+                                {clSaving ? 'Publicando...' : '+ Publicar Entrada'}
+                            </button>
+                        </div>
+                    </div>
+                    {/* Existing entries */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, margin: 0 }}>Entradas publicadas</p>
+                        <button onClick={loadChangelog} style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <RefreshCw size={11} /> Recargar
+                        </button>
+                    </div>
+                    {changelogLoading ? <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>Cargando...</p> : changelogEntries.length === 0 ? (
+                        <div style={{ ...glass, padding: '30px 20px', textAlign: 'center' }}>
+                            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>No hay entradas aún. Crea la primera arriba.</p>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'grid', gap: 8 }}>
+                            {changelogEntries.map(e => {
+                                const catColors: Record<string, string> = { feature: '#8b87ff', fix: '#ef4444', improvement: '#34d399', announcement: '#fbbf24' };
+                                const catLabels: Record<string, string> = { feature: 'Nueva Función', fix: 'Corrección', improvement: 'Mejora', announcement: 'Anuncio' };
+                                return (
+                                    <div key={e.id} style={{ ...glass, padding: '14px 18px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                            <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: `${catColors[e.category] || '#6b7280'}20`, color: catColors[e.category] || '#6b7280', border: `1px solid ${catColors[e.category] || '#6b7280'}40` }}>
+                                                {catLabels[e.category] || e.category}
+                                            </span>
+                                            <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>{new Date(e.createdAt).toLocaleDateString('es-CR')}</span>
+                                        </div>
+                                        <p style={{ color: '#F2F2F2', fontWeight: 600, fontSize: 14, margin: '0 0 4px' }}>{e.title}</p>
+                                        <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, margin: 0, lineHeight: 1.5 }}>{e.description}</p>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
             <style>{`.lm-save-btn:hover{filter:brightness(1.2);box-shadow:0 0 14px currentColor} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
         </div>
     );

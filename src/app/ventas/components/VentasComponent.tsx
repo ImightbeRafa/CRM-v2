@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, Suspense, lazy } from 'react';
-import HomeButton from '@/app/components/ui/HomeButtom';
+import { AppShell } from '@/app/components/AppShell';
 import { SalesDashboard } from '@/app/ventas/components/SalesDashboard';
 import DailyStats from '@/app/ventas/components/DailyStats';
 import SalesErrorBoundary from '@/app/ventas/components/SalesErrorBoundary';
@@ -35,13 +35,7 @@ export default function VentasContent() {
   const [showOrderForm, setShowOrderForm] = useState(false);
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm border-b">
-        <div className="container mx-auto px-4 py-3">
-          <HomeButton />
-        </div>
-      </nav>
-
+    <AppShell>
       <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-6" style={{ overflow: 'visible' }}>
         <DOMErrorBoundary>
           <SalesErrorBoundary>
@@ -90,6 +84,6 @@ export default function VentasContent() {
           </SalesErrorBoundary>
         </DOMErrorBoundary>
       </div>
-    </main>
+    </AppShell>
   );
 }

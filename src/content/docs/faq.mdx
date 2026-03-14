@@ -1,0 +1,95 @@
+---
+title: "Preguntas Frecuentes"
+description: "Respuestas a las preguntas más comunes sobre BetsyCRM."
+visibility: public
+category: general
+order: 50
+---
+
+## General
+
+### ¿Qué es BetsyCRM?
+
+BetsyCRM es un sistema de gestión de pedidos diseñado para emprendedores y PyMEs en Costa Rica. Te permite registrar pedidos, gestionar inventario, generar guías de envío con Correos de Costa Rica, ver estadísticas de tu negocio, conectar tu sitio web vía API, y administrar tu equipo de trabajo con roles y permisos.
+
+### ¿Cuánto cuesta?
+
+BetsyCRM ofrece una prueba gratuita de 7 días con acceso completo. Después, el plan Pro cuesta $20/mes e incluye todo: usuarios ilimitados, pedidos ilimitados, API, integraciones, y más.
+
+### ¿Puedo usarlo en mi celular?
+
+Sí, BetsyCRM es completamente responsive y funciona en cualquier navegador móvil (Chrome, Safari, Firefox). La experiencia web móvil está optimizada para todas las funciones principales. No hay una app nativa por el momento.
+
+### ¿Mis datos están seguros?
+
+Sí. BetsyCRM utiliza encriptación HTTPS, autenticación segura con tokens JWT, y aislamiento de datos por tenant. Los pagos se procesan a través de Tilopay con certificación PCI DSS. No almacenamos datos de tarjetas de crédito.
+
+## Pedidos
+
+### ¿Cómo creo un pedido?
+
+Ve a **Ventas** → **+ Nuevo Pedido**. Completa los datos del cliente y producto, y el pedido aparecerá en tu tablero. Para una guía detallada, consulta la documentación del módulo de ventas.
+
+### ¿Puedo personalizar los estados de los pedidos?
+
+Sí, en **Configuración** → **Estados de Pedidos** puedes agregar, editar, reordenar o eliminar estados. Cada estado tiene un nombre y color personalizable. El orden de los estados define las columnas del tablero Kanban.
+
+### ¿Cómo exporto mis datos?
+
+En el módulo de **Ventas** encontrarás opciones de exportación a Excel y CSV. Los filtros activos se aplican a la exportación. También puedes exportar datos de clientes y estadísticas.
+
+### ¿Puedo recibir pedidos desde mi sitio web?
+
+Sí, BetsyCRM ofrece una API REST para recibir pedidos automáticamente. Necesitas un plan Basic o superior y una clave API. Consulta la guía de integración API para ejemplos de código.
+
+<LinkCard href="/docs/api-integration" title="Integración API" description="Guía completa con ejemplos en JavaScript, Python y PHP." />
+
+## Envíos
+
+### ¿Cómo funciona la integración con Correos de Costa Rica?
+
+BetsyCRM se conecta con el Web Service SOAP de Correos CR para generar guías automáticamente. Necesitas credenciales del Web Service proporcionadas directamente por Correos de Costa Rica (diferentes a tu cuenta web).
+
+<LinkCard href="/docs/correos-cr-setup" title="Configurar Correos CR" description="Guía paso a paso para configurar la integración." />
+
+### ¿Puedo usar otro servicio de mensajería?
+
+Actualmente la generación automática de guías solo está disponible para Correos de Costa Rica. Sin embargo, puedes registrar envíos manuales con cualquier servicio de mensajería y gestionar el seguimiento manualmente.
+
+## Equipo
+
+### ¿Cómo invito a mi equipo?
+
+Ve a **Configuración** → **Usuarios** y agrega miembros con diferentes roles. Los roles disponibles son: Owner, Admin, Manager, Sales, Production y Viewer. Cada rol tiene permisos específicos.
+
+### ¿Cuántos usuarios puedo tener?
+
+Depende de tu plan: Free incluye 1 usuario, Basic hasta 5, y Pro hasta 25. Si necesitas más, contacta al soporte.
+
+## Cuenta
+
+### ¿Puedo cambiar de plan en cualquier momento?
+
+Actualmente solo hay un plan de pago (Pro a $20/mes). Puedes activarlo o cancelarlo en cualquier momento desde **Configuración** → **Facturación**.
+
+### ¿Cómo cancelo mi suscripción?
+
+Ve a **Configuración** → **Facturación** → **Cancelar Suscripción**. Tu cuenta seguirá activa hasta el final del período pagado y tus datos se conservan por 30 días adicionales.
+
+### ¿Puedo conectar mi Instagram o WhatsApp?
+
+Sí, BetsyCRM soporta la integración con Instagram Business y WhatsApp Business a través de la API de Meta. Puedes recibir y responder mensajes directamente desde el CRM.
+
+### ¿Tienen un bot o asistente IA?
+
+Sí, puedes conectar un bot de Telegram con inteligencia artificial que te envía notificaciones de pedidos y responde consultas sobre tu negocio. Configúralo en **Configuración** → **AI Assistant**.
+
+## Soporte
+
+### ¿Cómo reporto un problema?
+
+Usa el botón de **feedback** en la esquina inferior derecha de cualquier pantalla. Describe el problema y nuestro equipo te responderá lo antes posible.
+
+### ¿Dónde puedo ver las novedades?
+
+Las actualizaciones y nuevas funciones se anuncian en el changelog, accesible desde el menú de tu cuenta.

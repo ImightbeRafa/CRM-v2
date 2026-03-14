@@ -1,171 +1,146 @@
 'use client';
 
-import React, { useEffect } from 'react';
-import { WizardStepProps } from '../SetupWizard';
+import React, { useEffect, useState } from 'react';
 import { Button } from '@/app/components/ui/button';
 import { Card } from '@/app/components/ui/card';
-import { 
-  CheckCircle,
-  ArrowRight,
-  Home,
-  BarChart,
+import {
+  CheckCircle2,
   ShoppingCart,
-  Settings
+  Users,
+  BarChart3,
+  BookOpen,
+  ArrowRight,
+  Sparkles,
+  Loader2,
+  PartyPopper,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
+import type { WizardStepProps } from '../SetupWizard';
+
+const NEXT_STEPS = [
+  {
+    icon: ShoppingCart,
+    title: 'Crear tu primer pedido',
+    description: 'Registra una orden en el módulo de Ventas',
+    href: '/ventas',
+    color: 'from-blue-500 to-blue-600',
+  },
+  {
+    icon: Users,
+    title: 'Invitar a tu equipo',
+    description: 'Agrega vendedores o colaboradores',
+    href: '/config?tab=users',
+    color: 'from-purple-500 to-purple-600',
+  },
+  {
+    icon: BarChart3,
+    title: 'Ver estadísticas',
+    description: 'Explora los reportes y métricas',
+    href: '/estadisticas',
+    color: 'from-green-500 to-green-600',
+  },
+  {
+    icon: BookOpen,
+    title: 'Leer la documentación',
+    description: 'Guías detalladas de cada función',
+    href: '/help',
+    color: 'from-amber-500 to-orange-500',
+  },
+];
 
 export function CompletionStep({ markCompleted }: WizardStepProps) {
   const router = useRouter();
+  const [completing, setCompleting] = useState(true);
 
   useEffect(() => {
-    markCompleted();
-    
-    // Mark wizard as completed in the database
-    fetch('/api/setup/wizard-complete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    }).catch(error => {
-      console.error('Error marking wizard as complete:', error);
-      // Don't block user flow if this fails
-    });
-  }, [markCompleted]);
+    completeWizard();
+  }, []);
 
-  const nextSteps = [
-    {
-      icon: ShoppingCart,
-      title: 'Crear tu Primer Pedido',
-      description: 'Ve a Ventas y crea tu primer pedido',
-      action: '/ventas',
-      color: 'blue'
-    },
-    {
-      icon: BarChart,
-      title: 'Ver Estadísticas',
-      description: 'Revisa tus métricas y reportes',
-      action: '/estadisticas',
-      color: 'purple'
-    },
-    {
-      icon: Settings,
-      title: 'Ajustar Configuración',
-      description: 'Personaliza más detalles en Config',
-      action: '/config',
-      color: 'gray'
-    }
-  ];
-
-  const handleNavigate = (path: string) => {
-    router.push(path);
+  const completeWizard = async () => {
+    try {
+      await fetch('/api/setup/wizard-complete', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      markCompleted();
+      try { localStorage.removeItem('betsy-wizard-progress'); } catch { /* noop */ }
+    } catch { /* still mark completed in UI */ markCompleted(); }
+    finally { setCompleting(false); }
   };
 
+  if (completing) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-8 text-center">
-      {/* Success Animation */}
-      <div className="flex flex-col items-center">
-        <div className="relative">
-          <div className="absolute inset-0 bg-green-500 rounded-full animate-ping opacity-20"></div>
-          <div className="relative p-6 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full">
-            <CheckCircle className="h-16 w-16 text-white" />
-          </div>
+    <div className="space-y-8">
+      {/* Success banner */}
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+        className="text-center py-6"
+      >
+        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 mb-4 shadow-lg">
+          <PartyPopper className="h-10 w-10 text-white" />
         </div>
-        
-        <h2 className="text-4xl font-bold text-gray-900 mt-6 mb-3">
-          ¡Configuración Completada!
-        </h2>
-        <p className="text-xl text-gray-600 max-w-2xl">
-          Tu CRM está listo para usar. Ahora puedes empezar a gestionar tus ventas y producción.
+        <h2 className="text-3xl font-bold text-gray-900 mb-2">¡Tu CRM está listo!</h2>
+        <p className="text-gray-600 text-lg max-w-md mx-auto">
+          Has completado la configuración inicial. Aquí tienes algunas ideas para empezar:
         </p>
+      </motion.div>
+
+      {/* Next steps */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {NEXT_STEPS.map((step, idx) => (
+          <motion.div
+            key={step.href}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 * (idx + 1) }}
+          >
+            <Card
+              className="p-4 hover:shadow-lg transition-shadow cursor-pointer group border-2 hover:border-blue-200"
+              onClick={() => router.push(step.href)}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`p-2.5 rounded-xl bg-gradient-to-br ${step.color} shadow-md`}>
+                  <step.icon className="h-5 w-5 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-gray-900 group-hover:text-blue-700 transition-colors">
+                    {step.title}
+                  </h3>
+                  <p className="text-sm text-gray-500">{step.description}</p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-gray-300 group-hover:text-blue-500 transition-colors mt-1" />
+              </div>
+            </Card>
+          </motion.div>
+        ))}
       </div>
 
-      {/* Summary */}
-      <Card className="p-6 bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
-        <h3 className="text-lg font-semibold text-green-900 mb-4">
-          ✨ Lo que has configurado:
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-left text-sm">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <span>Información del Negocio</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <span>Campos Personalizados</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <span>Estados de Pedidos</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <span>Inventario</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <span>Clientes Frecuentes</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <span>Productos Frecuentes</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <span>Vendedores</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <span>Métodos de Envío</span>
-          </div>
-        </div>
-      </Card>
-
-      {/* Next Steps */}
-      <div>
-        <h3 className="text-2xl font-semibold text-gray-900 mb-4">
-          ¿Qué sigue?
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {nextSteps.map((step, idx) => {
-            const Icon = step.icon;
-            return (
-              <Card 
-                key={idx} 
-                className="p-6 hover:shadow-lg transition-all cursor-pointer group"
-                onClick={() => handleNavigate(step.action)}
-              >
-                <div className={`p-3 bg-${step.color}-100 rounded-lg w-fit mb-4 group-hover:scale-110 transition-transform`}>
-                  <Icon className={`h-6 w-6 text-${step.color}-600`} />
-                </div>
-                <h4 className="font-semibold text-gray-900 mb-2">
-                  {step.title}
-                </h4>
-                <p className="text-sm text-gray-600 mb-4">
-                  {step.description}
-                </p>
-                <div className="flex items-center text-blue-600 text-sm font-medium">
-                  Ir ahora
-                  <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Main Action */}
-      <div className="pt-6">
-        <Button 
-          size="lg" 
-          className="bg-green-600 hover:bg-green-700 text-lg px-8 py-6"
-          onClick={() => router.push('/home')}
+      {/* CTA */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.6 }}
+        className="text-center pt-2"
+      >
+        <Button
+          size="lg"
+          onClick={() => router.push('/dashboard')}
+          className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 h-12 px-8 text-base"
         >
-          <Home className="h-5 w-5 mr-2" />
+          <Sparkles className="h-5 w-5 mr-2" />
           Ir al Dashboard
         </Button>
-        <p className="text-sm text-gray-600 mt-3">
-          Puedes volver a ejecutar este asistente desde Configuración → Asistente de Configuración
-        </p>
-      </div>
+      </motion.div>
     </div>
   );
 }
-

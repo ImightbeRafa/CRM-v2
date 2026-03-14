@@ -1,0 +1,77 @@
+---
+title: "Gestionar tu Equipo"
+description: "Cómo invitar colaboradores, asignar roles y administrar los permisos de tu equipo en BetsyCRM."
+visibility: private
+category: config
+order: 30
+---
+
+## Tu Equipo en BetsyCRM
+
+BetsyCRM soporta múltiples usuarios con diferentes niveles de acceso. Puedes invitar a tu equipo de trabajo y asignarles roles que controlan qué pueden ver y hacer dentro del CRM.
+
+## Roles Disponibles
+
+| Rol | Descripción | Acceso |
+|-----|-------------|--------|
+| **Owner** | Propietario de la cuenta | Acceso completo, facturación, eliminar cuenta |
+| **Admin** | Co-administrador | Acceso completo excepto facturación |
+| **Manager** | Gerente operativo | Ventas, Producción, Estadísticas, Config (solo lectura) |
+| **Sales** | Vendedor | Solo módulo de Ventas |
+| **Production** | Producción | Solo módulo de Producción (Kanban) |
+| **Viewer** | Observador | Solo lectura en todas las secciones |
+
+<Callout type="info">
+Para una guía detallada de qué puede hacer exactamente cada rol, consulta la guía de Roles y Permisos.
+</Callout>
+
+<LinkCard href="/help/roles-permissions" title="Roles y Permisos Detallados" description="Tabla completa de permisos por rol." />
+
+## Invitar Miembros
+
+<Steps>
+  <Step title="Ir a Usuarios">Navega a **Configuración** → **Usuarios**.</Step>
+  <Step title="Invitar usuario">Haz clic en **Invitar Usuario** o **Agregar Miembro**.</Step>
+  <Step title="Ingresar correo">Escribe el correo electrónico del colaborador que quieres invitar.</Step>
+  <Step title="Seleccionar rol">Elige el rol apropiado para el colaborador según sus responsabilidades.</Step>
+  <Step title="Enviar invitación">El colaborador recibirá un email con un enlace para unirse a tu cuenta. Al hacer clic, podrá crear su contraseña e iniciar sesión.</Step>
+</Steps>
+
+<Callout type="tip">
+Asigna el rol más restrictivo que cubra las necesidades del colaborador. Siempre es más fácil agregar permisos que quitarlos después de que alguien ya tiene acceso a datos sensibles.
+</Callout>
+
+## Cambiar el Rol de un Miembro
+
+<Steps>
+  <Step title="Ir a Usuarios">Navega a **Configuración** → **Usuarios**.</Step>
+  <Step title="Seleccionar usuario">Encuentra al miembro en la lista y haz clic en su registro.</Step>
+  <Step title="Cambiar rol">Selecciona el nuevo rol en el dropdown. El cambio se aplica inmediatamente.</Step>
+</Steps>
+
+<Callout type="warning">
+Cambiar el rol de un usuario no cierra su sesión activa. Los nuevos permisos se aplican en la próxima carga de página o petición API.
+</Callout>
+
+## Eliminar un Miembro
+
+1. Ve a **Configuración** → **Usuarios**
+2. Haz clic en el botón de eliminar junto al usuario
+3. Confirma la acción
+
+El usuario perderá acceso inmediatamente. Su historial de actividad (pedidos creados, cambios realizados) se mantiene en el registro de auditoría.
+
+## Usuarios
+
+| | Prueba Gratis | Pro ($20/mes) |
+|--|---------------|---------------|
+| **Usuarios** | 1 | Ilimitados |
+
+<Callout type="info">
+El plan Pro incluye usuarios ilimitados. Puedes agregar a todo tu equipo sin costo adicional.
+</Callout>
+
+## Próximos Pasos
+
+<LinkCard href="/help/roles-permissions" title="Roles y Permisos" description="Consulta la tabla completa de permisos por rol." />
+<LinkCard href="/help/audit-logs" title="Registro de Auditoría" description="Revisa las acciones de tu equipo." />

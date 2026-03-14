@@ -44,6 +44,7 @@ const PUBLIC_ROUTES = [
   '/privacy',                                   // Privacy policy (required for Meta verification)
   '/terms',                                     // Terms of service (required for Meta verification)
   '/data-deletion',                             // Data deletion instructions (required for Meta)
+  '/docs',                                      // Public documentation (no auth required)
 ];
 
 /**
@@ -159,6 +160,11 @@ export default async function middleware(request: Request) {
         return NextResponse.redirect(new URL('/dashboard', url.origin));
       }
       return NextResponse.next({ request: { headers: requestHeaders } });
+    }
+
+    // Redirect disabled features to dashboard
+    if (pathname === '/chats' || pathname.startsWith('/chats/')) {
+      return NextResponse.redirect(new URL('/dashboard', url.origin));
     }
 
     // Handle tenant-specific routes

@@ -15,6 +15,7 @@ import { TenantSettingsPanel } from '../components/TenantSettingsPanel'
 import { useConfig } from '../contexts/ConfigContext'
 import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck, Bot, Building2 } from 'lucide-react'
 import { BusinessProfileSettings } from './components/BusinessProfileSettings'
+import { MobileBottomNav } from '../components/MobileBottomNav'
 
 function ConfigPageInner() {
   const searchParams = useSearchParams()
@@ -1758,6 +1759,7 @@ function ConfigPageInner() {
       
       {/* Tenant Settings Gear (only visible on config page) */}
       <TenantSettingsPanel />
+      <MobileBottomNav />
     </div>
   )
 }

@@ -1,0 +1,66 @@
+---
+title: "Registro de Auditoría"
+description: "Cómo consultar el historial de acciones, cambios y operaciones realizadas en tu cuenta."
+visibility: private
+category: config
+order: 38
+---
+
+## ¿Qué es el Registro de Auditoría?
+
+El registro de auditoría mantiene un historial detallado de todas las acciones importantes realizadas en tu cuenta de BetsyCRM. Esto te permite saber quién hizo qué, cuándo y sobre qué registros.
+
+## Qué Se Registra
+
+| Acción | Ejemplo |
+|--------|---------|
+| **Crear** | Se creó un nuevo pedido EA-042 |
+| **Actualizar** | Se cambió el estado de EA-042 de "Pendiente" a "En Producción" |
+| **Eliminar** | Se eliminó el producto "Camiseta M" |
+| **Eliminación masiva** | Se eliminaron 15 pedidos |
+| **Cambio de rol** | Se cambió el rol de usuario@email.com de "Sales" a "Admin" |
+| **Configuración** | Se actualizó la información del negocio |
+
+## Consultar el Registro
+
+<Steps>
+  <Step title="Ir a Auditoría">Navega a **Configuración** → **Auditoría**.</Step>
+  <Step title="Ver entradas">Las entradas se muestran en orden cronológico, con las más recientes primero.</Step>
+  <Step title="Filtrar">Usa los filtros para buscar por tipo de acción, usuario o rango de fechas.</Step>
+</Steps>
+
+## Información de Cada Entrada
+
+Cada registro de auditoría incluye:
+
+- **Acción**: Qué se hizo (crear, actualizar, eliminar)
+- **Usuario**: Quién realizó la acción
+- **Recurso**: Sobre qué registro se actuó
+- **Fecha y hora**: Cuándo ocurrió
+- **Detalles**: Información adicional sobre los cambios
+
+<Callout type="info">
+El registro de auditoría no almacena información sensible como contraseñas o tokens. Solo registra metadatos de las acciones.
+</Callout>
+
+## Limpiar Registros
+
+Si el registro de auditoría crece demasiado, puedes limpiarlo:
+
+1. Ve a **Configuración** → **Auditoría**
+2. Usa el botón de **Limpiar registros**
+3. Selecciona el rango de fechas a eliminar
+4. Confirma la operación
+
+<Callout type="warning">
+La limpieza del registro de auditoría es irreversible. Considera exportar los datos antes de limpiar si necesitas mantener un historial.
+</Callout>
+
+## Permisos
+
+Solo los usuarios con rol **Owner** o **Admin** pueden acceder al registro de auditoría.
+
+## Próximos Pasos
+
+<LinkCard href="/help/bulk-operations" title="Operaciones Masivas" description="Las operaciones masivas se registran aquí automáticamente." />
+<LinkCard href="/help/roles-permissions" title="Roles y Permisos" description="Controla quién puede ver el registro de auditoría." />

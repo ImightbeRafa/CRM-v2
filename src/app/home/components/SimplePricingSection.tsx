@@ -8,64 +8,44 @@ import { CheckCircle, Loader2 } from 'lucide-react';
 
 const pricingPlans = [
   {
-    name: "Free",
+    name: "Prueba Gratis",
     price: "$0",
-    period: "/month",
-    description: "Perfect to get started with 7-day trial",
+    period: "",
+    description: "7 días gratis con acceso completo",
     features: [
-      "1 usuario all access",
-      "7 días gratis",
-      "Complete order management",
-      "Visual kanban board",
-      "Customer tracking",
-      "Basic reporting",
-      "Email support"
+      "Acceso completo a todas las funciones",
+      "Gestión de pedidos y Kanban",
+      "Seguimiento de clientes",
+      "Reportes básicos",
+      "1 usuario",
+      "Soporte por email"
     ],
-    cta: "Start Free Trial",
+    cta: "Comenzar Gratis",
     popular: false,
-    priceId: null, // Free plan
+    priceId: null,
     tilopayLink: null
-  },
-  {
-    name: "Basic",
-    price: "$20",
-    period: "/month",
-    description: "All features for growing businesses",
-    features: [
-      "24/7 support",
-      "Pedidos ilimitados",
-      "Usuarios ilimitados",
-      "Advanced analytics",
-      "Custom fields",
-      "Priority support",
-      "Export to Excel",
-      "Audit logs"
-    ],
-    cta: "Start Basic Plan",
-    popular: true,
-    priceId: "basic",
-    tilopayLink: "https://tp.cr/l/TkRFME9RPT18MQ==" // Tilopay Repeat link for BASIC
   },
   {
     name: "Pro",
-    price: "Coming Soon",
-    period: "",
-    originalPrice: "Pro pending!",
-    description: "Advanced features for enterprise businesses",
+    price: "$20",
+    period: "/mes",
+    description: "Todo incluido para tu negocio",
     features: [
-      "Everything in Basic",
-      "Advanced reports",
-      "API access",
-      "Custom integrations",
-      "Inventory management",
-      "Priority 24/7 support",
-      "Dedicated account manager",
-      "White-label options"
+      "Usuarios ilimitados",
+      "Pedidos ilimitados",
+      "Integración API",
+      "Correos de Costa Rica",
+      "Reportes y estadísticas",
+      "Campos personalizados",
+      "Importar desde Excel",
+      "Instagram y WhatsApp",
+      "Asistente IA (Telegram)",
+      "Soporte prioritario"
     ],
-    cta: "Notify Me",
-    popular: false,
+    cta: "Activar Pro",
+    popular: true,
     priceId: "pro",
-    tilopayLink: null
+    tilopayLink: "https://tp.cr/l/TkRFME9RPT18MQ=="
   }
 ];
 
@@ -79,13 +59,7 @@ export default function SimplePricingSection() {
       return;
     }
 
-    // Handle Pro plan (Coming Soon)
-    if (plan.priceId === 'pro' && plan.price === 'Coming Soon') {
-      alert('🚀 Pro plan coming soon! We\'ll notify you when it\'s available. For now, try our Basic plan with all the features you need.');
-      return;
-    }
-
-    // For paid plans (BASIC), show loading and redirect directly to Tilopay
+    // For paid plans, show loading and redirect to Tilopay
     // User can create account after payment or existing users can upgrade
     setLoading(plan.priceId);
     
@@ -122,7 +96,7 @@ export default function SimplePricingSection() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
           {pricingPlans.map((plan, index) => (
             <Card key={index} className={`relative ${plan.popular ? 'border-blue-500 shadow-xl' : 'border-gray-200'}`}>
               {plan.popular && (
@@ -172,7 +146,7 @@ export default function SimplePricingSection() {
 
         <div className="mt-12 text-center">
           <p className="text-gray-600 mb-4">
-            Free plan includes 7-day trial. Paid plans start immediately. Cancel anytime.
+            Prueba gratis por 7 días. Cancela en cualquier momento.
           </p>
           <p className="text-sm text-gray-500 mb-4">
             💳 We accept all major credit cards via secure Tilopay payment processing

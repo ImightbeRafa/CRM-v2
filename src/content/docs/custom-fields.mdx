@@ -1,0 +1,84 @@
+---
+title: "Campos Personalizados"
+description: "Cómo agregar campos adicionales a tus pedidos y productos para adaptarlos a tu negocio."
+visibility: private
+category: config
+order: 31
+---
+
+## ¿Qué son los Campos Personalizados?
+
+Los campos personalizados te permiten agregar información adicional a tus pedidos que no está incluida por defecto. Por ejemplo: color, talla, material, tipo de empaque, fecha de entrega deseada, etc.
+
+## Tipos de Campos
+
+| Tipo | Descripción | Ejemplo de uso |
+|------|-------------|----------------|
+| **Texto** | Campo de texto libre | Color, Material, Dedicatoria |
+| **Número** | Solo valores numéricos | Peso extra, Cantidad de piezas |
+| **Selección** | Lista de opciones predefinidas | Talla (S/M/L/XL), Color (Rojo/Azul/Verde) |
+
+## Crear un Campo Personalizado
+
+<Steps>
+  <Step title="Ir a Campos">Navega a **Configuración** → **Configuración de Campos**.</Step>
+  <Step title="Agregar campo">Haz clic en **Agregar Campo**.</Step>
+  <Step title="Configurar">Define el nombre del campo, selecciona el tipo y marca si es obligatorio.</Step>
+  <Step title="Opciones (si es selección)">Para campos tipo "Selección", agrega las opciones disponibles. Puedes agregar tantas opciones como necesites.</Step>
+  <Step title="Guardar">El campo aparecerá automáticamente en el formulario de ventas para los próximos pedidos.</Step>
+</Steps>
+
+## Ejemplos por Tipo de Negocio
+
+### Tienda de Ropa
+- **Talla** (Selección): XS, S, M, L, XL, XXL
+- **Color** (Selección): Negro, Blanco, Azul, Rojo
+- **Material** (Texto): Para notas sobre el material
+
+### Repostería
+- **Sabor** (Selección): Chocolate, Vainilla, Fresa, Red Velvet
+- **Tamaño** (Selección): Personal, Mediano, Grande
+- **Dedicatoria** (Texto): Mensaje para escribir en el pastel
+- **Cantidad de porciones** (Número): Para calcular el tamaño
+
+### Joyería
+- **Material** (Selección): Plata 925, Oro 14k, Acero inoxidable
+- **Grabado** (Texto): Texto para grabar en la pieza
+- **Largo** (Número): Medida en centímetros
+
+<Callout type="tip">
+Usa campos tipo "Selección" siempre que las opciones sean predefinidas y limitadas. Esto reduce errores de escritura y facilita filtrar y buscar pedidos por esos valores.
+</Callout>
+
+## Campos Obligatorios vs Opcionales
+
+- **Obligatorio**: El formulario de ventas no permitirá guardar el pedido sin completar este campo. Úsalo para información indispensable como talla o color.
+- **Opcional**: El vendedor puede dejarlo vacío. Úsalo para información complementaria como notas o preferencias.
+
+<Callout type="warning">
+Si marcas un campo como obligatorio después de haber creado pedidos, los pedidos existentes no se verán afectados. Solo los nuevos pedidos requerirán completar ese campo.
+</Callout>
+
+## Campos de Información del Negocio
+
+Además de los campos de producto, puedes personalizar los campos que aparecen en el formulario de pedido en **Configuración** → **Perfil del Negocio**. Estos campos incluyen:
+
+- Campos del cliente (nombre, teléfono, email, dirección)
+- Campos de envío (provincia, cantón, distrito, código postal)
+- Campos de pago (método de pago, referencia)
+
+Puedes activar o desactivar cada campo según lo que necesites recolectar.
+
+## Editar o Eliminar Campos
+
+- **Editar**: Haz clic en el campo para cambiar su nombre, tipo o si es obligatorio
+- **Eliminar**: Haz clic en el botón de eliminar. Los datos de ese campo en pedidos existentes se mantienen pero ya no serán visibles en el formulario
+
+<Callout type="info">
+Los campos personalizados también funcionan con la API de integración. Puedes enviar valores para tus campos personalizados al crear pedidos desde tu sitio web.
+</Callout>
+
+## Próximos Pasos
+
+<LinkCard href="/help/sales-module" title="Módulo de Ventas" description="Los campos personalizados aparecen automáticamente en el formulario." />
+<LinkCard href="/help/api-keys" title="Integración API" description="Envía campos personalizados desde tu sitio web." />

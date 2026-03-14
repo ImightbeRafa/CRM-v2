@@ -1,0 +1,68 @@
+---
+title: "Importar Datos desde Excel"
+description: "Cómo importar productos y datos masivamente usando archivos Excel o CSV."
+visibility: private
+category: config
+order: 33
+---
+
+## Importación Masiva
+
+BetsyCRM te permite importar datos masivamente desde archivos Excel (.xlsx) o CSV para ahorrar tiempo al configurar tu inventario o migrar datos de otra plataforma.
+
+## Descargar la Plantilla
+
+<Steps>
+  <Step title="Ir a Configuración">Navega a **Configuración** → **Importar Excel**.</Step>
+  <Step title="Descargar plantilla">Haz clic en **Descargar Plantilla** para obtener un archivo Excel con las columnas correctas ya configuradas.</Step>
+  <Step title="Completar datos">Abre la plantilla en Excel o Google Sheets y completa tus datos siguiendo el formato de cada columna.</Step>
+</Steps>
+
+<Callout type="warning">
+No modifiques los encabezados de las columnas en la plantilla. El importador los usa para mapear los datos correctamente. Si cambias un encabezado, esos datos no se importarán.
+</Callout>
+
+## Formato del Archivo
+
+La plantilla incluye las siguientes columnas:
+
+| Columna | Tipo | Requerida | Descripción |
+|---------|------|-----------|-------------|
+| Nombre | Texto | Sí | Nombre del producto |
+| SKU | Texto | No | Código único del producto |
+| Precio | Número | No | Precio de venta |
+| Costo | Número | No | Costo de adquisición |
+| Stock | Número | No | Cantidad en inventario |
+| Stock Mínimo | Número | No | Alerta de stock bajo |
+
+## Proceso de Importación
+
+<Steps>
+  <Step title="Subir archivo">Arrastra el archivo a la zona de carga o haz clic para seleccionarlo. Se acepta .xlsx y .csv.</Step>
+  <Step title="Vista previa">El sistema muestra una vista previa de los datos detectados. Verifica que las columnas se hayan mapeado correctamente.</Step>
+  <Step title="Validación">El importador valida los datos antes de importar. Si hay errores (como campos requeridos vacíos o formatos incorrectos), se muestran en rojo.</Step>
+  <Step title="Confirmar">Haz clic en **Importar** para crear los registros. El proceso puede tomar unos segundos dependiendo de la cantidad de datos.</Step>
+</Steps>
+
+## Manejo de Errores
+
+Si alguna fila tiene errores:
+
+- Las filas válidas se importan normalmente
+- Las filas con errores se muestran en un resumen al finalizar
+- Puedes corregir los errores y volver a importar solo las filas que fallaron
+
+<Callout type="info">
+La importación no duplica registros existentes. Si un producto con el mismo SKU ya existe, puedes elegir entre actualizarlo o saltarlo.
+</Callout>
+
+## Consejos para una Importación Exitosa
+
+- Asegúrate de que los precios y cantidades sean valores numéricos sin símbolos de moneda
+- Usa el formato de la plantilla sin modificaciones en los encabezados
+- Si copias datos de otro sistema, verifica que no haya espacios extra o caracteres especiales
+- Para archivos CSV, usa codificación UTF-8 para preservar tildes y caracteres especiales
+
+## Próximos Pasos
+
+<LinkCard href="/help/inventory" title="Gestión de Inventario" description="Administra los productos importados." />

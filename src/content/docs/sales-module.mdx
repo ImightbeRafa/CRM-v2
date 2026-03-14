@@ -1,0 +1,78 @@
+---
+title: "Módulo de Ventas"
+description: "Cómo crear pedidos, gestionar ventas diarias, usar el formulario de ventas y exportar datos."
+visibility: private
+category: ventas
+order: 6
+---
+
+## Resumen del Módulo de Ventas
+
+El módulo de **Ventas** es donde creas y administras todos los pedidos de tu negocio. Incluye un formulario dinámico, estadísticas diarias y herramientas de exportación.
+
+## Crear un Nuevo Pedido
+
+<Steps>
+  <Step title="Ir a Ventas">Desde el dashboard, haz clic en **Ventas** en el menú lateral o en el acceso rápido.</Step>
+  <Step title="Abrir el formulario">Haz clic en el botón **+ Nuevo Pedido** en la esquina superior.</Step>
+  <Step title="Datos del cliente">Completa el nombre del cliente, teléfono, email y dirección de envío. Si el cliente ya ha comprado antes, los datos se autocompletarán.</Step>
+  <Step title="Producto y cantidad">Selecciona un producto del inventario o escribe el nombre manualmente. Ajusta la cantidad y el precio si es necesario.</Step>
+  <Step title="Campos personalizados">Si configuraste campos adicionales (color, talla, etc.), complétalos aquí.</Step>
+  <Step title="Guardar">Haz clic en **Crear Pedido**. El pedido aparecerá en tu lista y en el tablero Kanban de Producción.</Step>
+</Steps>
+
+## Formulario de Ventas Dinámico
+
+El formulario se adapta automáticamente a tu configuración:
+
+- **Productos del inventario**: Si tienes productos en inventario, aparece un selector con búsqueda. Al seleccionar un producto, el precio se completa automáticamente.
+- **Campos personalizados**: Los campos que hayas configurado en **Configuración > Campos** aparecen dinámicamente. Los campos marcados como obligatorios no te dejarán guardar sin completarlos.
+- **Opciones de selección**: Los campos tipo "selección" muestran un dropdown con las opciones que configuraste.
+
+<Callout type="tip">
+Si un cliente te compra frecuentemente, BetsyCRM lo detecta y lo agrega a la lista de clientes frecuentes. La próxima vez que escribas su nombre, los datos se autocompletarán.
+</Callout>
+
+## Estadísticas Diarias
+
+En la parte superior del módulo de ventas puedes ver un resumen rápido:
+
+| Métrica | Qué muestra |
+|---------|-------------|
+| **Ventas del día** | Total de pedidos creados hoy |
+| **Ingresos del día** | Suma del valor total de los pedidos de hoy |
+| **Promedio por pedido** | Valor promedio de cada pedido del día |
+
+## Dashboard de Ventas
+
+La vista de dashboard de ventas muestra una tabla con todos tus pedidos recientes, incluyendo:
+
+- Número de pedido (ej: EA-001)
+- Nombre del cliente
+- Producto
+- Total
+- Estado actual
+- Fecha de creación
+
+Puedes filtrar por estado, buscar por nombre de cliente o producto, y ordenar por cualquier columna.
+
+## Exportar Datos
+
+<Steps>
+  <Step title="Seleccionar formato">Haz clic en el botón de exportación y elige Excel o CSV.</Step>
+  <Step title="Aplicar filtros">Los filtros activos se aplican a la exportación. Si quieres exportar todo, asegúrate de no tener filtros activos.</Step>
+  <Step title="Descargar">El archivo se descarga automáticamente a tu computadora.</Step>
+</Steps>
+
+## Actualización de Stock
+
+Cuando creas un pedido con un producto del inventario, el stock se descuenta automáticamente. Si cancelas el pedido, el stock se restaura.
+
+<Callout type="warning">
+Si un producto tiene stock en 0, aún podrás crear pedidos con él, pero verás una advertencia visual. Revisa tu inventario regularmente para evitar vender productos sin stock.
+</Callout>
+
+## Próximos Pasos
+
+<LinkCard href="/help/production-kanban" title="Producción y Tablero Kanban" description="Visualiza y organiza tus pedidos después de crearlos." />
+<LinkCard href="/help/custom-fields" title="Campos Personalizados" description="Agrega campos adicionales al formulario de ventas." />

@@ -1,0 +1,210 @@
+---
+title: "Integración API para tu Sitio Web"
+description: "Cómo conectar tu tienda en línea con BetsyCRM para recibir pedidos automáticamente."
+visibility: public
+category: api
+order: 20
+---
+
+## Descripción General
+
+BetsyCRM ofrece una API REST que permite a tu sitio web crear pedidos automáticamente. Cuando un cliente realiza una compra en tu tienda en línea, puedes enviar los datos del pedido directamente a BetsyCRM.
+
+## Autenticación
+
+Todas las peticiones a la API requieren un **API Key** en el header:
+
+```
+x-api-key: tu-api-key-aquí
+```
+
+<Callout type="info">
+Puedes generar tu API Key en **Configuración** → **Integraciones**. La clave se muestra solo una vez al crearla, así que guárdala en un lugar seguro.
+</Callout>
+
+<Callout type="danger">
+Nunca incluyas tu API Key en código del lado del cliente (JavaScript del navegador). Las claves API deben usarse exclusivamente desde tu servidor backend para evitar que sean expuestas.
+</Callout>
+
+## Crear un Pedido
+
+**Endpoint:** `POST /api/integration/orders/create`
+
+**Headers:**
+- `Content-Type: application/json`
+- `x-api-key: tu-api-key`
+
+**Body de ejemplo:**
+
+```json
+{
+  "customerName": "Juan Pérez",
+  "phone": "88887777",
+  "email": "juan@email.com",
+  "product": "Camiseta Negra M",
+  "quantity": 2,
+  "total": 15000,
+  "address": "San Pedro, San José",
+  "province": "San José",
+  "comments": "Envío urgente"
+}
+```
+
+**Respuesta exitosa (201):**
+
+```json
+{
+  "success": true,
+  "orderId": "EA-001",
+  "message": "Order created successfully"
+}
+```
+
+## Campos Disponibles
+
+| Campo | Tipo | Requerido | Descripción |
+|-------|------|-----------|-------------|
+| `customerName` | string | Sí | Nombre del cliente |
+| `phone` | string | No | Teléfono del cliente |
+| `email` | string | No | Email del cliente |
+| `product` | string | No | Nombre del producto |
+| `quantity` | number | No | Cantidad (default: 1) |
+| `total` | number | No | Monto total en colones |
+| `address` | string | No | Dirección de envío |
+| `province` | string | No | Provincia |
+| `canton` | string | No | Cantón |
+| `district` | string | No | Distrito |
+| `postalCode` | string | No | Código postal (5 dígitos) |
+| `comments` | string | No | Notas adicionales |
+| `customFields` | object | No | Campos personalizados |
+
+## Códigos de Respuesta
+
+| Código | Significado |
+|--------|-------------|
+| `201` | Pedido creado exitosamente |
+| `400` | Datos inválidos — revisa el body de la petición |
+| `401` | API Key inválida o no proporcionada |
+| `403` | API Key sin permisos o plan no permite API |
+| `429` | Límite de peticiones excedido |
+| `500` | Error interno del servidor |
+
+## Ejemplo con JavaScript
+
+```javascript
+const response = await fetch('https://betsycrm.com/api/integration/orders/create', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-api-key': process.env.BETSY_API_KEY
+  },
+  body: JSON.stringify({
+    customerName: 'María López',
+    phone: '87776666',
+    product: 'Bolso Artesanal',
+    total: 25000,
+    province: 'Heredia'
+  })
+});
+
+const data = await response.json();
+console.log('Pedido creado:', data.orderId);
+```
+
+## Ejemplo con Python
+
+```python
+import requests
+
+response = requests.post(
+    'https://betsycrm.com/api/integration/orders/create',
+    headers={
+        'Content-Type': 'application/json',
+        'x-api-key': 'tu-api-key'
+    },
+    json={
+        'customerName': 'Carlos Mora',
+        'phone': '86665555',
+        'product': 'Taza Personalizada',
+        'total': 8000,
+        'province': 'Alajuela'
+    }
+)
+
+data = response.json()
+print(f'Pedido creado: {data["orderId"]}')
+```
+
+## Ejemplo con PHP
+
+```php
+$ch = curl_init('https://betsycrm.com/api/integration/orders/create');
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Content-Type: application/json',
+    'x-api-key: tu-api-key'
+]);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+    'customerName' => 'Ana Solano',
+    'phone' => '85554444',
+    'product' => 'Collar Artesanal',
+    'total' => 12000,
+    'province' => 'San José'
+]));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+$response = json_decode(curl_exec($ch), true);
+curl_close($ch);
+
+echo 'Pedido creado: ' . $response['orderId'];
+```
+
+## Campos Personalizados
+
+Si configuraste campos personalizados en tu CRM, puedes enviarlos en la petición:
+
+```json
+{
+  "customerName": "Laura Vega",
+  "product": "Camiseta",
+  "total": 15000,
+  "customFields": {
+    "color": "Azul",
+    "talla": "M",
+    "empaque_regalo": "Si"
+  }
+}
+```
+
+Los nombres de los campos personalizados deben coincidir exactamente con los configurados en tu CRM.
+
+## Acceso API
+
+La integración API está incluida en el plan Pro ($20/mes) sin límites de peticiones ni restricción en la cantidad de claves API.
+
+<Callout type="info">
+Durante la prueba gratuita de 7 días también puedes probar la API con acceso completo.
+</Callout>
+
+## Probar tu Integración
+
+BetsyCRM incluye un endpoint de prueba para verificar que tu clave API funciona:
+
+```
+GET /api/integration/test
+Header: x-api-key: tu-api-key
+```
+
+Respuesta exitosa:
+```json
+{
+  "success": true,
+  "tenant": "Mi Tienda",
+  "message": "API key is valid"
+}
+```
+
+## Próximos Pasos
+
+<LinkCard href="/docs/api-keys" title="Claves API e Integraciones" description="Cómo generar y gestionar tus claves API." />
+<LinkCard href="/docs/faq" title="Preguntas Frecuentes" description="Respuestas a dudas comunes." />

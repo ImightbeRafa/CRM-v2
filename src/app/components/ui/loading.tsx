@@ -1,4 +1,5 @@
 import React from 'react'
+import { cn } from '@/lib/utils'
 
 interface LoadingProps {
   size?: 'sm' | 'md' | 'lg'
@@ -15,9 +16,9 @@ export function Loading({ size = 'md', text = 'Cargando...', className = '' }: L
 
   return (
     <div className={`flex flex-col items-center justify-center ${className}`}>
-      <div className={`animate-spin rounded-full border-b-2 border-blue-600 ${sizeClasses[size]}`}></div>
+      <div className={`animate-spin rounded-full border-2 border-transparent border-t-brand-blue border-b-brand-purple ${sizeClasses[size]}`}></div>
       {text && (
-        <p className="mt-2 text-sm text-gray-600">{text}</p>
+        <p className="mt-2 text-sm text-muted-foreground">{text}</p>
       )}
     </div>
   )
@@ -31,15 +32,19 @@ export function LoadingSpinner({ size = 'md', className = '' }: Omit<LoadingProp
   }
 
   return (
-    <div className={`animate-spin rounded-full border-b-2 border-blue-600 ${sizeClasses[size]} ${className}`}></div>
+    <div className={`animate-spin rounded-full border-2 border-transparent border-t-brand-blue border-b-brand-purple ${sizeClasses[size]} ${className}`}></div>
   )
 }
 
 export function LoadingSkeleton({ lines = 3, className = '' }: { lines?: number; className?: string }) {
   return (
-    <div className={`animate-pulse ${className}`}>
+    <div className={cn('space-y-2', className)}>
       {Array.from({ length: lines }).map((_, i) => (
-        <div key={i} className="h-4 bg-gray-200 rounded mb-2" style={{ width: `${Math.random() * 40 + 60}%` }}></div>
+        <div
+          key={i}
+          className="h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer"
+          style={{ width: `${75 + Math.round(Math.sin(i + 1) * 20)}%` }}
+        ></div>
       ))}
     </div>
   )
@@ -48,13 +53,11 @@ export function LoadingSkeleton({ lines = 3, className = '' }: { lines?: number;
 export function LoadingCard({ className = '' }: { className?: string }) {
   return (
     <div className={`bg-white rounded-lg shadow-sm p-6 ${className}`}>
-      <div className="animate-pulse">
-        <div className="h-4 bg-gray-200 rounded w-1/4 mb-4"></div>
-        <div className="space-y-3">
-          <div className="h-3 bg-gray-200 rounded"></div>
-          <div className="h-3 bg-gray-200 rounded w-5/6"></div>
-          <div className="h-3 bg-gray-200 rounded w-4/6"></div>
-        </div>
+      <div className="space-y-3">
+        <div className="h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer w-1/4"></div>
+        <div className="h-3 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer"></div>
+        <div className="h-3 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer w-5/6"></div>
+        <div className="h-3 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer w-4/6"></div>
       </div>
     </div>
   )

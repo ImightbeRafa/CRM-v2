@@ -1,0 +1,76 @@
+---
+title: "Operaciones Masivas"
+description: "Cómo usar la eliminación masiva, actualizaciones en lote y otras operaciones de gestión de datos."
+visibility: private
+category: config
+order: 37
+---
+
+## Operaciones en Lote
+
+BetsyCRM incluye herramientas para realizar operaciones masivas sobre tus datos. Estas herramientas están diseñadas para situaciones donde necesitas hacer cambios en muchos registros a la vez.
+
+<Callout type="danger">
+Las operaciones masivas son irreversibles. Una vez que eliminas o modificas registros en lote, no se pueden recuperar. Asegúrate de verificar tu selección antes de confirmar.
+</Callout>
+
+## Eliminación Masiva
+
+La herramienta de eliminación masiva te permite borrar múltiples registros de una vez.
+
+### Tipos de Registros
+
+Puedes eliminar masivamente:
+
+| Tipo | Descripción |
+|------|-------------|
+| **Pedidos** | Elimina pedidos seleccionados o por rango de fecha |
+| **Campos** | Elimina campos personalizados que ya no necesitas |
+| **Usuarios** | Elimina miembros del equipo (excepto el Owner) |
+
+### Cómo Usar
+
+<Steps>
+  <Step title="Ir a Eliminación Masiva">Navega a **Configuración** → **Eliminación Masiva**.</Step>
+  <Step title="Seleccionar tipo">Elige el tipo de registro que quieres eliminar.</Step>
+  <Step title="Filtrar registros">Aplica filtros para seleccionar exactamente qué registros eliminar. Puedes filtrar por fecha, estado u otros criterios.</Step>
+  <Step title="Revisar selección">El sistema muestra cuántos registros serán eliminados. Verifica que la cantidad sea la esperada.</Step>
+  <Step title="Confirmar">Escribe "ELIMINAR" (o la palabra de confirmación indicada) para confirmar la operación.</Step>
+</Steps>
+
+<Callout type="warning">
+La eliminación de pedidos también elimina los registros de auditoría asociados. Si necesitas mantener un historial, exporta los datos antes de eliminarlos.
+</Callout>
+
+## Actualización Masiva
+
+Permite actualizar campos de múltiples registros a la vez:
+
+- **Cambiar estado** de múltiples pedidos
+- **Activar/Desactivar** productos del inventario en lote
+- **Actualizar campos** de varios registros simultáneamente
+
+## Toggle de Activación
+
+Para productos o campos, puedes activar o desactivar en lote:
+
+1. Selecciona los registros que quieres modificar
+2. Usa el toggle de "Activo/Inactivo"
+3. Los cambios se aplican inmediatamente
+
+<Callout type="info">
+Los productos desactivados no aparecen en el formulario de ventas pero se mantienen en el sistema. Puedes reactivarlos en cualquier momento.
+</Callout>
+
+## Registro de Auditoría
+
+Todas las operaciones masivas se registran en el log de auditoría con:
+
+- Quién realizó la operación
+- Qué tipo de operación fue
+- Cuántos registros se afectaron
+- Fecha y hora de la operación
+
+## Próximos Pasos
+
+<LinkCard href="/help/audit-logs" title="Registro de Auditoría" description="Revisa el historial de acciones en tu cuenta." />

@@ -1,0 +1,71 @@
+---
+title: "Asistente IA con Telegram"
+description: "Cómo configurar el bot de Telegram con inteligencia artificial para recibir notificaciones y consultar pedidos."
+visibility: private
+category: integraciones
+order: 36
+---
+
+## ¿Qué es el Asistente IA?
+
+BetsyCRM incluye un bot de Telegram con inteligencia artificial que te permite interactuar con tu CRM desde cualquier dispositivo. Recibe notificaciones de nuevos pedidos, consulta estadísticas y gestiona tu negocio por chat.
+
+## Configurar el Bot
+
+<Steps>
+  <Step title="Ir a AI Assistant">Navega a **Configuración** → **AI Assistant** o al menú **Config > AI Assistant**.</Step>
+  <Step title="Conectar Telegram">Haz clic en **Conectar con Telegram**. Se generará un enlace único para tu cuenta.</Step>
+  <Step title="Abrir en Telegram">Abre el enlace en Telegram (móvil o escritorio). Haz clic en **Start** para iniciar la conexión.</Step>
+  <Step title="Verificar conexión">Vuelve a BetsyCRM y verifica que el estado muestre "Conectado". Recibirás un mensaje de bienvenida en Telegram.</Step>
+</Steps>
+
+<Callout type="tip">
+Puedes conectar el bot en varios dispositivos a la vez. La sesión de Telegram funciona en tu teléfono y computadora simultáneamente.
+</Callout>
+
+## Funciones Disponibles
+
+### Notificaciones
+
+El bot te envía notificaciones automáticas cuando:
+
+- Se crea un nuevo pedido (incluidos los pedidos vía API)
+- Un pedido cambia de estado
+- Se genera una guía de envío
+
+### Consultas por Chat
+
+Puedes escribirle al bot para:
+
+| Comando / Pregunta | Respuesta |
+|---------------------|-----------|
+| "¿Cuántos pedidos hay hoy?" | Resumen de pedidos del día |
+| "Resumen de ventas" | Estadísticas de ingresos del día/semana |
+| "Pedidos pendientes" | Lista de pedidos sin procesar |
+| "Estado del pedido EA-123" | Detalles de un pedido específico |
+
+<Callout type="info">
+El bot entiende lenguaje natural en español. No necesitas usar comandos exactos — puedes hacer preguntas como las harías a un asistente humano.
+</Callout>
+
+## Gestionar Sesiones
+
+En la sección de AI Assistant puedes:
+
+- **Ver sesiones activas** — Dispositivos conectados al bot
+- **Desconectar sesión** — Revocar acceso de un dispositivo específico
+- **Reconectar** — Si la conexión se pierde, genera un nuevo enlace
+
+## Seguridad
+
+- Cada sesión de Telegram está vinculada a un usuario específico de BetsyCRM
+- El bot solo muestra información del tenant al que pertenece el usuario
+- Las sesiones se pueden revocar en cualquier momento desde la configuración
+
+<Callout type="warning">
+No compartas el enlace de conexión del bot con personas que no deberían tener acceso a los datos de tu negocio. Cada enlace es único y otorga acceso a la información de tu CRM.
+</Callout>
+
+## Próximos Pasos
+
+<LinkCard href="/help/social-accounts" title="Cuentas Sociales" description="Conecta Instagram y WhatsApp para centralizar tu comunicación." />

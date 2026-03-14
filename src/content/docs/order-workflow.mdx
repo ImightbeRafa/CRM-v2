@@ -1,0 +1,74 @@
+---
+title: "Estados de Pedidos y Flujo de Trabajo"
+description: "Cómo funcionan los estados de pedidos, el tablero Kanban y cómo personalizar tu flujo de trabajo."
+visibility: private
+category: getting-started
+order: 3
+---
+
+## El Flujo de Trabajo de Pedidos
+
+Cada pedido en BetsyCRM pasa por una serie de **estados** que representan las etapas de tu proceso de trabajo. Estos estados se visualizan como columnas en el tablero Kanban del módulo de Producción.
+
+## El Tablero Kanban
+
+El módulo de **Producción** muestra tus pedidos organizados en columnas por estado. Puedes arrastrar pedidos entre columnas para actualizar su estado instantáneamente.
+
+El flujo típico se ve así:
+
+```
+Pendiente → En Producción → Listo → Enviado → Entregado
+```
+
+## Estados por Defecto
+
+BetsyCRM viene con estados predefinidos que cubren el flujo de trabajo más común:
+
+| Estado | Color | Descripción |
+|--------|-------|-------------|
+| **Pendiente** | Amarillo | Pedido recién creado, pendiente de procesar |
+| **En Producción** | Azul | Se está preparando el pedido |
+| **Listo** | Morado | Pedido listo para enviar o entregar |
+| **Enviado** | Cyan | El pedido fue enviado al cliente |
+| **Entregado** | Verde | El cliente recibió su pedido |
+| **Cancelado** | Rojo | El pedido fue cancelado |
+
+<Callout type="tip">
+Los estados "Entregado" y "Cancelado" se consideran estados finales. Cuando un pedido llega a uno de estos estados, se registra automáticamente la fecha de completado para tus estadísticas.
+</Callout>
+
+## Personalizar Estados
+
+Puedes adaptar los estados a tu flujo de trabajo específico. Por ejemplo, un negocio de repostería podría usar: Recibido → En Preparación → Decorando → Listo para Entregar → Entregado.
+
+<Steps>
+  <Step title="Ir a Configuración">Navega a **Configuración** → **Estados de Pedidos**.</Step>
+  <Step title="Agregar estado">Haz clic en **Agregar Estado** para crear un nuevo estado con nombre y color personalizado.</Step>
+  <Step title="Reordenar">Arrastra los estados para cambiar su orden. El orden define la posición de las columnas en el Kanban de izquierda a derecha.</Step>
+  <Step title="Editar o eliminar">Haz clic en un estado existente para cambiar su nombre o color. También puedes eliminarlo si ya no lo necesitas.</Step>
+</Steps>
+
+<Callout type="warning">
+Si eliminas un estado que tiene pedidos asignados, esos pedidos se moverán al primer estado disponible. Revisa tus pedidos antes de eliminar un estado.
+</Callout>
+
+## Mover Pedidos entre Estados
+
+Hay varias formas de cambiar el estado de un pedido:
+
+1. **Arrastrar y soltar** en el tablero Kanban (la forma más visual)
+2. **Menú contextual** en la tarjeta del pedido
+3. **Editar el pedido** y cambiar el campo de estado
+4. **Acciones en lote** para mover múltiples pedidos a la vez
+
+## Consejos para un Flujo Eficiente
+
+- Mantén entre 5 y 7 estados para un flujo simple y manejable
+- Usa colores distintos y fáciles de diferenciar para cada estado
+- El orden de los estados debe reflejar tu proceso real de trabajo
+- Revisa periódicamente si todos los estados se están usando — elimina los que sobren
+
+## Próximos Pasos
+
+<LinkCard href="/help/production-kanban" title="Producción y Tablero Kanban" description="Aprende a usar el tablero Kanban en detalle." />
+<LinkCard href="/help/sales-module" title="Módulo de Ventas" description="Crea pedidos que fluyen por tus estados." />

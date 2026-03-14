@@ -90,11 +90,10 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       price: 0,
       interval: 'month',
       features: [
-        '1 usuario all access',
-        '7 días gratis',
-        'Funcionalidades básicas',
-        'Soporte por email',
-        '500 MB almacenamiento'
+        'Prueba gratuita de 7 días',
+        'Acceso completo a todas las funciones',
+        '1 usuario',
+        'Soporte por email'
       ],
       limits: {
         users: 1,
@@ -103,47 +102,29 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       }
     },
     {
-      id: 'basic',
-      name: 'BASIC',
+      id: 'pro',
+      name: 'PRO',
       price: 20,
       interval: 'month',
       features: [
-        '24/7 support',
-        'Pedidos ilimitados',
         'Usuarios ilimitados',
-        'Todas las funcionalidades',
-        'Generador de facturas',
-        'Reportes avanzados',
-        'Soporte prioritario',
-        '5 GB almacenamiento'
-      ],
-      limits: {
-        users: 999999,
-        orders: 999999,
-        storage: '5 GB'
-      },
-      popular: true
-    },
-    {
-      id: 'pro',
-      name: 'PRO',
-      price: 0,
-      interval: 'month',
-      features: [
-        'Próximamente disponible',
-        'Funcionalidades avanzadas',
-        'Acceso API',
-        'Integración TiloPay',
-        'Reportes personalizados',
-        'Soporte 24/7',
-        'Almacenamiento ilimitado',
-        'Dominio personalizado'
+        'Pedidos ilimitados',
+        'Integración API',
+        'Correos de Costa Rica',
+        'Reportes y estadísticas',
+        'Campos personalizados',
+        'Importar desde Excel',
+        'Registro de auditoría',
+        'Instagram y WhatsApp',
+        'Asistente IA (Telegram)',
+        'Soporte prioritario'
       ],
       limits: {
         users: 999999,
         orders: 999999,
         storage: 'Ilimitado'
-      }
+      },
+      popular: true
     }
   ];
 
@@ -239,12 +220,6 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
   };
 
   const handleChangePlan = async (planId: string) => {
-    // Handle Pro plan (Coming Soon)
-    if (planId === 'pro') {
-      alert('🚀 Pro plan coming soon! We\'ll notify you when it\'s available. For now, try our Basic plan with all the features you need.');
-      return;
-    }
-
     if (planId === 'free') {
       if (!confirm('¿Deseas cambiar al plan gratuito? Perderás acceso a funcionalidades premium.')) {
         return;
@@ -281,7 +256,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
     const planHierarchy: Record<string, number> = {
       'free': 0,
       'basic': 1,
-      'pro': 2
+      'pro': 1
     };
 
     const currentLevel = planHierarchy[currentPlanId] || 0;
@@ -320,8 +295,8 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
     
     // Show embedded Tilopay SDK v2 checkout
     const planPricing: Record<string, number> = {
-      basic: 10000,  // ₡10,000/month ($20 USD)
-      pro: 45000     // ₡45,000/month
+      basic: 10000,  // ₡10,000/month ($20 USD) - legacy
+      pro: 10000     // ₡10,000/month ($20 USD)
     };
     
     const amount = planPricing[planId];
@@ -417,11 +392,11 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                 </p>
                 <div className="flex gap-3 flex-wrap">
                   <Button
-                    onClick={() => handleChangePlan('basic')}
+                    onClick={() => handleChangePlan('pro')}
                     className="bg-red-600 hover:bg-red-700 text-white"
                   >
                     <CreditCard className="w-4 h-4 mr-2" />
-                    Actualizar a Plan Basic ($20/mes)
+                    Activar Plan Pro ($20/mes)
                   </Button>
                 </div>
                 <p className="text-sm text-red-700 dark:text-red-300 mt-4">
@@ -688,7 +663,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       {/* Available Plans */}
       <div id="plans">
         <h2 className="text-2xl font-bold text-gray-900 mb-4">Planes Disponibles</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
           {plans.map((plan) => (
             <Card 
               key={plan.id}
@@ -746,11 +721,9 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                 >
                   {plan.id === currentPlan.name.toLowerCase() 
                     ? 'Plan Actual'
-                    : plan.id === 'pro'
-                      ? 'Próximamente'
-                      : plan.price === 0
-                        ? 'Cambiar a Gratis'
-                        : 'Actualizar Plan'
+                    : plan.price === 0
+                      ? 'Cambiar a Gratis'
+                      : 'Activar Pro'
                   }
                 </Button>
               </CardContent>

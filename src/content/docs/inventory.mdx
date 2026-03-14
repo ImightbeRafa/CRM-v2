@@ -1,0 +1,89 @@
+---
+title: "Gestión de Inventario"
+description: "Cómo agregar productos, gestionar stock, configurar alertas y mantener tu inventario actualizado."
+visibility: private
+category: getting-started
+order: 5
+---
+
+## Tu Inventario en BetsyCRM
+
+El módulo de inventario te permite gestionar todos tus productos en un solo lugar: precios, stock, costos y alertas. Cuando creas un pedido, el stock se actualiza automáticamente.
+
+## Agregar Productos
+
+<Steps>
+  <Step title="Ir a Inventario">Navega a **Configuración** → **Inventario**.</Step>
+  <Step title="Agregar producto">Haz clic en **Agregar Producto**.</Step>
+  <Step title="Completar datos">Ingresa el nombre, SKU, precio de venta, costo (opcional) y la cantidad en stock.</Step>
+  <Step title="Stock mínimo">Define un stock mínimo para recibir alertas cuando el inventario baje de ese nivel.</Step>
+  <Step title="Guardar">Haz clic en **Guardar**. El producto estará disponible inmediatamente en el formulario de ventas.</Step>
+</Steps>
+
+## Campos de Producto
+
+| Campo | Descripción | Ejemplo |
+|-------|-------------|---------|
+| **Nombre** | Nombre del producto | Camiseta Negra M |
+| **SKU** | Código único de identificación | CAM-NEG-M |
+| **Precio de Venta** | Precio al que vendes el producto | ₡12,000 |
+| **Costo** | Tu costo de adquisición (opcional) | ₡6,000 |
+| **Stock Actual** | Cantidad disponible actualmente | 25 |
+| **Stock Mínimo** | Nivel de alerta de stock bajo | 5 |
+| **Activo** | Si el producto aparece en el formulario de ventas | Sí / No |
+
+<Callout type="tip">
+Usa un sistema de SKU consistente para tus productos. Por ejemplo: las primeras 3 letras del producto + color + talla (CAM-NEG-M para "Camiseta Negra M"). Esto facilita la búsqueda y el seguimiento.
+</Callout>
+
+## Alertas de Stock Bajo
+
+Cuando el stock de un producto cae por debajo del **Stock Mínimo** configurado:
+
+- El producto se resalta visualmente en la lista de inventario
+- Verás un indicador de advertencia en el dashboard
+- Al crear un pedido con ese producto, verás un aviso
+
+<Callout type="warning">
+Los productos con stock en 0 no se bloquean automáticamente. Puedes seguir creando pedidos con ellos, pero verás una advertencia visual. Si quieres evitar vender productos sin stock, desactiva el producto.
+</Callout>
+
+## Actualización Automática de Stock
+
+Cuando creas un pedido con un producto del inventario:
+
+- El stock se **descuenta** automáticamente según la cantidad del pedido
+- Si cancelas el pedido, el stock se **restaura**
+- Si editas la cantidad del pedido, el stock se ajusta en consecuencia
+
+## Seguimiento de Costos
+
+Si registras el costo de tus productos, BetsyCRM calcula automáticamente:
+
+- **Margen por producto**: Precio de venta - Costo
+- **Margen porcentual**: (Margen / Precio) × 100
+
+Esta información te ayuda a identificar tus productos más y menos rentables.
+
+## Importar Productos Masivamente
+
+Si tienes muchos productos, puedes importarlos desde un archivo Excel en lugar de agregarlos uno por uno.
+
+<LinkCard href="/help/excel-import" title="Importar desde Excel" description="Guía para importar productos masivamente." />
+
+## Activar y Desactivar Productos
+
+Los productos desactivados no aparecen en el formulario de ventas pero se mantienen en el sistema:
+
+- **Desactivar**: Útil para productos temporalmente fuera de stock o descontinuados
+- **Reactivar**: El producto vuelve a aparecer en el formulario de ventas
+
+<Callout type="info">
+Desactivar un producto no afecta los pedidos existentes que lo contienen. Solo previene que se creen nuevos pedidos con ese producto.
+</Callout>
+
+## Próximos Pasos
+
+<LinkCard href="/help/sales-module" title="Módulo de Ventas" description="Crea pedidos usando productos de tu inventario." />
+<LinkCard href="/help/custom-fields" title="Campos Personalizados" description="Agrega campos adicionales como color, talla, etc." />
+<LinkCard href="/help/excel-import" title="Importar desde Excel" description="Importa productos masivamente." />

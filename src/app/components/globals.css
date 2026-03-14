@@ -33,6 +33,18 @@
     --ring: 222.2 84% 4.9%;
  
     --radius: 0.5rem;
+
+    /* Brand iridescent palette (oil-slick / tornasol) */
+    --brand-blue: 217 91% 60%;
+    --brand-purple: 263 70% 50%;
+    --brand-pink: 330 81% 60%;
+    --brand-gradient: linear-gradient(135deg, hsl(var(--brand-blue)), hsl(var(--brand-purple)), hsl(var(--brand-pink)));
+
+    /* Success / Warning semantic tokens */
+    --success: 152 76% 40%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
   }
 }
  
@@ -42,6 +54,19 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* Brand gradient utilities */
+@layer utilities {
+  .bg-brand-gradient {
+    background: var(--brand-gradient);
+  }
+  .text-brand-gradient {
+    background: var(--brand-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 }
 

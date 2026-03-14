@@ -12,21 +12,16 @@ import {
   Sparkles,
   Building2,
   Package,
-  Users,
   Truck,
-  Settings,
-  LayoutList,
   Tags,
-  ShoppingCart,
   CheckCircle2,
   ArrowRight,
   Home,
-  Info,
   AlertTriangle,
-  Save,
   X
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,16 +33,10 @@ import {
   AlertDialogTitle,
 } from '@/app/components/ui/alert-dialog';
 
-// Import step components
-import { WelcomeStep } from './steps/WelcomeStep';
-import { BusinessInfoStep } from './steps/BusinessInfoStep';
-import { CustomFieldsStep } from './steps/CustomFieldsStep';
-import { InventoryStep } from './steps/InventoryStep';
-import { FrequentClientsStep } from './steps/FrequentClientsStep';
-import { FrequentProductsStep } from './steps/FrequentProductsStep';
+import { WelcomeBusinessStep } from './steps/WelcomeBusinessStep';
 import { OrderStatusStep } from './steps/OrderStatusStep';
-import { ShippingStep } from './steps/ShippingStep';
-import { SellersStep } from './steps/SellersStep';
+import { ShippingCorreosStep } from './steps/ShippingCorreosStep';
+import { FirstProductStep } from './steps/FirstProductStep';
 import { CompletionStep } from './steps/CompletionStep';
 
 export interface WizardStep {
@@ -72,86 +61,65 @@ export interface WizardStepProps {
 
 const WIZARD_STEPS: Omit<WizardStep, 'completed'>[] = [
   {
-    id: 'welcome',
-    title: 'Bienvenido',
-    description: 'Configuración inicial de tu CRM',
-    icon: Sparkles,
-    component: WelcomeStep,
-    optional: false,
-  },
-  {
-    id: 'business-info',
-    title: 'Información del Negocio',
-    description: 'Campos personalizados de tu empresa',
+    id: 'welcome-business',
+    title: 'Tu Negocio',
+    description: 'Cuéntanos sobre tu empresa para personalizar tu CRM',
     icon: Building2,
-    component: BusinessInfoStep,
-    optional: true,
-  },
-  {
-    id: 'custom-fields',
-    title: 'Campos Personalizados',
-    description: 'Campos adicionales para tus productos',
-    icon: LayoutList,
-    component: CustomFieldsStep,
-    optional: true,
+    component: WelcomeBusinessStep,
+    optional: false,
   },
   {
     id: 'order-status',
     title: 'Estados de Pedidos',
-    description: 'Configura los estados del flujo de trabajo',
+    description: 'Define el flujo de trabajo para tus órdenes',
     icon: Tags,
     component: OrderStatusStep,
     optional: false,
   },
   {
-    id: 'inventory',
-    title: 'Inventario',
-    description: 'Productos y stock disponible',
-    icon: Package,
-    component: InventoryStep,
-    optional: true,
-  },
-  {
-    id: 'frequent-clients',
-    title: 'Clientes Frecuentes',
-    description: 'Lista de clientes habituales',
-    icon: Users,
-    component: FrequentClientsStep,
-    optional: true,
-  },
-  {
-    id: 'frequent-products',
-    title: 'Productos Frecuentes',
-    description: 'Catálogo de productos comunes',
-    icon: ShoppingCart,
-    component: FrequentProductsStep,
-    optional: true,
-  },
-  {
-    id: 'sellers',
-    title: 'Vendedores',
-    description: 'Equipo de ventas',
-    icon: Users,
-    component: SellersStep,
-    optional: true,
-  },
-  {
-    id: 'shipping',
-    title: 'Configuración de Envíos',
-    description: 'Métodos de envío y mensajería',
+    id: 'shipping-correos',
+    title: 'Envíos',
+    description: 'Configura Correos de Costa Rica u otro servicio',
     icon: Truck,
-    component: ShippingStep,
+    component: ShippingCorreosStep,
+    optional: true,
+  },
+  {
+    id: 'first-product',
+    title: 'Primer Producto',
+    description: 'Agrega tu primer producto al inventario',
+    icon: Package,
+    component: FirstProductStep,
     optional: true,
   },
   {
     id: 'completion',
     title: '¡Listo!',
-    description: 'Tu CRM está configurado',
+    description: 'Tu CRM está configurado y listo para usar',
     icon: CheckCircle2,
     component: CompletionStep,
     optional: false,
   },
 ];
+
+const STORAGE_KEY = 'betsy-wizard-progress';
+
+function loadProgress(): { stepIndex: number; completedSteps: string[] } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveProgress(stepIndex: number, completedSteps: string[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ stepIndex, completedSteps }));
+  } catch { /* noop */ }
+}
+
+function clearProgress() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch { /* noop */ }
+}
 
 export function SetupWizard() {
   const router = useRouter();
@@ -164,6 +132,23 @@ export function SetupWizard() {
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [showNavigationDialog, setShowNavigationDialog] = useState(false);
   const [pendingNavigationIndex, setPendingNavigationIndex] = useState<number | null>(null);
+  const [direction, setDirection] = useState(1);
+
+  useEffect(() => {
+    const saved = loadProgress();
+    if (saved) {
+      setCurrentStepIndex(saved.stepIndex);
+      setSteps(prev => prev.map(s => ({
+        ...s,
+        completed: saved.completedSteps.includes(s.id),
+      })));
+    }
+  }, []);
+
+  useEffect(() => {
+    const completedSteps = steps.filter(s => s.completed).map(s => s.id);
+    saveProgress(currentStepIndex, completedSteps);
+  }, [currentStepIndex, steps]);
 
   const currentStep = steps[currentStepIndex];
   const progress = ((currentStepIndex + 1) / steps.length) * 100;
@@ -174,12 +159,19 @@ export function SetupWizard() {
       idx === currentStepIndex ? { ...step, completed: true } : step
     ));
     setCanProceed(true);
-    setHasUnsavedChanges(false); // Mark as saved when completed
+    setHasUnsavedChanges(false);
   }, [currentStepIndex]);
 
   const markUnsavedChanges = useCallback((hasChanges: boolean) => {
     setHasUnsavedChanges(hasChanges);
   }, []);
+
+  const navigateTo = useCallback((index: number) => {
+    setDirection(index > currentStepIndex ? 1 : -1);
+    setCurrentStepIndex(index);
+    setCanProceed(false);
+    setHasUnsavedChanges(false);
+  }, [currentStepIndex]);
 
   const handleNext = () => {
     if (hasUnsavedChanges) {
@@ -187,11 +179,8 @@ export function SetupWizard() {
       setShowNavigationDialog(true);
       return;
     }
-    
     if (currentStepIndex < steps.length - 1) {
-      setCurrentStepIndex(prev => prev + 1);
-      setCanProceed(false);
-      setHasUnsavedChanges(false);
+      navigateTo(currentStepIndex + 1);
     }
   };
 
@@ -201,33 +190,21 @@ export function SetupWizard() {
       setShowNavigationDialog(true);
       return;
     }
-    
     if (currentStepIndex > 0) {
-      setCurrentStepIndex(prev => prev - 1);
-      setCanProceed(true); // Can always proceed back
-      setHasUnsavedChanges(false);
+      navigateTo(currentStepIndex - 1);
     }
   };
 
   const confirmNavigation = () => {
     if (pendingNavigationIndex !== null) {
-      setCurrentStepIndex(pendingNavigationIndex);
-      setHasUnsavedChanges(false);
-      setCanProceed(pendingNavigationIndex < currentStepIndex); // Can proceed if going back
+      navigateTo(pendingNavigationIndex);
     }
-    setShowNavigationDialog(false);
-    setPendingNavigationIndex(null);
-  };
-
-  const cancelNavigation = () => {
     setShowNavigationDialog(false);
     setPendingNavigationIndex(null);
   };
 
   const handleSkip = () => {
-    if (currentStep.optional) {
-      handleNext();
-    }
+    if (currentStep.optional) handleNext();
   };
 
   const handleExit = () => {
@@ -239,165 +216,124 @@ export function SetupWizard() {
   };
 
   const confirmExit = () => {
-    // Navigate to dashboard - users can exit and come back later
     router.push('/dashboard');
     setShowExitDialog(false);
   };
 
-  const cancelExit = () => {
-    setShowExitDialog(false);
-  };
-
-  // Warn before closing/refreshing page if there are unsaved changes
   useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasUnsavedChanges) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) { e.preventDefault(); e.returnValue = ''; }
     };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
   }, [hasUnsavedChanges]);
 
-  const completedSteps = steps.filter(s => s.completed).length;
-  const totalSteps = steps.length;
+  const slideVariants = {
+    enter: (dir: number) => ({ x: dir > 0 ? 80 : -80, opacity: 0 }),
+    center: { x: 0, opacity: 1 },
+    exit: (dir: number) => ({ x: dir > 0 ? -80 : 80, opacity: 0 }),
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       {/* Header */}
-      <div className="bg-white border-b shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 py-4">
+      <div className="bg-white/80 backdrop-blur-sm border-b sticky top-0 z-50">
+        <div className="max-w-5xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Sparkles className="h-6 w-6 text-blue-600" />
+              <div className="p-2 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl">
+                <Sparkles className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">Asistente de Configuración</h1>
-                <p className="text-sm text-gray-600">
-                  Paso {currentStepIndex + 1} de {totalSteps}
+                <h1 className="text-lg font-bold text-gray-900">Configuración Inicial</h1>
+                <p className="text-xs text-gray-500">
+                  Paso {currentStepIndex + 1} de {steps.length} &mdash; {currentStep.title}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               {hasUnsavedChanges && (
-                <Badge variant="destructive" className="animate-pulse">
+                <Badge variant="destructive" className="animate-pulse text-xs">
                   <AlertTriangle className="h-3 w-3 mr-1" />
-                  Cambios sin guardar
+                  Sin guardar
                 </Badge>
               )}
-              <Button variant="ghost" onClick={handleExit}>
-                <Home className="h-4 w-4 mr-2" />
-                {hasUnsavedChanges ? 'Salir (sin guardar)' : 'Salir'}
+              <Button variant="ghost" size="sm" onClick={handleExit}>
+                <Home className="h-4 w-4 mr-1" />
+                Salir
               </Button>
             </div>
           </div>
 
-          {/* Progress Bar */}
-          <div className="mt-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-700">
-                Progreso General
-              </span>
-              <span className="text-sm font-medium text-blue-600">
-                {Math.round(progress)}%
-              </span>
-            </div>
-            <Progress value={progress} className="h-2" />
+          {/* Step indicators */}
+          <div className="mt-3 flex items-center gap-1">
+            {steps.map((step, idx) => {
+              const Icon = step.icon;
+              const isCurrent = idx === currentStepIndex;
+              const isDone = step.completed;
+              return (
+                <div key={step.id} className="flex items-center flex-1">
+                  <button
+                    onClick={() => {
+                      if (isDone || idx < currentStepIndex) {
+                        if (hasUnsavedChanges) {
+                          setPendingNavigationIndex(idx);
+                          setShowNavigationDialog(true);
+                        } else {
+                          navigateTo(idx);
+                        }
+                      }
+                    }}
+                    disabled={!isDone && idx > currentStepIndex}
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-all ${
+                      isCurrent
+                        ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300'
+                        : isDone
+                        ? 'bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer'
+                        : 'text-gray-400 cursor-default'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      isCurrent ? 'bg-blue-600 text-white'
+                      : isDone ? 'bg-green-600 text-white'
+                      : 'bg-gray-200 text-gray-400'
+                    }`}>
+                      {isDone ? <Check className="h-3 w-3" /> : <span className="text-[10px]">{idx + 1}</span>}
+                    </div>
+                    <span className="hidden sm:inline truncate">{step.title}</span>
+                  </button>
+                  {idx < steps.length - 1 && (
+                    <div className={`flex-1 h-0.5 mx-1 rounded ${isDone ? 'bg-green-300' : 'bg-gray-200'}`} />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        <div className="grid grid-cols-12 gap-6">
-          {/* Sidebar - Steps List */}
-          <div className="col-span-12 lg:col-span-3">
-            <Card className="sticky top-4">
-              <CardHeader>
-                <CardTitle className="text-sm">Pasos</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {steps.map((step, idx) => {
-                  const Icon = step.icon;
-                  const isCurrent = idx === currentStepIndex;
-                  const isPast = idx < currentStepIndex;
-                  
-                  return (
-                    <div
-                      key={step.id}
-                      className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${
-                        isCurrent 
-                          ? 'bg-blue-100 border border-blue-200' 
-                          : isPast 
-                          ? 'bg-green-50' 
-                          : 'bg-gray-50'
-                      }`}
-                    >
-                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                        isCurrent 
-                          ? 'bg-blue-600 text-white' 
-                          : step.completed 
-                          ? 'bg-green-600 text-white' 
-                          : 'bg-gray-200 text-gray-500'
-                      }`}>
-                        {step.completed ? (
-                          <Check className="h-4 w-4" />
-                        ) : (
-                          <Icon className="h-4 w-4" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-medium truncate ${
-                          isCurrent ? 'text-blue-900' : step.completed ? 'text-green-900' : 'text-gray-600'
-                        }`}>
-                          {step.title}
-                        </p>
-                        {step.optional && (
-                          <Badge variant="outline" className="text-xs mt-0.5">
-                            Opcional
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
-
-            {/* Help Card */}
-            <Card className="mt-4">
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Info className="h-4 w-4" />
-                  Ayuda
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-xs text-gray-600">
-                  Este asistente te guiará paso a paso en la configuración de tu CRM. 
-                  Puedes omitir pasos opcionales y volver más tarde.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Main Step Content */}
-          <div className="col-span-12 lg:col-span-9">
-            <Card className="shadow-lg">
-              <CardHeader className="border-b bg-gradient-to-r from-blue-50 to-indigo-50">
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <AnimatePresence mode="wait" custom={direction}>
+          <motion.div
+            key={currentStep.id}
+            custom={direction}
+            variants={slideVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+          >
+            <Card className="shadow-xl border-0 overflow-hidden">
+              <CardHeader className="bg-gradient-to-r from-white to-blue-50/50 border-b pb-6">
                 <div className="flex items-start gap-4">
-                  <div className="p-3 bg-white rounded-lg shadow-sm">
-                    {React.createElement(currentStep.icon, { className: 'h-6 w-6 text-blue-600' })}
+                  <div className="p-3 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl shadow-lg">
+                    {React.createElement(currentStep.icon, { className: 'h-6 w-6 text-white' })}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <CardTitle className="text-2xl">{currentStep.title}</CardTitle>
-                      {currentStep.optional && (
-                        <Badge variant="secondary">Opcional</Badge>
-                      )}
+                      {currentStep.optional && <Badge variant="secondary">Opcional</Badge>}
                       {currentStep.completed && (
                         <Badge className="bg-green-600">
                           <Check className="h-3 w-3 mr-1" />
@@ -405,9 +341,7 @@ export function SetupWizard() {
                         </Badge>
                       )}
                     </div>
-                    <CardDescription className="text-base">
-                      {currentStep.description}
-                    </CardDescription>
+                    <CardDescription className="text-base">{currentStep.description}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -425,51 +359,37 @@ export function SetupWizard() {
               </CardContent>
 
               {/* Navigation Footer */}
-              <div className="border-t bg-gray-50 px-6 py-4 flex items-center justify-between">
-                <Button
-                  variant="outline"
-                  onClick={handleBack}
-                  disabled={currentStepIndex === 0}
-                >
-                  <ChevronLeft className="h-4 w-4 mr-2" />
+              <div className="border-t bg-gray-50/80 px-6 py-4 flex items-center justify-between">
+                <Button variant="outline" onClick={handleBack} disabled={currentStepIndex === 0}>
+                  <ChevronLeft className="h-4 w-4 mr-1" />
                   Anterior
                 </Button>
-
                 <div className="flex items-center gap-2">
                   {currentStep.optional && !currentStep.completed && (
-                    <Button
-                      variant="ghost"
-                      onClick={handleSkip}
-                    >
-                      Omitir
-                    </Button>
+                    <Button variant="ghost" onClick={handleSkip}>Omitir</Button>
                   )}
-                  
                   {currentStepIndex < steps.length - 1 ? (
                     <Button
                       onClick={handleNext}
                       disabled={!canProceed && !currentStep.optional && !currentStep.completed}
                     >
                       Siguiente
-                      <ChevronRight className="h-4 w-4 ml-2" />
+                      <ChevronRight className="h-4 w-4 ml-1" />
                     </Button>
                   ) : (
-                    <Button
-                      onClick={handleExit}
-                      className="bg-green-600 hover:bg-green-700"
-                    >
+                    <Button onClick={handleExit} className="bg-green-600 hover:bg-green-700">
                       Ir al Dashboard
-                      <ArrowRight className="h-4 w-4 ml-2" />
+                      <ArrowRight className="h-4 w-4 ml-1" />
                     </Button>
                   )}
                 </div>
               </div>
             </Card>
-          </div>
-        </div>
+          </motion.div>
+        </AnimatePresence>
       </div>
 
-      {/* Exit Confirmation Dialog */}
+      {/* Exit Dialog */}
       <AlertDialog open={showExitDialog} onOpenChange={setShowExitDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -478,24 +398,19 @@ export function SetupWizard() {
               ¿Salir sin guardar?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Tienes cambios sin guardar en este paso. Si sales ahora, perderás estos cambios.
-              ¿Estás seguro de que deseas salir?
+              Tienes cambios sin guardar. Si sales ahora, perderás estos cambios.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={cancelExit}>
-              <X className="h-4 w-4 mr-2" />
-              Cancelar
-            </AlertDialogCancel>
+            <AlertDialogCancel><X className="h-4 w-4 mr-1" />Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={confirmExit} className="bg-red-600 hover:bg-red-700">
-              <Home className="h-4 w-4 mr-2" />
-              Salir sin guardar
+              <Home className="h-4 w-4 mr-1" />Salir sin guardar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Navigation Confirmation Dialog */}
+      {/* Navigation Dialog */}
       <AlertDialog open={showNavigationDialog} onOpenChange={setShowNavigationDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -505,17 +420,12 @@ export function SetupWizard() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               Tienes cambios sin guardar en este paso. Si continúas, perderás estos cambios.
-              ¿Deseas continuar de todas formas?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={cancelNavigation}>
-              <X className="h-4 w-4 mr-2" />
-              Cancelar
-            </AlertDialogCancel>
+            <AlertDialogCancel><X className="h-4 w-4 mr-1" />Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={confirmNavigation} className="bg-amber-600 hover:bg-amber-700">
-              <ChevronRight className="h-4 w-4 mr-2" />
-              Continuar sin guardar
+              <ChevronRight className="h-4 w-4 mr-1" />Continuar sin guardar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -523,4 +433,3 @@ export function SetupWizard() {
     </div>
   );
 }
-

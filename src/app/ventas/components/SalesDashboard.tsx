@@ -33,7 +33,10 @@ import { useSalesStream } from '@/app/hooks/useSalesStream';
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Loader2, TrendingUp, Package, DollarSign, Clock } from 'lucide-react';
+import { Loader2, TrendingUp, Package, DollarSign, Clock, CheckCircle, Edit3 } from 'lucide-react';
+import { MobileOrderCard } from '@/app/components/ui/MobileOrderCard';
+import { SwipeableRow } from '@/app/components/ui/SwipeableRow';
+import { useUpdateOrderStatus } from '@/app/hooks/useOrderMutations';
 
 interface Sale {
   orderId: string;
@@ -53,6 +56,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
   const [orderTypeFilter, setOrderTypeFilter] = useState<'ALL' | 'EA' | 'RA'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const { formatCurrency } = useTenantSettings();
+  const updateStatus = useUpdateOrderStatus();
 
   const { sales, isLoading, error, refresh, stats } = useSalesStream({
     pollingInterval: 30000 // 30 seconds
@@ -77,69 +81,77 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
 
   return (
     <div className="space-y-4" style={{ zIndex: 1, position: 'relative' }}>
-      {/* Quick Stats Summary */}
+      {/* Quick Stats Summary -- horizontal snap-scroll on mobile */}
       {!isLoading && stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card className="border-l-4 border-l-green-500">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <TrendingUp className="h-5 w-5 text-green-600" />
+        <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-1 snap-scroll-hide md:grid md:grid-cols-4 md:overflow-visible">
+          <div className="min-w-[65vw] snap-center md:min-w-0">
+            <Card className="h-full border-t-4 border-t-emerald-400 md:border-t-0 md:border-l-4 md:border-l-green-500">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 rounded-lg">
+                    <TrendingUp className="h-5 w-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Total Ventas</p>
+                    <p className="text-xl md:text-lg font-bold">{formatCurrency(stats.totalAmount || 0)}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Total Ventas</p>
-                  <p className="text-lg font-bold">{formatCurrency(stats.totalAmount || 0)}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
           
-          <Card className="border-l-4 border-l-blue-500">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Package className="h-5 w-5 text-blue-600" />
+          <div className="min-w-[65vw] snap-center md:min-w-0">
+            <Card className="h-full border-t-4 border-t-blue-400 md:border-t-0 md:border-l-4 md:border-l-blue-500">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Package className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Total Órdenes</p>
+                    <p className="text-xl md:text-lg font-bold">{stats.total || 0}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Total Órdenes</p>
-                  <p className="text-lg font-bold">{stats.total || 0}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
           
-          <Card className="border-l-4 border-l-purple-500">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <DollarSign className="h-5 w-5 text-purple-600" />
+          <div className="min-w-[65vw] snap-center md:min-w-0">
+            <Card className="h-full border-t-4 border-t-purple-400 md:border-t-0 md:border-l-4 md:border-l-purple-500">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-100 rounded-lg">
+                    <DollarSign className="h-5 w-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Promedio</p>
+                    <p className="text-xl md:text-lg font-bold">₡{Math.round(averageOrderValue).toLocaleString()}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Promedio</p>
-                  <p className="text-lg font-bold">₡{Math.round(averageOrderValue).toLocaleString()}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
           
-          <Card className="border-l-4 border-l-orange-500">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-orange-100 rounded-lg">
-                  <Clock className="h-5 w-5 text-orange-600" />
+          <div className="min-w-[65vw] snap-center md:min-w-0">
+            <Card className="h-full border-t-4 border-t-orange-400 md:border-t-0 md:border-l-4 md:border-l-orange-500">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-orange-100 rounded-lg">
+                    <Clock className="h-5 w-5 text-orange-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Esta Semana</p>
+                    <p className="text-xl md:text-lg font-bold">{sales.filter(s => {
+                      const saleDate = new Date(s.timestamp);
+                      const weekAgo = new Date();
+                      weekAgo.setDate(weekAgo.getDate() - 7);
+                      return saleDate >= weekAgo;
+                    }).length}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Esta Semana</p>
-                  <p className="text-lg font-bold">{sales.filter(s => {
-                    const saleDate = new Date(s.timestamp);
-                    const weekAgo = new Date();
-                    weekAgo.setDate(weekAgo.getDate() - 7);
-                    return saleDate >= weekAgo;
-                  }).length}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
 
@@ -188,10 +200,45 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border overflow-hidden">
+          {/* Mobile card list */}
+          <div className="md:hidden space-y-2">
+            {isLoading ? (
+              <div className="flex justify-center items-center gap-2 py-8">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Cargando ventas...</span>
+              </div>
+            ) : error ? (
+              <p className="text-center text-red-500 py-8">{error}</p>
+            ) : filteredSales.length === 0 ? (
+              <p className="text-center py-8 text-muted-foreground">No se encontraron ventas</p>
+            ) : (
+              filteredSales.map((sale) => (
+                <SwipeableRow
+                  key={sale.orderId}
+                  leftAction={{
+                    label: 'Completar',
+                    icon: <CheckCircle className="h-5 w-5" />,
+                    color: '#10b981',
+                    onAction: () => updateStatus.mutate({ orderId: sale.orderId, status: 'Completado' }),
+                  }}
+                  rightAction={{
+                    label: 'Detalles',
+                    icon: <Edit3 className="h-5 w-5" />,
+                    color: '#3b82f6',
+                    onAction: () => setSelectedSale(sale),
+                  }}
+                >
+                  <MobileOrderCard order={sale} formatCurrency={formatCurrency} />
+                </SwipeableRow>
+              ))
+            )}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block rounded-md border overflow-hidden">
             <Table className="relative">
               <TableHeader>
-                <TableRow className="bg-gray-50">
+                <TableRow className="bg-slate-50">
                   <TableHead className="font-semibold">Orden</TableHead>
                   <TableHead className="font-semibold">Cliente</TableHead>
                   <TableHead className="font-semibold">Producto</TableHead>
@@ -225,7 +272,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                   </TableRow>
                 ) : (
                   filteredSales.map((sale) => (
-                    <TableRow key={sale.orderId} className="hover:bg-gray-50 transition-colors">
+                    <TableRow key={sale.orderId} className="hover:bg-slate-50 transition-colors">
                       <TableCell>
                         <div className="flex items-center gap-2 relative z-10" style={{ position: 'relative', zIndex: 10 }}>
                           <span className="relative z-10 font-mono text-sm">{sale.orderId}</span>
@@ -239,12 +286,12 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                       </TableCell>
                       <TableCell>
                         <div>
-                          <div className="font-medium text-gray-900">{sale.customerName}</div>
+                          <div className="font-medium text-foreground">{sale.customerName}</div>
                           <div className="text-xs text-muted-foreground">📞 {sale.phone}</div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="text-sm text-gray-700 max-w-[200px] truncate" title={sale.product}>
+                        <div className="text-sm text-foreground max-w-[200px] truncate" title={sale.product}>
                           {sale.product}
                         </div>
                       </TableCell>

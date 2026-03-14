@@ -1,0 +1,84 @@
+---
+title: "Claves API e Integraciones"
+description: "Cómo generar, gestionar y revocar claves API para conectar tu sitio web con BetsyCRM."
+visibility: both
+category: api
+order: 21
+---
+
+## ¿Qué son las Claves API?
+
+Las claves API te permiten conectar tu sitio web, tienda en línea o cualquier sistema externo con BetsyCRM. Con una clave API, tu sistema puede crear pedidos automáticamente en tu CRM cuando un cliente hace una compra.
+
+## Generar una Clave API
+
+<Steps>
+  <Step title="Ir a Integraciones">Navega a **Configuración** → **Integraciones API** o al menú **Config > Integraciones**.</Step>
+  <Step title="Crear clave">Haz clic en **Generar Nueva Clave API**.</Step>
+  <Step title="Nombrar la clave">Dale un nombre descriptivo (ej: "Tienda Web", "Landing Page") para identificarla fácilmente.</Step>
+  <Step title="Copiar la clave">La clave se muestra una única vez. Cópiala y guárdala en un lugar seguro.</Step>
+</Steps>
+
+<Callout type="danger">
+La clave API se muestra solo al momento de crearla. Si la pierdes, deberás generar una nueva. Nunca compartas tu clave API públicamente ni la incluyas en código del lado del cliente (frontend).
+</Callout>
+
+## Usar la Clave API
+
+Incluye la clave en el header `x-api-key` de todas las peticiones:
+
+```
+x-api-key: tu-clave-api-aquí
+```
+
+<Callout type="info">
+Para ver ejemplos completos de cómo enviar pedidos a la API, consulta la guía de Integración API.
+</Callout>
+
+<LinkCard href="/docs/api-integration" title="Integración API para tu Sitio Web" description="Guía completa con ejemplos de código." />
+
+## Estadísticas de Uso
+
+En la sección de integraciones puedes ver métricas de uso de cada clave:
+
+| Métrica | Descripción |
+|---------|-------------|
+| **Peticiones totales** | Cuántas veces se ha usado la clave |
+| **Pedidos creados** | Cantidad de pedidos creados vía API |
+| **Última actividad** | Fecha y hora de la última petición |
+| **Errores** | Peticiones que fallaron |
+
+## Probar la Integración
+
+BetsyCRM incluye una herramienta para probar tu integración:
+
+1. Ve a **Configuración** → **Integraciones API**
+2. Haz clic en **Probar Integración**
+3. Envía un pedido de prueba y verifica que aparezca en tu lista de pedidos
+
+## Revocar una Clave
+
+Si sospechas que una clave fue comprometida o ya no la necesitas:
+
+<Steps>
+  <Step title="Ir a Integraciones">Navega a **Configuración** → **Integraciones API**.</Step>
+  <Step title="Encontrar la clave">Busca la clave por su nombre en la lista.</Step>
+  <Step title="Revocar">Haz clic en **Revocar** y confirma. La clave dejará de funcionar inmediatamente.</Step>
+</Steps>
+
+<Callout type="warning">
+Al revocar una clave, cualquier sistema que la esté usando dejará de poder crear pedidos. Asegúrate de actualizar tu sitio web con la nueva clave antes de revocar la anterior.
+</Callout>
+
+## Acceso API
+
+La integración API está incluida en el plan Pro ($20/mes) sin límites de peticiones ni restricción en la cantidad de claves.
+
+<Callout type="info">
+Durante la prueba gratuita de 7 días también puedes probar la API con acceso completo.
+</Callout>
+
+## Próximos Pasos
+
+<LinkCard href="/docs/api-integration" title="Integración API" description="Ejemplos de código para conectar tu sitio web." />
+<LinkCard href="/help/billing" title="Facturación" description="Activa el plan Pro para acceso permanente." />

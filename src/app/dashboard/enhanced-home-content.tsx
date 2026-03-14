@@ -1,10 +1,14 @@
 'use client';
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { motion } from "framer-motion";
 import LogoutButton from "@/app/components/LogoutButton";
+import { WhatsNewDrawer } from "@/app/components/WhatsNewDrawer";
+import { MobileBottomNav } from "@/app/components/MobileBottomNav";
+import { useDashboardStats } from "@/app/hooks/useDashboardStats";
 import BetsyLogo from "@/BetsyLogo.png";
 import { Button } from "@/app/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/app/components/ui/card";
@@ -14,47 +18,24 @@ import {
   ShoppingCart, Plus, BarChart3, DollarSign, ArrowUpRight, Clock, RefreshCw, MessageSquare
 } from "lucide-react";
 
+const pageTransition = {
+  initial: { opacity: 0, y: 12 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] },
+};
+
+const cardHover = {
+  whileHover: { y: -3, transition: { duration: 0.2 } },
+  whileTap: { scale: 0.98 },
+};
+
 export default function EnhancedHomeContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [showWizardModal, setShowWizardModal] = useState(false);
-  const [stats, setStats] = useState({
-    ordersWeek: 0,
-    pendingOrders: 0,
-    totalClients: 0,
-    weeklyRevenue: 0,
-    ordersChange: 0,
-    newClientsThisWeek: 0,
-    revenueChange: 0
-  });
-  const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const { stats, isLoading: isLoadingStats, refresh: refreshStats } = useDashboardStats();
 
-  // Fetch quick stats
-  const fetchStats = async (forceRefresh = false) => {
-    try {
-      setIsLoadingStats(true);
-      const url = forceRefresh ? '/api/dashboard/stats?refresh=true' : '/api/dashboard/stats';
-      const response = await fetch(url, {
-        credentials: 'include'
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      } else {
-        console.error('Failed to fetch dashboard stats');
-      }
-    } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
-    } finally {
-      setIsLoadingStats(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!session) return;
-    
-    fetchStats();
-  }, [session]);
+  const fetchStats = (forceRefresh = false) => refreshStats(forceRefresh);
 
   // Show loading state while checking authentication
   if (status === "loading") {
@@ -98,8 +79,11 @@ export default function EnhancedHomeContent() {
 
   // Main content for authenticated users
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
-      <main className="container mx-auto px-4 md:px-6 py-6 md:py-8">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50/80 to-slate-100/60">
+      <motion.main
+        {...pageTransition}
+        className="container mx-auto px-4 md:px-6 py-6 md:py-8 pb-24 md:pb-8"
+      >
         {/* Header */}
         <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-8">
           <div className="flex-1 flex items-center gap-3">
@@ -145,103 +129,129 @@ export default function EnhancedHomeContent() {
                 <span className="hidden md:inline">Configuración</span>
               </Link>
             )}
+            <WhatsNewDrawer />
             <LogoutButton />
           </div>
         </div>
 
-        {/* Quick Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
-          <Card className="border-l-4 border-l-blue-600">
-            <CardHeader className="pb-2">
-              <CardDescription className="flex items-center gap-2 text-gray-600">
-                <ShoppingCart className="h-4 w-4" />
-                Pedidos Esta Semana
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-baseline justify-between">
-                <p className="text-3xl font-bold text-gray-900">{isLoadingStats ? '...' : stats.ordersWeek}</p>
-                {!isLoadingStats && stats.ordersChange !== 0 && (
-                  <span className={`text-sm flex items-center ${
-                    stats.ordersChange > 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    <TrendingUp className={`h-3 w-3 mr-1 ${
-                      stats.ordersChange < 0 ? 'rotate-180' : ''
-                    }`} />
-                    {stats.ordersChange > 0 ? '+' : ''}{stats.ordersChange}%
-                  </span>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+        {/* Quick Action Bar */}
+        <div className="flex flex-wrap gap-3 mb-6">
+          <Link
+            href="/ventas?new=1"
+            className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-md hover:shadow-lg text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Crear Pedido
+          </Link>
+          <Link
+            href="/help"
+            className="inline-flex items-center gap-2 bg-white text-gray-700 px-4 py-2.5 rounded-xl hover:bg-gray-50 transition-colors border text-sm"
+          >
+            📖 Centro de Ayuda
+          </Link>
+        </div>
 
-          <Card className="border-l-4 border-l-orange-500">
-            <CardHeader className="pb-2">
-              <CardDescription className="flex items-center gap-2 text-gray-600">
-                <Clock className="h-4 w-4" />
-                Pendientes
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-baseline justify-between">
-                <p className="text-3xl font-bold text-gray-900">{isLoadingStats ? '...' : stats.pendingOrders}</p>
-                {stats.pendingOrders > 0 && (
-                  <Link href="/ventas?status=pending" className="text-orange-600 text-sm hover:underline">
-                    Ver →
-                  </Link>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+        {/* Quick Stats Cards -- horizontal snap-scroll on mobile, grid on desktop */}
+        <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 snap-scroll-hide md:grid md:grid-cols-2 lg:grid-cols-4 md:gap-6 md:overflow-visible mb-8">
+          <div className="min-w-[75vw] snap-center md:min-w-0">
+            <Card className="h-full border-t-4 border-t-blue-500 md:border-t-0 md:border-l-4 md:border-l-blue-600">
+              <CardHeader className="pb-2">
+                <CardDescription className="flex items-center gap-2 text-muted-foreground">
+                  <ShoppingCart className="h-4 w-4" />
+                  Pedidos Esta Semana
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-baseline justify-between">
+                  <p className="text-4xl md:text-3xl font-bold text-foreground">{isLoadingStats ? '...' : stats.ordersWeek}</p>
+                  {!isLoadingStats && stats.ordersChange !== 0 && (
+                    <span className={`text-sm flex items-center ${
+                      stats.ordersChange > 0 ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      <TrendingUp className={`h-3 w-3 mr-1 ${
+                        stats.ordersChange < 0 ? 'rotate-180' : ''
+                      }`} />
+                      {stats.ordersChange > 0 ? '+' : ''}{stats.ordersChange}%
+                    </span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
-          <Card className="border-l-4 border-l-purple-600">
-            <CardHeader className="pb-2">
-              <CardDescription className="flex items-center gap-2 text-gray-600">
-                <Users className="h-4 w-4" />
-                Total Clientes
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-baseline justify-between">
-                <p className="text-3xl font-bold text-gray-900">{isLoadingStats ? '...' : stats.totalClients}</p>
-                {!isLoadingStats && stats.newClientsThisWeek > 0 && (
-                  <span className="text-purple-600 text-sm flex items-center">
-                    <ArrowUpRight className="h-3 w-3 mr-1" />
-                    +{stats.newClientsThisWeek}
-                  </span>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          <div className="min-w-[75vw] snap-center md:min-w-0">
+            <Card className="h-full border-t-4 border-t-orange-400 md:border-t-0 md:border-l-4 md:border-l-orange-500">
+              <CardHeader className="pb-2">
+                <CardDescription className="flex items-center gap-2 text-muted-foreground">
+                  <Clock className="h-4 w-4" />
+                  Pendientes
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-baseline justify-between">
+                  <p className="text-4xl md:text-3xl font-bold text-foreground">{isLoadingStats ? '...' : stats.pendingOrders}</p>
+                  {stats.pendingOrders > 0 && (
+                    <Link href="/ventas?status=pending" className="text-orange-600 text-sm hover:underline">
+                      Ver →
+                    </Link>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
-          <Card className="border-l-4 border-l-green-600">
-            <CardHeader className="pb-2">
-              <CardDescription className="flex items-center gap-2 text-gray-600">
-                <DollarSign className="h-4 w-4" />
-                Ventas Esta Semana
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-baseline justify-between">
-                <p className="text-2xl font-bold text-gray-900">
-                  {isLoadingStats ? '...' : stats.weeklyRevenue >= 1000 
-                    ? `₡${(stats.weeklyRevenue / 1000).toFixed(1)}k` 
-                    : `₡${stats.weeklyRevenue}`
-                  }
-                </p>
-                {!isLoadingStats && stats.revenueChange !== 0 && (
-                  <span className={`text-sm flex items-center ${
-                    stats.revenueChange > 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    <TrendingUp className={`h-3 w-3 mr-1 ${
-                      stats.revenueChange < 0 ? 'rotate-180' : ''
-                    }`} />
-                    {stats.revenueChange > 0 ? '+' : ''}{stats.revenueChange}%
-                  </span>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          <div className="min-w-[75vw] snap-center md:min-w-0">
+            <Card className="h-full border-t-4 border-t-purple-500 md:border-t-0 md:border-l-4 md:border-l-purple-600">
+              <CardHeader className="pb-2">
+                <CardDescription className="flex items-center gap-2 text-muted-foreground">
+                  <Users className="h-4 w-4" />
+                  Total Clientes
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-baseline justify-between">
+                  <p className="text-4xl md:text-3xl font-bold text-foreground">{isLoadingStats ? '...' : stats.totalClients}</p>
+                  {!isLoadingStats && stats.newClientsThisWeek > 0 && (
+                    <span className="text-purple-600 text-sm flex items-center">
+                      <ArrowUpRight className="h-3 w-3 mr-1" />
+                      +{stats.newClientsThisWeek}
+                    </span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="min-w-[75vw] snap-center md:min-w-0">
+            <Card className="h-full border-t-4 border-t-emerald-500 md:border-t-0 md:border-l-4 md:border-l-green-600">
+              <CardHeader className="pb-2">
+                <CardDescription className="flex items-center gap-2 text-muted-foreground">
+                  <DollarSign className="h-4 w-4" />
+                  Ventas Esta Semana
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-baseline justify-between">
+                  <p className="text-4xl md:text-2xl font-bold text-foreground">
+                    {isLoadingStats ? '...' : stats.weeklyRevenue >= 1000 
+                      ? `₡${(stats.weeklyRevenue / 1000).toFixed(1)}k` 
+                      : `₡${stats.weeklyRevenue}`
+                    }
+                  </p>
+                  {!isLoadingStats && stats.revenueChange !== 0 && (
+                    <span className={`text-sm flex items-center ${
+                      stats.revenueChange > 0 ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      <TrendingUp className={`h-3 w-3 mr-1 ${
+                        stats.revenueChange < 0 ? 'rotate-180' : ''
+                      }`} />
+                      {stats.revenueChange > 0 ? '+' : ''}{stats.revenueChange}%
+                    </span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         {/* Main Content Grid */}
@@ -254,9 +264,10 @@ export default function EnhancedHomeContent() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* Ventas Card */}
+              <motion.div {...cardHover}>
               <Link
                 href="/ventas"
-                className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-gray-100 hover:border-blue-300 overflow-hidden"
+                className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-blue-300 overflow-hidden block"
               >
                 <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-400/10 to-blue-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
                 <div className="relative">
@@ -266,15 +277,17 @@ export default function EnhancedHomeContent() {
                     </div>
                     <ArrowUpRight className="w-6 h-6 text-blue-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                   </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">Ventas</h3>
-                  <p className="text-sm text-gray-600 leading-relaxed">Gestionar pedidos y clientes</p>
+                  <h3 className="text-xl font-bold text-foreground mb-2">Ventas</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">Gestionar pedidos y clientes</p>
                 </div>
               </Link>
+              </motion.div>
 
               {/* Production Card */}
+              <motion.div {...cardHover}>
               <Link
                 href="/produccion"
-                className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-gray-100 hover:border-purple-300 overflow-hidden"
+                className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-purple-300 overflow-hidden block"
               >
                 <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-400/10 to-purple-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
                 <div className="relative">
@@ -284,15 +297,17 @@ export default function EnhancedHomeContent() {
                     </div>
                     <ArrowUpRight className="w-6 h-6 text-purple-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                   </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">Producción</h3>
-                  <p className="text-sm text-gray-600 leading-relaxed">Gestionar producción y órdenes</p>
+                  <h3 className="text-xl font-bold text-foreground mb-2">Producción</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">Gestionar producción y órdenes</p>
                 </div>
               </Link>
+              </motion.div>
 
               {/* Statistics Card */}
+              <motion.div {...cardHover}>
               <Link
                 href="/estadisticas"
-                className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-gray-100 hover:border-green-300 overflow-hidden"
+                className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-green-300 overflow-hidden block"
               >
                 <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-400/10 to-green-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
                 <div className="relative">
@@ -302,34 +317,18 @@ export default function EnhancedHomeContent() {
                     </div>
                     <ArrowUpRight className="w-6 h-6 text-green-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                   </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">Estadísticas</h3>
-                  <p className="text-sm text-gray-600 leading-relaxed">Análisis y reportes detallados</p>
+                  <h3 className="text-xl font-bold text-foreground mb-2">Estadísticas</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">Análisis y reportes detallados</p>
                 </div>
               </Link>
-
-              {/* Messages/Chat Card */}
-              <Link
-                href="/chats"
-                className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-gray-100 hover:border-pink-300 overflow-hidden"
-              >
-                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-pink-400/10 to-purple-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
-                <div className="relative">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="p-4 bg-gradient-to-br from-pink-500 to-purple-600 rounded-xl shadow-lg group-hover:shadow-xl transition-shadow">
-                      <MessageSquare className="w-7 h-7 text-white" />
-                    </div>
-                    <ArrowUpRight className="w-6 h-6 text-pink-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">Mensajes</h3>
-                  <p className="text-sm text-gray-600 leading-relaxed">WhatsApp e Instagram DMs</p>
-                </div>
-              </Link>
+              </motion.div>
 
               {/* Config Card (if admin) */}
               {session.user?.role === 'MASTER' && (
+                <motion.div {...cardHover}>
                 <Link
                   href="/config"
-                  className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-gray-100 hover:border-gray-300 overflow-hidden"
+                  className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-gray-300 overflow-hidden block"
                 >
                   <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-gray-400/10 to-gray-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
                   <div className="relative">
@@ -339,10 +338,11 @@ export default function EnhancedHomeContent() {
                       </div>
                       <ArrowUpRight className="w-6 h-6 text-gray-800 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                     </div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-2">Configuración</h3>
-                    <p className="text-sm text-gray-600 leading-relaxed">Ajustes del sistema</p>
+                    <h3 className="text-xl font-bold text-foreground mb-2">Configuración</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">Ajustes del sistema</p>
                   </div>
                 </Link>
+                </motion.div>
               )}
 
               {/* Logistics Card — only for logistics admins */}
@@ -430,7 +430,7 @@ export default function EnhancedHomeContent() {
           <p>© 2024 Betsy CRM</p>
           <p className="mt-1">v1.0.1</p>
         </footer>
-      </main>
+      </motion.main>
 
       {/* Setup Wizard Floating Button (optional - can remove if button in sidebar) */}
       <button
@@ -440,6 +440,8 @@ export default function EnhancedHomeContent() {
       >
         <Sparkles className="h-6 w-6 animate-pulse" />
       </button>
+
+      <MobileBottomNav />
 
       {/* Setup Wizard Modal */}
       <Dialog open={showWizardModal} onOpenChange={setShowWizardModal}>

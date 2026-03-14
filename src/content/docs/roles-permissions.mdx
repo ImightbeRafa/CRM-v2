@@ -1,0 +1,126 @@
+---
+title: "Roles y Permisos Detallados"
+description: "Guía completa de los roles disponibles, qué puede hacer cada uno y cómo asignarlos correctamente."
+visibility: private
+category: config
+order: 32
+---
+
+## Sistema de Roles
+
+BetsyCRM usa un sistema de control de acceso basado en roles (RBAC). Cada miembro de tu equipo tiene un rol que determina qué secciones puede ver y qué acciones puede realizar.
+
+## Roles Disponibles
+
+### Owner (Propietario)
+
+El rol más alto. Solo puede haber un Owner por cuenta.
+
+**Acceso completo a:**
+- Todas las secciones del CRM
+- Facturación y suscripciones
+- Eliminación de la cuenta
+- Transferencia de propiedad
+- Todas las acciones de todos los otros roles
+
+<Callout type="info">
+El Owner es el usuario que creó la cuenta. Este rol no se puede quitar, solo transferir a otro usuario.
+</Callout>
+
+### Admin (Administrador)
+
+Acceso casi completo, ideal para co-administradores de confianza.
+
+**Puede:**
+- Acceder a Ventas, Producción, Estadísticas
+- Gestionar configuración completa
+- Administrar usuarios y roles
+- Ver registros de auditoría
+
+**No puede:**
+- Gestionar facturación y pagos
+- Eliminar la cuenta
+
+### Manager (Gerente)
+
+Visión operativa del negocio.
+
+**Puede:**
+- Acceder a Ventas (crear y editar pedidos)
+- Acceder a Producción (tablero Kanban)
+- Ver Estadísticas y reportes
+- Ver configuración (solo lectura)
+
+**No puede:**
+- Modificar configuración
+- Administrar usuarios
+- Acceder a facturación
+
+### Sales (Vendedor)
+
+Enfocado exclusivamente en la creación de pedidos.
+
+**Puede:**
+- Acceder al módulo de Ventas
+- Crear nuevos pedidos
+- Ver y editar sus propios pedidos
+
+**No puede:**
+- Acceder a Producción, Estadísticas o Configuración
+- Ver pedidos de otros vendedores (depende de la configuración)
+
+### Production (Producción)
+
+Enfocado en el flujo de trabajo de producción.
+
+**Puede:**
+- Acceder al módulo de Producción
+- Mover pedidos entre estados en el Kanban
+- Ver detalles de pedidos
+
+**No puede:**
+- Crear nuevos pedidos
+- Acceder a Ventas, Estadísticas o Configuración
+
+### Viewer (Observador)
+
+Solo lectura, útil para supervisores o auditoría externa.
+
+**Puede:**
+- Ver todas las secciones del CRM
+- Ver pedidos, estadísticas y configuración
+
+**No puede:**
+- Crear, editar o eliminar ningún registro
+- Cambiar ninguna configuración
+
+## Resumen de Permisos
+
+| Permiso | Owner | Admin | Manager | Sales | Production | Viewer |
+|---------|-------|-------|---------|-------|------------|--------|
+| Ver Ventas | Si | Si | Si | Si | No | Si |
+| Crear Pedidos | Si | Si | Si | Si | No | No |
+| Ver Producción | Si | Si | Si | No | Si | Si |
+| Mover Kanban | Si | Si | Si | No | Si | No |
+| Ver Estadísticas | Si | Si | Si | No | No | Si |
+| Ver Config | Si | Si | Solo lectura | No | No | Solo lectura |
+| Editar Config | Si | Si | No | No | No | No |
+| Gestionar Usuarios | Si | Si | No | No | No | No |
+| Facturación | Si | No | No | No | No | No |
+
+## Asignar Roles
+
+<Steps>
+  <Step title="Ir a Usuarios">Navega a **Configuración** → **Usuarios**.</Step>
+  <Step title="Seleccionar usuario">Encuentra al miembro del equipo en la lista.</Step>
+  <Step title="Cambiar rol">Haz clic en el selector de rol y elige el rol apropiado.</Step>
+  <Step title="Guardar">El cambio se aplica inmediatamente. El usuario verá los cambios en su próxima carga de página.</Step>
+</Steps>
+
+<Callout type="warning">
+Cambiar el rol de un usuario no cierra su sesión activa. Si necesitas revocar acceso inmediatamente, cambia el rol y luego elimina al usuario.
+</Callout>
+
+## Próximos Pasos
+
+<LinkCard href="/help/managing-team" title="Gestionar tu Equipo" description="Cómo invitar y administrar colaboradores." />

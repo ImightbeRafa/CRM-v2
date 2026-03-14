@@ -79,20 +79,10 @@ export default function SubscriptionBanner() {
           </div>
           <div className="flex items-center gap-2">
             <a
-              href="https://tp.cr/l/TkRFME9RPT18MQ=="
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/config?tab=billing"
               className="px-3 py-1.5 bg-white text-red-600 rounded shadow-sm text-sm font-medium hover:bg-gray-50 transition-colors"
             >
-              Basic (₡15k)
-            </a>
-            <a
-              href="https://tp.cr/l/TkRFMU1BPT18MQ=="
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 bg-yellow-400 text-red-900 rounded shadow-sm text-sm font-medium hover:bg-yellow-300 transition-colors"
-            >
-              Pro (₡45k)
+              Activar Pro — $20/mes
             </a>
             <button
               onClick={() => setDismissed(true)}
@@ -126,20 +116,10 @@ export default function SubscriptionBanner() {
           </div>
           <div className="flex items-center gap-2">
             <a
-              href="https://tp.cr/l/TkRFME9RPT18MQ=="
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 bg-white text-yellow-900 rounded shadow-sm text-sm font-medium hover:bg-gray-50 transition-colors"
-            >
-              Basic
-            </a>
-            <a
-              href="https://tp.cr/l/TkRFMU1BPT18MQ=="
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/config?tab=billing"
               className="px-3 py-1.5 bg-yellow-900 text-white rounded shadow-sm text-sm font-medium hover:bg-yellow-800 transition-colors"
             >
-              Pro ⚡
+              Activar Pro — $20/mes
             </a>
             <button
               onClick={() => setDismissed(true)}

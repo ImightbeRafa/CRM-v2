@@ -12,6 +12,7 @@ import {
     PackageCheck,
     BarChart2,
     FileText,
+    Shield,
 } from 'lucide-react';
 
 export const metadata: Metadata = {
@@ -33,6 +34,7 @@ export default async function LogisticsLayout({ children }: { children: React.Re
         { href: '/logistics/accounting', label: 'Contabilidad', icon: BookOpen },
         { href: '/logistics/reports', label: 'Reportes', icon: BarChart2 },
         { href: '/logistics/guias', label: 'Guías', icon: FileText },
+        { href: '/logistics/admin', label: 'Admin', icon: Shield },
     ];
 
     return (

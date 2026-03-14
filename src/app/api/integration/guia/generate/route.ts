@@ -3,7 +3,7 @@ import { validateApiKey } from '@/lib/integration-auth';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
 import { withTenantContext } from '@/lib/tenantContext';
-import { CorreosWebService } from '@/lib/correos';
+import { CorreosWebService, buildGuiaDescription } from '@/lib/correos';
 import type { CorreosWSCredentials } from '@/lib/correos';
 import { logIntegrationActivity } from '@/lib/integration-logs';
 
@@ -179,7 +179,7 @@ export async function POST(req: NextRequest) {
             senderZip: sender.zip,
             senderPhone: sender.phone,
             weight: 500,
-            description: (order as any).product || (order as any).comments || 'Paquete',
+            description: buildGuiaDescription(order as any),
           });
 
           results.push({

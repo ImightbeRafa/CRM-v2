@@ -1,0 +1,89 @@
+---
+title: "Generar Guías de Envío"
+description: "Cómo generar guías de envío con Correos de Costa Rica, descargar etiquetas y rastrear envíos."
+visibility: private
+category: shipping
+order: 11
+---
+
+## Generar Guías desde BetsyCRM
+
+Una vez que hayas configurado tus credenciales de Correos de Costa Rica, puedes generar guías de envío directamente desde BetsyCRM sin necesidad de entrar al portal de Correos.
+
+<Callout type="info">
+Antes de generar guías, asegúrate de haber completado la configuración de Correos CR. Si aún no lo has hecho, consulta la guía de configuración.
+</Callout>
+
+<LinkCard href="/help/correos-cr-setup" title="Configurar Correos de Costa Rica" description="Guía para obtener y configurar tus credenciales." />
+
+## Generar una Guía Individual
+
+<Steps>
+  <Step title="Ir a Producción">Navega al tablero Kanban en **Producción**.</Step>
+  <Step title="Seleccionar pedido">Haz clic en la tarjeta del pedido que quieres enviar.</Step>
+  <Step title="Generar guía">En los detalles del pedido, haz clic en el botón **Generar Guía**.</Step>
+  <Step title="Verificar datos">Revisa los datos del destinatario: nombre, dirección, código postal y teléfono. Corrige cualquier error antes de continuar.</Step>
+  <Step title="Confirmar">Haz clic en **Confirmar**. La guía se genera en segundos y el número de rastreo se asigna automáticamente al pedido.</Step>
+  <Step title="Descargar etiqueta">Haz clic en **Descargar PDF** para obtener la etiqueta lista para imprimir.</Step>
+</Steps>
+
+## Generación en Lote
+
+Si necesitas generar guías para múltiples pedidos:
+
+<Steps>
+  <Step title="Seleccionar pedidos">En el tablero Kanban, selecciona los pedidos usando los checkboxes.</Step>
+  <Step title="Acción en lote">Haz clic en **Generar Guías** en el menú de acciones en lote.</Step>
+  <Step title="Revisión">El sistema muestra un resumen de los pedidos seleccionados. Verifica que todos tengan dirección y código postal completos.</Step>
+  <Step title="Generar">Haz clic en **Generar Todas**. Las guías se crean secuencialmente y puedes descargar todas las etiquetas en un solo PDF.</Step>
+</Steps>
+
+<Callout type="warning">
+Los pedidos sin dirección o con código postal inválido serán excluidos de la generación en lote. Revisa los errores reportados y completa los datos faltantes.
+</Callout>
+
+## Datos Requeridos para la Guía
+
+| Campo | Origen | Notas |
+|-------|--------|-------|
+| **Nombre destinatario** | Nombre del cliente del pedido | |
+| **Dirección** | Dirección del pedido | Debe ser lo más específica posible |
+| **Código postal** | Código postal del pedido | 5 dígitos, válido en Costa Rica |
+| **Teléfono** | Teléfono del cliente | Para contacto en caso de no encontrar al destinatario |
+| **Peso** | Configuración o manual | Se usa para calcular la tarifa |
+
+## Rastrear Envíos
+
+Una vez generada la guía, puedes:
+
+- **Ver el número de rastreo** directamente en la tarjeta del pedido en el Kanban
+- **Consultar el estado** del envío desde los detalles del pedido
+- **Compartir el rastreo** con el cliente copiando el enlace de rastreo
+
+## Etiquetas PDF
+
+Las etiquetas generadas incluyen:
+
+- Código de barras con el número de guía
+- Datos del remitente (configurados en tu perfil de Correos CR)
+- Datos del destinatario
+- Peso y servicio seleccionado
+- Código QR para lectura rápida
+
+<Callout type="tip">
+Imprime las etiquetas en papel autoadhesivo de 4x6 pulgadas para mayor comodidad. También puedes imprimirlas en hoja carta y pegarlas al paquete.
+</Callout>
+
+## Solución de Problemas
+
+| Error | Solución |
+|-------|----------|
+| "Código postal inválido" | Verifica que sea un código postal válido de 5 dígitos de Costa Rica |
+| "Error de conexión" | Verifica tus credenciales del Web Service en Configuración |
+| "Servicio no disponible" | Contacta a Correos CR para verificar el estado de tu servicio |
+| "Peso excedido" | El peso supera el máximo permitido para el servicio contratado |
+
+## Próximos Pasos
+
+<LinkCard href="/help/correos-cr-setup" title="Configurar Correos CR" description="Revisa o actualiza tus credenciales." />
+<LinkCard href="/help/production-kanban" title="Tablero Kanban" description="Gestiona pedidos y genera guías desde el tablero." />

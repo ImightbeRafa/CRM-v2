@@ -1,0 +1,78 @@
+---
+title: "Gestión de Clientes"
+description: "Cómo funciona el sistema de clientes automáticos, clientes frecuentes y el historial de compras."
+visibility: private
+category: getting-started
+order: 4
+---
+
+## Sistema de Clientes
+
+BetsyCRM gestiona clientes de forma inteligente. Cada vez que creas un pedido, el sistema registra los datos del cliente automáticamente para futuras compras.
+
+## Clientes Automáticos
+
+Cuando creas un pedido con un nombre de cliente nuevo, BetsyCRM:
+
+1. **Crea un registro de cliente** automáticamente con los datos proporcionados (nombre, teléfono, email, dirección)
+2. **Asocia el pedido** al registro del cliente
+3. **Mantiene un historial** de todos los pedidos del cliente
+
+La próxima vez que escribas el mismo nombre en el formulario de ventas, los datos se autocompletarán.
+
+<Callout type="tip">
+El autocompletado busca por nombre del cliente. Si un cliente usa nombres ligeramente diferentes en cada compra (ej: "Juan Pérez" vs "Juan P."), se crearán registros separados. Intenta ser consistente con los nombres.
+</Callout>
+
+## Clientes Frecuentes
+
+BetsyCRM identifica automáticamente a los clientes que compran con mayor frecuencia y los marca como "frecuentes". Esto te permite:
+
+- **Priorizar** la atención de clientes leales
+- **Autocompletar** más rápido sus datos
+- **Ver estadísticas** de compra por cliente
+
+### Ver Clientes Frecuentes
+
+<Steps>
+  <Step title="Ir a Configuración">Navega a **Configuración** → **Clientes**.</Step>
+  <Step title="Lista de clientes">Verás la lista de todos tus clientes ordenados por cantidad de pedidos.</Step>
+  <Step title="Detalles">Haz clic en un cliente para ver su historial de pedidos, total gastado y productos comprados.</Step>
+</Steps>
+
+## Productos Frecuentes
+
+De manera similar a los clientes frecuentes, BetsyCRM también rastrea qué productos se piden más. Esta información está disponible en la configuración y te ayuda a:
+
+- Identificar tus productos más populares
+- Planificar inventario
+- Detectar tendencias de compra
+
+## Datos del Cliente
+
+| Campo | Fuente | Uso |
+|-------|--------|-----|
+| **Nombre** | Formulario de venta | Identificación y autocompletado |
+| **Teléfono** | Formulario de venta | Contacto y envío |
+| **Email** | Formulario de venta | Notificaciones |
+| **Dirección** | Formulario de venta | Envío y generación de guías |
+| **Provincia** | Formulario de venta | Estadísticas por zona |
+| **Cantidad de pedidos** | Automático | Identificar frecuentes |
+| **Total gastado** | Automático | Valor del cliente |
+
+<Callout type="info">
+Los datos de clientes se almacenan de forma segura y aislada por tenant. Cada negocio solo ve sus propios clientes.
+</Callout>
+
+## Privacidad
+
+BetsyCRM cumple con las mejores prácticas de privacidad de datos:
+
+- Los datos de clientes no se comparten entre tenants
+- Puedes eliminar registros de clientes si lo solicitan
+- No se almacenan datos de pago de los clientes
+
+## Próximos Pasos
+
+<LinkCard href="/help/sales-module" title="Módulo de Ventas" description="Crea pedidos y el sistema registra clientes automáticamente." />
+<LinkCard href="/help/inventory" title="Gestión de Inventario" description="Gestiona los productos que compran tus clientes." />

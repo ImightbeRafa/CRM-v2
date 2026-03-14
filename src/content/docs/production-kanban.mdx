@@ -1,0 +1,79 @@
+---
+title: "Producción y Tablero Kanban"
+description: "Cómo usar el tablero Kanban para organizar, filtrar y actualizar el estado de tus pedidos visualmente."
+visibility: private
+category: produccion
+order: 7
+---
+
+## El Tablero Kanban
+
+El módulo de **Producción** presenta tus pedidos en un tablero estilo Kanban: columnas organizadas por estado que te permiten ver de un vistazo dónde está cada pedido en tu flujo de trabajo.
+
+Cada columna corresponde a un **estado de pedido** que hayas configurado, y las columnas se ordenan de izquierda a derecha según el orden que definiste.
+
+## Cómo Funciona
+
+<Steps>
+  <Step title="Visualización por columnas">Cada pedido aparece como una tarjeta dentro de la columna de su estado actual. Las columnas muestran el nombre y color del estado.</Step>
+  <Step title="Arrastrar y soltar">Para cambiar el estado de un pedido, simplemente arrastra su tarjeta de una columna a otra. El estado se actualiza automáticamente.</Step>
+  <Step title="Detalles del pedido">Haz clic en cualquier tarjeta para ver los detalles completos: cliente, producto, total, campos personalizados y más.</Step>
+</Steps>
+
+## Tarjetas de Pedido
+
+Cada tarjeta en el Kanban muestra información clave:
+
+- **Número de pedido** (ej: EA-015)
+- **Nombre del cliente**
+- **Producto** y cantidad
+- **Total** del pedido
+- **Fecha** de creación
+- **Vendedor** asignado (si aplica)
+
+<Callout type="tip">
+Las tarjetas tienen un color sutil de fondo que coincide con el color del estado. Esto te ayuda a identificar visualmente pedidos que se han movido recientemente.
+</Callout>
+
+## Filtrar Pedidos
+
+Puedes filtrar los pedidos del tablero para enfocarte en lo que necesitas:
+
+| Filtro | Descripción |
+|--------|-------------|
+| **Por vendedor** | Muestra solo pedidos de un vendedor específico |
+| **Por fecha** | Filtra pedidos creados en un rango de fechas |
+| **Por producto** | Busca pedidos que contengan un producto específico |
+| **Búsqueda** | Busca por nombre de cliente, número de pedido o producto |
+
+## Actualizar Pedidos
+
+Además de arrastrar y soltar, puedes:
+
+- **Editar** los datos del pedido (cliente, producto, total)
+- **Cambiar el estado** desde el menú contextual de la tarjeta
+- **Agregar notas** o comentarios internos
+- **Generar guía de envío** directamente desde la tarjeta (si tienes Correos CR configurado)
+
+## Estados Completados
+
+Cuando un pedido llega a un estado marcado como "completado" (como Entregado), se registra la fecha de completado. Esto permite calcular métricas como:
+
+- Tiempo promedio desde creación hasta entrega
+- Pedidos completados por período
+
+<Callout type="info">
+Los pedidos en estados de tipo "completado" o "cancelado" permanecen visibles en el tablero pero aparecen con un estilo visual diferenciado para que puedas enfocarte en los pedidos activos.
+</Callout>
+
+## Acciones en Lote
+
+Si necesitas mover varios pedidos a la vez:
+
+1. Selecciona múltiples tarjetas usando los checkboxes
+2. Usa el menú de acciones en lote para cambiar el estado de todos los seleccionados
+
+## Próximos Pasos
+
+<LinkCard href="/help/order-workflow" title="Estados de Pedidos" description="Personaliza los estados y colores de tu flujo de trabajo." />
+<LinkCard href="/help/shipping-labels" title="Generar Guías de Envío" description="Crea guías de Correos CR desde el tablero." />

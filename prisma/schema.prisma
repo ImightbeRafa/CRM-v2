@@ -71,6 +71,8 @@ model Tenant {
   apiKeys        ApiKey[]
   integrationLogs IntegrationLog[]
   botSessions    BotSession[]
+  feedbackTickets FeedbackTicket[]
+  changelogEntries ChangelogEntry[]
   
   @@index([slug])
   @@index([isActive])
@@ -215,6 +217,7 @@ model User {
   auditLogs   AuditLog[]
   socialAccounts SocialAccount[]
   botSessions BotSession[]
+  feedbackTickets FeedbackTicket[]
   
   @@map("User")
   @@index([email])
@@ -743,4 +746,48 @@ model BotSession {
   @@index([tenantId])
   @@index([userId])
   @@index([platform, isActive])
+}
+
+// ============================================================================
+// FEEDBACK & CHANGELOG
+// ============================================================================
+
+model FeedbackTicket {
+  id            String    @id @default(cuid())
+  tenantId      String
+  userId        String
+  category      String    // bug, feature, question, other
+  subject       String
+  description   String    @db.Text
+  screenshotUrl String?
+  status        String    @default("open") // open, in_progress, resolved, closed
+  adminNotes    String?   @db.Text
+  priority      String    @default("normal") // low, normal, high, critical
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  resolvedAt    DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+}
+
+model ChangelogEntry {
+  id          String   @id @default(cuid())
+  tenantId    String?  // null = global (visible to all tenants)
+  title       String
+  description String   @db.Text
+  category    String   // feature, fix, improvement, announcement
+  createdAt   DateTime @default(now())
+  createdBy   String   // admin user id
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([category])
+  @@index([createdAt])
 }

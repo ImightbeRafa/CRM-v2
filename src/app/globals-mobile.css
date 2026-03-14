@@ -1,27 +1,15 @@
 /* Mobile-First Responsive Overrides */
 /* Applied ONLY on mobile devices - desktop stays exactly the same */
 
-/* Base mobile-friendly typography */
 @media (max-width: 767px) {
-  /* Ensure minimum touch target size */
-  button, a, input, select, textarea {
-    min-height: 44px;
-    touch-action: manipulation;
+  /* Prevent iOS zoom on input focus */
+  html {
+    font-size: 16px;
   }
 
   /* Prevent horizontal scroll */
   body {
     overflow-x: hidden;
-  }
-
-  /* Better font sizing for readability */
-  html {
-    font-size: 16px; /* Prevent iOS zoom on input focus */
-  }
-
-  /* Card padding optimization */
-  .card, [class*="card"] {
-    padding: 1rem !important;
   }
 
   /* Modal full-screen on mobile */
@@ -31,37 +19,11 @@
     margin: 0 !important;
   }
 
-  /* Table responsiveness - convert to cards */
+  /* Table responsiveness */
   table {
     display: block;
     overflow-x: auto;
-    white-space: nowrap;
     -webkit-overflow-scrolling: touch;
-  }
-
-  /* Stack grid columns on mobile */
-  .grid {
-    grid-template-columns: 1fr !important;
-  }
-
-  /* Form elements full-width */
-  input:not([type="checkbox"]):not([type="radio"]),
-  select,
-  textarea {
-    width: 100% !important;
-  }
-
-  /* Navigation improvements */
-  nav {
-    position: sticky;
-    top: 0;
-    z-index: 50;
-  }
-
-  /* Button improvements */
-  button {
-    padding: 0.75rem 1.5rem;
-    font-size: 1rem;
   }
 
   /* Image responsiveness */
@@ -70,22 +32,11 @@
     height: auto;
   }
 
-  /* Config Page specific */
-  .container {
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
-  }
-
   /* Tab navigation scrollable */
   [role="tablist"] {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     flex-wrap: nowrap !important;
-  }
-
-  /* Config page cards */
-  .bg-gradient-to-r {
-    padding: 1rem !important;
   }
 
   /* Config headers compact */
@@ -104,94 +55,62 @@
     line-height: 1.5rem !important;
   }
 
-  /* Form rows stack */
-  .grid.grid-cols-2,
-  .grid.grid-cols-3,
-  .grid.grid-cols-4 {
-    grid-template-columns: 1fr !important;
-    gap: 0.75rem !important;
+  /* Container padding */
+  .container {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
   }
 
-  /* Action buttons */
-  .flex.gap-2 button,
-  .flex.gap-3 button,
-  .flex.gap-4 button {
-    flex: 1 1 auto;
-    min-width: fit-content;
+  /* Bottom nav safe zone: prevent content from hiding behind nav */
+  .app-shell-content {
+    padding-bottom: 72px;
   }
+}
 
-  /* Card headers stack */
-  .flex.items-center.justify-between {
+/* Opt-in mobile utility classes — use these on elements that need stacking */
+@media (max-width: 767px) {
+  .mobile-stack {
     flex-direction: column !important;
     align-items: flex-start !important;
     gap: 0.75rem !important;
   }
 
-  /* Status badges smaller */
-  .badge, [class*="badge"] {
-    font-size: 0.75rem !important;
-    padding: 0.25rem 0.5rem !important;
-  }
-
-  /* Stats cards stacked */
-  [class*="stat"], [class*="kpi"] {
+  .mobile-full-width {
     width: 100% !important;
-    margin-bottom: 1rem;
   }
 
-  /* Chart containers responsive */
-  canvas {
-    max-width: 100% !important;
-    height: auto !important;
+  .mobile-single-col {
+    grid-template-columns: 1fr !important;
   }
 
-  /* Production dashboard cards */
-  [class*="order-card"] {
-    width: 100% !important;
-    margin-bottom: 0.75rem;
+  .mobile-hide {
+    display: none !important;
   }
 
-  /* Bulk operations bottom sheet on mobile */
-  [class*="bulk-operations"] {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    max-height: 70vh;
-    border-radius: 1rem 1rem 0 0;
-  }
-
-  /* Filter sections collapsible */
-  [class*="filter"] {
-    margin-bottom: 0.5rem;
+  .mobile-text-center {
+    text-align: center !important;
   }
 }
 
 /* Tablet adjustments (768px - 1023px) */
 @media (min-width: 768px) and (max-width: 1023px) {
-  .grid {
+  .tablet-two-col {
     grid-template-columns: repeat(2, 1fr) !important;
   }
 }
 
 /* Touch-friendly hover states */
 @media (hover: none) and (pointer: coarse) {
-  /* Remove hover effects on touch devices */
-  *:hover {
-    /* Hover styles won't apply on touch devices */
-  }
-  
-  /* Add active states instead */
   button:active, a:active {
-    opacity: 0.8;
-    transform: scale(0.98);
+    opacity: 0.85;
+    transform: scale(0.97);
+    transition: transform 0.1s ease;
   }
 }
 
-/* Improve scrolling performance */
+/* Tap highlight removal */
 * {
   -webkit-tap-highlight-color: transparent;
-  -webkit-touch-callout: none;
 }
 
 /* Safe area for iOS notch */
@@ -202,3 +121,11 @@
   }
 }
 
+/* Hide scrollbar on snap-scroll containers for clean mobile look */
+.snap-scroll-hide::-webkit-scrollbar {
+  display: none;
+}
+.snap-scroll-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

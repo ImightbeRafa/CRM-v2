@@ -4,7 +4,7 @@ import { useState } from 'react';
 import BackupPage from './BackupPage';
 import { EnhancedProductionDashboard } from './EnhancedProductionDashboard';
 import { ProductionErrorBoundary } from './ProductionErrorBoundary';
-import HomeButton from '@/app/components/ui/HomeButtom';
+import { AppShell } from '@/app/components/AppShell';
 
 export function ProductionPageClient() {
   const [isGuiaGeneratorOpen, setIsGuiaGeneratorOpen] = useState(false);
@@ -12,13 +12,7 @@ export function ProductionPageClient() {
 
   return (
     <ProductionErrorBoundary>
-      <div className="min-h-screen bg-gray-50">
-        <nav className="bg-white shadow-sm border-b sticky top-0 z-10">
-          <div className="container mx-auto px-4 py-3">
-            <HomeButton />
-          </div>
-        </nav>
-        
+      <AppShell>
         <main className="container mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-6 space-y-6 md:space-y-8">
           <EnhancedProductionDashboard 
             onGenerateGuias={() => setIsGuiaGeneratorOpen(true)}
@@ -39,7 +33,7 @@ export function ProductionPageClient() {
         </main>
         
         <div className="h-16 md:h-20" />
-      </div>
+      </AppShell>
     </ProductionErrorBoundary>
   );
 }

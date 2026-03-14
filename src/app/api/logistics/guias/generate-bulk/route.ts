@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
-import { CorreosWebService } from '@/lib/correos';
+import { CorreosWebService, buildGuiaDescription } from '@/lib/correos';
 import type { CorreosWSCredentials } from '@/lib/correos';
 
 export const maxDuration = 300;
@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
             select: {
                 id: true, orderId: true, tenantId: true, customerName: true,
                 phone: true, email: true, product: true, quantity: true,
+                productDetails: true,
                 province: true, canton: true, district: true, address: true, comments: true,
             },
         });
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
                     senderZip: sender.zip,
                     senderPhone: sender.phone,
                     weight: 500,
-                    description: dbOrder.product || dbOrder.comments || 'Paquete',
+                    description: buildGuiaDescription(dbOrder),
                 });
 
                 console.log(`[WS] Guía result for ${verified.orderId}: success=${result.success}, guia=${result.guiaNumber}, msg=${result.responseMessage}`);

@@ -6,7 +6,12 @@ import { TenantSettingsProvider } from "./contexts/TenantSettingsContext"
 import { ConfigProvider } from "./contexts/ConfigContext"
 import SubscriptionBanner from "./components/SubscriptionBanner"
 import { ClientProviders } from "./components/ClientProviders"
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+}
 
 export const metadata: Metadata = {
   other: {

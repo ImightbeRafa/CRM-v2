@@ -1,11 +1,11 @@
 'use client';
 import { signOut } from "next-auth/react";
 
-export default function LogoutButton() {
+export default function LogoutButton({ className }: { className?: string }) {
   return (
     <button
       onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-      className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+      className={className || "inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"}
     >
       <svg 
         className="w-4 h-4 mr-2" 

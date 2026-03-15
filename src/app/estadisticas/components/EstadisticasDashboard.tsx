@@ -433,6 +433,7 @@ export default function EstadisticasDashboard() {
           subtitle="Evolución temporal"
           loading={loadingRevenue}
           error={errorRevenue}
+          isEmpty={!revenueData || revenueData.length === 0}
           actions={
             <select
               value={groupBy}
@@ -456,6 +457,7 @@ export default function EstadisticasDashboard() {
             subtitle="Estados de pedidos"
             loading={loadingStatus}
             error={errorStatus}
+            isEmpty={!statusBreakdown || statusBreakdown.length === 0}
           >
             <StatusBreakdownChart data={statusBreakdown} height={300} />
           </ChartContainer>

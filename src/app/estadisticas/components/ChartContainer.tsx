@@ -1,7 +1,7 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, BarChart3 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface ChartContainerProps {
@@ -11,6 +11,7 @@ interface ChartContainerProps {
   actions?: React.ReactNode;
   loading?: boolean;
   error?: string;
+  isEmpty?: boolean;
 }
 
 export default function ChartContainer({
@@ -20,6 +21,7 @@ export default function ChartContainer({
   actions,
   loading = false,
   error,
+  isEmpty = false,
 }: ChartContainerProps) {
   return (
     <motion.div
@@ -43,6 +45,14 @@ export default function ChartContainer({
               <div className="text-center">
                 <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-2" />
                 <p className="text-red-600">{error}</p>
+              </div>
+            </div>
+          ) : isEmpty ? (
+            <div className="h-64 w-full flex items-center justify-center">
+              <div className="text-center">
+                <BarChart3 className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500 font-medium">No hay datos disponibles</p>
+                <p className="text-gray-400 text-sm mt-1">Los datos aparecerán aquí cuando haya pedidos registrados.</p>
               </div>
             </div>
           ) : (

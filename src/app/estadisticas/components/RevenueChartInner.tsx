@@ -15,7 +15,10 @@ interface RevenueChartProps {
 }
 
 const RevenueChartInner = ({ data, height = 300, currencySymbol = '₡', locale = 'es-CR' }: RevenueChartProps) => {
-  // Format data for display
+  if (!data || data.length === 0) {
+    return null;
+  }
+
   const formattedData = data.map((item) => ({
     ...item,
     displayDate: format(new Date(item.date), 'dd/MM'),

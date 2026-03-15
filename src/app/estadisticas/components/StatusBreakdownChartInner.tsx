@@ -13,6 +13,10 @@ interface StatusBreakdownChartProps {
 }
 
 const StatusBreakdownChartInner = ({ data, height = 300 }: StatusBreakdownChartProps) => {
+  if (!data || data.length === 0) {
+    return null;
+  }
+
   const RADIAN = Math.PI / 180;
 
   const renderCustomizedLabel = ({

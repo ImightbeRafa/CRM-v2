@@ -139,6 +139,8 @@ export default function TopCustomersChart({ startDate, endDate }: TopCustomersCh
                      activeTab === 'orders' ? data.topCustomersByOrders :
                      data.customerActivity;
 
+  const hasCustomers = currentData && currentData.length > 0;
+
   return (
     <Card className="max-h-[600px] flex flex-col">
       <CardHeader className="pb-3">
@@ -224,6 +226,14 @@ export default function TopCustomersChart({ startDate, endDate }: TopCustomersCh
             {activeTab === 'orders' && 'Top 10 por Cantidad de Pedidos'}
             {activeTab === 'activity' && 'Actividad Reciente'}
           </h4>
+          {!hasCustomers ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-center">
+                <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-gray-500 text-sm">No hay clientes en este período.</p>
+              </div>
+            </div>
+          ) : (
           <div className="space-y-1.5">
             {currentData.slice(0, 10).map((customer, index) => (
               <div key={customer.customerName} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg gap-2">
@@ -255,6 +265,7 @@ export default function TopCustomersChart({ startDate, endDate }: TopCustomersCh
               </div>
             ))}
           </div>
+          )}
         </div>
       </CardContent>
     </Card>

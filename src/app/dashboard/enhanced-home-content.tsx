@@ -130,7 +130,9 @@ export default function EnhancedHomeContent() {
               </Link>
             )}
             <WhatsNewDrawer />
-            <LogoutButton />
+            <div className="hidden md:block">
+              <LogoutButton />
+            </div>
           </div>
         </div>
 

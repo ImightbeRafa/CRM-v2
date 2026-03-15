@@ -209,84 +209,84 @@ const EnhancedHeader = React.memo(({
         </Badge>
       </div>
 
-      {/* Compact Action Buttons */}
-      <div className="flex flex-wrap gap-1">
-        <Button onClick={onBulkOperations} variant="outline" size="sm" className="text-xs px-2 py-1">
-          <Users className="h-3 w-3 mr-1" />
+      {/* Action Buttons */}
+      <div className="flex flex-wrap gap-1.5">
+        <Button onClick={onBulkOperations} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-[36px]">
+          <Users className="h-4 w-4 mr-1" />
           Masivas
         </Button>
-        <Button onClick={onGenerateGuias} variant="outline" size="sm" className="text-xs px-2 py-1">
-          <Truck className="h-3 w-3 mr-1" />
+        <Button onClick={onGenerateGuias} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-[36px]">
+          <Truck className="h-4 w-4 mr-1" />
           Guías
         </Button>
-        <Button onClick={onGenerateInvoices} variant="outline" size="sm" className="text-xs px-2 py-1 bg-purple-50 border-purple-200 hover:bg-purple-100">
-          <FileText className="h-3 w-3 mr-1" />
+        <Button onClick={onGenerateInvoices} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-[36px] bg-purple-50 border-purple-200 hover:bg-purple-100">
+          <FileText className="h-4 w-4 mr-1" />
           Facturas
         </Button>
-        <Button onClick={onExport} variant="outline" size="sm" className="text-xs px-2 py-1">
-          <Download className="h-3 w-3 mr-1" />
+        <Button onClick={onExport} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-[36px]">
+          <Download className="h-4 w-4 mr-1" />
           Exportar
         </Button>
       </div>
     </div>
 
-    {/* Compact Filters Row */}
+    {/* Filters Row */}
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
       <div className="relative">
-        <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+        <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
         <Input
           placeholder="Buscar..."
           value={searchTerm}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="pl-7 h-8 text-sm"
+          className="pl-8 h-9 text-sm"
         />
       </div>
 
       <StatusFilterSelect value={statusFilter} onValueChange={onStatusChange} />
 
-      <Button variant="outline" size="sm" className="justify-start h-8 text-xs">
-        <Filter className="h-3 w-3 mr-1" />
+      <Button variant="outline" size="sm" className="justify-start h-9 text-xs min-h-[36px]">
+        <Filter className="h-4 w-4 mr-1" />
         Filtros
       </Button>
 
       <Button
         variant="outline"
         size="sm"
-        className="justify-start h-8 text-xs"
+        className="justify-start h-9 text-xs min-h-[36px]"
         onClick={onShowStats}
       >
-        <TrendingUp className="h-3 w-3 mr-1" />
+        <TrendingUp className="h-4 w-4 mr-1" />
         Stats
       </Button>
 
-      {/* Compact View Mode Toggle */}
-      <div className="flex gap-1 border rounded-md p-1 h-8">
+      {/* View Mode Toggle */}
+      <div className="flex gap-1 border rounded-md p-1 h-9">
         <Button
           variant={viewMode === 'table' ? 'default' : 'ghost'}
           size="sm"
-          className="px-2 h-6"
+          className="px-2.5 h-7"
           onClick={() => onViewModeChange('table')}
           title="Tabla"
         >
-          <LayoutGrid className="h-3 w-3" />
+          <LayoutGrid className="h-4 w-4" />
         </Button>
         <Button
           variant={viewMode === 'kanban' ? 'default' : 'ghost'}
           size="sm"
-          className="px-2 h-6"
+          className="px-2.5 h-7"
           onClick={() => onViewModeChange('kanban')}
           title="Kanban"
         >
-          <Kanban className="h-3 w-3" />
+          <Kanban className="h-4 w-4" />
         </Button>
         <Button
           variant={viewMode === 'mobile' ? 'default' : 'ghost'}
           size="sm"
-          className="px-2 h-6"
+          className="px-2.5 h-7"
           onClick={() => onViewModeChange('mobile')}
           title="Móvil"
         >
-          <List className="h-3 w-3" />
+          <List className="h-4 w-4" />
         </Button>
       </div>
     </div>

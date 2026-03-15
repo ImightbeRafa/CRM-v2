@@ -13,8 +13,10 @@ import {
   Settings,
   MessageSquare,
   HelpCircle,
+  LogOut,
   X,
 } from 'lucide-react';
+import { signOut } from 'next-auth/react';
 
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Inicio', icon: Home },
@@ -84,6 +86,17 @@ export function MobileBottomNav() {
                     </Link>
                   );
                 })}
+                <div className="border-t border-gray-100 my-1 mx-4" />
+                <button
+                  onClick={() => {
+                    setMoreOpen(false);
+                    signOut({ callbackUrl: '/auth/signin' });
+                  }}
+                  className="flex items-center gap-3 px-4 py-3.5 rounded-xl transition-colors text-red-600 hover:bg-red-50 active:bg-red-100 w-full"
+                >
+                  <LogOut className="h-5 w-5" />
+                  <span className="font-medium text-[15px]">Cerrar Sesión</span>
+                </button>
               </nav>
             </motion.div>
           </>

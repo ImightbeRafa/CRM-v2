@@ -73,8 +73,40 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                 }} />
             </div>
 
-            {/* ── Sidebar ───────────────────────────────────── */}
-            <aside style={{
+            {/* ── Mobile top nav ──────────────────────────── */}
+            <div className="lm-mobile-nav">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div style={{
+                        width: 28, height: 28, borderRadius: 8,
+                        background: 'linear-gradient(135deg, #6c3fff, #3b82f6)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                    }}>
+                        <Package size={15} color="white" />
+                    </div>
+                    <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13, margin: 0 }}>HolaMA</p>
+                    <Link href="/dashboard" style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.4)', textDecoration: 'none', fontSize: 11 }}>
+                        <LogOut size={14} />
+                    </Link>
+                </div>
+                <nav style={{ display: 'flex', overflowX: 'auto', gap: 4, padding: '8px 12px', WebkitOverflowScrolling: 'touch' }}>
+                    {navItems.map(({ href, label, icon: Icon }) => (
+                        <Link key={href} href={href} className="lm-nav-link" style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '6px 10px', borderRadius: 8,
+                            color: 'rgba(255,255,255,0.5)', textDecoration: 'none',
+                            fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap',
+                            border: '1px solid transparent', flexShrink: 0,
+                        }}>
+                            <Icon size={13} />
+                            {label}
+                        </Link>
+                    ))}
+                </nav>
+            </div>
+
+            {/* ── Sidebar (hidden on mobile) ─────────────────── */}
+            <aside className="lm-sidebar" style={{
                 width: 232,
                 minHeight: '100vh',
                 flexShrink: 0,
@@ -140,9 +172,9 @@ export default async function LogisticsLayout({ children }: { children: React.Re
             </aside>
 
             {/* ── Main content ─────────────────────────────── */}
-            <main style={{
+            <main className="lm-main" style={{
                 flex: 1, padding: '32px 36px',
-                overflowY: 'auto', overflowX: 'hidden',
+                overflowY: 'auto', overflowX: 'auto',
                 position: 'relative', zIndex: 1,
             }}>
                 {children}
@@ -181,6 +213,14 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
                 @keyframes spin { to { transform: rotate(360deg); } }
                 @keyframes pulse-orb { 0%,100%{opacity:1} 50%{opacity:0.7} }
+                .lm-mobile-nav { display: none; }
+                .lm-stat-grid { grid-template-columns: repeat(6, 1fr); }
+                @media (max-width: 768px) {
+                    .lm-sidebar { display: none !important; }
+                    .lm-mobile-nav { display: block; position: sticky; top: 0; z-index: 20; background: rgba(13,13,13,0.95); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid rgba(255,255,255,0.08); }
+                    .lm-main { padding: 16px !important; }
+                    .lm-stat-grid { grid-template-columns: repeat(3, 1fr) !important; }
+                }
             `}</style>
         </div>
     );

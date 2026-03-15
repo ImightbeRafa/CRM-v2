@@ -83,7 +83,7 @@ export default function LogisticsDashboardPage() {
             </div>
 
             {/* Stat cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 12, marginBottom: 28 }}>
+            <div className="lm-stat-grid" style={{ display: 'grid', gap: 12, marginBottom: 28 }}>
                 {[
                     { label: 'Total', value: total, color: '#8b87ff' },
                     { label: 'Hoy', value: today, color: '#34d399' },
@@ -131,8 +131,8 @@ export default function LogisticsDashboardPage() {
             </div>
 
             {/* Table */}
-            <div style={{ ...glass, overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <div style={{ ...glass, overflowX: 'auto', overflowY: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 900 }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                             {['Cuenta', 'Cliente', 'Teléfono', 'Producto', 'Provincia', 'Estado CRM', 'Carrier', 'Estado LM', 'Total', 'Fecha'].map(h => (

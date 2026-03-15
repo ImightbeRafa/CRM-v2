@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app
 import { Alert, AlertDescription } from '@/app/components/ui/alert';
 import { X, Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
 import { signIn } from 'next-auth/react';
+import Link from 'next/link';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -208,6 +209,15 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
+                </div>
+                <div className="flex justify-end mt-1">
+                  <Link
+                    href="/auth/forgot-password"
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                    onClick={onClose}
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </Link>
                 </div>
               </div>
               

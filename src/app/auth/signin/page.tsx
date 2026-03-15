@@ -4,7 +4,9 @@ import { signIn } from "next-auth/react"
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import Image from "next/image"
+import Link from "next/link"
 import { Button } from "@/app/components/ui/button"
+import { Eye, EyeOff } from "lucide-react"
 import BetsyLogo from "@/BetsyLogo.png"
 
 function SignInPageInner() {
@@ -13,6 +15,7 @@ function SignInPageInner() {
   const [name, setName] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
   const searchParams = useSearchParams()
   const intendedPlan = (searchParams?.get('plan') || '').toLowerCase()
@@ -204,15 +207,35 @@ function SignInPageInner() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">Contraseña</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              placeholder={isRegistering ? "Mínimo 6 caracteres" : ""}
-              minLength={isRegistering ? 6 : undefined}
-              required
-            />
+            <div className="relative mt-1">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="block w-full rounded-md border border-gray-300 px-3 py-2 pr-10 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                placeholder={isRegistering ? "Mínimo 6 caracteres" : ""}
+                minLength={isRegistering ? 6 : undefined}
+                required
+              />
+              <button
+                type="button"
+                className="absolute right-0 top-0 h-full px-3 text-gray-400 hover:text-gray-600"
+                onClick={() => setShowPassword(!showPassword)}
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            {!isRegistering && (
+              <div className="flex justify-end mt-1">
+                <Link
+                  href="/auth/forgot-password"
+                  className="text-xs text-blue-600 hover:text-blue-800"
+                >
+                  ¿Olvidaste tu contraseña?
+                </Link>
+              </div>
+            )}
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button
@@ -230,7 +253,7 @@ function SignInPageInner() {
             <button
               type="button"
               onClick={() => setIsRegistering(!isRegistering)}
-              className="text-sm text-blue-600 hover:text-blue-800"
+              className="text-sm text-blue-600 hover:text-blue-800 py-2"
             >
               {isRegistering 
                 ? '¿Ya tienes cuenta? Inicia sesión' 
@@ -279,7 +302,7 @@ function SignInPageInner() {
         </form>
       </div>
       <footer className="mt-8 text-center text-gray-500 text-sm">
-        {new Date().getFullYear()}BetsyCRM los derechos reservados.
+        © {new Date().getFullYear()} BetsyCRM. Todos los derechos reservados.
       </footer>
     </div>
   )

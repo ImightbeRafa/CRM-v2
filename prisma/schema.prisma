@@ -197,6 +197,10 @@ model User {
   email_verification_token String? @map("email_verification_token")
   email_verification_token_expires DateTime? @map("email_verification_token_expires")
   
+  // Password reset
+  passwordResetToken String? @map("passwordResetToken")
+  passwordResetTokenExpires DateTime? @map("passwordResetTokenExpires")
+
   // OAuth
   provider  String?
   providerId String?

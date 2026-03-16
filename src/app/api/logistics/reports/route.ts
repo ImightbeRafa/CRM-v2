@@ -4,7 +4,31 @@ import { guardLogisticsApi } from '@/lib/logistics-auth';
 
 const CR_TZ = 'America/Costa_Rica';
 
-// GET /api/logistics/reports?tenantId=&dateFrom=&dateTo=&staffName=&includeBilled=&billedWeekId=
+function getMondayCR(): string {
+    const now = new Date();
+    const crStr = now.toLocaleDateString('en-CA', { timeZone: CR_TZ });
+    const [y, m, d] = crStr.split('-').map(Number);
+    const crDate = new Date(y, m - 1, d);
+    const day = crDate.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    crDate.setDate(crDate.getDate() + diff);
+    const yy = crDate.getFullYear();
+    const mm = String(crDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(crDate.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+}
+
+function getSundayCR(monday: string): string {
+    const [y, m, d] = monday.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + 6);
+    const yy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+}
+
+// GET /api/logistics/reports?tenantId=&dateFrom=&dateTo=&staffName=&includeBilled=&billedWeekId=&currentWeek=true
 export async function GET(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
     if (guard) return guard;
@@ -15,11 +39,37 @@ export async function GET(req: NextRequest) {
     const dateTo = url.searchParams.get('dateTo');
     const staffName = url.searchParams.get('staffName') ?? 'Marlenn';
     const includeBilled = url.searchParams.get('includeBilled') === 'true';
-    const billedWeekId = url.searchParams.get('billedWeekId');
+    let billedWeekId = url.searchParams.get('billedWeekId');
+    const currentWeek = url.searchParams.get('currentWeek') === 'true';
 
     if (!tenantId) return NextResponse.json({ error: 'tenantId required' }, { status: 400 });
 
     try {
+        let weekMeta: { id: number; week_start: string; week_end: string; finalized_at: string | null } | null = null;
+
+        if (currentWeek && !billedWeekId) {
+            const monday = getMondayCR();
+            const sunday = getSundayCR(monday);
+            const existing = await prisma.$queryRawUnsafe<{ id: number; week_start: string; week_end: string; finalized_at: string | null }[]>(
+                `SELECT id, week_start::text, week_end::text, finalized_at::text
+                 FROM lm_billing_weeks WHERE week_start = $1::date`, monday
+            );
+            if (existing.length > 0) {
+                weekMeta = existing[0];
+                billedWeekId = String(existing[0].id);
+            } else {
+                const inserted = await prisma.$queryRawUnsafe<{ id: number; week_start: string; week_end: string; finalized_at: string | null }[]>(
+                    `INSERT INTO lm_billing_weeks (week_start, week_end)
+                     VALUES ($1::date, $2::date)
+                     ON CONFLICT (week_start) DO UPDATE SET week_end = EXCLUDED.week_end
+                     RETURNING id, week_start::text, week_end::text, finalized_at::text`,
+                    monday, sunday
+                );
+                weekMeta = inserted[0];
+                billedWeekId = String(inserted[0].id);
+            }
+        }
+
         // 1. Fetch rates config
         const rateRows = await prisma.$queryRaw<{ key: string; value: string }[]>`
             SELECT key, value FROM lm_carrier_configs
@@ -32,41 +82,34 @@ export async function GET(req: NextRequest) {
         const salaryRate = cfg['salary_daily_rate'] ?? 10000;
         const gdRecoleccionCost = cfg['gd_recoleccion_cost'] ?? 2700;
 
-        // 2. Build date filters using completed_at (billing anchor) with CR timezone
+        // 2. Build date filters and billing scope
+        const dateCol = 'COALESCE(lm.completed_at, o.timestamp)';
         let dateSql = '';
         const params: any[] = [tenantId];
-
-        if (dateFrom && dateTo) {
-            params.push(dateFrom);
-            const pFrom = params.length;
-            params.push(dateTo);
-            const pTo = params.length;
-            dateSql += ` AND (
-                (lm.completed_at IS NOT NULL
-                 AND lm.completed_at >= ($${pFrom}::date AT TIME ZONE '${CR_TZ}')
-                 AND lm.completed_at < (($${pTo}::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}'))
-                OR (lm.completed_at IS NULL)
-            )`;
-        } else if (dateFrom) {
-            params.push(dateFrom);
-            dateSql += ` AND (
-                (lm.completed_at IS NOT NULL AND lm.completed_at >= ($${params.length}::date AT TIME ZONE '${CR_TZ}'))
-                OR (lm.completed_at IS NULL)
-            )`;
-        } else if (dateTo) {
-            params.push(dateTo);
-            dateSql += ` AND (
-                (lm.completed_at IS NOT NULL AND lm.completed_at < (($${params.length}::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}'))
-                OR (lm.completed_at IS NULL)
-            )`;
-        }
 
         let billedFilter = '';
         if (billedWeekId) {
             params.push(Number(billedWeekId));
             billedFilter = ` AND lm.billed_week_id = $${params.length}`;
-        } else if (!includeBilled) {
-            billedFilter = ' AND lm.billed_week_id IS NULL';
+        } else {
+            if (!includeBilled) {
+                billedFilter = ' AND lm.billed_week_id IS NULL';
+            }
+
+            if (dateFrom && dateTo) {
+                params.push(dateFrom);
+                const pFrom = params.length;
+                params.push(dateTo);
+                const pTo = params.length;
+                dateSql += ` AND ${dateCol} >= ($${pFrom}::date AT TIME ZONE '${CR_TZ}')
+                     AND ${dateCol} < (($${pTo}::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}')`;
+            } else if (dateFrom) {
+                params.push(dateFrom);
+                dateSql += ` AND ${dateCol} >= ($${params.length}::date AT TIME ZONE '${CR_TZ}')`;
+            } else if (dateTo) {
+                params.push(dateTo);
+                dateSql += ` AND ${dateCol} < (($${params.length}::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}')`;
+            }
         }
 
         // 3. Fetch orders — DISTINCT ON prevents duplicates from multiple lm_orders rows
@@ -162,6 +205,7 @@ export async function GET(req: NextRequest) {
             period: { dateFrom, dateTo },
             tenantId,
             staffName,
+            ...(weekMeta ? { billingWeek: weekMeta } : {}),
             correos: {
                 packages: correoOrders.length,
                 shippingCost: correosShipping,

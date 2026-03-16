@@ -50,9 +50,15 @@ async function patchOrder(orderId: string, patch: object) {
     const res = await fetch('/api/logistics/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, ...patch }) });
     if (!res.ok) throw new Error(`PATCH failed: ${res.status}`);
 }
-async function archiveOrder(orderId: string) {
-    const res = await fetch('/api/logistics/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, archivedAt: new Date().toISOString() }) });
-    if (!res.ok) throw new Error(`Archive failed: ${res.status}`);
+async function terminateOrders(orderIds: string[], correosCosts?: Record<string, number>) {
+    const body: any = { orderIds };
+    if (correosCosts && Object.keys(correosCosts).length > 0) body.correosCosts = correosCosts;
+    const res = await fetch('/api/logistics/orders/terminate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Terminate failed: ${res.status}`);
+    }
+    return res.json();
 }
 async function restoreOrder(orderId: string) {
     const res = await fetch('/api/logistics/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, archivedAt: null }) });
@@ -369,30 +375,22 @@ export default function CarriersPage() {
         }
         setOrders(p => p.filter(o => o.id !== id));
         try {
-            await archiveOrder(id);
-            logEvent(id, 'archived', {});
-        } catch {
+            await terminateOrders([id]);
+        } catch (err: any) {
             if (order) setOrders(p => [...p, order]);
-            alert('Error al archivar la orden. Por favor intente de nuevo.');
+            alert(err.message || 'Error al terminar la orden. Por favor intente de nuevo.');
         }
     }, [orders]);
     const confirmCorreosCostAndArchive = useCallback(async () => {
         if (!costModal || !costValue || isNaN(Number(costValue)) || Number(costValue) < 0) return;
         setCostSaving(true);
         try {
-            const costRes = await fetch('/api/logistics/correos-costs', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ orderId: costModal.orderId, cost: Number(costValue) }),
-            });
-            if (!costRes.ok) throw new Error(`Cost save failed: ${costRes.status}`);
+            await terminateOrders([costModal.orderId], { [costModal.orderId]: Number(costValue) });
             setOrders(p => p.filter(o => o.id !== costModal.orderId));
-            await archiveOrder(costModal.orderId);
-            logEvent(costModal.orderId, 'archived', { correosCost: Number(costValue) });
             setCostModal(null);
             setCostValue('');
-        } catch {
-            alert('Error al guardar costo y archivar. Por favor intente de nuevo.');
+        } catch (err: any) {
+            alert(err.message || 'Error al guardar costo y terminar. Por favor intente de nuevo.');
         } finally { setCostSaving(false); }
     }, [costModal, costValue]);
     const onRestoreOrder = useCallback(async (id: string) => {
@@ -426,26 +424,18 @@ export default function CarriersPage() {
         if (!ids.length) return;
         const correosPending = orders.filter(o => ids.includes(o.id) && o.lmCarrier === 'correos' && o.lmStatus === 'Entregado' && o.correosShippingCost == null);
         if (correosPending.length > 0) {
-            alert(`${correosPending.length} orden(es) de Correos CR necesitan costo de envío antes de terminar. Por favor, archívelas individualmente usando el botón Terminar de cada tarjeta.`);
+            alert(`${correosPending.length} orden(es) de Correos CR necesitan costo de envío antes de terminar. Por favor, termínelas individualmente usando el botón Terminar de cada tarjeta.`);
             return;
         }
         setApplying(true);
-        const failed: string[] = [];
-        for (const id of ids) {
-            try {
-                await archiveOrder(id);
-                logEvent(id, 'archived', { bulk: true });
-            } catch {
-                failed.push(id);
-            }
-        }
-        const archivedSet = new Set(ids.filter(id => !failed.includes(id)));
-        setOrders(p => p.filter(o => !archivedSet.has(o.id)));
-        setSelectedIds(new Set(failed));
-        setApplying(false);
-        if (failed.length > 0) {
-            alert(`${failed.length} de ${ids.length} órdenes no se pudieron archivar. Por favor intente de nuevo.`);
-        }
+        try {
+            await terminateOrders(ids);
+            const terminatedSet = new Set(ids);
+            setOrders(p => p.filter(o => !terminatedSet.has(o.id)));
+            setSelectedIds(new Set());
+        } catch (err: any) {
+            alert(err.message || 'Error al terminar las órdenes. Por favor intente de nuevo.');
+        } finally { setApplying(false); }
     }, [selectedIds, orders]);
 
     const applyBulk = useCallback(async () => {

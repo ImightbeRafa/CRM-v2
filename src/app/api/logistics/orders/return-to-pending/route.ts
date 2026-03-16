@@ -24,27 +24,32 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Max 100 orders per request' }, { status: 400 });
         }
 
-        // Verify orders exist and are currently Entregado
         const placeholders = orderIds.map((_: string, i: number) => `$${i + 1}`).join(',');
-        const currentOrders = await prisma.$queryRawUnsafe<{ crm_order_id: string; status: string; billed_week_id: number | null }[]>(`
-            SELECT crm_order_id, status, billed_week_id FROM lm_orders
-            WHERE crm_order_id IN (${placeholders})
+
+        // Verify orders exist
+        const currentOrders = await prisma.$queryRawUnsafe<{ crm_order_id: string; status: string; billed_week_id: number | null; finalized_at: string | null }[]>(`
+            SELECT lm.crm_order_id, lm.status, lm.billed_week_id, bw.finalized_at
+            FROM lm_orders lm
+            LEFT JOIN lm_billing_weeks bw ON bw.id = lm.billed_week_id
+            WHERE lm.crm_order_id IN (${placeholders})
         `, ...orderIds);
 
-        const billed = currentOrders.filter(o => o.billed_week_id !== null);
-        if (billed.length > 0) {
+        const finalized = currentOrders.filter(o => o.finalized_at !== null);
+        if (finalized.length > 0) {
             return NextResponse.json({
-                error: `${billed.length} orden(es) ya estan facturadas. Debes revertir la semana primero.`,
-                billedIds: billed.map(o => o.crm_order_id)
+                error: `${finalized.length} orden(es) pertenecen a una semana ya finalizada. No se pueden modificar.`,
+                finalizedIds: finalized.map(o => o.crm_order_id)
             }, { status: 400 });
         }
 
-        // Update status to Pendiente and clear completion flag
+        // Return to Pendiente: clear billing, archive, and completion data
         await prisma.$executeRawUnsafe(`
             UPDATE lm_orders
-            SET status = 'Pendiente', completed_at = NULL, completed_by = NULL
+            SET status = 'Pendiente',
+                billed_week_id = NULL, billed_at = NULL,
+                archived_at = NULL,
+                completed_at = NULL, completed_by = NULL
             WHERE crm_order_id IN (${placeholders})
-              AND billed_week_id IS NULL
         `, ...orderIds);
 
         // Batch insert events in a single query

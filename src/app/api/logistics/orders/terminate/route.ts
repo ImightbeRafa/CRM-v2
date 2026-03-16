@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth-options';
 
 const CR_TZ = 'America/Costa_Rica';
 
@@ -42,8 +40,7 @@ export async function POST(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
     if (guard) return guard;
 
-    const session = await getServerSession(authOptions);
-    const actor = session?.user?.email ?? req.headers.get('x-user-email') ?? 'system';
+    const actor = req.headers.get('x-user-email') ?? 'system';
 
     try {
         const body = await req.json();
@@ -114,27 +111,31 @@ export async function POST(req: NextRequest) {
                 weekId = inserted[0].id;
             }
 
-            for (const id of orderIds) {
+            const nonCorreosIds = orderIds.filter(id => {
                 const o = orderMap.get(id)!;
-                const costVal = correosCosts?.[id];
-                const hasNewCost = o.carrier === 'correos' && costVal != null;
+                return !(o.carrier === 'correos' && correosCosts?.[id] != null);
+            });
+            if (nonCorreosIds.length > 0) {
+                await prisma.$executeRawUnsafe(
+                    `UPDATE lm_orders
+                     SET billed_week_id = $1, billed_at = NOW(), archived_at = NOW()
+                     WHERE crm_order_id = ANY($2::text[]) AND billed_week_id IS NULL`,
+                    weekId, nonCorreosIds
+                );
+            }
 
-                if (hasNewCost) {
-                    await prisma.$executeRawUnsafe(
-                        `UPDATE lm_orders
-                         SET billed_week_id = $1, billed_at = NOW(), archived_at = NOW(),
-                             correos_shipping_cost = $2
-                         WHERE crm_order_id = $3 AND billed_week_id IS NULL`,
-                        weekId, costVal, id
-                    );
-                } else {
-                    await prisma.$executeRawUnsafe(
-                        `UPDATE lm_orders
-                         SET billed_week_id = $1, billed_at = NOW(), archived_at = NOW()
-                         WHERE crm_order_id = $2 AND billed_week_id IS NULL`,
-                        weekId, id
-                    );
-                }
+            const correosWithCost = orderIds.filter(id => {
+                const o = orderMap.get(id)!;
+                return o.carrier === 'correos' && correosCosts?.[id] != null;
+            });
+            for (const id of correosWithCost) {
+                await prisma.$executeRawUnsafe(
+                    `UPDATE lm_orders
+                     SET billed_week_id = $1, billed_at = NOW(), archived_at = NOW(),
+                         correos_shipping_cost = $2
+                     WHERE crm_order_id = $3 AND billed_week_id IS NULL`,
+                    weekId, correosCosts![id], id
+                );
             }
 
             const payloadJson = JSON.stringify({ weekId, weekStart: monday, weekEnd: sunday });

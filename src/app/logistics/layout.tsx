@@ -38,7 +38,7 @@ export default async function LogisticsLayout({ children }: { children: React.Re
     ];
 
     return (
-        <div style={{
+        <div className="lm-root" style={{
             display: 'flex',
             minHeight: '100vh',
             background: '#0D0D0D',
@@ -47,7 +47,7 @@ export default async function LogisticsLayout({ children }: { children: React.Re
             fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         }}>
             {/* ── Ambient orbs ─────────────────────────────── */}
-            <div style={{
+            <div className="lm-orbs" style={{
                 position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0,
             }}>
                 {/* Blue top-right orb */}
@@ -220,6 +220,14 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                     .lm-mobile-nav { display: block; position: sticky; top: 0; z-index: 20; background: rgba(13,13,13,0.95); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid rgba(255,255,255,0.08); }
                     .lm-main { padding: 16px !important; }
                     .lm-stat-grid { grid-template-columns: repeat(3, 1fr) !important; }
+                }
+                @media print {
+                    .lm-sidebar { display: none !important; }
+                    .lm-mobile-nav { display: none !important; }
+                    .lm-orbs { display: none !important; }
+                    .lm-root { overflow: visible !important; background: white !important; }
+                    .lm-main { overflow: visible !important; padding: 0 !important; }
+                    body { background: white !important; margin: 0; padding: 0; }
                 }
             `}</style>
         </div>

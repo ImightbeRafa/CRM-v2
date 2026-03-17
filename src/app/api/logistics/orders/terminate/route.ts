@@ -91,9 +91,8 @@ export async function POST(req: NextRequest) {
         const monday = getMondayCR();
         const sunday = getSundayCR(monday);
 
-        await prisma.$executeRawUnsafe('BEGIN');
-        try {
-            const existing = await prisma.$queryRawUnsafe<{ id: number }[]>(
+        const result = await prisma.$transaction(async (tx) => {
+            const existing = await tx.$queryRawUnsafe<{ id: number }[]>(
                 `SELECT id FROM lm_billing_weeks WHERE week_start = $1::date`, monday
             );
 
@@ -101,7 +100,7 @@ export async function POST(req: NextRequest) {
             if (existing.length > 0) {
                 weekId = existing[0].id;
             } else {
-                const inserted = await prisma.$queryRawUnsafe<{ id: number }[]>(
+                const inserted = await tx.$queryRawUnsafe<{ id: number }[]>(
                     `INSERT INTO lm_billing_weeks (week_start, week_end)
                      VALUES ($1::date, $2::date)
                      ON CONFLICT (week_start) DO UPDATE SET week_end = EXCLUDED.week_end
@@ -111,12 +110,12 @@ export async function POST(req: NextRequest) {
                 weekId = inserted[0].id;
             }
 
-            const nonCorreosIds = orderIds.filter(id => {
+            const nonCorreosIds = orderIds.filter((id: string) => {
                 const o = orderMap.get(id)!;
                 return !(o.carrier === 'correos' && correosCosts?.[id] != null);
             });
             if (nonCorreosIds.length > 0) {
-                await prisma.$executeRawUnsafe(
+                await tx.$executeRawUnsafe(
                     `UPDATE lm_orders
                      SET billed_week_id = $1, billed_at = NOW(), archived_at = NOW()
                      WHERE crm_order_id = ANY($2::text[]) AND billed_week_id IS NULL`,
@@ -124,12 +123,12 @@ export async function POST(req: NextRequest) {
                 );
             }
 
-            const correosWithCost = orderIds.filter(id => {
+            const correosWithCost = orderIds.filter((id: string) => {
                 const o = orderMap.get(id)!;
                 return o.carrier === 'correos' && correosCosts?.[id] != null;
             });
             for (const id of correosWithCost) {
-                await prisma.$executeRawUnsafe(
+                await tx.$executeRawUnsafe(
                     `UPDATE lm_orders
                      SET billed_week_id = $1, billed_at = NOW(), archived_at = NOW(),
                          correos_shipping_cost = $2
@@ -144,24 +143,15 @@ export async function POST(req: NextRequest) {
                 return `($${base + 1}, 'terminated', $${base + 2}::jsonb, $${base + 3})`;
             }).join(', ');
             const eventParams = orderIds.flatMap((id: string) => [id, payloadJson, actor]);
-            await prisma.$executeRawUnsafe(
+            await tx.$executeRawUnsafe(
                 `INSERT INTO lm_order_events (crm_order_id, event_type, payload, actor) VALUES ${eventValues}`,
                 ...eventParams
             );
 
-            await prisma.$executeRawUnsafe('COMMIT');
+            return { weekId, billedCount: orderIds.length, weekStart: monday, weekEnd: sunday };
+        });
 
-            return NextResponse.json({
-                success: true,
-                weekId,
-                billedCount: orderIds.length,
-                weekStart: monday,
-                weekEnd: sunday,
-            });
-        } catch (txError) {
-            await prisma.$executeRawUnsafe('ROLLBACK');
-            throw txError;
-        }
+        return NextResponse.json({ success: true, ...result });
     } catch (error: any) {
         if (error instanceof SyntaxError) {
             return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });

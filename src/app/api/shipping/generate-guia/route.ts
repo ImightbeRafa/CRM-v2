@@ -3,7 +3,7 @@ import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
 import { withTenantContext } from '@/lib/tenantContext';
-import { CorreosWebService, buildGuiaDescription } from '@/lib/correos';
+import { CorreosWebService, buildGuiaDescription, buildFullAddress } from '@/lib/correos';
 import type { CorreosWSCredentials } from '@/lib/correos';
 
 export async function POST(request: NextRequest) {
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
           const res = await ws.generateAndRegisterGuia({
             customerName: order.customerName || 'Destinatario',
             customerPhone: order.phone || '00000000',
-            customerAddress: order.address || 'Sin dirección',
+            customerAddress: buildFullAddress(order),
             customerZip: destZip,
             customerApartado: destZip,
             senderName: sender.name,

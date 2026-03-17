@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
-import { CorreosWebService, buildGuiaDescription } from '@/lib/correos';
+import { CorreosWebService, buildGuiaDescription, buildFullAddress } from '@/lib/correos';
 import type { CorreosWSCredentials } from '@/lib/correos';
 
 export const maxDuration = 300;
@@ -112,7 +112,12 @@ export async function POST(req: NextRequest) {
                 const result = await ws.generateAndRegisterGuia({
                     customerName: dbOrder.customerName || 'Destinatario',
                     customerPhone: dbOrder.phone || '00000000',
-                    customerAddress: verified.address || dbOrder.address || 'Sin dirección',
+                    customerAddress: buildFullAddress({
+                        province: verified.province,
+                        canton: verified.canton,
+                        district: verified.district,
+                        address: verified.address || dbOrder.address,
+                    }),
                     customerZip: destZip,
                     customerApartado: destZip,
                     senderName: sender.name,

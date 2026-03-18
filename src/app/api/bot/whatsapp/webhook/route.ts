@@ -61,6 +61,43 @@ function isRateLimited(phoneNumber: string): boolean {
   return false;
 }
 
+// Deduplication - track recently processed message IDs to prevent Meta retries
+const processedMessages = new Map<string, number>();
+const DEDUP_WINDOW = 5 * 60 * 1000;
+const DEDUP_CLEANUP_INTERVAL = 60 * 1000;
+const DEDUP_MAX_SIZE = 10000;
+let lastDedupCleanup = Date.now();
+
+function isDuplicateMessage(messageId: string): boolean {
+  const now = Date.now();
+
+  if (now - lastDedupCleanup > DEDUP_CLEANUP_INTERVAL) {
+    lastDedupCleanup = now;
+    for (const [id, timestamp] of processedMessages.entries()) {
+      if (now - timestamp > DEDUP_WINDOW) {
+        processedMessages.delete(id);
+      }
+    }
+  }
+
+  if (processedMessages.has(messageId)) {
+    return true;
+  }
+
+  if (processedMessages.size >= DEDUP_MAX_SIZE) {
+    const oldest = processedMessages.entries().next().value;
+    if (oldest) processedMessages.delete(oldest[0]);
+  }
+
+  processedMessages.set(messageId, now);
+  return false;
+}
+
+// Per-chat processing lock to prevent concurrent processing for the same phone
+const chatProcessingLocks = new Map<string, Promise<void>>();
+
+const MAX_MESSAGE_LENGTH = 4000;
+
 /**
  * GET handler - Webhook verification (required by Meta)
  * Meta sends a GET request to verify your webhook endpoint
@@ -122,20 +159,39 @@ export async function POST(request: NextRequest) {
     const message = parseWhatsAppWebhook(body);
     
     if (!message) {
-      // No message to process (might be a status update)
+      return NextResponse.json({ status: 'ok' });
+    }
+    
+    // Deduplication: skip if this message was already processed (Meta can retry)
+    if (isDuplicateMessage(message.messageId)) {
+      console.log(`[WhatsApp Webhook] ⚠️ Duplicate message ${message.messageId}, skipping`);
       return NextResponse.json({ status: 'ok' });
     }
     
     console.log(`[WhatsApp Webhook] 📩 Message from ${message.from}: type=${message.type}`);
     
-    // Process the message
-    await handleWhatsAppMessage(message);
+    // Per-chat lock: wait for any ongoing processing for this phone number
+    const phoneNumber = message.from;
+    const existingLock = chatProcessingLocks.get(phoneNumber);
+    if (existingLock) {
+      console.log(`[WhatsApp Webhook] ⏳ Waiting for existing processing on ${phoneNumber}`);
+      await existingLock.catch(() => {});
+    }
+
+    let resolveLock: () => void;
+    const lockPromise = new Promise<void>((resolve) => { resolveLock = resolve; });
+    chatProcessingLocks.set(phoneNumber, lockPromise);
+
+    try {
+      await handleWhatsAppMessage(message);
+    } finally {
+      resolveLock!();
+      chatProcessingLocks.delete(phoneNumber);
+    }
     
-    // Always return 200 to acknowledge receipt
     return NextResponse.json({ status: 'ok' });
   } catch (error: any) {
     console.error('[WhatsApp Webhook] ❌ Error:', error);
-    // Still return 200 to prevent retries
     return NextResponse.json({ status: 'error' });
   }
 }
@@ -201,6 +257,12 @@ async function handleWhatsAppMessage(message: WhatsAppMessage) {
     }
     
     if (!text.trim()) {
+      return;
+    }
+
+    if (text.length > MAX_MESSAGE_LENGTH) {
+      console.log(`[WhatsApp] ⚠️ Message too long (${text.length} chars) from ${phoneNumber}`);
+      await sendWhatsAppMessage(phoneNumber, `⚠️ Tu mensaje es demasiado largo (${text.length} caracteres). El máximo es ${MAX_MESSAGE_LENGTH}. Por favor acorta tu mensaje.`);
       return;
     }
     
@@ -286,13 +348,43 @@ async function handleWhatsAppMessage(message: WhatsAppMessage) {
       }
     );
     
-    // Send response
-    await sendWhatsAppMessage(phoneNumber, response);
+    await sendLongWhatsAppMessage(phoneNumber, response);
     console.log(`[WhatsApp] ✅ Response sent to ${phoneNumber}`);
     
   } catch (error: any) {
     console.error(`[WhatsApp] ❌ Error handling message from ${phoneNumber}:`, error);
     await sendWhatsAppMessage(phoneNumber, '❌ Ocurrió un error procesando tu mensaje. Por favor intenta de nuevo.');
+  }
+}
+
+/**
+ * Send a long message by splitting it if necessary.
+ * WhatsApp has a 4096 character limit per text message.
+ */
+async function sendLongWhatsAppMessage(phoneNumber: string, text: string) {
+  const MAX_LENGTH = 4000; // Leave margin below 4096
+
+  if (text.length <= MAX_LENGTH) {
+    await sendWhatsAppMessage(phoneNumber, text);
+    return;
+  }
+
+  const paragraphs = text.split('\n\n');
+  let currentChunk = '';
+
+  for (const paragraph of paragraphs) {
+    if ((currentChunk + paragraph).length > MAX_LENGTH) {
+      if (currentChunk) {
+        await sendWhatsAppMessage(phoneNumber, currentChunk.trim());
+      }
+      currentChunk = paragraph + '\n\n';
+    } else {
+      currentChunk += paragraph + '\n\n';
+    }
+  }
+
+  if (currentChunk.trim()) {
+    await sendWhatsAppMessage(phoneNumber, currentChunk.trim());
   }
 }
 

@@ -294,7 +294,7 @@ export async function getBotSessionWithContext(
       session,
       user: {
         id: `bot-${session.platformId}`, // Virtual user ID for audit logs
-        email: `bot-${session.platformId}@telegram.local`,
+        email: `bot-${session.platformId}@${session.platform}.local`,
         username: session.username || session.platformId,
         name: session.providedName || session.displayName || 'Bot User',
         memberships: [],

@@ -26,6 +26,7 @@ import {
   clearPendingConfirmation,
 } from './conversation-memory';
 import { formatOrderForTelegram, formatInventoryForTelegram, formatStatsForTelegram } from './telegram';
+import { formatOrderForWhatsApp, formatInventoryForWhatsApp, formatStatsForWhatsApp } from './whatsapp';
 import { z } from 'zod';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { getTenantCustomFields, formatCustomFieldsForTelegram } from '@/lib/customFields';
@@ -296,7 +297,7 @@ export async function processMessage(
 
       if (confirmed) {
         // Execute the pending action
-        const result = await executePendingAction(pending, context);
+        const result = await executePendingAction(pending, context, platform);
         await clearPendingConfirmation(platform, platformId);
         return result;
       } else if (denied) {
@@ -431,8 +432,7 @@ export async function processMessage(
         });
 
         if (result.success) {
-          // Format the result based on tool type
-          const formatted = formatToolResult(toolName, result);
+          const formatted = formatToolResult(toolName, result, platform);
           toolResults.push(formatted);
         } else {
           toolResults.push('❌ Error: ' + result.error);
@@ -493,12 +493,17 @@ export async function processMessage(
 }
 
 /**
- * Format tool results for display
+ * Format tool results for display, using platform-appropriate formatting.
+ * Telegram uses HTML tags; WhatsApp uses markdown-style (*bold*).
  */
-function formatToolResult(toolName: ToolName, result: ToolResult): string {
+function formatToolResult(toolName: ToolName, result: ToolResult, platform: string): string {
   if (!result.success) {
     return result.error || 'Error desconocido';
   }
+
+  const formatOrder = platform === 'whatsapp' ? formatOrderForWhatsApp : formatOrderForTelegram;
+  const formatInventory = platform === 'whatsapp' ? formatInventoryForWhatsApp : formatInventoryForTelegram;
+  const formatStats = platform === 'whatsapp' ? formatStatsForWhatsApp : formatStatsForTelegram;
 
   switch (toolName) {
     case 'get_orders':
@@ -513,7 +518,7 @@ function formatToolResult(toolName: ToolName, result: ToolResult): string {
 
     case 'get_order_details':
       if (result.data) {
-        return formatOrderForTelegram(result.data);
+        return formatOrder(result.data);
       }
       return 'Orden no encontrada.';
 
@@ -529,7 +534,7 @@ function formatToolResult(toolName: ToolName, result: ToolResult): string {
 
     case 'get_inventory_item':
       if (result.data) {
-        return formatInventoryForTelegram(result.data);
+        return formatInventory(result.data);
       }
       return 'Producto no encontrado.';
 
@@ -546,9 +551,8 @@ function formatToolResult(toolName: ToolName, result: ToolResult): string {
     case 'get_statistics_summary':
       if (result.data) {
         const stats = result.data as any;
-        let response = formatStatsForTelegram(stats);
+        let response = formatStats(stats);
 
-        // Add custom fields if available
         if (stats.customFields && Object.keys(stats.customFields).length > 0) {
           response += '\n\n**Campos Personalizados:**\n';
           for (const [key, value] of Object.entries(stats.customFields)) {
@@ -596,12 +600,12 @@ function isDenial(message: string): boolean {
 /**
  * Execute a pending action
  */
-async function executePendingAction(pending: any, context: ToolContext): Promise<string> {
+async function executePendingAction(pending: any, context: ToolContext, platform: string): Promise<string> {
   try {
     const result = await executeTool(pending.toolName as ToolName, context, pending.toolArgs);
 
     if (result.success) {
-      const formatted = formatToolResult(pending.toolName as ToolName, result);
+      const formatted = formatToolResult(pending.toolName as ToolName, result, platform);
       return '✅ Acción confirmada:\n\n' + formatted;
     } else {
       return '❌ Error al ejecutar la acción: ' + result.error;

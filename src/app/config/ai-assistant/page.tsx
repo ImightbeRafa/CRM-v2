@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  Bot, Copy, Check, RefreshCw, Shield, Users, Sparkles, ArrowLeft, Key
+  Bot, Copy, Check, RefreshCw, Shield, Users, Sparkles, ArrowLeft, Key, MessageCircle, Send
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -17,6 +17,7 @@ export default function AIAssistantPage() {
   const [copied, setCopied] = useState(false);
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'telegram' | 'whatsapp'>('telegram');
 
   // Load bot access code
   useEffect(() => {
@@ -100,7 +101,7 @@ export default function AIAssistantPage() {
             </div>
             <div>
               <h1 className="text-3xl font-bold text-gray-800">Betsy AI Assistant</h1>
-              <p className="text-gray-600 mt-1">Gestiona tu negocio desde Telegram</p>
+              <p className="text-gray-600 mt-1">Gestiona tu negocio desde Telegram y WhatsApp</p>
             </div>
           </div>
         </div>
@@ -115,7 +116,7 @@ export default function AIAssistantPage() {
           {botCode ? (
             <div>
               <p className="text-gray-600 mb-4">
-                Comparte este código con tu equipo para que puedan conectarse al bot de Telegram:
+                Comparte este código con tu equipo para que puedan conectarse al bot desde Telegram o WhatsApp:
               </p>
               
               {/* Code Display */}
@@ -136,30 +137,102 @@ export default function AIAssistantPage() {
                 </div>
               </div>
 
-              {/* Instructions */}
-              <div className="bg-gray-50 rounded-xl p-6 mb-6">
-                <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                  <Bot className="w-5 h-5" />
-                  Cómo conectarse:
-                </h3>
-                <ol className="space-y-3 text-gray-700">
-                  <li className="flex gap-3">
-                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</span>
-                    <span>Abre Telegram y busca <code className="bg-white px-2 py-1 rounded text-blue-600 font-mono">@betsycrmai_bot</code></span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</span>
-                    <span>Envía el mensaje: <code className="bg-white px-2 py-1 rounded text-blue-600 font-mono">/start {botCode}</code></span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">3</span>
-                    <span>Cuando el bot pida tu nombre, ingrésalo para completar el registro</span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">4</span>
-                    <span>¡Listo! Ya puedes crear órdenes, consultar inventario y más desde Telegram</span>
-                  </li>
-                </ol>
+              {/* Platform Tabs */}
+              <div className="mb-6">
+                <div className="flex border-b border-gray-200 mb-0">
+                  <button
+                    onClick={() => setActiveTab('telegram')}
+                    className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+                      activeTab === 'telegram'
+                        ? 'border-blue-600 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <Send className="w-4 h-4" />
+                    Telegram
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('whatsapp')}
+                    className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+                      activeTab === 'whatsapp'
+                        ? 'border-green-600 text-green-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    WhatsApp
+                  </button>
+                </div>
+
+                {/* Telegram Instructions */}
+                {activeTab === 'telegram' && (
+                  <div className="bg-gray-50 rounded-b-xl p-6">
+                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                      <Send className="w-5 h-5 text-blue-600" />
+                      Conectarse por Telegram:
+                    </h3>
+                    <ol className="space-y-3 text-gray-700">
+                      <li className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</span>
+                        <span>Abre Telegram y busca <code className="bg-white px-2 py-1 rounded text-blue-600 font-mono">@betsycrmai_bot</code></span>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</span>
+                        <span>Envía el mensaje: <code className="bg-white px-2 py-1 rounded text-blue-600 font-mono">/start {botCode}</code></span>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">3</span>
+                        <span>Cuando el bot pida tu nombre, ingrésalo para completar el registro</span>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">4</span>
+                        <span>¡Listo! Ya puedes crear órdenes, consultar inventario y más</span>
+                      </li>
+                    </ol>
+                  </div>
+                )}
+
+                {/* WhatsApp Instructions */}
+                {activeTab === 'whatsapp' && (
+                  <div className="bg-gray-50 rounded-b-xl p-6">
+                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                      <MessageCircle className="w-5 h-5 text-green-600" />
+                      Conectarse por WhatsApp:
+                    </h3>
+                    <ol className="space-y-3 text-gray-700">
+                      <li className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</span>
+                        <span>
+                          Abre WhatsApp y envía un mensaje a Betsy AI:{' '}
+                          <a
+                            href={`https://wa.me/50661498470?text=${encodeURIComponent(botCode || '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg text-sm font-medium transition-colors"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            Abrir WhatsApp
+                          </a>
+                        </span>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</span>
+                        <span>Envía tu código de acceso: <code className="bg-white px-2 py-1 rounded text-green-600 font-mono">{botCode}</code></span>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">3</span>
+                        <span>Cuando el bot pida tu nombre, ingrésalo para completar el registro</span>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">4</span>
+                        <span>¡Listo! Ya puedes crear órdenes, consultar inventario y más</span>
+                      </li>
+                    </ol>
+                    <p className="mt-4 text-sm text-gray-500">
+                      Número de WhatsApp: <span className="font-mono">+506 6149 8470</span>
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Regenerate Button */}
@@ -218,19 +291,30 @@ export default function AIAssistantPage() {
                   className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                      <Bot className="w-5 h-5 text-blue-600" />
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      session.platform === 'whatsapp' ? 'bg-green-100' : 'bg-blue-100'
+                    }`}>
+                      {session.platform === 'whatsapp'
+                        ? <MessageCircle className="w-5 h-5 text-green-600" />
+                        : <Send className="w-5 h-5 text-blue-600" />
+                      }
                     </div>
                     <div>
                       <p className="font-medium text-gray-800">
                         {session.providedName || session.displayName || 'Usuario'}
                       </p>
                       <p className="text-sm text-gray-500">
-                        {session.username ? `@${session.username}` : session.platform}
+                        {session.username ? `@${session.username}` : (session.platform === 'whatsapp' ? 'WhatsApp' : 'Telegram')}
                       </p>
                     </div>
                   </div>
                   <div className="text-right text-sm text-gray-500">
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium mb-1 ${
+                      session.platform === 'whatsapp' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {session.platform === 'whatsapp' ? 'WhatsApp' : 'Telegram'}
+                    </span>
+                    <br />
                     Conectado: {new Date(session.connectedAt).toLocaleDateString()}
                   </div>
                 </div>

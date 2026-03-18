@@ -12,7 +12,7 @@
  * @see https://developers.facebook.com/docs/whatsapp/cloud-api
  */
 
-const WHATSAPP_API_VERSION = 'v18.0';
+const WHATSAPP_API_VERSION = 'v24.0';
 const WHATSAPP_API_BASE = `https://graph.facebook.com/${WHATSAPP_API_VERSION}`;
 
 /**

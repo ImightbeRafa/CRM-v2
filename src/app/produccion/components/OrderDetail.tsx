@@ -27,6 +27,8 @@ interface OrderDetailsProps {
   onUpdateOrder: (orderId: string, updatedData: Partial<Sale>) => Promise<Sale>;
 }
 
+const COST_FIELDS: Set<SaleKeys> = new Set(['productCost', 'shippingCost', 'iva']);
+
 // Core fields that are ALWAYS shown (essential order info)
 const CORE_FIELDS: Array<[string, SaleKeys, string?]> = [
   ['Usuario', 'username'],
@@ -139,12 +141,13 @@ export function OrderDetails({
       
       (newOrder[field as keyof Sale] as Sale[keyof Sale]) = value;
       
-      if (field === 'productCost' || field === 'shippingCost') {
+      if (field === 'productCost' || field === 'shippingCost' || field === 'iva') {
         const productCost = Number(newOrder.productCost) || 0;
         const shippingCost = newOrder.orderType === 'EA' 
           ? (Number(newOrder.shippingCost) || 0)
           : 0;
-        newOrder.total = productCost + shippingCost;
+        const iva = Number((newOrder as any).iva) || 0;
+        newOrder.total = productCost + shippingCost + iva;
       }
       
       return newOrder;
@@ -335,6 +338,22 @@ export function OrderDetails({
 
   const renderTotal = () => {
     const total = isEditing ? editedOrder.total : displayOrder.total;
+
+    if (isEditing) {
+      return (
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Total</label>
+          <Input
+            type="number"
+            value={total?.toString() || '0'}
+            onChange={(e) => handleInputChange('total' as SaleKeys, parseFloat(e.target.value) || 0)}
+            placeholder="Ingrese total..."
+            className="transition-colors"
+          />
+        </div>
+      );
+    }
+
     return (
       <div className="group relative py-2 transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-md px-2 -mx-2">
         <div className="flex justify-between items-baseline">
@@ -347,11 +366,10 @@ export function OrderDetails({
     );
   };
 
-  // Build shipping fields - show fields that have values
+  // Build shipping fields - show fields that have values (always show cost fields when editing)
   const shippingFields = useMemo((): Array<[string, SaleKeys, string?]> => {
     const fields: Array<[string, SaleKeys, string?]> = [];
     
-    // Shipping-specific fields from the order
     const shippingMappings: Array<{ label: string; field: SaleKeys; type?: string }> = [
       { label: 'Dirección', field: 'address' },
       { label: 'Mensajería', field: 'courier' },
@@ -364,8 +382,11 @@ export function OrderDetails({
       { label: 'IVA', field: 'iva', type: 'number' },
     ];
     
-    // Add fields that have values
     shippingMappings.forEach(({ label, field, type }) => {
+      if (isEditing && COST_FIELDS.has(field)) {
+        fields.push([label, field, type]);
+        return;
+      }
       const value = (displayOrder as any)[field];
       const hasValue = value !== undefined && value !== null && String(value).trim() !== '' && String(value).trim() !== '0';
       if (hasValue) {
@@ -374,7 +395,7 @@ export function OrderDetails({
     });
     
     return fields;
-  }, [displayOrder]);
+  }, [displayOrder, isEditing]);
 
   const renderShippingDetails = () => {
     if (shippingFields.length === 0) return null;
@@ -456,19 +477,9 @@ export function OrderDetails({
                 ['Estado', 'status']
               ])}
 
-              {displayOrder.orderType === 'EA' && (
-                <>
-                  {renderShippingDetails()}
-                  <div key="total-section" className="rounded-lg border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
-                    <div className="p-4">
-                      {renderTotal()}
-                    </div>
-                  </div>
-                </>
-              )}
+              {displayOrder.orderType === 'EA' && renderShippingDetails()}
 
               {displayOrder.orderType === 'RA' && (() => {
-                // Build pickup fields - show fields that have values
                 const pickupFields: Array<[string, SaleKeys, string?]> = [];
                 
                 const pickupMappings: Array<{ label: string; field: SaleKeys; type?: string }> = [
@@ -483,6 +494,12 @@ export function OrderDetails({
                 pickupMappings.forEach(({ label, field, type }) => {
                   if (addedPickupFields.has(field)) return;
                   
+                  if (isEditing && COST_FIELDS.has(field)) {
+                    pickupFields.push([label, field, type]);
+                    addedPickupFields.add(field);
+                    return;
+                  }
+
                   const value = (displayOrder as any)[field];
                   const hasValue = value !== undefined && value !== null && String(value).trim() !== '' && String(value).trim() !== '0';
                   
@@ -494,6 +511,12 @@ export function OrderDetails({
                 
                 return pickupFields.length > 0 ? renderSection('Detalles de Retiro', pickupFields) : null;
               })()}
+
+              <div key="total-section" className="rounded-lg border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
+                <div className="p-4">
+                  {renderTotal()}
+                </div>
+              </div>
 
               {/* Dynamic Custom Fields (Campos personalizados) - Display tenant-configured fields AND raw data */}
               {customFieldsLoaded && (() => {

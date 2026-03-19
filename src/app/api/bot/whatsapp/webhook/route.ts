@@ -271,8 +271,8 @@ async function handleWhatsAppMessage(message: WhatsAppMessage) {
     // Handle special commands
     const lowerText = text.toLowerCase().trim();
     
-    if (lowerText === '/start' || lowerText === 'hola' || lowerText === 'hi' || lowerText === 'hello') {
-      await handleStartCommand(phoneNumber, displayName);
+    if (lowerText.startsWith('/start') || lowerText === 'hola' || lowerText === 'hi' || lowerText === 'hello') {
+      await handleStartCommand(phoneNumber, text, displayName);
       return;
     }
     
@@ -390,22 +390,56 @@ async function sendLongWhatsAppMessage(phoneNumber: string, text: string) {
 
 /**
  * Handle /start or greeting command
+ * Mirrors Telegram's handleStartCommand: supports /start CODE in one message,
+ * tenant switching, and falls back to button flow for bare /start.
  */
-async function handleStartCommand(phoneNumber: string, displayName: string) {
-  // Check if already has a session
+async function handleStartCommand(phoneNumber: string, text: string, displayName: string) {
+  // Parse code from "/start CODE" (same as Telegram)
+  const parts = text.split(/\s+/);
+  const code = parts.length > 1 ? parts[1]?.trim().toUpperCase() : null;
+
+  if (code) {
+    // Validate the access code (works for new connections AND tenant switching)
+    console.log(`[WhatsApp] 🔑 Verifying code from /start for ${phoneNumber}: ${code}`);
+    const tenant = await validateBotAccessCode(code);
+
+    if (!tenant) {
+      await sendWhatsAppMessage(
+        phoneNumber,
+        `❌ *Código inválido*\n\nEl código *${code}* no existe o ha expirado.\n\nPor favor verifica el código e intenta de nuevo.`
+      );
+      return;
+    }
+
+    // Code valid — ask for name for audit trail (same as Telegram)
+    await setConversationState('whatsapp', phoneNumber, {
+      awaitingName: true,
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+    });
+
+    await sendWhatsAppMessage(
+      phoneNumber,
+      `✅ *¡Código válido!*\n\nEstás conectando a: *${tenant.name}*\n\nPara el registro de auditoría, ¿cuál es tu nombre completo?\n\n_Ejemplo: Juan Pérez o María González_`
+    );
+    return;
+  }
+
+  // No code provided — check if already connected
   const existingSession = await findBotSession('whatsapp', phoneNumber);
-  
+
   if (existingSession) {
     const sessionContext = await getBotSessionWithContext('whatsapp', phoneNumber);
     const tenantName = sessionContext?.tenant?.name || 'tu negocio';
-    const welcome = `¡Hola ${displayName}! 👋\n\nYa estás conectado a *${tenantName}*.\n\n¿En qué puedo ayudarte hoy?\n\nEscribe tu consulta o usa /help para ver los comandos disponibles.`;
+    const userName = existingSession.providedName || existingSession.displayName || displayName;
+    const welcome = `👋 *¡Hola de nuevo, ${userName}!*\n\n✅ *Tu sesión está activa*\n\nConectado a: *${tenantName}*\n\n¿En qué puedo ayudarte hoy?\n\nEscribe tu consulta o usa /help para ver los comandos disponibles.`;
     await sendWhatsAppMessage(phoneNumber, welcome);
     return;
   }
-  
-  // No session - start connection flow
+
+  // Not connected and no code — show button flow (WhatsApp-specific UX)
   const welcome = `¡Hola ${displayName}! 👋\n\nSoy *Betsy AI*, tu asistente de ventas inteligente.\n\nPara empezar, necesito conectarte con tu negocio en Betsy.\n\n📱 *¿Tienes un código de acceso?*\nEscríbelo aquí para conectarte.\n\n🆕 *¿Eres nuevo en Betsy?*\nVisita betsycrm.com para crear tu cuenta gratuita.`;
-  
+
   await sendWhatsAppButtonMessage(
     phoneNumber,
     welcome,
@@ -414,8 +448,7 @@ async function handleStartCommand(phoneNumber: string, displayName: string) {
       { id: 'new_user', title: 'Soy nuevo' },
     ]
   );
-  
-  // Set state to await code
+
   await setConversationState('whatsapp', phoneNumber, { awaitingCode: true });
 }
 

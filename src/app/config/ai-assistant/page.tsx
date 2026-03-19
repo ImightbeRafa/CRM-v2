@@ -205,7 +205,7 @@ export default function AIAssistantPage() {
                         <span>
                           Abre WhatsApp y envía un mensaje a Betsy AI:{' '}
                           <a
-                            href={`https://wa.me/50661498470?text=${encodeURIComponent(botCode || '')}`}
+                            href={`https://wa.me/50661498470?text=${encodeURIComponent('/start ' + (botCode || ''))}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg text-sm font-medium transition-colors"
@@ -217,7 +217,7 @@ export default function AIAssistantPage() {
                       </li>
                       <li className="flex gap-3">
                         <span className="flex-shrink-0 w-6 h-6 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</span>
-                        <span>Envía tu código de acceso: <code className="bg-white px-2 py-1 rounded text-green-600 font-mono">{botCode}</code></span>
+                        <span>Envía el mensaje: <code className="bg-white px-2 py-1 rounded text-green-600 font-mono">/start {botCode}</code></span>
                       </li>
                       <li className="flex gap-3">
                         <span className="flex-shrink-0 w-6 h-6 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">3</span>

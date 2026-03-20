@@ -218,6 +218,88 @@ export async function sendWhatsAppListMessage(
 }
 
 /**
+ * Send a document (PDF, etc.) to a WhatsApp user
+ * Two-step: upload media, then send document message referencing the media ID
+ */
+export async function sendWhatsAppDocument(
+  to: string,
+  fileBuffer: Buffer,
+  filename: string,
+  caption?: string
+): Promise<{ success: boolean; error?: string }> {
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+  if (!accessToken || !phoneNumberId) {
+    console.error('[WhatsApp] Missing WHATSAPP_ACCESS_TOKEN or WHATSAPP_PHONE_NUMBER_ID');
+    return { success: false, error: 'WhatsApp not configured' };
+  }
+
+  try {
+    // Step 1: Upload media
+    console.log(`[WhatsApp] 📎 Uploading document "${filename}" (${fileBuffer.length} bytes)...`);
+    const uploadForm = new FormData();
+    uploadForm.append('messaging_product', 'whatsapp');
+    uploadForm.append('file', new Blob([fileBuffer], { type: 'application/pdf' }), filename);
+    uploadForm.append('type', 'application/pdf');
+
+    const uploadResponse = await fetch(`${WHATSAPP_API_BASE}/${phoneNumberId}/media`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+      body: uploadForm,
+    });
+
+    const uploadData = await uploadResponse.json();
+
+    if (!uploadResponse.ok || !uploadData.id) {
+      console.error('[WhatsApp] ❌ Media upload failed:', uploadData);
+      return { success: false, error: uploadData.error?.message || 'Media upload failed' };
+    }
+
+    const mediaId = uploadData.id;
+    console.log(`[WhatsApp] ✅ Media uploaded, id: ${mediaId}`);
+
+    // Step 2: Send document message referencing the uploaded media
+    const messagePayload: any = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'document',
+      document: {
+        id: mediaId,
+        filename,
+      },
+    };
+
+    if (caption) {
+      messagePayload.document.caption = caption;
+    }
+
+    const sendResponse = await fetch(`${WHATSAPP_API_BASE}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(messagePayload),
+    });
+
+    const sendData = await sendResponse.json();
+
+    if (!sendResponse.ok) {
+      console.error('[WhatsApp] ❌ sendDocument failed:', sendData);
+      return { success: false, error: sendData.error?.message || 'Failed to send document' };
+    }
+
+    console.log(`[WhatsApp] ✅ Document "${filename}" sent to ${to}`);
+    return { success: true };
+  } catch (error: any) {
+    console.error('[WhatsApp] sendDocument error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * Mark a message as read (shows blue checkmarks)
  */
 export async function markMessageAsRead(messageId: string): Promise<boolean> {

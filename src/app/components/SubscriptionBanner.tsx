@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import { usePathname } from 'next/navigation';
 import { X, CreditCard, AlertCircle, Clock } from 'lucide-react';
+
+const PUBLIC_PATHS = [
+  '/home', '/landing', '/auth', '/privacy', '/terms',
+  '/data-deletion', '/docs', '/help', '/unauthorized',
+];
 
 interface BillingInfo {
   name: string;
@@ -20,13 +26,15 @@ interface TrialStatus {
 
 export default function SubscriptionBanner() {
   const { status } = useSession();
+  const pathname = usePathname();
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [trial, setTrial] = useState<TrialStatus | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
+  const isPublicRoute = PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'));
+
   useEffect(() => {
-    // Only load if authenticated
-    if (status !== 'authenticated') {
+    if (status !== 'authenticated' || isPublicRoute) {
       return;
     }
 
@@ -61,32 +69,31 @@ export default function SubscriptionBanner() {
       .catch(err => {
         console.warn('Failed to load trial status:', err);
       });
-  }, [status]);
+  }, [status, isPublicRoute]);
 
+  if (status !== 'authenticated' || isPublicRoute) return null;
   if (dismissed) return null;
 
   // Priority 1: Show trial expired banner (most urgent)
   if (trial?.trialExpired) {
     return (
-      <div className="fixed top-0 left-0 right-0 z-50 bg-red-600 text-white border-b px-4 py-3 shadow-md">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 flex-1">
-            <AlertCircle className="h-5 w-5 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="font-semibold text-sm">Tu prueba gratuita ha expirado</p>
-              <p className="text-xs opacity-90">Actualiza tu plan para seguir usando todas las funciones</p>
-            </div>
+      <div className="sticky top-0 z-50 bg-red-600 text-white border-b px-3 py-2 md:px-4 md:py-3 shadow-md">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 md:gap-4">
+          <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
+            <AlertCircle className="h-4 w-4 md:h-5 md:w-5 flex-shrink-0" />
+            <p className="font-semibold text-xs md:text-sm truncate">Prueba expirada</p>
+            <p className="hidden md:block text-xs opacity-90">— Actualiza tu plan para seguir usando todas las funciones</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
             <a
               href="/config?tab=billing"
-              className="px-3 py-1.5 bg-white text-red-600 rounded shadow-sm text-sm font-medium hover:bg-gray-50 transition-colors"
+              className="px-2.5 py-1 md:px-3 md:py-1.5 bg-white text-red-600 rounded shadow-sm text-xs md:text-sm font-medium hover:bg-gray-50 transition-colors whitespace-nowrap"
             >
-              Activar Pro — $20/mes
+              Activar Pro
             </a>
             <button
               onClick={() => setDismissed(true)}
-              className="p-1 rounded hover:bg-white hover:bg-opacity-20 transition-colors"
+              className="p-2 rounded hover:bg-white hover:bg-opacity-20 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
               title="Cerrar"
             >
               <X className="h-4 w-4" />
@@ -100,30 +107,28 @@ export default function SubscriptionBanner() {
   // Priority 2: Show trial warning in last 3 days
   if (trial?.isInTrial && trial.daysRemaining <= 3) {
     return (
-      <div className="fixed top-0 left-0 right-0 z-50 bg-yellow-500 text-yellow-900 border-b px-4 py-3 shadow-md">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 flex-1">
-            <Clock className="h-5 w-5 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="font-semibold text-sm">
-                {trial.daysRemaining === 1 
-                  ? '¡Último día de prueba gratuita!' 
-                  : `${trial.daysRemaining} días restantes de prueba`
-                }
-              </p>
-              <p className="text-xs opacity-90">Actualiza ahora para continuar sin interrupciones</p>
-            </div>
+      <div className="sticky top-0 z-50 bg-yellow-500 text-yellow-900 border-b px-3 py-2 md:px-4 md:py-3 shadow-md">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 md:gap-4">
+          <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
+            <Clock className="h-4 w-4 md:h-5 md:w-5 flex-shrink-0" />
+            <p className="font-semibold text-xs md:text-sm truncate">
+              {trial.daysRemaining === 1 
+                ? '¡Último día de prueba!' 
+                : `${trial.daysRemaining} días de prueba`
+              }
+            </p>
+            <p className="hidden md:block text-xs opacity-90">— Actualiza ahora para continuar sin interrupciones</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
             <a
               href="/config?tab=billing"
-              className="px-3 py-1.5 bg-yellow-900 text-white rounded shadow-sm text-sm font-medium hover:bg-yellow-800 transition-colors"
+              className="px-2.5 py-1 md:px-3 md:py-1.5 bg-yellow-900 text-white rounded shadow-sm text-xs md:text-sm font-medium hover:bg-yellow-800 transition-colors whitespace-nowrap"
             >
-              Activar Pro — $20/mes
+              Activar Pro
             </a>
             <button
               onClick={() => setDismissed(true)}
-              className="p-1 rounded hover:bg-white hover:bg-opacity-20 transition-colors"
+              className="p-2 rounded hover:bg-white hover:bg-opacity-20 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
               title="Cerrar"
             >
               <X className="h-4 w-4" />
@@ -166,26 +171,25 @@ export default function SubscriptionBanner() {
   const msg = messages[billing.status] || messages.pending;
 
   return (
-    <div className={`fixed top-0 left-0 right-0 z-50 ${msg.color} border-b px-4 py-3 shadow-md`}>
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 flex-1">
-          <AlertCircle className="h-5 w-5 flex-shrink-0" />
-          <div className="flex-1">
-            <p className="font-semibold text-sm">{msg.title}</p>
-            <p className="text-xs">{msg.desc}</p>
-          </div>
+    <div className={`sticky top-0 z-50 ${msg.color} border-b px-3 py-2 md:px-4 md:py-3 shadow-md`}>
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 md:gap-4">
+        <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
+          <AlertCircle className="h-4 w-4 md:h-5 md:w-5 flex-shrink-0" />
+          <p className="font-semibold text-xs md:text-sm truncate">{msg.title}</p>
+          <p className="hidden md:block text-xs">{msg.desc}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
           <a
             href="/config?tab=billing"
-            className="px-3 py-1.5 bg-white rounded shadow-sm text-sm font-medium hover:bg-gray-50 transition-colors flex items-center gap-1"
+            className="px-2.5 py-1 md:px-3 md:py-1.5 bg-white rounded shadow-sm text-xs md:text-sm font-medium hover:bg-gray-50 transition-colors flex items-center gap-1 whitespace-nowrap"
           >
-            <CreditCard className="h-4 w-4" />
-            Renovar Ahora
+            <CreditCard className="h-3.5 w-3.5 md:h-4 md:w-4" />
+            <span className="hidden md:inline">Renovar Ahora</span>
+            <span className="md:hidden">Renovar</span>
           </a>
           <button
             onClick={() => setDismissed(true)}
-            className="p-1 rounded hover:bg-white hover:bg-opacity-50 transition-colors"
+            className="p-2 rounded hover:bg-white hover:bg-opacity-50 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
             title="Cerrar"
           >
             <X className="h-4 w-4" />

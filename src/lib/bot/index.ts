@@ -8,6 +8,7 @@
 export {
   getTelegramBot,
   sendMessage,
+  sendDocument,
   sendTypingAction,
   sendMessageWithButtons,
   generateDeepLink,
@@ -40,6 +41,7 @@ export {
   processMessage,
   generateWelcomeMessage,
   generateUnauthorizedMessage,
+  type MessageResponse,
 } from './ai-agent';
 
 // AI tools
@@ -48,8 +50,12 @@ export {
   executeTool,
   type ToolContext,
   type ToolResult,
+  type ToolAttachment,
   type ToolName,
 } from './ai-tools';
+
+// Guía generation service
+export { generateGuiasForOrders, type GuiaGenerationResult, type GuiaBatchResult } from './guia-service';
 
 // Conversation memory
 export {

@@ -28,12 +28,21 @@ export interface ToolContext {
   userRole: string;
 }
 
+// Attachment returned by tools (e.g. PDF guía)
+export interface ToolAttachment {
+  type: 'pdf';
+  buffer: Buffer;
+  filename: string;
+  caption?: string;
+}
+
 // Tool result type
 export interface ToolResult<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
   message?: string;
+  attachments?: ToolAttachment[];
 }
 
 // ============================================================================
@@ -182,10 +191,18 @@ export const toolSchemas = {
 
   // Shipping
   generate_shipping_guia: {
-    description: 'Generar guía de envío MANUAL para una orden. SIEMPRE genera guías manuales, nunca automáticas. Proporciona el PDF al usuario.',
+    description: 'Generar guía de envío para una orden. Modo "auto" genera guía real de Correos de Costa Rica con PDF. Modo "manual" solo registra la guía sin PDF.',
     parameters: z.object({
       orderId: z.string().describe('ID de la orden para generar guía'),
-      carrier: z.string().default('correos').describe('Carrier de envío (correos, etc). Siempre usa tipo manual'),
+      mode: z.enum(['auto', 'manual']).default('auto').describe('auto = Correos CR con PDF, manual = solo registro'),
+    }),
+  },
+
+  // Bulk shipping
+  generate_guias_bulk: {
+    description: 'Generar guías de envío de Correos de Costa Rica para múltiples órdenes a la vez. Devuelve los PDFs de las guías generadas.',
+    parameters: z.object({
+      orderIds: z.array(z.string()).min(1).max(10).describe('Lista de IDs de órdenes (máximo 10)'),
     }),
   },
 };
@@ -963,7 +980,8 @@ export async function searchClients(
 }
 
 /**
- * Generate shipping guía - ALWAYS MANUAL
+ * Generate shipping guía — auto mode calls Correos WS and returns PDF,
+ * manual mode creates a pending record.
  */
 export async function generateShippingGuia(
   ctx: ToolContext,
@@ -973,7 +991,6 @@ export async function generateShippingGuia(
     { tenantId: ctx.tenantId, userId: ctx.userId, userName: ctx.userName, userRole: ctx.userRole },
     async () => {
       try {
-        // Get order details first
         const tenantPrisma = getTenantPrisma(ctx.tenantId);
         const order = await tenantPrisma.order.findFirst({
           where: {
@@ -985,19 +1002,63 @@ export async function generateShippingGuia(
         });
 
         if (!order) {
+          return { success: false, error: `No se encontró la orden ${params.orderId}` };
+        }
+
+        const addressParts = [order.province, order.canton, order.district].filter(Boolean).join(', ');
+
+        // ── Auto mode: generate via Correos WS ──
+        if (params.mode === 'auto') {
+          const { generateGuiasForOrders } = await import('./guia-service');
+          const batch = await generateGuiasForOrders(ctx.tenantId, [order.orderId]);
+          const result = batch.results[0];
+
+          if (!result || !result.success) {
+            return {
+              success: false,
+              error: result?.error || 'Error al generar guía de Correos CR',
+            };
+          }
+
+          const attachments: ToolAttachment[] = [];
+          if (result.pdfBuffer) {
+            attachments.push({
+              type: 'pdf',
+              buffer: result.pdfBuffer,
+              filename: result.pdfFileName || `guia-${result.guiaNumber}.pdf`,
+              caption: `Guía ${result.guiaNumber} — Orden #${order.orderId}`,
+            });
+          }
+
           return {
-            success: false,
-            error: `No se encontró la orden ${params.orderId}`,
+            success: true,
+            data: {
+              orderId: order.orderId,
+              guiaNumber: result.guiaNumber,
+              trackingNumber: result.trackingNumber,
+              hasPdf: !!result.pdfBuffer,
+            },
+            message: `✅ Guía de Correos CR generada.\n\n📦 **Orden:** #${order.orderId}\n👤 **Cliente:** ${order.customerName}\n🔢 **Guía #:** ${result.guiaNumber}\n📍 **Destino:** ${addressParts || 'No especificado'}\n📄 **PDF:** ${result.pdfBuffer ? 'Adjunto' : 'No disponible'}`,
+            attachments,
           };
         }
 
-        // Check if order already has a guía
+        // ── Manual mode: create pending record ──
         const existingGuia = await tenantPrisma.shippingGuia.findFirst({
-          where: { orderId: order.id },
+          where: { orderId: order.orderId, tenantId: ctx.tenantId },
         });
 
         if (existingGuia) {
           const hasPdf = !!existingGuia.pdfData;
+          const attachments: ToolAttachment[] = [];
+          if (hasPdf && existingGuia.pdfData) {
+            attachments.push({
+              type: 'pdf',
+              buffer: Buffer.from(existingGuia.pdfData),
+              filename: existingGuia.pdfFileName || `guia-${existingGuia.guiaNumber}.pdf`,
+              caption: `Guía ${existingGuia.guiaNumber} — Orden #${order.orderId}`,
+            });
+          }
           return {
             success: true,
             data: {
@@ -1007,39 +1068,85 @@ export async function generateShippingGuia(
               status: existingGuia.status,
               hasPdf,
             },
-            message: `ℹ️ Esta orden ya tiene una guía generada.\n\n🔢 **Guía #:** ${existingGuia.guiaNumber || 'Manual'}\n📍 **Estado:** ${existingGuia.status}${hasPdf ? '\n📄 **PDF disponible** en el panel de Betsy' : ''}\n\n🔗 Ver en: https://www.betsycrm.com/produccion`,
+            message: `ℹ️ Esta orden ya tiene una guía.\n\n🔢 **Guía #:** ${existingGuia.guiaNumber || 'Manual'}\n📍 **Estado:** ${existingGuia.status}${hasPdf ? '\n📄 PDF adjunto' : ''}`,
+            attachments,
           };
         }
 
-        // Create manual guía record (no PDF - PDF is generated via Correos integration)
         const guia = await tenantPrisma.shippingGuia.create({
           data: {
             tenantId: ctx.tenantId,
-            orderId: order.id,
-            carrier: params.carrier || 'correos',
+            orderId: order.orderId,
+            carrier: 'correos',
             status: 'pending',
             serviceType: 'manual',
             progress: `Guía manual registrada por ${ctx.userName}`,
           },
         });
 
-        // Build response with order details for context
-        const addressParts = [order.province, order.canton, order.district].filter(Boolean).join(', ');
-
         return {
           success: true,
-          data: {
-            guiaId: guia.id,
-            orderId: order.orderId,
-          },
-          message: `✅ Guía registrada para envío.\n\n📦 **Orden:** #${order.orderId}\n👤 **Cliente:** ${order.customerName}\n📍 **Destino:** ${addressParts || 'No especificado'}\n📱 **Teléfono:** ${order.phone || 'No especificado'}\n📫 **Dirección:** ${order.address || 'No especificada'}\n\n⚠️ **Siguiente paso:** Ve a Producción en Betsy para generar la guía con Correos de Costa Rica y obtener el PDF.\n\n🔗 https://www.betsycrm.com/produccion`,
+          data: { guiaId: guia.id, orderId: order.orderId },
+          message: `✅ Guía manual registrada.\n\n📦 **Orden:** #${order.orderId}\n👤 **Cliente:** ${order.customerName}\n📍 **Destino:** ${addressParts || 'No especificado'}\n\n⚠️ Para generar la guía real con Correos CR, usa el modo automático o ve a Producción en Betsy.`,
         };
       } catch (error: any) {
         console.error('[AI Tool] generateShippingGuia error:', error);
+        return { success: false, error: error.message || 'Error al generar guía de envío' };
+      }
+    }
+  );
+}
+
+/**
+ * Generate guías in bulk via Correos WS for multiple orders at once.
+ */
+export async function generateGuiasBulk(
+  ctx: ToolContext,
+  params: z.infer<typeof toolSchemas.generate_guias_bulk.parameters>
+): Promise<ToolResult> {
+  return withTenantContext(
+    { tenantId: ctx.tenantId, userId: ctx.userId, userName: ctx.userName, userRole: ctx.userRole },
+    async () => {
+      try {
+        const { generateGuiasForOrders } = await import('./guia-service');
+        const batch = await generateGuiasForOrders(ctx.tenantId, params.orderIds);
+
+        const attachments: ToolAttachment[] = [];
+        for (const r of batch.results) {
+          if (r.success && r.pdfBuffer) {
+            attachments.push({
+              type: 'pdf',
+              buffer: r.pdfBuffer,
+              filename: r.pdfFileName || `guia-${r.guiaNumber}.pdf`,
+              caption: `Guía ${r.guiaNumber} — Orden #${r.orderId}`,
+            });
+          }
+        }
+
+        const lines = batch.results.map(r =>
+          r.success
+            ? `✅ #${r.orderId} → Guía ${r.guiaNumber}`
+            : `❌ #${r.orderId} → ${r.error}`
+        );
+
         return {
-          success: false,
-          error: error.message || 'Error al generar guía de envío',
+          success: batch.successful > 0,
+          data: {
+            successful: batch.successful,
+            failed: batch.failed,
+            results: batch.results.map(r => ({
+              orderId: r.orderId,
+              success: r.success,
+              guiaNumber: r.guiaNumber,
+              error: r.error,
+            })),
+          },
+          message: `📦 Guías generadas: ${batch.successful}/${batch.results.length}\n\n${lines.join('\n')}${attachments.length > 0 ? `\n\n📄 ${attachments.length} PDF(s) adjuntos` : ''}`,
+          attachments,
         };
+      } catch (error: any) {
+        console.error('[AI Tool] generateGuiasBulk error:', error);
+        return { success: false, error: error.message || 'Error al generar guías en bulk' };
       }
     }
   );
@@ -1136,6 +1243,7 @@ const toolExecutors: Record<ToolName, (ctx: ToolContext, params: any) => Promise
   get_statistics_summary: getStatisticsSummary,
   search_clients: searchClients,
   generate_shipping_guia: generateShippingGuia,
+  generate_guias_bulk: generateGuiasBulk,
 };
 
 /**

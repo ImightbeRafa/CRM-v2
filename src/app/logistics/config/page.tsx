@@ -288,7 +288,7 @@ export default function ConfigPage() {
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                                     <div>
                                         <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Usuario ID</label>
-                                        <input value={wsUsuarioId} onChange={e => setWsUsuarioId(e.target.value)} placeholder="117960921"
+                                        <input value={wsUsuarioId} onChange={e => setWsUsuarioId(e.target.value)} placeholder="204835716"
                                             style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(0,0,0,0.25)', color: '#F2F2F2', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
                                     </div>
                                     <div>

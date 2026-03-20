@@ -4,14 +4,14 @@
  
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 40 20% 98.5%;
+    --foreground: 230 25% 10%;
  
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 40 15% 99%;
+    --card-foreground: 230 25% 10%;
  
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 230 25% 10%;
  
     --primary: 222.2 47.4% 11.2%;
     --primary-foreground: 210 40% 98%;
@@ -19,7 +19,7 @@
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
  
-    --muted: 210 40% 96.1%;
+    --muted: 220 14% 95%;
     --muted-foreground: 215.4 16.3% 46.9%;
  
     --accent: 210 40% 96.1%;
@@ -28,8 +28,8 @@
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
  
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
+    --border: 220 20% 91%;
+    --input: 220 20% 91%;
     --ring: 222.2 84% 4.9%;
  
     --radius: 0.5rem;
@@ -39,6 +39,11 @@
     --brand-purple: 263 70% 50%;
     --brand-pink: 330 81% 60%;
     --brand-gradient: linear-gradient(135deg, hsl(var(--brand-blue)), hsl(var(--brand-purple)), hsl(var(--brand-pink)));
+
+    /* Landing page surface & text tokens */
+    --color-surface-elevated: 40 15% 96%;
+    --color-text-secondary: 220 10% 46%;
+    --color-accent-glow: 263 70% 50%;
 
     /* Success / Warning semantic tokens */
     --success: 152 76% 40%;
@@ -55,6 +60,10 @@
   body {
     @apply bg-background text-foreground;
   }
+  ::selection {
+    background: hsl(var(--brand-purple));
+    color: white;
+  }
 }
 
 /* Brand gradient utilities */
@@ -67,6 +76,133 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+  }
+}
+
+/* Logo wordmark */
+@layer utilities {
+  .logo-wordmark {
+    font-family: var(--font-logo), system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    background: linear-gradient(135deg, hsl(217 91% 55%), hsl(263 70% 50%), hsl(330 81% 55%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+/* Landing page typography */
+@layer utilities {
+  .landing-hero {
+    font-size: clamp(2.5rem, 5vw + 1rem, 4.5rem);
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: 1.1;
+  }
+  .landing-h2 {
+    font-size: clamp(1.75rem, 3vw + 0.5rem, 2.5rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+  .landing-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+}
+
+/* Elevated shadow system */
+@layer utilities {
+  .shadow-elevated {
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.04),
+      0 4px 8px rgba(0,0,0,0.04),
+      0 16px 32px rgba(0,0,0,0.04);
+  }
+  .shadow-elevated-hover {
+    box-shadow:
+      0 4px 8px rgba(0,0,0,0.06),
+      0 16px 32px rgba(0,0,0,0.06),
+      0 32px 64px rgba(0,0,0,0.04);
+  }
+}
+
+/* Grain noise texture overlay */
+@layer utilities {
+  .grain {
+    position: relative;
+  }
+  .grain::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 128px 128px;
+    pointer-events: none;
+    border-radius: inherit;
+    z-index: 1;
+  }
+}
+
+/* Animated gradient wave for hero */
+@keyframes hero-wave-roam {
+  0% {
+    transform: translate(-20%, -30%) rotate(0deg) scale(1);
+  }
+  15% {
+    transform: translate(30%, -10%) rotate(15deg) scale(1.1);
+  }
+  30% {
+    transform: translate(50%, 20%) rotate(30deg) scale(0.95);
+  }
+  45% {
+    transform: translate(20%, 50%) rotate(50deg) scale(1.05);
+  }
+  60% {
+    transform: translate(-15%, 30%) rotate(70deg) scale(1.1);
+  }
+  75% {
+    transform: translate(-30%, 0%) rotate(90deg) scale(0.95);
+  }
+  90% {
+    transform: translate(-10%, -20%) rotate(105deg) scale(1.05);
+  }
+  100% {
+    transform: translate(-20%, -30%) rotate(120deg) scale(1);
+  }
+}
+
+@keyframes hero-wave-counter {
+  0% {
+    transform: translate(30%, 20%) rotate(0deg) scale(1.05);
+  }
+  20% {
+    transform: translate(-10%, 40%) rotate(-20deg) scale(0.95);
+  }
+  40% {
+    transform: translate(-40%, 10%) rotate(-45deg) scale(1.1);
+  }
+  60% {
+    transform: translate(-20%, -25%) rotate(-70deg) scale(0.9);
+  }
+  80% {
+    transform: translate(20%, -15%) rotate(-95deg) scale(1.08);
+  }
+  100% {
+    transform: translate(30%, 20%) rotate(-120deg) scale(1.05);
+  }
+}
+
+/* Gradient divider between sections */
+@layer utilities {
+  .section-divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, hsl(var(--brand-purple) / 0.2), transparent);
   }
 }
 

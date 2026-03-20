@@ -6,6 +6,7 @@ import { Badge } from "@/app/components/ui/badge";
 import { Sale } from '../types/sales';
 import { 
   ChevronRight, 
+  ChevronDown,
   CheckCircle, 
   Clock, 
   Package, 
@@ -204,20 +205,25 @@ export function MobileProductionWorkflow({
   };
 
   const MobileOrderCard = ({ order }: { order: Sale }) => {
+    const [expanded, setExpanded] = useState(false);
     const statusInfo = getStatusInfo(order.status);
     const orderAge = getOrderAge(order.timestamp);
     const statusBackgroundHaze = getStatusBackgroundHaze(statusInfo.color);
 
+    const hasDetails = order.phone || order.business || order.product || 
+      (order as any).funnel || (order as any).seller || order.comments ||
+      (order.orderType === 'EA' && ((order as any).province || (order as any).expectedDate)) ||
+      (order.orderType === 'RA' && (order as any).agreedDate);
+
     return (
       <Card 
-        className={`mb-3 cursor-pointer transition-all hover:shadow-md ${
+        className={`mb-3 transition-all ${
           orderAge.urgent ? 'border-red-300 bg-red-50/50' : statusBackgroundHaze
         }`}
-        onClick={() => onOrderSelect(order)}
       >
         <CardContent className="p-4">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-3">
+          {/* Summary row: always visible */}
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <h3 className="font-semibold text-sm">#{order.orderId}</h3>
               {orderAge.urgent && (
@@ -230,108 +236,116 @@ export function MobileProductionWorkflow({
             </Badge>
           </div>
 
-          {/* Customer Info */}
-          <div className="space-y-2 mb-3">
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <User className="h-4 w-4 text-gray-500" />
-              <span className="font-medium">{order.customerName}</span>
+              <span className="font-medium text-sm">{order.customerName}</span>
             </div>
-            <div className="flex items-center gap-2">
-              <Phone className="h-4 w-4 text-gray-500" />
-              <span className="text-sm text-gray-600">{order.phone}</span>
-            </div>
-            {order.business && (
-              <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                {order.business}
-              </div>
-            )}
-          </div>
-
-          {/* Product Info */}
-          <div className="space-y-1 mb-3">
-            <div className="flex items-center gap-2">
-              <Package className="h-4 w-4 text-gray-500" />
-              <span className="font-medium text-sm">{order.product}</span>
-            </div>
-            <div className="flex items-center gap-4 text-xs text-gray-600">
-              <span>Cant: {order.quantity}</span>
-              {order.size && <span>Talla: {order.size}</span>}
-              {order.color && <span>Color: {order.color}</span>}
-            </div>
-            {(order as any).productCost && (
-              <div className="text-xs text-gray-600">
-                <span className="font-medium">Costo: </span>
-                <span>₡{Number((order as any).productCost).toLocaleString()}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Sales Channel & Seller */}
-          <div className="space-y-1 mb-3">
-            {(order as any).funnel && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="font-medium">Canal:</span>
-                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                  {(order as any).funnel}
-                </span>
-              </div>
-            )}
-            {(order as any).seller && (
-              <div className="flex items-center gap-2 text-xs text-gray-600">
-                <User className="h-3 w-3" />
-                <span>Vendedor: {(order as any).seller}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Location (for EA orders) */}
-          {order.orderType === 'EA' && (
-            <div className="flex items-center gap-2 mb-3">
-              <MapPin className="h-4 w-4 text-gray-500" />
-              <span className="text-sm text-gray-600">
-                {(order as any).province && (order as any).canton 
-                  ? `${(order as any).province}, ${(order as any).canton}`
-                  : 'Ubicación no especificada'
-                }
-              </span>
-            </div>
-          )}
-
-          {/* Dates */}
-          <div className="space-y-1 mb-3">
-            {order.orderType === 'EA' && (order as any).expectedDate && (
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-gray-500" />
-                <span className="text-sm text-gray-600">
-                  Esperado: {(order as any).expectedDate}
-                </span>
-              </div>
-            )}
-            
-            {order.orderType === 'RA' && (order as any).agreedDate && (
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-gray-500" />
-                <span className="text-sm text-gray-600">
-                  Acordado: {(order as any).agreedDate}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Total */}
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium">Total:</span>
-            <span className="text-lg font-bold text-green-600">
+            <span className="text-base font-bold text-green-600">
               ₡{order.total.toLocaleString()}
             </span>
           </div>
 
-          {/* Quick Actions */}
+          <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
+            <span>{orderAge.label}</span>
+            {order.orderType === 'EA' && (order as any).expectedDate && (
+              <span>Esperado: {(order as any).expectedDate}</span>
+            )}
+            {order.orderType === 'RA' && (order as any).agreedDate && (
+              <span>Acordado: {(order as any).agreedDate}</span>
+            )}
+          </div>
+
+          {/* Expand/collapse toggle */}
+          {hasDetails && (
+            <button
+              className="w-full flex items-center justify-center gap-1 text-xs text-gray-500 py-1 mb-2 hover:text-gray-700 transition-colors min-h-[32px]"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded(!expanded);
+              }}
+            >
+              <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+              {expanded ? 'Ocultar detalles' : 'Ver detalles'}
+            </button>
+          )}
+
+          {/* Expanded details */}
+          {expanded && (
+            <div className="space-y-2 mb-3 pt-2 border-t border-gray-200/60">
+              {order.phone && (
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Phone className="h-4 w-4 text-gray-400" />
+                  <span>{order.phone}</span>
+                </div>
+              )}
+
+              {order.business && (
+                <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1.5 rounded">
+                  {order.business}
+                </div>
+              )}
+
+              {order.product && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-4 w-4 text-gray-400" />
+                    <span className="font-medium text-sm">{order.product}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-gray-600 ml-6">
+                    <span>Cant: {order.quantity}</span>
+                    {order.size && <span>Talla: {order.size}</span>}
+                    {order.color && <span>Color: {order.color}</span>}
+                  </div>
+                  {(order as any).productCost && (
+                    <div className="text-xs text-gray-600 ml-6">
+                      Costo: ₡{Number((order as any).productCost).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {((order as any).funnel || (order as any).seller) && (
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {(order as any).funnel && (
+                    <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                      {(order as any).funnel}
+                    </span>
+                  )}
+                  {(order as any).seller && (
+                    <span className="text-gray-600">
+                      Vendedor: {(order as any).seller}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {order.orderType === 'EA' && (order as any).province && (
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <MapPin className="h-4 w-4 text-gray-400" />
+                  <span>
+                    {(order as any).canton 
+                      ? `${(order as any).province}, ${(order as any).canton}`
+                      : (order as any).province
+                    }
+                  </span>
+                </div>
+              )}
+
+              {order.comments && (
+                <div className="p-2 bg-gray-50 rounded text-xs">
+                  <span className="font-medium">Comentarios:</span>
+                  <p className="mt-1 text-gray-600">{order.comments}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Quick Actions -- 44px min touch targets */}
           <div className="flex gap-2">
             <Button
               variant="outline"
-              size="sm"
-              className="flex-1"
+              className="flex-1 min-h-[44px]"
               onClick={(e) => {
                 e.stopPropagation();
                 onOrderSelect(order);
@@ -341,7 +355,7 @@ export function MobileProductionWorkflow({
             </Button>
             
             <select
-              className="flex-1 text-sm rounded border border-gray-300 px-2 py-1 bg-white"
+              className="flex-1 text-sm rounded-md border border-gray-300 px-3 py-2 bg-white min-h-[44px]"
               value={order.status}
               onChange={(e) => handleQuickStatusUpdate(order.orderId, e.target.value)}
               onClick={(e) => e.stopPropagation()}
@@ -354,14 +368,6 @@ export function MobileProductionWorkflow({
               }
             </select>
           </div>
-
-          {/* Comments */}
-          {order.comments && (
-            <div className="mt-3 p-2 bg-gray-50 rounded text-xs">
-              <span className="font-medium">Comentarios:</span>
-              <p className="mt-1 text-gray-600">{order.comments}</p>
-            </div>
-          )}
         </CardContent>
       </Card>
     );
@@ -372,7 +378,7 @@ export function MobileProductionWorkflow({
       {/* Mobile Tabs */}
       <div className="flex bg-gray-100 rounded-lg p-1">
         <button
-          className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+          className={`flex-1 py-3 px-3 rounded-md text-sm font-medium transition-colors min-h-[44px] ${
             selectedTab === 'pending'
               ? 'bg-white text-blue-600 shadow-sm'
               : 'text-gray-600'
@@ -382,7 +388,7 @@ export function MobileProductionWorkflow({
           Pendientes ({tabCounts.pending})
         </button>
         <button
-          className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+          className={`flex-1 py-3 px-3 rounded-md text-sm font-medium transition-colors min-h-[44px] ${
             selectedTab === 'in-progress'
               ? 'bg-white text-blue-600 shadow-sm'
               : 'text-gray-600'
@@ -392,7 +398,7 @@ export function MobileProductionWorkflow({
           En Proceso ({tabCounts['in-progress']})
         </button>
         <button
-          className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+          className={`flex-1 py-3 px-3 rounded-md text-sm font-medium transition-colors min-h-[44px] ${
             selectedTab === 'completed'
               ? 'bg-white text-blue-600 shadow-sm'
               : 'text-gray-600'

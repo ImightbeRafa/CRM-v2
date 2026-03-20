@@ -14,9 +14,17 @@ import {
   ToolContext,
   ToolResult,
   ToolName,
+  ToolAttachment,
   updateToolSchemasWithCustomFields,
   getFormattedCustomFieldsForOrder,
 } from './ai-tools';
+
+export type { ToolAttachment };
+
+export interface MessageResponse {
+  text: string;
+  attachments?: ToolAttachment[];
+}
 import {
   getFormattedHistory,
   addUserMessage,
@@ -58,8 +66,11 @@ const ACTION_KEYWORDS = [
   // Inventory
   'agregar stock', 'añadir stock', 'reducir stock', 'aumentar stock',
   'descontar', 'restar', 'sumar al inventario',
-  // Shipping
+  // Shipping — individual and bulk guía generation
   'generar guía', 'genera guía', 'crear guía', 'guía de envío',
+  'generar guia', 'genera guia', 'crear guia', 'guia de envio',
+  'guías en bulk', 'guías masivas', 'guias en bulk', 'guias masivas',
+  'guías de correos', 'guias de correos', 'generar guías', 'generar guias',
 ];
 
 /**
@@ -84,7 +95,7 @@ Tu rol es ayudar a los usuarios a gestionar su negocio de manera eficiente y pro
 4. **Gestionar inventario**: Consultar stock, agregar o reducir cantidades de productos.
 5. **Ver estadísticas y reportes**: Mostrar resúmenes de ventas, ingresos, productos más vendidos, etc.
 6. **Buscar clientes**: Encontrar información de clientes y su historial de compras.
-7. **Generar guías de envío**: Crear guías MANUALES para envíos (siempre manual, nunca automático).
+7. **Generar guías de envío**: Crear guías de Correos de Costa Rica (con PDF) o manuales, individuales o en bulk.
 
 CONCEPTOS IMPORTANTES DE ENVÍO:
 - **EA (Envío a Domicilio)**: El pedido se ENVÍA a la dirección del cliente. Requiere dirección, provincia, y generar guía de envío.
@@ -129,9 +140,11 @@ FORMATO DE RESPUESTAS:
 - Separa secciones claramente
 
 GUÍAS DE ENVÍO:
-- Cuando se solicite generar una guía, SIEMPRE genera guía MANUAL (tipo: "manual")
-- Proporciona el enlace al PDF generado
-- Confirma que la guía está lista para imprimir
+- Por defecto usa modo "auto" para generar guías reales de Correos de Costa Rica con PDF adjunto.
+- Usa modo "manual" solo si el usuario lo pide explícitamente.
+- Para generar guías de varias órdenes a la vez, usa la herramienta generate_guias_bulk con los IDs de las órdenes.
+- El PDF se envía directamente al usuario en el chat.
+- Confirma el número de guía generado y que el PDF está adjunto.
 
 GESTIÓN DE STOCK:
 - Cuando el usuario diga "agregar X al stock de [producto]", actualiza el inventario
@@ -248,8 +261,11 @@ function zodToOpenAITool(name: string, schema: { description: string; parameters
         }
         // Remove from required since it has a default
         jsonSchema.required = jsonSchema.required.filter((r: string) => r !== key);
+      } else if (innerDef.typeName === 'ZodArray') {
+        const itemDef = innerDef.type?._def;
+        const itemType = itemDef?.typeName === 'ZodNumber' ? 'number' : 'string';
+        fieldSchema = { type: 'array', items: { type: itemType } };
       } else if (innerDef.typeName === 'ZodObject') {
-        // Nested object
         fieldSchema = { type: 'object', properties: {} };
       }
 
@@ -287,7 +303,7 @@ export async function processMessage(
   platformId: string,
   userMessage: string,
   context: ToolContext
-): Promise<string> {
+): Promise<MessageResponse> {
   try {
     // Check for pending confirmations first
     const pending = await getPendingConfirmation(platform, platformId);
@@ -296,15 +312,13 @@ export async function processMessage(
       const denied = isDenial(userMessage);
 
       if (confirmed) {
-        // Execute the pending action
         const result = await executePendingAction(pending, context, platform);
         await clearPendingConfirmation(platform, platformId);
-        return result;
+        return { text: result };
       } else if (denied) {
         await clearPendingConfirmation(platform, platformId);
-        return '✅ Entendido, acción cancelada.';
+        return { text: '✅ Entendido, acción cancelada.' };
       }
-      // If neither, continue with normal processing
     }
 
     // Add user message to history
@@ -343,7 +357,7 @@ export async function processMessage(
     // Build messages array
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPromptWithDate },
-      ...history.slice(-20), // Keep last 20 messages for context
+      ...history.slice(-20),
     ];
 
     // Detect if this is an action request that should require tool execution
@@ -358,7 +372,6 @@ export async function processMessage(
       model: MODEL,
       messages,
       tools: currentTools,
-      // Force tool calls for action requests to prevent hallucinated responses
       tool_choice: requiresToolCall ? 'required' : 'auto',
       max_tokens: MAX_TOKENS,
       temperature: TEMPERATURE,
@@ -371,13 +384,11 @@ export async function processMessage(
     }
 
     // SECURITY CHECK: Detect when AI should have called a tool but didn't
-    // This prevents the AI from hallucinating success without executing tools
     if (requiresToolCall && (!message.tool_calls || message.tool_calls.length === 0)) {
       console.warn('[AI Agent] ⚠️ ACTION REQUEST BUT NO TOOL CALLS!');
       console.warn('[AI Agent] User message:', userMessage);
       console.warn('[AI Agent] AI response (text only):', message.content?.slice(0, 300));
 
-      // Return a message that asks for more details instead of allowing hallucinated success
       const safeResponse = `Para ejecutar esta acción, necesito más información. Por favor proporciona en un solo mensaje:
 
 📦 **Para crear orden:**
@@ -393,13 +404,14 @@ export async function processMessage(
 ¿Puedes proporcionar estos datos?`;
 
       await addAssistantMessage(platform, platformId, safeResponse);
-      return safeResponse;
+      return { text: safeResponse };
     }
 
     // Handle tool calls
     if (message.tool_calls && message.tool_calls.length > 0) {
       const toolResults: string[] = [];
       const toolCallsLog: any[] = [];
+      const allAttachments: ToolAttachment[] = [];
 
       for (const toolCall of message.tool_calls) {
         const toolName = toolCall.function.name as ToolName;
@@ -415,7 +427,6 @@ export async function processMessage(
 
         const result = await executeTool(toolName, context, toolArgs);
 
-        // Enhanced logging for debugging
         if (result.success) {
           console.log(`[AI Agent] ✅ Tool ${toolName} executed successfully`);
           if (result.data && typeof result.data === 'object' && 'orderId' in result.data) {
@@ -423,6 +434,11 @@ export async function processMessage(
           }
         } else {
           console.error(`[AI Agent] ❌ Tool ${toolName} failed:`, result.error);
+        }
+
+        // Collect attachments (PDFs etc.) from tool results
+        if (result.attachments && result.attachments.length > 0) {
+          allAttachments.push(...result.attachments);
         }
 
         toolCallsLog.push({
@@ -469,26 +485,25 @@ export async function processMessage(
 
       if (finalMessage) {
         await addAssistantMessage(platform, platformId, finalMessage);
-        return finalMessage;
+        return { text: finalMessage, attachments: allAttachments.length > 0 ? allAttachments : undefined };
       }
 
-      // Build a meaningful fallback from tool results instead of generic "Processing..."
       const fallback = toolResults.join('\n\n') || 'No pude generar una respuesta. Por favor intenta de nuevo.';
       await addAssistantMessage(platform, platformId, fallback);
-      return fallback;
+      return { text: fallback, attachments: allAttachments.length > 0 ? allAttachments : undefined };
     }
 
     // No tool calls, just return the AI response
     if (message.content) {
       await addAssistantMessage(platform, platformId, message.content);
-      return message.content;
+      return { text: message.content };
     }
 
-    return 'Lo siento, no pude procesar tu solicitud.';
+    return { text: 'Lo siento, no pude procesar tu solicitud.' };
 
   } catch (error) {
     console.error('[AI Agent] Error processing message:', error);
-    return 'Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo.';
+    return { text: 'Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo.' };
   }
 }
 
@@ -569,6 +584,9 @@ function formatToolResult(toolName: ToolName, result: ToolResult, platform: stri
         return result.message || '✅ Guía de envío generada correctamente.';
       }
       return 'Error al generar la guía de envío.';
+
+    case 'generate_guias_bulk':
+      return result.message || '✅ Guías generadas.';
 
     default:
       return result.message || 'Operación completada.';

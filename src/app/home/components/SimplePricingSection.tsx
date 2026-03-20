@@ -85,33 +85,42 @@ export default function SimplePricingSection() {
   };
 
   return (
-    <section id="pricing" className="py-16 px-4 sm:px-6 lg:px-8 bg-gray-50">
+    <section id="pricing" className="py-20 lg:py-28 px-4 sm:px-6 lg:px-8 bg-background">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+          <h2 className="landing-h2 text-foreground mb-4">
             Simple, Transparent Pricing
           </h2>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+          <p className="text-xl text-text-secondary max-w-3xl mx-auto">
             Choose the plan that fits your business. All plans include our core features.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
           {pricingPlans.map((plan, index) => (
-            <Card key={index} className={`relative ${plan.popular ? 'border-blue-500 shadow-xl' : 'border-gray-200'}`}>
+            <Card key={index} className={`relative overflow-hidden shadow-elevated hover:shadow-elevated-hover transition-all duration-300 ${plan.popular ? 'border-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.15)]' : 'border-gray-200'}`}>
               {plan.popular && (
-                <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                  <Badge className="bg-blue-500 text-white">Most Popular</Badge>
-                </div>
+                <>
+                  <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500 to-purple-500" />
+                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 z-10">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium tracking-wide uppercase bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
+                      </span>
+                      Most Popular
+                    </span>
+                  </div>
+                </>
               )}
               <CardHeader className="text-center">
                 <CardTitle className="text-2xl">{plan.name}</CardTitle>
                 <div className="mt-4">
-                  <span className="text-4xl font-bold">{plan.price}</span>
-                  <span className="text-gray-600">{plan.period}</span>
+                  <span className="text-4xl font-extrabold tracking-tight">{plan.price}</span>
+                  <span className="text-text-secondary">{plan.period}</span>
                 </div>
                 {plan.originalPrice && (
-                  <p className="text-sm text-gray-500 mt-1">{plan.originalPrice}</p>
+                  <p className="text-sm text-text-secondary mt-1">{plan.originalPrice}</p>
                 )}
                 <CardDescription className="mt-2">{plan.description}</CardDescription>
               </CardHeader>
@@ -119,13 +128,13 @@ export default function SimplePricingSection() {
                 <ul className="space-y-3">
                   {plan.features.map((feature, featureIndex) => (
                     <li key={featureIndex} className="flex items-center">
-                      <CheckCircle className="h-5 w-5 text-green-500 mr-3" />
-                      <span className="text-gray-700">{feature}</span>
+                      <CheckCircle className="h-5 w-5 text-green-500 mr-3 flex-shrink-0" />
+                      <span className="text-foreground/80">{feature}</span>
                     </li>
                   ))}
                 </ul>
                 <Button 
-                  className={`w-full mt-6 ${plan.popular ? 'bg-blue-600 hover:bg-blue-700' : ''}`}
+                  className={`w-full mt-6 h-12 rounded-xl transition-all duration-300 ${plan.popular ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-[0_0_20px_rgba(124,58,237,0.2)] hover:shadow-[0_0_30px_rgba(124,58,237,0.3)] hover:-translate-y-0.5' : ''}`}
                   variant={plan.popular ? 'default' : 'outline'}
                   onClick={() => handlePlanSelect(plan)}
                   disabled={loading === plan.priceId}
@@ -145,17 +154,17 @@ export default function SimplePricingSection() {
         </div>
 
         <div className="mt-12 text-center">
-          <p className="text-gray-600 mb-4">
+          <p className="text-text-secondary mb-4">
             Prueba gratis por 7 días. Cancela en cualquier momento.
           </p>
-          <p className="text-sm text-gray-500 mb-4">
+          <p className="text-sm text-text-secondary/70 mb-4">
             💳 We accept all major credit cards via secure Tilopay payment processing
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button variant="outline" onClick={() => window.location.href = '#features'}>
+            <Button variant="outline" className="rounded-xl" onClick={() => window.location.href = '#features'}>
               View All Features
             </Button>
-            <Button variant="outline" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+            <Button variant="outline" className="rounded-xl" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
               Contact Sales
             </Button>
           </div>

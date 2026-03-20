@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Card,
   CardContent,
@@ -56,6 +56,23 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
   const [orderTypeFilter, setOrderTypeFilter] = useState<'ALL' | 'EA' | 'RA'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const { formatCurrency } = useTenantSettings();
+  const kpiScrollRef = useRef<HTMLDivElement>(null);
+  const [activeKpiCard, setActiveKpiCard] = useState(0);
+
+  const handleKpiScroll = useCallback(() => {
+    const el = kpiScrollRef.current;
+    if (!el) return;
+    const cardWidth = el.scrollWidth / 4;
+    const idx = Math.round(el.scrollLeft / cardWidth);
+    setActiveKpiCard(Math.min(idx, 3));
+  }, []);
+
+  useEffect(() => {
+    const el = kpiScrollRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', handleKpiScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleKpiScroll);
+  }, [handleKpiScroll]);
   const updateStatus = useUpdateOrderStatus();
 
   const { sales, isLoading, error, refresh, stats } = useSalesStream({
@@ -82,9 +99,9 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
   return (
     <div className="space-y-4" style={{ zIndex: 1, position: 'relative' }}>
       {/* Quick Stats Summary -- horizontal snap-scroll on mobile */}
-      {!isLoading && stats && (
-        <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-1 snap-scroll-hide md:grid md:grid-cols-4 md:overflow-visible">
-          <div className="min-w-[65vw] snap-center md:min-w-0">
+      {!isLoading && stats && (<>
+        <div ref={kpiScrollRef} className="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-1 snap-scroll-hide md:grid md:grid-cols-4 md:overflow-visible">
+          <div className="min-w-[60vw] snap-center md:min-w-0">
             <Card className="h-full border-t-4 border-t-emerald-400 md:border-t-0 md:border-l-4 md:border-l-green-500">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
@@ -100,7 +117,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
             </Card>
           </div>
           
-          <div className="min-w-[65vw] snap-center md:min-w-0">
+          <div className="min-w-[60vw] snap-center md:min-w-0">
             <Card className="h-full border-t-4 border-t-blue-400 md:border-t-0 md:border-l-4 md:border-l-blue-500">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
@@ -116,7 +133,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
             </Card>
           </div>
           
-          <div className="min-w-[65vw] snap-center md:min-w-0">
+          <div className="min-w-[60vw] snap-center md:min-w-0">
             <Card className="h-full border-t-4 border-t-purple-400 md:border-t-0 md:border-l-4 md:border-l-purple-500">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
@@ -132,7 +149,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
             </Card>
           </div>
           
-          <div className="min-w-[65vw] snap-center md:min-w-0">
+          <div className="min-w-[60vw] snap-center md:min-w-0">
             <Card className="h-full border-t-4 border-t-orange-400 md:border-t-0 md:border-l-4 md:border-l-orange-500">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
@@ -153,7 +170,25 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
             </Card>
           </div>
         </div>
-      )}
+        {/* Carousel dot indicators - mobile only */}
+        <div className="flex justify-center gap-1.5 mt-2 md:hidden">
+          {[0, 1, 2, 3].map((i) => (
+            <button
+              key={i}
+              className={`h-1.5 rounded-full transition-all duration-200 ${
+                activeKpiCard === i ? 'w-4 bg-blue-600' : 'w-1.5 bg-gray-300'
+              }`}
+              onClick={() => {
+                const el = kpiScrollRef.current;
+                if (!el) return;
+                const cardWidth = el.scrollWidth / 4;
+                el.scrollTo({ left: cardWidth * i, behavior: 'smooth' });
+              }}
+              aria-label={`KPI card ${i + 1}`}
+            />
+          ))}
+        </div>
+      </>)}
 
       {/* Sales Table */}
       <Card>

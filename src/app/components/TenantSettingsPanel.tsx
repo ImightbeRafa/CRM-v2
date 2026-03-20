@@ -157,7 +157,7 @@ export function TenantSettingsPanel() {
       {/* Floating Settings Button */}
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-4 right-4 z-40 p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all hover:scale-110"
+        className="fixed bottom-36 md:bottom-20 right-6 z-40 p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all hover:scale-110"
         title="Configuración de la tienda"
       >
         <Settings className="w-5 h-5" />
@@ -173,7 +173,7 @@ export function TenantSettingsPanel() {
           />
           
           {/* Panel */}
-          <div className="fixed bottom-16 right-4 z-50 w-72 bg-white rounded-lg shadow-2xl border border-gray-200 overflow-hidden">
+          <div className="fixed bottom-48 md:bottom-32 right-6 z-50 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-lg shadow-2xl border border-gray-200 overflow-hidden">
             {/* Header */}
             <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-3 py-2 text-white">
               <div className="flex items-center justify-between">

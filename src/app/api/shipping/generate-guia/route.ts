@@ -24,10 +24,24 @@ export async function POST(request: NextRequest) {
     const userRole = (token as any)?.membershipRole;
 
     const body = await request.json();
-    const { orderIds, carrier = 'correos_cr', deliveryType = 'Domicilio' } = body;
+    const { orderIds, carrier = 'correos_cr', deliveryType = 'Domicilio', verifiedLocations } = body;
 
     if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
       return NextResponse.json({ error: 'Order IDs are required' }, { status: 400 });
+    }
+
+    const locationMap = new Map<string, { province: string; canton: string; district: string; address: string }>();
+    if (Array.isArray(verifiedLocations)) {
+      for (const loc of verifiedLocations) {
+        if (loc.orderId && loc.province && loc.canton && loc.district) {
+          locationMap.set(loc.orderId, {
+            province: String(loc.province),
+            canton: String(loc.canton),
+            district: String(loc.district),
+            address: String(loc.address || ''),
+          });
+        }
+      }
     }
 
     console.log(`[Generate Guía] Tenant ${tenantId}`, 'Generating guías for orders:', orderIds);
@@ -82,21 +96,29 @@ export async function POST(request: NextRequest) {
 
       for (const order of orders) {
         try {
+          const verified = locationMap.get(order.orderId);
+          const province = verified?.province || order.province;
+          const canton = verified?.canton || order.canton;
+          const district = verified?.district || order.district;
+          const address = verified?.address || order.address;
+
           let destZip = '10101';
           try {
-            if (order.province && order.canton && order.district) {
-              destZip = await ws.getPostalCode(order.province, order.canton, order.district);
-              console.log(`[WS] Postal code for ${order.orderId}: ${order.province}/${order.canton}/${order.district} → ${destZip}`);
+            if (province && canton && district) {
+              destZip = await ws.getPostalCode(province, canton, district);
+              console.log(`[WS] Postal code for ${order.orderId}: ${province}/${canton}/${district} → ${destZip}`);
             }
           } catch (geoErr: any) {
             console.warn(`[WS] Could not resolve postal code for ${order.orderId}: ${geoErr.message}`);
           }
 
+          const addressData = { province, canton, district, address };
+
           console.log(`[WS] Generating guía for ${order.orderId} (zip: ${destZip})...`);
           const res = await ws.generateAndRegisterGuia({
             customerName: order.customerName || 'Destinatario',
             customerPhone: order.phone || '00000000',
-            customerAddress: buildFullAddress(order),
+            customerAddress: buildFullAddress(addressData),
             customerZip: destZip,
             customerApartado: destZip,
             senderName: sender.name,

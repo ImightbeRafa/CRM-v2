@@ -18,6 +18,7 @@ import crypto from 'crypto';
 import { 
   sendWhatsAppMessage, 
   sendWhatsAppButtonMessage,
+  sendWhatsAppDocument,
   markMessageAsRead,
   transcribeWhatsAppVoice,
   parseWhatsAppWebhook,
@@ -342,13 +343,31 @@ async function handleWhatsAppMessage(message: WhatsAppMessage) {
       text,
       {
         tenantId: tenantId,
-        userId: userId || `whatsapp-${phoneNumber}`, // Fallback ID for team members without Betsy accounts
+        userId: userId || `whatsapp-${phoneNumber}`,
         userName: userName,
         userRole: userRole,
       }
     );
     
-    await sendLongWhatsAppMessage(phoneNumber, response);
+    await sendLongWhatsAppMessage(phoneNumber, response.text);
+
+    // Send any PDF attachments from tool results
+    if (response.attachments && response.attachments.length > 0) {
+      for (const attachment of response.attachments) {
+        try {
+          console.log(`[WhatsApp] 📎 Sending attachment "${attachment.filename}" to ${phoneNumber}...`);
+          const docResult = await sendWhatsAppDocument(phoneNumber, attachment.buffer, attachment.filename, attachment.caption);
+          if (!docResult.success) {
+            console.error(`[WhatsApp] ❌ Failed to send attachment "${attachment.filename}":`, docResult.error);
+            await sendWhatsAppMessage(phoneNumber, `⚠️ No pude enviar el archivo "${attachment.filename}". Puedes descargarlo desde el panel de Betsy.`);
+          }
+        } catch (attachErr: any) {
+          console.error(`[WhatsApp] ❌ Failed to send attachment "${attachment.filename}":`, attachErr.message);
+          await sendWhatsAppMessage(phoneNumber, `⚠️ No pude enviar el archivo "${attachment.filename}". Puedes descargarlo desde el panel de Betsy.`);
+        }
+      }
+    }
+
     console.log(`[WhatsApp] ✅ Response sent to ${phoneNumber}`);
     
   } catch (error: any) {

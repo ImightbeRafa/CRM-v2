@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss"
+import { fontFamily } from "tailwindcss/defaultTheme"
 
 const config = {
   darkMode: ["class"],
@@ -35,6 +36,10 @@ const config = {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ['var(--font-display)', ...fontFamily.sans],
+        display: ['var(--font-display)', ...fontFamily.sans],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -82,6 +87,8 @@ const config = {
           DEFAULT: "hsl(var(--warning))",
           foreground: "hsl(var(--warning-foreground))",
         },
+        "surface-elevated": "hsl(var(--color-surface-elevated))",
+        "text-secondary": "hsl(var(--color-text-secondary))",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -101,11 +108,16 @@ const config = {
           "0%": { backgroundPosition: "-200% 0" },
           "100%": { backgroundPosition: "200% 0" },
         },
+        "breathe": {
+          "0%, 100%": { transform: "scale(1)", opacity: "0.15" },
+          "50%": { transform: "scale(1.05)", opacity: "0.25" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "shimmer": "shimmer 1.5s ease-in-out infinite",
+        "breathe": "breathe 8s ease-in-out infinite",
       },
     },
   },

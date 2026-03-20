@@ -237,7 +237,7 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
             <Input
               value={settings.ws_usuario_id}
               onChange={e => update('ws_usuario_id', e.target.value)}
-              placeholder="117960921"
+              placeholder="204835716"
             />
           </div>
           <div>

@@ -15,7 +15,6 @@ const CSP_HEADER = [
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'self'",
-  "upgrade-insecure-requests",
 ].join('; ');
 
 const PUBLIC_ROUTES = [

@@ -1,5 +1,5 @@
 'use client';
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -34,6 +34,23 @@ export default function EnhancedHomeContent() {
   const router = useRouter();
   const [showWizardModal, setShowWizardModal] = useState(false);
   const { stats, isLoading: isLoadingStats, refresh: refreshStats } = useDashboardStats();
+  const statsScrollRef = useRef<HTMLDivElement>(null);
+  const [activeStatCard, setActiveStatCard] = useState(0);
+
+  const handleStatsScroll = useCallback(() => {
+    const el = statsScrollRef.current;
+    if (!el) return;
+    const cardWidth = el.scrollWidth / 4;
+    const idx = Math.round(el.scrollLeft / cardWidth);
+    setActiveStatCard(Math.min(idx, 3));
+  }, []);
+
+  useEffect(() => {
+    const el = statsScrollRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', handleStatsScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleStatsScroll);
+  }, [handleStatsScroll]);
 
   const fetchStats = (forceRefresh = false) => refreshStats(forceRefresh);
 
@@ -139,7 +156,7 @@ export default function EnhancedHomeContent() {
         {/* Quick Action Bar */}
         <div className="flex flex-wrap gap-3 mb-6">
           <Link
-            href="/ventas?new=1"
+            href="/ventas"
             className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-md hover:shadow-lg text-sm"
           >
             <Plus className="h-4 w-4" />
@@ -154,8 +171,8 @@ export default function EnhancedHomeContent() {
         </div>
 
         {/* Quick Stats Cards -- horizontal snap-scroll on mobile, grid on desktop */}
-        <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 snap-scroll-hide md:grid md:grid-cols-2 lg:grid-cols-4 md:gap-6 md:overflow-visible mb-8">
-          <div className="min-w-[75vw] snap-center md:min-w-0">
+        <div ref={statsScrollRef} className="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 snap-scroll-hide md:grid md:grid-cols-2 lg:grid-cols-4 md:gap-6 md:overflow-visible mb-2">
+          <div className="min-w-[70vw] snap-center md:min-w-0">
             <Card className="h-full border-t-4 border-t-blue-500 md:border-t-0 md:border-l-4 md:border-l-blue-600">
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-2 text-muted-foreground">
@@ -181,7 +198,7 @@ export default function EnhancedHomeContent() {
             </Card>
           </div>
 
-          <div className="min-w-[75vw] snap-center md:min-w-0">
+          <div className="min-w-[70vw] snap-center md:min-w-0">
             <Card className="h-full border-t-4 border-t-orange-400 md:border-t-0 md:border-l-4 md:border-l-orange-500">
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-2 text-muted-foreground">
@@ -202,7 +219,7 @@ export default function EnhancedHomeContent() {
             </Card>
           </div>
 
-          <div className="min-w-[75vw] snap-center md:min-w-0">
+          <div className="min-w-[70vw] snap-center md:min-w-0">
             <Card className="h-full border-t-4 border-t-purple-500 md:border-t-0 md:border-l-4 md:border-l-purple-600">
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-2 text-muted-foreground">
@@ -224,7 +241,7 @@ export default function EnhancedHomeContent() {
             </Card>
           </div>
 
-          <div className="min-w-[75vw] snap-center md:min-w-0">
+          <div className="min-w-[70vw] snap-center md:min-w-0">
             <Card className="h-full border-t-4 border-t-emerald-500 md:border-t-0 md:border-l-4 md:border-l-green-600">
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-2 text-muted-foreground">
@@ -255,32 +272,50 @@ export default function EnhancedHomeContent() {
             </Card>
           </div>
         </div>
+        {/* Carousel dot indicators - mobile only */}
+        <div className="flex justify-center gap-1.5 mb-6 md:hidden">
+          {[0, 1, 2, 3].map((i) => (
+            <button
+              key={i}
+              className={`h-1.5 rounded-full transition-all duration-200 ${
+                activeStatCard === i ? 'w-4 bg-blue-600' : 'w-1.5 bg-gray-300'
+              }`}
+              onClick={() => {
+                const el = statsScrollRef.current;
+                if (!el) return;
+                const cardWidth = el.scrollWidth / 4;
+                el.scrollTo({ left: cardWidth * i, behavior: 'smooth' });
+              }}
+              aria-label={`Stat card ${i + 1}`}
+            />
+          ))}
+        </div>
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           {/* Main Navigation - Takes 2 columns on large screens */}
           <div className="lg:col-span-2">
-            <div className="mb-4">
+            <div className="mb-4 hidden md:block">
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Accesos Rápidos</h2>
               <p className="text-gray-600">Navega a las secciones principales del sistema</p>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div className="grid grid-cols-2 gap-3 md:gap-6">
               {/* Ventas Card */}
               <motion.div {...cardHover}>
               <Link
                 href="/ventas"
-                className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-blue-300 overflow-hidden block"
+                className="group relative bg-white p-4 md:p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-blue-300 overflow-hidden block"
               >
-                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-400/10 to-blue-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-400/10 to-blue-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500 hidden md:block"></div>
                 <div className="relative">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="p-4 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg group-hover:shadow-xl transition-shadow">
-                      <ShoppingCart className="w-7 h-7 text-white" />
+                  <div className="flex items-start justify-between mb-2 md:mb-4">
+                    <div className="p-2.5 md:p-4 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg group-hover:shadow-xl transition-shadow">
+                      <ShoppingCart className="w-5 h-5 md:w-7 md:h-7 text-white" />
                     </div>
-                    <ArrowUpRight className="w-6 h-6 text-blue-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
+                    <ArrowUpRight className="w-5 h-5 md:w-6 md:h-6 text-blue-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                   </div>
-                  <h3 className="text-xl font-bold text-foreground mb-2">Ventas</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">Gestionar pedidos y clientes</p>
+                  <h3 className="text-base md:text-xl font-bold text-foreground mb-0 md:mb-2">Ventas</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed hidden md:block">Gestionar pedidos y clientes</p>
                 </div>
               </Link>
               </motion.div>
@@ -289,18 +324,18 @@ export default function EnhancedHomeContent() {
               <motion.div {...cardHover}>
               <Link
                 href="/produccion"
-                className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-purple-300 overflow-hidden block"
+                className="group relative bg-white p-4 md:p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-purple-300 overflow-hidden block"
               >
-                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-400/10 to-purple-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-400/10 to-purple-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500 hidden md:block"></div>
                 <div className="relative">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="p-4 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg group-hover:shadow-xl transition-shadow">
-                      <Package className="w-7 h-7 text-white" />
+                  <div className="flex items-start justify-between mb-2 md:mb-4">
+                    <div className="p-2.5 md:p-4 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg group-hover:shadow-xl transition-shadow">
+                      <Package className="w-5 h-5 md:w-7 md:h-7 text-white" />
                     </div>
-                    <ArrowUpRight className="w-6 h-6 text-purple-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
+                    <ArrowUpRight className="w-5 h-5 md:w-6 md:h-6 text-purple-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                   </div>
-                  <h3 className="text-xl font-bold text-foreground mb-2">Producción</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">Gestionar producción y órdenes</p>
+                  <h3 className="text-base md:text-xl font-bold text-foreground mb-0 md:mb-2">Producción</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed hidden md:block">Gestionar producción y órdenes</p>
                 </div>
               </Link>
               </motion.div>
@@ -309,18 +344,18 @@ export default function EnhancedHomeContent() {
               <motion.div {...cardHover}>
               <Link
                 href="/estadisticas"
-                className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-green-300 overflow-hidden block"
+                className="group relative bg-white p-4 md:p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-green-300 overflow-hidden block"
               >
-                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-400/10 to-green-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-400/10 to-green-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500 hidden md:block"></div>
                 <div className="relative">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="p-4 bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg group-hover:shadow-xl transition-shadow">
-                      <BarChart3 className="w-7 h-7 text-white" />
+                  <div className="flex items-start justify-between mb-2 md:mb-4">
+                    <div className="p-2.5 md:p-4 bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg group-hover:shadow-xl transition-shadow">
+                      <BarChart3 className="w-5 h-5 md:w-7 md:h-7 text-white" />
                     </div>
-                    <ArrowUpRight className="w-6 h-6 text-green-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
+                    <ArrowUpRight className="w-5 h-5 md:w-6 md:h-6 text-green-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                   </div>
-                  <h3 className="text-xl font-bold text-foreground mb-2">Estadísticas</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">Análisis y reportes detallados</p>
+                  <h3 className="text-base md:text-xl font-bold text-foreground mb-0 md:mb-2">Estadísticas</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed hidden md:block">Análisis y reportes detallados</p>
                 </div>
               </Link>
               </motion.div>
@@ -330,18 +365,18 @@ export default function EnhancedHomeContent() {
                 <motion.div {...cardHover}>
                 <Link
                   href="/config"
-                  className="group relative bg-white p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-gray-300 overflow-hidden block"
+                  className="group relative bg-white p-4 md:p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-gray-300 overflow-hidden block"
                 >
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-gray-400/10 to-gray-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-gray-400/10 to-gray-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500 hidden md:block"></div>
                   <div className="relative">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="p-4 bg-gradient-to-br from-gray-700 to-gray-900 rounded-xl shadow-lg group-hover:shadow-xl transition-shadow">
-                        <Settings className="w-7 h-7 text-white" />
+                    <div className="flex items-start justify-between mb-2 md:mb-4">
+                      <div className="p-2.5 md:p-4 bg-gradient-to-br from-gray-700 to-gray-900 rounded-xl shadow-lg group-hover:shadow-xl transition-shadow">
+                        <Settings className="w-5 h-5 md:w-7 md:h-7 text-white" />
                       </div>
-                      <ArrowUpRight className="w-6 h-6 text-gray-800 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
+                      <ArrowUpRight className="w-5 h-5 md:w-6 md:h-6 text-gray-800 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                     </div>
-                    <h3 className="text-xl font-bold text-foreground mb-2">Configuración</h3>
-                    <p className="text-sm text-muted-foreground leading-relaxed">Ajustes del sistema</p>
+                    <h3 className="text-base md:text-xl font-bold text-foreground mb-0 md:mb-2">Configuración</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed hidden md:block">Ajustes del sistema</p>
                   </div>
                 </Link>
                 </motion.div>
@@ -351,18 +386,18 @@ export default function EnhancedHomeContent() {
               {(session.user as any)?.isLogisticsAdmin && (
                 <Link
                   href="/logistics"
-                  className="group relative bg-gradient-to-br from-[#0D0D0D] to-[#1a1a2e] p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-indigo-900/40 hover:border-indigo-500/60 overflow-hidden"
+                  className="group relative bg-gradient-to-br from-[#0D0D0D] to-[#1a1a2e] p-4 md:p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-indigo-900/40 hover:border-indigo-500/60 overflow-hidden"
                 >
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-indigo-500/20 to-blue-500/20 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-indigo-500/20 to-blue-500/20 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500 hidden md:block"></div>
                   <div className="relative">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="p-4 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl shadow-lg group-hover:shadow-xl transition-shadow" style={{ boxShadow: '0 0 18px rgba(108,63,255,0.4)' }}>
-                        <Truck className="w-7 h-7 text-white" />
+                    <div className="flex items-start justify-between mb-2 md:mb-4">
+                      <div className="p-2.5 md:p-4 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl shadow-lg group-hover:shadow-xl transition-shadow" style={{ boxShadow: '0 0 18px rgba(108,63,255,0.4)' }}>
+                        <Truck className="w-5 h-5 md:w-7 md:h-7 text-white" />
                       </div>
-                      <ArrowUpRight className="w-6 h-6 text-indigo-400 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
+                      <ArrowUpRight className="w-5 h-5 md:w-6 md:h-6 text-indigo-400 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                     </div>
-                    <h3 className="text-xl font-bold text-white mb-2">Logística</h3>
-                    <p className="text-sm text-gray-400 leading-relaxed">Envíos, guías y carriers</p>
+                    <h3 className="text-base md:text-xl font-bold text-white mb-0 md:mb-2">Logística</h3>
+                    <p className="text-sm text-gray-400 leading-relaxed hidden md:block">Envíos, guías y carriers</p>
                   </div>
                 </Link>
               )}
@@ -380,16 +415,6 @@ export default function EnhancedHomeContent() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Link href="/ventas" className="w-full">
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Nuevo Pedido
-                  </Button>
-                </Link>
-                
                 <Link href="/config?tab=inventory" className="w-full">
                   <Button
                     variant="outline"
@@ -437,7 +462,8 @@ export default function EnhancedHomeContent() {
       {/* Setup Wizard Floating Button (optional - can remove if button in sidebar) */}
       <button
         onClick={() => setShowWizardModal(true)}
-        className="fixed bottom-6 right-6 p-4 bg-gradient-to-br from-purple-600 to-blue-600 text-white rounded-full shadow-lg hover:shadow-xl transform hover:scale-110 transition-all duration-200 group z-50 lg:hidden"
+        className="fixed right-4 p-4 bg-gradient-to-br from-purple-600 to-blue-600 text-white rounded-full shadow-lg hover:shadow-xl transform hover:scale-110 transition-all duration-200 group z-40 lg:hidden"
+        style={{ bottom: 'calc(136px + env(safe-area-inset-bottom, 0px))' }}
         title="Asistente de Configuración"
       >
         <Sparkles className="h-6 w-6 animate-pulse" />

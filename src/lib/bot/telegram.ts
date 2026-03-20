@@ -188,6 +188,46 @@ export async function sendMessageWithButtons(
 }
 
 /**
+ * Send a document (file) to a Telegram chat
+ * Uses multipart/form-data upload via the Telegram Bot API
+ */
+export async function sendDocument(
+  chatId: string | number,
+  fileBuffer: Buffer,
+  filename: string,
+  caption?: string
+): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    throw new Error('TELEGRAM_BOT_TOKEN not set');
+  }
+
+  const formData = new FormData();
+  formData.append('chat_id', String(chatId));
+  formData.append('document', new Blob([fileBuffer]), filename);
+  if (caption) {
+    formData.append('caption', caption);
+    formData.append('parse_mode', 'HTML');
+  }
+
+  console.log(`[Telegram] 📎 Sending document "${filename}" (${fileBuffer.length} bytes) to ${chatId}...`);
+
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const responseData = await response.json();
+
+  if (!response.ok || !responseData.ok) {
+    console.error('[Telegram] ❌ sendDocument failed:', JSON.stringify(responseData));
+    throw new Error(`Telegram sendDocument error: ${responseData.description || 'Unknown error'}`);
+  }
+
+  console.log(`[Telegram] ✅ Document delivered, message_id: ${responseData.result?.message_id}`);
+}
+
+/**
  * Generate a magic deep link for bot connection
  * The payload contains encrypted user/tenant info
  */

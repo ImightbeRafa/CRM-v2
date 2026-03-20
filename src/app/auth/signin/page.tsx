@@ -184,7 +184,7 @@ function SignInPageInner() {
         <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
           {isRegistering && (
             <div>
-              <label className="block text-sm font-medium text-gray-700">Nombre (opcional)</label>
+              <label className="block text-sm font-semibold text-gray-800">Nombre (opcional)</label>
               <input
                 type="text"
                 value={name}
@@ -195,7 +195,7 @@ function SignInPageInner() {
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-gray-700">Correo Electrónico</label>
+            <label className="block text-sm font-semibold text-gray-800">Correo Electrónico</label>
             <input
               type="email"
               value={email}
@@ -206,7 +206,7 @@ function SignInPageInner() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Contraseña</label>
+            <label className="block text-sm font-semibold text-gray-800">Contraseña</label>
             <div className="relative mt-1">
               <input
                 type={showPassword ? "text" : "password"}
@@ -230,7 +230,7 @@ function SignInPageInner() {
               <div className="flex justify-end mt-1">
                 <Link
                   href="/auth/forgot-password"
-                  className="text-xs text-blue-600 hover:text-blue-800"
+                  className="text-sm text-blue-600 hover:text-blue-800 py-2 min-h-[44px] inline-flex items-center"
                 >
                   ¿Olvidaste tu contraseña?
                 </Link>
@@ -253,7 +253,7 @@ function SignInPageInner() {
             <button
               type="button"
               onClick={() => setIsRegistering(!isRegistering)}
-              className="text-sm text-blue-600 hover:text-blue-800 py-2"
+              className="text-sm text-blue-600 hover:text-blue-800 py-3 min-h-[44px] inline-flex items-center"
             >
               {isRegistering 
                 ? '¿Ya tienes cuenta? Inicia sesión' 

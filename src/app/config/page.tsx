@@ -608,20 +608,21 @@ function ConfigPageInner() {
           
           {/* Mobile: Scrollable tabs */}
           <div className="md:hidden -mx-4 px-4 overflow-x-auto scrollbar-hide">
-            <div className="flex gap-2.5 pb-2 min-w-max">
+            <div className="flex gap-2 pb-2 min-w-max">
               {tabs.map((tab) => {
                 const Icon = tab.icon
+                const isActive = activeTab === tab.id
                 return (
                 <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center gap-2.5 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${
-                      activeTab === tab.id
-                        ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg scale-105'
-                        : 'bg-white text-gray-600 hover:text-gray-900 shadow-sm border border-gray-200 hover:border-blue-300'
+                    className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 whitespace-nowrap min-h-[40px] ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'bg-white text-gray-600 border border-gray-200'
                   }`}
                 >
-                    <Icon className="w-4 h-4 flex-shrink-0" />
+                    <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400'}`} />
                     <span>{tab.label}</span>
                 </button>
                 )

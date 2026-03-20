@@ -10,7 +10,7 @@
 console.log('🚀🚀🚀 WEBHOOK MODULE LOADING 🚀🚀🚀', new Date().toISOString());
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getTelegramBot, sendMessage, sendTypingAction } from '@/lib/bot/telegram';
+import { getTelegramBot, sendMessage, sendTypingAction, sendDocument } from '@/lib/bot/telegram';
 import { timingSafeEqual } from 'crypto';
 import { 
   findBotSession, 
@@ -357,77 +357,72 @@ async function handleMessage(message: any) {
       await sendMessage(chatId, '🗑️ Historial de conversación limpiado. ¡Empecemos de nuevo!');
       return;
     }
-    
-  // Handle /status command
-  if (text === '/status') {
-    console.log(`[Telegram] 📊 Handling /status command for ${chatId}`);
-    await handleStatusCommand(chatId);
-    return;
-  }
-  
-  // Check if awaiting name (during setup)
-  const { getConversationState, clearConversationState } = await import('@/lib/bot/conversation-memory');
-  const state = await getConversationState('telegram', chatId);
-  
-  if (state?.awaitingName) {
-    console.log(`[Telegram] 📝 User provided name during setup: ${text}`);
-    
-    // Validate name (basic check)
-    if (text.length < 2 || text.length > 100) {
-      await sendMessage(chatId, '⚠️ Por favor ingresa un nombre válido (entre 2 y 100 caracteres).');
+
+    // Handle /status command
+    if (text === '/status') {
+      console.log(`[Telegram] 📊 Handling /status command for ${chatId}`);
+      await handleStatusCommand(chatId);
       return;
     }
-    
-    try {
-      // Create bot session using helper function
-      console.log(`[Telegram] 🔧 Creating session for ${chatId} in tenant ${state.tenantId}`);
-      const session = await createBotSession(
-        'telegram',
-        chatId,
-        null, // No specific user - team member
-        state.tenantId,
-        {
-          providedName: text.trim(),
-          displayName: displayName,
-          username: username,
-        }
-      );
-      
-      console.log(`[Telegram] ✅ Session created successfully:`, {
-        id: session.id,
-        platformId: session.platformId,
-        tenantId: session.tenantId,
-        providedName: session.providedName,
-      });
-      
-      // Verify session was created by trying to fetch it
-      const verifySession = await findBotSession('telegram', chatId);
-      if (!verifySession) {
-        console.error(`[Telegram] ❌ CRITICAL: Session was created but cannot be found immediately!`);
-        await sendMessage(chatId, '⚠️ Hubo un error al guardar tu sesión. Por favor intenta de nuevo con /start CODE');
+
+    // Check if awaiting name (during setup)
+    const { getConversationState, clearConversationState } = await import('@/lib/bot/conversation-memory');
+    const state = await getConversationState('telegram', chatId);
+
+    if (state?.awaitingName) {
+      console.log(`[Telegram] 📝 User provided name during setup: ${text}`);
+
+      if (text.length < 2 || text.length > 100) {
+        await sendMessage(chatId, '⚠️ Por favor ingresa un nombre válido (entre 2 y 100 caracteres).');
         return;
       }
-      console.log(`[Telegram] ✅ Session verified: ${verifySession.id}`);
-      
-    } catch (error: any) {
-      console.error(`[Telegram] ❌ Error creating session:`, error);
-      console.error(`[Telegram] Error details:`, {
-        message: error.message,
-        code: error.code,
-        meta: error.meta,
-      });
-      await sendMessage(chatId, '❌ Error al crear tu sesión. Por favor contacta a soporte.');
-      return;
-    }
-    
-    // Clear state
-    await clearConversationState('telegram', chatId);
-    
-    // Send welcome message
-    const safeName = escapeHtml(text.trim());
-    const safeTenantName = escapeHtml(state.tenantName);
-    const safeUsername = username ? escapeHtml(username) : null;
-    const welcomeMsg = `🎉 <b>¡Configuración completa, ${safeName}!</b>
+
+      try {
+        console.log(`[Telegram] 🔧 Creating session for ${chatId} in tenant ${state.tenantId}`);
+        const session = await createBotSession(
+          'telegram',
+          chatId,
+          null,
+          state.tenantId,
+          {
+            providedName: text.trim(),
+            displayName: displayName,
+            username: username,
+          }
+        );
+
+        console.log(`[Telegram] ✅ Session created successfully:`, {
+          id: session.id,
+          platformId: session.platformId,
+          tenantId: session.tenantId,
+          providedName: session.providedName,
+        });
+
+        const verifySession = await findBotSession('telegram', chatId);
+        if (!verifySession) {
+          console.error(`[Telegram] ❌ CRITICAL: Session was created but cannot be found immediately!`);
+          await sendMessage(chatId, '⚠️ Hubo un error al guardar tu sesión. Por favor intenta de nuevo con /start CODE');
+          return;
+        }
+        console.log(`[Telegram] ✅ Session verified: ${verifySession.id}`);
+
+      } catch (error: any) {
+        console.error(`[Telegram] ❌ Error creating session:`, error);
+        console.error(`[Telegram] Error details:`, {
+          message: error.message,
+          code: error.code,
+          meta: error.meta,
+        });
+        await sendMessage(chatId, '❌ Error al crear tu sesión. Por favor contacta a soporte.');
+        return;
+      }
+
+      await clearConversationState('telegram', chatId);
+
+      const safeName = escapeHtml(text.trim());
+      const safeTenantName = escapeHtml(state.tenantName);
+      const safeUsername = username ? escapeHtml(username) : null;
+      const welcomeMsg = `🎉 <b>¡Configuración completa, ${safeName}!</b>
 
 ✅ <b>Tu bot está listo para usar</b>
 
@@ -468,29 +463,28 @@ Usuario: ${safeUsername ? `@${safeUsername}` : 'Telegram'}
 <b>🚀 ¡Escribe tu primera consulta ahora!</b>
 
 Usa /help para ver todos los comandos disponibles.`;
-    
-    await sendMessage(chatId, welcomeMsg);
-    
-    console.log(`[Telegram] ✅ Session created for ${text.trim()} (@${username}) in tenant ${state.tenantName}`);
-    return;
-  }
-  
-  // Check if user is connected
-  console.log(`[Telegram] 🔍 Checking session for ${chatId}...`);
-  console.log(`[Telegram] 🔍 Chat ID type: ${typeof chatId}, value: "${chatId}"`);
-  
-  // First check with findBotSession to debug
-  const simpleSession = await findBotSession('telegram', chatId);
-  console.log(`[Telegram] 🔍 Simple session lookup result:`, simpleSession ? {
-    id: simpleSession.id,
-    platformId: simpleSession.platformId,
-    userId: simpleSession.userId,
-    tenantId: simpleSession.tenantId,
-    isActive: simpleSession.isActive,
-  } : 'null');
-  
-  const sessionContext = await getBotSessionWithContext('telegram', chatId);
-    
+
+      await sendMessage(chatId, welcomeMsg);
+
+      console.log(`[Telegram] ✅ Session created for ${text.trim()} (@${username}) in tenant ${state.tenantName}`);
+      return;
+    }
+
+    // Check if user is connected
+    console.log(`[Telegram] 🔍 Checking session for ${chatId}...`);
+    console.log(`[Telegram] 🔍 Chat ID type: ${typeof chatId}, value: "${chatId}"`);
+
+    const simpleSession = await findBotSession('telegram', chatId);
+    console.log(`[Telegram] 🔍 Simple session lookup result:`, simpleSession ? {
+      id: simpleSession.id,
+      platformId: simpleSession.platformId,
+      userId: simpleSession.userId,
+      tenantId: simpleSession.tenantId,
+      isActive: simpleSession.isActive,
+    } : 'null');
+
+    const sessionContext = await getBotSessionWithContext('telegram', chatId);
+
     if (!sessionContext) {
       console.log(`[Telegram] ⚠️ No session context found for ${chatId}`);
       console.log(`[Telegram] 📋 But simple session was: ${simpleSession ? 'FOUND' : 'NOT FOUND'}`);
@@ -525,11 +519,25 @@ Usa /help para ver todos los comandos disponibles.`;
       }
     );
     
-    console.log(`[Telegram] 💬 AI Response generated (${response.length} chars)`);
+    console.log(`[Telegram] 💬 AI Response generated (${response.text.length} chars)`);
     
-    // Send response (split if too long for Telegram)
+    // Send text response (split if too long for Telegram)
     console.log(`[Telegram] 📤 Sending response to ${chatId}...`);
-    await sendLongMessage(chatId, response);
+    await sendLongMessage(chatId, response.text);
+
+    // Send any PDF attachments from tool results
+    if (response.attachments && response.attachments.length > 0) {
+      for (const attachment of response.attachments) {
+        try {
+          console.log(`[Telegram] 📎 Sending attachment "${attachment.filename}" to ${chatId}...`);
+          await sendDocument(chatId, attachment.buffer, attachment.filename, attachment.caption);
+        } catch (attachErr: any) {
+          console.error(`[Telegram] ❌ Failed to send attachment "${attachment.filename}":`, attachErr.message);
+          await sendMessage(chatId, `⚠️ No pude enviar el archivo "${attachment.filename}". Puedes descargarlo desde el panel de Betsy.`);
+        }
+      }
+    }
+
     console.log(`[Telegram] ✅ Response sent successfully to ${chatId}`);
   } catch (error: any) {
     console.error(`[Telegram] ❌ Error in handleMessage:`, error);

@@ -1,18 +1,20 @@
 'use client'
 
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Card, CardContent } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { Badge } from '@/app/components/ui/badge';
-import { Checkbox } from '@/app/components/ui/checkbox';
-import { 
-  Plus, 
-  Edit, 
-  Trash2, 
-  Truck, 
+import {
+  Save,
+  Eye,
+  EyeOff,
   CheckCircle,
+  Loader2,
+  Wifi,
+  WifiOff,
+  AlertCircle,
 } from 'lucide-react';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 
@@ -20,164 +22,174 @@ interface ShippingConfig {
   id: string;
   carrier: string;
   name: string;
-  email?: string;
-  password?: string;
-  apiKey?: string;
-  baseUrl?: string;
   isActive: boolean;
   isDefault: boolean;
-  settings?: any;
-  createdAt: string;
-  updatedAt: string;
+  settings?: Record<string, any>;
 }
 
 export function ShippingConfigManagement() {
   const { user, loading: userLoading } = useCurrentUser();
-  const [configs, setConfigs] = useState<ShippingConfig[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editingConfig, setEditingConfig] = useState<ShippingConfig | null>(null);
+  const [existingId, setExistingId] = useState<string | null>(null);
 
-  // Form state
-  const [formData, setFormData] = useState({
-    carrier: '',
-    name: '',
-    email: '',
-    password: '',
-    apiKey: '',
-    baseUrl: '',
-    isDefault: false,
-    settings: {} as Record<string, any>,
-  });
+  const [wsUsername, setWsUsername] = useState('');
+  const [wsPassword, setWsPassword] = useState('');
+  const [wsSistema, setWsSistema] = useState('');
+  const [wsUsuarioId, setWsUsuarioId] = useState('');
+  const [wsServicioId, setWsServicioId] = useState('');
+  const [wsCodCliente, setWsCodCliente] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [hasCredentials, setHasCredentials] = useState(false);
 
-  const isCorreos = formData.carrier.toLowerCase() === 'correos_cr';
+  const [senderName, setSenderName] = useState('');
+  const [senderAddress, setSenderAddress] = useState('');
+  const [senderZip, setSenderZip] = useState('');
+  const [senderPhone, setSenderPhone] = useState('');
 
-  const updateSetting = (key: string, value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      settings: { ...prev.settings, [key]: value },
-    }));
-  };
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const buildSettings = useCallback(() => {
+    const settings: Record<string, string> = {
+      ws_username: wsUsername.trim(),
+      ws_sistema: wsSistema.trim(),
+      ws_usuario_id: wsUsuarioId.trim(),
+      ws_servicio_id: wsServicioId.trim(),
+      ws_cod_cliente: wsCodCliente.trim(),
+      ws_sender_name: senderName.trim(),
+      ws_sender_address: senderAddress.trim(),
+      ws_sender_zip: senderZip.trim(),
+      ws_sender_phone: senderPhone.trim(),
+    };
+    if (wsPassword) {
+      settings.ws_password = wsPassword;
+    }
+    return settings;
+  }, [wsUsername, wsPassword, wsSistema, wsUsuarioId, wsServicioId, wsCodCliente, senderName, senderAddress, senderZip, senderPhone]);
 
   useEffect(() => {
-    loadConfigs();
+    loadConfig();
   }, []);
 
-  const loadConfigs = async () => {
+  const loadConfig = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/config/shipping-config', {
-        credentials: 'include'
-      });
-      const result = await response.json();
-      
-      if (result.status === 'success') {
-        setConfigs(result.data);
+      const res = await fetch('/api/config/shipping-config', { credentials: 'include' });
+      const result = await res.json();
+      if (result.status === 'success' && Array.isArray(result.data)) {
+        const correosConfig = result.data.find(
+          (c: ShippingConfig) => c.carrier.toLowerCase() === 'correos_cr' && c.isActive
+        );
+        if (correosConfig) {
+          setExistingId(correosConfig.id);
+          const s = correosConfig.settings || {};
+          setWsUsername(s.ws_username || '');
+          setWsSistema(s.ws_sistema || '');
+          setWsUsuarioId(s.ws_usuario_id || '');
+          setWsServicioId(s.ws_servicio_id || '');
+          setWsCodCliente(s.ws_cod_cliente || '');
+          setSenderName(s.ws_sender_name || '');
+          setSenderAddress(s.ws_sender_address || '');
+          setSenderZip(s.ws_sender_zip || '');
+          setSenderPhone(s.ws_sender_phone || '');
+          setHasCredentials(!!s.ws_password && s.ws_password !== '');
+        }
       }
-    } catch (error) {
-      console.error('Error loading shipping configs:', error);
+    } catch (err) {
+      console.error('Error loading Correos CR config:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const url = editingConfig ? '/api/config/shipping-config' : '/api/config/shipping-config';
-      const method = editingConfig ? 'PUT' : 'POST';
-      const body = editingConfig ? { id: editingConfig.id, ...formData } : formData;
+  const handleSave = async () => {
+    if (!wsUsername.trim()) return;
+    setSaving(true);
+    setSaveError('');
+    setSaved(false);
 
-      const response = await fetch(url, {
+    try {
+      const method = existingId ? 'PUT' : 'POST';
+      const payload: Record<string, any> = {
+        carrier: 'correos_cr',
+        name: 'Correos de Costa Rica',
+        isDefault: true,
+        settings: buildSettings(),
+      };
+      if (existingId) {
+        payload.id = existingId;
+      }
+
+      const res = await fetch('/api/config/shipping-config', {
         method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(body)
+        body: JSON.stringify(payload),
       });
 
-      if (response.ok) {
-        await loadConfigs();
-        setShowForm(false);
-        setEditingConfig(null);
-        setFormData({
-          carrier: '',
-          name: '',
-          email: '',
-          password: '',
-          apiKey: '',
-          baseUrl: '',
-          isDefault: false,
-          settings: {}
-        });
+      if (res.ok) {
+        const result = await res.json();
+        if (!existingId && result.data?.id) {
+          setExistingId(result.data.id);
+        }
+        setHasCredentials(true);
+        setWsPassword('');
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      } else {
+        const errData = await res.json().catch(() => null);
+        setSaveError(errData?.error || 'Error al guardar la configuración');
       }
-    } catch (error) {
-      console.error('Error saving shipping config:', error);
+    } catch (err) {
+      console.error('Error saving Correos CR config:', err);
+      setSaveError('Error de conexión al guardar');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('¿Está seguro de que desea eliminar esta configuración de envío?')) return;
-    
+  const handleTest = async () => {
+    if (!wsUsername.trim()) return;
+    setTesting(true);
+    setTestResult(null);
+
+    const settings = buildSettings();
+    if (!settings.ws_password && !hasCredentials) {
+      setTestResult({ success: false, message: 'Se requiere contraseña para probar la conexión.' });
+      setTesting(false);
+      return;
+    }
+
     try {
-      const response = await fetch(`/api/config/shipping-config?id=${id}`, {
-        method: 'DELETE'
+      const res = await fetch('/api/config/correos-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ settings }),
       });
-
-      if (response.ok) {
-        await loadConfigs();
-      }
-    } catch (error) {
-      console.error('Error deleting shipping config:', error);
-    }
-  };
-
-  const handleEdit = (config: ShippingConfig) => {
-    setEditingConfig(config);
-    setFormData({
-      carrier: config.carrier,
-      name: config.name,
-      email: config.email || '',
-      password: '',
-      apiKey: config.apiKey || '',
-      baseUrl: config.baseUrl || '',
-      isDefault: config.isDefault,
-      settings: config.settings || {},
-    });
-    setShowForm(true);
-  };
-
-  const getCarrierIcon = (carrier: string) => {
-    switch (carrier.toLowerCase()) {
-      case 'correos_cr':
-        return '🇨🇷';
-      case 'dhl':
-        return '📦';
-      case 'fedex':
-        return '🚚';
-      case 'ups':
-        return '📦';
-      default:
-        return '🚛';
-    }
-  };
-
-  const getCarrierName = (carrier: string) => {
-    switch (carrier.toLowerCase()) {
-      case 'correos_cr':
-        return 'Correos de Costa Rica';
-      case 'dhl':
-        return 'DHL';
-      case 'fedex':
-        return 'FedEx';
-      case 'ups':
-        return 'UPS';
-      default:
-        return carrier;
+      const data = await res.json();
+      setTestResult({
+        success: data.success,
+        message: data.success ? data.message : (data.error || 'Error desconocido'),
+      });
+    } catch (err) {
+      setTestResult({ success: false, message: 'No se pudo conectar al servidor de pruebas.' });
+    } finally {
+      setTesting(false);
     }
   };
 
   if (userLoading || loading) {
-    return <div className="p-4">Cargando configuraciones de envío...</div>;
+    return (
+      <div className="flex items-center justify-center p-8 text-muted-foreground gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Cargando configuración de Correos CR...
+      </div>
+    );
   }
 
   if (!user || user.role !== 'MASTER') {
@@ -195,271 +207,236 @@ export function ShippingConfigManagement() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-2xl">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Configuración de Envíos</h2>
-          <p className="text-gray-600">Gestiona las configuraciones de empresas de envío</p>
+      <div>
+        <div className="flex items-center gap-3 mb-1">
+          <h2 className="text-2xl font-bold">Correos de Costa Rica</h2>
+          {hasCredentials && (
+            <Badge variant="outline" className="border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-400">
+              <CheckCircle className="h-3 w-3 mr-1" />
+              Configurado
+            </Badge>
+          )}
         </div>
+        <p className="text-sm text-muted-foreground">
+          Configuración del Web Service SOAP para la generación automática de guías
+        </p>
+      </div>
+
+      {/* Web Service (SOAP API) */}
+      <Card className="border-emerald-200 dark:border-emerald-800/60">
+        <CardContent className="p-5 space-y-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Wifi className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            <h3 className="font-semibold text-sm text-emerald-800 dark:text-emerald-300">Web Service (SOAP API)</h3>
+            <span className="text-xs text-muted-foreground">Credenciales proporcionadas por Correos CR</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="ws_username">Username</Label>
+              <Input
+                id="ws_username"
+                value={wsUsername}
+                onChange={(e) => setWsUsername(e.target.value)}
+                placeholder="ccrWS0000000"
+              />
+            </div>
+            <div>
+              <Label htmlFor="ws_password">
+                Password
+                {hasCredentials && (
+                  <span className="text-xs text-muted-foreground font-normal ml-1">(vacío = mantener)</span>
+                )}
+              </Label>
+              <div className="relative">
+                <Input
+                  id="ws_password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={wsPassword}
+                  onChange={(e) => setWsPassword(e.target.value)}
+                  placeholder={hasCredentials ? '••••••••' : 'Contraseña WS'}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((p) => !p)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="ws_sistema">Sistema</Label>
+            <Input
+              id="ws_sistema"
+              value={wsSistema}
+              onChange={(e) => setWsSistema(e.target.value)}
+              placeholder="PYMEXPRESS"
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label htmlFor="ws_usuario_id">Usuario ID</Label>
+              <Input
+                id="ws_usuario_id"
+                value={wsUsuarioId}
+                onChange={(e) => setWsUsuarioId(e.target.value)}
+                placeholder="100000000"
+              />
+            </div>
+            <div>
+              <Label htmlFor="ws_servicio_id">Servicio ID</Label>
+              <Input
+                id="ws_servicio_id"
+                value={wsServicioId}
+                onChange={(e) => setWsServicioId(e.target.value)}
+                placeholder="1000"
+              />
+            </div>
+            <div>
+              <Label htmlFor="ws_cod_cliente">Código Cliente</Label>
+              <Input
+                id="ws_cod_cliente"
+                value={wsCodCliente}
+                onChange={(e) => setWsCodCliente(e.target.value)}
+                placeholder="0000000"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Datos del Remitente */}
+      <Card className="border-amber-200 dark:border-amber-800/60">
+        <CardContent className="p-5 space-y-4">
+          <div>
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-base">📦</span>
+              <h3 className="font-semibold text-sm text-amber-800 dark:text-amber-300">Datos del Remitente</h3>
+            </div>
+            <p className="text-xs text-muted-foreground ml-7">
+              Información que aparece como remitente en cada guía generada
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="ws_sender_name">Nombre del Remitente</Label>
+            <Input
+              id="ws_sender_name"
+              value={senderName}
+              onChange={(e) => setSenderName(e.target.value)}
+              placeholder="Mi Empresa S.A."
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="ws_sender_address">Dirección del Remitente</Label>
+            <Input
+              id="ws_sender_address"
+              value={senderAddress}
+              onChange={(e) => setSenderAddress(e.target.value)}
+              placeholder="Barrio Los Yoses, San Pedro, San José"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="ws_sender_zip">Código Postal</Label>
+              <Input
+                id="ws_sender_zip"
+                value={senderZip}
+                onChange={(e) => setSenderZip(e.target.value)}
+                placeholder="10107"
+              />
+            </div>
+            <div>
+              <Label htmlFor="ws_sender_phone">Teléfono</Label>
+              <Input
+                id="ws_sender_phone"
+                value={senderPhone}
+                onChange={(e) => setSenderPhone(e.target.value)}
+                placeholder="22345678"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Test result feedback */}
+      {testResult && (
+        <div
+          className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm ${
+            testResult.success
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+              : 'border-red-300 bg-red-50 text-red-800 dark:border-red-700 dark:bg-red-950/30 dark:text-red-300'
+          }`}
+        >
+          {testResult.success ? (
+            <CheckCircle className="h-4 w-4 flex-shrink-0" />
+          ) : (
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+          )}
+          {testResult.message}
+        </div>
+      )}
+
+      {/* Save error feedback */}
+      {saveError && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 text-red-800 dark:border-red-700 dark:bg-red-950/30 dark:text-red-300 px-4 py-3 text-sm">
+          <AlertCircle className="h-4 w-4 flex-shrink-0" />
+          {saveError}
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex gap-3">
         <Button
-          onClick={() => {
-            setEditingConfig(null);
-            setFormData({
-              carrier: '',
-              name: '',
-              email: '',
-              password: '',
-              apiKey: '',
-              baseUrl: '',
-              isDefault: false,
-              settings: {}
-            });
-            setShowForm(true);
-          }}
+          onClick={handleTest}
+          disabled={testing || !wsUsername.trim()}
+          variant="outline"
           className="flex items-center gap-2"
         >
-          <Plus className="h-4 w-4" />
-          Agregar Configuración
+          {testing ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : testResult?.success ? (
+            <Wifi className="h-4 w-4 text-emerald-600" />
+          ) : testResult && !testResult.success ? (
+            <WifiOff className="h-4 w-4 text-red-500" />
+          ) : (
+            <Wifi className="h-4 w-4" />
+          )}
+          {testing ? 'Probando...' : 'Probar Conexión'}
+        </Button>
+
+        <Button
+          onClick={handleSave}
+          disabled={saving || !wsUsername.trim()}
+          className="flex items-center gap-2"
+        >
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : saved ? (
+            <CheckCircle className="h-4 w-4" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
+          {saving ? 'Guardando...' : saved ? 'Guardado' : 'Guardar Configuración Correos CR'}
         </Button>
       </div>
 
-      {/* Form */}
-      {showForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {editingConfig ? 'Editar Configuración de Envío' : 'Nueva Configuración de Envío'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="carrier">Empresa de Envío</Label>
-                  <Input
-                    id="carrier"
-                    value={formData.carrier}
-                    onChange={(e) => setFormData({ ...formData, carrier: e.target.value })}
-                    placeholder="correos_cr, dhl, fedex, etc."
-                    required
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="name">Nombre para Mostrar</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Correos de Costa Rica"
-                    required
-                  />
-                </div>
-              </div>
-
-              {isCorreos ? (
-                <div className="space-y-4">
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/20 p-4 space-y-3">
-                    <h4 className="font-semibold text-sm text-emerald-800 dark:text-emerald-300">Credenciales Web Service (SOAP API)</h4>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <Label htmlFor="ws_username">Username</Label>
-                        <Input id="ws_username" value={formData.settings.ws_username || ''} onChange={(e) => updateSetting('ws_username', e.target.value)} placeholder="ccrWS..." />
-                      </div>
-                      <div>
-                        <Label htmlFor="ws_password">Password {editingConfig && <span className="text-xs text-gray-400">(vacío = mantener)</span>}</Label>
-                        <Input id="ws_password" type="password" value={formData.settings.ws_password || ''} onChange={(e) => updateSetting('ws_password', e.target.value)} placeholder={editingConfig ? '••••••••' : 'Password'} />
-                      </div>
-                    </div>
-                    <div>
-                      <Label htmlFor="ws_sistema">Sistema</Label>
-                      <Input id="ws_sistema" value={formData.settings.ws_sistema || ''} onChange={(e) => updateSetting('ws_sistema', e.target.value)} placeholder="PYMEXPRESS" />
-                    </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div>
-                        <Label htmlFor="ws_usuario_id">Usuario ID</Label>
-                        <Input id="ws_usuario_id" value={formData.settings.ws_usuario_id || ''} onChange={(e) => updateSetting('ws_usuario_id', e.target.value)} placeholder="117960921" />
-                      </div>
-                      <div>
-                        <Label htmlFor="ws_servicio_id">Servicio ID</Label>
-                        <Input id="ws_servicio_id" value={formData.settings.ws_servicio_id || ''} onChange={(e) => updateSetting('ws_servicio_id', e.target.value)} placeholder="1564" />
-                      </div>
-                      <div>
-                        <Label htmlFor="ws_cod_cliente">Código Cliente</Label>
-                        <Input id="ws_cod_cliente" value={formData.settings.ws_cod_cliente || ''} onChange={(e) => updateSetting('ws_cod_cliente', e.target.value)} placeholder="7362097" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20 p-4 space-y-3">
-                    <h4 className="font-semibold text-sm text-amber-800 dark:text-amber-300">Datos del Remitente</h4>
-                    <p className="text-xs text-gray-500">Información que aparece como remitente en cada guía generada</p>
-                    <div>
-                      <Label htmlFor="ws_sender_name">Nombre del Remitente</Label>
-                      <Input id="ws_sender_name" value={formData.settings.ws_sender_name || ''} onChange={(e) => updateSetting('ws_sender_name', e.target.value)} placeholder="Mi Empresa S.A." />
-                    </div>
-                    <div>
-                      <Label htmlFor="ws_sender_address">Dirección del Remitente</Label>
-                      <Input id="ws_sender_address" value={formData.settings.ws_sender_address || ''} onChange={(e) => updateSetting('ws_sender_address', e.target.value)} placeholder="Barrio Los Yoses, San Pedro, San José" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <Label htmlFor="ws_sender_zip">Código Postal</Label>
-                        <Input id="ws_sender_zip" value={formData.settings.ws_sender_zip || ''} onChange={(e) => updateSetting('ws_sender_zip', e.target.value)} placeholder="10107" />
-                      </div>
-                      <div>
-                        <Label htmlFor="ws_sender_phone">Teléfono</Label>
-                        <Input id="ws_sender_phone" value={formData.settings.ws_sender_phone || ''} onChange={(e) => updateSetting('ws_sender_phone', e.target.value)} placeholder="22345678" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="email">Email de Acceso</Label>
-                    <Input id="email" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="usuario@ejemplo.com" />
-                  </div>
-                  <div>
-                    <Label htmlFor="password">Contraseña</Label>
-                    <Input id="password" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Contraseña de acceso" />
-                  </div>
-                  <div>
-                    <Label htmlFor="apiKey">API Key (Opcional)</Label>
-                    <Input id="apiKey" value={formData.apiKey} onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })} placeholder="API Key si está disponible" />
-                  </div>
-                  <div>
-                    <Label htmlFor="baseUrl">URL Base</Label>
-                    <Input id="baseUrl" value={formData.baseUrl} onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })} placeholder="https://api.example.com" />
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="isDefault"
-                  checked={formData.isDefault}
-                  onCheckedChange={(checked) => setFormData({ ...formData, isDefault: !!checked })}
-                />
-                <Label htmlFor="isDefault">Configuración por Defecto</Label>
-              </div>
-
-              <div className="flex gap-2">
-                <Button type="submit">
-                  {editingConfig ? 'Actualizar' : 'Crear'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setShowForm(false);
-                    setEditingConfig(null);
-                  }}
-                >
-                  Cancelar
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Configurations List */}
-      <div className="grid gap-4">
-        {configs.map((config) => (
-          <Card key={config.id}>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{getCarrierIcon(config.carrier)}</span>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">{config.name}</h3>
-                        {config.isDefault && (
-                          <Badge variant="default" className="bg-green-100 text-green-800">
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            Por Defecto
-                          </Badge>
-                        )}
-                        <Badge variant="outline">{getCarrierName(config.carrier)}</Badge>
-                      </div>
-                      <div className="text-sm text-gray-600 space-y-1">
-                        {config.carrier.toLowerCase() === 'correos_cr' && config.settings ? (
-                          <>
-                            {config.settings.ws_username && <p>🔗 WS: {config.settings.ws_username}</p>}
-                            {config.settings.ws_sender_name && <p>📦 Remitente: {config.settings.ws_sender_name}</p>}
-                            {config.settings.ws_sender_phone && <p>📞 {config.settings.ws_sender_phone}</p>}
-                            {config.settings.ws_password && <p>🔒 Credenciales WS configuradas</p>}
-                          </>
-                        ) : (
-                          <>
-                            {config.email && <p>📧 {config.email}</p>}
-                            {config.baseUrl && <p>🌐 {config.baseUrl}</p>}
-                            {config.apiKey && <p>🔑 API Key configurada</p>}
-                            {config.password && <p>🔒 Contraseña configurada</p>}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleEdit(config)}
-                  >
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleDelete(config.id)}
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      {/* Info note */}
+      <div className="rounded-lg border bg-muted/50 px-4 py-3">
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          <strong className="text-foreground/70">Nota:</strong> Los datos del remitente aparecerán impresos en cada guía de Correos CR.
+          Asegúrese de que la dirección, código postal y teléfono sean correctos.
+        </p>
       </div>
-
-      {configs.length === 0 && (
-        <Card>
-          <CardContent className="p-6 text-center">
-            <Truck className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-            <h3 className="text-lg font-semibold text-gray-600 mb-2">
-              No hay configuraciones de envío
-            </h3>
-            <p className="text-gray-500 mb-4">
-              Agrega una configuración para automatizar la generación de guías de envío.
-            </p>
-            <Button
-              onClick={() => {
-                setEditingConfig(null);
-                setFormData({
-                  carrier: '',
-                  name: '',
-                  email: '',
-                  password: '',
-                  apiKey: '',
-                  baseUrl: '',
-                  isDefault: false,
-                  settings: {}
-                });
-                setShowForm(true);
-              }}
-              className="flex items-center gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              Agregar Primera Configuración
-            </Button>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

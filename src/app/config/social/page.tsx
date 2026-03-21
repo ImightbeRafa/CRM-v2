@@ -369,18 +369,18 @@ export default function SocialConfigPage() {
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Configuración de Cuentas Sociales</h1>
-        <p className="text-gray-600">Aquí puedes vincular WhatsApp e Instagram para gestionar chats desde Betsy.</p>
+        <p className="text-muted-foreground">Aquí puedes vincular WhatsApp e Instagram para gestionar chats desde Betsy.</p>
       </div>
 
       {/* Instagram Setup */}
-      <div className="border rounded-lg p-6 bg-white shadow-sm">
+      <div className="border rounded-lg p-6 bg-card shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <span className="text-2xl">📸</span>
               Instagram Business
             </h2>
-            <p className="text-sm text-gray-600 mt-1">Conecta tu cuenta de Instagram Business para gestionar DMs</p>
+            <p className="text-sm text-muted-foreground mt-1">Conecta tu cuenta de Instagram Business para gestionar DMs</p>
           </div>
         </div>
 
@@ -414,20 +414,20 @@ export default function SocialConfigPage() {
           <span>🔗</span>
           Conectar con Facebook/Instagram
         </button>
-        <p className="text-xs text-gray-500 mt-2 text-center">
+        <p className="text-xs text-muted-foreground mt-2 text-center">
           Se abrirá una ventana para iniciar sesión con Facebook y autorizar el acceso a Instagram
         </p>
       </div>
 
       {/* WhatsApp Setup */}
-      <div className="border rounded-lg p-6 bg-white shadow-sm">
+      <div className="border rounded-lg p-6 bg-card shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <span className="text-2xl">💬</span>
               WhatsApp Business API
             </h2>
-            <p className="text-sm text-gray-600 mt-1">Conecta tu número de WhatsApp Business para recibir y enviar mensajes</p>
+            <p className="text-sm text-muted-foreground mt-1">Conecta tu número de WhatsApp Business para recibir y enviar mensajes</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -438,7 +438,7 @@ export default function SocialConfigPage() {
               Conectar con Facebook (WhatsApp)
             </button>
             {(!fbReady || !FB_LOGIN_CONFIG_ID) && (
-              <span className="text-xs text-gray-500">{!FB_LOGIN_CONFIG_ID ? 'Falta CONFIG_ID' : 'Cargando SDK...'}</span>
+              <span className="text-xs text-muted-foreground">{!FB_LOGIN_CONFIG_ID ? 'Falta CONFIG_ID' : 'Cargando SDK...'}</span>
             )}
           </div>
           <button
@@ -520,11 +520,11 @@ export default function SocialConfigPage() {
                 setAccountId(e.target.value)
                 setValidationError('')
               }}
-              className="border border-gray-300 rounded-lg px-4 py-3 w-full focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              className="border border-border rounded-lg px-4 py-3 w-full focus:ring-2 focus:ring-green-500 focus:border-transparent"
               placeholder="123456789012345"
               disabled={linking}
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Copia esto de Meta Dashboard → WhatsApp → API Setup (debajo de tu número de prueba)
             </p>
           </div>
@@ -541,11 +541,11 @@ export default function SocialConfigPage() {
                 setAccessToken(e.target.value)
                 setValidationError('')
               }}
-              className="border border-gray-300 rounded-lg px-4 py-3 w-full focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono text-sm"
+              className="border border-border rounded-lg px-4 py-3 w-full focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono text-sm"
               placeholder="EAAxxxxxxxxxxxxxxxxxxxxxxxxx"
               disabled={linking}
             />
-            <p className="text-xs text-gray-500 mt-1">Token de acceso permanente de Meta (System User Token recomendado)</p>
+            <p className="text-xs text-muted-foreground mt-1">Token de acceso permanente de Meta (System User Token recomendado)</p>
           </div>
 
           {validationError && (
@@ -580,27 +580,27 @@ export default function SocialConfigPage() {
       {/* Linked Accounts */}
       <div className="border rounded p-4">
         <h2 className="text-lg font-semibold mb-2">Cuentas vinculadas</h2>
-        <p className="text-sm text-gray-600 mb-4">Lista de cuentas sociales conectadas a este tenant.</p>
+        <p className="text-sm text-muted-foreground mb-4">Lista de cuentas sociales conectadas a este tenant.</p>
         {loading ? (
-          <div className="text-gray-600">Cargando...</div>
+          <div className="text-muted-foreground">Cargando...</div>
         ) : accounts.length === 0 ? (
-          <div className="text-gray-600">No hay cuentas vinculadas aún.</div>
+          <div className="text-muted-foreground">No hay cuentas vinculadas aún.</div>
         ) : (
           <div className="space-y-3">
             {accounts.map((acc) => (
-              <div key={acc.id} className="flex items-center justify-between p-4 border rounded-lg bg-white shadow-sm">
+              <div key={acc.id} className="flex items-center justify-between p-4 border rounded-lg bg-card shadow-sm">
                 <div className="flex items-center gap-4">
                   <div className="text-3xl">
                     {acc.platform === 'whatsapp' ? '💬' : '📸'}
                   </div>
                   <div>
                     <div className="font-semibold capitalize text-lg">{acc.platform}</div>
-                    <div className="text-sm text-gray-600">ID: {acc.accountId}</div>
-                    <div className="text-xs text-gray-500">Vinculada: {new Date(acc.linkedAt).toLocaleDateString('es')}</div>
+                    <div className="text-sm text-muted-foreground">ID: {acc.accountId}</div>
+                    <div className="text-xs text-muted-foreground">Vinculada: {new Date(acc.linkedAt).toLocaleDateString('es')}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className={`text-xs px-3 py-1 rounded-full font-medium ${acc.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                  <div className={`text-xs px-3 py-1 rounded-full font-medium ${acc.isActive ? 'bg-green-100 text-green-800' : 'bg-muted text-foreground'}`}>
                     {acc.isActive ? '✓ Activa' : 'Inactiva'}
                   </div>
                   <button

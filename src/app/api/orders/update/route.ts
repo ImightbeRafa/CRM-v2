@@ -163,15 +163,26 @@ export async function POST(request: NextRequest) {
 
     // Merge unknown keys into customFields
     const knownKeys = new Set([
-      'orderId','orderType','status','delivery','timestamp','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails'
+      'orderId','orderType','status','delivery','timestamp','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails','customFields','contraEntrega','cePaymentConfirmed'
     ])
     const additions: Record<string, any> = {}
     for (const [k,v] of Object.entries(cleanData)) {
       if (!knownKeys.has(k)) additions[k] = v
     }
-    if (Object.keys(additions).length > 0) {
-      const currentCustom = (existing as any).customFields || {}
-      updateData.customFields = { ...currentCustom, ...additions }
+
+    const currentCustom: Record<string, any> = (existing as any).customFields && typeof (existing as any).customFields === 'object'
+      ? (existing as any).customFields
+      : {}
+    const mergedCustomFields = { ...currentCustom, ...additions }
+
+    if (cleanData.customFields && typeof cleanData.customFields === 'object' && !Array.isArray(cleanData.customFields)) {
+      for (const [k, v] of Object.entries(cleanData.customFields as Record<string, any>)) {
+        mergedCustomFields[k] = v
+      }
+    }
+
+    if (Object.keys(mergedCustomFields).length > 0) {
+      updateData.customFields = mergedCustomFields
     }
 
       // Update order with tenant isolation (middleware auto-filters by tenantId)

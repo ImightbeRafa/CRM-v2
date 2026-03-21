@@ -235,9 +235,9 @@ export function SetupWizard() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-background dark:via-blue-950/20 dark:to-indigo-950/20">
       {/* Header */}
-      <div className="bg-white/80 backdrop-blur-sm border-b sticky top-0 z-50">
+      <div className="bg-card/80 backdrop-blur-sm border-b border-border sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -245,8 +245,8 @@ export function SetupWizard() {
                 <Sparkles className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-gray-900">Configuración Inicial</h1>
-                <p className="text-xs text-gray-500">
+                <h1 className="text-lg font-bold text-foreground">Configuración Inicial</h1>
+                <p className="text-xs text-muted-foreground">
                   Paso {currentStepIndex + 1} de {steps.length} &mdash; {currentStep.title}
                 </p>
               </div>
@@ -287,23 +287,23 @@ export function SetupWizard() {
                     disabled={!isDone && idx > currentStepIndex}
                     className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-all ${
                       isCurrent
-                        ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300'
+                        ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300 dark:bg-blue-950/30 dark:text-blue-400 dark:ring-blue-800'
                         : isDone
-                        ? 'bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer'
-                        : 'text-gray-400 cursor-default'
+                        ? 'bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-950/30 dark:text-green-400 dark:hover:bg-green-950/50 cursor-pointer'
+                        : 'text-muted-foreground cursor-default'
                     }`}
                   >
                     <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
                       isCurrent ? 'bg-blue-600 text-white'
                       : isDone ? 'bg-green-600 text-white'
-                      : 'bg-gray-200 text-gray-400'
+                      : 'bg-muted text-muted-foreground'
                     }`}>
                       {isDone ? <Check className="h-3 w-3" /> : <span className="text-[10px]">{idx + 1}</span>}
                     </div>
                     <span className="hidden sm:inline truncate">{step.title}</span>
                   </button>
                   {idx < steps.length - 1 && (
-                    <div className={`flex-1 h-0.5 mx-1 rounded ${isDone ? 'bg-green-300' : 'bg-gray-200'}`} />
+                    <div className={`flex-1 h-0.5 mx-1 rounded ${isDone ? 'bg-green-300 dark:bg-green-700' : 'bg-muted'}`} />
                   )}
                 </div>
               );
@@ -325,7 +325,7 @@ export function SetupWizard() {
             transition={{ duration: 0.25, ease: 'easeInOut' }}
           >
             <Card className="shadow-xl border-0 overflow-hidden">
-              <CardHeader className="bg-gradient-to-r from-white to-blue-50/50 border-b pb-6">
+              <CardHeader className="bg-gradient-to-r from-card to-blue-50/50 dark:to-blue-950/20 border-b border-border pb-6">
                 <div className="flex items-start gap-4">
                   <div className="p-3 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl shadow-lg">
                     {React.createElement(currentStep.icon, { className: 'h-6 w-6 text-white' })}
@@ -359,7 +359,7 @@ export function SetupWizard() {
               </CardContent>
 
               {/* Navigation Footer */}
-              <div className="border-t bg-gray-50/80 px-6 py-4 flex items-center justify-between">
+              <div className="border-t border-border bg-muted/80 px-6 py-4 flex items-center justify-between">
                 <Button variant="outline" onClick={handleBack} disabled={currentStepIndex === 0}>
                   <ChevronLeft className="h-4 w-4 mr-1" />
                   Anterior
@@ -394,7 +394,7 @@ export function SetupWizard() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
               ¿Salir sin guardar?
             </AlertDialogTitle>
             <AlertDialogDescription>
@@ -415,7 +415,7 @@ export function SetupWizard() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
               ¿Continuar sin guardar?
             </AlertDialogTitle>
             <AlertDialogDescription>

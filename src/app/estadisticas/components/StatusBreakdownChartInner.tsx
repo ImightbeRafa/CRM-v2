@@ -1,6 +1,7 @@
 'use client';
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { useTheme } from 'next-themes';
 
 interface StatusBreakdownChartProps {
   data: Array<{
@@ -13,9 +14,17 @@ interface StatusBreakdownChartProps {
 }
 
 const StatusBreakdownChartInner = ({ data, height = 300 }: StatusBreakdownChartProps) => {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
+
   if (!data || data.length === 0) {
     return null;
   }
+
+  const tooltipBg = isDark ? '#1E293B' : '#FFFFFF';
+  const tooltipBorder = isDark ? '#334155' : '#E5E7EB';
+  const tooltipText = isDark ? '#E2E8F0' : '#1F2937';
+  const legendColor = isDark ? '#94A3B8' : '#374151';
 
   const RADIAN = Math.PI / 180;
 
@@ -31,7 +40,7 @@ const StatusBreakdownChartInner = ({ data, height = 300 }: StatusBreakdownChartP
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
-    if (percent < 0.05) return null; // Don't show label for small slices
+    if (percent < 0.05) return null;
 
     return (
       <text
@@ -68,11 +77,13 @@ const StatusBreakdownChartInner = ({ data, height = 300 }: StatusBreakdownChartP
         </Pie>
         <Tooltip
           contentStyle={{
-            backgroundColor: '#FFFFFF',
-            border: '1px solid #E5E7EB',
+            backgroundColor: tooltipBg,
+            border: `1px solid ${tooltipBorder}`,
             borderRadius: '8px',
             fontSize: '14px',
+            color: tooltipText,
           }}
+          labelStyle={{ color: tooltipText }}
           formatter={(value: any, name: string, props: any) => {
             return [
               `${value} pedidos (${props.payload.percentage.toFixed(1)}%)`,
@@ -87,7 +98,7 @@ const StatusBreakdownChartInner = ({ data, height = 300 }: StatusBreakdownChartP
             const item = data.find((d) => d.status === entry.payload.status);
             return `${entry.payload.status} (${item?.count || 0})`;
           }}
-          wrapperStyle={{ fontSize: '12px' }}
+          wrapperStyle={{ fontSize: '12px', color: legendColor }}
         />
       </PieChart>
     </ResponsiveContainer>

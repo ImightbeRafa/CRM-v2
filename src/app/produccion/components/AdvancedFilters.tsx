@@ -93,7 +93,7 @@ export function AdvancedFilters({
             </Label>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="date-from" className="text-sm text-gray-600">
+                <Label htmlFor="date-from" className="text-sm text-muted-foreground">
                   Desde
                 </Label>
                 <Input
@@ -107,7 +107,7 @@ export function AdvancedFilters({
                 />
               </div>
               <div>
-                <Label htmlFor="date-to" className="text-sm text-gray-600">
+                <Label htmlFor="date-to" className="text-sm text-muted-foreground">
                   Hasta
                 </Label>
                 <Input
@@ -211,7 +211,7 @@ export function AdvancedFilters({
             </Label>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="province" className="text-sm text-gray-600">
+                <Label htmlFor="province" className="text-sm text-muted-foreground">
                   Provincia
                 </Label>
                 <Select>
@@ -231,7 +231,7 @@ export function AdvancedFilters({
                 </Select>
               </div>
               <div>
-                <Label htmlFor="canton" className="text-sm text-gray-600">
+                <Label htmlFor="canton" className="text-sm text-muted-foreground">
                   Cantón
                 </Label>
                 <Input
@@ -244,8 +244,8 @@ export function AdvancedFilters({
 
           {/* Active Filters Summary */}
           {hasActiveFilters && (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <h4 className="font-medium text-blue-900 mb-2">Filtros Activos:</h4>
+            <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <h4 className="font-medium text-blue-900 dark:text-blue-300 mb-2">Filtros Activos:</h4>
               <div className="flex flex-wrap gap-2">
                 {localFilters.dateRange.from && (
                   <Badge variant="secondary" className="flex items-center gap-1">

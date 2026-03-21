@@ -17,6 +17,7 @@ import {
   Sparkles, Zap, Settings, TrendingUp, Users, Package, Truck,
   ShoppingCart, Plus, BarChart3, DollarSign, ArrowUpRight, Clock, RefreshCw, MessageSquare
 } from "lucide-react";
+import { ThemeToggle } from "@/app/components/ThemeToggle";
 
 const pageTransition = {
   initial: { opacity: 0, y: 12 },
@@ -57,10 +58,10 @@ export default function EnhancedHomeContent() {
   // Show loading state while checking authentication
   if (status === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Cargando...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-muted-foreground">Cargando...</p>
         </div>
       </div>
     );
@@ -69,7 +70,7 @@ export default function EnhancedHomeContent() {
   // If not authenticated, show sign in prompt
   if (!session) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <div className="flex justify-center mb-6">
             <Image 
@@ -82,7 +83,7 @@ export default function EnhancedHomeContent() {
             />
           </div>
           
-          <p className="text-gray-600 mb-8">Por favor, inicia sesión para continuar</p>
+          <p className="text-muted-foreground mb-8">Por favor, inicia sesión para continuar</p>
           <Link
             href="/auth/signin"
             className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
@@ -96,7 +97,7 @@ export default function EnhancedHomeContent() {
 
   // Main content for authenticated users
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50/80 to-slate-100/60">
+    <div className="min-h-screen bg-background">
       <motion.main
         {...pageTransition}
         className="container mx-auto px-4 md:px-6 py-6 md:py-8 pb-24 md:pb-8"
@@ -114,9 +115,9 @@ export default function EnhancedHomeContent() {
               priority
             />
             <div>
-              <p className="text-sm md:text-base text-gray-600">Sistema de Gestión</p>
+              <p className="text-sm md:text-base text-muted-foreground">Sistema de Gestión</p>
               <div className="flex items-center gap-2">
-                <p className="text-xs md:text-sm text-gray-500 truncate max-w-[200px] sm:max-w-none">
+                <p className="text-xs md:text-sm text-muted-foreground truncate max-w-[200px] sm:max-w-none">
                   Bienvenido, {session.user?.email}
                 </p>
                 {session.user?.role === 'MASTER' && (
@@ -146,6 +147,7 @@ export default function EnhancedHomeContent() {
                 <span className="hidden md:inline">Configuración</span>
               </Link>
             )}
+            <ThemeToggle />
             <WhatsNewDrawer />
             <div className="hidden md:block">
               <LogoutButton />
@@ -164,7 +166,7 @@ export default function EnhancedHomeContent() {
           </Link>
           <Link
             href="/help"
-            className="inline-flex items-center gap-2 bg-white text-gray-700 px-4 py-2.5 rounded-xl hover:bg-gray-50 transition-colors border text-sm"
+            className="inline-flex items-center gap-2 bg-card text-foreground px-4 py-2.5 rounded-xl hover:bg-accent transition-colors border text-sm"
           >
             📖 Centro de Ayuda
           </Link>
@@ -278,7 +280,7 @@ export default function EnhancedHomeContent() {
             <button
               key={i}
               className={`h-1.5 rounded-full transition-all duration-200 ${
-                activeStatCard === i ? 'w-4 bg-blue-600' : 'w-1.5 bg-gray-300'
+                activeStatCard === i ? 'w-4 bg-blue-600' : 'w-1.5 bg-muted-foreground/30'
               }`}
               onClick={() => {
                 const el = statsScrollRef.current;
@@ -296,15 +298,15 @@ export default function EnhancedHomeContent() {
           {/* Main Navigation - Takes 2 columns on large screens */}
           <div className="lg:col-span-2">
             <div className="mb-4 hidden md:block">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Accesos Rápidos</h2>
-              <p className="text-gray-600">Navega a las secciones principales del sistema</p>
+              <h2 className="text-2xl font-bold text-foreground mb-2">Accesos Rápidos</h2>
+              <p className="text-muted-foreground">Navega a las secciones principales del sistema</p>
             </div>
             <div className="grid grid-cols-2 gap-3 md:gap-6">
               {/* Ventas Card */}
               <motion.div {...cardHover}>
               <Link
                 href="/ventas"
-                className="group relative bg-white p-4 md:p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-blue-300 overflow-hidden block"
+                className="group relative bg-card p-4 md:p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-blue-300 dark:hover:border-blue-700 overflow-hidden block"
               >
                 <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-400/10 to-blue-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500 hidden md:block"></div>
                 <div className="relative">
@@ -314,7 +316,7 @@ export default function EnhancedHomeContent() {
                     </div>
                     <ArrowUpRight className="w-5 h-5 md:w-6 md:h-6 text-blue-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                   </div>
-                  <h3 className="text-base md:text-xl font-bold text-foreground mb-0 md:mb-2">Ventas</h3>
+                  <h3 className="text-base md:text-xl font-bold text-card-foreground mb-0 md:mb-2">Ventas</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed hidden md:block">Gestionar pedidos y clientes</p>
                 </div>
               </Link>
@@ -324,7 +326,7 @@ export default function EnhancedHomeContent() {
               <motion.div {...cardHover}>
               <Link
                 href="/produccion"
-                className="group relative bg-white p-4 md:p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-purple-300 overflow-hidden block"
+                className="group relative bg-card p-4 md:p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-purple-300 dark:hover:border-purple-700 overflow-hidden block"
               >
                 <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-400/10 to-purple-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500 hidden md:block"></div>
                 <div className="relative">
@@ -334,7 +336,7 @@ export default function EnhancedHomeContent() {
                     </div>
                     <ArrowUpRight className="w-5 h-5 md:w-6 md:h-6 text-purple-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                   </div>
-                  <h3 className="text-base md:text-xl font-bold text-foreground mb-0 md:mb-2">Producción</h3>
+                  <h3 className="text-base md:text-xl font-bold text-card-foreground mb-0 md:mb-2">Producción</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed hidden md:block">Gestionar producción y órdenes</p>
                 </div>
               </Link>
@@ -344,7 +346,7 @@ export default function EnhancedHomeContent() {
               <motion.div {...cardHover}>
               <Link
                 href="/estadisticas"
-                className="group relative bg-white p-4 md:p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-green-300 overflow-hidden block"
+                className="group relative bg-card p-4 md:p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-green-300 dark:hover:border-green-700 overflow-hidden block"
               >
                 <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-400/10 to-green-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500 hidden md:block"></div>
                 <div className="relative">
@@ -354,7 +356,7 @@ export default function EnhancedHomeContent() {
                     </div>
                     <ArrowUpRight className="w-5 h-5 md:w-6 md:h-6 text-green-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                   </div>
-                  <h3 className="text-base md:text-xl font-bold text-foreground mb-0 md:mb-2">Estadísticas</h3>
+                  <h3 className="text-base md:text-xl font-bold text-card-foreground mb-0 md:mb-2">Estadísticas</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed hidden md:block">Análisis y reportes detallados</p>
                 </div>
               </Link>
@@ -365,7 +367,7 @@ export default function EnhancedHomeContent() {
                 <motion.div {...cardHover}>
                 <Link
                   href="/config"
-                  className="group relative bg-white p-4 md:p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-gray-300 overflow-hidden block"
+                  className="group relative bg-card p-4 md:p-8 rounded-2xl hover:shadow-2xl transition-all duration-300 border-2 border-border hover:border-gray-300 dark:hover:border-gray-600 overflow-hidden block"
                 >
                   <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-gray-400/10 to-gray-600/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500 hidden md:block"></div>
                   <div className="relative">
@@ -375,7 +377,7 @@ export default function EnhancedHomeContent() {
                       </div>
                       <ArrowUpRight className="w-5 h-5 md:w-6 md:h-6 text-gray-800 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                     </div>
-                    <h3 className="text-base md:text-xl font-bold text-foreground mb-0 md:mb-2">Configuración</h3>
+                    <h3 className="text-base md:text-xl font-bold text-card-foreground mb-0 md:mb-2">Configuración</h3>
                     <p className="text-sm text-muted-foreground leading-relaxed hidden md:block">Ajustes del sistema</p>
                   </div>
                 </Link>
@@ -428,7 +430,7 @@ export default function EnhancedHomeContent() {
             </Card>
 
             {/* System Info */}
-            <Card className="bg-gradient-to-br from-blue-50 to-purple-50 border-blue-200">
+            <Card className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 border-blue-200 dark:border-blue-800">
               <CardHeader>
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-purple-600" />
@@ -436,7 +438,7 @@ export default function EnhancedHomeContent() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-gray-700 mb-3">
+                <p className="text-sm text-muted-foreground mb-3">
                   Configura tu sistema en minutos con nuestro asistente guiado
                 </p>
                 <Button
@@ -453,7 +455,7 @@ export default function EnhancedHomeContent() {
         </div>
 
         {/* Footer Section */}
-        <footer className="mt-12 text-center text-gray-500 text-sm">
+        <footer className="mt-12 text-center text-muted-foreground text-sm">
           <p>© 2024 Betsy CRM</p>
           <p className="mt-1">v1.0.1</p>
         </footer>
@@ -487,30 +489,30 @@ export default function EnhancedHomeContent() {
           <div className="space-y-6 py-4">
             {/* Quick Info */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-lg">
+              <div className="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
                 <div className="p-2 bg-blue-600 rounded-lg">
                   <Zap className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <h4 className="font-semibold text-blue-900">Rápido</h4>
-                  <p className="text-sm text-blue-700">Solo 15-20 minutos</p>
+                  <h4 className="font-semibold text-blue-900 dark:text-blue-300">Rápido</h4>
+                  <p className="text-sm text-blue-700 dark:text-blue-400">Solo 15-20 minutos</p>
                 </div>
               </div>
-              <div className="flex items-start gap-3 p-4 bg-purple-50 rounded-lg">
+              <div className="flex items-start gap-3 p-4 bg-purple-50 dark:bg-purple-950/30 rounded-lg">
                 <div className="p-2 bg-purple-600 rounded-lg">
                   <Settings className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <h4 className="font-semibold text-purple-900">Completo</h4>
-                  <p className="text-sm text-purple-700">Configura todo tu sistema</p>
+                  <h4 className="font-semibold text-purple-900 dark:text-purple-300">Completo</h4>
+                  <p className="text-sm text-purple-700 dark:text-purple-400">Configura todo tu sistema</p>
                 </div>
               </div>
             </div>
 
             {/* What will be configured */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <h4 className="font-semibold text-gray-900 mb-3">Lo que configuraremos:</h4>
-              <ul className="space-y-2 text-sm text-gray-700">
+            <div className="bg-muted rounded-lg p-4">
+              <h4 className="font-semibold text-foreground mb-3">Lo que configuraremos:</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-center gap-2">
                   <div className="h-1.5 w-1.5 bg-blue-600 rounded-full"></div>
                   Información del Negocio

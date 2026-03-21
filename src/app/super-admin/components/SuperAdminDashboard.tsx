@@ -84,8 +84,8 @@ export default function SuperAdminDashboard() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading super admin dashboard...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
+          <p className="mt-4 text-muted-foreground">Loading super admin dashboard...</p>
         </div>
       </div>
     );
@@ -108,8 +108,8 @@ export default function SuperAdminDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">🔐 Super Admin Dashboard</h1>
-          <p className="text-gray-600 mt-1">Cross-tenant monitoring and analytics</p>
+          <h1 className="text-3xl font-bold text-foreground">🔐 Super Admin Dashboard</h1>
+          <p className="text-muted-foreground mt-1">Cross-tenant monitoring and analytics</p>
         </div>
         <button
           onClick={fetchStats}
@@ -146,7 +146,7 @@ export default function SuperAdminDashboard() {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold">{formatCurrency(stats.summary.totalOrders)}</p>
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               {stats.summary.ordersThisWeek} this week
             </p>
           </CardContent>
@@ -161,7 +161,7 @@ export default function SuperAdminDashboard() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">₡{formatCurrency(stats.summary.totalRevenue)}</p>
-            <p className="text-sm text-gray-600 mt-1">All time</p>
+            <p className="text-sm text-muted-foreground mt-1">All time</p>
           </CardContent>
         </Card>
 
@@ -174,7 +174,7 @@ export default function SuperAdminDashboard() {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold">{stats.summary.activeUsers}</p>
-            <p className="text-sm text-gray-600 mt-1">Platform-wide</p>
+            <p className="text-sm text-muted-foreground mt-1">Platform-wide</p>
           </CardContent>
         </Card>
       </div>
@@ -189,8 +189,8 @@ export default function SuperAdminDashboard() {
             <div className="space-y-3">
               {Object.entries(stats.tenantsByPlan).map(([plan, count]) => (
                 <div key={plan} className="flex justify-between items-center">
-                  <span className="text-gray-700 font-medium">{plan}</span>
-                  <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-bold">
+                  <span className="text-muted-foreground font-medium">{plan}</span>
+                  <span className="bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400 px-3 py-1 rounded-full text-sm font-bold">
                     {count}
                   </span>
                 </div>
@@ -208,12 +208,12 @@ export default function SuperAdminDashboard() {
               {stats.topTenants.slice(0, 5).map((tenant, i) => (
                 <div key={tenant.slug} className="flex justify-between items-center">
                   <div>
-                    <p className="font-medium text-gray-900">
+                    <p className="font-medium text-foreground">
                       {i + 1}. {tenant.name}
                     </p>
-                    <p className="text-xs text-gray-500">{tenant.plan}</p>
+                    <p className="text-xs text-muted-foreground">{tenant.plan}</p>
                   </div>
-                  <span className="text-blue-600 font-bold">{tenant.orders}</span>
+                  <span className="text-blue-600 dark:text-blue-400 font-bold">{tenant.orders}</span>
                 </div>
               ))}
             </div>
@@ -231,7 +231,7 @@ export default function SuperAdminDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b">
+                <tr className="border-b border-border">
                   <th className="text-left py-3 px-4">Tenant</th>
                   <th className="text-left py-3 px-4">Plan</th>
                   <th className="text-left py-3 px-4">Status</th>
@@ -243,25 +243,25 @@ export default function SuperAdminDashboard() {
               </thead>
               <tbody>
                 {stats.allTenants.map((tenant) => (
-                  <tr key={tenant.id} className="border-b hover:bg-gray-50">
+                  <tr key={tenant.id} className="border-b border-border hover:bg-muted/50">
                     <td className="py-3 px-4">
                       <div>
                         <p className="font-medium">{tenant.name}</p>
-                        <p className="text-xs text-gray-500">{tenant.slug}</p>
+                        <p className="text-xs text-muted-foreground">{tenant.slug}</p>
                       </div>
                     </td>
                     <td className="py-3 px-4">
                       <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        tenant.plan === 'PRO' ? 'bg-purple-100 text-purple-800' :
-                        tenant.plan === 'BASIC' ? 'bg-blue-100 text-blue-800' :
-                        'bg-gray-100 text-gray-800'
+                        tenant.plan === 'PRO' ? 'bg-purple-100 dark:bg-purple-950/30 text-purple-800 dark:text-purple-400' :
+                        tenant.plan === 'BASIC' ? 'bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400' :
+                        'bg-muted text-foreground'
                       }`}>
                         {tenant.plan}
                       </span>
                     </td>
                     <td className="py-3 px-4">
                       <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        tenant.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        tenant.isActive ? 'bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400' : 'bg-red-100 dark:bg-red-950/30 text-red-800 dark:text-red-400'
                       }`}>
                         {tenant.isActive ? 'Active' : 'Inactive'}
                       </span>
@@ -269,7 +269,7 @@ export default function SuperAdminDashboard() {
                     <td className="py-3 px-4 text-right">{tenant.stats.orders}</td>
                     <td className="py-3 px-4 text-right">{tenant.stats.clients}</td>
                     <td className="py-3 px-4 text-right">{tenant.stats.users}</td>
-                    <td className="py-3 px-4 text-sm text-gray-600">
+                    <td className="py-3 px-4 text-sm text-muted-foreground">
                       {new Date(tenant.createdAt).toLocaleDateString()}
                     </td>
                   </tr>

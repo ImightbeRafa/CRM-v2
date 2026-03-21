@@ -114,49 +114,49 @@ const filterOrders = (
 const getStatusInfo = (status: string) => {
   const statusMap: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
     'Pendiente': {
-      color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      color: 'bg-yellow-100 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800',
       icon: <Clock className="h-3 w-3" />,
       label: 'Pendiente'
     },
     'En Proceso': {
-      color: 'bg-blue-100 text-blue-800 border-blue-200',
+      color: 'bg-blue-100 dark:bg-blue-950/40 text-blue-800 dark:text-blue-400 border-blue-200 dark:border-blue-800',
       icon: <Package className="h-3 w-3" />,
       label: 'En Proceso'
     },
     'Completado': {
-      color: 'bg-green-100 text-green-800 border-green-200',
+      color: 'bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-400 border-green-200 dark:border-green-800',
       icon: <CheckCircle className="h-3 w-3" />,
       label: 'Completado'
     },
     'Enviado': {
-      color: 'bg-purple-100 text-purple-800 border-purple-200',
+      color: 'bg-purple-100 dark:bg-purple-950/40 text-purple-800 dark:text-purple-400 border-purple-200 dark:border-purple-800',
       icon: <Truck className="h-3 w-3" />,
       label: 'Enviado'
     },
     'Entregado': {
-      color: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      color: 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800',
       icon: <CheckCircle className="h-3 w-3" />,
       label: 'Entregado'
     },
     'Drive': {
-      color: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+      color: 'bg-indigo-100 dark:bg-indigo-950/40 text-indigo-800 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800',
       icon: <Truck className="h-3 w-3" />,
       label: 'Drive'
     },
     'Impreso': {
-      color: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+      color: 'bg-cyan-100 dark:bg-cyan-950/40 text-cyan-800 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800',
       icon: <Printer className="h-3 w-3" />,
       label: 'Impreso'
     },
     'PendienteDiseño': {
-      color: 'bg-orange-100 text-orange-800 border-orange-200',
+      color: 'bg-orange-100 dark:bg-orange-950/40 text-orange-800 dark:text-orange-400 border-orange-200 dark:border-orange-800',
       icon: <AlertCircle className="h-3 w-3" />,
       label: 'Pendiente Diseño'
     }
   };
 
   return statusMap[status] || {
-    color: 'bg-gray-100 text-gray-800 border-gray-200',
+    color: 'bg-gray-100 dark:bg-gray-800/40 text-gray-800 dark:text-gray-400 border-gray-200 dark:border-gray-700',
     icon: <Clock className="h-3 w-3" />,
     label: status
   };
@@ -219,7 +219,7 @@ const EnhancedHeader = React.memo(({
           <Truck className="h-4 w-4 mr-1" />
           Guías
         </Button>
-        <Button onClick={onGenerateInvoices} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-[36px] bg-purple-50 border-purple-200 hover:bg-purple-100">
+        <Button onClick={onGenerateInvoices} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-[36px] bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900">
           <FileText className="h-4 w-4 mr-1" />
           Facturas
         </Button>
@@ -233,7 +233,7 @@ const EnhancedHeader = React.memo(({
     {/* Filters Row */}
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder="Buscar..."
           value={searchTerm}
@@ -557,7 +557,7 @@ export function EnhancedProductionDashboard({
 
   if (loading && !orders.length) {
     return (
-      <div className="container mx-auto px-4 py-6">
+      <div className="space-y-4 py-6">
         <Card>
           <CardHeader>
             <CardTitle>Panel de Producción</CardTitle>
@@ -571,10 +571,10 @@ export function EnhancedProductionDashboard({
   }
 
   return (
-    <div className="container mx-auto px-4 py-4 space-y-4">
+    <div className="space-y-4">
       {/* Compact Sync Status */}
-      <div className="flex justify-between items-center bg-blue-50 border border-blue-200 rounded-lg p-3">
-        <div className="flex items-center gap-2 text-xs text-gray-600">
+      <div className="flex justify-between items-center bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Clock className="h-3 w-3" />
           <span>
             Sincronizado: {lastSync.toLocaleTimeString('es-CR', {
@@ -593,7 +593,7 @@ export function EnhancedProductionDashboard({
           }}
           variant="outline"
           size="sm"
-          className="gap-1 bg-white text-xs"
+          className="gap-1 bg-card text-xs"
           disabled={loading}
         >
           {loading ? (
@@ -698,7 +698,7 @@ export function EnhancedProductionDashboard({
                   </div>
 
                   {groupedOrders[type as keyof typeof groupedOrders].length === 0 && (
-                    <div className="text-center py-12 text-gray-500">
+                    <div className="text-center py-12 text-muted-foreground">
                       <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
                       <p>No hay órdenes {type === 'EA' ? 'de envío' : 'de retiro'} que coincidan con los filtros</p>
                     </div>
@@ -735,6 +735,8 @@ export function EnhancedProductionDashboard({
         <ExportManager
           orders={filteredOrders}
           onClose={() => setShowExport(false)}
+          productFieldConfigs={productFieldConfigs}
+          businessInfoFields={businessInfoFields}
         />
       )}
 

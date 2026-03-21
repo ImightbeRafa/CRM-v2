@@ -270,7 +270,7 @@ export async function PUT(request: NextRequest) {
       const inventoryItem = await prisma.inventoryItem.update({
         where: { id },
         data: {
-          name: mappedName || existing?.name || name,
+          name: mappedName || existing?.name,
           description: description || existing?.description || 'Producto de inventario',
           category: category || existing?.category || 'General',
           sku: sku || existing?.sku,

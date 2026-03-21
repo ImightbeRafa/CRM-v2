@@ -659,7 +659,7 @@ export function parseWhatsAppWebhook(body: any): WhatsAppMessage | null {
 /**
  * Format order for WhatsApp display (plain text, no HTML)
  */
-export function formatOrderForWhatsApp(order: any): string {
+export function formatOrderForWhatsApp(order: any, customFieldLines?: string[]): string {
   const lines = [
     `📦 *Orden #${order.orderId}*`,
     ``,
@@ -677,6 +677,11 @@ export function formatOrderForWhatsApp(order: any): string {
     order.province ? `🌍 *Ubicación:* ${[order.province, order.canton, order.district].filter(Boolean).join(', ')}` : null,
     order.address ? `📫 *Dirección:* ${order.address}` : null,
   ].filter(Boolean);
+
+  if (customFieldLines && customFieldLines.length > 0) {
+    lines.push('', `📋 *Campos personalizados:*`);
+    customFieldLines.forEach(line => lines.push(`  • ${line}`));
+  }
   
   return lines.join('\n');
 }

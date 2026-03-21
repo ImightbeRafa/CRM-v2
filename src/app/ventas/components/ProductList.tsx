@@ -4,6 +4,7 @@ import { Plus, Trash2, Edit3, Copy, Save, X } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
+import { Checkbox } from '@/app/components/ui/checkbox';
 import ProductForm from './productForm';
 import { ShippingMethodSelector } from './ShippingMethodSelector';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
@@ -194,10 +195,10 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
       {/* Header with Add Button */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-gray-800">
+          <h3 className="text-lg font-semibold text-foreground">
             Productos del Pedido ({orderInfo.products.length})
           </h3>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             Agregue productos individualmente al pedido
           </p>
         </div>
@@ -215,15 +216,15 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
       {/* Products List */}
       <div className="space-y-3">
         {orderInfo.products.length === 0 ? (
-          <Card className="border-dashed border-2 border-gray-300">
+          <Card className="border-dashed border-2 border-border">
             <CardContent className="flex flex-col items-center justify-center py-8">
-              <div className="text-gray-400 mb-2">
+              <div className="text-muted-foreground mb-2">
                 <Plus className="h-12 w-12 mx-auto" />
               </div>
-              <p className="text-gray-500 text-center">
+              <p className="text-muted-foreground text-center">
                 No hay productos agregados al pedido
               </p>
-              <p className="text-sm text-gray-400 text-center">
+              <p className="text-sm text-muted-foreground text-center">
                 Haga clic en &quot;Agregar Producto&quot; para comenzar
               </p>
             </CardContent>
@@ -238,7 +239,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                       <Badge variant="outline">#{index + 1}</Badge>
                       <span className="truncate">{product.type || 'Producto sin nombre'}</span>
                     </CardTitle>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-2 text-sm text-gray-600">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-2 text-sm text-muted-foreground">
                       <span className="whitespace-nowrap">Cantidad: {product.cantidad}</span>
                       <span className="whitespace-nowrap">Color: {getFieldDisplayValue('color', product.color)}</span>
                       <span className="whitespace-nowrap">Tamaño: {getFieldDisplayValue('tamano', product.tamano)}</span>
@@ -285,29 +286,29 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
               <CardContent className="pt-0">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
                   <div className="flex flex-col space-y-1">
-                    <span className="text-gray-500 text-xs">Costo Unitario:</span>
+                    <span className="text-muted-foreground text-xs">Costo Unitario:</span>
                     <p className="font-medium text-sm">₡{product.productCost.toFixed(2)}</p>
                   </div>
                   <div className="flex flex-col space-y-1">
-                    <span className="text-gray-500 text-xs">Subtotal:</span>
+                    <span className="text-muted-foreground text-xs">Subtotal:</span>
                     <p className="font-medium text-sm">₡{(product.productCost * product.cantidad).toFixed(2)}</p>
                   </div>
                   {orderType === 'EA' && (
                     <div className="flex flex-col space-y-1">
-                      <span className="text-gray-500 text-xs">Envío:</span>
+                      <span className="text-muted-foreground text-xs">Envío:</span>
                       <p className="font-medium text-sm">₡{product.shippingCost.toFixed(2)}</p>
                     </div>
                   )}
                   <div className="flex flex-col space-y-1">
-                    <span className="text-gray-500 text-xs">IVA:</span>
+                    <span className="text-muted-foreground text-xs">IVA:</span>
                     <p className="font-medium text-sm">₡{product.iva.toFixed(2)}</p>
                   </div>
                 </div>
 
                 {/* Comments */}
                 {product.comments && (
-                  <div className="mt-3 p-2 bg-gray-50 rounded">
-                    <span className="text-sm text-gray-500">Comentarios:</span>
+                  <div className="mt-3 p-2 bg-muted rounded">
+                    <span className="text-sm text-muted-foreground">Comentarios:</span>
                     <p className="text-sm">{product.comments}</p>
                   </div>
                 )}
@@ -316,7 +317,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
               {/* Edit Form Overlay */}
               {editingProductId === product.id && showAddForm && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4" style={{ zIndex: 1000, position: 'absolute' }}>
-                  <div className="bg-white border-2 border-blue-500 rounded-lg w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-2xl">
+                  <div className="bg-card border-2 border-blue-500 rounded-lg w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-2xl">
                     <div className="p-4">
                       <div className="flex justify-between items-center mb-4">
                         <h4 className="text-lg font-semibold">Editar Producto #{index + 1}</h4>
@@ -378,9 +379,9 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
 
       {/* Order Summary */}
       {orderInfo.products.length > 0 && (
-        <Card className="bg-green-50 border-green-200">
+        <Card className="bg-green-50 dark:bg-emerald-950/20 border-green-200 dark:border-emerald-800/40">
           <CardHeader>
-            <CardTitle className="text-green-800">Resumen del Pedido</CardTitle>
+            <CardTitle className="text-green-800 dark:text-emerald-400">Resumen del Pedido</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Order Configuration */}
@@ -388,19 +389,17 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
               {/* IVA checkbox */}
               <div className="flex flex-col space-y-2">
                 <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     id="applyOrderIVA"
                     checked={orderInfo.applyOrderIVA || false}
-                    onChange={(e) => {
+                    onCheckedChange={(checked) => {
                       onOrderInfoChange({
                         ...orderInfo,
-                        applyOrderIVA: e.target.checked
+                        applyOrderIVA: checked === true
                       });
                     }}
-                    className="w-4 h-4"
                   />
-                  <label htmlFor="applyOrderIVA" className="text-sm font-medium text-gray-700">
+                  <label htmlFor="applyOrderIVA" className="text-sm font-medium text-muted-foreground cursor-pointer">
                     Aplicar IVA (13%)
                   </label>
                 </div>
@@ -424,23 +423,23 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
             {/* Order Totals */}
             <div className={`grid gap-4 ${orderType === 'EA' ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-2 lg:grid-cols-3'}`}>
               <div className="flex flex-col space-y-1">
-                <span className="text-sm text-gray-600">Subtotal:</span>
+                <span className="text-sm text-muted-foreground">Subtotal:</span>
                 <p className="text-lg font-semibold">{formatCurrency(orderTotals.subtotal)}</p>
               </div>
               {/* Show shipping only for EA orders */}
               {orderType === 'EA' && (
                 <div className="flex flex-col space-y-1">
-                  <span className="text-sm text-gray-600">Envío:</span>
+                  <span className="text-sm text-muted-foreground">Envío:</span>
                   <p className="text-lg font-semibold">{formatCurrency(orderTotals.shipping)}</p>
                 </div>
               )}
               <div className="flex flex-col space-y-1">
-                <span className="text-sm text-gray-600">IVA:</span>
+                <span className="text-sm text-muted-foreground">IVA:</span>
                 <p className="text-lg font-semibold">{formatCurrency(orderTotals.iva)}</p>
               </div>
               <div className="flex flex-col space-y-1">
-                <span className="text-sm text-gray-600">Total:</span>
-                <p className="text-xl font-bold text-green-600">{formatCurrency(orderTotals.total)}</p>
+                <span className="text-sm text-muted-foreground">Total:</span>
+                <p className="text-xl font-bold text-green-600 dark:text-emerald-400">{formatCurrency(orderTotals.total)}</p>
               </div>
             </div>
           </CardContent>
@@ -459,7 +458,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
             }
           }}
         >
-          <div className="bg-white border-2 border-blue-500 rounded-lg w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-2xl">
+          <div className="bg-card border-2 border-blue-500 rounded-lg w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-2xl">
             <div className="p-4">
               <div className="flex justify-end items-center mb-4">
                 <Button

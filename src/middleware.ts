@@ -113,7 +113,7 @@ export default async function middleware(request: Request) {
     }
     const token = await getToken({
       req: request as any,
-      secret: secret || 'dev-secret-localhost-only',
+      secret: secret || (process.env.NODE_ENV === 'production' ? '' : 'dev-secret-localhost-only'),
     });
 
     // Redirect to login if no token

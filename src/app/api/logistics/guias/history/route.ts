@@ -56,22 +56,12 @@ export async function GET(req: NextRequest) {
             },
         });
 
-        // Check if PDF exists for each guia
-        const guiasWithPdfCheck = await Promise.all(
-            guias.map(async (g) => {
-                let hasPdf = false;
-                try {
-                    const pdfCheck = await prisma.shippingGuia.findFirst({
-                        where: { id: g.id },
-                        select: { pdfData: true },
-                    });
-                    hasPdf = !!(pdfCheck?.pdfData);
-                } catch {
-                    // Skip check on error
-                }
-                return { ...g, hasPdf };
-            })
-        );
+        const pdfChecks = await prisma.shippingGuia.findMany({
+            where: { id: { in: guias.map(g => g.id) } },
+            select: { id: true, pdfData: true },
+        });
+        const pdfSet = new Set(pdfChecks.filter(p => p.pdfData).map(p => p.id));
+        const guiasWithPdfCheck = guias.map(g => ({ ...g, hasPdf: pdfSet.has(g.id) }));
 
         // Get tenant names for enrichment
         const tenants = await prisma.tenant.findMany({

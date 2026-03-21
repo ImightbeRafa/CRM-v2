@@ -68,9 +68,21 @@ const StatusFilterExport = ({ value, onValueChange }: { value: string; onValueCh
 interface ExportManagerProps {
   orders: Sale[];
   onClose: () => void;
+  productFieldConfigs?: any[];
+  businessInfoFields?: any[];
 }
 
-export function ExportManager({ orders, onClose }: ExportManagerProps) {
+function parseOrderCustomFields(order: Sale): Record<string, any> {
+  try {
+    const raw = (order as any).customFields;
+    if (!raw) return {};
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    return {};
+  }
+}
+
+export function ExportManager({ orders, onClose, productFieldConfigs = [], businessInfoFields = [] }: ExportManagerProps) {
   const [exportFormat, setExportFormat] = useState('excel');
   const [includeFields, setIncludeFields] = useState({
     customerInfo: true,
@@ -78,8 +90,29 @@ export function ExportManager({ orders, onClose }: ExportManagerProps) {
     statusInfo: true,
     financialInfo: true,
     locationInfo: true,
-    comments: true
+    comments: true,
+    customFields: true,
   });
+
+  const customFieldKeys = React.useMemo(() => {
+    const keys: Array<{ key: string; label: string }> = [];
+    const seen = new Set<string>();
+    productFieldConfigs.forEach((f: any) => {
+      if (f?.key && !seen.has(f.key)) {
+        seen.add(f.key);
+        keys.push({ key: f.key, label: f.label || f.key });
+      }
+    });
+    businessInfoFields.forEach((f: any) => {
+      if (f?.name && !seen.has(f.name)) {
+        seen.add(f.name);
+        keys.push({ key: f.name, label: f.label || f.name });
+      }
+    });
+    return keys;
+  }, [productFieldConfigs, businessInfoFields]);
+
+  const hasCustomFieldConfigs = customFieldKeys.length > 0;
   const [dateRange, setDateRange] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [isExporting, setIsExporting] = useState(false);
@@ -163,6 +196,9 @@ export function ExportManager({ orders, onClose }: ExportManagerProps) {
     if (includeFields.comments) {
       headers.push('Comentarios');
     }
+    if (includeFields.customFields && hasCustomFieldConfigs) {
+      customFieldKeys.forEach(cf => headers.push(cf.label));
+    }
     headers.push('Fecha Creación', 'Fecha Esperada');
 
     const csvContent = [
@@ -216,6 +252,14 @@ export function ExportManager({ orders, onClose }: ExportManagerProps) {
         if (includeFields.comments) {
           row.push(`"${order.comments || ''}"`);
         }
+        if (includeFields.customFields && hasCustomFieldConfigs) {
+          const cfData = parseOrderCustomFields(order);
+          customFieldKeys.forEach(cf => {
+            const val = cfData[cf.key];
+            const display = val !== undefined && val !== null ? String(val).replace(/"/g, '""') : '';
+            row.push(`"${display}"`);
+          });
+        }
         row.push(
           `"${new Date(order.timestamp).toLocaleDateString()}"`,
           `"${(order as any).expectedDate || ''}"`
@@ -263,6 +307,17 @@ export function ExportManager({ orders, onClose }: ExportManagerProps) {
           </div>
         </div>
         ${order.comments ? `<p><strong>Comentarios:</strong> ${escapeHtml(order.comments)}</p>` : ''}
+        ${includeFields.customFields ? (() => {
+          const cfData = parseOrderCustomFields(order);
+          const entries = Object.entries(cfData).filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '');
+          if (entries.length === 0) return '';
+          const labelMap: Record<string, string> = {};
+          customFieldKeys.forEach(cf => { labelMap[cf.key] = cf.label; });
+          return `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc;">
+            <strong>Campos personalizados:</strong><br>
+            ${entries.map(([k, v]) => `<span>${escapeHtml(labelMap[k] || k)}: ${escapeHtml(String(v))}</span>`).join(' &nbsp;|&nbsp; ')}
+          </div>`;
+        })() : ''}
       </div>
     `).join('');
 
@@ -321,7 +376,7 @@ export function ExportManager({ orders, onClose }: ExportManagerProps) {
             <div className="grid grid-cols-3 gap-4">
               <div 
                 className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                  exportFormat === 'excel' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                  exportFormat === 'excel' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-border'
                 }`}
                 onClick={() => setExportFormat('excel')}
               >
@@ -330,7 +385,7 @@ export function ExportManager({ orders, onClose }: ExportManagerProps) {
               </div>
               <div 
                 className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                  exportFormat === 'pdf' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                  exportFormat === 'pdf' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-border'
                 }`}
                 onClick={() => setExportFormat('pdf')}
               >
@@ -339,7 +394,7 @@ export function ExportManager({ orders, onClose }: ExportManagerProps) {
               </div>
               <div 
                 className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                  exportFormat === 'print' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                  exportFormat === 'print' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-border'
                 }`}
                 onClick={() => setExportFormat('print')}
               >
@@ -424,17 +479,27 @@ export function ExportManager({ orders, onClose }: ExportManagerProps) {
                   />
                   <label htmlFor="comments" className="text-sm">Comentarios</label>
                 </div>
+                {hasCustomFieldConfigs && (
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="customFields" 
+                      checked={includeFields.customFields}
+                      onCheckedChange={() => toggleField('customFields')}
+                    />
+                    <label htmlFor="customFields" className="text-sm">Campos Personalizados ({customFieldKeys.length})</label>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
           {/* Preview */}
-          <div className="p-3 bg-gray-50 rounded-lg">
+          <div className="p-3 bg-muted rounded-lg">
             <h4 className="font-medium mb-2">Vista Previa</h4>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               Se exportarán <strong>{filteredOrders.length}</strong> órdenes en formato <strong>{exportFormat.toUpperCase()}</strong>
             </p>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-muted-foreground/70 mt-1">
               Campos incluidos: {Object.entries(includeFields)
                 .filter(([_, included]) => included)
                 .map(([field, _]) => field)

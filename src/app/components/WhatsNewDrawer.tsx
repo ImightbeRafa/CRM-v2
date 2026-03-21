@@ -22,10 +22,10 @@ interface ChangelogEntry {
 }
 
 const CATEGORY_CONFIG: Record<string, { icon: React.ComponentType<any>; label: string; color: string }> = {
-  feature: { icon: Sparkles, label: 'Nueva Función', color: 'bg-purple-100 text-purple-700 border-purple-200' },
-  fix: { icon: Bug, label: 'Corrección', color: 'bg-red-100 text-red-700 border-red-200' },
-  improvement: { icon: Wrench, label: 'Mejora', color: 'bg-green-100 text-green-700 border-green-200' },
-  announcement: { icon: Megaphone, label: 'Anuncio', color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  feature: { icon: Sparkles, label: 'Nueva Función', color: 'bg-purple-100 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800' },
+  fix: { icon: Bug, label: 'Corrección', color: 'bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800' },
+  improvement: { icon: Wrench, label: 'Mejora', color: 'bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800' },
+  announcement: { icon: Megaphone, label: 'Anuncio', color: 'bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800' },
 };
 
 const SEEN_KEY = 'betsy-changelog-seen';
@@ -73,12 +73,12 @@ export function WhatsNewDrawer() {
       {/* Bell icon trigger */}
       <button
         onClick={handleOpen}
-        className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
+        className="relative p-2 rounded-lg hover:bg-muted transition-colors"
         aria-label="Novedades"
       >
-        <Bell className="h-5 w-5 text-gray-500" />
+        <Bell className="h-5 w-5 text-muted-foreground" />
         {hasNew && (
-          <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-blue-600 rounded-full ring-2 ring-white animate-pulse" />
+          <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-blue-600 rounded-full ring-2 ring-background animate-pulse" />
         )}
       </button>
 
@@ -86,15 +86,15 @@ export function WhatsNewDrawer() {
       {isOpen && (
         <>
           <div className="fixed inset-0 bg-black/20 z-50" onClick={() => setIsOpen(false)} />
-          <div className="fixed top-0 right-0 h-full w-[380px] max-w-[90vw] bg-white shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
+          <div className="fixed top-0 right-0 h-full w-[380px] max-w-[90vw] bg-card border-l border-border shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-blue-600" />
-                <h2 className="text-lg font-bold text-gray-900">Novedades</h2>
+                <Sparkles className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <h2 className="text-lg font-bold text-foreground">Novedades</h2>
               </div>
-              <button onClick={() => setIsOpen(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-                <X className="h-4 w-4 text-gray-500" />
+              <button onClick={() => setIsOpen(false)} className="p-1.5 hover:bg-muted rounded-lg transition-colors">
+                <X className="h-4 w-4 text-muted-foreground" />
               </button>
             </div>
 
@@ -104,18 +104,18 @@ export function WhatsNewDrawer() {
                 const config = CATEGORY_CONFIG[entry.category] || CATEGORY_CONFIG.improvement;
                 const Icon = config.icon;
                 return (
-                  <div key={entry.id} className="border rounded-xl p-4 hover:bg-gray-50 transition-colors">
+                  <div key={entry.id} className="border border-border rounded-xl p-4 hover:bg-muted transition-colors">
                     <div className="flex items-center gap-2 mb-2">
                       <Badge variant="outline" className={`text-[10px] ${config.color}`}>
                         <Icon className="h-3 w-3 mr-1" />
                         {config.label}
                       </Badge>
-                      <span className="text-[11px] text-gray-400">
+                      <span className="text-[11px] text-muted-foreground">
                         {new Date(entry.createdAt).toLocaleDateString('es-CR', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </span>
                     </div>
-                    <h3 className="font-semibold text-gray-900 text-sm mb-1">{entry.title}</h3>
-                    <p className="text-xs text-gray-500 leading-relaxed">{entry.description}</p>
+                    <h3 className="font-semibold text-foreground text-sm mb-1">{entry.title}</h3>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{entry.description}</p>
                   </div>
                 );
               })}

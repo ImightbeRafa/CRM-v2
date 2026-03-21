@@ -65,16 +65,16 @@ export function DocsSidebar({ docs, currentSlug, basePath, onNavigate }: DocsSid
               onClick={() => toggleCategory(cat)}
               className={`
                 w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-colors
-                ${hasActive ? 'text-blue-700 bg-blue-50/50' : 'text-gray-700 hover:bg-gray-100'}
+                ${hasActive ? 'text-blue-700 bg-blue-50/50' : 'text-muted-foreground hover:bg-muted'}
               `}
             >
               <Icon className="h-4 w-4 shrink-0" />
               <span className="flex-1 text-left">{CATEGORY_LABELS[cat] || cat}</span>
-              <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+              <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
             </button>
 
             {!isCollapsed && (
-              <div className="ml-3 pl-3 border-l border-gray-200 mt-1 mb-2 space-y-0.5">
+              <div className="ml-3 pl-3 border-l border-border mt-1 mb-2 space-y-0.5">
                 {catDocs.map(doc => {
                   const isActive = doc.slug === currentSlug;
                   return (
@@ -86,12 +86,12 @@ export function DocsSidebar({ docs, currentSlug, basePath, onNavigate }: DocsSid
                         flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors
                         ${isActive
                           ? 'bg-blue-50 text-blue-700 font-medium border-l-2 border-blue-600 -ml-[1px] pl-[11px]'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                         }
                       `}
                     >
                       <span className="truncate flex-1">{doc.title}</span>
-                      <span className="text-[10px] text-gray-400 shrink-0 flex items-center gap-0.5">
+                      <span className="text-[10px] text-muted-foreground shrink-0 flex items-center gap-0.5">
                         <Clock className="h-2.5 w-2.5" />
                         {doc.readingTime}m
                       </span>

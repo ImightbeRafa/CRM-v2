@@ -154,8 +154,8 @@ function SignInPageInner() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100">
-      <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-6 shadow-md">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-muted">
+      <div className="w-full max-w-md space-y-8 rounded-lg bg-card p-6 shadow-md">
         <div className="text-center">
           <div className="flex justify-center mb-6">
             <Image 
@@ -167,18 +167,18 @@ function SignInPageInner() {
               priority
             />
           </div>
-          <h2 className="mt-2 text-3xl font-bold text-gray-900">
+          <h2 className="mt-2 text-3xl font-bold text-foreground">
             {isRegistering ? 'Crear Cuenta' : 'Iniciar Sesión'}
           </h2>
-          <p className="mt-2 text-gray-600">
+          <p className="mt-2 text-muted-foreground">
             {isRegistering 
               ? `Regístrate ${intendedPlan && intendedPlan !== 'free' ? `para el plan ${intendedPlan.toUpperCase()}` : 'gratis'}` 
               : 'Usa tu correo electrónico y contraseña'
             }
           </p>
           {intendedPlan && intendedPlan !== 'free' && isRegistering && (
-            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-sm text-blue-800">
+            <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-sm text-blue-800 dark:text-blue-400">
                 ✨ Después del registro, serás redirigido al pago seguro de Tilopay
               </p>
             </div>
@@ -187,42 +187,42 @@ function SignInPageInner() {
         <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
           {isRegistering && (
             <div>
-              <label className="block text-sm font-semibold text-gray-800">Nombre (opcional)</label>
+              <label className="block text-sm font-semibold text-muted-foreground">Nombre (opcional)</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-border px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-background text-foreground"
                 placeholder="Tu nombre"
               />
             </div>
           )}
           <div>
-            <label className="block text-sm font-semibold text-gray-800">Correo Electrónico</label>
+            <label className="block text-sm font-semibold text-muted-foreground">Correo Electrónico</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-border px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-background text-foreground"
               placeholder="tu@email.com"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-800">Contraseña</label>
+            <label className="block text-sm font-semibold text-muted-foreground">Contraseña</label>
             <div className="relative mt-1">
               <input
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 pr-10 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                className="block w-full rounded-md border border-border px-3 py-2 pr-10 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-background text-foreground"
                 placeholder={isRegistering ? "Mínimo 6 caracteres" : ""}
                 minLength={isRegistering ? 6 : undefined}
                 required
               />
               <button
                 type="button"
-                className="absolute right-0 top-0 h-full px-3 text-gray-400 hover:text-gray-600"
+                className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
                 onClick={() => setShowPassword(!showPassword)}
                 tabIndex={-1}
               >
@@ -233,7 +233,7 @@ function SignInPageInner() {
               <div className="flex justify-end mt-1">
                 <Link
                   href="/auth/forgot-password"
-                  className="text-sm text-blue-600 hover:text-blue-800 py-2 min-h-[44px] inline-flex items-center"
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 py-2 min-h-[44px] inline-flex items-center"
                 >
                   ¿Olvidaste tu contraseña?
                 </Link>
@@ -256,7 +256,7 @@ function SignInPageInner() {
             <button
               type="button"
               onClick={() => setIsRegistering(!isRegistering)}
-              className="text-sm text-blue-600 hover:text-blue-800 py-3 min-h-[44px] inline-flex items-center"
+              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 py-3 min-h-[44px] inline-flex items-center"
             >
               {isRegistering 
                 ? '¿Ya tienes cuenta? Inicia sesión' 
@@ -268,10 +268,10 @@ function SignInPageInner() {
           {/* Divider */}
           <div className="relative my-4">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300"></div>
+              <div className="w-full border-t border-border"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">O continúa con</span>
+              <span className="px-2 bg-card text-muted-foreground">O continúa con</span>
             </div>
           </div>
 
@@ -280,7 +280,7 @@ function SignInPageInner() {
             type="button"
             onClick={handleGoogleSignIn}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 bg-white text-gray-700 px-4 py-2 rounded-lg shadow-sm border border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-colors"
+            className="w-full flex items-center justify-center gap-3 bg-card text-foreground px-4 py-2 rounded-lg shadow-sm border border-border hover:bg-muted focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-colors"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path
@@ -304,7 +304,7 @@ function SignInPageInner() {
           </button>
         </form>
       </div>
-      <footer className="mt-8 text-center text-gray-500 text-sm">
+      <footer className="mt-8 text-center text-muted-foreground text-sm">
         © {new Date().getFullYear()} BetsyCRM. Todos los derechos reservados.
       </footer>
     </div>
@@ -314,11 +314,11 @@ function SignInPageInner() {
 export default function SignInPage() {
   return (
     <Suspense fallback={
-      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100">
-        <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-6 shadow-md">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-muted">
+        <div className="w-full max-w-md space-y-8 rounded-lg bg-card p-6 shadow-md">
           <div className="text-center">
-            <div className="animate-pulse h-16 w-16 bg-gray-200 rounded mx-auto mb-6"></div>
-            <div className="animate-pulse h-8 bg-gray-200 rounded w-3/4 mx-auto"></div>
+            <div className="animate-pulse h-16 w-16 bg-muted rounded mx-auto mb-6"></div>
+            <div className="animate-pulse h-8 bg-muted rounded w-3/4 mx-auto"></div>
           </div>
         </div>
       </div>

@@ -9,7 +9,6 @@ export default function BackupPage() {
   const handleExportData = async () => {
     setIsExporting(true);
     try {
-      // Simple data export functionality
       const response = await fetch('/api/orders');
       const data = await response.json();
       
@@ -33,21 +32,21 @@ export default function BackupPage() {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm mx-4 my-8 p-6">
+    <div className="bg-card rounded-lg shadow-sm mx-4 my-8 p-6">
       <div className="max-w-7xl mx-auto">
-        <div className="border-b pb-4 mb-6">
-          <h2 className="text-2xl font-semibold text-gray-800">
+        <div className="border-b border-border pb-4 mb-6">
+          <h2 className="text-2xl font-semibold text-foreground">
             Gestión de Datos
           </h2>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Exportar y gestionar datos de ventas
           </p>
         </div>
         
         <div className="space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="font-semibold text-blue-800 mb-2">Exportar Datos</h3>
-            <p className="text-sm text-blue-600 mb-3">
+          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Exportar Datos</h3>
+            <p className="text-sm text-blue-600 dark:text-blue-400 mb-3">
               Descarga todos los datos de ventas en formato JSON
             </p>
             <button
@@ -59,9 +58,9 @@ export default function BackupPage() {
             </button>
           </div>
           
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <h3 className="font-semibold text-gray-800 mb-2">Información</h3>
-            <p className="text-sm text-gray-600">
+          <div className="bg-muted border border-border rounded-lg p-4">
+            <h3 className="font-semibold text-foreground mb-2">Información</h3>
+            <p className="text-sm text-muted-foreground">
               Los datos se exportan en formato JSON y contienen toda la información de pedidos, clientes y productos.
             </p>
           </div>

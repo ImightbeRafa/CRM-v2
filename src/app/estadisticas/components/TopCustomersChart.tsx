@@ -81,11 +81,11 @@ export default function TopCustomersChart({ startDate, endDate }: TopCustomersCh
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Very Active': return 'bg-green-100 text-green-800';
-      case 'Active': return 'bg-blue-100 text-blue-800';
-      case 'Moderate': return 'bg-yellow-100 text-yellow-800';
-      case 'Inactive': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'Very Active': return 'bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-400';
+      case 'Active': return 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400';
+      case 'Moderate': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-400';
+      case 'Inactive': return 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-400';
+      default: return 'bg-muted text-muted-foreground';
     }
   };
 
@@ -153,8 +153,8 @@ export default function TopCustomersChart({ startDate, endDate }: TopCustomersCh
             onClick={() => setActiveTab('revenue')}
             className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
               activeTab === 'revenue' 
-                ? 'bg-purple-100 text-purple-800' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-400' 
+                : 'bg-muted text-muted-foreground hover:bg-accent'
             }`}
           >
             Por Ingresos
@@ -163,8 +163,8 @@ export default function TopCustomersChart({ startDate, endDate }: TopCustomersCh
             onClick={() => setActiveTab('orders')}
             className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
               activeTab === 'orders' 
-                ? 'bg-purple-100 text-purple-800' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-400' 
+                : 'bg-muted text-muted-foreground hover:bg-accent'
             }`}
           >
             Por Pedidos
@@ -173,8 +173,8 @@ export default function TopCustomersChart({ startDate, endDate }: TopCustomersCh
             onClick={() => setActiveTab('activity')}
             className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
               activeTab === 'activity' 
-                ? 'bg-purple-100 text-purple-800' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-400' 
+                : 'bg-muted text-muted-foreground hover:bg-accent'
             }`}
           >
             Actividad
@@ -184,31 +184,31 @@ export default function TopCustomersChart({ startDate, endDate }: TopCustomersCh
       <CardContent className="overflow-y-auto flex-1 pt-0">
         {/* Summary Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
-          <div className="text-center p-2 bg-gray-50 rounded-lg">
-            <div className="text-lg font-bold text-gray-900">{data.summary.totalCustomers}</div>
-            <div className="text-xs text-gray-600">Total Clientes</div>
+          <div className="text-center p-2 bg-muted rounded-lg">
+            <div className="text-lg font-bold text-foreground">{data.summary.totalCustomers}</div>
+            <div className="text-xs text-muted-foreground">Total Clientes</div>
           </div>
-          <div className="text-center p-2 bg-green-50 rounded-lg">
-            <div className="text-lg font-bold text-green-600">{data.summary.activeCustomers}</div>
-            <div className="text-xs text-green-600">Activos</div>
+          <div className="text-center p-2 bg-green-50 dark:bg-green-950/30 rounded-lg">
+            <div className="text-lg font-bold text-green-600 dark:text-green-400">{data.summary.activeCustomers}</div>
+            <div className="text-xs text-green-600 dark:text-green-400">Activos</div>
           </div>
-          <div className="text-center p-2 bg-blue-50 rounded-lg">
-            <div className="text-sm font-bold text-blue-600 truncate px-1">
+          <div className="text-center p-2 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
+            <div className="text-sm font-bold text-blue-600 dark:text-blue-400 truncate px-1">
               {formatCurrency(data.summary.totalRevenue)}
             </div>
-            <div className="text-xs text-blue-600">Ingresos</div>
+            <div className="text-xs text-blue-600 dark:text-blue-400">Ingresos</div>
           </div>
-          <div className="text-center p-2 bg-purple-50 rounded-lg">
-            <div className="text-sm font-bold text-purple-600 truncate px-1">
+          <div className="text-center p-2 bg-purple-50 dark:bg-purple-950/30 rounded-lg">
+            <div className="text-sm font-bold text-purple-600 dark:text-purple-400 truncate px-1">
               {formatCurrency(data.summary.averageOrderValue)}
             </div>
-            <div className="text-xs text-purple-600">Promedio</div>
+            <div className="text-xs text-purple-600 dark:text-purple-400">Promedio</div>
           </div>
         </div>
 
         {/* Customer Status Distribution */}
         <div className="mb-4">
-          <h4 className="text-xs font-medium text-gray-700 mb-2">Distribución por Estado</h4>
+          <h4 className="text-xs font-medium text-muted-foreground mb-2">Distribución por Estado</h4>
           <div className="flex flex-wrap gap-1.5">
             {Object.entries(data.customerStatusDistribution).map(([status, count]) => (
               <Badge key={status} className={`${getStatusColor(status)} text-xs px-2 py-0.5`}>
@@ -221,7 +221,7 @@ export default function TopCustomersChart({ startDate, endDate }: TopCustomersCh
 
         {/* Top Customers List */}
         <div className="space-y-2">
-          <h4 className="text-xs font-medium text-gray-700">
+          <h4 className="text-xs font-medium text-muted-foreground">
             {activeTab === 'revenue' && 'Top 10 por Ingresos'}
             {activeTab === 'orders' && 'Top 10 por Cantidad de Pedidos'}
             {activeTab === 'activity' && 'Actividad Reciente'}
@@ -229,31 +229,31 @@ export default function TopCustomersChart({ startDate, endDate }: TopCustomersCh
           {!hasCustomers ? (
             <div className="flex items-center justify-center py-8">
               <div className="text-center">
-                <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                <p className="text-gray-500 text-sm">No hay clientes en este período.</p>
+                <Users className="w-10 h-10 text-muted-foreground/40 mx-auto mb-2" />
+                <p className="text-muted-foreground text-sm">No hay clientes en este período.</p>
               </div>
             </div>
           ) : (
           <div className="space-y-1.5">
             {currentData.slice(0, 10).map((customer, index) => (
-              <div key={customer.customerName} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg gap-2">
+              <div key={customer.customerName} className="flex items-center justify-between p-2 bg-muted/50 rounded-lg gap-2">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center text-xs font-bold text-purple-600 flex-shrink-0">
+                  <div className="w-6 h-6 bg-purple-100 dark:bg-purple-950/40 rounded-full flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-400 flex-shrink-0">
                     {index + 1}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="font-medium text-sm text-gray-900 truncate">{customer.customerName}</div>
-                    <div className="text-xs text-gray-600 truncate">
+                    <div className="font-medium text-sm text-foreground truncate">{customer.customerName}</div>
+                    <div className="text-xs text-muted-foreground truncate">
                       {customer.orderCount} pedidos • {formatCurrency(customer.averageOrderValue)}
                     </div>
                   </div>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <div className="font-bold text-sm text-gray-900 whitespace-nowrap">
+                  <div className="font-bold text-sm text-foreground whitespace-nowrap">
                     {formatCurrency(customer.totalRevenue)}
                   </div>
                   {activeTab === 'activity' && (
-                    <div className="flex items-center gap-1 text-xs text-gray-500 justify-end">
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
                       {getStatusIcon(customer.customerStatus)}
                       <span className="truncate max-w-[80px]">{customer.customerStatus}</span>
                       {customer.daysSinceLastOrder !== null && (

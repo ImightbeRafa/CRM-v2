@@ -244,8 +244,8 @@ export default function EstadisticasDashboard() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4 print:hidden">
         <div className="flex-1">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Panel de Estadísticas</h1>
-          <p className="text-sm md:text-base text-gray-600 mt-1">
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Panel de Estadísticas</h1>
+          <p className="text-sm md:text-base text-muted-foreground mt-1">
             Vista general del rendimiento de ventas
           </p>
         </div>
@@ -280,12 +280,12 @@ export default function EstadisticasDashboard() {
       {/* Report Modal/View */}
       {showReport && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 print:relative print:inset-auto print:bg-transparent print:p-0">
-          <div ref={reportRef} className="bg-white rounded-lg max-w-5xl w-full max-h-[90vh] overflow-auto print:max-h-none print:overflow-visible print:rounded-none">
+          <div ref={reportRef} className="bg-card rounded-lg max-w-5xl w-full max-h-[90vh] overflow-auto print:max-h-none print:overflow-visible print:rounded-none">
             {/* Report Header */}
-            <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between print:static print:border-b-2 print:border-black">
+            <div className="sticky top-0 bg-card border-b border-border p-4 flex items-center justify-between print:static print:border-b-2 print:border-black">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">Reporte de Ventas</h2>
-                <p className="text-sm text-gray-600">{formatDateRange()}</p>
+                <h2 className="text-xl font-bold text-foreground">Reporte de Ventas</h2>
+                <p className="text-sm text-muted-foreground">{formatDateRange()}</p>
               </div>
               <div className="flex items-center gap-2 print:hidden">
                 <button
@@ -297,7 +297,7 @@ export default function EstadisticasDashboard() {
                 </button>
                 <button
                   onClick={() => setShowReport(false)}
-                  className="px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm"
+                  className="px-3 py-2 bg-muted text-muted-foreground rounded-md hover:bg-muted/80 text-sm"
                 >
                   Cerrar
                 </button>
@@ -308,22 +308,22 @@ export default function EstadisticasDashboard() {
             <div className="p-6">
               {/* Summary Section */}
               <div className="mb-8">
-                <h3 className="text-lg font-semibold mb-4 border-b pb-2">Resumen General</h3>
+                <h3 className="text-lg font-semibold mb-4 border-b border-border pb-2">Resumen General</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="bg-gray-50 p-4 rounded-lg print:border print:bg-transparent">
-                    <p className="text-sm text-gray-600">Total Pedidos</p>
-                    <p className="text-2xl font-bold text-gray-900">{summary?.totalSales || 0}</p>
+                  <div className="bg-muted p-4 rounded-lg print:border print:bg-transparent">
+                    <p className="text-sm text-muted-foreground">Total Pedidos</p>
+                    <p className="text-2xl font-bold text-foreground">{summary?.totalSales || 0}</p>
                   </div>
-                  <div className="bg-green-50 p-4 rounded-lg print:border print:bg-transparent">
-                    <p className="text-sm text-gray-600">Ingresos Totales</p>
+                  <div className="bg-green-50 dark:bg-green-950/30 p-4 rounded-lg print:border print:bg-transparent">
+                    <p className="text-sm text-muted-foreground">Ingresos Totales</p>
                     <p className="text-2xl font-bold text-green-600">₡{formatCurrency(summary?.totalRevenue || 0)}</p>
                   </div>
-                  <div className="bg-blue-50 p-4 rounded-lg print:border print:bg-transparent">
-                    <p className="text-sm text-gray-600">Valor Promedio</p>
+                  <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg print:border print:bg-transparent">
+                    <p className="text-sm text-muted-foreground">Valor Promedio</p>
                     <p className="text-2xl font-bold text-blue-600">₡{formatCurrency(summary?.averageOrderValue || 0)}</p>
                   </div>
-                  <div className="bg-purple-50 p-4 rounded-lg print:border print:bg-transparent">
-                    <p className="text-sm text-gray-600">Clientes Únicos</p>
+                  <div className="bg-purple-50 dark:bg-purple-950/30 p-4 rounded-lg print:border print:bg-transparent">
+                    <p className="text-sm text-muted-foreground">Clientes Únicos</p>
                     <p className="text-2xl font-bold text-purple-600">{summary?.activeClients || 0}</p>
                   </div>
                 </div>
@@ -332,29 +332,29 @@ export default function EstadisticasDashboard() {
               {/* EA vs RA Breakdown */}
               {typeBreakdown && (
                 <div className="mb-8">
-                  <h3 className="text-lg font-semibold mb-4 border-b pb-2">Desglose por Tipo de Pedido</h3>
+                  <h3 className="text-lg font-semibold mb-4 border-b border-border pb-2">Desglose por Tipo de Pedido</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="border rounded-lg p-4">
+                    <div className="border border-border rounded-lg p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-lg font-semibold text-blue-600">Envíos (EA)</span>
-                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm font-medium">
+                        <span className="bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400 px-2 py-1 rounded text-sm font-medium">
                           {typeBreakdown.EA.count} pedidos
                         </span>
                       </div>
-                      <p className="text-3xl font-bold text-gray-900">₡{formatCurrency(typeBreakdown.EA.revenue)}</p>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-3xl font-bold text-foreground">₡{formatCurrency(typeBreakdown.EA.revenue)}</p>
+                      <p className="text-sm text-muted-foreground mt-1">
                         Promedio: ₡{formatCurrency(typeBreakdown.EA.count > 0 ? typeBreakdown.EA.revenue / typeBreakdown.EA.count : 0)}
                       </p>
                     </div>
-                    <div className="border rounded-lg p-4">
+                    <div className="border border-border rounded-lg p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-lg font-semibold text-orange-600">Retiros (RA)</span>
-                        <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-sm font-medium">
+                        <span className="bg-orange-100 dark:bg-orange-950/30 text-orange-800 dark:text-orange-400 px-2 py-1 rounded text-sm font-medium">
                           {typeBreakdown.RA.count} pedidos
                         </span>
                       </div>
-                      <p className="text-3xl font-bold text-gray-900">₡{formatCurrency(typeBreakdown.RA.revenue)}</p>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-3xl font-bold text-foreground">₡{formatCurrency(typeBreakdown.RA.revenue)}</p>
+                      <p className="text-sm text-muted-foreground mt-1">
                         Promedio: ₡{formatCurrency(typeBreakdown.RA.count > 0 ? typeBreakdown.RA.revenue / typeBreakdown.RA.count : 0)}
                       </p>
                     </div>
@@ -364,17 +364,17 @@ export default function EstadisticasDashboard() {
 
               {/* Orders Table */}
               <div>
-                <h3 className="text-lg font-semibold mb-4 border-b pb-2">Detalle de Pedidos</h3>
+                <h3 className="text-lg font-semibold mb-4 border-b border-border pb-2">Detalle de Pedidos</h3>
                 {loadingReport ? (
                   <div className="text-center py-8">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-gray-400" />
-                    <p className="text-gray-500 mt-2">Cargando pedidos...</p>
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-muted-foreground" />
+                    <p className="text-muted-foreground mt-2">Cargando pedidos...</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="bg-gray-100 print:bg-gray-200">
+                        <tr className="bg-muted print:bg-muted/80">
                           <th className="text-left p-2 font-semibold">Fecha</th>
                           <th className="text-left p-2 font-semibold">ID Pedido</th>
                           <th className="text-left p-2 font-semibold">Cliente</th>
@@ -385,7 +385,7 @@ export default function EstadisticasDashboard() {
                       </thead>
                       <tbody>
                         {orderDetails.map((order, idx) => (
-                          <tr key={order.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <tr key={order.id} className={idx % 2 === 0 ? 'bg-card' : 'bg-muted'}>
                             <td className="p-2">
                               {format(new Date(order.saleDate || order.timestamp), 'dd/MM/yyyy')}
                             </td>
@@ -394,8 +394,8 @@ export default function EstadisticasDashboard() {
                             <td className="p-2 text-center">
                               <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                                 order.orderType === 'EA' 
-                                  ? 'bg-blue-100 text-blue-800' 
-                                  : 'bg-orange-100 text-orange-800'
+                                  ? 'bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400' 
+                                  : 'bg-orange-100 dark:bg-orange-950/30 text-orange-800 dark:text-orange-400'
                               }`}>
                                 {order.orderType}
                               </span>
@@ -406,7 +406,7 @@ export default function EstadisticasDashboard() {
                         ))}
                       </tbody>
                       <tfoot>
-                        <tr className="bg-gray-200 font-bold print:bg-gray-300">
+                        <tr className="bg-muted font-bold print:bg-muted/80">
                           <td colSpan={5} className="p-2 text-right">TOTAL:</td>
                           <td className="p-2 text-right">₡{formatCurrency(orderDetails.reduce((sum, o) => sum + (o.total || 0), 0))}</td>
                         </tr>
@@ -417,7 +417,7 @@ export default function EstadisticasDashboard() {
               </div>
 
               {/* Footer for print */}
-              <div className="hidden print:block mt-8 pt-4 border-t text-center text-sm text-gray-500">
+              <div className="hidden print:block mt-8 pt-4 border-t border-border text-center text-sm text-muted-foreground">
                 <p>Reporte generado el {format(new Date(), "d 'de' MMMM, yyyy 'a las' HH:mm", { locale: es })}</p>
               </div>
             </div>
@@ -438,7 +438,7 @@ export default function EstadisticasDashboard() {
             <select
               value={groupBy}
               onChange={(e) => setGroupBy(e.target.value as 'day' | 'week' | 'month')}
-              className="px-3 py-1.5 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-1.5 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-card"
             >
               <option value="day">Por Día</option>
               <option value="week">Por Semana</option>
@@ -463,42 +463,42 @@ export default function EstadisticasDashboard() {
           </ChartContainer>
 
           {/* Enhanced Summary Stats Card */}
-          <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Resumen del Período</h3>
+          <div className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 rounded-lg border border-border p-6">
+            <h3 className="text-lg font-semibold text-foreground mb-4">Resumen del Período</h3>
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Total de Pedidos:</span>
-                <span className="font-bold text-gray-900">{summary?.totalSales || 0}</span>
+                <span className="text-muted-foreground">Total de Pedidos:</span>
+                <span className="font-bold text-foreground">{summary?.totalSales || 0}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Ingresos Totales:</span>
+                <span className="text-muted-foreground">Ingresos Totales:</span>
                 <span className="font-bold text-green-600">
                   ₡{formatCurrency(summary?.totalRevenue || 0)}
                 </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Valor Promedio:</span>
+                <span className="text-muted-foreground">Valor Promedio:</span>
                 <span className="font-bold text-purple-600">
                   ₡{formatCurrency(summary?.averageOrderValue || 0)}
                 </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Clientes Únicos:</span>
+                <span className="text-muted-foreground">Clientes Únicos:</span>
                 <span className="font-bold text-orange-600">{summary?.activeClients || 0}</span>
               </div>
               {typeBreakdown && (
                 <>
-                  <hr className="my-3" />
+                  <hr className="my-3 border-border" />
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Envíos (EA):</span>
+                      <span className="text-muted-foreground">Envíos (EA):</span>
                       <div className="text-right">
                         <span className="font-bold text-blue-600">{typeBreakdown.EA.count} pedidos</span>
                         <span className="block text-sm text-green-600 font-medium">₡{formatCurrency(typeBreakdown.EA.revenue)}</span>
                       </div>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Retiros (RA):</span>
+                      <span className="text-muted-foreground">Retiros (RA):</span>
                       <div className="text-right">
                         <span className="font-bold text-blue-600">{typeBreakdown.RA.count} pedidos</span>
                         <span className="block text-sm text-green-600 font-medium">₡{formatCurrency(typeBreakdown.RA.revenue)}</span>

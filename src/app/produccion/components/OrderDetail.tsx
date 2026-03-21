@@ -225,16 +225,16 @@ export function OrderDetails({
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      'Pendiente': 'bg-yellow-100 text-yellow-800',
-      'En Proceso': 'bg-blue-100 text-blue-800',
-      'Completado': 'bg-green-100 text-green-800',
-      'Enviado': 'bg-purple-100 text-purple-800',
-      'Entregado': 'bg-purple-100 text-purple-800',
-      'Drive': 'bg-indigo-100 text-indigo-800',
-      'Impreso': 'bg-cyan-100 text-cyan-800',
-      'PendienteDiseño': 'bg-orange-100 text-orange-800'
+      'Pendiente': 'bg-yellow-100 dark:bg-yellow-950/30 text-yellow-800 dark:text-yellow-400',
+      'En Proceso': 'bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400',
+      'Completado': 'bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400',
+      'Enviado': 'bg-purple-100 dark:bg-purple-950/30 text-purple-800 dark:text-purple-400',
+      'Entregado': 'bg-purple-100 dark:bg-purple-950/30 text-purple-800 dark:text-purple-400',
+      'Drive': 'bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400',
+      'Impreso': 'bg-cyan-100 dark:bg-cyan-950/30 text-cyan-800 dark:text-cyan-400',
+      'PendienteDiseño': 'bg-orange-100 dark:bg-orange-950/30 text-orange-800 dark:text-orange-400'
     };
-    return colors[status] || 'bg-gray-100 text-gray-800';
+    return colors[status] || 'bg-muted text-foreground';
   };
 
   const renderField = (label: string, field: SaleKeys, type: string = 'text') => {
@@ -242,16 +242,16 @@ export function OrderDetails({
     
     if (!isEditing) {
       return (
-        <div className="group relative py-2 transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-md px-2 -mx-2">
+        <div className="group relative py-2 transition-all duration-200 hover:bg-muted rounded-md px-2 -mx-2">
           <div className="flex justify-between items-baseline">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{label}</label>
+            <label className="text-xs font-medium text-muted-foreground">{label}</label>
             {field === 'status' && value && (
               <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(value.toString())}`}>
                 {value.toString()}
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-900 dark:text-gray-100 font-medium mt-1">
+          <p className="text-sm text-foreground font-medium mt-1">
             {type === 'number' && typeof value === 'number' 
               ? value.toLocaleString()
               : value?.toString() || '-'
@@ -264,7 +264,7 @@ export function OrderDetails({
     if (field === 'comments') {
       return (
         <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</label>
+          <label className="text-sm font-medium text-muted-foreground">{label}</label>
           <Textarea
             value={value?.toString() || ''}
             onChange={(e) => handleInputChange(field, e.target.value)}
@@ -278,7 +278,7 @@ export function OrderDetails({
     if (field === 'status') {
       return (
         <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</label>
+          <label className="text-sm font-medium text-muted-foreground">{label}</label>
           <select
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm 
                      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
@@ -301,7 +301,7 @@ export function OrderDetails({
 
     return (
       <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</label>
+        <label className="text-sm font-medium text-muted-foreground">{label}</label>
         <Input
           type={type}
           value={value?.toString() || ''}
@@ -316,9 +316,9 @@ export function OrderDetails({
   };
 
   const renderSection = (title: string, fields: Array<[string, SaleKeys, string?]>) => (
-    <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
-      <div className="p-4 border-b border-gray-100 dark:border-gray-800">
-        <h3 className="font-medium text-sm text-gray-600 dark:text-gray-300">{title}</h3>
+    <div className="rounded-lg border border-border bg-card shadow-sm">
+      <div className="p-4 border-b border-border">
+        <h3 className="font-medium text-sm text-muted-foreground">{title}</h3>
       </div>
       <div className="p-4 space-y-4">
         {fields.map(([label, field, type]) => (
@@ -342,7 +342,7 @@ export function OrderDetails({
     if (isEditing) {
       return (
         <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Total</label>
+          <label className="text-sm font-medium text-muted-foreground">Total</label>
           <Input
             type="number"
             value={total?.toString() || '0'}
@@ -355,11 +355,11 @@ export function OrderDetails({
     }
 
     return (
-      <div className="group relative py-2 transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-md px-2 -mx-2">
+      <div className="group relative py-2 transition-all duration-200 hover:bg-muted rounded-md px-2 -mx-2">
         <div className="flex justify-between items-baseline">
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Total</label>
+          <label className="text-xs font-medium text-muted-foreground">Total</label>
         </div>
-        <p className="text-sm text-gray-900 dark:text-gray-100 font-medium mt-1">
+        <p className="text-sm text-foreground font-medium mt-1">
           {typeof total === 'number' ? total.toLocaleString() : '-'}
         </p>
       </div>
@@ -405,11 +405,11 @@ export function OrderDetails({
   return (
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-        <DialogHeader className="px-6 py-4 border-b bg-white dark:bg-gray-900 sticky top-0 z-10">
+        <DialogHeader className="px-6 py-4 border-b border-border bg-card sticky top-0 z-10">
           <DialogTitle className="flex justify-between items-center">
             <div className="flex items-center space-x-3">
-              <span className="text-lg font-semibold">Orden {displayOrder.orderId}</span>
-              <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+              <span className="text-lg font-semibold text-foreground">Orden {displayOrder.orderId}</span>
+              <span className="px-2 py-1 text-xs font-medium rounded-full bg-muted text-muted-foreground">
                 {displayOrder.orderType}
               </span>
               {displayOrder.status && (
@@ -418,7 +418,7 @@ export function OrderDetails({
                 </span>
               )}
               {displayOrder.contraEntrega && (
-                <span className="px-2 py-1 text-xs font-medium rounded-full bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                <span className="px-2 py-1 text-xs font-medium rounded-full bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-300 dark:border-amber-800 flex items-center gap-1">
                   <Banknote className="h-3 w-3" />
                   Contra Entrega
                 </span>
@@ -472,7 +472,7 @@ export function OrderDetails({
           </DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 h-full max-h-[calc(90vh-8rem)] bg-gray-50 dark:bg-gray-900/50">
+        <ScrollArea className="flex-1 h-full max-h-[calc(90vh-8rem)] bg-muted">
           <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-6">
               {renderSection('Información del Cliente', customerInfoFields)}
@@ -484,9 +484,9 @@ export function OrderDetails({
               ])}
 
               {displayOrder.contraEntrega && (
-                <div className="rounded-lg border-2 border-amber-200 bg-amber-50 dark:bg-amber-900/20 shadow-sm">
-                  <div className="p-4 border-b border-amber-200">
-                    <h3 className="font-medium text-sm text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+                <div className="rounded-lg border-2 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 shadow-sm">
+                  <div className="p-4 border-b border-amber-200 dark:border-amber-800">
+                    <h3 className="font-medium text-sm text-amber-800 dark:text-amber-400 flex items-center gap-1.5">
                       <Banknote className="h-4 w-4" />
                       Contra Entrega
                     </h3>
@@ -494,8 +494,8 @@ export function OrderDetails({
                   <div className="p-4">
                     <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
                       displayOrder.cePaymentConfirmed
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-amber-100 text-amber-700'
+                        ? 'bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400'
+                        : 'bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400'
                     }`}>
                       {displayOrder.cePaymentConfirmed ? '✓ Pago Confirmado' : '○ Pendiente de Cobro'}
                     </div>
@@ -538,7 +538,7 @@ export function OrderDetails({
                 return pickupFields.length > 0 ? renderSection('Detalles de Retiro', pickupFields) : null;
               })()}
 
-              <div key="total-section" className="rounded-lg border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
+              <div key="total-section" className="rounded-lg border border-border bg-card shadow-sm">
                 <div className="p-4">
                   {renderTotal()}
                 </div>
@@ -581,19 +581,19 @@ export function OrderDetails({
                 if (fieldsToDisplay.length === 0) return null;
                 
                 return (
-                  <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
-                    <div className="p-4 border-b border-gray-100 dark:border-gray-800">
-                      <h3 className="font-medium text-sm text-gray-600 dark:text-gray-300">Campos personalizados</h3>
+                  <div className="rounded-lg border border-border bg-card shadow-sm">
+                    <div className="p-4 border-b border-border">
+                      <h3 className="font-medium text-sm text-muted-foreground">Campos personalizados</h3>
                     </div>
                     <div className="p-4 space-y-2">
                       {fieldsToDisplay.map((field) => (
-                        <div key={`custom-${field.key}`} className="group relative py-2 transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-md px-2 -mx-2">
+                        <div key={`custom-${field.key}`} className="group relative py-2 transition-all duration-200 hover:bg-muted rounded-md px-2 -mx-2">
                           <div className="flex justify-between items-baseline">
-                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                            <label className="text-xs font-medium text-muted-foreground">
                               {field.label}
                             </label>
                           </div>
-                          <p className="text-sm text-gray-900 dark:text-gray-100 font-medium mt-1">
+                          <p className="text-sm text-foreground font-medium mt-1">
                             {field.type === 'number' ? Number(field.value).toLocaleString('es-CR') : 
                              field.type === 'boolean' ? (field.value ? 'Sí' : 'No') :
                              field.type === 'date' ? new Date(field.value).toLocaleDateString('es-CR') :
@@ -608,9 +608,9 @@ export function OrderDetails({
 
               {/* Comentario - Always show when editing, or when comments exist */}
               {(isEditing || displayOrder.comments) && (
-                <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
-                  <div className="p-4 border-b border-gray-100 dark:border-gray-800">
-                    <h3 className="font-medium text-sm text-gray-600 dark:text-gray-300">Comentarios</h3>
+                <div className="rounded-lg border border-border bg-card shadow-sm">
+                  <div className="p-4 border-b border-border">
+                    <h3 className="font-medium text-sm text-muted-foreground">Comentarios</h3>
                   </div>
                   <div className="p-4">
                     {isEditing ? (
@@ -621,7 +621,7 @@ export function OrderDetails({
                         placeholder="Ingrese comentarios..."
                       />
                     ) : (
-                      <p className="text-sm text-gray-900 dark:text-gray-100">{displayOrder.comments}</p>
+                      <p className="text-sm text-foreground">{displayOrder.comments}</p>
                     )}
                   </div>
                 </div>

@@ -96,14 +96,14 @@ export default function TilopaySubscriptionCheckout({
               <h3 className="text-xl font-semibold">
                 Suscripción {planName}
               </h3>
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 ₡{amountCRC.toLocaleString()} / mes
               </p>
             </div>
             {onClose && (
               <button
                 onClick={onClose}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-muted-foreground hover:text-muted-foreground"
                 disabled={loading}
               >
                 ✕
@@ -161,7 +161,7 @@ export default function TilopaySubscriptionCheckout({
             )}
           </Button>
 
-          <div className="text-xs text-gray-500 space-y-1 text-center">
+          <div className="text-xs text-muted-foreground space-y-1 text-center">
             <p>🔒 Pago seguro procesado por Tilopay</p>
             <p>💳 Monto: ₡{amountCRC.toLocaleString()} / mes</p>
             <p>🔄 Cancele en cualquier momento desde su panel</p>

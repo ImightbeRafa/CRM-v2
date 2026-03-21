@@ -87,13 +87,13 @@ export default function SubscriptionBanner() {
           <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
             <a
               href="/config?tab=billing"
-              className="px-2.5 py-1 md:px-3 md:py-1.5 bg-white text-red-600 rounded shadow-sm text-xs md:text-sm font-medium hover:bg-gray-50 transition-colors whitespace-nowrap"
+              className="px-2.5 py-1 md:px-3 md:py-1.5 bg-card text-red-600 rounded shadow-sm text-xs md:text-sm font-medium hover:bg-muted transition-colors whitespace-nowrap"
             >
               Activar Pro
             </a>
             <button
               onClick={() => setDismissed(true)}
-              className="p-2 rounded hover:bg-white hover:bg-opacity-20 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
+              className="p-2 rounded hover:bg-card/20 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
               title="Cerrar"
             >
               <X className="h-4 w-4" />
@@ -128,7 +128,7 @@ export default function SubscriptionBanner() {
             </a>
             <button
               onClick={() => setDismissed(true)}
-              className="p-2 rounded hover:bg-white hover:bg-opacity-20 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
+              className="p-2 rounded hover:bg-card/20 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
               title="Cerrar"
             >
               <X className="h-4 w-4" />
@@ -149,22 +149,22 @@ export default function SubscriptionBanner() {
     past_due: {
       title: 'Pago Pendiente',
       desc: 'Tu último pago falló. Por favor, actualiza tu método de pago para evitar la interrupción del servicio.',
-      color: 'bg-red-50 border-red-200 text-red-800',
+      color: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-800 dark:text-red-400',
     },
     canceled: {
       title: 'Suscripción Cancelada',
       desc: 'Tu suscripción fue cancelada. Renueva para continuar usando todas las funcionalidades.',
-      color: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+      color: 'bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-400',
     },
     pending: {
       title: 'Pago Pendiente',
       desc: 'Completa tu pago para activar tu plan y desbloquear todas las funcionalidades.',
-      color: 'bg-blue-50 border-blue-200 text-blue-800',
+      color: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-400',
     },
     incomplete: {
       title: 'Configuración Incompleta',
       desc: 'Finaliza la configuración de tu suscripción para acceder a todas las funcionalidades.',
-      color: 'bg-orange-50 border-orange-200 text-orange-800',
+      color: 'bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-400',
     },
   };
 
@@ -181,7 +181,7 @@ export default function SubscriptionBanner() {
         <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
           <a
             href="/config?tab=billing"
-            className="px-2.5 py-1 md:px-3 md:py-1.5 bg-white rounded shadow-sm text-xs md:text-sm font-medium hover:bg-gray-50 transition-colors flex items-center gap-1 whitespace-nowrap"
+            className="px-2.5 py-1 md:px-3 md:py-1.5 bg-card text-foreground rounded shadow-sm text-xs md:text-sm font-medium hover:bg-muted transition-colors flex items-center gap-1 whitespace-nowrap border border-border"
           >
             <CreditCard className="h-3.5 w-3.5 md:h-4 md:w-4" />
             <span className="hidden md:inline">Renovar Ahora</span>
@@ -189,11 +189,11 @@ export default function SubscriptionBanner() {
           </a>
           <button
             onClick={() => setDismissed(true)}
-            className="p-2 rounded hover:bg-white hover:bg-opacity-50 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
-            title="Cerrar"
-          >
-            <X className="h-4 w-4" />
-          </button>
+            className="p-2 rounded hover:bg-muted/50 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
+              title="Cerrar"
+            >
+              <X className="h-4 w-4" />
+            </button>
         </div>
       </div>
     </div>

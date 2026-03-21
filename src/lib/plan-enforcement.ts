@@ -10,7 +10,7 @@ export interface PlanCheck {
 }
 
 const planLimits = {
-  users: { FREE: 1, BASIC: 999999, PRO: 999999, ENTERPRISE: 999999 },
+  users: { FREE: 1, BASIC: 5, PRO: 25, ENTERPRISE: 999999 },
   ordersPerMonth: { FREE: 100, BASIC: 999999, PRO: 999999, ENTERPRISE: 999999 },
 };
 

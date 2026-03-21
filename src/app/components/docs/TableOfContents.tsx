@@ -45,7 +45,7 @@ export function TableOfContents({ headings }: TableOfContentsProps) {
 
   return (
     <div>
-      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
         En esta página
       </p>
       <nav className="space-y-0.5">
@@ -60,7 +60,7 @@ export function TableOfContents({ headings }: TableOfContentsProps) {
                 ${heading.depth === 3 ? 'pl-5' : 'pl-3'}
                 ${isActive
                   ? 'border-blue-600 text-blue-700 font-medium'
-                  : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
                 }
               `}
             >

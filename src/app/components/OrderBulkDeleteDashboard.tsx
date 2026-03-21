@@ -200,33 +200,33 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Pendiente': return 'bg-yellow-100 text-yellow-800'
-      case 'En Proceso': return 'bg-blue-100 text-blue-800'
-      case 'Enviado': return 'bg-green-100 text-green-800'
-      case 'Entregado': return 'bg-emerald-100 text-emerald-800'
-      case 'Cancelado': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
+      case 'Pendiente': return 'bg-yellow-100 dark:bg-yellow-950/30 text-yellow-800 dark:text-yellow-400'
+      case 'En Proceso': return 'bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400'
+      case 'Enviado': return 'bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400'
+      case 'Entregado': return 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400'
+      case 'Cancelado': return 'bg-red-100 dark:bg-red-950/30 text-red-800 dark:text-red-400'
+      default: return 'bg-muted text-foreground'
     }
   }
 
   const getOrderTypeColor = (type: string) => {
     switch (type) {
-      case 'EA': return 'bg-purple-100 text-purple-800'
-      case 'RA': return 'bg-orange-100 text-orange-800'
-      default: return 'bg-gray-100 text-gray-800'
+      case 'EA': return 'bg-purple-100 dark:bg-purple-950/30 text-purple-800 dark:text-purple-400'
+      case 'RA': return 'bg-orange-100 dark:bg-orange-950/30 text-orange-800 dark:text-orange-400'
+      default: return 'bg-muted text-foreground'
     }
   }
 
   if (!isMaster) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex items-center gap-4 p-6 bg-yellow-50 rounded-xl border border-yellow-200">
-          <div className="p-2 bg-yellow-100 rounded-lg">
-            <AlertTriangle className="w-6 h-6 text-yellow-600" />
+        <div className="flex items-center gap-4 p-6 bg-yellow-50 dark:bg-yellow-950/30 rounded-xl border border-yellow-200 dark:border-yellow-800">
+          <div className="p-2 bg-yellow-100 dark:bg-yellow-950/40 rounded-lg">
+            <AlertTriangle className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
           </div>
           <div>
-            <span className="text-yellow-800 font-semibold text-lg">Acceso Restringido</span>
-            <p className="text-yellow-700 text-sm mt-1">
+            <span className="text-yellow-800 dark:text-yellow-400 font-semibold text-lg">Acceso Restringido</span>
+            <p className="text-yellow-700 dark:text-yellow-300 text-sm mt-1">
               Solo los usuarios maestros pueden acceder a la eliminación masiva de órdenes.
             </p>
           </div>
@@ -295,28 +295,28 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
 
 
       {/* Search and Filters */}
-      <div className="bg-white rounded-xl p-6 shadow-lg border border-gray-200">
+      <div className="bg-card rounded-xl p-6 shadow-lg border border-border">
         <div className="flex items-center gap-4 mb-4">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
             <input
               type="text"
               placeholder="Buscar por cliente, orden, teléfono, producto o vendedor..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-background text-foreground"
             />
           </div>
         </div>
 
         {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-gray-200">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-border">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
+              <label className="block text-sm font-medium text-muted-foreground mb-2">Estado</label>
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-background text-foreground"
               >
                 <option value="all">Todos los estados</option>
                 <option value="Pendiente">Pendiente</option>
@@ -327,11 +327,11 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Orden</label>
+              <label className="block text-sm font-medium text-muted-foreground mb-2">Tipo de Orden</label>
               <select
                 value={orderTypeFilter}
                 onChange={(e) => setOrderTypeFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-background text-foreground"
               >
                 <option value="all">Todos los tipos</option>
                 <option value="EA">EA</option>
@@ -347,16 +347,16 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
         <div className="flex items-center justify-center py-12">
           <div className="flex items-center gap-3">
             <RefreshCw className="w-6 h-6 animate-spin text-red-500" />
-            <span className="text-gray-600">Cargando órdenes...</span>
+            <span className="text-muted-foreground">Cargando órdenes...</span>
           </div>
         </div>
       ) : orders.length === 0 ? (
         <div className="text-center py-12">
-          <div className="p-4 bg-gray-100 rounded-full w-20 h-20 mx-auto mb-4 flex items-center justify-center">
-            <Package className="w-10 h-10 text-gray-400" />
+          <div className="p-4 bg-muted rounded-full w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+            <Package className="w-10 h-10 text-muted-foreground" />
           </div>
-          <h3 className="text-xl font-semibold text-gray-800 mb-2">No hay órdenes</h3>
-          <p className="text-gray-500">No se encontraron órdenes en el sistema.</p>
+          <h3 className="text-xl font-semibold text-foreground mb-2">No hay órdenes</h3>
+          <p className="text-muted-foreground">No se encontraron órdenes en el sistema.</p>
           <button
             onClick={loadOrders}
             className="mt-4 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
@@ -366,17 +366,17 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
         </div>
       ) : filteredOrders.length === 0 ? (
         <div className="text-center py-12">
-          <div className="p-4 bg-gray-100 rounded-full w-20 h-20 mx-auto mb-4 flex items-center justify-center">
-            <Package className="w-10 h-10 text-gray-400" />
+          <div className="p-4 bg-muted rounded-full w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+            <Package className="w-10 h-10 text-muted-foreground" />
           </div>
-          <h3 className="text-xl font-semibold text-gray-800 mb-2">No hay órdenes</h3>
-          <p className="text-gray-500">No se encontraron órdenes que coincidan con los filtros.</p>
-          <p className="text-sm text-gray-400 mt-2">Total de órdenes: {orders.length}</p>
+          <h3 className="text-xl font-semibold text-foreground mb-2">No hay órdenes</h3>
+          <p className="text-muted-foreground">No se encontraron órdenes que coincidan con los filtros.</p>
+          <p className="text-sm text-muted-foreground/80 mt-2">Total de órdenes: {orders.length}</p>
         </div>
       ) : (
         <div>
           {/* Select All Bar */}
-          <div className="bg-gradient-to-r from-red-50 to-pink-50 border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <div className="bg-gradient-to-r from-red-50 to-pink-50 dark:from-red-950/30 dark:to-pink-950/30 border-b border-border px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <input
                 type="checkbox"
@@ -384,7 +384,7 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
                 onChange={toggleSelectAll}
                 className="w-5 h-5 text-red-600 rounded focus:ring-2 focus:ring-red-500 cursor-pointer"
               />
-              <span className="text-sm font-medium text-gray-700">
+              <span className="text-sm font-medium text-muted-foreground">
                 {selectedOrders.size > 0 
                   ? `${selectedOrders.size} de ${paginatedOrders.length} seleccionadas`
                   : 'Seleccionar todas'}
@@ -404,9 +404,9 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
             )}
           </div>
           
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-border">
             {paginatedOrders.map((order) => (
-              <div key={order.id} className="p-6 hover:bg-gradient-to-r hover:from-gray-50 hover:to-red-50 transition-all duration-200 group">
+              <div key={order.id} className="p-6 hover:bg-gradient-to-r hover:from-muted hover:to-red-950/20 transition-all duration-200 group">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-4">
                     <input
@@ -415,12 +415,12 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
                       onChange={() => toggleSelectOrder(order.id)}
                       className="mt-1 w-5 h-5 text-red-600 rounded focus:ring-2 focus:ring-red-500 cursor-pointer"
                     />
-                    <div className="p-2 bg-gray-100 group-hover:bg-white rounded-lg transition-colors">
-                      <Package className="w-5 h-5 text-gray-600" />
+                    <div className="p-2 bg-muted group-hover:bg-card rounded-lg transition-colors">
+                      <Package className="w-5 h-5 text-muted-foreground" />
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
-                        <span className="text-lg font-semibold text-gray-900">#{order.orderId}</span>
+                        <span className="text-lg font-semibold text-foreground">#{order.orderId}</span>
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusColor(order.status)}`}>
                           {order.status}
                         </span>
@@ -429,17 +429,17 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
                         </span>
                       </div>
                       
-                      <div className="text-sm text-gray-600 mb-3">
+                      <div className="text-sm text-muted-foreground mb-3">
                         <div className="flex items-center gap-6">
                           <span className="flex items-center gap-2">
-                            <User className="w-4 h-4 text-gray-400" />
-                            <span className="font-medium">{order.customerName}</span>
+                            <User className="w-4 h-4 text-muted-foreground/70" />
+                            <span className="font-medium text-foreground">{order.customerName}</span>
                             {order.phone && (
-                              <span className="text-gray-500">({order.phone})</span>
+                              <span className="text-muted-foreground">({order.phone})</span>
                             )}
                           </span>
                           <span className="flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-gray-400" />
+                            <Clock className="w-4 h-4 text-muted-foreground/70" />
                             {new Date(order.timestamp).toLocaleString()}
                           </span>
                           <span className="font-semibold text-green-600">
@@ -447,7 +447,7 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
                           </span>
                         </div>
                         {order.product && (
-                          <div className="mt-2 text-sm text-gray-500">
+                          <div className="mt-2 text-sm text-muted-foreground">
                             <span className="font-medium">Producto:</span> {order.product}
                             {order.quantity && ` (${order.quantity}x)`}
                             {order.color && ` - ${order.color}`}
@@ -459,7 +459,7 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => toggleOrderDetails(order.id)}
-                          className="flex items-center gap-1 px-3 py-1 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors"
+                          className="flex items-center gap-1 px-3 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
                         >
                           {showOrderDetails.has(order.id) ? (
                             <>
@@ -476,54 +476,54 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
                       </div>
 
                       {showOrderDetails.has(order.id) && (
-                        <div className="mt-4 bg-gray-50 rounded-lg p-4">
-                          <h4 className="font-semibold text-gray-800 mb-2">Detalles de la orden:</h4>
+                        <div className="mt-4 bg-muted rounded-lg p-4">
+                          <h4 className="font-semibold text-foreground mb-2">Detalles de la orden:</h4>
                           <div className="space-y-2">
                             <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Cliente:</span>
+                              <span className="text-sm text-muted-foreground">Cliente:</span>
                               <span className="text-sm font-medium">{order.customerName}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Teléfono:</span>
+                              <span className="text-sm text-muted-foreground">Teléfono:</span>
                               <span className="text-sm font-medium">{order.phone}</span>
                             </div>
                             {order.email && (
                               <div className="flex justify-between">
-                                <span className="text-sm text-gray-600">Email:</span>
+                                <span className="text-sm text-muted-foreground">Email:</span>
                                 <span className="text-sm font-medium">{order.email}</span>
                               </div>
                             )}
                             <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Total:</span>
+                              <span className="text-sm text-muted-foreground">Total:</span>
                               <span className="text-sm font-semibold text-green-600">₡{order.total.toLocaleString()}</span>
                             </div>
                             {order.product && (
                               <div className="flex justify-between">
-                                <span className="text-sm text-gray-600">Producto:</span>
+                                <span className="text-sm text-muted-foreground">Producto:</span>
                                 <span className="text-sm font-medium">{order.product}</span>
                               </div>
                             )}
                             {order.quantity && (
                               <div className="flex justify-between">
-                                <span className="text-sm text-gray-600">Cantidad:</span>
+                                <span className="text-sm text-muted-foreground">Cantidad:</span>
                                 <span className="text-sm font-medium">{order.quantity}</span>
                               </div>
                             )}
                             {order.seller && (
                               <div className="flex justify-between">
-                                <span className="text-sm text-gray-600">Vendedor:</span>
+                                <span className="text-sm text-muted-foreground">Vendedor:</span>
                                 <span className="text-sm font-medium">{order.seller}</span>
                               </div>
                             )}
                             {order.delivery && (
                               <div className="flex justify-between">
-                                <span className="text-sm text-gray-600">Entrega:</span>
+                                <span className="text-sm text-muted-foreground">Entrega:</span>
                                 <span className="text-sm font-medium">{order.delivery}</span>
                               </div>
                             )}
                             {order.address && (
                               <div className="flex justify-between">
-                                <span className="text-sm text-gray-600">Dirección:</span>
+                                <span className="text-sm text-muted-foreground">Dirección:</span>
                                 <span className="text-sm font-medium">{order.address}</span>
                               </div>
                             )}
@@ -539,15 +539,15 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between px-6 py-4 bg-gray-50">
-              <div className="text-sm text-gray-600">
+            <div className="flex items-center justify-between px-6 py-4 bg-muted">
+              <div className="text-sm text-muted-foreground">
                 Mostrando {((currentPage - 1) * itemsPerPage) + 1} a {Math.min(currentPage * itemsPerPage, filteredOrders.length)} de {filteredOrders.length} órdenes
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1 text-sm border border-border rounded-md hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed bg-background text-foreground"
                 >
                   Anterior
                 </button>
@@ -557,7 +557,7 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
                 <button
                   onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1 text-sm border border-border rounded-md hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed bg-background text-foreground"
                 >
                   Siguiente
                 </button>
@@ -570,29 +570,29 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
       {/* Delete Confirmation Dialog */}
       {showDeleteDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+          <div className="bg-card rounded-xl p-6 max-w-md w-full mx-4 border border-border">
             <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <AlertTriangle className="w-6 h-6 text-red-600" />
+              <div className="p-2 bg-red-100 dark:bg-red-950/30 rounded-lg">
+                <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Confirmar Eliminación</h3>
-                <p className="text-sm text-gray-600">Esta acción no se puede deshacer</p>
+                <h3 className="text-lg font-semibold text-foreground">Confirmar Eliminación</h3>
+                <p className="text-sm text-muted-foreground">Esta acción no se puede deshacer</p>
               </div>
             </div>
             
             <div className="mb-4">
-              <p className="text-sm text-gray-700 mb-2">
+              <p className="text-sm text-muted-foreground mb-2">
                 ¿Estás seguro de que quieres eliminar <strong>{selectedOrders.size} órdenes</strong>?
               </p>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-muted-foreground mb-2">
                 Razón de eliminación (requerido):
               </label>
               <textarea
                 value={deleteReason}
                 onChange={(e) => setDeleteReason(e.target.value)}
                 placeholder="Ej: Órdenes duplicadas, datos incorrectos, etc."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-background text-foreground"
                 rows={3}
               />
             </div>
@@ -600,7 +600,7 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowDeleteDialog(false)}
-                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                className="flex-1 px-4 py-2 text-sm font-medium text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors border border-border"
               >
                 Cancelar
               </button>

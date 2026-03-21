@@ -304,7 +304,7 @@ export function SmartFieldWizard({
             <Sparkles className="w-6 h-6 text-purple-500" />
             Agregar Campos al Formulario
           </DialogTitle>
-          <p className="text-sm text-gray-500 mt-2">
+          <p className="text-sm text-muted-foreground mt-2">
             Selecciona campos predefinidos o crea uno personalizado
           </p>
         </DialogHeader>
@@ -313,7 +313,7 @@ export function SmartFieldWizard({
           {/* Step 1: Choose Category */}
           {!selectedCategory && (
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">¿Qué tipo de campos necesitas?</h3>
+              <h3 className="text-lg font-semibold text-foreground">¿Qué tipo de campos necesitas?</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card 
                   className="cursor-pointer hover:shadow-lg transition-all hover:scale-105 border-2 hover:border-purple-500"
@@ -324,7 +324,7 @@ export function SmartFieldWizard({
                       <Package className="w-8 h-8 text-purple-600" />
                     </div>
                     <h4 className="font-bold text-lg mb-2">Campos de Producto</h4>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       Color, tamaño, material, personalización, empaque
                     </p>
                     <Badge className="mt-3 bg-purple-100 text-purple-700">
@@ -342,7 +342,7 @@ export function SmartFieldWizard({
                       <Building className="w-8 h-8 text-blue-600" />
                     </div>
                     <h4 className="font-bold text-lg mb-2">Campos de Negocio</h4>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       Razón social, cédula, contactos, información fiscal
                     </p>
                     <Badge className="mt-3 bg-blue-100 text-blue-700">
@@ -360,7 +360,7 @@ export function SmartFieldWizard({
                       <Truck className="w-8 h-8 text-green-600" />
                     </div>
                     <h4 className="font-bold text-lg mb-2">Campos de Envío</h4>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       Direcciones, métodos de envío, fechas de entrega
                     </p>
                     <Badge className="mt-3 bg-green-100 text-green-700">
@@ -401,7 +401,7 @@ export function SmartFieldWizard({
                   >
                     ← Volver
                   </Button>
-                  <h3 className="text-lg font-semibold text-gray-900">
+                  <h3 className="text-lg font-semibold text-foreground">
                     Selecciona los campos que necesitas
                   </h3>
                 </div>
@@ -421,27 +421,27 @@ export function SmartFieldWizard({
                       className={`cursor-pointer transition-all ${
                         isSelected 
                           ? 'border-2 border-purple-500 bg-purple-50' 
-                          : 'hover:shadow-md hover:border-gray-300'
+                          : 'hover:shadow-md hover:border-border'
                       }`}
                       onClick={() => handleFieldToggle(field.id)}
                     >
                       <CardContent className="p-4">
                         <div className="flex items-start gap-3">
                           <div className={`p-2 rounded-lg ${
-                            isSelected ? 'bg-purple-200' : 'bg-gray-100'
+                            isSelected ? 'bg-purple-200' : 'bg-muted'
                           }`}>
                             <Icon className={`w-5 h-5 ${
-                              isSelected ? 'text-purple-600' : 'text-gray-600'
+                              isSelected ? 'text-purple-600' : 'text-muted-foreground'
                             }`} />
                           </div>
                           <div className="flex-1">
                             <div className="flex items-center justify-between">
-                              <h4 className="font-semibold text-gray-900">{field.label}</h4>
+                              <h4 className="font-semibold text-foreground">{field.label}</h4>
                               {isSelected && (
                                 <Check className="w-5 h-5 text-purple-600" />
                               )}
                             </div>
-                            <p className="text-sm text-gray-600 mt-1">{field.description}</p>
+                            <p className="text-sm text-muted-foreground mt-1">{field.description}</p>
                             <div className="flex items-center gap-2 mt-2">
                               <Badge variant="outline" className="text-xs">
                                 {field.type}

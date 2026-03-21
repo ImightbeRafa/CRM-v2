@@ -149,17 +149,17 @@ export function BusinessProfileSettings() {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-8">
+      <div className="bg-card rounded-xl shadow-lg border border-border p-8">
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <span className="ml-3 text-gray-600">Cargando perfil...</span>
+          <span className="ml-3 text-muted-foreground">Cargando perfil...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+    <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
         <div className="flex items-center gap-4">
@@ -221,11 +221,11 @@ export function BusinessProfileSettings() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Owner Name */}
             <div className="space-y-2">
-              <label htmlFor="ownerName" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="ownerName" className="block text-sm font-medium text-muted-foreground">
                 Tu Nombre
               </label>
               <div className="relative">
-                <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <input
                   id="ownerName"
                   name="ownerName"
@@ -233,18 +233,18 @@ export function BusinessProfileSettings() {
                   value={formData.ownerName}
                   onChange={handleInputChange}
                   placeholder="Tu nombre completo"
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
             </div>
 
             {/* Business Name */}
             <div className="space-y-2">
-              <label htmlFor="businessName" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="businessName" className="block text-sm font-medium text-muted-foreground">
                 Nombre del Negocio
               </label>
               <div className="relative">
-                <Building2 className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Building2 className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <input
                   id="businessName"
                   name="businessName"
@@ -252,24 +252,24 @@ export function BusinessProfileSettings() {
                   value={formData.businessName}
                   onChange={handleInputChange}
                   placeholder="Nombre de tu empresa o tienda"
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
             </div>
 
             {/* Country */}
             <div className="space-y-2">
-              <label htmlFor="country" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="country" className="block text-sm font-medium text-muted-foreground">
                 País <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <MapPin className="absolute left-3 top-3 h-4 w-4 text-gray-400 z-10" />
+                <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground z-10" />
                 <select
                   id="country"
                   name="country"
                   value={formData.country}
                   onChange={handleInputChange}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-border rounded-lg bg-card focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
                   {COUNTRIES.map(country => (
@@ -284,7 +284,7 @@ export function BusinessProfileSettings() {
             {/* Province (only for Costa Rica) */}
             {formData.country === 'CR' && (
               <div className="space-y-2">
-                <label htmlFor="province" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="province" className="block text-sm font-medium text-muted-foreground">
                   Provincia
                 </label>
                 <select
@@ -292,7 +292,7 @@ export function BusinessProfileSettings() {
                   name="province"
                   value={formData.province}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-lg bg-card focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">Selecciona una provincia</option>
                   {CR_PROVINCES.map(prov => (
@@ -304,15 +304,15 @@ export function BusinessProfileSettings() {
 
             {/* Phone */}
             <div className="space-y-2 md:col-span-2">
-              <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="phone" className="block text-sm font-medium text-muted-foreground">
                 Teléfono de Contacto <span className="text-red-500">*</span>
               </label>
               <div className="flex">
-                <span className="inline-flex items-center px-4 bg-gray-100 border border-r-0 border-gray-300 rounded-l-lg text-gray-600 text-sm font-medium">
+                <span className="inline-flex items-center px-4 bg-muted border border-r-0 border-border rounded-l-lg text-muted-foreground text-sm font-medium">
                   {selectedCountry?.phoneCode || '+506'}
                 </span>
                 <div className="relative flex-1">
-                  <Phone className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Phone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <input
                     id="phone"
                     name="phone"
@@ -320,19 +320,19 @@ export function BusinessProfileSettings() {
                     value={formData.phone}
                     onChange={handleInputChange}
                     placeholder="8888-8888"
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-r-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2 border border-border rounded-r-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   />
                 </div>
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Este teléfono se usará para contactarte sobre tu cuenta y soporte
               </p>
             </div>
           </div>
 
           {/* Submit Button */}
-          <div className="flex justify-end pt-4 border-t border-gray-200">
+          <div className="flex justify-end pt-4 border-t border-border">
             <button
               type="submit"
               disabled={saving}
@@ -355,16 +355,16 @@ export function BusinessProfileSettings() {
 
         {/* Account Info */}
         {profile && (
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Información de la Cuenta</h3>
+          <div className="mt-8 pt-6 border-t border-border">
+            <h3 className="text-lg font-medium text-foreground mb-4">Información de la Cuenta</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-500">Plan Actual</p>
-                <p className="font-medium text-gray-900 capitalize">{profile.plan?.toLowerCase() || 'Free'}</p>
+              <div className="p-4 bg-muted rounded-lg">
+                <p className="text-sm text-muted-foreground">Plan Actual</p>
+                <p className="font-medium text-foreground capitalize">{profile.plan?.toLowerCase() || 'Free'}</p>
               </div>
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-500">Cuenta Creada</p>
-                <p className="font-medium text-gray-900">
+              <div className="p-4 bg-muted rounded-lg">
+                <p className="text-sm text-muted-foreground">Cuenta Creada</p>
+                <p className="font-medium text-foreground">
                   {new Date(profile.createdAt).toLocaleDateString('es-CR', {
                     year: 'numeric',
                     month: 'long',
@@ -372,9 +372,9 @@ export function BusinessProfileSettings() {
                   })}
                 </p>
               </div>
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-500">ID del Negocio</p>
-                <p className="font-medium text-gray-900 font-mono text-xs">{profile.id}</p>
+              <div className="p-4 bg-muted rounded-lg">
+                <p className="text-sm text-muted-foreground">ID del Negocio</p>
+                <p className="font-medium text-foreground font-mono text-xs">{profile.id}</p>
               </div>
             </div>
           </div>

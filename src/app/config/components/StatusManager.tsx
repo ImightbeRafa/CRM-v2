@@ -90,7 +90,7 @@ export function StatusManager({ statuses, loading = false, onRefresh }: StatusMa
       <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-600 p-6 text-white">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-white bg-opacity-20 rounded-xl">
+            <div className="p-3 bg-card/20 rounded-xl">
               <CheckCircle className="w-8 h-8" />
             </div>
             <div>
@@ -104,7 +104,7 @@ export function StatusManager({ statuses, loading = false, onRefresh }: StatusMa
               setShowForm(true);
               setFormData({ key: '', label: '', color: '#60A5FA', order: statuses.length });
             }}
-            className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-white"
+            className="bg-card/20 hover:bg-card/30 text-white border-white"
           >
             <Plus className="w-4 h-4 mr-2" />
             Nuevo Estado
@@ -114,9 +114,9 @@ export function StatusManager({ statuses, loading = false, onRefresh }: StatusMa
 
       <CardContent className="p-6">
         {loading ? (
-          <div className="text-center py-8 text-gray-500">Cargando...</div>
+          <div className="text-center py-8 text-muted-foreground">Cargando...</div>
         ) : statuses.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-muted-foreground">
             No hay estados configurados. Haz click en "Nuevo Estado" para agregar uno.
           </div>
         ) : (
@@ -124,17 +124,17 @@ export function StatusManager({ statuses, loading = false, onRefresh }: StatusMa
             {statuses.map((status) => (
               <div
                 key={status.id}
-                className="flex items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow bg-white"
+                className="flex items-center justify-between p-4 border border-border rounded-lg hover:shadow-md transition-shadow bg-card"
               >
                 <div className="flex items-center gap-4">
-                  <GripVertical className="h-5 w-5 text-gray-400 cursor-move" />
+                  <GripVertical className="h-5 w-5 text-muted-foreground cursor-move" />
                   <div
-                    className="w-4 h-4 rounded-full border-2 border-gray-300"
+                    className="w-4 h-4 rounded-full border-2 border-border"
                     style={{ backgroundColor: status.color || '#gray' }}
                   />
                   <div>
-                    <p className="font-semibold text-gray-900">{status.label}</p>
-                    <p className="text-sm text-gray-500">{status.key}</p>
+                    <p className="font-semibold text-foreground">{status.label}</p>
+                    <p className="text-sm text-muted-foreground">{status.key}</p>
                   </div>
                   <Badge variant="outline" className="text-xs">
                     Orden: {status.order}
@@ -161,7 +161,7 @@ export function StatusManager({ statuses, loading = false, onRefresh }: StatusMa
                     variant="outline"
                     size="sm"
                     onClick={() => handleDelete(status.id)}
-                    className="text-red-600 hover:bg-red-50"
+                    className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

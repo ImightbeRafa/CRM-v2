@@ -61,8 +61,8 @@ export default function DateRangePicker({
   ];
 
   return (
-    <div className="bg-white rounded-lg border p-4 space-y-4">
-      <div className="flex items-center gap-2 text-gray-700 font-medium">
+    <div className="bg-card rounded-lg border border-border p-4 space-y-4">
+      <div className="flex items-center gap-2 text-foreground font-medium">
         <Calendar className="w-5 h-5" />
         <span>Rango de Fechas</span>
       </div>
@@ -73,7 +73,7 @@ export default function DateRangePicker({
           <button
             key={range.label}
             onClick={range.onClick}
-            className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+            className="px-3 py-1.5 text-sm bg-muted hover:bg-accent text-muted-foreground hover:text-accent-foreground rounded-md transition-colors"
           >
             {range.label}
           </button>
@@ -83,25 +83,25 @@ export default function DateRangePicker({
       {/* Custom Date Inputs */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
+          <label className="block text-sm font-medium text-muted-foreground mb-1">
             Fecha Inicio
           </label>
           <input
             type="date"
             value={startDate}
             onChange={(e) => onDateChange(e.target.value, endDate)}
-            className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full border border-input bg-background text-foreground rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
+          <label className="block text-sm font-medium text-muted-foreground mb-1">
             Fecha Fin
           </label>
           <input
             type="date"
             value={endDate}
             onChange={(e) => onDateChange(startDate, e.target.value)}
-            className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full border border-input bg-background text-foreground rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
       </div>

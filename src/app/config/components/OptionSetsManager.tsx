@@ -192,10 +192,10 @@ export function OptionSetsManager() {
                 <List className="w-6 h-6 text-white" />
               </div>
               <div>
-                <CardTitle className="text-2xl text-gray-900">
+                <CardTitle className="text-2xl text-foreground">
                   Conjuntos de Opciones
                 </CardTitle>
-                <p className="text-sm text-gray-600 mt-1">
+                <p className="text-sm text-muted-foreground mt-1">
                   Gestiona las opciones disponibles para campos de selección
                 </p>
               </div>
@@ -211,35 +211,35 @@ export function OptionSetsManager() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Database className="w-5 h-5 text-gray-700" />
+            <Database className="w-5 h-5 text-muted-foreground" />
             Campos con Opciones
           </CardTitle>
         </CardHeader>
         <CardContent>
           {optionSets.length === 0 ? (
             <div className="text-center py-12">
-              <Database className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 text-lg font-medium">No hay conjuntos de opciones</p>
-              <p className="text-gray-400 text-sm mt-2">
+              <Database className="w-16 h-16 text-muted-foreground/50 mx-auto mb-4" />
+              <p className="text-muted-foreground text-lg font-medium">No hay conjuntos de opciones</p>
+              <p className="text-muted-foreground text-sm mt-2">
                 Crea campos de tipo "Selección" para empezar
               </p>
             </div>
           ) : (
             <div className="space-y-3">
               {optionSets.map((set) => (
-                <div key={set.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                <div key={set.id} className="border border-border rounded-lg overflow-hidden">
                   {/* Option Set Header */}
                   <div
-                    className="flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+                    className="flex items-center justify-between p-4 bg-muted hover:bg-accent transition-colors cursor-pointer"
                     onClick={() => setExpandedSet(expandedSet === set.id ? null : set.id)}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="p-2 bg-white rounded-lg shadow-sm">
+                      <div className="p-2 bg-card rounded-lg shadow-sm">
                         <List className="w-5 h-5 text-blue-600" />
                       </div>
                       <div>
-                        <h3 className="font-semibold text-gray-900">{set.name}</h3>
-                        <p className="text-sm text-gray-500">
+                        <h3 className="font-semibold text-foreground">{set.name}</h3>
+                        <p className="text-sm text-muted-foreground">
                           {set.options.length} {set.options.length === 1 ? 'opción' : 'opciones'}
                         </p>
                       </div>
@@ -247,21 +247,21 @@ export function OptionSetsManager() {
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">{set.key}</Badge>
                       {expandedSet === set.id ? (
-                        <ChevronUp className="w-5 h-5 text-gray-400" />
+                        <ChevronUp className="w-5 h-5 text-muted-foreground" />
                       ) : (
-                        <ChevronDown className="w-5 h-5 text-gray-400" />
+                        <ChevronDown className="w-5 h-5 text-muted-foreground" />
                       )}
                     </div>
                   </div>
 
                   {/* Expanded Options List */}
                   {expandedSet === set.id && (
-                    <div className="p-4 bg-white border-t border-gray-200">
+                    <div className="p-4 bg-card border-t border-border">
                       <div className="space-y-2 mb-4">
                         {set.options.map((option) => (
                           <div
                             key={option.id}
-                            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                            className="flex items-center justify-between p-3 bg-muted rounded-lg hover:bg-accent transition-colors"
                           >
                             {editingOption?.id === option.id ? (
                               // Edit Form
@@ -309,7 +309,7 @@ export function OptionSetsManager() {
                               // Display Mode
                               <>
                                 <div className="flex items-center gap-3 flex-1">
-                                  <span className="font-medium text-gray-900">{option.label}</span>
+                                  <span className="font-medium text-foreground">{option.label}</span>
                                   <Badge variant="outline" className="text-xs">
                                     {option.value}
                                   </Badge>

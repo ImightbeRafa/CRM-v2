@@ -83,9 +83,9 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
 
 
   const getStockStatus = (item: InventoryItem) => {
-    if (item.currentStock === 0) return { status: 'out', color: 'bg-red-100 text-red-800', icon: AlertTriangle };
-    if (item.currentStock <= item.minStock) return { status: 'low', color: 'bg-yellow-100 text-yellow-800', icon: AlertTriangle };
-    return { status: 'normal', color: 'bg-green-100 text-green-800', icon: CheckCircle };
+    if (item.currentStock === 0) return { status: 'out', color: 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-400', icon: AlertTriangle };
+    if (item.currentStock <= item.minStock) return { status: 'low', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-400', icon: AlertTriangle };
+    return { status: 'normal', color: 'bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-400', icon: CheckCircle };
   };
 
 
@@ -93,7 +93,7 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
     <div className="space-y-4">
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <input
           type="text"
           placeholder="Buscar productos del inventario..."
@@ -103,18 +103,18 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
             setShowSuggestions(true);
           }}
           onFocus={() => setShowSuggestions(true)}
-          className="w-full pl-10 pr-4 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          className="w-full pl-10 pr-4 py-2 border border-indigo-200 dark:border-indigo-800 bg-background text-foreground rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
         />
       </div>
 
         {/* Inventory Suggestions */}
         {showSuggestions && (
           <div className="space-y-3">
-            <h4 className="font-semibold text-gray-700 flex items-center gap-2">
+            <h4 className="font-semibold text-muted-foreground flex items-center gap-2">
               <Package className="h-4 w-4 text-blue-500" />
               Inventario ({filteredInventory.length})
             </h4>
-            <div className="max-h-64 overflow-y-auto space-y-2 border border-gray-200 rounded-lg p-2">
+            <div className="max-h-64 overflow-y-auto space-y-2 border border-border rounded-lg p-2">
               {filteredInventory.length > 0 ? (
                 filteredInventory.map((item) => {
                   const stockStatus = getStockStatus(item);
@@ -123,7 +123,7 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
                   return (
                     <div
                       key={item.id}
-                      className="flex items-center justify-between p-3 bg-white rounded-lg border border-blue-100 hover:border-blue-300 cursor-pointer transition-colors"
+                      className="flex items-center justify-between p-3 bg-card rounded-lg border border-border hover:border-blue-400 dark:hover:border-blue-600 cursor-pointer transition-colors"
                       onClick={() => handleProductSelect(item)}
                     >
                       <div className="flex-1">
@@ -138,10 +138,10 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
                              stockStatus.status === 'low' ? 'Stock Bajo' : 'Stock OK'}
                           </Badge>
                         </div>
-                        <div className="text-sm text-gray-600">
+                        <div className="text-sm text-muted-foreground">
                           {item.category} • SKU: {item.sku}
                         </div>
-                        <div className="text-xs text-gray-500 flex items-center gap-4">
+                        <div className="text-xs text-muted-foreground flex items-center gap-4">
                           <span>Stock: {item.currentStock}</span>
                           <span>Costo: ₡{item.unitCost.toLocaleString()}</span>
                           <span>Precio: ₡{item.sellingPrice.toLocaleString()}</span>
@@ -157,7 +157,7 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
                   );
                 })
               ) : (
-                <div className="text-center text-gray-500 py-4">
+                <div className="text-center text-muted-foreground py-4">
                   {searchTerm ? 'No se encontraron productos en el inventario' : 'No hay productos en el inventario'}
                 </div>
               )}
@@ -171,7 +171,7 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
           <div className="text-center">
             <Button
               variant="outline"
-              className="text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+              className="text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
               onClick={() => setShowSuggestions(true)}
             >
               <Package className="h-4 w-4 mr-2" />
@@ -182,9 +182,9 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
 
         {/* Stats Summary */}
         {!showSuggestions && (
-          <div className="text-center pt-4 border-t border-gray-200">
-            <div className="text-2xl font-bold text-indigo-600">{inventoryItems.length}</div>
-            <div className="text-sm text-gray-600">Productos en Inventario</div>
+          <div className="text-center pt-4 border-t border-border">
+            <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{inventoryItems.length}</div>
+            <div className="text-sm text-muted-foreground">Productos en Inventario</div>
           </div>
         )}
       </div>

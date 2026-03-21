@@ -36,26 +36,35 @@ export async function GET(request: NextRequest) {
       data: {}
     };
     
-    // Export core business data
+    const MAX_EXPORT_ROWS = 10000;
+
     const [orders, clients, sellers, products, orderItems] = await Promise.all([
       prisma.order.findMany({
-        include: {
-          client: true,
-          seller: true,
+        take: MAX_EXPORT_ROWS,
+        orderBy: { timestamp: 'desc' },
+        select: {
+          id: true, orderId: true, orderType: true, status: true,
+          customerName: true, product: true, quantity: true, total: true,
+          timestamp: true, createdAt: true, updatedAt: true,
+          client: { select: { id: true, name: true, email: true } },
+          seller: { select: { id: true, name: true } },
           orderItems: {
-            include: {
-              product: true
+            select: {
+              id: true, quantity: true, unitPrice: true, totalPrice: true,
+              product: { select: { id: true, name: true, price: true } }
             }
           }
         }
       }),
-      prisma.client.findMany(),
-      prisma.seller.findMany(),
-      prisma.product.findMany(),
+      prisma.client.findMany({ take: MAX_EXPORT_ROWS }),
+      prisma.seller.findMany({ take: MAX_EXPORT_ROWS }),
+      prisma.product.findMany({ take: MAX_EXPORT_ROWS }),
       prisma.orderItem.findMany({
-        include: {
-          product: true,
-          order: true
+        take: MAX_EXPORT_ROWS,
+        select: {
+          id: true, quantity: true, unitPrice: true, totalPrice: true,
+          product: { select: { id: true, name: true } },
+          order: { select: { id: true, orderId: true } }
         }
       })
     ]);

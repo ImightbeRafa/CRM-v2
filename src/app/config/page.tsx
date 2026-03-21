@@ -1,21 +1,23 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
+import { useEffect, useState, Suspense, lazy } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { BulkOperations } from '../components/ui/bulk-operations'
-import { SimpleAuditDashboard } from '../components/SimpleAuditDashboard'
-import { OrderBulkDeleteDashboard } from '../components/OrderBulkDeleteDashboard'
-import { MasterConfigDashboard } from './components/MasterConfigDashboard'
-import { SimpleFieldsManager } from './components/SimpleFieldsManager'
-import { OptionSetsManager } from './components/OptionSetsManager'
-import { BillingDashboard } from './components/BillingDashboard'
-import { ExcelImporter } from './components/ExcelImporter'
-import { StatusManager, OrderStatus } from './components/StatusManager'
-import { TenantSettingsPanel } from '../components/TenantSettingsPanel'
 import { useConfig } from '../contexts/ConfigContext'
 import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck, Bot, Building2 } from 'lucide-react'
-import { BusinessProfileSettings } from './components/BusinessProfileSettings'
 import { MobileBottomNav } from '../components/MobileBottomNav'
+import type { OrderStatus } from './components/StatusManager'
+
+const BulkOperations = lazy(() => import('../components/ui/bulk-operations').then(m => ({ default: m.BulkOperations })))
+const SimpleAuditDashboard = lazy(() => import('../components/SimpleAuditDashboard').then(m => ({ default: m.SimpleAuditDashboard })))
+const OrderBulkDeleteDashboard = lazy(() => import('../components/OrderBulkDeleteDashboard').then(m => ({ default: m.OrderBulkDeleteDashboard })))
+const MasterConfigDashboard = lazy(() => import('./components/MasterConfigDashboard').then(m => ({ default: m.MasterConfigDashboard })))
+const SimpleFieldsManager = lazy(() => import('./components/SimpleFieldsManager').then(m => ({ default: m.SimpleFieldsManager })))
+const OptionSetsManager = lazy(() => import('./components/OptionSetsManager').then(m => ({ default: m.OptionSetsManager })))
+const BillingDashboard = lazy(() => import('./components/BillingDashboard').then(m => ({ default: m.BillingDashboard })))
+const ExcelImporter = lazy(() => import('./components/ExcelImporter').then(m => ({ default: m.ExcelImporter })))
+const StatusManager = lazy(() => import('./components/StatusManager').then(m => ({ default: m.StatusManager })))
+const TenantSettingsPanel = lazy(() => import('../components/TenantSettingsPanel').then(m => ({ default: m.TenantSettingsPanel })))
+const BusinessProfileSettings = lazy(() => import('./components/BusinessProfileSettings').then(m => ({ default: m.BusinessProfileSettings })))
 
 function ConfigPageInner() {
   const searchParams = useSearchParams()
@@ -59,27 +61,55 @@ function ConfigPageInner() {
   const statusesState = getState<OrderStatus[]>('statuses')
   const statuses = statusesState.data ?? []
 
-  const loadData = async () => {
+  const loadData = async (tab?: string) => {
+    const currentTab = tab || activeTab
     setLoading(true)
     try {
-        const [fieldsRes, businessFieldsRes, usersRes, optionSetsRes, shippingRes, sellersRes, ordersRes] = await Promise.all([
-          fetch('/api/config/fields').then(r => r.json()).catch(() => ({ status: 'success', data: [] })),
-          fetch('/api/config/business-info').then(r => r.json()).catch(() => ({ status: 'success', data: [] })),
-          fetch('/api/users').then(r => r.json()).catch(() => ({ status: 'success', data: [] })),
-          fetch('/api/config/option-sets').then(r => r.json()).catch(() => ({ status: 'success', data: [] })),
-          fetch('/api/config/shipping').then(r => r.json()).catch(() => ({ status: 'success', data: [] })),
-          fetch('/api/config/sellers').then(r => r.json()).catch(() => ({ status: 'success', data: [] })),
-          fetch('/api/orders').then(r => r.json()).catch(() => ({ status: 'success', data: [] }))
-        ])
-      
-      if (fieldsRes.status === 'success') setFields(fieldsRes.data)
-      if (businessFieldsRes.status === 'success') setBusinessFields(businessFieldsRes.data)
-      if (usersRes.status === 'success') setUsers(usersRes.data)
-      if (optionSetsRes.status === 'success') setOptionSets(optionSetsRes.data)
-      if (shippingRes.status === 'success') setShipping(shippingRes.data)
-      if (sellersRes.status === 'success') setSellers(sellersRes.data)
-      if (ordersRes.status === 'success') setOrders(ordersRes.data)
-      
+      const fetchers: Promise<void>[] = []
+
+      const tabDataMap: Record<string, () => Promise<void>> = {
+        fields: async () => {
+          const res = await fetch('/api/config/fields').then(r => r.json()).catch(() => ({ status: 'success', data: [] }))
+          if (res.status === 'success') setFields(res.data)
+        },
+        'legacy-fields': async () => {
+          const res = await fetch('/api/config/fields').then(r => r.json()).catch(() => ({ status: 'success', data: [] }))
+          if (res.status === 'success') setFields(res.data)
+        },
+        business: async () => {
+          const res = await fetch('/api/config/business-info').then(r => r.json()).catch(() => ({ status: 'success', data: [] }))
+          if (res.status === 'success') setBusinessFields(res.data)
+        },
+        users: async () => {
+          const res = await fetch('/api/users').then(r => r.json()).catch(() => ({ status: 'success', data: [] }))
+          if (res.status === 'success') setUsers(res.data)
+        },
+        'option-sets': async () => {
+          const res = await fetch('/api/config/option-sets').then(r => r.json()).catch(() => ({ status: 'success', data: [] }))
+          if (res.status === 'success') setOptionSets(res.data)
+        },
+        shipping: async () => {
+          const res = await fetch('/api/config/shipping').then(r => r.json()).catch(() => ({ status: 'success', data: [] }))
+          if (res.status === 'success') setShipping(res.data)
+        },
+        sellers: async () => {
+          const res = await fetch('/api/config/sellers').then(r => r.json()).catch(() => ({ status: 'success', data: [] }))
+          if (res.status === 'success') setSellers(res.data)
+        },
+        'bulk-delete': async () => {
+          const res = await fetch('/api/orders').then(r => r.json()).catch(() => ({ status: 'success', data: [] }))
+          if (res.status === 'success') setOrders(res.data)
+        },
+        import: async () => {
+          const res = await fetch('/api/orders').then(r => r.json()).catch(() => ({ status: 'success', data: [] }))
+          if (res.status === 'success') setOrders(res.data)
+        },
+      }
+
+      const loader = tabDataMap[currentTab]
+      if (loader) fetchers.push(loader())
+
+      await Promise.all(fetchers)
     } catch (error) {
       console.error('Error loading data:', error)
     } finally {
@@ -106,16 +136,12 @@ function ConfigPageInner() {
 
   useEffect(() => {
     if (!mounted) return
-    loadData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted])
-
-  useEffect(() => {
-    if (!mounted) return
+    loadData(activeTab)
     if (activeTab === 'statuses') {
       void refresh('statuses')
     }
-  }, [activeTab, mounted, refresh])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, activeTab])
 
   // Bulk operation handlers
   const handleBulkDelete = async (ids: string[], reason?: string) => {
@@ -529,12 +555,12 @@ function ConfigPageInner() {
   // Show loading skeleton on server/initial render
   if (!mounted) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+      <div className="min-h-screen bg-gradient-to-br from-muted to-blue-50 dark:from-background dark:to-background">
         <div className="max-w-7xl mx-auto p-4 md:p-6">
           <div className="animate-pulse space-y-4">
-            <div className="h-24 bg-gray-200 rounded-xl"></div>
-            <div className="h-16 bg-gray-200 rounded-xl"></div>
-            <div className="h-96 bg-gray-200 rounded-xl"></div>
+            <div className="h-24 bg-muted rounded-xl"></div>
+            <div className="h-16 bg-muted rounded-xl"></div>
+            <div className="h-96 bg-muted rounded-xl"></div>
           </div>
         </div>
       </div>
@@ -542,7 +568,7 @@ function ConfigPageInner() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+    <div className="min-h-screen bg-gradient-to-br from-muted to-blue-50 dark:from-background dark:to-background">
       <div className="max-w-7xl mx-auto p-4 md:p-6 pb-20 md:pb-6">
         {/* Header */}
         <div className="mb-6 md:mb-8">
@@ -551,7 +577,7 @@ function ConfigPageInner() {
               <div className="flex items-center gap-2 md:gap-4 mb-2">
             <a
               href="/dashboard"
-                  className="inline-flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm md:text-base"
+                  className="inline-flex items-center gap-2 px-3 md:px-4 py-2 bg-muted hover:bg-accent text-muted-foreground rounded-lg transition-colors text-sm md:text-base"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -560,16 +586,16 @@ function ConfigPageInner() {
               <span className="sm:hidden">Inicio</span>
             </a>
           </div>
-              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-1 md:mb-2">Panel de Configuración</h1>
-              <p className="text-gray-600 text-sm md:text-base lg:text-lg">Gestiona usuarios, configuración y auditoría del sistema</p>
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-foreground mb-1 md:mb-2">Panel de Configuración</h1>
+              <p className="text-muted-foreground text-sm md:text-base lg:text-lg">Gestiona usuarios, configuración y auditoría del sistema</p>
             </div>
             <div className="flex items-center gap-3 justify-between md:justify-end">
               <div className="p-2 md:p-3 bg-blue-100 rounded-xl">
                 <Database className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
               </div>
               <div className="text-left md:text-right">
-                <div className="text-xs md:text-sm text-gray-500">Sistema</div>
-                <div className="text-sm md:text-base font-semibold text-gray-900">Betsy CRM</div>
+                <div className="text-xs md:text-sm text-muted-foreground">Sistema</div>
+                <div className="text-sm md:text-base font-semibold text-foreground">Betsy CRM</div>
               </div>
             </div>
           </div>
@@ -579,7 +605,7 @@ function ConfigPageInner() {
         <div className="mb-6 md:mb-8">
           {/* Desktop: Grid layout */}
           <div className="hidden md:block">
-            <div className="grid grid-cols-5 gap-3 bg-white p-3 rounded-xl shadow-lg border border-gray-200">
+            <div className="grid grid-cols-5 gap-3 bg-card p-3 rounded-xl shadow-lg border border-border">
               {tabs.map((tab) => {
                 const Icon = tab.icon
                 return (
@@ -589,7 +615,7 @@ function ConfigPageInner() {
                     className={`group rounded-lg transition-all duration-200 px-3 py-3.5 min-h-[60px] flex flex-col items-center justify-center gap-2 ${
                       activeTab === tab.id
                         ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md ring-1 ring-blue-400/50'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 hover:shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent hover:shadow-sm'
                   }`}
                 >
                   <Icon className={`w-5 h-5 flex-shrink-0 transition-transform duration-200 ${
@@ -619,10 +645,10 @@ function ConfigPageInner() {
                     className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 whitespace-nowrap min-h-[40px] ${
                       isActive
                         ? 'bg-blue-600 text-white shadow-md'
-                        : 'bg-white text-gray-600 border border-gray-200'
+                        : 'bg-card text-muted-foreground border border-border'
                   }`}
                 >
-                    <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400'}`} />
+                    <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-muted-foreground'}`} />
                     <span>{tab.label}</span>
                 </button>
                 )
@@ -633,6 +659,7 @@ function ConfigPageInner() {
 
           {/* Tab Content */}
         <div className="space-y-6">
+         <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div>}>
           {/* Business Profile Tab */}
           {activeTab === 'profile' && (
             <BusinessProfileSettings />
@@ -671,11 +698,11 @@ function ConfigPageInner() {
           {activeTab === 'users' && (
             <div className="space-y-6">
               {/* Users Table */}
-              <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+              <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
                 <div className="bg-gradient-to-r from-purple-500 to-indigo-600 p-6 text-white">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className="p-3 bg-white bg-opacity-20 rounded-xl">
+                      <div className="p-3 bg-card bg-opacity-20 rounded-xl">
                         <Users className="w-8 h-8" />
                       </div>
                       <div>
@@ -688,7 +715,7 @@ function ConfigPageInner() {
                         setEditingUser(null)
                         setShowUserForm(true)
                       }}
-                      className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
+                      className="px-4 py-2 bg-card bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
                     >
                       + Agregar Usuario
                     </button>
@@ -699,12 +726,12 @@ function ConfigPageInner() {
                   {loading ? (
                     <div className="flex items-center justify-center py-12">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-                      <span className="ml-3 text-gray-600">Cargando usuarios...</span>
+                      <span className="ml-3 text-muted-foreground">Cargando usuarios...</span>
                     </div>
                   ) : users.length === 0 ? (
                     <div className="text-center py-12">
-                      <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-500">No hay usuarios configurados</p>
+                      <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">No hay usuarios configurados</p>
                       <button 
                         onClick={() => {
                           setEditingUser(null)
@@ -718,18 +745,18 @@ function ConfigPageInner() {
                   ) : (
                     <div className="grid gap-4">
                       {users.map((user) => (
-                        <div key={user.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                        <div key={user.id} className="flex items-center justify-between p-4 bg-muted rounded-lg hover:bg-accent transition-colors">
                           <div className="flex items-center gap-4">
                             <div className="p-2 bg-purple-100 rounded-lg">
                               <Users className="w-5 h-5 text-purple-600" />
                             </div>
                             <div className="flex-1">
                               <div className="flex items-center gap-3">
-                                <div className="font-medium text-gray-900">{user.username}</div>
+                                <div className="font-medium text-foreground">{user.username}</div>
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                                   user.role === 'MASTER' 
                                     ? 'bg-purple-100 text-purple-800' 
-                                    : 'bg-gray-100 text-gray-800'
+                                    : 'bg-muted text-foreground'
                                 }`}>
                                   {user.role}
                                 </span>
@@ -741,7 +768,7 @@ function ConfigPageInner() {
                                   {user.active ? 'Activo' : 'Inactivo'}
                                 </span>
                               </div>
-                              <div className="text-sm text-gray-500 mt-1">
+                              <div className="text-sm text-muted-foreground mt-1">
                                 Última actividad: {new Date().toLocaleDateString()}
                               </div>
                             </div>
@@ -771,7 +798,7 @@ function ConfigPageInner() {
 
           {/* Social Tab */}
           {activeTab === 'social' && (
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+            <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
               <div className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
@@ -780,7 +807,7 @@ function ConfigPageInner() {
                     </div>
                     <div>
                       <h2 className="text-2xl font-bold">Cuentas Sociales</h2>
-                      <p className="text-gray-600">Vincula Instagram y WhatsApp para gestionar chats en Betsy</p>
+                      <p className="text-muted-foreground">Vincula Instagram y WhatsApp para gestionar chats en Betsy</p>
                     </div>
                   </div>
                   <a
@@ -790,7 +817,7 @@ function ConfigPageInner() {
                     Gestionar Cuentas
                   </a>
                 </div>
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-muted-foreground">
                   Solo usuarios Owner o Master pueden vincular cuentas sociales.
                 </div>
               </div>
@@ -799,11 +826,11 @@ function ConfigPageInner() {
 
           {/* AI Assistant Tab */}
           {activeTab === 'ai-assistant' && (
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+            <div className="bg-card rounded-xl shadow-lg border border-border p-6">
               <div className="text-center">
                 <Bot className="w-12 h-12 text-indigo-600 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">Betsy AI Sales Assistant</h3>
-                <p className="text-gray-600 mb-6">
+                <h3 className="text-xl font-semibold text-foreground mb-2">Betsy AI Sales Assistant</h3>
+                <p className="text-muted-foreground mb-6">
                   Gestiona tu negocio con comandos naturales vía Telegram
                 </p>
                 <a
@@ -820,11 +847,11 @@ function ConfigPageInner() {
           {/* Import Tab */}
           {/* Integrations Tab */}
           {activeTab === 'integrations' && (
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+            <div className="bg-card rounded-xl shadow-lg border border-border p-6">
               <div className="text-center">
                 <Plug className="w-12 h-12 text-blue-600 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">Integraciones API</h3>
-                <p className="text-gray-600 mb-6">
+                <h3 className="text-xl font-semibold text-foreground mb-2">Integraciones API</h3>
+                <p className="text-muted-foreground mb-6">
                   Conecta tu sitio web para sincronizar órdenes automáticamente
                 </p>
                 <a
@@ -861,11 +888,11 @@ function ConfigPageInner() {
           {activeTab === 'legacy-fields' && (
             <div className="space-y-6">
               {/* Product Fields Management */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+            <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
                 <div className="bg-gradient-to-r from-green-500 to-emerald-600 p-6 text-white">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className="p-3 bg-white bg-opacity-20 rounded-xl">
+                      <div className="p-3 bg-card bg-opacity-20 rounded-xl">
                         <Database className="w-8 h-8" />
                   </div>
                   <div>
@@ -878,7 +905,7 @@ function ConfigPageInner() {
                         setEditingField(null)
                         setShowFieldForm(true)
                       }}
-                      className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
+                      className="px-4 py-2 bg-card bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
                     >
                       + Nuevo Campo
                     </button>
@@ -889,12 +916,12 @@ function ConfigPageInner() {
                   {loading ? (
                     <div className="flex items-center justify-center py-8">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
-                      <span className="ml-3 text-gray-600">Cargando campos...</span>
+                      <span className="ml-3 text-muted-foreground">Cargando campos...</span>
                     </div>
                   ) : fields.length === 0 ? (
                     <div className="text-center py-8">
-                      <Database className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500">No hay campos configurados</p>
+                      <Database className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No hay campos configurados</p>
                       <button
                         onClick={() => {
                           setEditingField(null)
@@ -908,14 +935,14 @@ function ConfigPageInner() {
                 ) : (
                     <div className="space-y-3">
                       {fields.map((field) => (
-                        <div key={field.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                        <div key={field.id} className="flex items-center justify-between p-4 bg-muted rounded-lg hover:bg-accent transition-colors">
                         <div className="flex items-center gap-3">
                             <div className="p-2 bg-green-100 rounded-lg">
                               <Database className="w-5 h-5 text-green-600" />
                           </div>
                           <div>
-                              <div className="font-medium text-gray-900">{field.label}</div>
-                            <div className="text-sm text-gray-500">
+                              <div className="font-medium text-foreground">{field.label}</div>
+                            <div className="text-sm text-muted-foreground">
                                 {field.type} • {field.required ? 'Requerido' : 'Opcional'} • Orden: {field.order}
                             </div>
                           </div>
@@ -942,11 +969,11 @@ function ConfigPageInner() {
             </div>
 
               {/* Business Info Fields Management */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+            <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
                 <div className="bg-gradient-to-r from-blue-500 to-cyan-600 p-6 text-white">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className="p-3 bg-white bg-opacity-20 rounded-xl">
+                      <div className="p-3 bg-card bg-opacity-20 rounded-xl">
                         <Settings className="w-8 h-8" />
                       </div>
                       <div>
@@ -959,7 +986,7 @@ function ConfigPageInner() {
                         setEditingBusinessField(null)
                         setShowBusinessFieldForm(true)
                       }}
-                      className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
+                      className="px-4 py-2 bg-card bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
                     >
                       + Nuevo Campo
                     </button>
@@ -970,12 +997,12 @@ function ConfigPageInner() {
                   {loading ? (
                     <div className="flex items-center justify-center py-8">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                      <span className="ml-3 text-gray-600">Cargando campos...</span>
+                      <span className="ml-3 text-muted-foreground">Cargando campos...</span>
                     </div>
                   ) : businessFields.length === 0 ? (
                     <div className="text-center py-8">
-                      <Settings className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-500">No hay campos de negocio configurados</p>
+                      <Settings className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">No hay campos de negocio configurados</p>
                       <button
                         onClick={() => {
                           setEditingBusinessField(null)
@@ -989,14 +1016,14 @@ function ConfigPageInner() {
                   ) : (
                     <div className="space-y-3">
                       {businessFields.map((field) => (
-                        <div key={field.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                        <div key={field.id} className="flex items-center justify-between p-4 bg-muted rounded-lg hover:bg-accent transition-colors">
                           <div className="flex items-center gap-3">
                             <div className="p-2 bg-blue-100 rounded-lg">
                               <Settings className="w-5 h-5 text-blue-600" />
                             </div>
                             <div>
-                              <div className="font-medium text-gray-900">{field.label}</div>
-                              <div className="text-sm text-gray-500">
+                              <div className="font-medium text-foreground">{field.label}</div>
+                              <div className="text-sm text-muted-foreground">
                                 {field.type} • {field.required ? 'Requerido' : 'Opcional'} • Orden: {field.order}
                               </div>
                             </div>
@@ -1023,11 +1050,11 @@ function ConfigPageInner() {
               </div>
 
               {/* Option Sets Management */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+            <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
                 <div className="bg-gradient-to-r from-purple-500 to-violet-600 p-6 text-white">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className="p-3 bg-white bg-opacity-20 rounded-xl">
+                      <div className="p-3 bg-card bg-opacity-20 rounded-xl">
                         <Zap className="w-8 h-8" />
                   </div>
                   <div>
@@ -1041,7 +1068,7 @@ function ConfigPageInner() {
                         setOptionSetOptions([{ label: '', value: '', priceDelta: 0, metadata: '' }])
                         setShowOptionSetForm(true)
                       }}
-                      className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
+                      className="px-4 py-2 bg-card bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
                     >
                       + Nuevo conjunto
                             </button>
@@ -1052,12 +1079,12 @@ function ConfigPageInner() {
                   {loading ? (
                     <div className="flex items-center justify-center py-8">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-                      <span className="ml-3 text-gray-600">Cargando conjuntos...</span>
+                      <span className="ml-3 text-muted-foreground">Cargando conjuntos...</span>
                     </div>
                   ) : optionSets.length === 0 ? (
                     <div className="text-center py-8">
-                      <Zap className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-500">No hay conjuntos de opciones configurados</p>
+                      <Zap className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">No hay conjuntos de opciones configurados</p>
                                 <button 
                         onClick={() => {
                           setEditingOptionSet(null)
@@ -1072,14 +1099,14 @@ function ConfigPageInner() {
                   ) : (
                     <div className="space-y-3">
                       {optionSets.map((set) => (
-                        <div key={set.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                        <div key={set.id} className="flex items-center justify-between p-4 bg-muted rounded-lg hover:bg-accent transition-colors">
                 <div className="flex items-center gap-3">
                             <div className="p-2 bg-purple-100 rounded-lg">
                               <Zap className="w-5 h-5 text-purple-600" />
                   </div>
                   <div>
-                              <div className="font-medium text-gray-900">{set.name}</div>
-                              <div className="text-sm text-gray-500">
+                              <div className="font-medium text-foreground">{set.name}</div>
+                              <div className="text-sm text-muted-foreground">
                                 Clave: {set.key} • {set.options?.length || 0} opciones
                   </div>
                 </div>
@@ -1106,11 +1133,11 @@ function ConfigPageInner() {
             </div>
 
               {/* Shipping Methods Management */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+            <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
                 <div className="bg-gradient-to-r from-orange-500 to-amber-600 p-6 text-white">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className="p-3 bg-white bg-opacity-20 rounded-xl">
+                      <div className="p-3 bg-card bg-opacity-20 rounded-xl">
                         <BarChart3 className="w-8 h-8" />
                   </div>
                   <div>
@@ -1123,7 +1150,7 @@ function ConfigPageInner() {
                         setEditingShipping(null)
                         setShowShippingForm(true)
                       }}
-                      className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
+                      className="px-4 py-2 bg-card bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
                     >
                       + Nuevo método
                     </button>
@@ -1134,12 +1161,12 @@ function ConfigPageInner() {
                   {loading ? (
                     <div className="flex items-center justify-center py-8">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600"></div>
-                      <span className="ml-3 text-gray-600">Cargando métodos...</span>
+                      <span className="ml-3 text-muted-foreground">Cargando métodos...</span>
                     </div>
                   ) : shipping.length === 0 ? (
                   <div className="text-center py-8">
-                      <BarChart3 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-500">No hay métodos de envío configurados</p>
+                      <BarChart3 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">No hay métodos de envío configurados</p>
                       <button
                         onClick={() => {
                           setEditingShipping(null)
@@ -1153,14 +1180,14 @@ function ConfigPageInner() {
                 ) : (
                   <div className="space-y-3">
                       {shipping.map((method) => (
-                        <div key={method.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                        <div key={method.id} className="flex items-center justify-between p-4 bg-muted rounded-lg hover:bg-accent transition-colors">
                           <div className="flex items-center gap-3">
                             <div className="p-2 bg-orange-100 rounded-lg">
                               <BarChart3 className="w-5 h-5 text-orange-600" />
                             </div>
                             <div>
-                              <div className="font-medium text-gray-900">{method.name}</div>
-                              <div className="text-sm text-gray-500">
+                              <div className="font-medium text-foreground">{method.name}</div>
+                              <div className="text-sm text-muted-foreground">
                                 Precio base: ₡{method.basePrice || 0} • {method.active ? 'Activo' : 'Inactivo'}
                               </div>
                             </div>
@@ -1187,13 +1214,14 @@ function ConfigPageInner() {
             </div>
           </div>
           )}
+         </Suspense>
         </div>
       </div>
 
       {/* Field Form Modal */}
       {showFieldForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="bg-card rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-4">
               {editingField ? 'Editar Campo' : 'Nuevo Campo'}
             </h3>
@@ -1237,12 +1265,12 @@ function ConfigPageInner() {
               <div className="space-y-4">
             {!editingField && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Clave única</label>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Clave única</label>
                     <input
                       type="text"
                       name="key"
                       defaultValue={''}
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
                       required
                       pattern="[a-zA-Z0-9_]+"
                       title="Solo letras, números y guiones bajos"
@@ -1250,24 +1278,24 @@ function ConfigPageInner() {
                   </div>
                 )}
             <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Etiqueta</label>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Etiqueta</label>
               <input
                     type="text"
                     name="label"
                     defaultValue={editingField?.label || ''}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 required
               />
             </div>
             <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Tipo</label>
               <select
                     name="type"
                     value={editingField ? editingField.type : newFieldType}
                     onChange={(e) => {
                       if (!editingField) setNewFieldType(e.target.value);
                     }}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
               >
                 <option value="text">Texto</option>
                 <option value="number">Número</option>
@@ -1285,13 +1313,13 @@ function ConfigPageInner() {
             </div>
                 {(editingField?.type === 'select' || newFieldType === 'select') && (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-muted-foreground mb-2">
                       Conjunto de opciones *
                     </label>
                     <select
                       name="optionSetId"
                       defaultValue={editingField?.optionSetId || ''}
-                      className="w-full p-2 border border-green-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
+                      className="w-full p-2 border border-green-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-card"
                       required
                     >
                       <option value="">-- Seleccionar conjunto --</option>
@@ -1299,18 +1327,18 @@ function ConfigPageInner() {
                         <option key={set.id} value={set.id}>{set.name} ({set.key})</option>
                       ))}
                     </select>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Gestiona conjuntos de opciones en la pestaña &quot;Conjuntos de Opciones&quot;
                     </p>
                   </div>
                 )}
             <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Orden</label>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Orden</label>
               <input
                 type="number"
                     name="order"
                     defaultValue={editingField?.order || 0}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
               />
             </div>
                 <div className="flex items-center gap-4">
@@ -1318,13 +1346,13 @@ function ConfigPageInner() {
                     type="checkbox"
                     name="required"
                     defaultChecked={editingField?.required || false}
-                    className="rounded border-gray-300 text-green-600 focus:ring-green-500 mr-2"
+                    className="rounded border-border text-green-600 focus:ring-green-500 mr-2"
                   />Requerido</label>
                   <label className="flex items-center"><input
                     type="checkbox"
                     name="multiSelect"
                     defaultChecked={editingField?.multiSelect || false}
-                    className="rounded border-gray-300 text-green-600 focus:ring-green-500 mr-2"
+                    className="rounded border-border text-green-600 focus:ring-green-500 mr-2"
                   />Selección múltiple</label>
                 </div>
               </div>
@@ -1335,7 +1363,7 @@ function ConfigPageInner() {
                     setShowFieldForm(false)
                     setEditingField(null)
                   }}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                  className="px-4 py-2 text-muted-foreground hover:text-foreground"
               >
                 Cancelar
               </button>
@@ -1354,7 +1382,7 @@ function ConfigPageInner() {
       {/* Option Set Form Modal */}
       {showOptionSetForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="bg-card rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-4">
               {editingOptionSet ? 'Editar Conjunto de Opciones' : 'Nuevo Conjunto de Opciones'}
             </h3>
@@ -1410,22 +1438,22 @@ function ConfigPageInner() {
             }}>
               <div className="space-y-4">
             <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Nombre</label>
               <input
                     type="text"
                     name="name"
                     defaultValue={editingOptionSet?.name || ''}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 required
               />
             </div>
             <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Clave</label>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Clave</label>
               <input
                     type="text"
                     name="key"
                     defaultValue={editingOptionSet?.key || ''}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 required
                     pattern="[a-zA-Z0-9_]+"
                     title="Solo letras, números y guiones bajos"
@@ -1433,7 +1461,7 @@ function ConfigPageInner() {
             </div>
                 <div className="border-t pt-4">
                   <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-gray-900">Opciones del conjunto</label>
+                    <label className="block text-sm font-medium text-foreground">Opciones del conjunto</label>
                     <button
                       type="button"
                       onClick={() => setOptionSetOptions(prev => [...prev, { label: '', value: '', priceDelta: 0, metadata: '' }])}
@@ -1443,7 +1471,7 @@ function ConfigPageInner() {
                     </button>
                   </div>
                   {optionSetOptions.length === 0 ? (
-                    <div className="text-sm text-gray-500">No hay opciones. Agrega al menos una opción.</div>
+                    <div className="text-sm text-muted-foreground">No hay opciones. Agrega al menos una opción.</div>
                   ) : (
                     <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
                       {optionSetOptions.map((opt, idx) => (
@@ -1509,7 +1537,7 @@ function ConfigPageInner() {
                     setEditingOptionSet(null)
                     setOptionSetOptions([])
                   }}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                  className="px-4 py-2 text-muted-foreground hover:text-foreground"
               >
                 Cancelar
               </button>
@@ -1528,7 +1556,7 @@ function ConfigPageInner() {
       {/* Shipping Form Modal */}
       {showShippingForm && (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="bg-card rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-4">
               {editingShipping ? 'Editar Método de Envío' : 'Nuevo Método de Envío'}
             </h3>
@@ -1563,32 +1591,32 @@ function ConfigPageInner() {
             }}>
               <div className="space-y-4">
         <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Nombre</label>
           <input 
                     type="text"
                     name="name"
                     defaultValue={editingShipping?.name || ''}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             required 
           />
         </div>
         <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Transportista (opcional)</label>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Transportista (opcional)</label>
           <input 
             type="text" 
                     name="carrier"
                     defaultValue={editingShipping?.carrier || ''}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
           />
         </div>
         <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Precio base</label>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Precio base</label>
           <input 
             type="number" 
                     name="basePrice"
                     step="0.01"
                     defaultValue={editingShipping?.basePrice || 0}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             required
           />
         </div>
@@ -1600,7 +1628,7 @@ function ConfigPageInner() {
                     setShowShippingForm(false)
                     setEditingShipping(null)
                   }}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                  className="px-4 py-2 text-muted-foreground hover:text-foreground"
               >
                 Cancelar
               </button>
@@ -1619,7 +1647,7 @@ function ConfigPageInner() {
       {/* User Form Modal */}
       {showUserForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="bg-card rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-4">
               {editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
             </h3>
@@ -1633,7 +1661,7 @@ function ConfigPageInner() {
             <form onSubmit={handleUserSubmit}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">
                     Email <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -1641,13 +1669,13 @@ function ConfigPageInner() {
                     name="email"
                     defaultValue={editingUser?.email || ''}
                     placeholder="usuario@ejemplo.com"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                     required
                   />
-                  <p className="text-xs text-gray-500 mt-1">Email único para iniciar sesión</p>
+                  <p className="text-xs text-muted-foreground mt-1">Email único para iniciar sesión</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">
                     Nombre de Usuario <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -1655,14 +1683,14 @@ function ConfigPageInner() {
                     name="username"
                     defaultValue={editingUser?.username || ''}
                     placeholder="Ej: PedroPascal02"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                     required
                   />
-                  <p className="text-xs text-gray-500 mt-1">Usado para identificar quién realiza acciones (ventas, órdenes, etc.)</p>
+                  <p className="text-xs text-muted-foreground mt-1">Usado para identificar quién realiza acciones (ventas, órdenes, etc.)</p>
                 </div>
                 {!editingUser && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">
                       Contraseña <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
@@ -1670,7 +1698,7 @@ function ConfigPageInner() {
                         type={showPassword ? 'text' : 'password'}
                         name="password"
                         placeholder="Mínimo 8 caracteres"
-                        className="w-full p-2 pr-24 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                        className="w-full p-2 pr-24 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                         required
                         minLength={8}
                       />
@@ -1682,18 +1710,18 @@ function ConfigPageInner() {
                         {showPassword ? 'Ocultar' : 'Mostrar'}
                       </button>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">La contraseña es requerida para nuevos usuarios. Mínimo 8 caracteres.</p>
+                    <p className="text-xs text-muted-foreground mt-1">La contraseña es requerida para nuevos usuarios. Mínimo 8 caracteres.</p>
                   </div>
                 )}
                 {editingUser && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Contraseña</label>
                     <div className="relative">
                       <input
                         type={showPassword ? 'text' : 'password'}
                         name="password"
                         placeholder="Dejar en blanco para mantener la actual"
-                        className="w-full p-2 pr-24 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                        className="w-full p-2 pr-24 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                       />
                       <button
                         type="button"
@@ -1703,17 +1731,17 @@ function ConfigPageInner() {
                         {showPassword ? 'Ocultar' : 'Mostrar'}
                       </button>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">Dejar vacío para no cambiar la contraseña.</p>
+                    <p className="text-xs text-muted-foreground mt-1">Dejar vacío para no cambiar la contraseña.</p>
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">
                     Rol <span className="text-red-500">*</span>
                   </label>
                   <select
                     name="role"
                     defaultValue={editingUser?.role || 'VIEWER'}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                     required
                   >
                     <option value="OWNER">OWNER - Propietario (Acceso completo + facturación)</option>
@@ -1723,16 +1751,16 @@ function ConfigPageInner() {
                     <option value="PRODUCTION">PRODUCTION - Producción (Solo módulo de producción)</option>
                     <option value="VIEWER">VIEWER - Visualizador (Solo lectura)</option>
                   </select>
-                  <p className="text-xs text-gray-500 mt-1">Define los permisos y accesos del usuario</p>
+                  <p className="text-xs text-muted-foreground mt-1">Define los permisos y accesos del usuario</p>
                 </div>
                 <div className="flex items-center">
                   <input
                     type="checkbox"
                     name="active"
                     defaultChecked={editingUser?.active !== false}
-                    className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    className="rounded border-border text-purple-600 focus:ring-purple-500"
                   />
-                  <label className="ml-2 text-sm text-gray-700">Usuario activo</label>
+                  <label className="ml-2 text-sm text-muted-foreground">Usuario activo</label>
                 </div>
               </div>
               <div className="flex justify-end gap-3 mt-6">
@@ -1742,7 +1770,7 @@ function ConfigPageInner() {
                     setShowUserForm(false)
                     setEditingUser(null)
                   }}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                  className="px-4 py-2 text-muted-foreground hover:text-foreground"
                 >
                   Cancelar
                 </button>
@@ -1768,12 +1796,12 @@ function ConfigPageInner() {
 export default function ConfigPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+      <div className="min-h-screen bg-gradient-to-br from-muted to-blue-50 dark:from-background dark:to-background">
         <div className="max-w-7xl mx-auto p-4 md:p-6">
           <div className="animate-pulse space-y-4">
-            <div className="h-24 bg-gray-200 rounded-xl"></div>
-            <div className="h-16 bg-gray-200 rounded-xl"></div>
-            <div className="h-96 bg-gray-200 rounded-xl"></div>
+            <div className="h-24 bg-muted rounded-xl"></div>
+            <div className="h-16 bg-muted rounded-xl"></div>
+            <div className="h-96 bg-muted rounded-xl"></div>
           </div>
         </div>
       </div>

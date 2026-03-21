@@ -36,8 +36,8 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100">
-      <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-6 shadow-md">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-muted">
+      <div className="w-full max-w-md space-y-8 rounded-lg bg-card p-6 shadow-md">
         <div className="text-center">
           <div className="flex justify-center mb-6">
             <Image
@@ -49,25 +49,25 @@ export default function ForgotPasswordPage() {
               priority
             />
           </div>
-          <h2 className="mt-2 text-3xl font-bold text-gray-900">
+          <h2 className="mt-2 text-3xl font-bold text-foreground">
             Recuperar contraseña
           </h2>
-          <p className="mt-2 text-gray-600">
+          <p className="mt-2 text-muted-foreground">
             Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.
           </p>
         </div>
 
         {submitted ? (
           <div className="mt-6 space-y-4">
-            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-sm text-green-800">
+            <div className="p-4 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg">
+              <p className="text-sm text-green-800 dark:text-green-400">
                 Si el correo existe en nuestro sistema, recibirás un enlace para restablecer tu contraseña. Revisa tu bandeja de entrada y spam.
               </p>
             </div>
             <div className="text-center">
               <Link
                 href="/auth/signin"
-                className="text-sm text-blue-600 hover:text-blue-800 py-2 inline-block"
+                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 py-2 inline-block"
               >
                 Volver a iniciar sesión
               </Link>
@@ -76,14 +76,14 @@ export default function ForgotPasswordPage() {
         ) : (
           <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
             <div>
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-muted-foreground">
                 Correo Electrónico
               </label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-border px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-background text-foreground"
                 placeholder="tu@email.com"
                 required
                 autoFocus
@@ -103,7 +103,7 @@ export default function ForgotPasswordPage() {
             <div className="text-center mt-4">
               <Link
                 href="/auth/signin"
-                className="text-sm text-blue-600 hover:text-blue-800 py-2 inline-block"
+                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 py-2 inline-block"
               >
                 Volver a iniciar sesión
               </Link>
@@ -111,7 +111,7 @@ export default function ForgotPasswordPage() {
           </form>
         )}
       </div>
-      <footer className="mt-8 text-center text-gray-500 text-sm">
+      <footer className="mt-8 text-center text-muted-foreground text-sm">
         © {new Date().getFullYear()} BetsyCRM. Todos los derechos reservados.
       </footer>
     </div>

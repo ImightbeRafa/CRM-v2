@@ -4,7 +4,7 @@ import { hashPassword } from '@/lib/password';
 import { authRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: Request) {
-  const rateLimitResult = authRateLimit(request);
+  const rateLimitResult = await authRateLimit(request);
   if (rateLimitResult instanceof Response) return rateLimitResult;
 
   try {

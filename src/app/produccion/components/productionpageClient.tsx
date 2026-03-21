@@ -13,7 +13,7 @@ export function ProductionPageClient() {
   return (
     <ProductionErrorBoundary>
       <AppShell>
-        <main className="container mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-6 space-y-6 md:space-y-8">
+        <main className="w-full px-2 md:px-3 lg:px-4 py-2 md:py-3 space-y-4">
           <EnhancedProductionDashboard 
             onGenerateGuias={() => setIsGuiaGeneratorOpen(true)}
             isGuiaGeneratorOpen={isGuiaGeneratorOpen}
@@ -25,7 +25,7 @@ export function ProductionPageClient() {
           
           <div className="relative hidden md:block">
             <div className="absolute inset-0 flex items-center" aria-hidden="true">
-              <div className="w-full border-t border-gray-200" />
+              <div className="w-full border-t border-border" />
             </div>
           </div>
           

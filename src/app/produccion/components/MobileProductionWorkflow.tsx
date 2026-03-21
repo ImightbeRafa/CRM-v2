@@ -81,49 +81,49 @@ export function MobileProductionWorkflow({
       category: 'pending' | 'in-progress' | 'completed';
     }> = {
       'Pendiente': { 
-        color: 'bg-yellow-100 text-yellow-800', 
+        color: 'bg-yellow-100 dark:bg-yellow-950/30 text-yellow-800 dark:text-yellow-400', 
         icon: <Clock className="h-4 w-4" />, 
         label: 'Pendiente',
         category: 'pending'
       },
       'En Proceso': { 
-        color: 'bg-blue-100 text-blue-800', 
+        color: 'bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400', 
         icon: <Package className="h-4 w-4" />, 
         label: 'En Proceso',
         category: 'in-progress'
       },
       'Completado': { 
-        color: 'bg-green-100 text-green-800', 
+        color: 'bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400', 
         icon: <CheckCircle className="h-4 w-4" />, 
         label: 'Completado',
         category: 'completed'
       },
       'Enviado': { 
-        color: 'bg-purple-100 text-purple-800', 
+        color: 'bg-purple-100 dark:bg-purple-950/30 text-purple-800 dark:text-purple-400', 
         icon: <Truck className="h-4 w-4" />, 
         label: 'Enviado',
         category: 'completed'
       },
       'Entregado': { 
-        color: 'bg-emerald-100 text-emerald-800', 
+        color: 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400', 
         icon: <CheckCircle className="h-4 w-4" />, 
         label: 'Entregado',
         category: 'completed'
       },
       'Drive': { 
-        color: 'bg-indigo-100 text-indigo-800', 
+        color: 'bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400', 
         icon: <Truck className="h-4 w-4" />, 
         label: 'Drive',
         category: 'in-progress'
       },
       'Impreso': { 
-        color: 'bg-cyan-100 text-cyan-800', 
+        color: 'bg-cyan-100 dark:bg-cyan-950/30 text-cyan-800 dark:text-cyan-400', 
         icon: <Package className="h-4 w-4" />, 
         label: 'Impreso',
         category: 'in-progress'
       },
       'PendienteDiseño': { 
-        color: 'bg-orange-100 text-orange-800', 
+        color: 'bg-orange-100 dark:bg-orange-950/30 text-orange-800 dark:text-orange-400', 
         icon: <AlertCircle className="h-4 w-4" />, 
         label: 'Pendiente Diseño',
         category: 'pending'
@@ -131,7 +131,7 @@ export function MobileProductionWorkflow({
     };
     
     return statusMap[status] || { 
-      color: 'bg-gray-100 text-gray-800', 
+      color: 'bg-muted text-foreground', 
       icon: <Clock className="h-4 w-4" />, 
       label: status,
       category: 'pending'
@@ -143,10 +143,10 @@ export function MobileProductionWorkflow({
     const now = new Date();
     const diffInHours = (now.getTime() - orderDate.getTime()) / (1000 * 60 * 60);
     
-    if (diffInHours < 1) return { label: 'Recién creado', color: 'text-green-600', urgent: false };
-    if (diffInHours < 24) return { label: `${Math.floor(diffInHours)}h`, color: 'text-blue-600', urgent: false };
-    if (diffInHours < 48) return { label: `${Math.floor(diffInHours / 24)}d`, color: 'text-orange-600', urgent: true };
-    return { label: `${Math.floor(diffInHours / 24)}d`, color: 'text-red-600', urgent: true };
+    if (diffInHours < 1) return { label: 'Recién creado', color: 'text-green-600 dark:text-green-400', urgent: false };
+    if (diffInHours < 24) return { label: `${Math.floor(diffInHours)}h`, color: 'text-blue-600 dark:text-blue-400', urgent: false };
+    if (diffInHours < 48) return { label: `${Math.floor(diffInHours / 24)}d`, color: 'text-orange-600 dark:text-orange-400', urgent: true };
+    return { label: `${Math.floor(diffInHours / 24)}d`, color: 'text-red-600 dark:text-red-400', urgent: true };
   };
 
   // Get a subtle background haze color based on the status
@@ -155,24 +155,24 @@ export function MobileProductionWorkflow({
     // Map of status colors to their subtle background variants
     // Using 50% opacity for better color differentiation
     const colorHazeMap: Record<string, string> = {
-      'bg-blue-500': 'bg-blue-50/50 border-blue-200',
-      'bg-green-500': 'bg-green-50/50 border-green-200',
-      'bg-yellow-500': 'bg-yellow-50/50 border-yellow-200',
-      'bg-orange-500': 'bg-orange-50/50 border-orange-200',
-      'bg-red-500': 'bg-red-50/50 border-red-200',
-      'bg-purple-500': 'bg-purple-50/50 border-purple-200',
-      'bg-pink-500': 'bg-pink-50/50 border-pink-200',
-      'bg-indigo-500': 'bg-indigo-50/50 border-indigo-200',
-      'bg-cyan-500': 'bg-cyan-50/50 border-cyan-200',
-      'bg-gray-500': 'bg-gray-50/50 border-gray-200',
-      'bg-emerald-500': 'bg-emerald-50/50 border-emerald-200',
-      'bg-lime-500': 'bg-lime-50/50 border-lime-200',
-      'bg-teal-500': 'bg-teal-50/50 border-teal-200',
-      'bg-sky-500': 'bg-sky-50/50 border-sky-200',
-      'bg-violet-500': 'bg-violet-50/50 border-violet-200',
-      'bg-fuchsia-500': 'bg-fuchsia-50/50 border-fuchsia-200',
-      'bg-rose-500': 'bg-rose-50/50 border-rose-200',
-      'bg-amber-500': 'bg-amber-50/50 border-amber-200',
+      'bg-blue-500': 'bg-blue-50/50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800',
+      'bg-green-500': 'bg-green-50/50 dark:bg-green-950/30 border-green-200 dark:border-green-800',
+      'bg-yellow-500': 'bg-yellow-50/50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800',
+      'bg-orange-500': 'bg-orange-50/50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800',
+      'bg-red-500': 'bg-red-50/50 dark:bg-red-950/30 border-red-200 dark:border-red-800',
+      'bg-purple-500': 'bg-purple-50/50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800',
+      'bg-pink-500': 'bg-pink-50/50 dark:bg-pink-950/30 border-pink-200 dark:border-pink-800',
+      'bg-indigo-500': 'bg-indigo-50/50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800',
+      'bg-cyan-500': 'bg-cyan-50/50 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800',
+      'bg-gray-500': 'bg-muted/50 border-border',
+      'bg-emerald-500': 'bg-emerald-50/50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800',
+      'bg-lime-500': 'bg-lime-50/50 dark:bg-lime-950/30 border-lime-200 dark:border-lime-800',
+      'bg-teal-500': 'bg-teal-50/50 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800',
+      'bg-sky-500': 'bg-sky-50/50 dark:bg-sky-950/30 border-sky-200 dark:border-sky-800',
+      'bg-violet-500': 'bg-violet-50/50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800',
+      'bg-fuchsia-500': 'bg-fuchsia-50/50 dark:bg-fuchsia-950/30 border-fuchsia-200 dark:border-fuchsia-800',
+      'bg-rose-500': 'bg-rose-50/50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800',
+      'bg-amber-500': 'bg-amber-50/50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800',
     };
     
     // Extract the main color class (e.g., "bg-blue-500 text-white" -> "bg-blue-500")
@@ -182,7 +182,7 @@ export function MobileProductionWorkflow({
     }
     
     // Fallback for unknown colors
-    return 'bg-gray-50/50 border-gray-200';
+    return 'bg-muted/50 border-border';
   };
 
   const filteredOrders = orders.filter(order => {
@@ -218,7 +218,7 @@ export function MobileProductionWorkflow({
     return (
       <Card 
         className={`mb-3 transition-all ${
-          orderAge.urgent ? 'border-red-300 bg-red-50/50' : statusBackgroundHaze
+          orderAge.urgent ? 'border-red-300 dark:border-red-800 bg-red-50/50 dark:bg-red-950/30' : statusBackgroundHaze
         }`}
       >
         <CardContent className="p-4">
@@ -238,15 +238,15 @@ export function MobileProductionWorkflow({
 
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-gray-500" />
+              <User className="h-4 w-4 text-muted-foreground" />
               <span className="font-medium text-sm">{order.customerName}</span>
             </div>
-            <span className="text-base font-bold text-green-600">
+            <span className="text-base font-bold text-green-600 dark:text-green-400">
               ₡{order.total.toLocaleString()}
             </span>
           </div>
 
-          <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
+          <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
             <span>{orderAge.label}</span>
             {order.orderType === 'EA' && (order as any).expectedDate && (
               <span>Esperado: {(order as any).expectedDate}</span>
@@ -259,7 +259,7 @@ export function MobileProductionWorkflow({
           {/* Expand/collapse toggle */}
           {hasDetails && (
             <button
-              className="w-full flex items-center justify-center gap-1 text-xs text-gray-500 py-1 mb-2 hover:text-gray-700 transition-colors min-h-[32px]"
+              className="w-full flex items-center justify-center gap-1 text-xs text-muted-foreground py-1 mb-2 hover:text-foreground transition-colors min-h-[32px]"
               onClick={(e) => {
                 e.stopPropagation();
                 setExpanded(!expanded);
@@ -272,16 +272,16 @@ export function MobileProductionWorkflow({
 
           {/* Expanded details */}
           {expanded && (
-            <div className="space-y-2 mb-3 pt-2 border-t border-gray-200/60">
+            <div className="space-y-2 mb-3 pt-2 border-t border-border/60">
               {order.phone && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <Phone className="h-4 w-4 text-gray-400" />
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
                   <span>{order.phone}</span>
                 </div>
               )}
 
               {order.business && (
-                <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1.5 rounded">
+                <div className="text-xs text-muted-foreground bg-muted px-2 py-1.5 rounded">
                   {order.business}
                 </div>
               )}
@@ -289,16 +289,16 @@ export function MobileProductionWorkflow({
               {order.product && (
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <Package className="h-4 w-4 text-gray-400" />
+                    <Package className="h-4 w-4 text-muted-foreground" />
                     <span className="font-medium text-sm">{order.product}</span>
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-gray-600 ml-6">
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground ml-6">
                     <span>Cant: {order.quantity}</span>
                     {order.size && <span>Talla: {order.size}</span>}
                     {order.color && <span>Color: {order.color}</span>}
                   </div>
                   {(order as any).productCost && (
-                    <div className="text-xs text-gray-600 ml-6">
+                    <div className="text-xs text-muted-foreground ml-6">
                       Costo: ₡{Number((order as any).productCost).toLocaleString()}
                     </div>
                   )}
@@ -308,12 +308,12 @@ export function MobileProductionWorkflow({
               {((order as any).funnel || (order as any).seller) && (
                 <div className="flex flex-wrap gap-2 text-xs">
                   {(order as any).funnel && (
-                    <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                    <span className="bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400 px-2 py-1 rounded">
                       {(order as any).funnel}
                     </span>
                   )}
                   {(order as any).seller && (
-                    <span className="text-gray-600">
+                    <span className="text-muted-foreground">
                       Vendedor: {(order as any).seller}
                     </span>
                   )}
@@ -321,8 +321,8 @@ export function MobileProductionWorkflow({
               )}
 
               {order.orderType === 'EA' && (order as any).province && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <MapPin className="h-4 w-4 text-gray-400" />
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <MapPin className="h-4 w-4 text-muted-foreground" />
                   <span>
                     {(order as any).canton 
                       ? `${(order as any).province}, ${(order as any).canton}`
@@ -333,9 +333,9 @@ export function MobileProductionWorkflow({
               )}
 
               {order.comments && (
-                <div className="p-2 bg-gray-50 rounded text-xs">
+                <div className="p-2 bg-muted rounded text-xs">
                   <span className="font-medium">Comentarios:</span>
-                  <p className="mt-1 text-gray-600">{order.comments}</p>
+                  <p className="mt-1 text-muted-foreground">{order.comments}</p>
                 </div>
               )}
             </div>
@@ -355,7 +355,7 @@ export function MobileProductionWorkflow({
             </Button>
             
             <select
-              className="flex-1 text-sm rounded-md border border-gray-300 px-3 py-2 bg-white min-h-[44px]"
+              className="flex-1 text-sm rounded-md border border-border px-3 py-2 bg-card min-h-[44px]"
               value={order.status}
               onChange={(e) => handleQuickStatusUpdate(order.orderId, e.target.value)}
               onClick={(e) => e.stopPropagation()}
@@ -376,12 +376,12 @@ export function MobileProductionWorkflow({
   return (
     <div className="space-y-4">
       {/* Mobile Tabs */}
-      <div className="flex bg-gray-100 rounded-lg p-1">
+      <div className="flex bg-muted rounded-lg p-1">
         <button
           className={`flex-1 py-3 px-3 rounded-md text-sm font-medium transition-colors min-h-[44px] ${
             selectedTab === 'pending'
-              ? 'bg-white text-blue-600 shadow-sm'
-              : 'text-gray-600'
+              ? 'bg-card text-blue-600 dark:text-blue-400 shadow-sm'
+              : 'text-muted-foreground'
           }`}
           onClick={() => setSelectedTab('pending')}
         >
@@ -390,8 +390,8 @@ export function MobileProductionWorkflow({
         <button
           className={`flex-1 py-3 px-3 rounded-md text-sm font-medium transition-colors min-h-[44px] ${
             selectedTab === 'in-progress'
-              ? 'bg-white text-blue-600 shadow-sm'
-              : 'text-gray-600'
+              ? 'bg-card text-blue-600 dark:text-blue-400 shadow-sm'
+              : 'text-muted-foreground'
           }`}
           onClick={() => setSelectedTab('in-progress')}
         >
@@ -400,8 +400,8 @@ export function MobileProductionWorkflow({
         <button
           className={`flex-1 py-3 px-3 rounded-md text-sm font-medium transition-colors min-h-[44px] ${
             selectedTab === 'completed'
-              ? 'bg-white text-blue-600 shadow-sm'
-              : 'text-gray-600'
+              ? 'bg-card text-blue-600 dark:text-blue-400 shadow-sm'
+              : 'text-muted-foreground'
           }`}
           onClick={() => setSelectedTab('completed')}
         >
@@ -413,7 +413,7 @@ export function MobileProductionWorkflow({
       <div className="space-y-3">
         {filteredOrders.length === 0 ? (
           <Card className="p-8 text-center">
-            <div className="text-gray-500">
+            <div className="text-muted-foreground">
               <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No hay órdenes en esta categoría</p>
             </div>
@@ -429,16 +429,16 @@ export function MobileProductionWorkflow({
       <Card className="p-4">
         <div className="grid grid-cols-3 gap-4 text-center">
           <div>
-            <div className="text-2xl font-bold text-yellow-600">{tabCounts.pending}</div>
-            <div className="text-xs text-gray-600">Pendientes</div>
+            <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{tabCounts.pending}</div>
+            <div className="text-xs text-muted-foreground">Pendientes</div>
           </div>
           <div>
-            <div className="text-2xl font-bold text-blue-600">{tabCounts['in-progress']}</div>
-            <div className="text-xs text-gray-600">En Proceso</div>
+            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{tabCounts['in-progress']}</div>
+            <div className="text-xs text-muted-foreground">En Proceso</div>
           </div>
           <div>
-            <div className="text-2xl font-bold text-green-600">{tabCounts.completed}</div>
-            <div className="text-xs text-gray-600">Completadas</div>
+            <div className="text-2xl font-bold text-green-600 dark:text-green-400">{tabCounts.completed}</div>
+            <div className="text-xs text-muted-foreground">Completadas</div>
           </div>
         </div>
       </Card>

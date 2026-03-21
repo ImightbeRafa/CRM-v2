@@ -75,9 +75,9 @@ export default function DailyStats() {
           <div className="animate-pulse grid grid-cols-3 gap-4">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="space-y-2">
-                <div className="h-4 bg-gray-200 rounded w-20"></div>
-                <div className="h-6 bg-gray-200 rounded w-24"></div>
-                <div className="h-3 bg-gray-200 rounded w-16"></div>
+                <div className="h-4 bg-muted rounded w-20"></div>
+                <div className="h-6 bg-muted rounded w-24"></div>
+                <div className="h-3 bg-muted rounded w-16"></div>
               </div>
             ))}
           </div>

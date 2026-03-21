@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui/card";
 import { Save, Loader, AlertCircle, CheckCircle, Clock, Banknote } from 'lucide-react';
+import { Checkbox } from "@/app/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/app/components/ui/alert";
 import { Button } from "@/app/components/ui/button";
 import OrderTypeToggle from './OrderTypeToggle';
@@ -603,13 +604,13 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                 <CardTitle className="flex items-center gap-2">
                   Betsy - Sistema de Ventas Optimizado
                   {autoSaveStatus === 'saving' && (
-                    <Clock className="h-4 w-4 text-blue-500 animate-spin" />
+                    <Clock className="h-4 w-4 text-blue-500 dark:text-blue-400 animate-spin" />
                   )}
                   {autoSaveStatus === 'saved' && lastAutoSave && (
-                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400" />
                   )}
                   {autoSaveStatus === 'unsaved' && (
-                    <AlertCircle className="h-4 w-4 text-orange-500" />
+                    <AlertCircle className="h-4 w-4 text-orange-500 dark:text-orange-400" />
                   )}
                 </CardTitle>
                 <Button
@@ -621,7 +622,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                   Cerrar
                 </Button>
               </div>
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 {autoSaveStatus === 'saved' && lastAutoSave &&
                   `Guardado automáticamente: ${lastAutoSave.toLocaleTimeString()}`
                 }
@@ -644,13 +645,13 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         <CardContent>
           {submitStatus.message && (
             <Alert
-              className={`mb-4 ${submitStatus.type === 'success' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+              className={`mb-4 ${submitStatus.type === 'success' ? 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800/50' : 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800/50'
                 }`}
             >
-              <AlertTitle className={submitStatus.type === 'success' ? 'text-green-800' : 'text-red-800'}>
+              <AlertTitle className={submitStatus.type === 'success' ? 'text-green-800 dark:text-green-400' : 'text-red-800 dark:text-red-400'}>
                 {submitStatus.type === 'success' ? 'Éxito' : 'Error'}
               </AlertTitle>
-              <AlertDescription className={submitStatus.type === 'success' ? 'text-green-700' : 'text-red-700'}>
+              <AlertDescription className={submitStatus.type === 'success' ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}>
                 {submitStatus.message}
               </AlertDescription>
             </Alert>
@@ -658,8 +659,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
           <form onSubmit={handleSubmit} className="space-y-8">
             {/* Customer Information */}
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h3 className="text-lg font-semibold text-blue-800 mb-4">
+            <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg">
+              <h3 className="text-lg font-semibold text-blue-800 dark:text-blue-400 mb-4">
                 👤 Información del Cliente
               </h3>
 
@@ -680,14 +681,14 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
             {/* Business Info Fields */}
             {businessInfoFields.length > 0 && (
-              <div className="bg-orange-50 p-4 rounded-lg">
-                <h3 className="text-lg font-semibold text-orange-800 mb-4">
+              <div className="bg-orange-50 dark:bg-orange-950/30 p-4 rounded-lg">
+                <h3 className="text-lg font-semibold text-orange-800 dark:text-orange-400 mb-4">
                   🏢 Información de Negocio
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {businessInfoFields.map((field) => (
                     <div key={field.id} className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">
+                      <label className="block text-sm font-medium text-muted-foreground">
                         {field.label}
                         {field.required && <span className="text-red-500 ml-1">*</span>}
                       </label>
@@ -700,7 +701,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                             [field.name]: e.target.value
                           })}
                           placeholder={field.placeholder}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                           required={field.required}
                         />
                       )}
@@ -712,7 +713,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                             [field.name]: e.target.value
                           })}
                           placeholder={field.placeholder}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                           rows={3}
                           required={field.required}
                         />
@@ -724,7 +725,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                             ...orderInfo.customerInfo,
                             [field.name]: e.target.value
                           })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                           required={field.required}
                         >
                           <option value="">{field.placeholder || 'Seleccionar...'}</option>
@@ -741,7 +742,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                             ...orderInfo.customerInfo,
                             [field.name]: e.target.value
                           })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                           required={field.required}
                         />
                       )}
@@ -752,8 +753,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
             )}
 
             {/* Product Selection - Quick Pick */}
-            <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-4 rounded-lg">
-              <h3 className="text-lg font-semibold text-indigo-800 mb-4 flex items-center gap-2">
+            <div className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/30 p-4 rounded-lg">
+              <h3 className="text-lg font-semibold text-indigo-800 dark:text-indigo-400 mb-4 flex items-center gap-2">
                 📦 Selección Rápida de Productos
               </h3>
               <EnhancedSmartSuggestions
@@ -762,7 +763,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
             </div>
 
             {/* Products Section */}
-            <div className="bg-green-50 p-4 rounded-lg">
+            <div className="bg-green-50 dark:bg-green-950/30 p-4 rounded-lg">
               <ProductList
                 orderInfo={orderInfo}
                 onOrderInfoChange={handleOrderInfoChange}
@@ -774,31 +775,34 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
             <div
               className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 ${
                 orderInfo.contraEntrega
-                  ? 'bg-amber-50 border-amber-400'
-                  : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+                  ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-400 dark:border-amber-600'
+                  : 'bg-muted border-border hover:border-muted-foreground/30'
               }`}
               onClick={() => setOrderInfo(prev => ({ ...prev, contraEntrega: !prev.contraEntrega }))}
             >
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
+              <div className="flex items-center gap-3">
+                <Checkbox
                   checked={orderInfo.contraEntrega || false}
-                  onChange={(e) => {
-                    e.stopPropagation();
-                    setOrderInfo(prev => ({ ...prev, contraEntrega: !prev.contraEntrega }));
+                  onCheckedChange={(checked) => {
+                    setOrderInfo(prev => ({ ...prev, contraEntrega: checked === true }));
                   }}
-                  className="w-5 h-5 rounded border-gray-300 text-amber-500 focus:ring-amber-500"
+                  onClick={(e) => e.stopPropagation()}
+                  className={`h-5 w-5 ${
+                    orderInfo.contraEntrega
+                      ? 'border-amber-500 data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500'
+                      : 'border-muted-foreground/30'
+                  }`}
                 />
-                <Banknote className={`h-5 w-5 ${orderInfo.contraEntrega ? 'text-amber-600' : 'text-gray-400'}`} />
+                <Banknote className={`h-5 w-5 ${orderInfo.contraEntrega ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`} />
                 <div>
-                  <span className={`font-semibold ${orderInfo.contraEntrega ? 'text-amber-800' : 'text-gray-700'}`}>
+                  <span className={`font-semibold ${orderInfo.contraEntrega ? 'text-amber-800 dark:text-amber-400' : 'text-muted-foreground'}`}>
                     Contra Entrega
                   </span>
-                  <p className={`text-xs ${orderInfo.contraEntrega ? 'text-amber-600' : 'text-gray-500'}`}>
+                  <p className={`text-xs ${orderInfo.contraEntrega ? 'text-amber-600 dark:text-amber-300' : 'text-muted-foreground'}`}>
                     El cliente paga al recibir el producto
                   </p>
                 </div>
-              </label>
+              </div>
             </div>
 
             {/* Submit Button */}

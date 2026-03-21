@@ -86,7 +86,7 @@ function VerifyEmailPageInner() {
 
   if (status === 'success') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="max-w-md w-full border-0 shadow-xl">
           <CardHeader className="text-center pb-2">
             <div className="flex justify-center mb-4">
@@ -110,7 +110,7 @@ function VerifyEmailPageInner() {
 
   if (status === 'error') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="max-w-md w-full border-0 shadow-xl">
           <CardHeader className="text-center pb-2">
             <div className="flex justify-center mb-4">
@@ -159,7 +159,7 @@ function VerifyEmailPageInner() {
 
   if (status === 'loading') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="max-w-md w-full border-0 shadow-xl">
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
@@ -174,7 +174,7 @@ function VerifyEmailPageInner() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="max-w-md w-full border-0 shadow-xl">
         <CardHeader className="text-center pb-2">
           <div className="flex justify-center mb-4">
@@ -190,8 +190,8 @@ function VerifyEmailPageInner() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <p className="text-sm font-medium text-blue-800 dark:text-blue-300">Pasos a seguir:</p>
+          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <p className="text-sm font-medium text-blue-800 dark:text-blue-400">Pasos a seguir:</p>
             <ol className="text-sm text-blue-700 dark:text-blue-400 mt-2 space-y-1 list-decimal list-inside">
               <li>Revisa tu bandeja de entrada (y la carpeta de spam)</li>
               <li>Haz clic en el enlace de verificación del email</li>
@@ -221,7 +221,7 @@ function VerifyEmailPageInner() {
             </div>
           )}
 
-          <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+          <div className="pt-2 border-t border-border">
             <Link href="/auth/signin" className="block">
               <Button variant="ghost" className="w-full text-muted-foreground text-sm">
                 <ArrowLeft className="w-4 h-4 mr-2" />
@@ -238,11 +238,11 @@ function VerifyEmailPageInner() {
 export default function VerifyEmailPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="max-w-md w-full border-0 shadow-xl">
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+              <Loader2 className="w-12 h-12 text-blue-600 dark:text-blue-400 animate-spin" />
             </div>
             <CardTitle className="text-2xl">Cargando...</CardTitle>
           </CardHeader>

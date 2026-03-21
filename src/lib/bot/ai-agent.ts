@@ -592,7 +592,9 @@ function formatToolResult(toolName: ToolName, result: ToolResult, platform: stri
 
     case 'get_order_details':
       if (result.data) {
-        return formatOrder(result.data);
+        const orderData = result.data as any;
+        const cfLines: string[] = orderData._customFieldLines || [];
+        return formatOrder(orderData, cfLines.length > 0 ? cfLines : undefined);
       }
       return 'Orden no encontrada.';
 

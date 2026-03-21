@@ -14,9 +14,7 @@ import {
   Package,
   BarChart3,
   Users,
-  Zap,
   CheckCircle,
-  MessageCircle,
   Bot,
   Phone,
   Mail,
@@ -27,13 +25,10 @@ import {
   Bell,
   Star,
   Eye,
-  Truck,
-  FileCheck
+  Truck
 } from 'lucide-react';
-import Image from 'next/image';
 import SimplePricingSection from './SimplePricingSection';
 import SimpleAuthModal from './SimpleAuthModal';
-import CorreosLogo from '@/correos-logo.png';
 
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 24 },
@@ -228,8 +223,10 @@ const AIAssistantSection = ({
   const [selectedPlatform, setSelectedPlatform] = useState<'telegram' | 'whatsapp'>('telegram');
 
   return (
-    <section id="ai-assistant" className="py-20 lg:py-28 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-stone-50/80 to-purple-50/60">
-      <div className="max-w-7xl mx-auto">
+    <section id="ai-assistant" className="py-20 lg:py-28 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-[#0c0b14] to-[#0a0a0f] relative overflow-hidden">
+      <div className="absolute top-1/3 right-0 w-[500px] h-[500px] rounded-full bg-purple-600/8 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-0 left-1/4 w-[400px] h-[400px] rounded-full bg-blue-600/8 blur-[100px] pointer-events-none" />
+      <div className="max-w-7xl mx-auto relative z-10">
         <motion.div
           className="grid lg:grid-cols-2 gap-12 items-center"
           variants={fadeUp}
@@ -239,33 +236,33 @@ const AIAssistantSection = ({
         >
           {/* Left - Content */}
           <div>
-            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium tracking-wide uppercase bg-purple-50 text-purple-700 border border-purple-200/60 mb-6">
+            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium tracking-wide uppercase bg-purple-500/10 text-purple-400 border border-purple-500/20 mb-6">
               <Bot className="w-3 h-3" />
               AI Sales Assistant
             </span>
             
-            <h2 className="landing-h2 text-foreground mb-6">
+            <h2 className="landing-h2 text-white mb-6">
               Tu negocio en
               <span className="block bg-gradient-to-r from-[#0088cc] to-[#25D366] bg-clip-text text-transparent">
                 Telegram & WhatsApp
               </span>
             </h2>
             
-            <p className="text-text-secondary text-lg mb-6">
+            <p className="text-gray-400 text-lg mb-6">
               Envía un mensaje de voz o texto y el asistente entiende lo que necesitas. 
               Crea órdenes, consulta inventario, ve estadísticas - todo hablando naturalmente en español.
-              <span className="font-medium text-foreground"> Usa la app que prefieras.</span>
+              <span className="font-medium text-white"> Usa la app que prefieras.</span>
             </p>
             
-            <div className="bg-white rounded-xl p-6 shadow-elevated border border-gray-100/80 mb-6">
-              <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Mic className="w-5 h-5 text-purple-600" />
+            <div className="bg-white/5 rounded-xl p-6 border border-white/10 mb-6">
+              <h4 className="font-semibold text-white mb-4 flex items-center gap-2">
+                <Mic className="w-5 h-5 text-purple-400" />
                 Lo que puedes hacer:
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {aiCapabilities.map((cap, i) => (
-                  <div key={i} className="flex items-center gap-2 text-text-secondary text-sm">
-                    <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                  <div key={i} className="flex items-center gap-2 text-gray-400 text-sm">
+                    <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
                     {cap}
                   </div>
                 ))}
@@ -295,13 +292,13 @@ const AIAssistantSection = ({
           {/* Right - Phone Demo with Toggle */}
           <div className="flex flex-col items-center">
             {/* Platform Toggle */}
-            <div className="flex bg-gray-100 rounded-full p-1 mb-6 shadow-inner">
+            <div className="flex bg-white/10 rounded-full p-1 mb-6">
               <button
                 onClick={() => setSelectedPlatform('telegram')}
                 className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-all ${
                   selectedPlatform === 'telegram'
-                    ? 'bg-white text-[#0088cc] shadow-md'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white/15 text-[#0088cc] shadow-md'
+                    : 'text-gray-400 hover:text-gray-200'
                 }`}
               >
                 <TelegramIcon />
@@ -311,8 +308,8 @@ const AIAssistantSection = ({
                 onClick={() => setSelectedPlatform('whatsapp')}
                 className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-all ${
                   selectedPlatform === 'whatsapp'
-                    ? 'bg-white text-[#25D366] shadow-md'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white/15 text-[#25D366] shadow-md'
+                    : 'text-gray-400 hover:text-gray-200'
                 }`}
               >
                 <WhatsAppIcon />
@@ -408,28 +405,28 @@ export default function LandingPage() {
     <div className="min-h-screen bg-background">
       {/* Navigation */}
       <nav className={`fixed top-0 w-full z-50 transition-all duration-500 ${
-        scrolled ? 'bg-white/80 backdrop-blur-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05),0_8px_24px_rgba(0,0,0,0.04)] border-b border-gray-200/60' : 'bg-transparent'
+        scrolled ? 'bg-gray-950/80 backdrop-blur-2xl shadow-[0_1px_3px_rgba(0,0,0,0.2),0_8px_24px_rgba(0,0,0,0.15)] border-b border-white/10' : 'bg-transparent'
       }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16 md:h-20">
             <div className="flex items-center gap-2">
-              <span className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent leading-relaxed pb-0.5">
+              <span className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent leading-relaxed pb-0.5">
                 Betsy
               </span>
             </div>
             
             <div className="hidden md:flex items-center gap-8">
-              <a href="#platform" className="text-gray-600 hover:text-blue-600 transition-colors text-sm font-medium">Plataforma</a>
-              <a href="#ai-assistant" className="text-gray-600 hover:text-blue-600 transition-colors text-sm font-medium">AI Assistant</a>
-              <a href="#correos" className="text-gray-600 hover:text-blue-600 transition-colors text-sm font-medium">Envíos</a>
-              <a href="#pricing" className="text-gray-600 hover:text-blue-600 transition-colors text-sm font-medium">Precios</a>
-              <a href="#contact" className="text-gray-600 hover:text-blue-600 transition-colors text-sm font-medium">Contacto</a>
+              <a href="#platform" className="text-gray-300 hover:text-white transition-colors text-sm font-medium">Plataforma</a>
+              <a href="#ai-assistant" className="text-gray-300 hover:text-white transition-colors text-sm font-medium">AI Assistant</a>
+              <a href="#correos" className="text-gray-300 hover:text-white transition-colors text-sm font-medium">Envíos</a>
+              <a href="#pricing" className="text-gray-300 hover:text-white transition-colors text-sm font-medium">Precios</a>
+              <a href="#contact" className="text-gray-300 hover:text-white transition-colors text-sm font-medium">Contacto</a>
             </div>
 
             <div className="hidden md:flex items-center gap-3">
               <Button 
                 variant="ghost" 
-                className="text-gray-600 hover:text-blue-600"
+                className="text-gray-300 hover:text-white hover:bg-white/10"
                 onClick={() => setIsAuthModalOpen(true)}
               >
                 Iniciar Sesión
@@ -443,7 +440,7 @@ export default function LandingPage() {
             </div>
 
             <button 
-              className="md:hidden p-2 text-gray-600"
+              className="md:hidden p-2 text-gray-300"
               onClick={() => setIsMenuOpen(!isMenuOpen)}
             >
               {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -453,15 +450,15 @@ export default function LandingPage() {
 
         {/* Mobile Menu */}
         {isMenuOpen && (
-          <div className="md:hidden bg-white border-t border-gray-100 shadow-lg">
+          <div className="md:hidden bg-gray-950/95 backdrop-blur-2xl border-t border-white/10">
             <div className="px-4 py-4 space-y-3">
-              <a href="#platform" onClick={() => setIsMenuOpen(false)} className="block text-gray-600 hover:text-blue-600 py-2 font-medium">Plataforma</a>
-              <a href="#ai-assistant" onClick={() => setIsMenuOpen(false)} className="block text-gray-600 hover:text-blue-600 py-2 font-medium">AI Assistant</a>
-              <a href="#correos" onClick={() => setIsMenuOpen(false)} className="block text-gray-600 hover:text-blue-600 py-2 font-medium">Envíos</a>
-              <a href="#pricing" onClick={() => setIsMenuOpen(false)} className="block text-gray-600 hover:text-blue-600 py-2 font-medium">Precios</a>
-              <a href="#contact" onClick={() => setIsMenuOpen(false)} className="block text-gray-600 hover:text-blue-600 py-2 font-medium">Contacto</a>
+              <a href="#platform" onClick={() => setIsMenuOpen(false)} className="block text-gray-300 hover:text-white py-2 font-medium">Plataforma</a>
+              <a href="#ai-assistant" onClick={() => setIsMenuOpen(false)} className="block text-gray-300 hover:text-white py-2 font-medium">AI Assistant</a>
+              <a href="#correos" onClick={() => setIsMenuOpen(false)} className="block text-gray-300 hover:text-white py-2 font-medium">Envíos</a>
+              <a href="#pricing" onClick={() => setIsMenuOpen(false)} className="block text-gray-300 hover:text-white py-2 font-medium">Precios</a>
+              <a href="#contact" onClick={() => setIsMenuOpen(false)} className="block text-gray-300 hover:text-white py-2 font-medium">Contacto</a>
               <div className="pt-4 flex gap-3">
-                <Button variant="outline" className="flex-1" onClick={() => { setIsMenuOpen(false); setIsAuthModalOpen(true); }}>
+                <Button variant="outline" className="flex-1 border-white/20 text-gray-300 hover:bg-white/10 hover:text-white" onClick={() => { setIsMenuOpen(false); setIsAuthModalOpen(true); }}>
                   Iniciar Sesión
                 </Button>
                 <Button className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600" onClick={() => { setIsMenuOpen(false); setIsAuthModalOpen(true); }}>
@@ -582,7 +579,9 @@ export default function LandingPage() {
       <div className="section-divider" />
 
       {/* Two Pillars Section */}
-      <section className="py-20 lg:py-28 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-blue-600 to-purple-700 relative overflow-hidden">
+      <section className="py-20 lg:py-28 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-[#0f0b1a] via-[#131025] to-[#0d0f1a] relative overflow-hidden">
+        <div className="absolute -top-32 left-1/4 w-[500px] h-[500px] rounded-full bg-purple-600/10 blur-[100px] pointer-events-none" />
+        <div className="absolute -bottom-32 right-1/4 w-[400px] h-[400px] rounded-full bg-blue-600/10 blur-[100px] pointer-events-none" />
         <div className="max-w-7xl mx-auto relative z-10">
           <motion.div
             className="text-center mb-12"
@@ -592,30 +591,30 @@ export default function LandingPage() {
             viewport={{ once: true, amount: 0.3 }}
           >
             <h2 className="landing-h2 text-white mb-4">
-              Dos formas de potenciar tu negocio
+              Todo para potenciar tu negocio
             </h2>
-            <p className="text-blue-100 text-lg max-w-2xl mx-auto">
-              Usa la plataforma web completa o gestiona todo desde Telegram y WhatsApp con IA
+            <p className="text-gray-400 text-lg max-w-2xl mx-auto">
+              Plataforma web, asistente IA en tus apps favoritas y envíos integrados
             </p>
           </motion.div>
           
           <motion.div
-            className="grid md:grid-cols-2 gap-8"
+            className="grid md:grid-cols-2 lg:grid-cols-3 gap-8"
             variants={staggerContainer}
             initial="hidden"
             whileInView="visible"
             viewport={{ once: true, amount: 0.2 }}
           >
             {/* Platform Card */}
-            <motion.div variants={fadeUp} className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 hover:bg-white/15 transition-all duration-300">
-              <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center mb-6">
-                <BarChart3 className="w-7 h-7 text-white" />
+            <motion.div variants={fadeUp} className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10 hover:bg-white/[0.08] transition-all duration-300">
+              <div className="w-14 h-14 bg-white/10 rounded-xl flex items-center justify-center mb-6">
+                <BarChart3 className="w-7 h-7 text-blue-400" />
               </div>
               <h3 className="text-2xl font-bold text-white mb-3">Plataforma Web</h3>
-              <p className="text-blue-100 mb-6">
+              <p className="text-gray-400 mb-6">
                 Dashboard completo para gestionar pedidos, clientes, inventario y reportes desde cualquier navegador.
               </p>
-              <ul className="space-y-2 text-blue-100">
+              <ul className="space-y-2 text-gray-300">
                 <li className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-green-400" />
                   Tablero Kanban visual
@@ -636,7 +635,7 @@ export default function LandingPage() {
             </motion.div>
             
             {/* AI Card */}
-            <motion.div variants={fadeUp} className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 hover:bg-white/15 transition-all duration-300">
+            <motion.div variants={fadeUp} className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10 hover:bg-white/[0.08] transition-all duration-300">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-14 h-14 bg-gradient-to-br from-[#0088cc] to-[#0077b5] rounded-xl flex items-center justify-center text-white">
                   <TelegramIcon />
@@ -646,10 +645,10 @@ export default function LandingPage() {
                 </div>
               </div>
               <h3 className="text-2xl font-bold text-white mb-3">AI en Telegram & WhatsApp</h3>
-              <p className="text-blue-100 mb-6">
+              <p className="text-gray-400 mb-6">
                 Asistente inteligente que entiende voz y texto. Gestiona tu negocio conversando naturalmente desde tu app favorita.
               </p>
-              <ul className="space-y-2 text-blue-100">
+              <ul className="space-y-2 text-gray-300">
                 <li className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-green-400" />
                   Mensajes de voz con Whisper AI
@@ -665,6 +664,35 @@ export default function LandingPage() {
                 <li className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-green-400" />
                   Respuestas instantáneas
+                </li>
+              </ul>
+            </motion.div>
+
+            {/* Correos de Costa Rica Card */}
+            <motion.div id="correos" variants={fadeUp} className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10 hover:bg-white/[0.08] transition-all duration-300">
+              <div className="w-14 h-14 bg-emerald-500/15 rounded-xl flex items-center justify-center mb-6">
+                <Truck className="w-7 h-7 text-emerald-400" />
+              </div>
+              <h3 className="text-2xl font-bold text-white mb-3">Envíos con Correos CR</h3>
+              <p className="text-gray-400 mb-6">
+                Genera guías de Correos de Costa Rica directamente desde Betsy. Un clic para envíos masivos en lote.
+              </p>
+              <ul className="space-y-2 text-gray-300">
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-400" />
+                  Generación masiva en lote
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-400" />
+                  Automatización completa
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-400" />
+                  Desde web o Telegram
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-400" />
+                  Integración oficial
                 </li>
               </ul>
             </motion.div>
@@ -798,134 +826,8 @@ export default function LandingPage() {
 
       <div className="section-divider" />
 
-      {/* Correos de Costa Rica Integration */}
-      <section id="correos" className="py-20 lg:py-28 px-4 sm:px-6 lg:px-8 bg-background">
-        <div className="max-w-7xl mx-auto">
-          <motion.div
-            className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center"
-            variants={fadeUp}
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.2 }}
-          >
-            {/* Left - Content */}
-            <div>
-              <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium tracking-wide uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/60 mb-6">
-                <Truck className="w-3.5 h-3.5" />
-                Integración Oficial
-              </span>
-
-              <h2 className="landing-h2 text-foreground mb-6">
-                Guías de Correos de Costa Rica
-                <span className="block text-emerald-600">en segundos</span>
-              </h2>
-
-              <p className="text-text-secondary text-lg mb-8">
-                Genera guías de envío de Correos de Costa Rica directamente desde Betsy. 
-                Selecciona tus pedidos, y con un clic genera todas las guías en lote. Así de simple.
-              </p>
-
-              <div className="space-y-4 mb-8">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600 flex-shrink-0 mt-0.5">
-                    <Zap className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">Generación masiva en lote</p>
-                    <p className="text-text-secondary text-sm">Selecciona los pedidos y genera todas las guías en segundos</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-blue-50 rounded-lg text-blue-600 flex-shrink-0 mt-0.5">
-                    <FileCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">Automatización completa</p>
-                    <p className="text-text-secondary text-sm">Desde la plataforma web con toda la información de tus pedidos</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-purple-50 rounded-lg text-purple-600 flex-shrink-0 mt-0.5">
-                    <MessageCircle className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">También por Telegram y WhatsApp</p>
-                    <p className="text-text-secondary text-sm flex items-center gap-1.5">
-                      Genera guías conversando con el asistente IA
-                      <span className="text-[#0088cc]"><TelegramIcon /></span>
-                      <span className="text-[#25D366]"><WhatsAppIcon /></span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <Button
-                size="lg"
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-lg px-8 h-12 rounded-xl shadow-[0_0_30px_rgba(124,58,237,0.15)] hover:shadow-[0_0_40px_rgba(124,58,237,0.25)] hover:-translate-y-0.5 transition-all duration-300"
-                onClick={() => setIsAuthModalOpen(true)}
-              >
-                Empezar Gratis
-                <ArrowRight className="ml-2 w-5 h-5" />
-              </Button>
-            </div>
-
-            {/* Right - Logo + Visual */}
-            <div className="flex flex-col items-center gap-8">
-              {/* Correos Logo Card */}
-              <div className="bg-white rounded-2xl shadow-elevated p-8 md:p-10 border border-gray-100/80 w-full max-w-sm">
-                <Image
-                  src={CorreosLogo}
-                  alt="Correos de Costa Rica"
-                  className="w-full h-auto"
-                  priority={false}
-                />
-              </div>
-
-              {/* Mini guia generation visual */}
-              <div className="w-full max-w-sm space-y-3">
-                {[
-                  { order: '#1847', name: 'María García', status: true },
-                  { order: '#1848', name: 'Carlos R.', status: true },
-                  { order: '#1849', name: 'Ana Jiménez', status: true },
-                ].map((guia, i) => (
-                  <motion.div
-                    key={i}
-                    className="flex items-center justify-between bg-white rounded-xl px-4 py-3 shadow-elevated border border-gray-100/80"
-                    initial={{ opacity: 0, x: 20 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: 0.2 + i * 0.1, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-                        <Package className="w-4 h-4 text-emerald-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{guia.order}</p>
-                        <p className="text-xs text-text-secondary">{guia.name}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-xs text-emerald-600 font-medium hidden sm:inline">Guía generada</span>
-                      <CheckCircle className="w-4 h-4 text-emerald-500" />
-                    </div>
-                  </motion.div>
-                ))}
-                <div className="text-center pt-2">
-                  <p className="text-xs text-text-secondary">3 guías generadas en 2.1 segundos</p>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      <div className="section-divider" />
-
       {/* Testimonials */}
-      <section className="py-16 lg:py-20 px-4 sm:px-6 lg:px-8 bg-stone-50/60">
+      <section className="py-16 lg:py-20 px-4 sm:px-6 lg:px-8 bg-[#0c0b14]">
         <div className="max-w-7xl mx-auto">
           <motion.div
             className="text-center mb-12"
@@ -934,10 +836,10 @@ export default function LandingPage() {
             whileInView="visible"
             viewport={{ once: true, amount: 0.3 }}
           >
-            <h2 className="landing-h2 text-foreground mb-4">
+            <h2 className="landing-h2 text-white mb-4">
               Lo que dicen nuestros clientes
             </h2>
-            <p className="text-xl text-text-secondary">
+            <p className="text-xl text-gray-400">
               Negocios reales con resultados reales
             </p>
           </motion.div>
@@ -951,8 +853,8 @@ export default function LandingPage() {
           >
             {testimonials.map((testimonial, index) => (
               <motion.div key={index} variants={fadeUp}>
-              <Card className="border border-gray-100/80 shadow-elevated hover:shadow-elevated-hover transition-all duration-300 bg-white h-full overflow-hidden relative">
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-blue-500/60 to-purple-500/60" />
+              <Card className="border border-white/10 hover:border-white/15 transition-all duration-300 bg-white/5 h-full overflow-hidden relative">
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-blue-500/40 to-purple-500/40" />
                 <CardContent className="pt-8 relative">
                   <span className="absolute top-3 left-5 text-6xl font-serif text-purple-500/10 leading-none select-none">&ldquo;</span>
                   <div className="flex items-center mb-4">
@@ -960,14 +862,14 @@ export default function LandingPage() {
                       <Star key={i} className="h-4 w-4 text-yellow-400 fill-current" />
                     ))}
                   </div>
-                  <p className="text-foreground/80 mb-6 relative z-10">&ldquo;{testimonial.content}&rdquo;</p>
+                  <p className="text-gray-300 mb-6 relative z-10">&ldquo;{testimonial.content}&rdquo;</p>
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
                       {testimonial.name.charAt(0)}
                     </div>
                     <div>
-                      <p className="font-semibold text-foreground">{testimonial.name}</p>
-                      <p className="text-sm text-text-secondary">{testimonial.role}</p>
+                      <p className="font-semibold text-white">{testimonial.name}</p>
+                      <p className="text-sm text-gray-400">{testimonial.role}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -979,8 +881,9 @@ export default function LandingPage() {
       </section>
 
       {/* Stats */}
-      <section className="py-16 lg:py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-blue-600 to-purple-600">
-        <div className="max-w-5xl mx-auto">
+      <section className="py-16 lg:py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-[#0f0b1a] via-[#131025] to-[#0d0f1a] relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 via-purple-600/5 to-pink-600/5 pointer-events-none" />
+        <div className="max-w-5xl mx-auto relative z-10">
           <motion.div
             className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center"
             variants={staggerContainer}
@@ -996,7 +899,7 @@ export default function LandingPage() {
             ].map((stat, i) => (
               <motion.div key={i} variants={fadeUp}>
                 <div className="text-4xl md:text-5xl font-extrabold text-white mb-2 tracking-tight">{stat.value}</div>
-                <div className="text-blue-100 text-sm">{stat.label}</div>
+                <div className="text-gray-400 text-sm">{stat.label}</div>
               </motion.div>
             ))}
           </motion.div>
@@ -1013,7 +916,7 @@ export default function LandingPage() {
       <div className="section-divider" />
 
       {/* Contact */}
-      <section id="contact" className="py-16 lg:py-20 px-4 sm:px-6 lg:px-8 bg-background">
+      <section id="contact" className="py-16 lg:py-20 px-4 sm:px-6 lg:px-8 bg-[#0c0b14]">
         <motion.div
           className="max-w-4xl mx-auto text-center"
           variants={fadeUp}
@@ -1021,10 +924,10 @@ export default function LandingPage() {
           whileInView="visible"
           viewport={{ once: true, amount: 0.3 }}
         >
-          <h2 className="landing-h2 text-foreground mb-4">
+          <h2 className="landing-h2 text-white mb-4">
             ¿Preguntas?
           </h2>
-          <p className="text-text-secondary text-lg mb-12">
+          <p className="text-gray-400 text-lg mb-12">
             Estamos aquí para ayudarte
           </p>
           
@@ -1039,47 +942,47 @@ export default function LandingPage() {
               href="https://wa.me/50661498470"
               target="_blank"
               rel="noopener noreferrer"
-              className="group bg-white border border-gray-100/80 rounded-2xl p-6 shadow-elevated hover:shadow-elevated-hover hover:border-green-300 transition-all duration-300"
+              className="group bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/[0.08] hover:border-green-500/30 transition-all duration-300"
             >
-              <div className="w-14 h-14 mx-auto bg-green-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <Phone className="w-6 h-6 text-green-600" />
+              <div className="w-14 h-14 mx-auto bg-green-500/10 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Phone className="w-6 h-6 text-green-400" />
               </div>
-              <h3 className="font-semibold text-foreground mb-1">WhatsApp</h3>
-              <p className="text-text-secondary text-sm">+506 6149-8470</p>
+              <h3 className="font-semibold text-white mb-1">WhatsApp</h3>
+              <p className="text-gray-400 text-sm">+506 6149-8470</p>
             </a>
             
             <a 
               href="mailto:betsycrm.cr@gmail.com"
-              className="group bg-white border border-gray-100/80 rounded-2xl p-6 shadow-elevated hover:shadow-elevated-hover hover:border-blue-300 transition-all duration-300"
+              className="group bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/[0.08] hover:border-blue-500/30 transition-all duration-300"
             >
-              <div className="w-14 h-14 mx-auto bg-blue-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <Mail className="w-6 h-6 text-blue-600" />
+              <div className="w-14 h-14 mx-auto bg-blue-500/10 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Mail className="w-6 h-6 text-blue-400" />
               </div>
-              <h3 className="font-semibold text-foreground mb-1">Email</h3>
-              <p className="text-text-secondary text-sm">betsycrm.cr@gmail.com</p>
+              <h3 className="font-semibold text-white mb-1">Email</h3>
+              <p className="text-gray-400 text-sm">betsycrm.cr@gmail.com</p>
             </a>
             
             <a 
               href="https://www.instagram.com/betsy_crm/"
               target="_blank"
               rel="noopener noreferrer"
-              className="group bg-white border border-gray-100/80 rounded-2xl p-6 shadow-elevated hover:shadow-elevated-hover hover:border-pink-300 transition-all duration-300"
+              className="group bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/[0.08] hover:border-pink-500/30 transition-all duration-300"
             >
-              <div className="w-14 h-14 mx-auto bg-gradient-to-br from-purple-100 to-pink-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <Instagram className="w-6 h-6 text-pink-600" />
+              <div className="w-14 h-14 mx-auto bg-gradient-to-br from-purple-500/10 to-pink-500/10 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Instagram className="w-6 h-6 text-pink-400" />
               </div>
-              <h3 className="font-semibold text-foreground mb-1">Instagram</h3>
-              <p className="text-text-secondary text-sm">@betsy_crm</p>
+              <h3 className="font-semibold text-white mb-1">Instagram</h3>
+              <p className="text-gray-400 text-sm">@betsy_crm</p>
             </a>
           </motion.div>
         </motion.div>
       </section>
 
       {/* CTA */}
-      <section className="py-24 lg:py-32 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-blue-600 to-purple-700 relative overflow-hidden grain">
+      <section className="py-24 lg:py-32 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-[#0f0b1a] via-[#131025] to-[#0d0f1a] relative overflow-hidden grain">
         {/* Decorative orb */}
-        <div className="absolute -bottom-20 -left-20 w-[400px] h-[400px] rounded-full bg-blue-400/20 blur-3xl animate-breathe pointer-events-none" />
-        <div className="absolute -top-20 -right-20 w-[300px] h-[300px] rounded-full bg-purple-300/15 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-20 -left-20 w-[400px] h-[400px] rounded-full bg-blue-600/15 blur-3xl animate-breathe pointer-events-none" />
+        <div className="absolute -top-20 -right-20 w-[300px] h-[300px] rounded-full bg-purple-500/10 blur-3xl pointer-events-none" />
 
         <motion.div
           className="max-w-3xl mx-auto text-center relative z-10"
@@ -1091,12 +994,12 @@ export default function LandingPage() {
           <h2 className="landing-h2 text-white mb-4">
             Empieza a vender más hoy
           </h2>
-          <p className="text-blue-100 text-lg mb-10 max-w-xl mx-auto">
+          <p className="text-gray-400 text-lg mb-10 max-w-xl mx-auto">
             Únete a cientos de negocios que ya usan Betsy para crecer
           </p>
           <Button 
             size="lg"
-            className="bg-white text-blue-600 hover:bg-gray-50 text-lg px-10 h-14 rounded-2xl font-semibold hover:-translate-y-0.5 shadow-elevated hover:shadow-elevated-hover transition-all duration-300"
+            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-lg px-10 h-14 rounded-2xl font-semibold hover:-translate-y-0.5 shadow-[0_0_40px_rgba(124,58,237,0.2)] hover:shadow-[0_0_50px_rgba(124,58,237,0.35)] transition-all duration-300"
             onClick={() => setIsAuthModalOpen(true)}
           >
             Crear Cuenta Gratis

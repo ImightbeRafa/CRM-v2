@@ -3,6 +3,7 @@
 import React from 'react';
 import NavigationMenu from '@/app/components/ui/HomeButtom';
 import { MobileBottomNav } from './MobileBottomNav';
+import { ThemeToggle } from './ThemeToggle';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -12,11 +13,12 @@ interface AppShellProps {
 
 export function AppShell({ children, showNav = true, className = '' }: AppShellProps) {
   return (
-    <div className={`min-h-screen bg-slate-50/50 ${className}`}>
+    <div className={`min-h-screen bg-background ${className}`}>
       {showNav && (
-        <nav className="bg-white shadow-sm border-b sticky top-0 z-10 hidden md:block">
-          <div className="container mx-auto px-4 py-3">
+        <nav className="bg-card shadow-sm border-b border-border sticky top-0 z-10 hidden md:block">
+          <div className="container mx-auto px-4 py-3 flex items-center justify-between">
             <NavigationMenu />
+            <ThemeToggle />
           </div>
         </nav>
       )}

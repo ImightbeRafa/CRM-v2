@@ -7,9 +7,9 @@ import { exportRateLimit } from '@/lib/rate-limit';
 export async function GET(request: NextRequest) {
   try {
     // Apply rate limiting
-    const rateLimitHeaders = exportRateLimit(request);
+    const rateLimitHeaders = await exportRateLimit(request);
     if (rateLimitHeaders instanceof Response) {
-      return rateLimitHeaders; // Rate limit exceeded
+      return rateLimitHeaders;
     }
     
     // Authenticate and check permissions

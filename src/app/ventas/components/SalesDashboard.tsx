@@ -105,7 +105,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
             <Card className="h-full border-t-4 border-t-emerald-400 md:border-t-0 md:border-l-4 md:border-l-green-500">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-green-100 rounded-lg">
+                  <div className="p-2 bg-green-100 dark:bg-green-950/40 rounded-lg">
                     <TrendingUp className="h-5 w-5 text-green-600" />
                   </div>
                   <div>
@@ -121,7 +121,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
             <Card className="h-full border-t-4 border-t-blue-400 md:border-t-0 md:border-l-4 md:border-l-blue-500">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 rounded-lg">
+                  <div className="p-2 bg-blue-100 dark:bg-blue-950/40 rounded-lg">
                     <Package className="h-5 w-5 text-blue-600" />
                   </div>
                   <div>
@@ -137,7 +137,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
             <Card className="h-full border-t-4 border-t-purple-400 md:border-t-0 md:border-l-4 md:border-l-purple-500">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-purple-100 rounded-lg">
+                  <div className="p-2 bg-purple-100 dark:bg-purple-950/40 rounded-lg">
                     <DollarSign className="h-5 w-5 text-purple-600" />
                   </div>
                   <div>
@@ -153,7 +153,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
             <Card className="h-full border-t-4 border-t-orange-400 md:border-t-0 md:border-l-4 md:border-l-orange-500">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-orange-100 rounded-lg">
+                  <div className="p-2 bg-orange-100 dark:bg-orange-950/40 rounded-lg">
                     <Clock className="h-5 w-5 text-orange-600" />
                   </div>
                   <div>
@@ -176,7 +176,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
             <button
               key={i}
               className={`h-1.5 rounded-full transition-all duration-200 ${
-                activeKpiCard === i ? 'w-4 bg-blue-600' : 'w-1.5 bg-gray-300'
+                activeKpiCard === i ? 'w-4 bg-blue-600' : 'w-1.5 bg-muted-foreground/30'
               }`}
               onClick={() => {
                 const el = kpiScrollRef.current;
@@ -273,7 +273,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
           <div className="hidden md:block rounded-md border overflow-hidden">
             <Table className="relative">
               <TableHeader>
-                <TableRow className="bg-slate-50">
+                <TableRow className="bg-muted">
                   <TableHead className="font-semibold">Orden</TableHead>
                   <TableHead className="font-semibold">Cliente</TableHead>
                   <TableHead className="font-semibold">Producto</TableHead>
@@ -307,7 +307,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                   </TableRow>
                 ) : (
                   filteredSales.map((sale) => (
-                    <TableRow key={sale.orderId} className="hover:bg-slate-50 transition-colors">
+                    <TableRow key={sale.orderId} className="hover:bg-muted/50 transition-colors">
                       <TableCell>
                         <div className="flex items-center gap-2 relative z-10" style={{ position: 'relative', zIndex: 10 }}>
                           <span className="relative z-10 font-mono text-sm">{sale.orderId}</span>
@@ -363,7 +363,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                           variant="ghost"
                           size="sm"
                           onClick={() => setSelectedSale(sale)}
-                          className="hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                          className="hover:bg-accent hover:text-accent-foreground transition-colors"
                         >
                           👁️ Ver
                         </Button>
@@ -397,31 +397,31 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
           {selectedSale && (
             <div className="space-y-4">
               {/* Order ID Card */}
-              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                <p className="text-xs text-blue-600 font-semibold mb-1">ID DE ORDEN</p>
-                <p className="text-lg font-mono font-bold text-blue-900">{selectedSale.orderId}</p>
+              <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                <p className="text-xs text-blue-600 dark:text-blue-400 font-semibold mb-1">ID DE ORDEN</p>
+                <p className="text-lg font-mono font-bold text-blue-900 dark:text-blue-300">{selectedSale.orderId}</p>
               </div>
 
               {/* Customer Info */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase">👤 Cliente</h4>
-                  <p className="font-medium text-gray-900">{selectedSale.customerName}</p>
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">👤 Cliente</h4>
+                  <p className="font-medium text-foreground">{selectedSale.customerName}</p>
                 </div>
                 <div className="space-y-1">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase">📞 Teléfono</h4>
-                  <p className="font-medium text-gray-900">{selectedSale.phone}</p>
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">📞 Teléfono</h4>
+                  <p className="font-medium text-foreground">{selectedSale.phone}</p>
                 </div>
                 <div className="space-y-1 col-span-2">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase">📧 Email</h4>
-                  <p className="font-medium text-gray-900">{selectedSale.email || 'No especificado'}</p>
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">📧 Email</h4>
+                  <p className="font-medium text-foreground">{selectedSale.email || 'No especificado'}</p>
                 </div>
               </div>
 
               {/* Address */}
               <div className="space-y-1">
-                <h4 className="text-xs font-semibold text-gray-500 uppercase">📍 Dirección</h4>
-                <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase">📍 Dirección</h4>
+                <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg border">
                   {selectedSale.address || 'No especificada'}
                 </p>
               </div>
@@ -429,11 +429,11 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
               {/* Product & Price */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase">📦 Producto</h4>
-                  <p className="text-sm text-gray-900">{selectedSale.product}</p>
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">📦 Producto</h4>
+                  <p className="text-sm text-foreground">{selectedSale.product}</p>
                 </div>
                 <div className="space-y-1">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase">💰 Total</h4>
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">💰 Total</h4>
                   <p className="text-2xl font-bold text-green-600">₡{selectedSale.total.toLocaleString()}</p>
                 </div>
               </div>
@@ -441,7 +441,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
               {/* Status & Time */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase">📊 Estado</h4>
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">📊 Estado</h4>
                   <Badge 
                     variant={
                       selectedSale.status === 'Pendiente' ? 'warning' :
@@ -454,8 +454,8 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                   </Badge>
                 </div>
                 <div className="space-y-1">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase">🕐 Creada</h4>
-                  <p className="text-sm text-gray-700">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">🕐 Creada</h4>
+                  <p className="text-sm text-muted-foreground">
                     {(() => {
                       const date = new Date(selectedSale.timestamp);
                       return isNaN(date.getTime())

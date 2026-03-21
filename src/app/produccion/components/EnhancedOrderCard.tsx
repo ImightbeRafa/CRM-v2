@@ -1,6 +1,5 @@
 "use client";
 import React, { useState } from 'react';
-import { Card, CardContent, CardHeader } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Checkbox } from "@/app/components/ui/checkbox";
@@ -15,15 +14,12 @@ import {
   Truck,
   Eye,
   Edit,
-  AlertCircle,
   CheckCircle,
   Truck as TruckIcon,
   Printer,
-  AlertTriangle,
+  AlertCircle,
   Banknote
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { es } from 'date-fns/locale';
 
 interface EnhancedOrderCardProps {
   order: Sale;
@@ -67,16 +63,12 @@ export function EnhancedOrderCard({
   };
 
   const getStatusInfo = (status: string) => {
-    // First, try to find the status in the configured statuses with custom colors
     const configuredStatus = availableStatuses.find(s => s.label === status);
 
     if (configuredStatus && configuredStatus.color) {
-      // Check if color is a hex value or a Tailwind class
       const isHexColor = configuredStatus.color.startsWith('#');
 
       if (isHexColor) {
-        // For hex colors, use inline styles with proper contrast
-        // Calculate text color based on brightness
         const hex = configuredStatus.color.replace('#', '');
         const r = parseInt(hex.substr(0, 2), 16);
         const g = parseInt(hex.substr(2, 2), 16);
@@ -87,15 +79,16 @@ export function EnhancedOrderCard({
         return {
           color: `border-transparent ${textColor}`,
           colorStyle: { backgroundColor: configuredStatus.color },
+          hexColor: configuredStatus.color,
           icon: <Clock className="h-3 w-3" />,
           label: configuredStatus.label,
           priority: 'medium' as const
         };
       } else {
-        // For Tailwind classes, use as is
         return {
           color: `${configuredStatus.color} text-white border-transparent`,
           colorStyle: undefined,
+          hexColor: undefined,
           icon: <Clock className="h-3 w-3" />,
           label: configuredStatus.label,
           priority: 'medium' as const
@@ -103,58 +96,66 @@ export function EnhancedOrderCard({
       }
     }
 
-    // Fallback to hardcoded colors if status not configured
     const statusMap: Record<string, {
       color: string;
       colorStyle?: React.CSSProperties;
+      hexColor: string;
       icon: React.ReactNode;
       label: string;
       priority: 'low' | 'medium' | 'high' | 'urgent';
     }> = {
       'Pendiente': {
-        color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+        color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/20',
+        hexColor: '#eab308',
         icon: <Clock className="h-3 w-3" />,
         label: 'Pendiente',
         priority: 'high'
       },
       'En Proceso': {
-        color: 'bg-blue-100 text-blue-800 border-blue-200',
+        color: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
+        hexColor: '#3b82f6',
         icon: <Package className="h-3 w-3" />,
         label: 'En Proceso',
         priority: 'medium'
       },
       'Completado': {
-        color: 'bg-green-100 text-green-800 border-green-200',
+        color: 'bg-green-500/15 text-green-400 border-green-500/20',
+        hexColor: '#22c55e',
         icon: <CheckCircle className="h-3 w-3" />,
         label: 'Completado',
         priority: 'low'
       },
       'Enviado': {
-        color: 'bg-purple-100 text-purple-800 border-purple-200',
+        color: 'bg-purple-500/15 text-purple-400 border-purple-500/20',
+        hexColor: '#a855f7',
         icon: <Truck className="h-3 w-3" />,
         label: 'Enviado',
         priority: 'low'
       },
       'Entregado': {
-        color: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+        color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20',
+        hexColor: '#10b981',
         icon: <CheckCircle className="h-3 w-3" />,
         label: 'Entregado',
         priority: 'low'
       },
       'Drive': {
-        color: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+        color: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/20',
+        hexColor: '#6366f1',
         icon: <TruckIcon className="h-3 w-3" />,
         label: 'Drive',
         priority: 'medium'
       },
       'Impreso': {
-        color: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+        color: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/20',
+        hexColor: '#06b6d4',
         icon: <Printer className="h-3 w-3" />,
         label: 'Impreso',
         priority: 'medium'
       },
       'PendienteDiseño': {
-        color: 'bg-orange-100 text-orange-800 border-orange-200',
+        color: 'bg-orange-500/15 text-orange-400 border-orange-500/20',
+        hexColor: '#f97316',
         icon: <AlertCircle className="h-3 w-3" />,
         label: 'Pendiente Diseño',
         priority: 'urgent'
@@ -162,57 +163,12 @@ export function EnhancedOrderCard({
     };
 
     return statusMap[status] || {
-      color: 'bg-gray-100 text-gray-800 border-gray-200',
+      color: 'bg-gray-500/15 text-gray-400 border-gray-500/20',
+      hexColor: '#6b7280',
       icon: <Clock className="h-3 w-3" />,
       label: status,
       priority: 'low'
     };
-  };
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'urgent': return 'border-red-300 bg-red-50';
-      case 'high': return 'border-orange-300 bg-orange-50';
-      case 'medium': return 'border-blue-300 bg-blue-50';
-      case 'low': return 'border-gray-300 bg-gray-50';
-      default: return 'border-gray-300 bg-gray-50';
-    }
-  };
-
-  // Get a subtle background haze color based on the status
-  // Using full class names so Tailwind includes them in the build
-  const getStatusBackgroundHaze = (statusColor: string) => {
-    // Map of status colors to their subtle background variants
-    // Using 50% opacity for better color differentiation
-    const colorHazeMap: Record<string, string> = {
-      'bg-blue-500': 'bg-blue-50/50 border-blue-200',
-      'bg-green-500': 'bg-green-50/50 border-green-200',
-      'bg-yellow-500': 'bg-yellow-50/50 border-yellow-200',
-      'bg-orange-500': 'bg-orange-50/50 border-orange-200',
-      'bg-red-500': 'bg-red-50/50 border-red-200',
-      'bg-purple-500': 'bg-purple-50/50 border-purple-200',
-      'bg-pink-500': 'bg-pink-50/50 border-pink-200',
-      'bg-indigo-500': 'bg-indigo-50/50 border-indigo-200',
-      'bg-cyan-500': 'bg-cyan-50/50 border-cyan-200',
-      'bg-gray-500': 'bg-gray-50/50 border-gray-200',
-      'bg-emerald-500': 'bg-emerald-50/50 border-emerald-200',
-      'bg-lime-500': 'bg-lime-50/50 border-lime-200',
-      'bg-teal-500': 'bg-teal-50/50 border-teal-200',
-      'bg-sky-500': 'bg-sky-50/50 border-sky-200',
-      'bg-violet-500': 'bg-violet-50/50 border-violet-200',
-      'bg-fuchsia-500': 'bg-fuchsia-50/50 border-fuchsia-200',
-      'bg-rose-500': 'bg-rose-50/50 border-rose-200',
-      'bg-amber-500': 'bg-amber-50/50 border-amber-200',
-    };
-
-    // Extract the main color class (e.g., "bg-blue-500 text-white" -> "bg-blue-500")
-    const colorMatch = statusColor.match(/bg-\w+-\d+/);
-    if (colorMatch && colorHazeMap[colorMatch[0]]) {
-      return colorHazeMap[colorMatch[0]];
-    }
-
-    // Fallback for unknown colors
-    return 'bg-gray-50/50 border-gray-200';
   };
 
   const getOrderAge = () => {
@@ -220,15 +176,15 @@ export function EnhancedOrderCard({
     const now = new Date();
     const diffInHours = (now.getTime() - orderDate.getTime()) / (1000 * 60 * 60);
 
-    if (diffInHours < 1) return { label: 'Recién creado', color: 'text-green-600' };
-    if (diffInHours < 24) return { label: `${Math.floor(diffInHours)}h`, color: 'text-blue-600' };
-    if (diffInHours < 48) return { label: `${Math.floor(diffInHours / 24)}d`, color: 'text-orange-600' };
-    return { label: `${Math.floor(diffInHours / 24)}d`, color: 'text-red-600' };
+    if (diffInHours < 1) return { label: 'Recién creado', color: 'text-emerald-400' };
+    if (diffInHours < 24) return { label: `${Math.floor(diffInHours)}h`, color: 'text-blue-400' };
+    if (diffInHours < 48) return { label: `${Math.floor(diffInHours / 24)}d`, color: 'text-orange-400' };
+    return { label: `${Math.floor(diffInHours / 24)}d`, color: 'text-red-400' };
   };
 
   const statusInfo = getStatusInfo(order.status);
   const orderAge = getOrderAge();
-  const statusBackgroundHaze = getStatusBackgroundHaze(statusInfo.color);
+  const accentColor = statusInfo.hexColor || '#6b7280';
 
   const handleStatusChange = async (newStatus: string) => {
     if (newStatus === order.status) return;
@@ -244,94 +200,111 @@ export function EnhancedOrderCard({
   };
 
   return (
-    <Card className={`transition-all duration-200 hover:shadow-lg cursor-pointer ${
-      isSelected
-        ? 'ring-2 ring-blue-500 bg-blue-100/50'
-        : order.contraEntrega
-          ? 'border-2 border-amber-300 bg-amber-50/60'
-          : statusBackgroundHaze
-      }`}>
-      <CardHeader className="pb-3">
+    <div
+      className={`
+        relative overflow-hidden rounded-xl
+        glass-card shadow-premium
+        transition-all duration-200 ease-out cursor-pointer group
+        hover:shadow-premium-hover hover:-translate-y-0.5
+        ${isSelected
+          ? 'ring-1 ring-blue-400/40 shadow-[0_0_20px_rgba(59,130,246,0.1)]'
+          : order.contraEntrega
+            ? 'ring-1 ring-amber-500/20'
+            : ''
+        }
+      `}
+    >
+      {/* Left accent bar */}
+      <div
+        className="absolute top-0 left-0 bottom-0 w-[3px]"
+        style={{ background: `linear-gradient(180deg, ${accentColor}, ${accentColor}44)` }}
+      />
+
+      {/* Header */}
+      <div className="px-4 pl-5 pt-4 pb-3">
         <div className="flex items-start justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <Checkbox
               checked={isSelected}
               onCheckedChange={() => onToggleSelection(order.orderId)}
-              className="mr-2"
+              className="border-white/20 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
             />
             <div>
-              <h3 className="font-semibold text-sm">#{order.orderId}</h3>
-              <p className="text-xs text-gray-500">{orderAge.label}</p>
+              <h3 className="font-semibold text-sm tracking-tight">#{order.orderId}</h3>
+              <p className={`text-[11px] font-medium ${orderAge.color}`}>{orderAge.label}</p>
             </div>
           </div>
 
-          <div className="flex flex-col items-end gap-1">
+          <div className="flex flex-col items-end gap-1.5">
             <Badge
-              className={`${statusInfo.color} border flex items-center gap-1`}
+              className={`${statusInfo.color} border flex items-center gap-1 text-[11px] px-2 py-0.5 font-medium`}
               style={statusInfo.colorStyle}
             >
               {statusInfo.icon}
               {statusInfo.label}
             </Badge>
             {order.contraEntrega && (
-              <Badge className="bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 text-[10px]">
+              <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1 text-[10px] font-medium">
                 <Banknote className="h-3 w-3" />
                 CONTRA ENTREGA
               </Badge>
             )}
           </div>
         </div>
-      </CardHeader>
+      </div>
 
-      <CardContent className="space-y-3">
+      <div className="px-4 pl-5 pb-4 space-y-3">
         {/* Customer Info */}
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <div className="flex items-center gap-2 text-sm">
-            <User className="h-3 w-3 text-gray-500" />
-            <span className="font-medium">{order.customerName}</span>
+            <User className="h-3.5 w-3.5 text-muted-foreground/50" />
+            <span className="font-medium text-foreground">{order.customerName}</span>
           </div>
 
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <Phone className="h-3 w-3" />
+          <div className="flex items-center gap-2 text-sm text-muted-foreground/70">
+            <Phone className="h-3.5 w-3.5 text-muted-foreground/40" />
             <span>{order.phone}</span>
           </div>
 
           {order.email && (
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <span className="text-xs">Email:</span>
-              <span className="text-xs">{order.email}</span>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
+              <span>Email:</span>
+              <span>{order.email}</span>
             </div>
           )}
 
           {order.business && (
-            <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+            <div className="text-xs text-muted-foreground/60 bg-white/[0.03] px-2.5 py-1.5 rounded-lg border border-white/[0.04]">
               {order.business}
             </div>
           )}
         </div>
 
+        {/* Divider */}
+        <div className="border-t border-white/[0.04]" />
+
         {/* Product Info */}
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <div className="flex items-center gap-2 text-sm">
-            <Package className="h-3 w-3 text-gray-500" />
-            <span className="font-medium">{order.product}</span>
+            <Package className="h-3.5 w-3.5 text-muted-foreground/50" />
+            <span className="font-medium text-foreground">{order.product}</span>
           </div>
 
-          <div className="flex items-center gap-4 text-xs text-gray-600">
+          <div className="flex items-center gap-4 text-xs text-muted-foreground/60">
             <span>Cant: {order.quantity}</span>
             {order.size && <span>Talla: {order.size}</span>}
             {order.color && <span>Color: {order.color}</span>}
           </div>
 
           {order.packaging && (
-            <div className="flex items-center gap-2 text-xs text-gray-600">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
               <span>Empaque:</span>
               <span>{order.packaging}</span>
             </div>
           )}
 
           {order.customization && (
-            <div className="flex items-center gap-2 text-xs text-gray-600">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
               <span>Personalización:</span>
               <span>{order.customization}</span>
             </div>
@@ -340,9 +313,9 @@ export function EnhancedOrderCard({
 
         {/* Delivery Status */}
         {order.delivery && (
-          <div className="flex items-center gap-2 text-xs text-gray-600">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
             <span className="font-medium">Delivery:</span>
-            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+            <span className="bg-blue-500/10 text-blue-400 border border-blue-500/15 px-2 py-0.5 rounded-md text-[11px]">
               {order.delivery}
             </span>
           </div>
@@ -350,36 +323,39 @@ export function EnhancedOrderCard({
 
         {/* Location Info (for EA orders) */}
         {order.orderType === 'EA' && (
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <MapPin className="h-3 w-3" />
-              <span className="text-xs">
-                {(order as any).province && (order as any).canton
-                  ? `${(order as any).province}, ${(order as any).canton}`
-                  : 'Ubicación no especificada'
-                }
-              </span>
+          <>
+            <div className="border-t border-white/[0.04]" />
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground/70">
+                <MapPin className="h-3.5 w-3.5 text-muted-foreground/40" />
+                <span className="text-xs">
+                  {(order as any).province && (order as any).canton
+                    ? `${(order as any).province}, ${(order as any).canton}`
+                    : 'Ubicación no especificada'
+                  }
+                </span>
+              </div>
+              {(order as any).address && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground/60 pl-5">
+                  <span>Dirección:</span>
+                  <span>{(order as any).address}</span>
+                </div>
+              )}
+              {(order as any).district && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground/60 pl-5">
+                  <span>Distrito:</span>
+                  <span>{(order as any).district}</span>
+                </div>
+              )}
             </div>
-            {(order as any).address && (
-              <div className="flex items-center gap-2 text-xs text-gray-600">
-                <span>Dirección:</span>
-                <span>{(order as any).address}</span>
-              </div>
-            )}
-            {(order as any).district && (
-              <div className="flex items-center gap-2 text-xs text-gray-600">
-                <span>Distrito:</span>
-                <span>{(order as any).district}</span>
-              </div>
-            )}
-          </div>
+          </>
         )}
 
         {/* Sales Channel */}
         {(order as any).funnel && (
-          <div className="flex items-center gap-2 text-xs text-gray-600">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
             <span className="font-medium">Canal:</span>
-            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+            <span className="bg-blue-500/10 text-blue-400 border border-blue-500/15 px-2 py-0.5 rounded-md text-[11px]">
               {(order as any).funnel}
             </span>
           </div>
@@ -387,15 +363,15 @@ export function EnhancedOrderCard({
 
         {/* Seller */}
         {(order as any).seller && (
-          <div className="flex items-center gap-2 text-xs text-gray-600">
-            <User className="h-3 w-3" />
+          <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
+            <User className="h-3 w-3 text-muted-foreground/40" />
             <span>Vendedor: {(order as any).seller}</span>
           </div>
         )}
 
         {/* Username */}
         {order.username && (
-          <div className="flex items-center gap-2 text-xs text-gray-600">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
             <span className="font-medium">Usuario:</span>
             <span>{order.username}</span>
           </div>
@@ -404,22 +380,22 @@ export function EnhancedOrderCard({
         {/* Dates */}
         <div className="space-y-1">
           {order.orderType === 'EA' && (order as any).expectedDate && (
-            <div className="flex items-center gap-2 text-xs text-gray-600">
-              <Calendar className="h-3 w-3" />
+            <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
+              <Calendar className="h-3 w-3 text-muted-foreground/40" />
               <span>Esperado: {(order as any).expectedDate}</span>
             </div>
           )}
 
           {order.orderType === 'RA' && (order as any).agreedDate && (
-            <div className="flex items-center gap-2 text-xs text-gray-600">
-              <Calendar className="h-3 w-3" />
+            <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
+              <Calendar className="h-3 w-3 text-muted-foreground/40" />
               <span>Acordado: {(order as any).agreedDate}</span>
             </div>
           )}
 
           {(order as any).saleDate && (
-            <div className="flex items-center gap-2 text-xs text-gray-600">
-              <Calendar className="h-3 w-3" />
+            <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
+              <Calendar className="h-3 w-3 text-muted-foreground/40" />
               <span>Fecha de Venta: {new Date((order as any).saleDate).toLocaleDateString()}</span>
             </div>
           )}
@@ -427,49 +403,64 @@ export function EnhancedOrderCard({
 
         {/* Courier Info (for EA orders) */}
         {order.orderType === 'EA' && (order as any).courier && (
-          <div className="flex items-center gap-2 text-xs text-gray-600">
-            <Truck className="h-3 w-3" />
+          <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
+            <Truck className="h-3 w-3 text-muted-foreground/40" />
             <span>Mensajería: {(order as any).courier}</span>
           </div>
         )}
 
+        {/* Divider */}
+        <div className="border-t border-white/[0.04]" />
+
         {/* Cost Breakdown */}
-        <div className="space-y-1 text-xs">
+        <div className="space-y-1 text-xs tabular-nums">
           {(order as any).productCost && (
             <div className="flex items-center justify-between">
-              <span>Costo Producto:</span>
-              <span className="text-gray-600">₡{Number((order as any).productCost).toLocaleString()}</span>
+              <span className="text-muted-foreground/50">Costo Producto:</span>
+              <span className="text-muted-foreground/70">₡{Number((order as any).productCost).toLocaleString()}</span>
             </div>
           )}
           {(order as any).shippingCost && (
             <div className="flex items-center justify-between">
-              <span>Envío:</span>
-              <span className="text-gray-600">₡{Number((order as any).shippingCost).toLocaleString()}</span>
+              <span className="text-muted-foreground/50">Envío:</span>
+              <span className="text-muted-foreground/70">₡{Number((order as any).shippingCost).toLocaleString()}</span>
             </div>
           )}
           {(order as any).iva && (
             <div className="flex items-center justify-between">
-              <span>IVA:</span>
-              <span className="text-gray-600">₡{Number((order as any).iva).toLocaleString()}</span>
+              <span className="text-muted-foreground/50">IVA:</span>
+              <span className="text-muted-foreground/70">₡{Number((order as any).iva).toLocaleString()}</span>
             </div>
           )}
         </div>
 
         {/* Total */}
-        <div className="flex items-center justify-between text-sm font-medium border-t pt-2">
-          <span>Total:</span>
-          <span className={order.contraEntrega && !order.cePaymentConfirmed ? 'text-amber-600' : 'text-green-600'}>
+        <div className="flex items-center justify-between rounded-lg bg-white/[0.03] border border-white/[0.04] px-3 py-2.5">
+          <span className="text-sm font-medium text-muted-foreground/70">Total:</span>
+          <span className={`text-base font-bold tabular-nums tracking-tight ${
+            order.contraEntrega && !order.cePaymentConfirmed
+              ? 'text-amber-400'
+              : 'text-emerald-400'
+          }`}>
             ₡{order.total.toLocaleString()}
           </span>
         </div>
 
         {/* Contra Entrega Payment Status */}
         {order.contraEntrega && (
-          <div className={`rounded-md p-2 ${order.cePaymentConfirmed ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
+          <div className={`rounded-lg p-2.5 ${
+            order.cePaymentConfirmed
+              ? 'bg-emerald-500/8 border border-emerald-500/15'
+              : 'bg-amber-500/8 border border-amber-500/15'
+          }`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
-                <Banknote className={`h-3.5 w-3.5 ${order.cePaymentConfirmed ? 'text-green-600' : 'text-amber-600'}`} />
-                <span className={`text-xs font-semibold ${order.cePaymentConfirmed ? 'text-green-700' : 'text-amber-700'}`}>
+                <Banknote className={`h-3.5 w-3.5 ${
+                  order.cePaymentConfirmed ? 'text-emerald-400' : 'text-amber-400'
+                }`} />
+                <span className={`text-xs font-semibold ${
+                  order.cePaymentConfirmed ? 'text-emerald-400' : 'text-amber-400'
+                }`}>
                   {order.cePaymentConfirmed ? '✓ Pago Confirmado' : 'Pendiente de Cobro'}
                 </span>
               </div>
@@ -477,7 +468,7 @@ export function EnhancedOrderCard({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-6 text-[10px] px-2 bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200"
+                  className="h-6 text-[10px] px-2.5 bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20 hover:border-amber-500/30"
                   onClick={(e) => { e.stopPropagation(); handleConfirmPayment(); }}
                   disabled={isConfirmingPayment}
                 >
@@ -490,7 +481,6 @@ export function EnhancedOrderCard({
 
         {/* Custom Fields (ProductField + BusinessInfo) */}
         {(() => {
-          // Parse order.customFields JSON
           let cfData: Record<string, any> = {};
           try {
             const raw = (order as any).customFields;
@@ -499,7 +489,6 @@ export function EnhancedOrderCard({
 
           if (Object.keys(cfData).length === 0) return null;
 
-          // Build labels from configs
           const labelMap: Record<string, string> = {};
           businessInfoFields.forEach((f: any) => {
             if (f?.name) labelMap[f.name] = f.label || f.name;
@@ -515,52 +504,57 @@ export function EnhancedOrderCard({
           if (entries.length === 0) return null;
 
           return (
-            <div className="space-y-1 text-xs border-t pt-2">
-              {entries.map(([key, value]) => (
-                <div key={`custom-${key}`} className="flex items-start gap-2 text-gray-600">
-                  <span className="font-medium">{labelMap[key] || key}:</span>
-                  <span className="break-words">{typeof value === 'number' ? value.toLocaleString() : String(value)}</span>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="border-t border-white/[0.04]" />
+              <div className="space-y-1 text-xs">
+                {entries.map(([key, value]) => (
+                  <div key={`custom-${key}`} className="flex items-start gap-2 text-muted-foreground/60">
+                    <span className="font-medium">{labelMap[key] || key}:</span>
+                    <span className="break-words">{typeof value === 'number' ? value.toLocaleString() : String(value)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
           );
         })()}
 
         {/* Comments */}
         {order.comments && (
-          <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
-            <span className="font-medium">Comentarios:</span>
-            <p className="mt-1">{order.comments}</p>
+          <div className="text-xs text-muted-foreground/60 bg-white/[0.02] p-2.5 rounded-lg border-l-2 border-white/[0.06]">
+            <span className="font-medium text-muted-foreground/70">Comentarios:</span>
+            <p className="mt-1 leading-relaxed">{order.comments}</p>
           </div>
         )}
 
         {/* Action Buttons */}
-        <div className="flex gap-2 pt-2 border-t">
+        <div className="flex gap-2 pt-1">
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => onSelectOrder(order)}
-            className="flex-1"
+            className="flex-1 h-8 text-xs bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.04] hover:border-white/[0.08] rounded-lg transition-all"
           >
-            <Eye className="h-3 w-3 mr-1" />
+            <Eye className="h-3 w-3 mr-1.5" />
             Ver
           </Button>
 
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => onSelectOrder(order)}
-            className="flex-1"
+            className="flex-1 h-8 text-xs bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.04] hover:border-white/[0.08] rounded-lg transition-all"
           >
-            <Edit className="h-3 w-3 mr-1" />
+            <Edit className="h-3 w-3 mr-1.5" />
             Editar
           </Button>
         </div>
 
         {/* Quick Status Update */}
-        <div className="pt-2 border-t">
+        <div className="pt-1">
           <select
-            className="w-full text-xs rounded border border-gray-300 px-2 py-1 bg-white"
+            className="w-full text-xs rounded-lg border border-white/[0.06] bg-white/[0.03] px-2.5 py-1.5 text-foreground
+              focus:outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500/30
+              transition-colors appearance-none cursor-pointer"
             value={order.status}
             onChange={(e) => handleStatusChange(e.target.value)}
             disabled={isUpdating}
@@ -573,7 +567,7 @@ export function EnhancedOrderCard({
             }
           </select>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

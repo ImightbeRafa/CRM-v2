@@ -4,9 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   DndContext,
   closestCenter,
-  closestCorners,
   pointerWithin,
-  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -14,24 +12,18 @@ import {
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
-  DragOverEvent,
   CollisionDetection,
 } from '@dnd-kit/core';
 import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
   horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { Sale } from '../types/sales';
-import { Card } from '@/app/components/ui/card';
-import { Badge } from '@/app/components/ui/badge';
-import { Button } from '@/app/components/ui/button';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard } from './KanbanCard';
 import { useToast } from '@/app/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
 
 interface KanbanBoardProps {
   orders: Sale[];
@@ -518,36 +510,38 @@ function KanbanBoardComponent({ orders, statuses: statusesProp, onOrderUpdate, o
 
   const activeOrder = activeId ? orders.find(o => o.orderId === activeId) : null;
 
-  // Show loading state while deferred or loading statuses
+  // Skeleton shimmer for loading state
   if (!isRendered || loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-          <p className="text-sm text-gray-500">
-            {!isRendered ? 'Preparando tablero...' : 'Cargando estados...'}
-          </p>
-        </div>
+      <div className="flex gap-4 overflow-hidden px-1 py-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="flex-shrink-0 w-[310px]">
+            <div className="rounded-xl glass-column overflow-hidden">
+              <div className="h-[2px] shimmer" />
+              <div className="px-4 py-3.5 border-b border-white/[0.04]">
+                <div className="flex items-center justify-between">
+                  <div className="h-4 w-24 rounded shimmer" />
+                  <div className="h-6 w-6 rounded-full shimmer" />
+                </div>
+              </div>
+              <div className="p-3 space-y-2.5">
+                {Array.from({ length: i === 0 ? 3 : 1 }).map((_, j) => (
+                  <div key={j} className="rounded-xl glass-card p-3.5 space-y-2">
+                    <div className="h-3 w-20 rounded shimmer" />
+                    <div className="h-3 w-32 rounded shimmer" />
+                    <div className="h-3 w-24 rounded shimmer" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
 
   return (
     <div className="relative">
-      {/* Panning indicator */}
-      {!isPanning && !activeId && (
-        <div className="absolute top-2 right-2 z-10 bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-medium opacity-0 hover:opacity-100 transition-opacity duration-200 pointer-events-none shadow-sm">
-          ← → Arrastra para navegar
-        </div>
-      )}
-      
-      {/* Panning active indicator */}
-      {isPanning && (
-        <div className="absolute top-2 left-1/2 transform -translate-x-1/2 z-10 bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-medium shadow-lg">
-          Navegando...
-        </div>
-      )}
-      
       <DndContext
         sensors={sensors}
         collisionDetection={customCollisionDetection}
@@ -557,13 +551,12 @@ function KanbanBoardComponent({ orders, statuses: statusesProp, onOrderUpdate, o
       >
         <div 
           ref={setBoardRef}
-          className={`flex gap-4 overflow-x-auto pb-4 px-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 ${
-            isPanning ? 'cursor-grabbing' : 'cursor-grab'
-          } select-none transition-all duration-200 ${
-            isPanning ? 'shadow-xl bg-blue-50/30' : 'hover:shadow-lg hover:bg-gray-50/50'
-          } rounded-lg border-2 border-dashed border-transparent hover:border-blue-200 ${
-            isPanning ? 'border-blue-300 bg-blue-50/50' : ''
-          }`}
+          className={`
+            flex gap-4 overflow-x-auto pb-4 px-1
+            scrollbar-thin
+            ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}
+            select-none rounded-xl
+          `}
           onMouseDown={handlePanStart}
           onMouseMove={handlePanMove}
           onMouseUp={handlePanEnd}
@@ -589,9 +582,12 @@ function KanbanBoardComponent({ orders, statuses: statusesProp, onOrderUpdate, o
         </SortableContext>
         </div>
 
-        <DragOverlay>
+        <DragOverlay dropAnimation={{
+          duration: 200,
+          easing: 'cubic-bezier(0.2, 0, 0, 1)',
+        }}>
           {activeOrder ? (
-            <div className="opacity-80">
+            <div className="opacity-90 scale-[1.02]">
               <KanbanCard 
                 order={activeOrder} 
                 onClick={() => {}} 
@@ -599,7 +595,7 @@ function KanbanBoardComponent({ orders, statuses: statusesProp, onOrderUpdate, o
               />
             </div>
           ) : isDraggingColumn && activeId ? (
-            <div className="opacity-80">
+            <div className="opacity-85 scale-[1.01]">
               <KanbanColumn
                 status={statuses.find(s => s.label === activeId)!}
                 orders={[]}

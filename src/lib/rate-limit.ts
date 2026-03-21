@@ -1,8 +1,29 @@
-/**
- * Simple in-memory rate limiter for development/testing.
- * In production, use Vercel KV or Upstash Redis for distributed rate limiting.
- */
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
 
+const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+
+const hasRedis = !!(redisUrl && redisToken);
+
+let redis: Redis | null = null;
+if (hasRedis) {
+  redis = new Redis({ url: redisUrl!, token: redisToken! });
+}
+
+function createRedisLimiter(config: { prefix: string; maxRequests: number; windowMs: number }) {
+  if (!redis) return null;
+
+  const windowSec = Math.ceil(config.windowMs / 1000);
+  return new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(config.maxRequests, `${windowSec} s`),
+    prefix: `ratelimit:${config.prefix}`,
+    analytics: false,
+  });
+}
+
+// --- In-memory fallback for local dev without Redis ---
 interface RateLimitEntry {
   count: number;
   resetTime: number;
@@ -10,121 +31,128 @@ interface RateLimitEntry {
 
 const memoryStore = new Map<string, RateLimitEntry>();
 
-/**
- * Rate limit configuration
- */
-interface RateLimitConfig {
-  windowMs: number; // Time window in milliseconds
-  maxRequests: number; // Max requests per window
-  identifier?: string; // Optional identifier override
+function memoryRateLimit(
+  identifier: string,
+  config: { maxRequests: number; windowMs: number; prefix?: string }
+): { allowed: boolean; headers: Record<string, string> } {
+  const now = Date.now();
+  const key = config.prefix ? `${config.prefix}:${identifier}` : identifier;
+
+  const entry = memoryStore.get(key);
+  if (!entry || now > entry.resetTime) {
+    memoryStore.set(key, { count: 1, resetTime: now + config.windowMs });
+    return {
+      allowed: true,
+      headers: {
+        'X-RateLimit-Limit': config.maxRequests.toString(),
+        'X-RateLimit-Remaining': (config.maxRequests - 1).toString(),
+        'X-RateLimit-Reset': Math.ceil((now + config.windowMs) / 1000).toString(),
+      },
+    };
+  }
+
+  entry.count++;
+  const remaining = Math.max(0, config.maxRequests - entry.count);
+  return {
+    allowed: entry.count <= config.maxRequests,
+    headers: {
+      'X-RateLimit-Limit': config.maxRequests.toString(),
+      'X-RateLimit-Remaining': remaining.toString(),
+      'X-RateLimit-Reset': Math.ceil(entry.resetTime / 1000).toString(),
+    },
+  };
 }
 
-/**
- * Check if a request should be rate limited
- * @param identifier Unique identifier (IP address, user ID, etc.)
- * @param config Rate limit configuration
- * @returns Object with allowed status and headers
- */
+// --- Unified rate limit function ---
+
+interface RateLimitConfig {
+  windowMs: number;
+  maxRequests: number;
+  identifier?: string;
+}
+
 export function rateLimit(
   identifier: string,
   config: RateLimitConfig
 ): { allowed: boolean; headers: Record<string, string> } {
-  const now = Date.now();
-  const key = config.identifier ? `${config.identifier}:${identifier}` : identifier;
-  
-  // Clean up expired entries
-  for (const [k, entry] of memoryStore.entries()) {
-    if (now > entry.resetTime) {
-      memoryStore.delete(k);
-    }
-  }
-  
-  // Get or create entry
-  let entry = memoryStore.get(key);
-  if (!entry || now > entry.resetTime) {
-    entry = { count: 0, resetTime: now + config.windowMs };
-    memoryStore.set(key, entry);
-  }
-  
-  // Increment counter
-  entry.count++;
-  
-  // Calculate remaining requests and reset time
-  const remaining = Math.max(0, config.maxRequests - entry.count);
-  const resetTime = Math.ceil(entry.resetTime / 1000);
-  
-  const headers = {
-    'X-RateLimit-Limit': config.maxRequests.toString(),
-    'X-RateLimit-Remaining': remaining.toString(),
-    'X-RateLimit-Reset': resetTime.toString(),
-  };
-  
-  // Check if exceeded
-  const allowed = entry.count <= config.maxRequests;
-  
-  return { allowed, headers };
+  const prefix = config.identifier || 'general';
+  return memoryRateLimit(identifier, { ...config, prefix });
 }
 
-/**
- * Extract client IP from request
- */
+// --- Async rate limit using Redis when available ---
+
+async function rateLimitAsync(
+  identifier: string,
+  limiter: Ratelimit | null,
+  fallbackConfig: { maxRequests: number; windowMs: number; prefix: string }
+): Promise<{ allowed: boolean; headers: Record<string, string> }> {
+  if (limiter) {
+    try {
+      const result = await limiter.limit(identifier);
+      return {
+        allowed: result.success,
+        headers: {
+          'X-RateLimit-Limit': result.limit.toString(),
+          'X-RateLimit-Remaining': result.remaining.toString(),
+          'X-RateLimit-Reset': Math.ceil(result.reset / 1000).toString(),
+        },
+      };
+    } catch {
+      // Redis unavailable -- fall through to in-memory
+    }
+  }
+  return memoryRateLimit(identifier, fallbackConfig);
+}
+
+// --- Pre-configured limiters ---
+
+const authRedisLimiter = createRedisLimiter({ prefix: 'auth', maxRequests: 5, windowMs: 15 * 60 * 1000 });
+const generalRedisLimiter = createRedisLimiter({ prefix: 'general', maxRequests: 100, windowMs: 15 * 60 * 1000 });
+const exportRedisLimiter = createRedisLimiter({ prefix: 'export', maxRequests: 10, windowMs: 60 * 60 * 1000 });
+
 export function getClientIP(request: Request): string {
-  // Try various headers for real IP
   const forwarded = request.headers.get('x-forwarded-for');
   const realIP = request.headers.get('x-real-ip');
-  const cfConnectingIP = request.headers.get('cf-connecting-ip'); // Cloudflare
-  
-  if (forwarded) {
-    return forwarded.split(',')[0].trim();
-  }
-  
-  if (realIP) {
-    return realIP.trim();
-  }
-  
-  if (cfConnectingIP) {
-    return cfConnectingIP.trim();
-  }
-  
-  // Fallback to a default
+  const cfConnectingIP = request.headers.get('cf-connecting-ip');
+
+  if (forwarded) return forwarded.split(',')[0].trim();
+  if (realIP) return realIP.trim();
+  if (cfConnectingIP) return cfConnectingIP.trim();
   return 'unknown';
 }
 
-/**
- * Rate limit middleware for API routes
- */
 export function createRateLimit(config: RateLimitConfig) {
-  return (request: Request, response?: Response) => {
-    const identifier = getClientIP(request);
-    const result = rateLimit(identifier, config);
-    
+  const prefix = config.identifier || 'custom';
+  const redisLimiter = createRedisLimiter({ prefix, ...config });
+
+  return async (request: Request) => {
+    const ip = getClientIP(request);
+    const result = await rateLimitAsync(ip, redisLimiter, { ...config, prefix });
+
     if (!result.allowed) {
       return Response.json(
         { error: 'Too many requests' },
-        { 
-          status: 429,
-          headers: result.headers
-        }
+        { status: 429, headers: result.headers }
       );
     }
-    
-    // Return headers to be added to successful response
     return result.headers;
   };
 }
 
-// Pre-configured rate limiters
 export const authRateLimit = createRateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  maxRequests: 5, // 5 attempts per 15 minutes
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 5,
+  identifier: 'auth',
 });
 
 export const generalRateLimit = createRateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  maxRequests: 100, // 100 requests per 15 minutes
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 100,
+  identifier: 'general',
 });
 
 export const exportRateLimit = createRateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  maxRequests: 10, // 10 exports per hour
+  windowMs: 60 * 60 * 1000,
+  maxRequests: 10,
+  identifier: 'export',
 });

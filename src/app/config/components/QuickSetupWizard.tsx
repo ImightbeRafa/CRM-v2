@@ -232,7 +232,7 @@ export function QuickSetupWizard({ onComplete }: { onComplete: () => void }) {
       <Card className="overflow-hidden">
         <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-600 text-white">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-white bg-opacity-20 rounded-xl">
+            <div className="p-3 bg-card bg-opacity-20 rounded-xl">
               <Zap className="w-8 h-8" />
             </div>
             <div>
@@ -247,14 +247,14 @@ export function QuickSetupWizard({ onComplete }: { onComplete: () => void }) {
           {/* Progress */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-600">
+              <span className="text-sm font-medium text-muted-foreground">
                 Paso {currentStep + 1} de {QUICK_SETUP_STEPS.length}
               </span>
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-muted-foreground">
                 {Math.round(((currentStep + 1) / QUICK_SETUP_STEPS.length) * 100)}% completado
               </span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-muted rounded-full h-2">
               <div 
                 className="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full transition-all duration-300"
                 style={{ width: `${((currentStep + 1) / QUICK_SETUP_STEPS.length) * 100}%` }}
@@ -269,8 +269,8 @@ export function QuickSetupWizard({ onComplete }: { onComplete: () => void }) {
                 <currentStepData.icon className="w-6 h-6 text-blue-600" />
               </div>
               <div>
-                <h3 className="text-xl font-semibold text-gray-900">{currentStepData.title}</h3>
-                <p className="text-gray-600">{currentStepData.description}</p>
+                <h3 className="text-xl font-semibold text-foreground">{currentStepData.title}</h3>
+                <p className="text-muted-foreground">{currentStepData.description}</p>
               </div>
             </div>
 
@@ -286,20 +286,20 @@ export function QuickSetupWizard({ onComplete }: { onComplete: () => void }) {
                     className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
                       isSelected 
                         ? 'border-blue-500 bg-blue-50' 
-                        : 'border-gray-200 bg-white hover:border-gray-300'
+                        : 'border-border bg-card hover:border-border'
                     }`}
                   >
                     <div className="flex items-start gap-3">
                       <div className={`p-2 rounded-lg ${
-                        isSelected ? 'bg-blue-100' : 'bg-gray-100'
+                        isSelected ? 'bg-blue-100' : 'bg-muted'
                       }`}>
                         <Icon className={`w-5 h-5 ${
-                          isSelected ? 'text-blue-600' : 'text-gray-600'
+                          isSelected ? 'text-blue-600' : 'text-muted-foreground'
                         }`} />
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <h4 className="font-medium text-gray-900">{field.label}</h4>
+                          <h4 className="font-medium text-foreground">{field.label}</h4>
                           {field.recommended && (
                             <Badge className="bg-green-100 text-green-800 text-xs">
                               Recomendado
@@ -309,7 +309,7 @@ export function QuickSetupWizard({ onComplete }: { onComplete: () => void }) {
                             <CheckCircle className="w-4 h-4 text-blue-600" />
                           )}
                         </div>
-                        <p className="text-sm text-gray-600 mt-1">{field.description}</p>
+                        <p className="text-sm text-muted-foreground mt-1">{field.description}</p>
                       </div>
                     </div>
                   </div>
@@ -330,7 +330,7 @@ export function QuickSetupWizard({ onComplete }: { onComplete: () => void }) {
             </Button>
 
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-muted-foreground">
                 {selectedFields.length} campos seleccionados
               </span>
               <Button

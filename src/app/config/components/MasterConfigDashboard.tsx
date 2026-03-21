@@ -225,7 +225,7 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
       <div className="p-4">
         <Card>
           <CardContent className="p-6">
-            <p className="text-center text-gray-500">
+            <p className="text-center text-muted-foreground">
               Solo los usuarios MASTER pueden acceder a esta configuración.
             </p>
           </CardContent>
@@ -402,12 +402,12 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
                         )}
                         <Badge variant="outline">{product.type}</Badge>
                       </div>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         {product.color && `${product.color} • `}
                         {product.tamano && `${product.tamano} • `}
                         ₡{product.baseCost.toLocaleString()}
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-muted-foreground">
                         Usado {product.useCount} veces • Último uso: {new Date(product.lastUsed).toLocaleDateString()}
                       </p>
                     </div>
@@ -572,13 +572,13 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
                         <h3 className="font-semibold">{customer.name}</h3>
                         <Badge variant="outline">{customer.totalOrders} pedidos</Badge>
                       </div>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         {customer.phone} • {customer.province}, {customer.canton}, {customer.district}
                       </p>
                       {customer.email && (
-                        <p className="text-sm text-gray-600">{customer.email}</p>
+                        <p className="text-sm text-muted-foreground">{customer.email}</p>
                       )}
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-muted-foreground">
                         Último pedido: {new Date(customer.lastOrder).toLocaleDateString()}
                       </p>
                     </div>

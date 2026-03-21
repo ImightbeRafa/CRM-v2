@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
+import { ThemeToggle } from './ThemeToggle';
 
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Inicio', icon: Home },
@@ -59,11 +60,11 @@ export function MobileBottomNav() {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 z-[95] bg-white rounded-t-2xl shadow-2xl md:hidden"
+              className="fixed bottom-0 left-0 right-0 z-[95] bg-card rounded-t-2xl shadow-2xl md:hidden"
               style={{ paddingBottom: 'calc(56px + env(safe-area-inset-bottom, 0px))' }}
             >
               <div className="flex justify-center pt-3 pb-1">
-                <div className="w-10 h-1 rounded-full bg-gray-300" />
+                <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
               </div>
               <nav className="px-4 py-2 space-y-1">
                 {MORE_ITEMS.map((item) => {
@@ -77,8 +78,8 @@ export function MobileBottomNav() {
                       onClick={() => setMoreOpen(false)}
                       className={`flex items-center gap-3 px-4 py-3.5 rounded-xl transition-colors ${
                         active
-                          ? 'bg-gradient-to-r from-blue-50 to-purple-50 text-blue-600'
-                          : 'text-gray-600 hover:bg-gray-50 active:bg-gray-100'
+                          ? 'bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/40 dark:to-purple-950/40 text-blue-600 dark:text-blue-400'
+                          : 'text-muted-foreground hover:bg-muted active:bg-accent'
                       }`}
                     >
                       <Icon className="h-5 w-5" />
@@ -86,13 +87,18 @@ export function MobileBottomNav() {
                     </Link>
                   );
                 })}
-                <div className="border-t border-gray-100 my-1 mx-4" />
+                <div className="border-t border-border my-1 mx-4" />
+                <div className="flex items-center justify-between px-4 py-2">
+                  <span className="text-sm text-muted-foreground">Tema</span>
+                  <ThemeToggle />
+                </div>
+                <div className="border-t border-border my-1 mx-4" />
                 <button
                   onClick={() => {
                     setMoreOpen(false);
                     signOut({ callbackUrl: '/auth/signin' });
                   }}
-                  className="flex items-center gap-3 px-4 py-3.5 rounded-xl transition-colors text-red-600 hover:bg-red-50 active:bg-red-100 w-full"
+                  className="flex items-center gap-3 px-4 py-3.5 rounded-xl transition-colors text-red-600 hover:bg-red-50 dark:hover:bg-red-950 active:bg-red-100 dark:active:bg-red-900 w-full"
                 >
                   <LogOut className="h-5 w-5" />
                   <span className="font-medium text-[15px]">Cerrar Sesión</span>
@@ -105,7 +111,7 @@ export function MobileBottomNav() {
 
       {/* Bottom tab bar */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-[100] md:hidden bg-white/95 backdrop-blur-lg border-t border-gray-200/60"
+        className="fixed bottom-0 left-0 right-0 z-[100] md:hidden bg-card/95 backdrop-blur-lg border-t border-border"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
         <div className="flex items-stretch justify-around h-14">
@@ -128,12 +134,12 @@ export function MobileBottomNav() {
                 )}
                 <Icon
                   className={`h-5 w-5 transition-colors ${
-                    active ? 'text-blue-600' : 'text-gray-400'
+                    active ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'
                   }`}
                 />
                 <span
                   className={`text-[10px] leading-tight font-medium transition-colors ${
-                    active ? 'text-blue-600' : 'text-gray-400'
+                    active ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'
                   }`}
                 >
                   {item.label}
@@ -159,13 +165,13 @@ export function MobileBottomNav() {
             ) : (
               <Menu
                 className={`h-5 w-5 transition-colors ${
-                  isMoreActive ? 'text-blue-600' : 'text-gray-400'
+                  isMoreActive ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'
                 }`}
               />
             )}
             <span
               className={`text-[10px] leading-tight font-medium transition-colors ${
-                moreOpen || isMoreActive ? 'text-blue-600' : 'text-gray-400'
+                moreOpen || isMoreActive ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'
               }`}
             >
               Más

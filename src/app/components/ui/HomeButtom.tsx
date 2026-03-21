@@ -17,7 +17,7 @@ const NavigationMenu = () => {
   const isActivePath = (path: string) => pathname === path;
 
   return (
-    <nav className="flex items-center gap-4 p-2 bg-white rounded-lg shadow-sm">
+    <nav className="flex items-center gap-4 p-2 bg-card rounded-lg shadow-sm">
       {menuItems.map((item) => {
         const Icon = item.icon;
         const isActive = isActivePath(item.path);
@@ -32,7 +32,7 @@ const NavigationMenu = () => {
               transition-all duration-200 ease-in-out
               ${isActive 
                 ? 'bg-brand-gradient text-white cursor-default pointer-events-none shadow-md' 
-                : 'text-muted-foreground hover:bg-blue-50 hover:text-blue-600 active:scale-95'}
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95'}
             `}
             onClick={(e) => {
               // Prevent navigation if already on this path

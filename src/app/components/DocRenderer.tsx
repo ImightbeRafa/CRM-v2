@@ -47,28 +47,28 @@ const mdxComponents = {
     return <h3 id={id} {...props}>{children}</h3>;
   },
   table: ({ children, ...props }: React.HTMLAttributes<HTMLTableElement>) => (
-    <div className="my-6 w-full overflow-x-auto rounded-lg border border-gray-200">
+    <div className="my-6 w-full overflow-x-auto rounded-lg border border-border">
       <table className="m-0 w-full text-sm" {...props}>{children}</table>
     </div>
   ),
   thead: ({ children, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) => (
-    <thead className="bg-gray-50 border-b border-gray-200" {...props}>{children}</thead>
+    <thead className="bg-muted border-b border-border" {...props}>{children}</thead>
   ),
   th: ({ children, ...props }: React.HTMLAttributes<HTMLTableCellElement>) => (
-    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" {...props}>{children}</th>
+    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider" {...props}>{children}</th>
   ),
   td: ({ children, ...props }: React.HTMLAttributes<HTMLTableCellElement>) => (
-    <td className="px-4 py-2.5 text-gray-700 border-t border-gray-100" {...props}>{children}</td>
+    <td className="px-4 py-2.5 text-muted-foreground border-t border-border" {...props}>{children}</td>
   ),
   tr: ({ children, ...props }: React.HTMLAttributes<HTMLTableRowElement>) => (
-    <tr className="hover:bg-gray-50/50 transition-colors" {...props}>{children}</tr>
+    <tr className="hover:bg-muted/50 transition-colors" {...props}>{children}</tr>
   ),
   code: ({ children, className, ...props }: React.HTMLAttributes<HTMLElement>) => {
     if (className?.includes('language-')) {
       return <code className={className} {...props}>{children}</code>;
     }
     return (
-      <code className="px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-800 text-[0.85em] font-mono border border-gray-200" {...props}>
+      <code className="px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground text-[0.85em] font-mono border border-border" {...props}>
         {children}
       </code>
     );
@@ -94,14 +94,14 @@ export function DocRenderer({ source, title, description, category, readingTime 
             </span>
           )}
           {readingTime && (
-            <span className="inline-flex items-center gap-1 text-xs text-gray-400">
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               <Clock className="h-3.5 w-3.5" />
               {readingTime} min de lectura
             </span>
           )}
         </div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-3 leading-tight">{title}</h1>
-        {description && <p className="text-lg text-gray-500 leading-relaxed">{description}</p>}
+        <h1 className="text-3xl font-bold text-foreground mb-3 leading-tight">{title}</h1>
+        {description && <p className="text-lg text-muted-foreground leading-relaxed">{description}</p>}
       </div>
       <MDXRemote {...source} components={mdxComponents} />
     </article>

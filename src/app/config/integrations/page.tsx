@@ -171,7 +171,7 @@ export default function IntegrationsPage() {
       <div className="mb-4">
         <a
           href="/config?tab=integrations"
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Volver a Configuración
@@ -181,7 +181,7 @@ export default function IntegrationsPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold">Integraciones de Sitio Web</h1>
-          <p className="text-gray-600">
+          <p className="text-muted-foreground">
             Conecta tu sitio web para enviar pedidos automáticamente a Betsy CRM
           </p>
         </div>
@@ -199,7 +199,7 @@ export default function IntegrationsPage() {
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-5 w-5 text-green-500" />
                 <div>
-                  <p className="text-sm text-gray-600">Pedidos Recibidos</p>
+                  <p className="text-sm text-muted-foreground">Pedidos Recibidos</p>
                   <p className="text-2xl font-bold">{stats.totalOrders}</p>
                 </div>
               </div>
@@ -210,7 +210,7 @@ export default function IntegrationsPage() {
               <div className="flex items-center gap-2">
                 <AlertCircle className="h-5 w-5 text-red-500" />
                 <div>
-                  <p className="text-sm text-gray-600">Errores</p>
+                  <p className="text-sm text-muted-foreground">Errores</p>
                   <p className="text-2xl font-bold">{stats.errorCount}</p>
                 </div>
               </div>
@@ -221,7 +221,7 @@ export default function IntegrationsPage() {
               <div className="flex items-center gap-2">
                 <Activity className="h-5 w-5 text-blue-500" />
                 <div>
-                  <p className="text-sm text-gray-600">Último Pedido</p>
+                  <p className="text-sm text-muted-foreground">Último Pedido</p>
                   <p className="text-sm font-medium">
                     {stats.lastOrderDate ? formatDate(stats.lastOrderDate) : 'Nunca'}
                   </p>
@@ -234,7 +234,7 @@ export default function IntegrationsPage() {
               <div className="flex items-center gap-2">
                 <Key className="h-5 w-5 text-purple-500" />
                 <div>
-                  <p className="text-sm text-gray-600">API Keys Activas</p>
+                  <p className="text-sm text-muted-foreground">API Keys Activas</p>
                   <p className="text-2xl font-bold">
                     {apiKeys.filter(k => k.active).length}
                   </p>
@@ -293,7 +293,7 @@ export default function IntegrationsPage() {
               <p className="text-sm text-green-700">
                 Guarda esta clave de forma segura. No podrás verla nuevamente.
               </p>
-              <div className="flex items-center gap-2 p-2 bg-white rounded border">
+              <div className="flex items-center gap-2 p-2 bg-card rounded border">
                 <code className="flex-1 text-sm font-mono">
                   {showKey === 'new' ? newApiKey : '•'.repeat(40)}
                 </code>
@@ -334,7 +334,7 @@ export default function IntegrationsPage() {
         </CardHeader>
         <CardContent>
           {apiKeys.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-muted-foreground">
               <Key className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No tienes API keys creadas</p>
               <p className="text-sm">Crea una para conectar tu sitio web</p>
@@ -353,7 +353,7 @@ export default function IntegrationsPage() {
                         {key.active ? 'Activa' : 'Inactiva'}
                       </Badge>
                     </div>
-                    <div className="text-sm text-gray-600 mt-1">
+                    <div className="text-sm text-muted-foreground mt-1">
                       Creada: {formatDate(key.createdAt)}
                       {key.lastUsed && (
                         <span className="ml-4">
@@ -388,7 +388,7 @@ export default function IntegrationsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             Verifica que el endpoint de integración esté funcionando correctamente.
           </p>
           <div className="flex items-center gap-4">
@@ -412,7 +412,7 @@ export default function IntegrationsPage() {
             )}
           </div>
           {testResult && (
-            <pre className="bg-gray-100 p-4 rounded text-xs overflow-x-auto whitespace-pre-wrap">
+            <pre className="bg-muted p-4 rounded text-xs overflow-x-auto whitespace-pre-wrap">
               {testResult}
             </pre>
           )}
@@ -450,23 +450,23 @@ export default function IntegrationsPage() {
             <ol className="list-decimal list-inside space-y-2 text-sm">
               <li>Crea una API Key usando el botón &quot;Nueva API Key&quot;</li>
               <li>Guarda la clave de forma segura en las variables de entorno de tu sitio</li>
-              <li>Configura tu sitio para enviar pedidos con <code className="bg-gray-100 px-2 py-1 rounded">Content-Type: application/json</code></li>
-              <li>Incluye la API Key en el header: <code className="bg-gray-100 px-2 py-1 rounded">x-api-key: tu-api-key-aqui</code></li>
+              <li>Configura tu sitio para enviar pedidos con <code className="bg-muted px-2 py-1 rounded">Content-Type: application/json</code></li>
+              <li>Incluye la API Key en el header: <code className="bg-muted px-2 py-1 rounded">x-api-key: tu-api-key-aqui</code></li>
             </ol>
 
             {/* Request Headers */}
             <h4 className="text-lg font-semibold mt-6">Headers requeridos:</h4>
-            <div className="bg-gray-100 p-4 rounded text-xs overflow-x-auto">
+            <div className="bg-muted p-4 rounded text-xs overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="border-b border-gray-300">
+                  <tr className="border-b border-border">
                     <th className="py-1 pr-4">Header</th>
                     <th className="py-1 pr-4">Requerido</th>
                     <th className="py-1">Descripción</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="border-b border-gray-200">
+                  <tr className="border-b border-border">
                     <td className="py-1 pr-4 font-mono">Content-Type</td>
                     <td className="py-1 pr-4">✅ Sí</td>
                     <td className="py-1">application/json</td>
@@ -482,10 +482,10 @@ export default function IntegrationsPage() {
 
             {/* Request Body */}
             <h4 className="text-lg font-semibold mt-6">Formato del body (JSON):</h4>
-            <p className="text-sm text-gray-600 mb-2">
+            <p className="text-sm text-muted-foreground mb-2">
               Todos los campos son <strong>requeridos</strong> salvo los marcados como <em>// opcional</em>.
             </p>
-            <pre className="bg-gray-100 p-4 rounded text-xs overflow-x-auto">
+            <pre className="bg-muted p-4 rounded text-xs overflow-x-auto">
               {`{
   "orderId": "799360",
   "customer": {
@@ -527,17 +527,17 @@ export default function IntegrationsPage() {
 
             {/* Field Reference */}
             <h4 className="text-lg font-semibold mt-6">Referencia de campos:</h4>
-            <div className="bg-gray-100 p-4 rounded text-xs overflow-x-auto">
+            <div className="bg-muted p-4 rounded text-xs overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="border-b border-gray-300">
+                  <tr className="border-b border-border">
                     <th className="py-1 pr-4">Campo</th>
                     <th className="py-1 pr-4">Tipo</th>
                     <th className="py-1 pr-4">Req.</th>
                     <th className="py-1">Nota</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-border">
                   <tr><td className="py-1 pr-4 font-mono">orderId</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">ID único de tu sistema</td></tr>
                   <tr><td className="py-1 pr-4 font-mono">customer.name</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Nombre del cliente</td></tr>
                   <tr><td className="py-1 pr-4 font-mono">customer.phone</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Teléfono del cliente</td></tr>
@@ -604,7 +604,7 @@ export default function IntegrationsPage() {
 
             {/* cURL Example */}
             <h4 className="text-lg font-semibold mt-6">Ejemplo con cURL:</h4>
-            <pre className="bg-gray-900 text-green-400 p-4 rounded text-xs overflow-x-auto">
+            <pre className="bg-gray-900 dark:bg-gray-950 text-green-400 p-4 rounded text-xs overflow-x-auto">
               {`curl -X POST ${apiBaseUrl}/api/integration/orders/create \\
   -H "Content-Type: application/json" \\
   -H "x-api-key: bts_tu_api_key_aqui" \\

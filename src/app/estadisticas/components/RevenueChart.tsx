@@ -15,7 +15,7 @@ interface RevenueChartProps {
 }
 
 function RevenueChartSkeleton({ height = 300 }: { height?: number }) {
-  return <div className="w-full bg-gray-200 animate-pulse rounded" style={{ height }} />;
+  return <div className="w-full bg-muted animate-pulse rounded" style={{ height }} />;
 }
 
 export default function RevenueChart(props: RevenueChartProps) {

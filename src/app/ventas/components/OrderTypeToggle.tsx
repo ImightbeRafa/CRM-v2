@@ -13,7 +13,7 @@ const OrderTypeToggle: React.FC<OrderTypeToggleProps> = ({ orderType, onOrderTyp
         className={`px-4 py-2 rounded-l-lg ${
           orderType === 'EA'
             ? 'bg-blue-500 text-white'
-            : 'bg-gray-200 text-gray-700'
+            : 'bg-muted text-muted-foreground'
         }`}
         onClick={() => onOrderTypeChange('EA')}
       >
@@ -24,7 +24,7 @@ const OrderTypeToggle: React.FC<OrderTypeToggleProps> = ({ orderType, onOrderTyp
         className={`px-4 py-2 rounded-r-lg ${
           orderType === 'RA'
             ? 'bg-blue-500 text-white'
-            : 'bg-gray-200 text-gray-700'
+            : 'bg-muted text-muted-foreground'
         }`}
         onClick={() => onOrderTypeChange('RA')}
       >

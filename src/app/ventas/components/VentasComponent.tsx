@@ -15,15 +15,15 @@ const EnhancedSalesForm = lazy(() => import('./EnhancedSalesForm'));
 // Loading skeleton component
 function FormSkeleton() {
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 animate-pulse">
-      <div className="h-8 bg-gray-200 rounded w-1/3 mb-6"></div>
+    <div className="bg-card rounded-lg shadow-md p-6 animate-pulse">
+      <div className="h-8 bg-muted rounded w-1/3 mb-6"></div>
       <div className="space-y-4">
-        <div className="h-10 bg-gray-200 rounded"></div>
-        <div className="h-10 bg-gray-200 rounded"></div>
-        <div className="h-10 bg-gray-200 rounded"></div>
-        <div className="h-32 bg-gray-200 rounded"></div>
+        <div className="h-10 bg-muted rounded"></div>
+        <div className="h-10 bg-muted rounded"></div>
+        <div className="h-10 bg-muted rounded"></div>
+        <div className="h-32 bg-muted rounded"></div>
       </div>
-      <div className="mt-6 flex items-center gap-2 text-blue-600">
+      <div className="mt-6 flex items-center gap-2 text-blue-600 dark:text-blue-400">
         <Loader2 className="h-5 w-5 animate-spin" />
         <span className="text-sm">Cargando formulario...</span>
       </div>
@@ -36,7 +36,7 @@ export default function VentasContent() {
 
   return (
     <AppShell>
-      <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-6" style={{ overflow: 'visible' }}>
+      <div className="w-full px-2 sm:px-3 md:px-4 py-3 sm:py-4" style={{ overflow: 'visible' }}>
         <DOMErrorBoundary>
           <SalesErrorBoundary>
             <div className="flex flex-col xl:flex-row gap-4 lg:gap-8 transition-all duration-300">
@@ -72,11 +72,11 @@ export default function VentasContent() {
                 </div>
               )}
               
-              <div className="bg-white rounded-lg shadow-sm">
+              <div className="bg-card rounded-lg shadow-sm">
                 <DailyStats />
               </div>
               
-              <div className="bg-white rounded-lg shadow-sm">
+              <div className="bg-card rounded-lg shadow-sm">
                 <SalesDashboard />
               </div>
             </section>

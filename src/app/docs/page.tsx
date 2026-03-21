@@ -45,8 +45,8 @@ export default function DocsIndex() {
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 mb-4 shadow-lg shadow-blue-200">
           <BookOpen className="h-7 w-7 text-white" />
         </div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Documentación de BetsyCRM</h1>
-        <p className="text-gray-500 max-w-lg mx-auto">
+        <h1 className="text-3xl font-bold text-foreground mb-2">Documentación de BetsyCRM</h1>
+        <p className="text-muted-foreground max-w-lg mx-auto">
           Guías paso a paso para configurar y aprovechar al máximo tu CRM.
         </p>
       </div>
@@ -60,7 +60,7 @@ export default function DocsIndex() {
         <p className="text-blue-100 mb-4">Prueba BetsyCRM gratis por 15 días. Sin tarjeta de crédito.</p>
         <Link
           href="/auth/signin"
-          className="inline-flex items-center gap-2 bg-white text-blue-600 font-semibold px-6 py-2.5 rounded-lg hover:bg-blue-50 transition-colors"
+          className="inline-flex items-center gap-2 bg-card text-blue-600 font-semibold px-6 py-2.5 rounded-lg hover:bg-blue-50 transition-colors"
         >
           Empezar Gratis <ArrowRight className="h-4 w-4" />
         </Link>
@@ -78,10 +78,10 @@ export default function DocsIndex() {
                 {getCategoryIcon(cat)}
               </div>
               <div>
-                <h2 className="text-lg font-bold text-gray-900">
+                <h2 className="text-lg font-bold text-foreground">
                   {CATEGORY_LABELS[cat] || cat}
                 </h2>
-                <p className="text-xs text-gray-400">{catDocs.length} {catDocs.length === 1 ? 'artículo' : 'artículos'}</p>
+                <p className="text-xs text-muted-foreground">{catDocs.length} {catDocs.length === 1 ? 'artículo' : 'artículos'}</p>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -92,12 +92,12 @@ export default function DocsIndex() {
                   className="group flex items-start gap-3 border rounded-xl p-4 hover:shadow-md hover:border-blue-200 transition-all"
                 >
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-medium text-gray-900 group-hover:text-blue-600 transition-colors text-sm mb-1">
+                    <h3 className="font-medium text-foreground group-hover:text-blue-600 transition-colors text-sm mb-1">
                       {doc.title}
                     </h3>
-                    <p className="text-xs text-gray-500 line-clamp-2">{doc.description}</p>
+                    <p className="text-xs text-muted-foreground line-clamp-2">{doc.description}</p>
                   </div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400 shrink-0 mt-0.5">
+                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0 mt-0.5">
                     <Clock className="h-3 w-3" />
                     {doc.readingTime}m
                   </div>
@@ -109,9 +109,9 @@ export default function DocsIndex() {
       })}
 
       {docs.length === 0 && (
-        <div className="text-center py-16 border rounded-2xl bg-gray-50">
-          <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500">Estamos preparando la documentación. Vuelve pronto.</p>
+        <div className="text-center py-16 border rounded-2xl bg-muted">
+          <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <p className="text-muted-foreground">Estamos preparando la documentación. Vuelve pronto.</p>
         </div>
       )}
     </div>

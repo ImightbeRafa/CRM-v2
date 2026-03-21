@@ -379,7 +379,7 @@ export function InvoiceGenerator({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 overflow-y-auto">
-      <Card className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <Card className="max-w-4xl w-full max-h-[90vh] overflow-y-auto print:max-h-none print:bg-white print:text-black">
         <CardHeader className="bg-gradient-to-r from-purple-500 to-pink-600 text-white">
           <div className="flex items-center justify-between">
             <div>
@@ -395,7 +395,7 @@ export function InvoiceGenerator({
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="text-white hover:bg-white hover:bg-opacity-20"
+              className="text-white hover:bg-white/20"
             >
               <X className="w-4 h-4" />
             </Button>
@@ -450,7 +450,7 @@ export function InvoiceGenerator({
                       className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-all ${
                         selectedOrders.includes(order.id)
                           ? 'border-purple-500 bg-purple-50'
-                          : 'border-gray-200 hover:border-gray-300'
+                          : 'border-border hover:border-muted-foreground/40'
                       }`}
                       onClick={() => handleToggleOrder(order.id)}
                     >
@@ -459,13 +459,13 @@ export function InvoiceGenerator({
                           type="checkbox"
                           checked={selectedOrders.includes(order.id)}
                           onChange={() => handleToggleOrder(order.id)}
-                          className="rounded border-gray-300"
+                          className="rounded border-border"
                         />
                         <div>
-                          <div className="font-medium text-gray-900 text-sm">
+                          <div className="font-medium text-foreground text-sm">
                             #{order.orderId}
                           </div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-muted-foreground">
                             {order.customerName} • {formatCurrency(order.total)}
                           </div>
                         </div>
@@ -493,70 +493,70 @@ export function InvoiceGenerator({
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">
                       Nombre del Cliente <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       value={currentInvoice.customerName}
                       onChange={(e) => setCurrentInvoice(prev => ({ ...prev, customerName: e.target.value }))}
-                      className="w-full p-2 border border-gray-300 rounded-md"
+                      className="w-full p-2 border border-border rounded-md"
                       placeholder="Juan Pérez"
                       required
                     />
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Email</label>
                     <input
                       type="email"
                       value={currentInvoice.customerEmail}
                       onChange={(e) => setCurrentInvoice(prev => ({ ...prev, customerEmail: e.target.value }))}
-                      className="w-full p-2 border border-gray-300 rounded-md"
+                      className="w-full p-2 border border-border rounded-md"
                       placeholder="juan@example.com"
                     />
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Teléfono</label>
                     <input
                       type="tel"
                       value={currentInvoice.customerPhone}
                       onChange={(e) => setCurrentInvoice(prev => ({ ...prev, customerPhone: e.target.value }))}
-                      className="w-full p-2 border border-gray-300 rounded-md"
+                      className="w-full p-2 border border-border rounded-md"
                       placeholder="8888-9999"
                     />
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Cédula/ID</label>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Cédula/ID</label>
                     <input
                       type="text"
                       value={currentInvoice.customerIdNumber}
                       onChange={(e) => setCurrentInvoice(prev => ({ ...prev, customerIdNumber: e.target.value }))}
-                      className="w-full p-2 border border-gray-300 rounded-md"
+                      className="w-full p-2 border border-border rounded-md"
                       placeholder="1-1234-5678"
                     />
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">
                       Fecha de Vencimiento
                     </label>
                     <input
                       type="date"
                       value={currentInvoice.dueDate}
                       onChange={(e) => setCurrentInvoice(prev => ({ ...prev, dueDate: e.target.value }))}
-                      className="w-full p-2 border border-gray-300 rounded-md"
+                      className="w-full p-2 border border-border rounded-md"
                     />
                   </div>
                   
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Dirección</label>
                     <textarea
                       value={currentInvoice.customerAddress}
                       onChange={(e) => setCurrentInvoice(prev => ({ ...prev, customerAddress: e.target.value }))}
-                      className="w-full p-2 border border-gray-300 rounded-md"
+                      className="w-full p-2 border border-border rounded-md"
                       rows={2}
                       placeholder="Dirección completa del cliente"
                     />
@@ -584,8 +584,8 @@ export function InvoiceGenerator({
                 </CardHeader>
                 <CardContent>
                   {currentInvoice.items.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Package className="w-12 h-12 mx-auto mb-2 text-muted-foreground" />
                       <p>No hay artículos. Agrega al menos uno.</p>
                       <Button
                         variant="outline"
@@ -599,13 +599,13 @@ export function InvoiceGenerator({
                   ) : (
                     <div className="space-y-3">
                       {currentInvoice.items.map((item, index) => (
-                        <div key={index} className="grid grid-cols-12 gap-2 items-center p-3 bg-gray-50 rounded-lg">
+                        <div key={index} className="grid grid-cols-12 gap-2 items-center p-3 bg-muted rounded-lg">
                           <div className="col-span-5">
                             <input
                               type="text"
                               value={item.description}
                               onChange={(e) => updateLineItem(index, 'description', e.target.value)}
-                              className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                              className="w-full p-2 border border-border rounded-md text-sm"
                               placeholder="Descripción del artículo"
                             />
                           </div>
@@ -614,7 +614,7 @@ export function InvoiceGenerator({
                               type="number"
                               value={item.quantity}
                               onChange={(e) => updateLineItem(index, 'quantity', parseInt(e.target.value) || 0)}
-                              className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                              className="w-full p-2 border border-border rounded-md text-sm"
                               placeholder="Cant."
                               min="1"
                             />
@@ -624,13 +624,13 @@ export function InvoiceGenerator({
                               type="number"
                               value={item.unitPrice}
                               onChange={(e) => updateLineItem(index, 'unitPrice', parseFloat(e.target.value) || 0)}
-                              className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                              className="w-full p-2 border border-border rounded-md text-sm"
                               placeholder="Precio"
                               min="0"
                               step="0.01"
                             />
                           </div>
-                          <div className="col-span-2 text-right font-semibold text-gray-900">
+                          <div className="col-span-2 text-right font-semibold text-foreground">
                             {formatCurrency(item.total)}
                           </div>
                           <div className="col-span-1">
@@ -652,15 +652,15 @@ export function InvoiceGenerator({
                   {currentInvoice.items.length > 0 && (
                     <div className="mt-6 border-t pt-4 space-y-3">
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-700">Subtotal:</span>
-                        <span className="font-semibold text-gray-900">
+                        <span className="text-muted-foreground">Subtotal:</span>
+                        <span className="font-semibold text-foreground">
                           {formatCurrency(currentInvoice.subtotal)}
                         </span>
                       </div>
                       
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-2">
-                          <span className="text-gray-700">IVA:</span>
+                          <span className="text-muted-foreground">IVA:</span>
                           <input
                             type="number"
                             value={currentInvoice.taxRate}
@@ -668,21 +668,21 @@ export function InvoiceGenerator({
                               setCurrentInvoice(prev => ({ ...prev, taxRate: parseFloat(e.target.value) || 0 }));
                               setTimeout(recalculateTotals, 0);
                             }}
-                            className="w-20 p-1 border border-gray-300 rounded text-sm"
+                            className="w-20 p-1 border border-border rounded text-sm"
                             min="0"
                             max="100"
                             step="0.1"
                           />
-                          <span className="text-gray-700">%</span>
+                          <span className="text-muted-foreground">%</span>
                         </div>
-                        <span className="font-semibold text-gray-900">
+                        <span className="font-semibold text-foreground">
                           {formatCurrency(currentInvoice.tax)}
                         </span>
                       </div>
                       
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-2">
-                          <span className="text-gray-700">Descuento:</span>
+                          <span className="text-muted-foreground">Descuento:</span>
                           <input
                             type="number"
                             value={currentInvoice.discount}
@@ -690,7 +690,7 @@ export function InvoiceGenerator({
                               setCurrentInvoice(prev => ({ ...prev, discount: parseFloat(e.target.value) || 0 }));
                               setTimeout(recalculateTotals, 0);
                             }}
-                            className="w-32 p-1 border border-gray-300 rounded text-sm"
+                            className="w-32 p-1 border border-border rounded text-sm"
                             min="0"
                             step="0.01"
                             placeholder="0.00"
@@ -701,8 +701,8 @@ export function InvoiceGenerator({
                         </span>
                       </div>
                       
-                      <div className="flex justify-between items-center pt-3 border-t-2 border-gray-300">
-                        <span className="text-lg font-bold text-gray-900">TOTAL:</span>
+                      <div className="flex justify-between items-center pt-3 border-t-2 border-border">
+                        <span className="text-lg font-bold text-foreground">TOTAL:</span>
                         <span className="text-2xl font-bold text-purple-600">
                           {formatCurrency(currentInvoice.total)}
                         </span>
@@ -721,7 +721,7 @@ export function InvoiceGenerator({
                   <textarea
                     value={currentInvoice.notes}
                     onChange={(e) => setCurrentInvoice(prev => ({ ...prev, notes: e.target.value }))}
-                    className="w-full p-2 border border-gray-300 rounded-md"
+                    className="w-full p-2 border border-border rounded-md"
                     rows={3}
                     placeholder="Notas, términos y condiciones, instrucciones de pago..."
                   />
@@ -814,13 +814,13 @@ export function InvoiceGenerator({
                   {generatedInvoices.map((invoice) => (
                     <div 
                       key={invoice.id}
-                      className="flex items-center justify-between p-3 bg-white rounded-lg border border-green-200"
+                      className="flex items-center justify-between p-3 bg-card rounded-lg border border-green-200 print:bg-white print:text-black"
                     >
                       <div>
-                        <div className="font-medium text-gray-900">
+                        <div className="font-medium text-foreground">
                           {invoice.invoiceNumber}
                         </div>
-                        <div className="text-sm text-gray-500">
+                        <div className="text-sm text-muted-foreground">
                           {invoice.customerName} • {formatCurrency(invoice.total)}
                         </div>
                       </div>

@@ -27,11 +27,11 @@ export function DocsPagination({ docs, currentSlug, basePath }: DocsPaginationPr
           href={`${basePath}/${prev.slug}`}
           className="group flex flex-col items-start gap-1 p-4 rounded-lg border hover:border-blue-200 hover:bg-blue-50/30 transition-all"
         >
-          <span className="flex items-center gap-1 text-xs text-gray-400 group-hover:text-blue-600 transition-colors">
+          <span className="flex items-center gap-1 text-xs text-muted-foreground group-hover:text-blue-600 transition-colors">
             <ChevronLeft className="h-3 w-3" />
             Anterior
           </span>
-          <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 transition-colors">
+          <span className="text-sm font-medium text-muted-foreground group-hover:text-blue-700 transition-colors">
             {prev.title}
           </span>
         </Link>
@@ -43,11 +43,11 @@ export function DocsPagination({ docs, currentSlug, basePath }: DocsPaginationPr
           href={`${basePath}/${next.slug}`}
           className="group flex flex-col items-end gap-1 p-4 rounded-lg border hover:border-blue-200 hover:bg-blue-50/30 transition-all"
         >
-          <span className="flex items-center gap-1 text-xs text-gray-400 group-hover:text-blue-600 transition-colors">
+          <span className="flex items-center gap-1 text-xs text-muted-foreground group-hover:text-blue-600 transition-colors">
             Siguiente
             <ChevronRight className="h-3 w-3" />
           </span>
-          <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 transition-colors">
+          <span className="text-sm font-medium text-muted-foreground group-hover:text-blue-700 transition-colors">
             {next.title}
           </span>
         </Link>

@@ -439,28 +439,28 @@ export function SimpleFieldsManager() {
   const getCategoryBadge = (field: Field) => {
     const category = detectCategory(field);
     switch (category) {
-      case 'producto': return { label: 'Producto', color: 'bg-purple-100 text-purple-700' };
-      case 'negocio': return { label: 'Negocio', color: 'bg-blue-100 text-blue-700' };
-      case 'envio': return { label: 'Envío', color: 'bg-green-100 text-green-700' };
-      default: return { label: 'Personalizado', color: 'bg-gray-100 text-gray-700' };
+      case 'producto': return { label: 'Producto', color: 'bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400' };
+      case 'negocio': return { label: 'Negocio', color: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400' };
+      case 'envio': return { label: 'Envío', color: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400' };
+      default: return { label: 'Personalizado', color: 'bg-muted text-muted-foreground' };
     }
   };
 
   return (
     <div className="space-y-6">
       {/* Header Card */}
-      <Card className="border-2 border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50">
+      <Card className="border-2 border-purple-200 dark:border-purple-800 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="p-3 bg-purple-100 rounded-xl">
+              <div className="p-3 bg-purple-100 dark:bg-purple-950/40 rounded-xl">
                 <Sparkles className="w-8 h-8 text-purple-600" />
               </div>
               <div>
-                <CardTitle className="text-2xl font-bold text-gray-900">
+                <CardTitle className="text-2xl font-bold text-foreground">
                   Campos Personalizados
                 </CardTitle>
-                <p className="text-gray-600 mt-1">
+                <p className="text-muted-foreground mt-1">
                   Gestiona todos los campos de tu formulario de ventas
                 </p>
               </div>
@@ -485,7 +485,7 @@ export function SimpleFieldsManager() {
               <CardTitle className="text-lg font-semibold">
                 Campos Activos
               </CardTitle>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 {fields.length} {fields.length === 1 ? 'campo configurado' : 'campos configurados'}
               </p>
             </div>
@@ -495,15 +495,15 @@ export function SimpleFieldsManager() {
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
-              <span className="ml-3 text-gray-600">Cargando campos...</span>
+              <span className="ml-3 text-muted-foreground">Cargando campos...</span>
             </div>
           ) : fields.length === 0 ? (
             <div className="text-center py-12">
-              <Sparkles className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              <Sparkles className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-foreground mb-2">
                 No hay campos configurados
               </h3>
-              <p className="text-gray-500 mb-6">
+              <p className="text-muted-foreground mb-6">
                 Comienza agregando campos predefinidos o crea uno personalizado
               </p>
               <Button
@@ -524,15 +524,15 @@ export function SimpleFieldsManager() {
                 return (
                   <div
                     key={field.id}
-                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
+                    className="flex items-center justify-between p-4 bg-muted rounded-lg hover:bg-muted transition-colors border border-border"
                   >
                     <div className="flex items-center gap-3 flex-1">
-                      <div className="p-2 bg-white rounded-lg shadow-sm">
-                        <Icon className="w-5 h-5 text-gray-700" />
+                      <div className="p-2 bg-card rounded-lg shadow-sm">
+                        <Icon className="w-5 h-5 text-muted-foreground" />
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-gray-900">
+                          <span className="font-semibold text-foreground">
                             {field.label}
                           </span>
                           <Badge className={categoryBadge.color}>
@@ -540,20 +540,20 @@ export function SimpleFieldsManager() {
                           </Badge>
                         </div>
                         <div className="flex items-center gap-3 mt-1">
-                          <span className="text-sm text-gray-500">
+                          <span className="text-sm text-muted-foreground">
                             Tipo: <span className="font-medium">{field.type}</span>
                           </span>
-                          <span className="text-sm text-gray-500">•</span>
-                          <span className="text-sm text-gray-500">
+                          <span className="text-sm text-muted-foreground">•</span>
+                          <span className="text-sm text-muted-foreground">
                             {field.required ? (
                               <span className="text-red-600 font-medium">Requerido</span>
                             ) : (
-                              <span className="text-gray-500">Opcional</span>
+                              <span className="text-muted-foreground">Opcional</span>
                             )}
                           </span>
                           {field.optionSetId && (
                             <>
-                              <span className="text-sm text-gray-500">•</span>
+                              <span className="text-sm text-muted-foreground">•</span>
                               <Badge variant="outline" className="text-xs">
                                 Con opciones
                               </Badge>
@@ -607,7 +607,7 @@ export function SimpleFieldsManager() {
       {/* Custom Field Form Modal */}
       {showCustomFieldForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="bg-card rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <Settings className="w-5 h-5 text-purple-600" />
               Crear Campo Personalizado
@@ -667,7 +667,7 @@ export function SimpleFieldsManager() {
             >
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">
                     Clave única *
                   </label>
                   <input
@@ -676,24 +676,24 @@ export function SimpleFieldsManager() {
                     required
                     pattern="[a-zA-Z0-9_]+"
                     title="Solo letras, números y guiones bajos"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                     placeholder="ej: miCampoPersonalizado"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">
                     Etiqueta *
                   </label>
                   <input
                     type="text"
                     name="label"
                     required
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                     placeholder="ej: Mi Campo Personalizado"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">
                     Tipo *
                   </label>
                   <select
@@ -701,7 +701,7 @@ export function SimpleFieldsManager() {
                     required
                     value={newFieldType}
                     onChange={(e) => setNewFieldType(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                   >
                     <option value="text">Texto</option>
                     <option value="number">Número</option>
@@ -722,10 +722,10 @@ export function SimpleFieldsManager() {
                   <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-xl p-5 space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <label className="block text-sm font-semibold text-gray-800 mb-1">
+                        <label className="block text-sm font-semibold text-muted-foreground mb-1">
                           Conjunto de opciones *
                         </label>
-                        <p className="text-xs text-gray-600">
+                        <p className="text-xs text-muted-foreground">
                           Define las opciones disponibles para este campo desplegable
                         </p>
                       </div>
@@ -737,7 +737,7 @@ export function SimpleFieldsManager() {
                           <select
                             value={newFieldOptionSetId}
                             onChange={(e) => setNewFieldOptionSetId(e.target.value)}
-                            className="flex-1 p-2.5 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white shadow-sm font-medium"
+                            className="flex-1 p-2.5 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-card shadow-sm font-medium"
                             required
                           >
                             <option value="">-- Seleccionar conjunto existente --</option>
@@ -791,9 +791,9 @@ export function SimpleFieldsManager() {
                         )}
                       </>
                     ) : (
-                      <div className="bg-white rounded-lg p-4 border-2 border-purple-400 space-y-3">
+                      <div className="bg-card rounded-lg p-4 border-2 border-purple-400 space-y-3">
                         <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-semibold text-gray-800">Crear nuevo conjunto de opciones</h4>
+                          <h4 className="font-semibold text-muted-foreground">Crear nuevo conjunto de opciones</h4>
                           <Button
                             type="button"
                             variant="ghost"
@@ -804,7 +804,7 @@ export function SimpleFieldsManager() {
                               setQuickOptionSetKey('');
                               setQuickOptions([{label: '', value: ''}]);
                             }}
-                            className="text-gray-500"
+                            className="text-muted-foreground"
                           >
                             ✕ Cancelar
                           </Button>
@@ -957,9 +957,9 @@ export function SimpleFieldsManager() {
                   <input
                     type="checkbox"
                     name="required"
-                    className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    className="rounded border-border text-purple-600 focus:ring-purple-500"
                   />
-                  <label className="ml-2 text-sm text-gray-700">Campo requerido</label>
+                  <label className="ml-2 text-sm text-muted-foreground">Campo requerido</label>
                 </div>
               </div>
               <div className="flex justify-end gap-3 mt-6">
@@ -982,7 +982,7 @@ export function SimpleFieldsManager() {
       {/* Edit Field Modal */}
       {editingField && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full my-8">
+          <div className="bg-card rounded-lg p-6 max-w-2xl w-full my-8">
             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <Edit className="w-5 h-5 text-blue-600" />
               Editar Campo: {editingField.label}
@@ -1031,18 +1031,18 @@ export function SimpleFieldsManager() {
             >
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">
                     Clave (No editable)
                   </label>
                   <input
                     type="text"
                     value={editingField.key}
                     disabled
-                    className="w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500"
+                    className="w-full p-2 border border-border rounded-md bg-muted text-muted-foreground"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">
                     Etiqueta *
                   </label>
                   <input
@@ -1050,18 +1050,18 @@ export function SimpleFieldsManager() {
                     name="label"
                     defaultValue={editingField.label}
                     required
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">
                     Tipo *
                   </label>
                   <select
                     name="type"
                     defaultValue={editingField.type}
                     required
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="text">Texto</option>
                     <option value="number">Número</option>
@@ -1072,7 +1072,7 @@ export function SimpleFieldsManager() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">
                     Orden *
                   </label>
                   <input
@@ -1080,7 +1080,7 @@ export function SimpleFieldsManager() {
                     name="order"
                     defaultValue={editingField.order}
                     required
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
                 <div className="flex items-center">
@@ -1088,16 +1088,16 @@ export function SimpleFieldsManager() {
                     type="checkbox"
                     name="required"
                     defaultChecked={editingField.required}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="rounded border-border text-blue-600 focus:ring-blue-500"
                   />
-                  <label className="ml-2 text-sm text-gray-700">Campo requerido</label>
+                  <label className="ml-2 text-sm text-muted-foreground">Campo requerido</label>
                 </div>
 
                 {/* Options Manager for Select Fields */}
                 {editingField.type === 'select' && editingField.optionSetId && (
-                  <div className="pt-4 border-t border-gray-200">
+                  <div className="pt-4 border-t border-border">
                     <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                      <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
                         <Database className="w-4 h-4" />
                         Opciones del Campo
                       </h4>
@@ -1107,7 +1107,7 @@ export function SimpleFieldsManager() {
                     {/* Existing Options List */}
                     <div className="space-y-2 mb-3 max-h-48 overflow-y-auto">
                       {fieldOptions.map((option) => (
-                        <div key={option.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded-md">
+                        <div key={option.id} className="flex items-center gap-2 p-2 bg-muted rounded-md">
                           {editingOptionId === option.id ? (
                             <>
                               <Input

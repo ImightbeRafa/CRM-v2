@@ -197,7 +197,7 @@ export function ShippingConfigManagement() {
       <div className="p-4">
         <Card>
           <CardContent className="p-6">
-            <p className="text-center text-gray-500">
+            <p className="text-center text-muted-foreground">
               Solo los usuarios MASTER pueden acceder a la configuración de envíos.
             </p>
           </CardContent>

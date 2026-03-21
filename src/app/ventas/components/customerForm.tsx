@@ -459,51 +459,51 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
       </div>
 
       {/* Customer Information Display */}
-      <div className="mt-4 space-y-4 border rounded-lg p-4 bg-gray-50">
+      <div className="mt-4 space-y-4 border rounded-lg p-4 bg-muted">
         <h3 className="font-medium text-lg">Info cliente:</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Common fields */}
           <div>
-            <label className="block text-sm text-gray-600">
+            <label className="block text-sm text-muted-foreground">
               {customerInfo.orderType === 'EA' ? 'Cliente' : 'Nombre'}
             </label>
             <input
               type="text"
               name="name"
-              className="w-full p-2 bg-white border rounded"
+              className="w-full p-2 bg-card border rounded"
               value={customerInfo.name}
               onChange={handleInputChange}
               placeholder="No detectado"
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-600">Teléfono</label>
+            <label className="block text-sm text-muted-foreground">Teléfono</label>
             <input
               type="text"
               name="phone"
-              className="w-full p-2 bg-white border rounded"
+              className="w-full p-2 bg-card border rounded"
               value={customerInfo.phone}
               onChange={handleInputChange}
               placeholder="No detectado"
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-600">Email</label>
+            <label className="block text-sm text-muted-foreground">Email</label>
             <input
               type="email"
               name="email"
-              className="w-full p-2 bg-white border rounded"
+              className="w-full p-2 bg-card border rounded"
               value={customerInfo.email}
               onChange={handleInputChange}
               placeholder="No detectado"
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-600">Usuario</label>
+            <label className="block text-sm text-muted-foreground">Usuario</label>
             <input
               type="text"
               name="username"
-              className="w-full p-2 bg-white border rounded"
+              className="w-full p-2 bg-card border rounded"
               value={customerInfo.username}
               onChange={handleInputChange}
               placeholder="Usuario de Instagram/Facebook"
@@ -514,10 +514,10 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
           {customerInfo.orderType === 'EA' && (
             <>
               <div>
-                <label className="block text-sm text-gray-600">Provincia</label>
+                <label className="block text-sm text-muted-foreground">Provincia</label>
                 <select
                   name="province"
-                  className="w-full p-2 bg-white border rounded"
+                  className="w-full p-2 bg-card border rounded"
                   value={selectedProvince?.nombre || customerInfo.province}
                   onChange={handleProvinceChange}
                 >
@@ -530,7 +530,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-gray-600">Cantón</label>
+                <label className="block text-sm text-muted-foreground">Cantón</label>
                 <div className="space-y-1">
                   <input
                     type="text"
@@ -539,10 +539,10 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                     onFocus={() => setCantonSuggestionsOpen(true)}
                     onBlur={() => setTimeout(() => setCantonSuggestionsOpen(false), 150)}
                     placeholder="Buscar cantón"
-                    className="w-full p-2 bg-white border rounded"
+                    className="w-full p-2 bg-card border rounded"
                   />
                   {cantonSuggestionsOpen && (
-                    <div className="max-h-48 overflow-y-auto border rounded bg-white shadow-sm">
+                    <div className="max-h-48 overflow-y-auto border rounded bg-card shadow-sm">
                       {displayedCantonResults.length > 0 ? (
                         displayedCantonResults.map((result) => (
                           <button
@@ -557,12 +557,12 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                             }}
                             className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
                           >
-                            <div className="font-medium text-gray-800">{result.canton}</div>
-                            <div className="text-xs text-gray-500">{result.province}</div>
+                            <div className="font-medium text-foreground">{result.canton}</div>
+                            <div className="text-xs text-muted-foreground">{result.province}</div>
                           </button>
                         ))
                       ) : (
-                        <div className="px-3 py-2 text-sm text-gray-500">
+                        <div className="px-3 py-2 text-sm text-muted-foreground">
                           No se encontraron cantones.
                         </div>
                       )}
@@ -571,7 +571,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                 </div>
               </div>
               <div>
-                <label className="block text-sm text-gray-600">Distrito</label>
+                <label className="block text-sm text-muted-foreground">Distrito</label>
                 <div className="space-y-1">
                   <input
                     type="text"
@@ -580,10 +580,10 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                     onFocus={() => setDistrictSuggestionsOpen(true)}
                     onBlur={() => setTimeout(() => setDistrictSuggestionsOpen(false), 150)}
                     placeholder="Buscar distrito"
-                    className="w-full p-2 bg-white border rounded"
+                    className="w-full p-2 bg-card border rounded"
                   />
                   {districtSuggestionsOpen && (
-                    <div className="max-h-48 overflow-y-auto border rounded bg-white shadow-sm">
+                    <div className="max-h-48 overflow-y-auto border rounded bg-card shadow-sm">
                       {displayedDistrictResults.length > 0 ? (
                         displayedDistrictResults.map((result) => (
                           <button
@@ -595,14 +595,14 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                             }}
                             className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
                           >
-                            <div className="font-medium text-gray-800">{result.district}</div>
-                            <div className="text-xs text-gray-500">
+                            <div className="font-medium text-foreground">{result.district}</div>
+                            <div className="text-xs text-muted-foreground">
                               {result.canton} • {result.province}
                             </div>
                           </button>
                         ))
                       ) : (
-                        <div className="px-3 py-2 text-sm text-gray-500">
+                        <div className="px-3 py-2 text-sm text-muted-foreground">
                           No se encontraron distritos.
                         </div>
                       )}
@@ -611,10 +611,10 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                 </div>
               </div>
               <div className="col-span-1 sm:col-span-2">
-                <label className="block text-sm text-gray-600">Dirección</label>
+                <label className="block text-sm text-muted-foreground">Dirección</label>
                 <textarea
                   name="address"
-                  className="w-full p-2 bg-white border rounded"
+                  className="w-full p-2 bg-card border rounded"
                   value={customerInfo.address}
                   onChange={handleInputChange}
                   placeholder="No detectado"

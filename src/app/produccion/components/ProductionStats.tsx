@@ -131,7 +131,7 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
         const g = parseInt(hex.substr(2, 2), 16);
         const b = parseInt(hex.substr(4, 2), 16);
         const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-        const textColor = brightness > 128 ? 'text-gray-900' : 'text-white';
+        const textColor = brightness > 128 ? 'text-foreground' : 'text-white';
         
         // Return both the color style and text color class
         return {
@@ -149,26 +149,36 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
     
     // Fallback to hardcoded colors if status not configured
     const colors: Record<string, string> = {
-      'Pendiente': 'bg-yellow-100 text-yellow-800',
-      'En Proceso': 'bg-blue-100 text-blue-800',
-      'Completado': 'bg-green-100 text-green-800',
-      'Enviado': 'bg-purple-100 text-purple-800',
-      'Entregado': 'bg-emerald-100 text-emerald-800',
-      'Drive': 'bg-indigo-100 text-indigo-800',
-      'Impreso': 'bg-cyan-100 text-cyan-800',
-      'PendienteDiseño': 'bg-orange-100 text-orange-800'
+      'Pendiente': 'bg-yellow-100 dark:bg-yellow-950/30 text-yellow-800 dark:text-yellow-400',
+      'En Proceso': 'bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400',
+      'Completado': 'bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400',
+      'Enviado': 'bg-purple-100 dark:bg-purple-950/30 text-purple-800 dark:text-purple-400',
+      'Entregado': 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400',
+      'Drive': 'bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400',
+      'Impreso': 'bg-cyan-100 dark:bg-cyan-950/30 text-cyan-800 dark:text-cyan-400',
+      'PendienteDiseño': 'bg-orange-100 dark:bg-orange-950/30 text-orange-800 dark:text-orange-400'
     };
     return {
-      className: colors[status] || 'bg-gray-100 text-gray-800',
+      className: colors[status] || 'bg-muted text-foreground',
       style: undefined
     };
+  };
+
+  const VALUE_ICON_BG: Record<string, string> = {
+    'text-blue-600': 'bg-blue-100 dark:bg-blue-950/30',
+    'text-green-600': 'bg-green-100 dark:bg-green-950/30',
+    'text-purple-600': 'bg-purple-100 dark:bg-purple-950/30',
+    'text-red-600': 'bg-red-100 dark:bg-red-950/30',
+    'text-emerald-600': 'bg-emerald-100 dark:bg-emerald-950/30',
+    'text-gray-600': 'bg-muted',
+    'text-muted-foreground': 'bg-muted',
   };
 
   const StatCard = React.memo(({ 
     title, 
     value, 
     icon, 
-    color = "text-gray-600",
+    color = "text-muted-foreground",
     subtitle,
     trend,
     onClick,
@@ -193,18 +203,18 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
 
     return (
       <Card 
-        className={`transition-shadow duration-200 ${clickable ? 'hover:shadow-lg cursor-pointer hover:border-blue-400' : 'hover:shadow-md'}`}
+        className={`transition-shadow duration-200 ${clickable ? 'hover:shadow-lg cursor-pointer hover:border-blue-400 dark:hover:border-blue-500' : 'hover:shadow-md'}`}
         onClick={handleClick}
       >
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">{title}</p>
+              <p className="text-sm font-medium text-muted-foreground">{title}</p>
               <p className={`text-2xl font-bold ${color}`}>{value}</p>
-              {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
+              {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
               {trend && (
                 <div className={`flex items-center text-xs ${
-                  trend.isPositive ? 'text-green-600' : 'text-red-600'
+                  trend.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                 }`}>
                   <TrendingUp className={`h-3 w-3 mr-1 ${
                     trend.isPositive ? '' : 'rotate-180'
@@ -212,9 +222,17 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
                   {Math.abs(trend.value)}%
                 </div>
               )}
-              {clickable && <p className="text-xs text-blue-500 mt-1">👆 Click para filtrar</p>}
+              {clickable && <p className="text-xs text-blue-500 dark:text-blue-400 mt-1">👆 Click para filtrar</p>}
             </div>
-            <div className={`p-2 rounded-full ${color.replace('text-', 'bg-').replace('-600', '-100')}`}>
+            <div
+              className={`p-2 rounded-full ${
+                VALUE_ICON_BG[
+                  color.includes('text-muted-foreground')
+                    ? 'text-muted-foreground'
+                    : (color.match(/text-[a-z]+-600/)?.[0] ?? 'text-muted-foreground')
+                ] ?? 'bg-muted'
+              }`}
+            >
               {icon}
             </div>
           </div>
@@ -245,25 +263,25 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
                 title="Total Órdenes"
                 value={stats.total}
                 icon={<Package className="h-5 w-5" />}
-                color="text-blue-600"
+                color="text-blue-600 dark:text-blue-400"
               />
               <StatCard
                 title="Envíos (EA)"
                 value={stats.eaOrders}
                 icon={<Truck className="h-5 w-5" />}
-                color="text-green-600"
+                color="text-green-600 dark:text-green-400"
               />
               <StatCard
                 title="Retiros (RA)"
                 value={stats.raOrders}
                 icon={<Package className="h-5 w-5" />}
-                color="text-purple-600"
+                color="text-purple-600 dark:text-purple-400"
               />
               <StatCard
                 title="Órdenes Urgentes"
                 value={stats.urgentOrders}
                 icon={<AlertCircle className="h-5 w-5" />}
-                color="text-red-600"
+                color="text-red-600 dark:text-red-400"
                 subtitle="Estado urgente/+24h pendientes"
               />
             </div>
@@ -274,19 +292,19 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
                 title="Ingresos Totales"
                 value={`₡${stats.totalRevenue.toLocaleString()}`}
                 icon={<DollarSign className="h-5 w-5" />}
-                color="text-green-600"
+                color="text-green-600 dark:text-green-400"
               />
               <StatCard
                 title="Valor Promedio"
                 value={`₡${stats.avgOrderValue.toLocaleString()}`}
                 icon={<TrendingUp className="h-5 w-5" />}
-                color="text-blue-600"
+                color="text-blue-600 dark:text-blue-400"
               />
               <StatCard
                 title="Tasa de Completado"
                 value={`${stats.completionRate.toFixed(1)}%`}
                 icon={<CheckCircle className="h-5 w-5" />}
-                color="text-emerald-600"
+                color="text-emerald-600 dark:text-emerald-400"
               />
             </div>
 
@@ -296,21 +314,21 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
                 title="Hoy"
                 value={stats.todayOrders}
                 icon={<Calendar className="h-5 w-5" />}
-                color="text-blue-600"
+                color="text-blue-600 dark:text-blue-400"
                 subtitle="Órdenes creadas hoy"
               />
               <StatCard
                 title="Ayer"
                 value={stats.yesterdayOrders}
                 icon={<Calendar className="h-5 w-5" />}
-                color="text-gray-600"
+                color="text-muted-foreground"
                 subtitle="Órdenes de ayer"
               />
               <StatCard
                 title="Esta Semana"
                 value={stats.thisWeekOrders}
                 icon={<Calendar className="h-5 w-5" />}
-                color="text-purple-600"
+                color="text-purple-600 dark:text-purple-400"
                 subtitle="Órdenes de la semana"
               />
             </div>
@@ -322,7 +340,7 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
                 {Object.entries(stats.statusCounts).map(([status, count]) => {
                   const statusColor = getStatusColor(status);
                   return (
-                    <div key={status} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div key={status} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                       <div className="flex items-center gap-2">
                         <Badge 
                           className={statusColor.className}
@@ -347,7 +365,7 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
                     <span>Completadas</span>
                     <span>{stats.completedOrders} / {stats.total}</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="w-full bg-muted rounded-full h-2">
                     <div 
                       className="bg-green-500 h-2 rounded-full transition-all duration-300"
                       style={{ width: `${stats.completionRate}%` }}
@@ -360,7 +378,7 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
                     <span>En Proceso</span>
                     <span>{stats.statusCounts['En Proceso'] || 0}</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="w-full bg-muted rounded-full h-2">
                     <div 
                       className="bg-blue-500 h-2 rounded-full transition-all duration-300"
                       style={{ width: `${((stats.statusCounts['En Proceso'] || 0) / stats.total) * 100}%` }}
@@ -373,7 +391,7 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
                     <span>Pendientes</span>
                     <span>{stats.statusCounts['Pendiente'] || 0}</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="w-full bg-muted rounded-full h-2">
                     <div 
                       className="bg-yellow-500 h-2 rounded-full transition-all duration-300"
                       style={{ width: `${((stats.statusCounts['Pendiente'] || 0) / stats.total) * 100}%` }}
@@ -410,7 +428,7 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
         title="Total Órdenes"
         value={stats.total}
         icon={<Package className="h-5 w-5" />}
-        color="text-blue-600"
+        color="text-blue-600 dark:text-blue-400"
         onClick={handleTotalClick}
         clickable={!!onFilterChange}
       />
@@ -418,7 +436,7 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
         title="Envíos (EA)"
         value={stats.eaOrders}
         icon={<Truck className="h-5 w-5" />}
-        color="text-green-600"
+        color="text-green-600 dark:text-green-400"
         onClick={handleEAClick}
         clickable={!!onFilterChange}
       />
@@ -426,7 +444,7 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
         title="Retiros (RA)"
         value={stats.raOrders}
         icon={<Package className="h-5 w-5" />}
-        color="text-purple-600"
+        color="text-purple-600 dark:text-purple-400"
         onClick={handleRAClick}
         clickable={!!onFilterChange}
       />
@@ -434,7 +452,7 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
         title="Urgentes"
         value={stats.urgentOrders}
         icon={<AlertCircle className="h-5 w-5" />}
-        color="text-red-600"
+        color="text-red-600 dark:text-red-400"
         subtitle="Estado urgente/+24h pendientes"
         onClick={handleUrgentClick}
         clickable={!!onFilterChange}

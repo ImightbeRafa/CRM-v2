@@ -58,7 +58,7 @@ export function ShippingMethodSelector({ selectedMethod, onMethodChange }: Shipp
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-gray-500">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Truck className="w-4 h-4 animate-pulse" />
         <span>Cargando métodos de envío...</span>
       </div>
@@ -71,7 +71,7 @@ export function ShippingMethodSelector({ selectedMethod, onMethodChange }: Shipp
 
   return (
     <div className="flex flex-col space-y-2">
-      <label htmlFor="shippingMethod" className="text-sm font-medium text-gray-700 flex items-center gap-2">
+      <label htmlFor="shippingMethod" className="text-sm font-medium text-muted-foreground flex items-center gap-2">
         <Truck className="w-4 h-4" />
         Método de Envío
       </label>
@@ -79,7 +79,7 @@ export function ShippingMethodSelector({ selectedMethod, onMethodChange }: Shipp
         id="shippingMethod"
         value={selectedMethod || ''}
         onChange={handleChange}
-        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+        className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
       >
         <option value="">Seleccionar método de envío...</option>
         {shippingOptions.map((option) => (
@@ -89,7 +89,7 @@ export function ShippingMethodSelector({ selectedMethod, onMethodChange }: Shipp
         ))}
       </select>
       {selectedMethod && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           Costo de envío: ₡{shippingOptions.find(o => o.value === selectedMethod)?.priceDelta.toLocaleString() || 0}
         </p>
       )}

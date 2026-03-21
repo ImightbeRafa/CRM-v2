@@ -86,21 +86,6 @@ const TENANT_MODELS_LOWER: readonly string[] = TENANT_MODELS.map((m) => m.toLowe
  * This ensures a single, clear tenant isolation strategy without drift.
  */
 
-// Helper to get DATABASE_URL with connection pooling parameters
-const getDatabaseUrl = () => {
-  const baseUrl = process.env.DATABASE_URL;
-  if (!baseUrl) return baseUrl;
-
-  const hasParams = baseUrl.includes('?');
-  const separator = hasParams ? '&' : '?';
-
-  if (!baseUrl.includes('connection_limit')) {
-    return `${baseUrl}${separator}connection_limit=20&pool_timeout=20`;
-  }
-
-  return baseUrl;
-};
-
 // Reuse the singleton Prisma client from db.ts for tenant-scoped operations.
 // IMPORTANT: Do NOT create a second PrismaClient here — it doubles connection pool usage
 // and was the primary cause of Supabase "Max client connections reached" errors.

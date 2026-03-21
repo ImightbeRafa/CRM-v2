@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getTenantPrisma } from '@/lib/prisma-tenant'
 import { authenticateAPI } from '@/lib/auth-helpers'
 import { withTenantContext } from '@/lib/tenantContext'
-import { getToken } from 'next-auth/jwt'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { logCreate, logUpdate, logDelete } from '@/lib/auditLogger'
 
@@ -16,12 +15,9 @@ export async function GET(request: NextRequest) {
     const auth = await authenticateAPI(request)
     if (!auth.ok) return auth.response
     
-    const { tenantId } = auth
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
-    const userId = (token as any)?.sub as string | undefined
-    const userName = (token as any)?.name || (token as any)?.email || 'System'
+    const { tenantId, userId, role } = auth
 
-    return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName }, async () => {
+    return await withTenantContext({ tenantId, userId, role, userRole: role, userName: 'System' }, async () => {
       const tenantPrisma = getTenantPrisma(tenantId)
       
       const sales = await tenantPrisma.order.findMany({
@@ -45,14 +41,11 @@ export async function POST(request: NextRequest) {
     const auth = await authenticateAPI(request)
     if (!auth.ok) return auth.response
     
-    const { tenantId } = auth
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
-    const userId = (token as any)?.sub as string | undefined
-    const userName = (token as any)?.name || (token as any)?.email || 'System'
+    const { tenantId, userId, role } = auth
 
     const body = await request.json()
 
-    return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName }, async () => {
+    return await withTenantContext({ tenantId, userId, role, userRole: role, userName: 'System' }, async () => {
       const tenantPrisma = getTenantPrisma(tenantId)
       
       // Create a new sale record with tenant isolation
@@ -91,10 +84,7 @@ export async function DELETE(request: NextRequest) {
     const auth = await authenticateAPI(request)
     if (!auth.ok) return auth.response
     
-    const { tenantId } = auth
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
-    const userId = (token as any)?.sub as string | undefined
-    const userName = (token as any)?.name || (token as any)?.email || 'System'
+    const { tenantId, userId, role } = auth
 
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
@@ -103,7 +93,7 @@ export async function DELETE(request: NextRequest) {
       return createErrorResponse('Missing id parameter', 400)
     }
 
-    return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName }, async () => {
+    return await withTenantContext({ tenantId, userId, role, userRole: role, userName: 'System' }, async () => {
       const tenantPrisma = getTenantPrisma(tenantId)
       
       // Find sale with tenant isolation

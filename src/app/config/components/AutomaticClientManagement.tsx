@@ -253,7 +253,7 @@ export function AutomaticClientManagement() {
   };
 
   const getClientStatus = (client: Client) => {
-    if (!client.isActive) return { status: 'inactive', color: 'bg-gray-100 text-gray-800', icon: EyeOff };
+    if (!client.isActive) return { status: 'inactive', color: 'bg-muted text-foreground', icon: EyeOff };
     if (client.isFavorite) return { status: 'favorite', color: 'bg-yellow-100 text-yellow-800', icon: Star };
     if (client.totalSpent > 100000) return { status: 'vip', color: 'bg-purple-100 text-purple-800', icon: TrendingUp };
     return { status: 'active', color: 'bg-green-100 text-green-800', icon: CheckCircle };
@@ -294,7 +294,7 @@ export function AutomaticClientManagement() {
       <div className="p-4">
         <Card>
           <CardContent className="p-6">
-            <p className="text-center text-gray-500">
+            <p className="text-center text-muted-foreground">
               Solo los usuarios MASTER pueden acceder a la gestión de clientes.
             </p>
           </CardContent>
@@ -309,7 +309,7 @@ export function AutomaticClientManagement() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Gestión Automática de Clientes</h1>
-          <p className="text-gray-600">Clientes sincronizados automáticamente desde las ventas</p>
+          <p className="text-muted-foreground">Clientes sincronizados automáticamente desde las ventas</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -340,7 +340,7 @@ export function AutomaticClientManagement() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Total Clientes</p>
+                <p className="text-sm font-medium text-muted-foreground">Total Clientes</p>
                 <p className="text-2xl font-bold">{stats.totalClients}</p>
               </div>
               <Users className="h-8 w-8 text-blue-600" />
@@ -352,7 +352,7 @@ export function AutomaticClientManagement() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Clientes Activos</p>
+                <p className="text-sm font-medium text-muted-foreground">Clientes Activos</p>
                 <p className="text-2xl font-bold text-green-600">{stats.activeClients}</p>
               </div>
               <CheckCircle className="h-8 w-8 text-green-600" />
@@ -364,7 +364,7 @@ export function AutomaticClientManagement() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Nuevos Este Mes</p>
+                <p className="text-sm font-medium text-muted-foreground">Nuevos Este Mes</p>
                 <p className="text-2xl font-bold text-blue-600">{stats.newClientsThisMonth}</p>
               </div>
               <TrendingUp className="h-8 w-8 text-blue-600" />
@@ -376,7 +376,7 @@ export function AutomaticClientManagement() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Ingresos Totales</p>
+                <p className="text-sm font-medium text-muted-foreground">Ingresos Totales</p>
                 <p className="text-2xl font-bold text-green-600">₡{stats.totalRevenue.toLocaleString()}</p>
               </div>
               <TrendingUp className="h-8 w-8 text-green-600" />
@@ -391,7 +391,7 @@ export function AutomaticClientManagement() {
           <div className="flex flex-wrap gap-4">
             <div className="flex-1 min-w-64">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Buscar clientes..."
                   value={searchTerm}
@@ -404,7 +404,7 @@ export function AutomaticClientManagement() {
             <select
               value={locationFilter}
               onChange={(e) => setLocationFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md"
+              className="px-3 py-2 border border-border rounded-md"
             >
               <option value="all">Todas las ubicaciones</option>
               {getLocations().map(location => (
@@ -417,7 +417,7 @@ export function AutomaticClientManagement() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md"
+              className="px-3 py-2 border border-border rounded-md"
             >
               <option value="all">Todos los estados</option>
               <option value="active">Activos</option>
@@ -584,7 +584,7 @@ export function AutomaticClientManagement() {
                       <Badge variant="outline">{client.totalOrders} pedidos</Badge>
                     </div>
                     
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-muted-foreground">
                       <div className="flex items-center gap-1">
                         <Phone className="h-3 w-3" />
                         {client.phone}
@@ -647,8 +647,8 @@ export function AutomaticClientManagement() {
       {filteredClients.length === 0 && (
         <Card>
           <CardContent className="p-8 text-center">
-            <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500">No hay clientes registrados</p>
+            <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground">No hay clientes registrados</p>
             <div className="flex gap-2 justify-center mt-4">
               <Button
                 onClick={syncClientsFromSales}

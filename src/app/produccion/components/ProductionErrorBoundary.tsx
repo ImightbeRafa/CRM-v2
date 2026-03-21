@@ -42,30 +42,30 @@ export class ProductionErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6 text-center">
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="max-w-md w-full bg-card rounded-lg shadow-lg p-6 text-center">
             <div className="flex justify-center mb-4">
               <AlertTriangle className="h-12 w-12 text-red-500" />
             </div>
             
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">
+            <h2 className="text-xl font-semibold text-foreground mb-2">
               Error en Producción
             </h2>
             
-            <p className="text-gray-600 mb-6">
+            <p className="text-muted-foreground mb-6">
               Ha ocurrido un error en el módulo de producción. Esto puede deberse a problemas de conexión o configuración.
             </p>
             
             {process.env.NODE_ENV === 'development' && this.state.error && (
               <details className="mb-4 text-left">
-                <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
+                <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
                   Detalles del error
                 </summary>
-                <pre className="mt-2 text-xs text-red-600 bg-red-50 p-2 rounded overflow-auto">
+                <pre className="mt-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-2 rounded overflow-auto">
                   {this.state.error.message}
                 </pre>
                 {this.state.errorInfo && (
-                  <pre className="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded overflow-auto">
+                  <pre className="mt-2 text-xs text-muted-foreground bg-muted p-2 rounded overflow-auto">
                     {this.state.errorInfo.componentStack}
                   </pre>
                 )}
@@ -98,13 +98,11 @@ export class ProductionErrorBoundary extends Component<Props, State> {
   }
 }
 
-// Hook version for functional components
 export function useProductionErrorHandler() {
   const router = useRouter();
   
   const handleError = (error: Error) => {
     console.error('Production error:', error);
-    // Could implement error reporting here
   };
 
   return { handleError };

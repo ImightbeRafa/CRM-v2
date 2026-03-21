@@ -26,7 +26,7 @@ interface DocsBreadcrumbProps {
 
 export function DocsBreadcrumb({ basePath, baseLabel, category, title }: DocsBreadcrumbProps) {
   return (
-    <nav className="flex items-center gap-1.5 text-xs text-gray-400 mb-6 flex-wrap">
+    <nav className="flex items-center gap-1.5 text-xs text-muted-foreground mb-6 flex-wrap">
       <Link href={basePath} className="flex items-center gap-1 hover:text-blue-600 transition-colors">
         <Home className="h-3 w-3" />
         {baseLabel}
@@ -34,13 +34,13 @@ export function DocsBreadcrumb({ basePath, baseLabel, category, title }: DocsBre
       {category && (
         <>
           <ChevronRight className="h-3 w-3" />
-          <span className="text-gray-400">{CATEGORY_LABELS[category] || category}</span>
+          <span className="text-muted-foreground">{CATEGORY_LABELS[category] || category}</span>
         </>
       )}
       {title && (
         <>
           <ChevronRight className="h-3 w-3" />
-          <span className="text-gray-600 font-medium truncate max-w-[200px]">{title}</span>
+          <span className="text-muted-foreground font-medium truncate max-w-[200px]">{title}</span>
         </>
       )}
     </nav>

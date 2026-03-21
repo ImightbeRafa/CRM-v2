@@ -6,10 +6,8 @@ import { useSortable } from '@dnd-kit/sortable';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Sale } from '../types/sales';
-import { Card, CardHeader, CardTitle, CardContent } from '@/app/components/ui/card';
-import { Badge } from '@/app/components/ui/badge';
 import { KanbanCard } from './KanbanCard';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, Inbox } from 'lucide-react';
 
 interface KanbanColumnProps {
   status: {
@@ -45,142 +43,107 @@ export function KanbanColumn({ status, orders, onOrderClick, isUpdating, isDragg
     opacity: isSortableDragging ? 0.5 : 1,
   };
 
-  // Check if color is hex code
-  const isHexColor = status.color.startsWith('#');
-
-  // Helper to convert hex to rgba
-  const hexToRgba = (hex: string, opacity: number) => {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  const resolveColor = (color: string): string => {
+    if (color.startsWith('#')) return color;
+    const tailwindToHex: Record<string, string> = {
+      yellow: '#eab308', blue: '#3b82f6', green: '#22c55e',
+      purple: '#a855f7', emerald: '#10b981', indigo: '#6366f1',
+      cyan: '#06b6d4', orange: '#f97316', gray: '#6b7280',
+      red: '#ef4444', pink: '#ec4899', teal: '#14b8a6',
+    };
+    return tailwindToHex[color] || '#6b7280';
   };
 
-  const colorClasses: Record<string, { bg: string; border: string; text: string; badge: string }> = {
-    yellow: {
-      bg: 'bg-yellow-50',
-      border: 'border-yellow-200',
-      text: 'text-yellow-800',
-      badge: 'bg-yellow-100 text-yellow-800',
-    },
-    blue: {
-      bg: 'bg-blue-50',
-      border: 'border-blue-200',
-      text: 'text-blue-800',
-      badge: 'bg-blue-100 text-blue-800',
-    },
-    green: {
-      bg: 'bg-green-50',
-      border: 'border-green-200',
-      text: 'text-green-800',
-      badge: 'bg-green-100 text-green-800',
-    },
-    purple: {
-      bg: 'bg-purple-50',
-      border: 'border-purple-200',
-      text: 'text-purple-800',
-      badge: 'bg-purple-100 text-purple-800',
-    },
-    emerald: {
-      bg: 'bg-emerald-50',
-      border: 'border-emerald-200',
-      text: 'text-emerald-800',
-      badge: 'bg-emerald-100 text-emerald-800',
-    },
-    indigo: {
-      bg: 'bg-indigo-50',
-      border: 'border-indigo-200',
-      text: 'text-indigo-800',
-      badge: 'bg-indigo-100 text-indigo-800',
-    },
-    cyan: {
-      bg: 'bg-cyan-50',
-      border: 'border-cyan-200',
-      text: 'text-cyan-800',
-      badge: 'bg-cyan-100 text-cyan-800',
-    },
-    orange: {
-      bg: 'bg-orange-50',
-      border: 'border-orange-200',
-      text: 'text-orange-800',
-      badge: 'bg-orange-100 text-orange-800',
-    },
-    gray: {
-      bg: 'bg-gray-50',
-      border: 'border-gray-200',
-      text: 'text-gray-800',
-      badge: 'bg-gray-100 text-gray-800',
-    },
-  };
-
-  const colors = colorClasses[status.color] || colorClasses.gray;
-
-  // If hex color, use inline styles
-  const headerStyle = isHexColor ? {
-    backgroundColor: hexToRgba(status.color, 0.1),
-    borderColor: status.color,
-  } : {};
-
-  const borderStyle = isHexColor ? {
-    borderColor: status.color,
-  } : {};
+  const hex = resolveColor(status.color);
 
   return (
     <div 
       ref={setSortableRef}
       style={style}
-      className="kanban-column flex-shrink-0 w-80"
+      className="kanban-column flex-shrink-0 w-[310px]"
     >
-      <Card 
-        className={`border-2 ${isOver ? 'ring-2 ring-blue-400 ring-offset-2' : ''} ${!isHexColor ? colors.border : ''} ${
-          isSortableDragging ? 'shadow-xl scale-105 rotate-1' : ''
-        }`}
-        style={isHexColor ? borderStyle : {}}
+      <div
+        className={`
+          relative rounded-xl overflow-hidden
+          glass-column
+          transition-all duration-200
+          ${isOver ? 'drop-pulse ring-1 ring-blue-400/30' : ''}
+          ${isSortableDragging ? 'shadow-premium-drag scale-[1.02] rotate-1' : 'shadow-premium'}
+        `}
       >
-        <CardHeader 
-          className={`border-b border-2 ${!isHexColor ? `${colors.bg} ${colors.border}` : ''}`}
-          style={isHexColor ? headerStyle : {}}
+        {/* Top gradient accent */}
+        <div
+          className="absolute top-0 left-0 right-0 h-[2px]"
+          style={{ background: `linear-gradient(90deg, ${hex}, ${hex}66)` }}
+        />
+
+        {/* Column header */}
+        <div
+          className="relative px-4 py-3.5 border-b border-white/[0.04]"
+          style={{ background: `linear-gradient(180deg, ${hex}08, transparent)` }}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="cursor-grab active:cursor-grabbing p-1 hover:bg-white/20 rounded transition-colors"
+                className="cursor-grab active:cursor-grabbing p-0.5 rounded-md
+                  text-muted-foreground/40 hover:text-muted-foreground/70
+                  hover:bg-white/5 transition-colors"
                 {...attributes}
                 {...listeners}
               >
-                <GripVertical className="h-4 w-4 text-gray-500" />
+                <GripVertical className="h-3.5 w-3.5" />
               </button>
-              <CardTitle 
-                className={`text-lg font-semibold ${!isHexColor ? colors.text : ''}`}
-                style={isHexColor ? { color: status.color } : {}}
+              <h3
+                className="text-sm font-semibold tracking-tight"
+                style={{ color: hex }}
               >
                 {status.label}
-              </CardTitle>
+              </h3>
             </div>
-            <Badge variant="secondary" className={!isHexColor ? colors.badge : ''}>
+            <div
+              className="min-w-[24px] h-6 px-2 flex items-center justify-center
+                rounded-full text-xs font-semibold tabular-nums"
+              style={{
+                backgroundColor: `${hex}15`,
+                color: hex,
+              }}
+            >
               {orders.length}
-            </Badge>
+            </div>
           </div>
-        </CardHeader>
-        <CardContent 
+        </div>
+
+        {/* Cards area */}
+        <div
           ref={setNodeRef}
-          className={`p-4 space-y-3 min-h-[500px] max-h-[70vh] overflow-y-auto transition-colors duration-200 ${
-            isOver ? 'bg-blue-50 border-blue-300' : ''
-          }`}
+          className={`
+            p-3 space-y-2.5
+            min-h-[400px] max-h-[70vh]
+            overflow-y-auto scrollbar-kanban
+            transition-colors duration-300
+            ${isOver ? 'bg-blue-500/[0.03]' : ''}
+          `}
         >
           <SortableContext
             items={orders.map(o => o.orderId)}
             strategy={verticalListSortingStrategy}
           >
             {orders.length === 0 ? (
-              <div className={`text-center py-8 transition-colors duration-200 ${
-                isOver ? 'text-blue-600' : 'text-gray-400'
-              }`}>
-                <p className="text-sm">No hay pedidos</p>
-                <p className="text-xs mt-1">
-                  {isOver ? 'Suelta aquí' : 'Arrastra pedidos aquí'}
+              <div className={`
+                flex flex-col items-center justify-center py-16
+                transition-colors duration-200
+                ${isOver ? 'text-blue-400/60' : 'text-muted-foreground/30'}
+              `}>
+                <Inbox className={`h-8 w-8 mb-3 ${isOver ? 'text-blue-400/40' : 'text-muted-foreground/20'}`} />
+                <p className="text-xs font-medium">
+                  {isOver ? 'Suelta aquí' : 'No hay pedidos'}
                 </p>
+                {!isOver && (
+                  <p className="text-[11px] mt-1 text-muted-foreground/20">
+                    Arrastra pedidos aquí
+                  </p>
+                )}
               </div>
             ) : (
               orders.map(order => (
@@ -193,8 +156,8 @@ export function KanbanColumn({ status, orders, onOrderClick, isUpdating, isDragg
               ))
             )}
           </SortableContext>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

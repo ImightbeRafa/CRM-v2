@@ -3,7 +3,6 @@ import { prisma } from '@/lib/db'
 import { getTenantPrisma } from '@/lib/prisma-tenant'
 import { authenticateAPI } from '@/lib/auth-helpers'
 import { withTenantContext } from '@/lib/tenantContext'
-import { getToken } from 'next-auth/jwt'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { logCreate } from '@/lib/auditLogger'
 import { checkOrderLimit } from '@/lib/plan-enforcement'
@@ -70,65 +69,22 @@ async function updateInventoryForProduct(product: any, tenantPrisma: any) {
   const { type, cantidad, color, tamano } = product
   
   try {
-    // Find inventory items that match this product type (tenant-filtered automatically!)
-    const inventoryItems = await tenantPrisma.inventoryItem.findMany({
+    const productType = type.toLowerCase()
+
+    // Query DB with filters instead of loading all items into memory
+    const matchingItems = await tenantPrisma.inventoryItem.findMany({
       where: {
-        isActive: true
-      }
+        isActive: true,
+        OR: [
+          { sku: { contains: productType, mode: 'insensitive' } },
+          { category: { contains: productType, mode: 'insensitive' } },
+          { name: { contains: productType, mode: 'insensitive' } },
+          { description: { contains: productType, mode: 'insensitive' } },
+        ],
+      },
     })
-    
-    // Filter by SKU/código match first, then fallback to name/description/category
-    const matchingItems = inventoryItems.filter((item: any) => {
-      const itemSku = item.sku?.toLowerCase() || ''
-      const itemName = item.name.toLowerCase()
-      const itemDesc = item.description?.toLowerCase() || ''
-      const itemCategory = item.category?.toLowerCase() || ''
-      const productType = type.toLowerCase()
-      
-      // First try: Match by SKU/código (most reliable)
-      const skuMatch = itemSku.includes(productType) || productType.includes(itemSku)
-      
-      // Second try: Match by category (very reliable for product types)
-      const categoryMatch = itemCategory.includes(productType) || productType.includes(itemCategory)
-      
-      // Third try: Match by name
-      const nameMatch = itemName.includes(productType) || productType.includes(itemName)
-      
-      // Fourth try: Match by description
-      const descMatch = itemDesc.includes(productType) || productType.includes(itemDesc)
-      
-      return skuMatch || categoryMatch || nameMatch || descMatch
-    })
-    
-    // If no exact matches, try fuzzy matching for common product types
+
     let finalMatches = matchingItems
-    if (matchingItems.length === 0) {
-      const fuzzyMatches = inventoryItems.filter((item: any) => {
-        const itemName = item.name.toLowerCase()
-        const itemDesc = item.description?.toLowerCase() || ''
-        const productType = type.toLowerCase()
-        
-        // Common product type mappings
-        const typeMappings = {
-          'tumblr': ['termo', 'taza', 'mug', 'vaso'],
-          'camiseta': ['camiseta', 'shirt', 'playera'],
-          'pantalon': ['pantalón', 'pants', 'jean'],
-          'vestido': ['vestido', 'dress'],
-          'zapatos': ['zapatos', 'shoes', 'zapato']
-        }
-        
-        // Check if any mapped terms match
-        const mappedTerms = (typeMappings as any)[productType] || []
-        return mappedTerms.some((term: string) => 
-          itemName.includes(term) || itemDesc.includes(term) ||
-          term.includes(itemName) || term.includes(itemDesc)
-        )
-      })
-      
-      if (fuzzyMatches.length > 0) {
-        finalMatches = fuzzyMatches
-      }
-    }
 
     // Update the first matching item
     if (finalMatches.length > 0) {
@@ -148,12 +104,7 @@ async function updateInventoryForProduct(product: any, tenantPrisma: any) {
       
       console.log(`✅ Updated inventory for ${type}: ${item.currentStock} -> ${newStock} (deducted ${quantityToDeduct})`)
     } else {
-      console.warn(`❌ No inventory item found for product type: ${type}`)
-      console.log('Available inventory items:', inventoryItems.map((item: any) => ({ 
-        name: item.name, 
-        description: item.description,
-        currentStock: item.currentStock 
-      })))
+      console.warn(`No inventory match for product type: ${type}`)
     }
   } catch (error) {
     console.error(`Failed to update inventory for product type ${type}:`, error)
@@ -166,14 +117,9 @@ export async function GET(request: NextRequest) {
     const auth = await authenticateAPI(request)
     if (!auth.ok) return auth.response
     
-    const { tenantId } = auth
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
-    const userId = (token as any)?.sub as string | undefined
-    const userName = (token as any)?.name || (token as any)?.email || 'System'
+    const { tenantId, userId, role } = auth
 
-    return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName }, async () => {
-      // SECURITY: Always use tenant-isolated client for regular endpoints
-      // Super admins work within tenant context like regular admins
+    return await withTenantContext({ tenantId, userId, role, userRole: role, userName: 'System' }, async () => {
       const tenantPrisma = getTenantPrisma(tenantId)
 
       // Get query parameters for pagination and filtering
@@ -312,10 +258,7 @@ export async function POST(request: NextRequest) {
     const auth = await authenticateAPI(request)
     if (!auth.ok) return auth.response
     
-    const { tenantId } = auth
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
-    const userId = (token as any)?.sub || (auth as any).userId
-    const userName = (token as any)?.name || (token as any)?.email || 'System'
+    const { tenantId, userId, role } = auth
     const tenantPrisma = getTenantPrisma(tenantId)
     const body = await request.json()
 

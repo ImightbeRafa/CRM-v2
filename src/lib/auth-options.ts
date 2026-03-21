@@ -64,6 +64,7 @@ declare module "next-auth/jwt" {
     memberships?: Membership[];
     allTenantIds?: string[];
     isLogisticsAdmin?: boolean;
+    lastDbSync?: number;
     currentTenant?: {
       id: string;
       role: MemberRole;
@@ -636,9 +637,9 @@ export const authOptions: NextAuthOptions = {
         token.role = (user as any).role || 'REGULAR';
         token.tenantId = (user as any).tenantId;
         token.email_verified = (user as any).email_verified || false;
-        token.active = (user as any).active !== false; // Default to true if not set
+        token.active = (user as any).active !== false;
+        token.lastDbSync = Date.now();
 
-        // Fetch isLogisticsAdmin at sign-in time so middleware sees it immediately
         try {
           const dbUser = await prisma.user.findUnique({
             where: { id: user.id },
@@ -752,8 +753,12 @@ export const authOptions: NextAuthOptions = {
         }
       }
 
-      // Update token with latest user data if needed
-      if (token.email) {
+      // Only refresh from DB when token data is stale (every 5 minutes)
+      const DB_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
+      const isStale = !token.lastDbSync || (Date.now() - token.lastDbSync > DB_SYNC_INTERVAL);
+
+      if (token.email && isStale) {
+        token.lastDbSync = Date.now();
         try {
           const dbUser = await prisma.user.findUnique({
             where: { email: token.email },

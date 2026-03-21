@@ -583,14 +583,14 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
 
     printWindow.document.write(`<!DOCTYPE html><html><head><title>Guías de Envío</title>
       <style>
-        body { font-family: Arial, sans-serif; padding: 20px; margin: 0; }
+        body { font-family: Arial, sans-serif; padding: 20px; margin: 0; background: #fff; color: #000; }
         .guia-container { border: 2px solid #000; padding: 20px; margin-bottom: 20px; page-break-inside: avoid; }
         .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
         .info-row { margin: 10px 0; display: flex; justify-content: space-between; }
         .info-label { font-weight: bold; margin-right: 10px; }
         .info-value { flex: 1; }
         .page-break { page-break-after: always; }
-        @media print { body { padding: 0; } .no-print { display: none; } }
+        @media print { body { padding: 0; background: #fff !important; color: #000 !important; } .no-print { display: none; } }
       </style></head><body>${orderElements}
       <button class="no-print" onclick="window.print()">Imprimir</button></body></html>`);
     printWindow.document.close();

@@ -284,7 +284,7 @@ export async function getWebhookInfo() {
 /**
  * Format order for Telegram display
  */
-export function formatOrderForTelegram(order: any): string {
+export function formatOrderForTelegram(order: any, customFieldLines?: string[]): string {
   const lines = [
     `📦 <b>Orden #${order.orderId}</b>`,
     ``,
@@ -302,6 +302,11 @@ export function formatOrderForTelegram(order: any): string {
     order.province ? `🌍 <b>Ubicación:</b> ${[order.province, order.canton, order.district].filter(Boolean).join(', ')}` : null,
     order.address ? `📫 <b>Dirección:</b> ${order.address}` : null,
   ].filter(Boolean);
+
+  if (customFieldLines && customFieldLines.length > 0) {
+    lines.push('', `📋 <b>Campos personalizados:</b>`);
+    customFieldLines.forEach(line => lines.push(`  • ${line}`));
+  }
   
   return lines.join('\n');
 }

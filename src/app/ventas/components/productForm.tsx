@@ -154,17 +154,17 @@ const ProductForm: React.FC<ProductFormProps> = ({
   return (
     <div className="space-y-6">
       {/* Product Information Header */}
-      <div className="bg-blue-50 p-4 rounded-lg">
+      <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg">
         <div className="flex justify-between items-start">
           <div>
-            <h3 className="text-lg font-semibold text-blue-800 mb-2">📦 Información del Producto</h3>
-            <p className="text-sm text-blue-600">Configure los detalles del producto que está vendiendo</p>
+            <h3 className="text-lg font-semibold text-blue-800 dark:text-blue-300 mb-2">📦 Información del Producto</h3>
+            <p className="text-sm text-blue-600 dark:text-blue-400">Configure los detalles del producto que está vendiendo</p>
           </div>
           <button
             type="button"
             onClick={loadData}
             disabled={loading}
-            className="flex items-center gap-2 px-3 py-1 text-sm bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-md transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-3 py-1 text-sm bg-blue-100 dark:bg-blue-950/40 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-800 dark:text-blue-300 rounded-md transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             {loading ? 'Cargando...' : 'Actualizar'}
@@ -177,11 +177,11 @@ const ProductForm: React.FC<ProductFormProps> = ({
       {isAddModal && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block font-medium text-sm text-gray-700 mb-1">Nombre del producto *</label>
+            <label className="block font-medium text-sm text-muted-foreground mb-1">Nombre del producto *</label>
             <input
               type="text"
               name="type"
-              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full p-2 bg-background text-foreground border border-border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               value={productInfo.type}
               onChange={handleInputChange}
               required
@@ -189,11 +189,11 @@ const ProductForm: React.FC<ProductFormProps> = ({
             />
           </div>
           <div>
-            <label className="block font-medium text-sm text-gray-700 mb-1">Cantidad *</label>
+            <label className="block font-medium text-sm text-muted-foreground mb-1">Cantidad *</label>
             <input
               type="number"
               name="cantidad"
-              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full p-2 bg-background text-foreground border border-border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               value={productInfo.cantidad}
               onChange={handleInputChange}
               min={1}
@@ -201,11 +201,11 @@ const ProductForm: React.FC<ProductFormProps> = ({
             />
           </div>
           <div>
-            <label className="block font-medium text-sm text-gray-700 mb-1">Costo unitario *</label>
+            <label className="block font-medium text-sm text-muted-foreground mb-1">Costo unitario *</label>
             <input
               type="number"
               name="productCost"
-              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full p-2 bg-background text-foreground border border-border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               value={productInfo.productCost}
               onChange={handleInputChange}
               min={0}
@@ -219,15 +219,15 @@ const ProductForm: React.FC<ProductFormProps> = ({
 
       {/* Dynamic Fields */}
       {loading ? (
-        <div className="bg-gray-50 p-4 rounded-lg">
+        <div className="bg-muted p-4 rounded-lg">
           <div className="flex items-center justify-center py-4">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-            <span className="ml-2 text-gray-600">Cargando campos personalizados...</span>
+            <span className="ml-2 text-muted-foreground">Cargando campos personalizados...</span>
           </div>
         </div>
       ) : fields.length > 0 ? (
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <h4 className="font-medium text-gray-800 mb-3">Campos Personalizados</h4>
+        <div className="bg-muted p-4 rounded-lg">
+          <h4 className="font-medium text-foreground mb-3">Campos Personalizados</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {fields.map((field) => {
               // Avoid duplicating comments if a dynamic field is configured with key 'comments'
@@ -243,13 +243,13 @@ const ProductForm: React.FC<ProductFormProps> = ({
               if (field.type === 'text' || field.type === 'number') {
                 return (
                   <div key={field.id}>
-                    <label className="block font-medium text-sm text-gray-700 mb-1">
+                    <label className="block font-medium text-sm text-muted-foreground mb-1">
                       {field.label}{field.required ? ' *' : ''}
                     </label>
                     <input
                       type={field.type === 'number' ? 'number' : 'text'}
                       name={name as string}
-                      className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full p-2 bg-background text-foreground border border-border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       value={(productInfo as any)[name] || ''}
                       onChange={handleInputChange}
                       required={field.required}
@@ -260,7 +260,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
               }
               if (field.type === 'boolean') {
                 return (
-                  <div key={field.id} className="flex items-center gap-2 p-2 bg-white rounded border">
+                  <div key={field.id} className="flex items-center gap-2 p-2 bg-card rounded border">
                     <input
                       type="checkbox"
                       name={name as string}
@@ -271,7 +271,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
                       }}
                       className="w-4 h-4"
                     />
-                    <label className="font-medium text-sm text-gray-700">{field.label}</label>
+                    <label className="font-medium text-sm text-muted-foreground">{field.label}</label>
                   </div>
                 )
               }
@@ -279,12 +279,12 @@ const ProductForm: React.FC<ProductFormProps> = ({
                 const options = field.optionSet?.options || []
                 return (
                   <div key={field.id}>
-                    <label className="block font-medium text-sm text-gray-700 mb-1">
+                    <label className="block font-medium text-sm text-muted-foreground mb-1">
                       {field.label}{field.required ? ' *' : ''}
                     </label>
                     <select
                       name={name as string}
-                      className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full p-2 bg-background text-foreground border border-border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       value={(productInfo as any)[name] || ''}
                       onChange={handleInputChange}
                       required={field.required}
@@ -316,7 +316,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
           <input
             type="text"
             name="vendedor"
-            className="w-full p-2 border rounded text-sm bg-gray-50"
+            className="w-full p-2 border border-border rounded text-sm bg-muted text-foreground"
             value={productInfo.vendedor || user?.username || ''}
             readOnly
             title="Vendedor asignado automáticamente"
@@ -334,7 +334,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
               name="productCost"
               value={productInfo.productCost}
               onChange={handleInputChange}
-              className="w-full p-2 border rounded text-sm"
+              className="w-full p-2 bg-background text-foreground border border-border rounded text-sm"
               min="0"
               step="any"
               required
@@ -347,7 +347,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
               name="cantidad"
               value={productInfo.cantidad}
               onChange={handleInputChange}
-              className="w-full p-2 border rounded text-sm"
+              className="w-full p-2 bg-background text-foreground border border-border rounded text-sm"
               min="1"
               step="1"
               required

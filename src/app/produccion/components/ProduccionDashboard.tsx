@@ -1,6 +1,6 @@
 "use client";
 import React from 'react';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Card,
   CardContent,
@@ -120,7 +120,27 @@ export function ProductionDashboard({ onGenerateGuias, isGuiaGeneratorOpen, onGu
   const [selectedOrder, setSelectedOrder] = useState<Sale | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [productFieldConfigs, setProductFieldConfigs] = useState<any[]>([]);
+  const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const fetchFieldConfigs = async () => {
+      try {
+        const [fieldsRes, bizRes] = await Promise.all([
+          fetch('/api/config/fields', { credentials: 'include' }),
+          fetch('/api/config/business-info', { credentials: 'include' }),
+        ]);
+        const fieldsData = await fieldsRes.json();
+        const bizData = await bizRes.json();
+        if (fieldsData?.status === 'success') setProductFieldConfigs(fieldsData.data || []);
+        if (bizData?.status === 'success') setBusinessInfoFields(bizData.data || []);
+      } catch {
+        // Non-critical: custom field labels will fall back to raw keys
+      }
+    };
+    fetchFieldConfigs();
+  }, []);
 
   const { sales: orders, isLoading: loading, error, refresh } = useSalesStream({
     pollingInterval: 30000,
@@ -270,6 +290,8 @@ export function ProductionDashboard({ onGenerateGuias, isGuiaGeneratorOpen, onGu
                   onSelectOrder={setSelectedOrder}
                   loading={loading}
                   error={error || ''}
+                  productFieldConfigs={productFieldConfigs}
+                  businessInfoFields={businessInfoFields}
                 />
               </TabsContent>
             ))}

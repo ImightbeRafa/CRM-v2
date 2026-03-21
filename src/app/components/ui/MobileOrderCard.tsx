@@ -41,7 +41,7 @@ export function MobileOrderCard({ order, formatCurrency, className = '' }: Mobil
   })();
 
   return (
-    <div className={`bg-white rounded-xl border border-gray-100 shadow-sm ${className}`}>
+    <div className={`bg-card rounded-xl border shadow-sm ${className}`}>
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full text-left px-4 py-3.5"
@@ -51,7 +51,7 @@ export function MobileOrderCard({ order, formatCurrency, className = '' }: Mobil
             <div className="flex items-center gap-2 mb-1">
               <span className="font-semibold text-sm text-foreground">#{order.orderId}</span>
               {order.orderType && (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                   {order.orderType}
                 </span>
               )}
@@ -93,7 +93,7 @@ export function MobileOrderCard({ order, formatCurrency, className = '' }: Mobil
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="px-4 pb-4 pt-1 border-t border-gray-100 space-y-2">
+            <div className="px-4 pb-4 pt-1 border-t border-border space-y-2">
               {order.phone && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Teléfono</span>

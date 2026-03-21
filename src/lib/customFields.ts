@@ -214,6 +214,9 @@ function sanitizeFieldValue(value: any, fieldType: string): any {
 
     case 'select':
     case 'text':
+    case 'email':
+    case 'tel':
+    case 'textarea':
     default:
       return String(value).trim();
   }

@@ -93,41 +93,41 @@ export function BulkOperations({
   const getStatusInfo = (status: string) => {
     const statusMap: Record<string, { color: string; icon: React.ReactNode }> = {
       'Pendiente': { 
-        color: 'bg-yellow-100 text-yellow-800', 
+        color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-400', 
         icon: <Clock className="h-3 w-3" /> 
       },
       'En Proceso': { 
-        color: 'bg-blue-100 text-blue-800', 
+        color: 'bg-blue-100 text-blue-800 dark:bg-blue-950/30 dark:text-blue-400', 
         icon: <Package className="h-3 w-3" /> 
       },
       'Completado': { 
-        color: 'bg-green-100 text-green-800', 
+        color: 'bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-400', 
         icon: <CheckCircle className="h-3 w-3" /> 
       },
       'Enviado': { 
-        color: 'bg-purple-100 text-purple-800', 
+        color: 'bg-purple-100 text-purple-800 dark:bg-purple-950/30 dark:text-purple-400', 
         icon: <Truck className="h-3 w-3" /> 
       },
       'Entregado': { 
-        color: 'bg-emerald-100 text-emerald-800', 
+        color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400', 
         icon: <CheckCircle className="h-3 w-3" /> 
       },
       'Drive': { 
-        color: 'bg-indigo-100 text-indigo-800', 
+        color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-400', 
         icon: <Truck className="h-3 w-3" /> 
       },
       'Impreso': { 
-        color: 'bg-cyan-100 text-cyan-800', 
+        color: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/30 dark:text-cyan-400', 
         icon: <Package className="h-3 w-3" /> 
       },
       'PendienteDiseño': { 
-        color: 'bg-orange-100 text-orange-800', 
+        color: 'bg-orange-100 text-orange-800 dark:bg-orange-950/30 dark:text-orange-400', 
         icon: <AlertCircle className="h-3 w-3" /> 
       }
     };
     
     return statusMap[status] || { 
-      color: 'bg-gray-100 text-gray-800', 
+      color: 'bg-muted text-muted-foreground', 
       icon: <Clock className="h-3 w-3" /> 
     };
   };
@@ -152,7 +152,7 @@ export function BulkOperations({
 
         <div className="space-y-6">
           {/* Selection Controls */}
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+          <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
             <div className="flex items-center gap-4">
               <Button
                 variant="outline"
@@ -173,7 +173,7 @@ export function BulkOperations({
             </div>
             
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600">Filtrar por estado:</span>
+              <span className="text-sm text-muted-foreground">Filtrar por estado:</span>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
                 <SelectTrigger className="w-40">
                   <SelectValue />
@@ -200,7 +200,7 @@ export function BulkOperations({
                 {Object.entries(statusCounts).map(([status, count]) => {
                   const statusInfo = getStatusInfo(status);
                   return (
-                    <div key={status} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                    <div key={status} className="flex items-center gap-2 p-2 bg-muted rounded">
                       <Badge className={`${statusInfo.color} flex items-center gap-1`}>
                         {statusInfo.icon}
                         {status}
@@ -212,15 +212,15 @@ export function BulkOperations({
               </div>
 
               {/* Order List */}
-              <div className="max-h-40 overflow-y-auto border rounded-lg">
+              <div className="max-h-40 overflow-y-auto border border-border rounded-lg">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 p-3">
                   {selectedOrdersData.map((order) => {
                     const statusInfo = getStatusInfo(order.status);
                     return (
-                      <div key={order.orderId} className="flex items-center justify-between p-2 bg-white border rounded">
+                      <div key={order.orderId} className="flex items-center justify-between p-2 bg-card border border-border rounded">
                         <div>
                           <span className="font-medium">#{order.orderId}</span>
-                          <span className="text-sm text-gray-600 ml-2">{order.customerName}</span>
+                          <span className="text-sm text-muted-foreground ml-2">{order.customerName}</span>
                         </div>
                         <Badge className={`${statusInfo.color} flex items-center gap-1`}>
                           {statusInfo.icon}
@@ -255,8 +255,8 @@ export function BulkOperations({
             </div>
 
             {newStatus && (
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-800">
+              <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+                <p className="text-sm text-blue-800 dark:text-blue-400">
                   <strong>Confirmación:</strong> Se cambiará el estado de {selectedOrders.length} órdenes a &quot;{newStatus}&quot;.
                 </p>
               </div>

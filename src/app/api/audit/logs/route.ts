@@ -60,8 +60,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    console.log('🔍 Querying audit logs with where clause:', where)
-    
     const auditLogs = await prisma.auditLog.findMany({
       where,
       orderBy: { timestamp: 'desc' },

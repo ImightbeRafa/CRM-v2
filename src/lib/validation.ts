@@ -44,7 +44,7 @@ export const userUpdateSchema = z.object({
 export const productFieldSchema = z.object({
   key: z.string().min(1, 'Key is required').regex(/^[a-zA-Z0-9_]+$/, 'Key must contain only letters, numbers, and underscores'),
   label: z.string().min(1, 'Label is required'),
-  type: z.enum(['text', 'number', 'select', 'multiselect', 'boolean']),
+  type: z.enum(['text', 'number', 'select', 'multiselect', 'boolean', 'email', 'tel', 'textarea']),
   required: z.boolean().default(false),
   order: z.number().int().min(0).default(0),
   optionSetId: z.string().optional(),

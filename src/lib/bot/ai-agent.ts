@@ -282,16 +282,19 @@ function zodToOpenAITool(name: string, schema: { description: string; parameters
       } else if (innerDef.typeName === 'ZodEnum') {
         fieldSchema = { type: 'string', enum: innerDef.values };
       } else if (innerDef.typeName === 'ZodDefault') {
-        // Handle default values
-        const defaultInner = innerDef.innerType._def;
+        let defaultInner = innerDef.innerType._def;
+        if (defaultInner.typeName === 'ZodOptional') {
+          defaultInner = defaultInner.innerType._def;
+        }
         if (defaultInner.typeName === 'ZodNumber') {
           fieldSchema = { type: 'number' };
         } else if (defaultInner.typeName === 'ZodString') {
           fieldSchema = { type: 'string' };
+        } else if (defaultInner.typeName === 'ZodBoolean') {
+          fieldSchema = { type: 'boolean' };
         } else if (defaultInner.typeName === 'ZodEnum') {
           fieldSchema = { type: 'string', enum: defaultInner.values };
         }
-        // Remove from required since it has a default
         jsonSchema.required = jsonSchema.required.filter((r: string) => r !== key);
       } else if (innerDef.typeName === 'ZodArray') {
         const itemDef = innerDef.type?._def;

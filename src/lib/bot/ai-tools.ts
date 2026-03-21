@@ -1601,9 +1601,18 @@ export async function executeTool(
     };
   }
   
-  // Validate parameters
+  // Coerce string booleans from AI model responses before validation
+  const coercedParams = typeof params === 'object' && params !== null
+    ? Object.fromEntries(
+        Object.entries(params as Record<string, unknown>).map(([k, v]) => [
+          k,
+          v === 'true' ? true : v === 'false' ? false : v,
+        ])
+      )
+    : params;
+
   const schema = toolSchemas[toolName].parameters;
-  const parseResult = schema.safeParse(params);
+  const parseResult = schema.safeParse(coercedParams);
   
   if (!parseResult.success) {
     return {

@@ -43,6 +43,9 @@ export interface ToolResult<T = unknown> {
   error?: string;
   message?: string;
   attachments?: ToolAttachment[];
+  needsConfirmation?: boolean;
+  confirmationType?: 'no_match' | 'zero_stock' | 'multiple_matches';
+  pendingOrderData?: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -191,10 +194,10 @@ export const toolSchemas = {
 
   // Shipping
   generate_shipping_guia: {
-    description: 'Generar guía de envío para una orden. Modo "auto" genera guía real de Correos de Costa Rica con PDF. Modo "manual" solo registra la guía sin PDF.',
+    description: 'Generar guía de envío para una orden. Modo "auto" genera guía real de Correos de Costa Rica con PDF y tracking. Modo "manual" genera una guía simple con PDF de etiqueta (sin Correos WS, sin tracking).',
     parameters: z.object({
       orderId: z.string().describe('ID de la orden para generar guía'),
-      mode: z.enum(['auto', 'manual']).default('auto').describe('auto = Correos CR con PDF, manual = solo registro'),
+      mode: z.enum(['auto', 'manual']).default('auto').describe('auto = Correos CR con PDF y tracking, manual = etiqueta PDF simple sin tracking'),
     }),
   },
 
@@ -322,6 +325,93 @@ function validateBaseOrderFields(params: any): { isValid: boolean; errors: strin
   return { isValid: errors.length === 0, errors };
 }
 
+// ============================================================================
+// INVENTORY MATCHING FOR BOT ORDERS
+// ============================================================================
+
+interface InventoryMatch {
+  id: string;
+  name: string;
+  sku: string;
+  category: string;
+  description: string | null;
+  currentStock: number;
+  sellingPrice: number;
+  confidence: number; // 1 = exact SKU, 2 = exact name, 3 = partial name, 4 = category, 5 = description
+}
+
+function normalizeText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+/**
+ * Search inventory items for matches against a product string.
+ * Returns matches sorted by confidence (lower = better).
+ */
+async function findInventoryMatches(
+  productQuery: string,
+  tenantPrisma: any
+): Promise<InventoryMatch[]> {
+  const items = await tenantPrisma.inventoryItem.findMany({
+    where: { isActive: true },
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      category: true,
+      description: true,
+      currentStock: true,
+      sellingPrice: true,
+    },
+  });
+
+  if (items.length === 0) return [];
+
+  const query = normalizeText(productQuery);
+  const matches: InventoryMatch[] = [];
+
+  for (const item of items) {
+    const sku = normalizeText(item.sku || '');
+    const name = normalizeText(item.name);
+    const category = normalizeText(item.category || '');
+    const description = normalizeText(item.description || '');
+
+    let confidence = 0;
+
+    if (sku && sku === query) {
+      confidence = 1; // exact SKU
+    } else if (name === query) {
+      confidence = 2; // exact name
+    } else if (name.includes(query) || query.includes(name)) {
+      confidence = 3; // partial name
+    } else if (category && (category.includes(query) || query.includes(category))) {
+      confidence = 4; // category
+    } else if (description && (description.includes(query) || query.includes(description))) {
+      confidence = 5; // description
+    }
+
+    if (confidence > 0) {
+      matches.push({
+        id: item.id,
+        name: item.name,
+        sku: item.sku,
+        category: item.category,
+        description: item.description,
+        currentStock: item.currentStock,
+        sellingPrice: item.sellingPrice,
+        confidence,
+      });
+    }
+  }
+
+  matches.sort((a, b) => a.confidence - b.confidence);
+  return matches;
+}
+
 /**
  * Create a new order with proper custom fields support
  */
@@ -375,6 +465,70 @@ export async function createOrder(
           };
         }
         
+        // STEP 4: Inventory lookup (unless forced to skip)
+        let matchedInventoryItem: InventoryMatch | null = null;
+        const quantity = params.quantity || 1;
+
+        if (!params._forceWithoutInventory) {
+          const matches = await findInventoryMatches(params.product, tenantPrisma);
+          console.log('[AI Tool] createOrder - Inventory matches:', matches.length, 'for product:', params.product);
+
+          if (matches.length === 0) {
+            console.log('[AI Tool] createOrder - No inventory match, requesting confirmation');
+            return {
+              success: false,
+              needsConfirmation: true,
+              confirmationType: 'no_match',
+              message: `No se encontró "${params.product}" en el inventario. ¿Deseas registrar esta venta de todas maneras?`,
+              pendingOrderData: { ...params },
+            };
+          }
+
+          const bestConfidence = matches[0].confidence;
+          const topMatches = matches.filter(m => m.confidence === bestConfidence);
+
+          if (topMatches.length === 1) {
+            const match = topMatches[0];
+
+            if (match.currentStock <= 0) {
+              console.log('[AI Tool] createOrder - Match found but zero stock:', match.name);
+              return {
+                success: false,
+                needsConfirmation: true,
+                confirmationType: 'zero_stock',
+                message: `"${match.name}" (SKU: ${match.sku}) tiene 0 unidades en stock. ¿Deseas registrar esta venta de todas maneras?`,
+                pendingOrderData: { ...params },
+              };
+            }
+
+            if (match.currentStock < quantity) {
+              console.log('[AI Tool] createOrder - Insufficient stock:', match.currentStock, 'requested:', quantity);
+              return {
+                success: false,
+                needsConfirmation: true,
+                confirmationType: 'zero_stock',
+                message: `"${match.name}" solo tiene ${match.currentStock} unidad(es) en stock pero se solicitan ${quantity}. ¿Deseas registrar esta venta de todas maneras?`,
+                pendingOrderData: { ...params },
+              };
+            }
+
+            matchedInventoryItem = match;
+          } else {
+            const optionsList = topMatches.slice(0, 10).map((m, i) =>
+              `${i + 1}. ${m.name} (SKU: ${m.sku}) — Stock: ${m.currentStock} — ₡${m.sellingPrice.toLocaleString('es-CR')}`
+            ).join('\n');
+
+            console.log('[AI Tool] createOrder - Multiple matches, asking user to pick');
+            return {
+              success: false,
+              needsConfirmation: true,
+              confirmationType: 'multiple_matches',
+              message: `Encontré ${topMatches.length} productos similares a "${params.product}":\n\n${optionsList}\n\n¿Cuál es el producto correcto?`,
+              pendingOrderData: { ...params },
+            };
+          }
+        }
+
         // Prepare order data with proper field mapping
         const orderData: any = {
           tenantId: ctx.tenantId,
@@ -384,25 +538,36 @@ export async function createOrder(
           customerName: params.customerName,
           phone: params.phone || '',
           email: params.email || '',
-          product: params.product,
-          quantity: params.quantity || 1,
+          product: matchedInventoryItem ? matchedInventoryItem.name : params.product,
+          quantity,
           size: params.size || '',
           color: params.color || '',
-          packaging: '', // Will be extracted from custom fields if present
-          customization: '', // Will be extracted from custom fields if present
+          packaging: '',
+          customization: '',
           total: params.total || 0,
           address: params.address || '',
           province: params.province || '',
           canton: params.canton || '',
           district: params.district || '',
           courier: params.courier || '',
-          shippingCost: undefined, // Will be extracted from custom fields if present
+          shippingCost: undefined,
           comments: params.comments || '',
           seller: ctx.userName,
           timestamp: new Date(),
-          // Store custom fields as JSON
           customFields: Object.keys(extractedCustomFields).length > 0 ? extractedCustomFields : undefined,
         };
+
+        // Populate productDetails for consistency with web UI orders
+        if (matchedInventoryItem) {
+          orderData.productDetails = JSON.stringify([{
+            type: matchedInventoryItem.name,
+            cantidad: quantity,
+            color: params.color || '',
+            tamano: params.size || '',
+            inventoryItemId: matchedInventoryItem.id,
+            inventoryItemSku: matchedInventoryItem.sku,
+          }]);
+        }
         
         // Extract known fields from custom fields if they exist
         const knownFieldMappings = {
@@ -415,26 +580,47 @@ export async function createOrder(
           for (const key of possibleKeys) {
             if (extractedCustomFields[key] !== undefined) {
               orderData[targetField] = extractedCustomFields[key];
-              // Remove from customFields to avoid duplication
               delete extractedCustomFields[key];
               break;
             }
           }
         });
         
-        // Update customFields with remaining fields
         orderData.customFields = Object.keys(extractedCustomFields).length > 0 ? extractedCustomFields : undefined;
         
         console.log('[AI Tool] createOrder - Final order data:', {
           orderId: orderData.orderId,
           customerName: orderData.customerName,
+          inventoryMatch: matchedInventoryItem?.name || 'none',
           customFieldsCount: Object.keys(orderData.customFields || {}).length,
-          customFieldsKeys: Object.keys(orderData.customFields || {})
         });
         
         const order = await tenantPrisma.order.create({
           data: orderData,
         });
+
+        // Deduct inventory stock if we matched an item
+        let inventoryMessage = '';
+        if (matchedInventoryItem) {
+          try {
+            const oldStock = matchedInventoryItem.currentStock;
+            const newStock = Math.max(0, oldStock - quantity);
+            await tenantPrisma.inventoryItem.update({
+              where: { id: matchedInventoryItem.id },
+              data: {
+                currentStock: newStock,
+                totalSold: { increment: quantity },
+                lastSold: new Date(),
+                lastUpdated: new Date(),
+              },
+            });
+            inventoryMessage = `\n📦 Inventario: "${matchedInventoryItem.name}" ${oldStock} → ${newStock}`;
+            console.log(`[AI Tool] createOrder - Stock updated: ${matchedInventoryItem.name} ${oldStock} → ${newStock}`);
+          } catch (invError) {
+            console.error('[AI Tool] createOrder - Failed to deduct inventory:', invError);
+            inventoryMessage = `\n⚠️ No se pudo actualizar inventario para "${matchedInventoryItem.name}"`;
+          }
+        }
         
         // Format custom fields for success message
         const customFieldsLines = formatCustomFieldsForTelegram(
@@ -442,9 +628,11 @@ export async function createOrder(
           customFieldsConfig
         );
         
-        const successMessage = customFieldsLines.length > 0
-          ? `✅ Orden #${order.orderId} creada exitosamente para ${params.customerName}\n\nCampos personalizados:\n${customFieldsLines.join('\n')}`
-          : `✅ Orden #${order.orderId} creada exitosamente para ${params.customerName}`;
+        let successMessage = `✅ Orden #${order.orderId} creada exitosamente para ${params.customerName}`;
+        if (customFieldsLines.length > 0) {
+          successMessage += `\n\nCampos personalizados:\n${customFieldsLines.join('\n')}`;
+        }
+        successMessage += inventoryMessage;
         
         return {
           success: true,
@@ -1043,12 +1231,12 @@ export async function generateShippingGuia(
           };
         }
 
-        // ── Manual mode: create pending record ──
+        // ── Manual mode: generate simple PDF label ──
         const existingGuia = await tenantPrisma.shippingGuia.findFirst({
           where: { orderId: order.orderId, tenantId: ctx.tenantId },
         });
 
-        if (existingGuia) {
+        if (existingGuia && existingGuia.status === 'completed') {
           const hasPdf = !!existingGuia.pdfData;
           const attachments: ToolAttachment[] = [];
           if (hasPdf && existingGuia.pdfData) {
@@ -1073,21 +1261,70 @@ export async function generateShippingGuia(
           };
         }
 
+        // Generate sequential guia number for manual labels
+        const guiaCount = await tenantPrisma.shippingGuia.count({
+          where: { tenantId: ctx.tenantId },
+        });
+        const guiaNumber = String(guiaCount + 1);
+
+        // Build the simple PDF
+        const { generateSimpleGuiaPdf } = await import('@/lib/pdf/simpleGuiaPdf');
+        const pdfBuffer = await generateSimpleGuiaPdf({
+          guiaNumber,
+          orderId: order.orderId,
+          phone: order.phone || undefined,
+          customerName: order.customerName || undefined,
+          product: order.product || undefined,
+          quantity: order.quantity ?? undefined,
+          province: order.province || undefined,
+          canton: order.canton || undefined,
+          district: order.district || undefined,
+          address: order.address || undefined,
+          comments: order.comments || undefined,
+        });
+
+        // Delete old failed/pending record if exists, then create with PDF
+        if (existingGuia) {
+          await tenantPrisma.shippingGuia.delete({ where: { id: existingGuia.id } });
+        }
+
+        const pdfFileName = `guia-manual-${order.orderId}.pdf`;
         const guia = await tenantPrisma.shippingGuia.create({
           data: {
             tenantId: ctx.tenantId,
             orderId: order.orderId,
-            carrier: 'correos',
-            status: 'pending',
+            carrier: 'manual',
+            guiaNumber,
+            status: 'completed',
             serviceType: 'manual',
-            progress: `Guía manual registrada por ${ctx.userName}`,
+            pdfData: pdfBuffer,
+            pdfFileName,
+            progress: `Guía manual generada por ${ctx.userName}`,
           },
         });
 
+        // Update order status
+        try {
+          await tenantPrisma.order.update({
+            where: { tenantId_orderId: { tenantId: ctx.tenantId, orderId: order.orderId } },
+            data: { status: 'Enviado' },
+          });
+        } catch (e) {
+          console.warn(`[AI Tool] Failed to update order status for ${order.orderId}:`, e);
+        }
+
+        const attachments: ToolAttachment[] = [{
+          type: 'pdf',
+          buffer: pdfBuffer,
+          filename: pdfFileName,
+          caption: `Guía Manual ${guiaNumber} — Orden #${order.orderId}`,
+        }];
+
         return {
           success: true,
-          data: { guiaId: guia.id, orderId: order.orderId },
-          message: `✅ Guía manual registrada.\n\n📦 **Orden:** #${order.orderId}\n👤 **Cliente:** ${order.customerName}\n📍 **Destino:** ${addressParts || 'No especificado'}\n\n⚠️ Para generar la guía real con Correos CR, usa el modo automático o ve a Producción en Betsy.`,
+          data: { guiaId: guia.id, orderId: order.orderId, guiaNumber, hasPdf: true },
+          message: `✅ Guía manual generada.\n\n📦 **Orden:** #${order.orderId}\n👤 **Cliente:** ${order.customerName}\n🔢 **Guía #:** ${guiaNumber}\n📍 **Destino:** ${addressParts || 'No especificado'}\n📄 **PDF:** Adjunto`,
+          attachments,
         };
       } catch (error: any) {
         console.error('[AI Tool] generateShippingGuia error:', error);
@@ -1274,6 +1511,17 @@ export async function executeTool(
     };
   }
   
-  return executor(ctx, parseResult.data);
+  // Preserve internal flags (prefixed with _) that are not part of the schema
+  // but needed for internal flows like inventory confirmation bypass.
+  const validatedParams = parseResult.data as Record<string, unknown>;
+  if (typeof params === 'object' && params !== null) {
+    for (const [key, value] of Object.entries(params as Record<string, unknown>)) {
+      if (key.startsWith('_') && !(key in validatedParams)) {
+        validatedParams[key] = value;
+      }
+    }
+  }
+  
+  return executor(ctx, validatedParams);
 }
 

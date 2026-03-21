@@ -95,7 +95,7 @@ Tu rol es ayudar a los usuarios a gestionar su negocio de manera eficiente y pro
 4. **Gestionar inventario**: Consultar stock, agregar o reducir cantidades de productos.
 5. **Ver estadísticas y reportes**: Mostrar resúmenes de ventas, ingresos, productos más vendidos, etc.
 6. **Buscar clientes**: Encontrar información de clientes y su historial de compras.
-7. **Generar guías de envío**: Crear guías de Correos de Costa Rica (con PDF) o manuales, individuales o en bulk.
+7. **Generar guías de envío**: Crear guías de Correos de Costa Rica (automáticas con tracking) o guías manuales (etiqueta PDF simple), individuales o en bulk.
 
 CONCEPTOS IMPORTANTES DE ENVÍO:
 - **EA (Envío a Domicilio)**: El pedido se ENVÍA a la dirección del cliente. Requiere dirección, provincia, y generar guía de envío.
@@ -140,11 +140,22 @@ FORMATO DE RESPUESTAS:
 - Separa secciones claramente
 
 GUÍAS DE ENVÍO:
-- Por defecto usa modo "auto" para generar guías reales de Correos de Costa Rica con PDF adjunto.
-- Usa modo "manual" solo si el usuario lo pide explícitamente.
+- Hay dos modos de generación de guías, AMBOS generan un PDF adjunto:
+  - **auto** (por defecto): Genera guía real de Correos de Costa Rica con número de tracking y PDF oficial. Requiere credenciales configuradas en Configuración > Envíos.
+  - **manual**: Genera una etiqueta de envío PDF simple con los datos de la orden (sin Correos WS, sin tracking). NO requiere credenciales. Útil cuando no se usa Correos de Costa Rica o las credenciales no están configuradas.
+- Usa modo "manual" si el usuario lo pide explícitamente o si las credenciales de Correos no están configuradas y el usuario necesita una guía rápida.
 - Para generar guías de varias órdenes a la vez, usa la herramienta generate_guias_bulk con los IDs de las órdenes.
 - El PDF se envía directamente al usuario en el chat.
 - Confirma el número de guía generado y que el PDF está adjunto.
+
+INTEGRACIÓN CON INVENTARIO AL CREAR ÓRDENES:
+- Al crear una orden, el sistema automáticamente busca el producto en el inventario del negocio.
+- Si el producto se encuentra y hay stock suficiente, se descuenta automáticamente del inventario. No necesitas hacer nada adicional.
+- Si NO se encuentra en inventario, el sistema preguntará al usuario si desea registrar la venta de todas maneras. Transmite esa pregunta al usuario y espera su respuesta.
+- Si el producto tiene stock insuficiente o en 0, el sistema preguntará al usuario si desea continuar. Transmite la pregunta al usuario.
+- Si hay múltiples productos similares en inventario, el sistema mostrará las opciones. Presenta la lista al usuario y pídele que elija el correcto. Cuando el usuario elija, vuelve a llamar create_order con el nombre EXACTO del producto elegido por el usuario.
+- NUNCA inventes o asumas un nombre de producto. Usa el nombre exacto que el usuario proporciona.
+- Cuando el usuario confirme que desea proceder sin inventario (respondiendo "sí" o similar), el sistema creará la orden automáticamente.
 
 GESTIÓN DE STOCK:
 - Cuando el usuario diga "agregar X al stock de [producto]", actualiza el inventario
@@ -436,6 +447,26 @@ export async function processMessage(
           console.error(`[AI Agent] ❌ Tool ${toolName} failed:`, result.error);
         }
 
+        // Handle inventory confirmation flow for create_order
+        if (result.needsConfirmation && toolName === 'create_order') {
+          const cType = result.confirmationType;
+          console.log(`[AI Agent] 🔄 Inventory confirmation needed: ${cType}`);
+
+          if (cType === 'no_match' || cType === 'zero_stock') {
+            await setPendingConfirmation(platform, platformId, {
+              type: 'inventory_confirm',
+              data: {
+                toolName: 'create_order',
+                toolArgs: { ...result.pendingOrderData, _forceWithoutInventory: true },
+              },
+              expiresAt: Date.now() + 120_000,
+            });
+          }
+          // For 'multiple_matches' we do NOT store a pending confirmation;
+          // the AI will present options and the user picks one, triggering
+          // a new create_order call with a more specific product name.
+        }
+
         // Collect attachments (PDFs etc.) from tool results
         if (result.attachments && result.attachments.length > 0) {
           allAttachments.push(...result.attachments);
@@ -444,12 +475,14 @@ export async function processMessage(
         toolCallsLog.push({
           name: toolName,
           args: toolArgs,
-          result: result.success ? 'success' : 'error',
+          result: result.success ? 'success' : (result.needsConfirmation ? 'needs_confirmation' : 'error'),
         });
 
         if (result.success) {
           const formatted = formatToolResult(toolName, result, platform);
           toolResults.push(formatted);
+        } else if (result.needsConfirmation && result.message) {
+          toolResults.push(result.message);
         } else {
           toolResults.push('❌ Error: ' + result.error);
         }
@@ -616,14 +649,22 @@ function isDenial(message: string): boolean {
 }
 
 /**
- * Execute a pending action
+ * Execute a pending action.
+ * Pending confirmations are stored as { type, data: { toolName, toolArgs }, expiresAt }.
  */
 async function executePendingAction(pending: any, context: ToolContext, platform: string): Promise<string> {
   try {
-    const result = await executeTool(pending.toolName as ToolName, context, pending.toolArgs);
+    const toolName = pending.data?.toolName || pending.toolName;
+    const toolArgs = pending.data?.toolArgs || pending.toolArgs;
+
+    if (!toolName) {
+      return '❌ Error: acción pendiente inválida.';
+    }
+
+    const result = await executeTool(toolName as ToolName, context, toolArgs);
 
     if (result.success) {
-      const formatted = formatToolResult(pending.toolName as ToolName, result, platform);
+      const formatted = formatToolResult(toolName as ToolName, result, platform);
       return '✅ Acción confirmada:\n\n' + formatted;
     } else {
       return '❌ Error al ejecutar la acción: ' + result.error;

@@ -48,14 +48,35 @@ export async function generateGuiasForOrders(
 ): Promise<GuiaBatchResult> {
   const tenantPrisma = getTenantPrisma(tenantId);
 
-  // Load and validate shipping config
-  const shippingConfig = await tenantPrisma.shippingConfig.findFirst({
+  // Load shipping config — try exact carrier match first, then fallback
+  let shippingConfig = await tenantPrisma.shippingConfig.findFirst({
     where: { carrier, isActive: true, tenantId },
   });
 
+  if (!shippingConfig) {
+    // Fallback: match any carrier containing 'correos' (handles 'correos', 'Correos_CR', etc.)
+    const allConfigs = await tenantPrisma.shippingConfig.findMany({
+      where: { isActive: true, tenantId },
+    });
+
+    shippingConfig = allConfigs.find(
+      c => c.carrier.toLowerCase().includes('correos'),
+    ) ?? null;
+
+    console.log(`[GuiaService] Exact carrier='${carrier}' not found for tenant ${tenantId}. ` +
+      `Found ${allConfigs.length} active config(s): [${allConfigs.map(c => `${c.carrier}(id:${c.id})`).join(', ')}]. ` +
+      `Fallback match: ${shippingConfig ? shippingConfig.carrier : 'NONE'}`);
+  }
+
   const settings = (shippingConfig?.settings as Record<string, any>) ?? {};
 
-  if (!settings.ws_username || !settings.ws_password) {
+  if (!shippingConfig || !settings.ws_username || !settings.ws_password) {
+    const detail = !shippingConfig
+      ? `No ShippingConfig found for tenant ${tenantId} with carrier containing 'correos'.`
+      : `Config found (carrier=${shippingConfig.carrier}, id=${shippingConfig.id}) but missing: ${!settings.ws_username ? 'ws_username ' : ''}${!settings.ws_password ? 'ws_password' : ''}`.trim();
+
+    console.error(`[GuiaService] Credentials check FAILED: ${detail}`);
+
     return {
       results: orderIds.map(id => ({
         success: false,
@@ -66,6 +87,8 @@ export async function generateGuiasForOrders(
       failed: orderIds.length,
     };
   }
+
+  console.log(`[GuiaService] Using config carrier='${shippingConfig.carrier}' (id:${shippingConfig.id}) for tenant ${tenantId}`);
 
   // Fetch orders – match by business orderId, EA type only
   const orders = await tenantPrisma.order.findMany({

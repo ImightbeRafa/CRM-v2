@@ -208,6 +208,16 @@ export const toolSchemas = {
       orderIds: z.array(z.string()).min(1).max(10).describe('Lista de IDs de órdenes (máximo 10)'),
     }),
   },
+
+  // Location validation
+  validate_order_location: {
+    description: 'Validar provincia, cantón y distrito contra la jerarquía oficial de Costa Rica. Úsalo ANTES de crear órdenes EA o generar guías para verificar que la ubicación es correcta. Devuelve opciones disponibles si algo no coincide.',
+    parameters: z.object({
+      province: z.string().describe('Provincia de Costa Rica'),
+      canton: z.string().optional().describe('Cantón (opcional, se valida dentro de la provincia)'),
+      district: z.string().optional().describe('Distrito (opcional, se valida dentro del cantón)'),
+    }),
+  },
 };
 
 // ============================================================================
@@ -442,6 +452,25 @@ export async function createOrder(
             error: errorMessage,
           };
         }
+
+        // STEP 1.5: Validate location hierarchy for EA orders
+        if (params.orderType === 'EA' && params.province) {
+          const { validateLocation, formatValidationMessage } = await import('@/lib/locationValidator');
+          const locResult = validateLocation(params.province, params.canton, params.district);
+
+          if (!locResult.valid) {
+            const msg = formatValidationMessage(locResult);
+            console.log('[AI Tool] createOrder - Location validation failed:', msg);
+            return {
+              success: false,
+              error: `❌ Ubicación inválida:\n${msg}`,
+            };
+          }
+
+          if (locResult.correctedProvince) params.province = locResult.correctedProvince;
+          if (locResult.correctedCanton) params.canton = locResult.correctedCanton;
+          if (locResult.correctedDistrict) params.district = locResult.correctedDistrict;
+        }
         
         // STEP 2: Get tenant custom fields configuration
         const customFieldsConfig = await getTenantCustomFields(ctx.tenantId);
@@ -529,6 +558,16 @@ export async function createOrder(
           }
         }
 
+        // Build comments including payment method (Order model has no paymentMethod column)
+        const commentParts: string[] = [];
+        if (params.paymentMethod) {
+          commentParts.push(`Pago: ${params.paymentMethod}`);
+        }
+        if (params.comments) {
+          commentParts.push(params.comments);
+        }
+        const finalComments = commentParts.join('\n');
+
         // Prepare order data with proper field mapping
         const orderData: any = {
           tenantId: ctx.tenantId,
@@ -551,7 +590,7 @@ export async function createOrder(
           district: params.district || '',
           courier: params.courier || '',
           shippingCost: undefined,
-          comments: params.comments || '',
+          comments: finalComments,
           seller: ctx.userName,
           timestamp: new Date(),
           customFields: Object.keys(extractedCustomFields).length > 0 ? extractedCustomFields : undefined,
@@ -1197,6 +1236,38 @@ export async function generateShippingGuia(
 
         // ── Auto mode: generate via Correos WS ──
         if (params.mode === 'auto') {
+          // Pre-validate location before calling Correos WS
+          if (order.province) {
+            const { validateLocation, formatValidationMessage } = await import('@/lib/locationValidator');
+            const locResult = validateLocation(order.province, order.canton, order.district);
+
+            if (!locResult.valid) {
+              const msg = formatValidationMessage(locResult);
+              return {
+                success: false,
+                error: `❌ La ubicación de la orden #${order.orderId} no es válida para Correos CR:\n${msg}\n\nCorrige la ubicación con update_order antes de generar la guía.`,
+              };
+            }
+
+            // Auto-correct fuzzy matches on the order
+            const updates: Record<string, string> = {};
+            if (locResult.correctedProvince) updates.province = locResult.correctedProvince;
+            if (locResult.correctedCanton) updates.canton = locResult.correctedCanton;
+            if (locResult.correctedDistrict) updates.district = locResult.correctedDistrict;
+
+            if (Object.keys(updates).length > 0) {
+              try {
+                await tenantPrisma.order.update({
+                  where: { tenantId_orderId: { tenantId: ctx.tenantId, orderId: order.orderId } },
+                  data: updates,
+                });
+                console.log(`[AI Tool] Auto-corrected location for ${order.orderId}:`, updates);
+              } catch (e) {
+                console.warn(`[AI Tool] Failed to auto-correct location for ${order.orderId}:`, e);
+              }
+            }
+          }
+
           const { generateGuiasForOrders } = await import('./guia-service');
           const batch = await generateGuiasForOrders(ctx.tenantId, [order.orderId]);
           const result = batch.results[0];
@@ -1462,6 +1533,31 @@ export async function updateInventoryStock(
   );
 }
 
+/**
+ * Validate a Costa Rica location (province / canton / district) against the
+ * canonical hierarchy.  Returns whether each level is valid and, when invalid,
+ * lists all available options at that level so the AI can present them.
+ */
+export async function validateOrderLocation(
+  _ctx: ToolContext,
+  params: z.infer<typeof toolSchemas.validate_order_location.parameters>,
+): Promise<ToolResult> {
+  try {
+    const { validateLocation, formatValidationMessage } = await import('@/lib/locationValidator');
+    const result = validateLocation(params.province, params.canton, params.district);
+    const message = formatValidationMessage(result);
+
+    return {
+      success: result.valid,
+      data: result,
+      message,
+    };
+  } catch (error: any) {
+    console.error('[AI Tool] validateOrderLocation error:', error);
+    return { success: false, error: error.message || 'Error al validar ubicación' };
+  }
+}
+
 // ============================================================================
 // TOOL EXECUTOR
 // ============================================================================
@@ -1481,6 +1577,7 @@ const toolExecutors: Record<ToolName, (ctx: ToolContext, params: any) => Promise
   search_clients: searchClients,
   generate_shipping_guia: generateShippingGuia,
   generate_guias_bulk: generateGuiasBulk,
+  validate_order_location: validateOrderLocation,
 };
 
 /**

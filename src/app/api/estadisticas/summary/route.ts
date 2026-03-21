@@ -63,9 +63,11 @@ export async function GET(req: NextRequest) {
       dateFilter.lte = end;
     }
 
-    const whereClause: any = { tenantId };
+    const whereClause: any = {
+      tenantId,
+      NOT: { contraEntrega: true, cePaymentConfirmed: false },
+    };
     if (Object.keys(dateFilter).length > 0) {
-      // Use saleDate when available (more accurate for sales stats), fallback to timestamp
       const saleDateFilter = {
         gte: dateFilter.gte?.toISOString(),
         lte: dateFilter.lte?.toISOString()

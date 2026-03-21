@@ -42,11 +42,11 @@ export async function GET(req: NextRequest) {
                 o.province,
                 lm.carrier      AS "lmCarrier",
                 lm.status       AS "lmStatus",
-                lm.is_contra_entrega    AS "isContraEntrega",
-                lm.contraentrega_collected AS "collected"
+                COALESCE(o."contraEntrega", lm.is_contra_entrega) AS "isContraEntrega",
+                COALESCE(o."cePaymentConfirmed", lm.contraentrega_collected) AS "collected"
             FROM "Order" o
-            INNER JOIN lm_orders lm ON lm.crm_order_id = o.id
-            WHERE lm.is_contra_entrega = TRUE
+            LEFT JOIN lm_orders lm ON lm.crm_order_id = o.id
+            WHERE (lm.is_contra_entrega = TRUE OR o."contraEntrega" = TRUE)
             ${dateSql}${ceSql}${tenantSql}
             ORDER BY o.timestamp DESC
             LIMIT 500
@@ -120,6 +120,16 @@ export async function POST(req: NextRequest) {
             INSERT INTO lm_order_events (crm_order_id, event_type, payload, actor)
             VALUES (${orderId}, 'ce_confirmed', ${JSON.stringify({ amount, notes })}::jsonb, ${actor})
         `;
+
+        // Sync to core Order model
+        try {
+            await prisma.order.update({
+                where: { id: orderId },
+                data: { cePaymentConfirmed: true },
+            });
+        } catch (syncErr) {
+            console.error('[contra-entrega POST] Order model sync failed (non-fatal):', syncErr);
+        }
 
         return NextResponse.json({ success: true });
     } catch (error) {

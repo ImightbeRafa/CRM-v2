@@ -87,9 +87,13 @@ function SignInPageInner() {
         return
       }
       
-      // If user selected a paid plan, redirect to payment or billing
+      if (data.requiresPhoneVerification && data.phone) {
+        const phoneParam = encodeURIComponent(data.phone)
+        window.location.href = `/auth/verify-phone?phone=${phoneParam}`
+        return
+      }
+
       if (intendedPlan && intendedPlan !== 'free') {
-        // Get the Tilopay link based on plan
         const tilopayLinks: { [key: string]: string } = {
           'basic': 'https://tp.cr/l/TkRFME9RPT18MQ==',
           'pro': 'https://tp.cr/l/TkRFMU1BPT18MQ=='
@@ -101,7 +105,6 @@ function SignInPageInner() {
         }
       }
       
-      // Otherwise, go to dashboard
       window.location.href = '/dashboard'
     } catch (err) {
       setError('Error al conectar con el servidor')

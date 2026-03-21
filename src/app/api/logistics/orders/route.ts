@@ -108,6 +108,8 @@ export async function GET(req: NextRequest) {
                     comments: true,
                     seller: true,
                     customFields: true,
+                    contraEntrega: true,
+                    cePaymentConfirmed: true,
                     tenant: { select: { name: true, slug: true, businessName: true } },
                 },
                 orderBy: { timestamp: 'desc' },
@@ -159,8 +161,8 @@ export async function GET(req: NextRequest) {
         const enriched = orders.map((o) => ({
             ...o,
             lmCarrier: lmData[o.id]?.lmCarrier ?? null,
-            isContraEntrega: lmData[o.id]?.isContraEntrega ?? false,
-            contraEntregaCollected: lmData[o.id]?.contraEntregaCollected ?? false,
+            isContraEntrega: (o as any).contraEntrega || lmData[o.id]?.isContraEntrega || false,
+            contraEntregaCollected: (o as any).cePaymentConfirmed || lmData[o.id]?.contraEntregaCollected || false,
             lmStatus: lmData[o.id]?.lmStatus ?? null,
             archivedAt: lmData[o.id]?.archivedAt ?? null,
             correosShippingCost: lmData[o.id]?.correosShippingCost ?? null,
@@ -241,6 +243,21 @@ export async function PATCH(req: NextRequest) {
             const completedAt = s === 'Entregado' ? new Date() : null;
             const completedBy = s === 'Entregado' ? actor : null;
             await prisma.$executeRaw`INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status, is_contra_entrega, contraentrega_collected, archived_at, completed_at, completed_by) VALUES (${orderId},${crm_tenant_id},${c},${s},${ce},${cc},${archVal},${completedAt},${completedBy})`;
+        }
+
+        // Sync CE fields to the core Order model
+        const orderUpdate: any = {};
+        if (isContraEntrega !== undefined) orderUpdate.contraEntrega = isContraEntrega;
+        if (contraEntregaCollected !== undefined) orderUpdate.cePaymentConfirmed = contraEntregaCollected;
+        if (Object.keys(orderUpdate).length > 0) {
+            try {
+                await prisma.order.update({
+                    where: { id: orderId },
+                    data: orderUpdate,
+                });
+            } catch (syncErr) {
+                console.error('[logistics/orders PATCH] Order model sync failed (non-fatal):', syncErr);
+            }
         }
 
         return NextResponse.json({ success: true });

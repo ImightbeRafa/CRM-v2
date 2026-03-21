@@ -67,6 +67,7 @@ export async function GET(req: NextRequest) {
     const orders = await prisma.order.findMany({
       where: {
         tenantId,
+        NOT: { contraEntrega: true, cePaymentConfirmed: false },
         OR: [
           {
             saleDate: {

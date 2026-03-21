@@ -59,7 +59,10 @@ export async function GET(req: NextRequest) {
       dateFilter.lte = end;
     }
 
-    const whereClause: any = { tenantId };
+    const whereClause: any = {
+      tenantId,
+      NOT: { contraEntrega: true, cePaymentConfirmed: false },
+    };
     if (Object.keys(dateFilter).length > 0) {
       const saleDateFilter = {
         gte: dateFilter.gte?.toISOString(),

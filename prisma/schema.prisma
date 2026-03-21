@@ -27,6 +27,9 @@ model Tenant {
   phone             String?   // Primary contact phone
   phoneVerified     Boolean   @default(false)
   phoneVerifiedAt   DateTime?
+  phoneVerificationCode       String?   // Hashed OTP code
+  phoneVerificationCodeExpires DateTime?
+  phoneVerificationAttempts   Int       @default(0)
   country           String?   // Country code (e.g., "CR" for Costa Rica)
   province          String?   // Province/State
   profileCompleted  Boolean   @default(false)  // True when all required info is filled
@@ -166,6 +169,10 @@ model Order {
   
   // Tenant-defined dynamic custom fields
   customFields  Json?
+
+  // Contra entrega (cash on delivery)
+  contraEntrega      Boolean @default(false)
+  cePaymentConfirmed Boolean @default(false)
   
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -178,6 +185,7 @@ model Order {
   @@index([tenantId, orderType])
   @@index([tenantId, timestamp])
   @@index([tenantId, customerName])
+  @@index([tenantId, contraEntrega])
 }
 
 model User {

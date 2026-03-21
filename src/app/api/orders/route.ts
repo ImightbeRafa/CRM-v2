@@ -256,6 +256,8 @@ export async function GET(request: NextRequest) {
           seller: true,
           delivery: true,
           customFields: true, // Custom fields JSON data
+          contraEntrega: true,
+          cePaymentConfirmed: true,
           tenantId: true, // Include for security verification
           // Exclude only the heaviest field: productDetails (can be loaded separately if needed)
         }
@@ -319,7 +321,7 @@ export async function POST(request: NextRequest) {
 
     // Separate known order fields from dynamic custom fields
     const knownKeys = new Set([
-      'orderId','orderType','status','delivery','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails','timestamp','customFields'
+      'orderId','orderType','status','delivery','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails','timestamp','customFields','contraEntrega','cePaymentConfirmed'
     ])
     const customFields: Record<string, any> = {}
     for (const [k,v] of Object.entries(body)) {
@@ -432,7 +434,9 @@ export async function POST(request: NextRequest) {
         seller: body.seller || '',
         productDetails: body.productDetails || '',
         timestamp: new Date(),
-        customFields: Object.keys(customFields).length > 0 ? customFields : undefined
+        customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
+        contraEntrega: body.contraEntrega === true,
+        cePaymentConfirmed: false,
       } as any)
     })
     

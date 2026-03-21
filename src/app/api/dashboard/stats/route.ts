@@ -112,10 +112,11 @@ export async function GET(request: NextRequest) {
 
     const newClientsThisWeek = totalClients - clientsLastWeek;
 
-    // Calculate weekly revenue (sum of all order totals this week)
+    // Calculate weekly revenue (exclude unconfirmed CE orders from revenue)
     const ordersWithTotals = await prisma.order.findMany({
       where: {
         ...whereClause,
+        NOT: { contraEntrega: true, cePaymentConfirmed: false },
         timestamp: {
           gte: startOfWeek
         }
@@ -131,6 +132,7 @@ export async function GET(request: NextRequest) {
     const ordersLastWeekWithTotals = await prisma.order.findMany({
       where: {
         ...whereClause,
+        NOT: { contraEntrega: true, cePaymentConfirmed: false },
         timestamp: {
           gte: startOfLastWeek,
           lt: startOfWeek

@@ -70,6 +70,8 @@ const baseOrderSchema = {
   orderType: z.enum(['EA', 'RA']).describe('REQUERIDO: Tipo de orden. EA = Envío a Domicilio (requiere dirección), RA = Retiro en Local (NO requiere dirección). SIEMPRE debe especificarse.'),
   size: z.string().optional().describe('Talla o tamaño del producto (si está configurado)'),
   color: z.string().optional().describe('Color del producto (si está configurado)'),
+  contraEntrega: z.boolean().optional().default(false).describe('Si el pedido es contra entrega (pago al recibir). Marcar como true cuando el cliente dice "contra entrega", "pago contra entrega", "COD", "paga al recibir", "pagar al recibir" o similar.'),
+  skipInventoryCheck: z.boolean().optional().default(false).describe('Poner en true SOLO cuando el usuario ya confirmó explícitamente que desea proceder sin que el producto esté en inventario. Nunca activar por defecto.'),
 };
 
 // Dynamic schema generator that includes custom fields
@@ -498,7 +500,7 @@ export async function createOrder(
         let matchedInventoryItem: InventoryMatch | null = null;
         const quantity = params.quantity || 1;
 
-        if (!params._forceWithoutInventory) {
+        if (!params._forceWithoutInventory && !params.skipInventoryCheck) {
           const matches = await findInventoryMatches(params.product, tenantPrisma);
           console.log('[AI Tool] createOrder - Inventory matches:', matches.length, 'for product:', params.product);
 
@@ -594,6 +596,8 @@ export async function createOrder(
           seller: ctx.userName,
           timestamp: new Date(),
           customFields: Object.keys(extractedCustomFields).length > 0 ? extractedCustomFields : undefined,
+          contraEntrega: params.contraEntrega === true,
+          cePaymentConfirmed: false,
         };
 
         // Populate productDetails for consistency with web UI orders

@@ -300,6 +300,89 @@ export async function sendWhatsAppDocument(
 }
 
 /**
+ * Send a template message (required for initiating conversations outside the 24-hour window).
+ * Used for authentication OTPs, notifications, etc.
+ *
+ * @see https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-message-templates
+ */
+export async function sendWhatsAppTemplate(
+  to: string,
+  templateName: string,
+  languageCode: string,
+  bodyParameters?: string[],
+  buttonParameters?: Array<{ index: number; text: string }>
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+  if (!accessToken || !phoneNumberId) {
+    console.error('[WhatsApp] Missing WHATSAPP_ACCESS_TOKEN or WHATSAPP_PHONE_NUMBER_ID');
+    return { success: false, error: 'WhatsApp not configured' };
+  }
+
+  try {
+    const components: any[] = [];
+
+    if (bodyParameters && bodyParameters.length > 0) {
+      components.push({
+        type: 'body',
+        parameters: bodyParameters.map(text => ({ type: 'text', text })),
+      });
+    }
+
+    if (buttonParameters && buttonParameters.length > 0) {
+      for (const btn of buttonParameters) {
+        components.push({
+          type: 'button',
+          sub_type: 'url',
+          index: btn.index.toString(),
+          parameters: [{ type: 'text', text: btn.text }],
+        });
+      }
+    }
+
+    const payload: any = {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: languageCode },
+      },
+    };
+
+    if (components.length > 0) {
+      payload.template.components = components;
+    }
+
+    const response = await fetch(`${WHATSAPP_API_BASE}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('[WhatsApp] sendTemplate failed:', data);
+      return {
+        success: false,
+        error: data.error?.message || 'Failed to send template message',
+      };
+    }
+
+    console.log(`[WhatsApp] Template "${templateName}" sent to ${to}`);
+    return { success: true, messageId: data.messages?.[0]?.id };
+  } catch (error: any) {
+    console.error('[WhatsApp] sendTemplate error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * Mark a message as read (shows blue checkmarks)
  */
 export async function markMessageAsRead(messageId: string): Promise<boolean> {

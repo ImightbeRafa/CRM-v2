@@ -10,7 +10,7 @@ import { Textarea } from "@/app/components/ui/textarea";
 import { useState, useEffect, useMemo } from "react";
 import { Sale, SaleKeys } from '../types/sales';
 import { ScrollArea } from "@/app/components/ui/scroll-area";
-import { Pencil, X, Save } from "lucide-react";
+import { Pencil, X, Save, Banknote } from "lucide-react";
 import { Alert, AlertTitle } from "@/app/components/ui/alert";
 import { 
   getTenantCustomFields, 
@@ -417,6 +417,12 @@ export function OrderDetails({
                   {displayOrder.status}
                 </span>
               )}
+              {displayOrder.contraEntrega && (
+                <span className="px-2 py-1 text-xs font-medium rounded-full bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                  <Banknote className="h-3 w-3" />
+                  Contra Entrega
+                </span>
+              )}
             </div>
             <div className="flex items-center space-x-2">
               <Button
@@ -476,6 +482,26 @@ export function OrderDetails({
               {renderSection('Estado', [
                 ['Estado', 'status']
               ])}
+
+              {displayOrder.contraEntrega && (
+                <div className="rounded-lg border-2 border-amber-200 bg-amber-50 dark:bg-amber-900/20 shadow-sm">
+                  <div className="p-4 border-b border-amber-200">
+                    <h3 className="font-medium text-sm text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+                      <Banknote className="h-4 w-4" />
+                      Contra Entrega
+                    </h3>
+                  </div>
+                  <div className="p-4">
+                    <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
+                      displayOrder.cePaymentConfirmed
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {displayOrder.cePaymentConfirmed ? '✓ Pago Confirmado' : '○ Pendiente de Cobro'}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {displayOrder.orderType === 'EA' && renderShippingDetails()}
 

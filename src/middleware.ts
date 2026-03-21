@@ -311,7 +311,7 @@ async function handleAppRoute(
   const fwd = { request: { headers: requestHeaders } };
 
   // Handle tenant setup flow - allow access to setup/auth pages without tenant
-  const setupRoutes = ['/setup-tenant', '/setup-wizard', '/auth/verify-email', '/auth/signin', '/auth/error'];
+  const setupRoutes = ['/setup-tenant', '/setup-wizard', '/auth/verify-email', '/auth/verify-phone', '/auth/signin', '/auth/error'];
   const isSetupRoute = setupRoutes.some(route => pathname === route || pathname.startsWith(route));
 
   if (!tenantId) {

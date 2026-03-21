@@ -20,6 +20,8 @@ export interface BaseOrder {
   total: number;
   orderType: 'EA' | 'RA';
   customFields?: Record<string, any> | string | null;
+  contraEntrega?: boolean;
+  cePaymentConfirmed?: boolean;
 }
 
 export interface EAOrder extends BaseOrder {

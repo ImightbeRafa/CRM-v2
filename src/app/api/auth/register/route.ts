@@ -157,7 +157,9 @@ export async function POST(request: Request) {
       message: 'Registration successful! You can now log in.',
       userId: result.user.id,
       tenantId: result.tenant.id,
-      requiresVerification: false // Email verification is optional
+      requiresVerification: false,
+      requiresPhoneVerification: !!phone,
+      phone: phone || null,
     });
 
   } catch (error: any) {

@@ -169,17 +169,23 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
         }),
       });
 
+      const data = await response.json();
+
       if (response.ok) {
-        // Auto sign in after successful registration
         await signIn('credentials', {
           email: formData.email,
           password: formData.password,
-          redirect: false
+          redirect: false,
         });
         onClose();
-        window.location.href = '/dashboard';
+
+        if (data.requiresPhoneVerification && formData.phone) {
+          const phoneParam = encodeURIComponent(formData.phone);
+          window.location.href = `/auth/verify-phone?phone=${phoneParam}`;
+        } else {
+          window.location.href = '/dashboard';
+        }
       } else {
-        const data = await response.json();
         setError(data.error || 'Error en el registro');
       }
     } catch (error) {

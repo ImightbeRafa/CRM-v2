@@ -9,6 +9,49 @@ interface SendVerificationEmailParams {
   name?: string;
 }
 
+interface SendOTPEmailParams {
+  email: string;
+  code: string;
+  name?: string;
+}
+
+export async function sendOTPEmail({ email, code, name }: SendOTPEmailParams) {
+  try {
+    await resend.emails.send({
+      from: 'BetsyCRM <noreply@betsycrm.com>',
+      to: email,
+      subject: 'Tu código de verificación - BetsyCRM',
+      html: `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #ffffff;">
+          <div style="text-align: center; padding: 32px 24px 16px;">
+            <h2 style="color: #111827; margin: 0 0 8px; font-size: 22px;">Verifica tu teléfono</h2>
+            <p style="color: #6b7280; margin: 0; font-size: 14px;">Hola${name ? ` ${name}` : ''}, usa este código para verificar tu número de teléfono en BetsyCRM.</p>
+          </div>
+          <div style="text-align: center; padding: 24px;">
+            <div style="display: inline-block; background: #f3f4f6; border-radius: 12px; padding: 20px 40px; letter-spacing: 8px; font-size: 36px; font-weight: 700; color: #111827; font-family: 'Courier New', monospace;">
+              ${code}
+            </div>
+          </div>
+          <div style="text-align: center; padding: 0 24px 32px;">
+            <p style="color: #9ca3af; font-size: 13px; margin: 0;">
+              Este código expira en 10 minutos.<br/>
+              Si no solicitaste este código, puedes ignorar este correo.
+            </p>
+          </div>
+          <div style="border-top: 1px solid #e5e7eb; padding: 16px 24px; text-align: center;">
+            <p style="color: #9ca3af; font-size: 12px; margin: 0;">BetsyCRM &mdash; Gestión inteligente de ventas</p>
+          </div>
+        </div>
+      `,
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('[Email] sendOTPEmail error:', error);
+    return { success: false, error: error?.message || 'Failed to send OTP email' };
+  }
+}
+
 export async function sendVerificationEmail({ email, name }: SendVerificationEmailParams) {
   try {
     console.log(`📧 Preparing to send verification email to: ${email}`);

@@ -476,6 +476,34 @@ export function EnhancedProductionDashboard({
     }
   };
 
+  const handleConfirmPayment = async (orderId: string) => {
+    try {
+      const response = await fetch('/api/orders/confirm-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ orderId })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || 'Failed to confirm payment');
+      }
+
+      refresh();
+      toast({
+        title: "Pago confirmado",
+        description: `Pago de la orden #${orderId} confirmado exitosamente.`,
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: `No se pudo confirmar el pago: ${error instanceof Error ? error.message : 'Error desconocido'}`,
+      });
+    }
+  };
+
   const handleBulkStatusUpdate = async (orderIds: string[], newStatus: string) => {
     let successCount = 0;
     let failCount = 0;
@@ -664,6 +692,7 @@ export function EnhancedProductionDashboard({
                         availableStatuses={statuses}
                         businessInfoFields={businessInfoFields}
                         productFieldConfigs={productFieldConfigs}
+                        onConfirmPayment={handleConfirmPayment}
                       />
                     ))}
                   </div>

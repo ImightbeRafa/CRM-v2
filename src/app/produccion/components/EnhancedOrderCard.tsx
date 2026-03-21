@@ -19,7 +19,8 @@ import {
   CheckCircle,
   Truck as TruckIcon,
   Printer,
-  AlertTriangle
+  AlertTriangle,
+  Banknote
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -33,6 +34,7 @@ interface EnhancedOrderCardProps {
   availableStatuses?: Array<{ key: string; label: string; color?: string | null }>;
   businessInfoFields?: any[];
   productFieldConfigs?: any[];
+  onConfirmPayment?: (orderId: string) => Promise<void>;
 }
 
 export function EnhancedOrderCard({
@@ -43,15 +45,26 @@ export function EnhancedOrderCard({
   onToggleSelection,
   availableStatuses: statusesProp,
   businessInfoFields: businessInfoProp,
-  productFieldConfigs: productFieldProp
+  productFieldConfigs: productFieldProp,
+  onConfirmPayment
 }: EnhancedOrderCardProps) {
-  // All config data comes from props — NO independent API fetches.
-  // The parent dashboard (EnhancedProductionDashboard) fetches once via ConfigContext
-  // and passes the data down, avoiding 50+ duplicate API calls per page load.
   const availableStatuses = statusesProp || [];
   const businessInfoFields = businessInfoProp || [];
   const productFieldConfigs = productFieldProp || [];
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+
+  const handleConfirmPayment = async () => {
+    if (!onConfirmPayment) return;
+    setIsConfirmingPayment(true);
+    try {
+      await onConfirmPayment(order.orderId);
+    } catch (error) {
+      console.error('Error confirming payment:', error);
+    } finally {
+      setIsConfirmingPayment(false);
+    }
+  };
 
   const getStatusInfo = (status: string) => {
     // First, try to find the status in the configured statuses with custom colors
@@ -231,7 +244,12 @@ export function EnhancedOrderCard({
   };
 
   return (
-    <Card className={`transition-all duration-200 hover:shadow-lg cursor-pointer ${isSelected ? 'ring-2 ring-blue-500 bg-blue-100/50' : statusBackgroundHaze
+    <Card className={`transition-all duration-200 hover:shadow-lg cursor-pointer ${
+      isSelected
+        ? 'ring-2 ring-blue-500 bg-blue-100/50'
+        : order.contraEntrega
+          ? 'border-2 border-amber-300 bg-amber-50/60'
+          : statusBackgroundHaze
       }`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
@@ -247,13 +265,21 @@ export function EnhancedOrderCard({
             </div>
           </div>
 
-          <Badge
-            className={`${statusInfo.color} border flex items-center gap-1`}
-            style={statusInfo.colorStyle}
-          >
-            {statusInfo.icon}
-            {statusInfo.label}
-          </Badge>
+          <div className="flex flex-col items-end gap-1">
+            <Badge
+              className={`${statusInfo.color} border flex items-center gap-1`}
+              style={statusInfo.colorStyle}
+            >
+              {statusInfo.icon}
+              {statusInfo.label}
+            </Badge>
+            {order.contraEntrega && (
+              <Badge className="bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 text-[10px]">
+                <Banknote className="h-3 w-3" />
+                CONTRA ENTREGA
+              </Badge>
+            )}
+          </div>
         </div>
       </CardHeader>
 
@@ -432,8 +458,35 @@ export function EnhancedOrderCard({
         {/* Total */}
         <div className="flex items-center justify-between text-sm font-medium border-t pt-2">
           <span>Total:</span>
-          <span className="text-green-600">₡{order.total.toLocaleString()}</span>
+          <span className={order.contraEntrega && !order.cePaymentConfirmed ? 'text-amber-600' : 'text-green-600'}>
+            ₡{order.total.toLocaleString()}
+          </span>
         </div>
+
+        {/* Contra Entrega Payment Status */}
+        {order.contraEntrega && (
+          <div className={`rounded-md p-2 ${order.cePaymentConfirmed ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Banknote className={`h-3.5 w-3.5 ${order.cePaymentConfirmed ? 'text-green-600' : 'text-amber-600'}`} />
+                <span className={`text-xs font-semibold ${order.cePaymentConfirmed ? 'text-green-700' : 'text-amber-700'}`}>
+                  {order.cePaymentConfirmed ? '✓ Pago Confirmado' : 'Pendiente de Cobro'}
+                </span>
+              </div>
+              {!order.cePaymentConfirmed && onConfirmPayment && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-[10px] px-2 bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200"
+                  onClick={(e) => { e.stopPropagation(); handleConfirmPayment(); }}
+                  disabled={isConfirmingPayment}
+                >
+                  {isConfirmingPayment ? 'Confirmando...' : 'Confirmar Pago'}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Custom Fields (ProductField + BusinessInfo) */}
         {(() => {

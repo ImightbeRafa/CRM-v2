@@ -13,7 +13,8 @@ import {
   MapPin, 
   Calendar,
   DollarSign,
-  GripVertical
+  GripVertical,
+  Banknote
 } from 'lucide-react';
 interface KanbanCardProps {
   order: Sale;
@@ -72,7 +73,7 @@ export function KanbanCard({ order, onClick, isDragging }: KanbanCardProps) {
       <Card 
         className={`hover:shadow-md transition-all ${
           isDragging || isSortableDragging ? 'shadow-xl scale-105 rotate-2' : ''
-        } ${isHighPriority() ? 'border-red-300 border-2' : 'border-gray-200'}`}
+        } ${isHighPriority() ? 'border-red-300 border-2' : order.contraEntrega ? 'border-amber-300 border-2 bg-amber-50/60' : 'border-gray-200'}`}
         onClick={handleCardClick}
       >
         <CardContent className="p-3 space-y-2">
@@ -134,14 +135,33 @@ export function KanbanCard({ order, onClick, isDragging }: KanbanCardProps) {
 
             {/* Order Type & Total */}
             <div className="flex items-center justify-between pt-2 border-t border-gray-100 mt-2">
-              <Badge variant="outline" className="text-xs">
-                {order.orderType}
-              </Badge>
-              <div className="flex items-center text-sm font-semibold text-gray-900">
+              <div className="flex items-center gap-1">
+                <Badge variant="outline" className="text-xs">
+                  {order.orderType}
+                </Badge>
+                {order.contraEntrega && (
+                  <Badge className="bg-amber-100 text-amber-800 border border-amber-300 text-[9px] px-1">
+                    <Banknote className="h-2.5 w-2.5 mr-0.5" />
+                    CE
+                  </Badge>
+                )}
+              </div>
+              <div className={`flex items-center text-sm font-semibold ${order.contraEntrega && !order.cePaymentConfirmed ? 'text-amber-700' : 'text-gray-900'}`}>
                 <DollarSign className="h-3 w-3 mr-0.5" />
                 {formatCurrency(order.total)}
               </div>
             </div>
+
+            {/* CE Payment Status */}
+            {order.contraEntrega && (
+              <div className={`text-[10px] font-semibold mt-1 px-1.5 py-0.5 rounded text-center ${
+                order.cePaymentConfirmed
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-amber-100 text-amber-700'
+              }`}>
+                {order.cePaymentConfirmed ? '✓ Cobrado' : '○ Pendiente cobro'}
+              </div>
+            )}
 
             {/* Date */}
             <div className="flex items-center text-xs text-gray-500 mt-2">

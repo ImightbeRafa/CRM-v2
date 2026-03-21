@@ -265,10 +265,12 @@ export async function getPendingConfirmation(
   
   if (redis) {
     try {
-      const data = await redis.get<string>(key);
-      if (data) {
+      const raw = await redis.get(key);
+      if (raw) {
         await redis.del(key);
-        return JSON.parse(data);
+        // Upstash SDK auto-deserializes JSON values, so `raw` may already be
+        // an object. Only call JSON.parse when it's still a string.
+        return typeof raw === 'string' ? JSON.parse(raw) : (raw as any);
       }
     } catch (error) {
       console.error('[ConversationMemory] Failed to get pending confirmation:', error);

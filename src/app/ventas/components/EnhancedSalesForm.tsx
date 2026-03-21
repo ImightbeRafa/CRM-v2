@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui/card";
-import { Save, Loader, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { Save, Loader, AlertCircle, CheckCircle, Clock, Banknote } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/app/components/ui/alert";
 import { Button } from "@/app/components/ui/button";
 import OrderTypeToggle from './OrderTypeToggle';
@@ -45,6 +45,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     orderIVA: 0,
     orderSubtotal: 0,
     orderShipping: 0,
+    contraEntrega: false,
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -400,6 +401,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         })),
         timestamp: new Date(),
         saleDate: new Date().toISOString(),
+        contraEntrega: orderInfo.contraEntrega || false,
         // Custom fields object for server-side storage in customFields JSON column
         customFields: Object.keys(customFieldsToSend).length > 0 ? customFieldsToSend : undefined
       };
@@ -522,6 +524,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       orderIVA: 0,
       orderSubtotal: 0,
       orderShipping: 0,
+      contraEntrega: false,
     });
 
     setRawCustomerText('');
@@ -765,6 +768,37 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                 onOrderInfoChange={handleOrderInfoChange}
                 orderType={orderInfo.customerInfo.orderType}
               />
+            </div>
+
+            {/* Contra Entrega Toggle */}
+            <div
+              className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 ${
+                orderInfo.contraEntrega
+                  ? 'bg-amber-50 border-amber-400'
+                  : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+              }`}
+              onClick={() => setOrderInfo(prev => ({ ...prev, contraEntrega: !prev.contraEntrega }))}
+            >
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={orderInfo.contraEntrega || false}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setOrderInfo(prev => ({ ...prev, contraEntrega: !prev.contraEntrega }));
+                  }}
+                  className="w-5 h-5 rounded border-gray-300 text-amber-500 focus:ring-amber-500"
+                />
+                <Banknote className={`h-5 w-5 ${orderInfo.contraEntrega ? 'text-amber-600' : 'text-gray-400'}`} />
+                <div>
+                  <span className={`font-semibold ${orderInfo.contraEntrega ? 'text-amber-800' : 'text-gray-700'}`}>
+                    Contra Entrega
+                  </span>
+                  <p className={`text-xs ${orderInfo.contraEntrega ? 'text-amber-600' : 'text-gray-500'}`}>
+                    El cliente paga al recibir el producto
+                  </p>
+                </div>
+              </label>
             </div>
 
             {/* Submit Button */}

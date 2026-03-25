@@ -119,8 +119,7 @@ export async function sendVerificationEmail({ email, name }: SendVerificationEma
     // Point to the page route, not the API route directly
     const verificationUrl = `${baseUrl}/auth/verify-email?token=${token}`;
     
-    console.log(`📧 Sending verification email from: BetsyCRM <noreply@betsycrm.com>`);
-    console.log(`📧 Verification URL: ${verificationUrl}`);
+    console.log(`📧 Sending verification email to: ${email.substring(0, 3)}***`);
     
     const emailResult = await resend.emails.send({
       from: 'BetsyCRM <noreply@betsycrm.com>',

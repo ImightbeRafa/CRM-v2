@@ -17,7 +17,7 @@ export async function GET() {
       <p>Se completó el inicio con Facebook. Puedes cerrar esta ventana.</p>
       <script>
         // Optionally notify opener
-        try { if (window.opener) window.opener.postMessage(JSON.stringify({ source:'betsy',event:'wa_oauth_complete' }), '*') } catch {}
+        try { if (window.opener) window.opener.postMessage(JSON.stringify({ source:'betsy',event:'wa_oauth_complete' }), window.location.origin) } catch {}
         setTimeout(() => { window.close() }, 500)
       </script>
     </body>

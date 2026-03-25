@@ -98,21 +98,25 @@ export async function POST(req: NextRequest) {
     const actor = session?.user?.email ?? 'unknown';
 
     const body = await req.json();
-    const { orderId, tenantId, amount, notes } = body;
+    const { orderId, amount, notes } = body;
 
     if (!orderId) return NextResponse.json({ error: 'orderId required' }, { status: 400 });
 
     try {
-        // Mark as collected on lm_orders
+        // Derive tenantId from the order itself, not from the request body
+        const orderRow: any[] = await prisma.$queryRaw`
+            SELECT crm_tenant_id FROM lm_orders WHERE crm_order_id = ${orderId} LIMIT 1
+        `;
+        const derivedTenantId = orderRow?.[0]?.crm_tenant_id ?? '';
+
         await prisma.$executeRaw`
             UPDATE lm_orders SET contraentrega_collected = TRUE, updated_at = NOW()
             WHERE crm_order_id = ${orderId}
         `;
 
-        // Record the payment
         await prisma.$executeRaw`
             INSERT INTO lm_ce_payments (crm_order_id, crm_tenant_id, amount, notes, confirmed_by)
-            VALUES (${orderId}, ${tenantId ?? ''}, ${amount ?? 0}, ${notes ?? null}, ${actor})
+            VALUES (${orderId}, ${derivedTenantId}, ${amount ?? 0}, ${notes ?? null}, ${actor})
         `;
 
         // Log event

@@ -355,16 +355,16 @@ export function MobileProductionWorkflow({
             </Button>
             
             <select
-              className="flex-1 text-sm rounded-md border border-border px-3 py-2 bg-card min-h-[44px]"
+              className="flex-1 text-sm rounded-md border border-border px-3 py-2 bg-card text-foreground min-h-[44px]"
               value={order.status}
               onChange={(e) => handleQuickStatusUpdate(order.orderId, e.target.value)}
               onClick={(e) => e.stopPropagation()}
             >
               {availableStatuses.length > 0
                 ? availableStatuses.map((s: any) => (
-                    <option key={s.key || s.label} value={s.label}>{s.label}</option>
+                    <option key={s.key || s.label} value={s.label} className="bg-card text-foreground">{s.label}</option>
                   ))
-                : <option value={order.status}>{order.status}</option>
+                : <option value={order.status} className="bg-card text-foreground">{order.status}</option>
               }
             </select>
           </div>

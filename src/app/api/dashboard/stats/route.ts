@@ -3,9 +3,25 @@ import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
 
-// Cache stats for 30 seconds to prevent repeated heavy queries
 const statsCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 30000; // 30 seconds
+const CACHE_TTL = 30000;
+const CACHE_MAX_SIZE = 200;
+
+function pruneCache() {
+  if (statsCache.size <= CACHE_MAX_SIZE) return;
+  const now = Date.now();
+  for (const [key, val] of statsCache) {
+    if (now - val.timestamp > CACHE_TTL) statsCache.delete(key);
+  }
+  if (statsCache.size > CACHE_MAX_SIZE) {
+    const toDelete = statsCache.size - CACHE_MAX_SIZE;
+    let i = 0;
+    for (const key of statsCache.keys()) {
+      if (i++ >= toDelete) break;
+      statsCache.delete(key);
+    }
+  }
+}
 
 // Helper to clear cache for a specific tenant (useful for debugging)
 export function clearStatsCache(tenantId?: string) {
@@ -112,38 +128,25 @@ export async function GET(request: NextRequest) {
 
     const newClientsThisWeek = totalClients - clientsLastWeek;
 
-    // Calculate weekly revenue (exclude unconfirmed CE orders from revenue)
-    const ordersWithTotals = await prisma.order.findMany({
+    const weeklyRevenueAgg = await prisma.order.aggregate({
       where: {
         ...whereClause,
         NOT: { contraEntrega: true, cePaymentConfirmed: false },
-        timestamp: {
-          gte: startOfWeek
-        }
+        timestamp: { gte: startOfWeek },
       },
-      select: {
-        total: true
-      }
+      _sum: { total: true },
     });
+    const weeklyRevenue = weeklyRevenueAgg._sum.total || 0;
 
-    const weeklyRevenue = ordersWithTotals.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
-
-    // Calculate last week's revenue
-    const ordersLastWeekWithTotals = await prisma.order.findMany({
+    const lastWeekRevenueAgg = await prisma.order.aggregate({
       where: {
         ...whereClause,
         NOT: { contraEntrega: true, cePaymentConfirmed: false },
-        timestamp: {
-          gte: startOfLastWeek,
-          lt: startOfWeek
-        }
+        timestamp: { gte: startOfLastWeek, lt: startOfWeek },
       },
-      select: {
-        total: true
-      }
+      _sum: { total: true },
     });
-
-    const lastWeekRevenue = ordersLastWeekWithTotals.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
+    const lastWeekRevenue = lastWeekRevenueAgg._sum.total || 0;
 
     const revenueChange = lastWeekRevenue > 0
       ? Math.round(((weeklyRevenue - lastWeekRevenue) / lastWeekRevenue) * 100)
@@ -169,8 +172,8 @@ export async function GET(request: NextRequest) {
       })
     };
     
-    // Store in cache
     statsCache.set(tenantId, { data: stats, timestamp: Date.now() });
+    pruneCache();
 
     console.log(`[Dashboard Stats] Tenant ${tenantId}: Orders this week: ${ordersThisWeek}, Pending: ${pendingOrders}, Clients: ${totalClients}, Revenue: ${weeklyRevenue}`);
 

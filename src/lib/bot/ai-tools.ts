@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { prisma } from '@/lib/db';
+import { checkOrderLimit } from '@/lib/plan-enforcement';
 import { 
   getTenantCustomFields, 
   extractCustomFields, 
@@ -235,20 +236,10 @@ export async function updateToolSchemasWithCustomFields(tenantId: string) {
     const customFieldsConfig = await getTenantCustomFields(tenantId);
     const dynamicSchema = createOrderSchemaWithCustomFields(customFieldsConfig);
     
-    // Update the create_order schema dynamically
-    toolSchemas.create_order = dynamicSchema;
-    
-    console.log('[AI Tools] Updated schemas with custom fields:', {
-      tenantId,
-      productFields: customFieldsConfig.productFields.length,
-      businessInfoFields: customFieldsConfig.businessInfoFields.length,
-    });
-    
-    return customFieldsConfig;
+    return { customFieldsConfig, tenantToolSchemas: { ...toolSchemas, create_order: dynamicSchema } };
   } catch (error) {
     console.error('[AI Tools] Failed to update schemas with custom fields:', error);
-    // Return empty config on error to prevent breaking the bot
-    return { productFields: [], businessInfoFields: [] };
+    return { customFieldsConfig: { productFields: [], businessInfoFields: [] }, tenantToolSchemas: toolSchemas };
   }
 }
 
@@ -507,14 +498,18 @@ export async function createOrder(
     { tenantId: ctx.tenantId, userId: ctx.userId, userName: ctx.userName, userRole: ctx.userRole },
     async () => {
       try {
+        const planCheck = await checkOrderLimit(ctx.tenantId);
+        if (!planCheck.allowed) {
+          return {
+            success: false,
+            error: `❌ ${planCheck.message}`,
+          };
+        }
+
         const tenantPrisma = getTenantPrisma(ctx.tenantId);
         
-        // Generate order ID
         const timestamp = Date.now();
         const orderId = `BOT-${timestamp}`;
-        
-        console.log('[AI Tool] createOrder - Creating order with custom fields support');
-        console.log('[AI Tool] createOrder - Raw params:', JSON.stringify(params, null, 2));
         
         // STEP 1: Validate base order fields first
         const baseValidation = validateBaseOrderFields(params);
@@ -528,6 +523,7 @@ export async function createOrder(
         }
 
         // STEP 1.5: Validate location hierarchy for EA orders
+        const locationCorrections: string[] = [];
         if (params.orderType === 'EA' && params.province) {
           const { validateLocation, formatValidationMessage } = await import('@/lib/locationValidator');
           const locResult = validateLocation(params.province, params.canton, params.district);
@@ -541,9 +537,18 @@ export async function createOrder(
             };
           }
 
-          if (locResult.correctedProvince) params.province = locResult.correctedProvince;
-          if (locResult.correctedCanton) params.canton = locResult.correctedCanton;
-          if (locResult.correctedDistrict) params.district = locResult.correctedDistrict;
+          if (locResult.correctedProvince) {
+            locationCorrections.push(`Provincia: "${params.province}" → "${locResult.correctedProvince}"`);
+            params.province = locResult.correctedProvince;
+          }
+          if (locResult.correctedCanton) {
+            locationCorrections.push(`Cantón: "${params.canton}" → "${locResult.correctedCanton}"`);
+            params.canton = locResult.correctedCanton;
+          }
+          if (locResult.correctedDistrict) {
+            locationCorrections.push(`Distrito: "${params.district}" → "${locResult.correctedDistrict}"`);
+            params.district = locResult.correctedDistrict;
+          }
         }
         
         // STEP 2: Get tenant custom fields configuration
@@ -760,6 +765,9 @@ export async function createOrder(
         );
         
         let successMessage = `✅ Orden #${order.orderId} creada exitosamente para ${params.customerName}`;
+        if (locationCorrections.length > 0) {
+          successMessage += `\n📍 Correcciones de ubicación aplicadas:\n${locationCorrections.map(c => `  - ${c}`).join('\n')}`;
+        }
         if (customFieldsLines.length > 0) {
           successMessage += `\n\nCampos personalizados:\n${customFieldsLines.join('\n')}`;
         }
@@ -800,11 +808,11 @@ export async function createOrder(
           if (fieldMatch) {
             userFriendlyError = `❌ Error: El campo "${fieldMatch[1]}" es requerido.`;
           } else {
-            userFriendlyError = `❌ Error de validación: ${error.message.slice(0, 200)}`;
+            userFriendlyError = `❌ Error de validación al crear la orden. Verifica los datos e intenta de nuevo.`;
           }
         } else if (error.message) {
-          // General error - provide the message but keep it user-friendly
-          userFriendlyError = `❌ Error: ${error.message.slice(0, 300)}`;
+          console.error('[AI Tool] createOrder - Unhandled error:', error.message);
+          userFriendlyError = `❌ Error al crear la orden. Por favor intenta de nuevo o contacta a soporte.`;
         }
         
         return {
@@ -1688,6 +1696,18 @@ export async function executeTool(
   ctx: ToolContext,
   params: unknown
 ): Promise<ToolResult> {
+  const WRITE_TOOLS: ToolName[] = [
+    'create_order', 'update_order', 'update_order_status',
+    'update_inventory_stock', 'generate_guia', 'generate_guias_bulk',
+  ];
+
+  if (WRITE_TOOLS.includes(toolName) && ctx.userRole === 'VIEWER') {
+    return {
+      success: false,
+      error: '❌ No tienes permisos para realizar esta acción. Contacta a un administrador.',
+    };
+  }
+
   const executor = toolExecutors[toolName];
   
   if (!executor) {

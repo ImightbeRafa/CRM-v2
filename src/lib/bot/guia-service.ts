@@ -8,6 +8,7 @@ import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
 import { CorreosWebService, buildGuiaDescription, buildFullAddress } from '@/lib/correos';
 import type { CorreosWSCredentials } from '@/lib/correos';
+import { decrypt } from '@/lib/encryption';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ export async function generateGuiasForOrders(
 
   const wsCreds: CorreosWSCredentials = {
     username: settings.ws_username,
-    password: settings.ws_password,
+    password: decrypt(settings.ws_password),
     sistema: settings.ws_sistema || 'PYMEXPRESS',
     usuarioId: Number(settings.ws_usuario_id) || 0,
     servicioId: Number(settings.ws_servicio_id) || 0,

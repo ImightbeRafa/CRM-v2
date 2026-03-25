@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getToken } from 'next-auth/jwt'
 import { addAppSecretProofToUrl } from '@/lib/meta-api'
+import { timingSafeEqual } from 'crypto'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -21,11 +22,12 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('[instagram/callback] OAuth error', { error, errorReason, errorDescription })
+      const esc = (s: string | null) => (s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
       const html = `
         <html><body>
           <h2>Error al conectar Instagram</h2>
-          <p>Error: ${error}</p>
-          ${errorDescription ? `<p>${errorDescription}</p>` : ''}
+          <p>Error: ${esc(error)}</p>
+          ${errorDescription ? `<p>${esc(errorDescription)}</p>` : ''}
           <p>Puedes cerrar esta ventana y volver a la app.</p>
         </body></html>
       `
@@ -34,6 +36,13 @@ export async function GET(request: NextRequest) {
 
     if (!code) {
       return new NextResponse('Missing code', { status: 400 })
+    }
+
+    const stateParam = url.searchParams.get('state') || ''
+    const storedState = request.cookies.get('ig_oauth_state')?.value || ''
+    if (!stateParam || !storedState || stateParam.length !== storedState.length ||
+        !timingSafeEqual(Buffer.from(stateParam), Buffer.from(storedState))) {
+      return new NextResponse('Invalid OAuth state — possible CSRF attack', { status: 403 })
     }
 
     // Get session to identify tenant/user
@@ -88,7 +97,7 @@ export async function GET(request: NextRequest) {
         <html><body>
           <h2>Error al obtener token</h2>
           <p>No se pudo intercambiar el código por un token de Facebook.</p>
-          <pre>${errText}</pre>
+          <p>Por favor intenta de nuevo o contacta soporte.</p>
         </body></html>
       `
       return new NextResponse(html, { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
@@ -104,7 +113,7 @@ export async function GET(request: NextRequest) {
         <html><body>
           <h2>Respuesta inválida</h2>
           <p>Facebook no devolvió un token válido.</p>
-          <p>Error: ${tokenData?.error?.message || 'Token no recibido'}</p>
+          <p>Facebook no devolvió un token válido. Intenta de nuevo.</p>
         </body></html>
       `
       return new NextResponse(html, { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
@@ -410,7 +419,7 @@ export async function GET(request: NextRequest) {
     const html = `
       <html><body>
         <h2>Error inesperado</h2>
-        <p>${e.message || 'Ocurrió un error al conectar Instagram.'}</p>
+        <p>Ocurrió un error al conectar Instagram. Por favor intenta de nuevo.</p>
       </body></html>
     `
     return new NextResponse(html, { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } })

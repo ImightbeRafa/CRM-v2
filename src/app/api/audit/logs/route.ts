@@ -5,7 +5,6 @@ import { createSuccessResponse, createErrorResponse, handleApiError } from '@/li
 
 export async function GET(request: NextRequest) {
   try {
-    // Get tenant from authenticated user
     const { getToken } = await import('next-auth/jwt')
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
     
@@ -13,7 +12,6 @@ export async function GET(request: NextRequest) {
       return createErrorResponse('Unauthorized', 401)
     }
 
-    // Get user's tenant
     const user = await prisma.user.findUnique({
       where: { id: token.sub },
       select: {
@@ -30,7 +28,12 @@ export async function GET(request: NextRequest) {
       return createErrorResponse('Unauthorized', 401)
     }
 
-    const tenantId = user.memberships[0].tenantId || user.defaultTenantId
+    const membership = user.memberships[0]
+    if (membership.role !== 'OWNER' && membership.role !== 'ADMIN') {
+      return createErrorResponse('Forbidden — requires ADMIN or OWNER role', 403)
+    }
+
+    const tenantId = membership.tenantId || user.defaultTenantId
 
     const { searchParams } = new URL(request.url)
     const action = searchParams.get('action')

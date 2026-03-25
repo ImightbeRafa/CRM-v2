@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { sendVerificationEmail } from '@/lib/email';
+import { authRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
+  const rateLimitResult = await authRateLimit(request);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+
   try {
     const { email } = await request.json();
 
@@ -39,12 +43,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // If email is already verified, inform the user
     if (user.emailVerified) {
       return NextResponse.json(
         { 
           success: true,
-          message: 'This email has already been verified. You can sign in.' 
+          message: 'If an account exists with this email, a verification email has been sent.' 
         },
         { status: 200 }
       );

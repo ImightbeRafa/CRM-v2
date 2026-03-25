@@ -59,6 +59,7 @@ export default async function middleware(request: Request) {
   sanitizedHeaders.delete('x-user-id');
   sanitizedHeaders.delete('x-user-role');
   sanitizedHeaders.delete('x-tenant-id');
+  sanitizedHeaders.delete('x-user-email');
   const cleanFwd = { request: { headers: sanitizedHeaders } };
 
   const origin = sanitizedHeaders.get('origin');
@@ -73,7 +74,6 @@ export default async function middleware(request: Request) {
     response.headers.set('Access-Control-Allow-Origin', origin);
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
-    response.headers.set('Access-Control-Allow-Credentials', 'true');
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 200, headers: response.headers });
@@ -108,12 +108,13 @@ export default async function middleware(request: Request) {
   try {
     // Get session token
     const secret = process.env.NEXTAUTH_SECRET;
-    if (!secret && process.env.NODE_ENV === 'production') {
-      throw new Error('NEXTAUTH_SECRET must be set in production');
+    if (!secret) {
+      console.error('[Middleware] NEXTAUTH_SECRET is not set');
+      return redirectToLogin(url);
     }
     const token = await getToken({
       req: request as any,
-      secret: secret || (process.env.NODE_ENV === 'production' ? '' : 'dev-secret-localhost-only'),
+      secret,
     });
 
     // Redirect to login if no token
@@ -407,7 +408,7 @@ async function handleAppRoute(
         }
       }
     } catch (error) {
-      // On error, allow access (fail open) - don't block users due to DB errors
+      console.error('[Middleware] Subscription check error:', error);
     }
   }
 
@@ -417,7 +418,7 @@ async function handleAppRoute(
     async () => {
       const response = NextResponse.next(fwd);
       response.headers.set('x-tenant-id', tenantId);
-      response.headers.set('Content-Security-Policy-Report-Only', CSP_HEADER);
+      response.headers.set('Content-Security-Policy', CSP_HEADER);
       return response;
     }
   );

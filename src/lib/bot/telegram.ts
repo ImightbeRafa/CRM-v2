@@ -8,6 +8,7 @@
  */
 
 import { Bot, Context, webhookCallback, InlineKeyboard } from 'grammy';
+import { escapeHtml } from '@/lib/validation';
 
 /**
  * Convert markdown to HTML for Telegram
@@ -285,22 +286,23 @@ export async function getWebhookInfo() {
  * Format order for Telegram display
  */
 export function formatOrderForTelegram(order: any, customFieldLines?: string[]): string {
+  const e = escapeHtml;
   const lines = [
-    `📦 <b>Orden #${order.orderId}</b>`,
+    `📦 <b>Orden #${e(order.orderId)}</b>`,
     ``,
-    `👤 <b>Cliente:</b> ${order.customerName}`,
-    order.phone ? `📱 <b>Teléfono:</b> ${order.phone}` : null,
-    order.email ? `📧 <b>Email:</b> ${order.email}` : null,
+    `👤 <b>Cliente:</b> ${e(order.customerName)}`,
+    order.phone ? `📱 <b>Teléfono:</b> ${e(order.phone)}` : null,
+    order.email ? `📧 <b>Email:</b> ${e(order.email)}` : null,
     ``,
-    `🛍️ <b>Producto:</b> ${order.product || 'N/A'}`,
+    `🛍️ <b>Producto:</b> ${e(order.product || 'N/A')}`,
     order.quantity ? `📊 <b>Cantidad:</b> ${order.quantity}` : null,
-    order.size ? `📏 <b>Talla:</b> ${order.size}` : null,
-    order.color ? `🎨 <b>Color:</b> ${order.color}` : null,
+    order.size ? `📏 <b>Talla:</b> ${e(order.size)}` : null,
+    order.color ? `🎨 <b>Color:</b> ${e(order.color)}` : null,
     ``,
     `💰 <b>Total:</b> ₡${(order.total || 0).toLocaleString('es-CR')}`,
-    `📍 <b>Estado:</b> ${order.status}`,
-    order.province ? `🌍 <b>Ubicación:</b> ${[order.province, order.canton, order.district].filter(Boolean).join(', ')}` : null,
-    order.address ? `📫 <b>Dirección:</b> ${order.address}` : null,
+    `📍 <b>Estado:</b> ${e(order.status)}`,
+    order.province ? `🌍 <b>Ubicación:</b> ${[order.province, order.canton, order.district].filter(Boolean).map(e).join(', ')}` : null,
+    order.address ? `📫 <b>Dirección:</b> ${e(order.address)}` : null,
   ].filter(Boolean);
 
   if (customFieldLines && customFieldLines.length > 0) {
@@ -322,15 +324,15 @@ export function formatInventoryForTelegram(item: any): string {
       : '🟢 En stock';
   
   return [
-    `📦 <b>${item.name}</b>`,
-    `SKU: ${item.sku}`,
+    `📦 <b>${escapeHtml(item.name)}</b>`,
+    `SKU: ${escapeHtml(item.sku || '')}`,
     ``,
     `📊 <b>Stock actual:</b> ${item.currentStock} unidades`,
     `${stockStatus}`,
     ``,
     `💰 <b>Precio:</b> ₡${(item.sellingPrice || 0).toLocaleString('es-CR')}`,
     `💵 <b>Costo:</b> ₡${(item.unitCost || 0).toLocaleString('es-CR')}`,
-    item.category ? `📁 <b>Categoría:</b> ${item.category}` : null,
+    item.category ? `📁 <b>Categoría:</b> ${escapeHtml(item.category)}` : null,
   ].filter(Boolean).join('\n');
 }
 

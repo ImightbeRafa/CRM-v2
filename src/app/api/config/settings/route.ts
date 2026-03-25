@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date().toISOString()
     }
     
-    console.log('💾 Saving settings to DB:', updatedSettings);
+    console.log('💾 Saving settings for tenant:', tenantId);
     
     // Update tenant settings
     await prisma.tenant.update({

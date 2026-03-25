@@ -273,6 +273,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, account: saved, tokenExchanged: Boolean(businessToken), phoneNumberId: phoneNumberId || null })
   } catch (e: any) {
     console.error('[wa/exchange] Error', e)
-    return NextResponse.json({ error: e.message || 'Internal error' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

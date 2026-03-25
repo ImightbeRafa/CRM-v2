@@ -173,9 +173,9 @@ export function formatValidationMessage(result: LocationValidationResult): strin
     if (result.correctedDistrict) corrections.push(`Distrito: "${result.district.input}" → "${result.correctedDistrict}"`);
 
     if (corrections.length > 0) {
-      return `Ubicación válida (con correcciones):\n${corrections.map(c => `  - ${c}`).join('\n')}`;
+      return `✅ Ubicación verificada. Se aplicaron las siguientes correcciones:\n${corrections.map(c => `  - ${c}`).join('\n')}`;
     }
-    return 'Ubicación válida.';
+    return '✅ Ubicación verificada correctamente.';
   }
 
   const lines: string[] = [];

@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     let user: any = null;
     try {
       user = await prisma.$queryRaw`
-        SELECT * FROM "User" 
+        SELECT id, email, username, "defaultTenantId", "emailVerified" FROM "User" 
         WHERE "emailVerificationToken" = ${token}
         AND "emailVerificationTokenExpires" > NOW()
         LIMIT 1
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
       // Fallback to snake_case column names
       try {
         user = await prisma.$queryRaw`
-          SELECT * FROM "User" 
+          SELECT id, email, username, "defaultTenantId", "emailVerified" FROM "User" 
           WHERE "email_verification_token" = ${token}
           AND "email_verification_token_expires" > NOW()
           LIMIT 1

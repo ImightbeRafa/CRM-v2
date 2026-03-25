@@ -36,7 +36,7 @@ export async function guardLogisticsApi(req: NextRequest): Promise<NextResponse 
     if (!secret && process.env.NODE_ENV === 'production') {
         return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
     }
-    const token = await getToken({ req, secret: secret || 'dev-secret-localhost-only' });
+    const token = await getToken({ req, secret: secret || '' });
 
     if (!token || !token.isLogisticsAdmin) {
         return NextResponse.json(

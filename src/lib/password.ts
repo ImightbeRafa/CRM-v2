@@ -6,6 +6,7 @@
  */
 
 import bcrypt from 'bcryptjs';
+import { randomInt } from 'crypto';
 
 /**
  * Number of salt rounds for bcrypt hashing.
@@ -136,20 +137,23 @@ export function generateSecurePassword(length: number = 12): string {
   
   const allChars = uppercase + lowercase + numbers + special;
   
-  let password = '';
+  const chars: string[] = [];
   
-  // Ensure at least one of each required type
-  password += uppercase[Math.floor(Math.random() * uppercase.length)];
-  password += lowercase[Math.floor(Math.random() * lowercase.length)];
-  password += numbers[Math.floor(Math.random() * numbers.length)];
-  password += special[Math.floor(Math.random() * special.length)];
+  chars.push(uppercase[randomInt(uppercase.length)]);
+  chars.push(lowercase[randomInt(lowercase.length)]);
+  chars.push(numbers[randomInt(numbers.length)]);
+  chars.push(special[randomInt(special.length)]);
   
-  // Fill rest with random characters
-  for (let i = password.length; i < length; i++) {
-    password += allChars[Math.floor(Math.random() * allChars.length)];
+  for (let i = chars.length; i < length; i++) {
+    chars.push(allChars[randomInt(allChars.length)]);
   }
   
-  // Shuffle the password
-  return password.split('').sort(() => Math.random() - 0.5).join('');
+  // Fisher-Yates shuffle with crypto-safe random
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  
+  return chars.join('');
 }
 

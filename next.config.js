@@ -24,10 +24,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  env: {
-    RESEND_API_KEY: process.env.RESEND_API_KEY,
-    // Add other environment variables here
-  },
   // Server-side packages that should not be bundled
   serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium', 'soap', 'axios'],
 

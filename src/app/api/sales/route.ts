@@ -80,11 +80,14 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    // Authenticate and get tenant context
     const auth = await authenticateAPI(request)
     if (!auth.ok) return auth.response
     
     const { tenantId, userId, role } = auth
+
+    if (role !== 'OWNER' && role !== 'ADMIN') {
+      return createErrorResponse('Forbidden — requires ADMIN or OWNER role to delete sales', 403)
+    }
 
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')

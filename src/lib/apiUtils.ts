@@ -78,7 +78,8 @@ export function handleApiError(error: unknown): NextResponse {
       return createErrorResponse('Invalid reference to related record', 400)
     }
     
-    return createErrorResponse(error.message, 500)
+    console.error('[handleApiError] Unhandled Prisma error:', error.message);
+    return createErrorResponse('Internal server error', 500)
   }
   
   return createErrorResponse('Internal server error', 500)

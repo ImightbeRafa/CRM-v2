@@ -111,9 +111,8 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // Store password in plain text for automation
-      // TODO: Implement proper encryption for production
-      const passwordToStore = (password && password !== '***') ? password : null;
+      const passwordToStore = (password && password !== '***') ? encrypt(password) : null;
+      const apiKeyToStore = apiKey ? encrypt(apiKey) : null;
 
       const shippingConfig = await prisma.shippingConfig.create({
         data: {
@@ -121,7 +120,7 @@ export async function POST(request: NextRequest) {
           name,
           email,
           password: passwordToStore,
-          apiKey,
+          apiKey: apiKeyToStore,
           baseUrl,
           isDefault,
           settings: settings || null,
@@ -204,8 +203,8 @@ export async function PUT(request: NextRequest) {
         });
       }
 
-      // Handle password update
-      const passwordToStore = (password && password !== '***') ? password : undefined;
+      const passwordToStore = (password && password !== '***') ? encrypt(password) : undefined;
+      const apiKeyToStore = apiKey ? encrypt(apiKey) : apiKey;
 
       let mergedSettings = settings || null;
       if (mergedSettings && typeof mergedSettings === 'object') {
@@ -224,7 +223,7 @@ export async function PUT(request: NextRequest) {
         carrier,
         name,
         email,
-        apiKey,
+        apiKey: apiKeyToStore,
         baseUrl,
         isDefault,
         settings: mergedSettings,

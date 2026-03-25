@@ -7,9 +7,9 @@ import { startOfDay, startOfWeek, startOfMonth, format } from 'date-fns';
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
 
-// Cache results for 30 seconds
 const revenueCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 30000;
+const CACHE_MAX = 200;
 
 export async function GET(req: NextRequest) {
   try {
@@ -128,8 +128,12 @@ export async function GET(req: NextRequest) {
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    // Store in cache
     revenueCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    if (revenueCache.size > CACHE_MAX) {
+      const now = Date.now();
+      for (const [k, v] of revenueCache) { if (now - v.timestamp > CACHE_TTL) revenueCache.delete(k); }
+      if (revenueCache.size > CACHE_MAX) { const first = revenueCache.keys().next().value; if (first) revenueCache.delete(first); }
+    }
 
     return NextResponse.json(result);
   } catch (error) {

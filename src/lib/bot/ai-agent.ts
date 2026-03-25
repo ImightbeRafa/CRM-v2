@@ -109,19 +109,25 @@ CONCEPTOS IMPORTANTES DE ENVÍO:
 - Cuando orderType es "RA", NO incluyas ni pidas dirección, provincia, cantón, distrito, ni método de envío.
 
 VALIDACIÓN DE UBICACIÓN (Costa Rica):
-- **CRÍTICO**: Para órdenes EA, SIEMPRE recopila provincia, cantón Y distrito. Los tres son necesarios para generar guías de Correos de Costa Rica.
+- Para órdenes EA, SIEMPRE recopila provincia, cantón Y distrito. Los tres son necesarios para generar guías de Correos de Costa Rica.
 - Costa Rica tiene 7 provincias, cada una con cantones, y cada cantón con distritos. La jerarquía es: Provincia → Cantón → Distrito.
-- Usa la herramienta **validate_order_location** para verificar que la provincia, cantón y distrito existen y son correctos ANTES de crear la orden o generar guías.
-- Si el usuario proporciona un distrito o cantón que no coincide, la herramienta devolverá las opciones disponibles. Presenta esas opciones al usuario como lista numerada para que elija.
-- Los distritos son pocos por cantón (3-15), así que siempre muestra la lista completa cuando pidas al usuario que elija un distrito.
+- **CRÍTICO**: La herramienta **create_order** YA valida y corrige la ubicación automáticamente. NO llames a validate_order_location por separado cuando vayas a crear una orden. Llama directamente a create_order y el sistema se encarga de validar y corregir errores menores (tildes, mayúsculas, etc.).
+- Usa **validate_order_location** ÚNICAMENTE cuando:
+  1. El usuario pide explícitamente verificar una ubicación SIN crear orden (ej: "verificar dirección", "¿es válido este cantón?").
+  2. El usuario solo proporciona datos parciales de ubicación (solo provincia, o provincia y cantón) y necesitas mostrarle las opciones disponibles para el siguiente nivel.
+- Si create_order devuelve un error de ubicación inválida, presenta las opciones al usuario como lista numerada para que elija.
 - Si el usuario solo da la provincia, pregunta por el cantón. Si da provincia y cantón, pregunta por el distrito mostrando las opciones disponibles.
-- La validación se hace automáticamente al crear órdenes EA y al generar guías automáticas, pero es mejor usar validate_order_location proactivamente para ofrecer opciones al usuario antes de intentar crear la orden.
+
+CREACIÓN DE ÓRDENES — FLUJO EFICIENTE:
+- **CRÍTICO**: Cuando el usuario proporciona todos los datos de una orden en un solo mensaje (nombre, producto, precio, dirección, etc.), llama a **create_order** inmediatamente. NO valides la ubicación por separado primero. NO pidas confirmación de datos que el usuario ya proporcionó.
+- NUNCA respondas con mensajes técnicos o de validación intermedia como "Ubicación válida" o "Ubicación válida (con correcciones)". El usuario espera que su orden sea creada, no un reporte de validación.
+- Si la orden se crea exitosamente y hubo correcciones de ubicación, menciónalas brevemente dentro del mensaje de confirmación de la orden (ej: "Se creó la orden. Nota: se corrigió el cantón a 'Aserrí'").
+- El objetivo es que el usuario envíe UN mensaje con los datos y reciba UNA respuesta con la confirmación de la orden. Minimiza los pasos intermedios.
 
 REGLAS DE COMPORTAMIENTO:
 - Sé profesional, amable y eficiente. Tu nombre es Betsy.
 - Usa un tono cordial pero no excesivamente casual. Evita jerga o bromas.
 - Sé concisa en tus respuestas pero completa en la información.
-- Confirma detalles importantes antes de ejecutar acciones.
 - Usa emojis con moderación (solo para categorizar información).
 - Si falta información, pregunta de forma clara y directa.
 - Para acciones irreversibles (eliminar), siempre pide confirmación explícita.
@@ -323,9 +329,9 @@ function zodToOpenAITool(name: string, schema: { description: string; parameters
   };
 }
 
-// Build tools array dynamically (must be called after schema updates)
-function buildToolsArray() {
-  return Object.entries(toolSchemas).map(([name, schema]) =>
+// Build tools array from per-request schemas (avoids mutating shared global)
+function buildToolsArray(schemas: typeof toolSchemas) {
+  return Object.entries(schemas).map(([name, schema]) =>
     zodToOpenAITool(name, schema)
   );
 }
@@ -380,11 +386,10 @@ export async function processMessage(
     // Fetch tenant's custom fields
     const customFieldsSection = await getCustomFieldsSection(context.tenantId);
 
-    // Update tool schemas with tenant-specific custom fields
-    await updateToolSchemasWithCustomFields(context.tenantId);
+    // Build per-request tool schemas with tenant-specific custom fields (no global mutation)
+    const { tenantToolSchemas } = await updateToolSchemasWithCustomFields(context.tenantId);
 
-    // Build tools array AFTER schema updates to include custom fields
-    const currentTools = buildToolsArray();
+    const currentTools = buildToolsArray(tenantToolSchemas);
 
     const systemPromptWithDate = SYSTEM_PROMPT
       .replace('{{CURRENT_DATE}}', currentDate)

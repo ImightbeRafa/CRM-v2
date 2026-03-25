@@ -46,11 +46,13 @@ export async function GET(request: NextRequest) {
     }
     
     // Fetch orders with related data
+    const MAX_EXPORT_ROWS = 10000;
     const orders = await prisma.order.findMany({
       where: whereClause,
       orderBy: {
         timestamp: 'desc'
-      }
+      },
+      take: MAX_EXPORT_ROWS,
     });
     
     // Transform data for export

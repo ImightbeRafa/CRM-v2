@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { hashPassword } from '@/lib/password';
+import { hashPassword, validatePasswordStrength } from '@/lib/password';
 import { authRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: Request) {
@@ -17,9 +17,17 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!password || typeof password !== 'string' || password.length < 6) {
+    if (!password || typeof password !== 'string') {
       return NextResponse.json(
-        { error: 'La contraseña debe tener al menos 6 caracteres.' },
+        { error: 'La contraseña es requerida.' },
+        { status: 400 }
+      );
+    }
+
+    const passwordCheck = validatePasswordStrength(password);
+    if (!passwordCheck.valid) {
+      return NextResponse.json(
+        { error: passwordCheck.errors.join('. ') },
         { status: 400 }
       );
     }

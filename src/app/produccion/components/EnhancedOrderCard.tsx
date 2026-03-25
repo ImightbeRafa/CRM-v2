@@ -552,18 +552,18 @@ export function EnhancedOrderCard({
         {/* Quick Status Update */}
         <div className="pt-1">
           <select
-            className="w-full text-xs rounded-lg border border-white/[0.06] bg-white/[0.03] px-2.5 py-1.5 text-foreground
+            className="w-full text-xs rounded-lg border border-border bg-card px-2.5 py-1.5 text-foreground
               focus:outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500/30
-              transition-colors appearance-none cursor-pointer"
+              transition-colors cursor-pointer"
             value={order.status}
             onChange={(e) => handleStatusChange(e.target.value)}
             disabled={isUpdating}
           >
             {availableStatuses.length > 0
               ? availableStatuses.map((s: any) => (
-                <option key={s.key || s.label} value={s.label}>{s.label}</option>
+                <option key={s.key || s.label} value={s.label} className="bg-card text-foreground">{s.label}</option>
               ))
-              : <option value={order.status}>{order.status}</option>
+              : <option value={order.status} className="bg-card text-foreground">{order.status}</option>
             }
           </select>
         </div>

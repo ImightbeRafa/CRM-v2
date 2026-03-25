@@ -112,6 +112,7 @@ export const authOptions: NextAuthOptions = {
               password: true,
               active: true,
               emailVerified: true,
+              emailVerificationToken: true,
               defaultTenantId: true,
               memberships: {
                 where: { isActive: true },
@@ -132,11 +133,12 @@ export const authOptions: NextAuthOptions = {
             return null
           }
 
-          // Check if email is verified (only for non-OAuth users with password)
-          // Temporarily disabled to allow immediate login after registration
-          // if (user.password && !user.emailVerified) {
-          //   throw new Error('Please verify your email before signing in')
-          // }
+          // Only enforce email verification for users who were sent a verification
+          // email (have a token). Legacy users created before the verification
+          // system was added have no token and are grandfathered in.
+          if (user.password && !user.emailVerified && user.emailVerificationToken) {
+            throw new Error('Please verify your email before signing in')
+          }
 
           // Check if account is active
           if (!user.active) {
@@ -272,7 +274,7 @@ export const authOptions: NextAuthOptions = {
                   name: user.name || dbUser.name,
                   image: user.image || dbUser.image,
                   emailVerified: dbUser.emailVerified || new Date(),
-                  active: true, // CRITICAL: Activate user on OAuth login (fixes users created inactive via API)
+                  active: dbUser.active, // Preserve admin deactivation — don't re-activate disabled users
                   // Update OAuth provider info so user can log in with Google in the future
                   provider: account?.provider || dbUser.provider || 'google',
                   providerId: account?.providerAccountId || dbUser.providerId,

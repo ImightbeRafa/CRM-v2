@@ -1,26 +1,37 @@
-import crypto from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 
-// Use environment variable for encryption key (should be set in .env)
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-key-change-in-production-32b';
-const ALGORITHM = 'aes-256-cbc';
+const ALGORITHM = 'aes-256-gcm';
+const IV_LENGTH = 16;
+const TAG_LENGTH = 16;
+const KEY_LENGTH = 32;
 
-// Ensure key is 32 bytes
-const KEY = crypto.createHash('sha256').update(ENCRYPTION_KEY).digest();
-
-export function encrypt(text: string): string {
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(ALGORITHM, KEY, iv);
-  let encrypted = cipher.update(text, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  return iv.toString('hex') + ':' + encrypted;
+function getKey(): Buffer {
+  const secret = process.env.ENCRYPTION_KEY || process.env.NEXTAUTH_SECRET;
+  if (!secret) {
+    throw new Error('ENCRYPTION_KEY or NEXTAUTH_SECRET must be set');
+  }
+  return scryptSync(secret, 'betsy-enc-v1', KEY_LENGTH);
 }
 
-export function decrypt(text: string): string {
-  const parts = text.split(':');
-  const iv = Buffer.from(parts[0], 'hex');
-  const encryptedText = parts[1];
-  const decipher = crypto.createDecipheriv(ALGORITHM, KEY, iv);
-  let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
+export function encrypt(plaintext: string): string {
+  if (!plaintext) return plaintext;
+  const key = getKey();
+  const iv = randomBytes(IV_LENGTH);
+  const cipher = createCipheriv(ALGORITHM, key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return 'enc:' + Buffer.concat([iv, encrypted, tag]).toString('base64');
+}
+
+export function decrypt(value: string): string {
+  if (!value) return value;
+  if (!value.startsWith('enc:')) return value;
+  const key = getKey();
+  const combined = Buffer.from(value.slice(4), 'base64');
+  const iv = combined.subarray(0, IV_LENGTH);
+  const tag = combined.subarray(combined.length - TAG_LENGTH);
+  const ciphertext = combined.subarray(IV_LENGTH, combined.length - TAG_LENGTH);
+  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(ciphertext) + decipher.final('utf8');
 }

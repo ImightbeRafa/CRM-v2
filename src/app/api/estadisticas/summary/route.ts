@@ -6,9 +6,9 @@ import { prisma as globalPrisma } from '@/lib/db';
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
 
-// Cache results for 30 seconds
 const summaryCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 30000;
+const CACHE_MAX = 200;
 
 export async function GET(req: NextRequest) {
   try {
@@ -142,8 +142,12 @@ export async function GET(req: NextRequest) {
       trends,
     };
     
-    // Store in cache
     summaryCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    if (summaryCache.size > CACHE_MAX) {
+      const now = Date.now();
+      for (const [k, v] of summaryCache) { if (now - v.timestamp > CACHE_TTL) summaryCache.delete(k); }
+      if (summaryCache.size > CACHE_MAX) { const first = summaryCache.keys().next().value; if (first) summaryCache.delete(first); }
+    }
     
     return NextResponse.json(result);
   } catch (error) {

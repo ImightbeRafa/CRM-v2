@@ -1,13 +1,9 @@
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { prisma } from './db';
 
 export async function validateApiKey(apiKey: string): Promise<string | null> {
-  console.log('[validateApiKey] Starting validation');
-  const startTime = Date.now();
-  
   try {
     const keyHash = hashApiKey(apiKey);
-    console.log('[validateApiKey] Key hashed, querying database...');
     
     const apiKeyRecord = await prisma.apiKey.findFirst({
       where: {
@@ -18,14 +14,10 @@ export async function validateApiKey(apiKey: string): Promise<string | null> {
         tenantId: true,
       },
     });
-
-    const duration = Date.now() - startTime;
-    console.log(`[validateApiKey] Query completed in ${duration}ms`);
     
     return apiKeyRecord?.tenantId || null;
   } catch (error) {
-    const duration = Date.now() - startTime;
-    console.error(`[validateApiKey] Error after ${duration}ms:`, error);
+    console.error('[validateApiKey] Error:', error);
     return null;
   }
 }
@@ -35,15 +27,7 @@ export async function getTenantFromApiKey(apiKey: string): Promise<string | null
 }
 
 export function generateApiKey(): string {
-  // Generate a secure 64-character API key
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = 'bts_'; // Prefix for Betsy API keys
-  
-  for (let i = 0; i < 60; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  
-  return result;
+  return 'bts_' + randomBytes(45).toString('base64url');
 }
 
 export function hashApiKey(apiKey: string): string {

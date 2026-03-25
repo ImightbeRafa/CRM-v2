@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { hashPassword } from '@/lib/password';
+import { hashPassword, validatePasswordStrength } from '@/lib/password';
 import { sendVerificationEmail } from '@/lib/email';
 import { withoutTenantIsolation } from '@/lib/tenantContext';
 import { authRateLimit } from '@/lib/rate-limit';
@@ -16,11 +16,17 @@ export async function POST(request: Request) {
     const { name, email, password, businessName, phone, country, province } = await request.json();
     console.log('📝 Registration request received:', { name, email: email.substring(0, 3) + '***', hasPhone: !!phone });
 
-    // Validate input
     if (!name || !email || !password) {
-      console.warn('⚠️ Missing required fields');
       return NextResponse.json(
         { error: 'Name, email, and password are required' },
+        { status: 400 }
+      );
+    }
+
+    const passwordCheck = validatePasswordStrength(password);
+    if (!passwordCheck.valid) {
+      return NextResponse.json(
+        { error: passwordCheck.errors.join('. ') },
         { status: 400 }
       );
     }
@@ -40,10 +46,9 @@ export async function POST(request: Request) {
     });
 
     if (existingUser) {
-      console.warn('⚠️ User already exists:', existingUser.email, '(searched:', normalizedEmail, ')');
       return NextResponse.json(
-        { error: 'User with this email already exists' },
-        { status: 400 }
+        { success: true, message: 'Registration successful! Please check your email to verify your account.' },
+        { status: 200 }
       );
     }
 

@@ -6,6 +6,7 @@
  */
 
 import { prisma } from '@/lib/db';
+import { randomInt } from 'crypto';
 
 /**
  * Generate a secure bot access code
@@ -16,8 +17,7 @@ export function generateBotAccessCode(): string {
   let code = '';
   
   for (let i = 0; i < 12; i++) {
-    const randomIndex = Math.floor(Math.random() * chars.length);
-    code += chars[randomIndex];
+    code += chars[randomInt(chars.length)];
   }
   
   return code;

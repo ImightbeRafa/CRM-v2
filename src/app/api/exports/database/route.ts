@@ -80,16 +80,28 @@ export async function GET(request: NextRequest) {
     // Include user data if requested and user has permission
     if (includeUsers) {
       const users = await prisma.user.findMany({
-        include: {
+        where: {
           memberships: {
-            where: {
-              tenantId: session.user.tenantId
-            },
-            include: {
-              tenant: true
+            some: { tenantId: session.user.tenantId }
+          }
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          active: true,
+          createdAt: true,
+          updatedAt: true,
+          memberships: {
+            where: { tenantId: session.user.tenantId },
+            select: {
+              role: true,
+              joinedAt: true,
             }
           }
-        }
+        },
+        take: MAX_EXPORT_ROWS,
       });
       
       exportData.data.users = users;

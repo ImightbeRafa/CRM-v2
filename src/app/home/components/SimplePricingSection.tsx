@@ -96,22 +96,23 @@ export default function SimplePricingSection() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto items-start">
           {pricingPlans.map((plan, index) => (
-            <Card key={index} className={`relative overflow-hidden shadow-elevated hover:shadow-elevated-hover transition-all duration-300 ${plan.popular ? 'border-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.15)]' : 'border-gray-200'}`}>
+            <div key={index} className={`relative ${plan.popular ? 'mt-0 pt-4' : ''}`}>
               {plan.popular && (
-                <>
-                  <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500 to-purple-500" />
-                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 z-10">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium tracking-wide uppercase bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg">
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
-                      </span>
-                      Most Popular
+                <div className="absolute -top-0 left-1/2 transform -translate-x-1/2 z-10">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium tracking-wide uppercase bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
                     </span>
-                  </div>
-                </>
+                    Most Popular
+                  </span>
+                </div>
+              )}
+              <Card className={`relative overflow-hidden shadow-elevated hover:shadow-elevated-hover transition-all duration-300 ${plan.popular ? 'border-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.15)]' : 'border-gray-200'}`}>
+              {plan.popular && (
+                <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500 to-purple-500" />
               )}
               <CardHeader className="text-center">
                 <CardTitle className="text-2xl">{plan.name}</CardTitle>
@@ -150,6 +151,7 @@ export default function SimplePricingSection() {
                 </Button>
               </CardContent>
             </Card>
+            </div>
           ))}
         </div>
 

@@ -7,7 +7,7 @@
  * Webhook URL: https://betsycrm.com/api/bot/telegram/webhook
  */
 
-console.log('🚀🚀🚀 WEBHOOK MODULE LOADING 🚀🚀🚀', new Date().toISOString());
+// Module loaded
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getTelegramBot, sendMessage, sendTypingAction, sendDocument } from '@/lib/bot/telegram';

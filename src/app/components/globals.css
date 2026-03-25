@@ -53,6 +53,7 @@
   }
 
   .dark {
+    color-scheme: dark;
     --background: 235 35% 3.5%;
     --foreground: 210 20% 95%;
 

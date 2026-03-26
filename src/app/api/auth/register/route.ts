@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { prisma } from '@/lib/db';
 import { hashPassword, validatePasswordStrength } from '@/lib/password';
 import { sendVerificationEmail } from '@/lib/email';
 import { withoutTenantIsolation } from '@/lib/tenantContext';
 import { authRateLimit } from '@/lib/rate-limit';
+import { sendCAPIEvent } from '@/lib/meta-capi';
 
-// Disable body parsing since we need the raw body for webhook verification
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
@@ -14,7 +15,6 @@ export async function POST(request: Request) {
 
   try {
     const { name, email, password, businessName, phone, country, province } = await request.json();
-    console.log('📝 Registration request received:', { name, email: email.substring(0, 3) + '***', hasPhone: !!phone });
 
     if (!name || !email || !password) {
       return NextResponse.json(
@@ -31,11 +31,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Normalize email first (always store lowercase)
     const normalizedEmail = email.trim().toLowerCase();
-    console.log('📧 Normalized email:', normalizedEmail.substring(0, 3) + '***');
-
-    // Check if user already exists (CASE-INSENSITIVE search to prevent duplicates)
     const existingUser = await prisma.user.findFirst({
       where: { 
         email: { 
@@ -52,49 +48,36 @@ export async function POST(request: Request) {
       );
     }
 
-    // Hash password
-    // Hashing password for security
     const hashedPassword = await hashPassword(password);
     const emailPrefix = normalizedEmail.split('@')[0];
     const tenantSlug = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now();
-    console.log('🏢 Tenant slug generated:', tenantSlug);
 
-    // Create user with tenant and membership in a transaction
-    // Use withoutTenantIsolation since this is a system operation creating a new tenant
-    console.log('🔄 Starting transaction...');
     const result = await withoutTenantIsolation(async () => {
       return await prisma.$transaction(async (tx) => {
-      // 1. Create tenant first
-      console.log('  1️⃣ Creating tenant...');
-      // @ts-ignore - New profile fields exist in schema, regenerate Prisma client if TypeScript complains
       const tenant = await tx.tenant.create({
         data: {
           name: businessName || `${name}'s Organization`,
           slug: tenantSlug,
           plan: 'FREE',
           isActive: true,
-          trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days trial
-          // Business profile fields
+          trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
           businessName: businessName || null,
           ownerName: name,
           phone: phone || null,
           country: country || null,
           province: province || null,
-          profileCompleted: !!(phone && country), // Mark as completed if basic info provided
-        } as any
+          profileCompleted: !!(phone && country),
+        }
       });
-      console.log('  ✅ Tenant created:', tenant.id);
 
-      // 2. Create user (active immediately to allow login)
-      console.log('  2️⃣ Creating user...');
       const user = await tx.user.create({
         data: {
           username: name,
           name: name,
           email: normalizedEmail,
           password: hashedPassword,
-          active: true, // FIXED: Active immediately so user can log in
-          emailVerified: null, // Email not verified yet, but doesn't block login
+          active: true,
+          emailVerified: null,
           defaultTenantId: tenant.id
         },
         select: {
@@ -104,10 +87,7 @@ export async function POST(request: Request) {
           active: true
         }
       });
-      console.log('  ✅ User created:', user.id);
 
-      // 3. Create membership with OWNER role
-      console.log('  3️⃣ Creating membership...');
       await tx.membership.create({
         data: {
           userId: user.id,
@@ -117,10 +97,7 @@ export async function POST(request: Request) {
           joinedAt: new Date()
         }
       });
-      console.log('  ✅ Membership created');
 
-      // 4. Create default order statuses directly in transaction
-      console.log('  4️⃣ Creating default order statuses...');
       const defaultStatuses = [
         { key: 'pendiente', label: 'Pendiente', color: '#FCD34D', order: 0 },
         { key: 'en-proceso', label: 'En Proceso', color: '#60A5FA', order: 1 },
@@ -138,45 +115,55 @@ export async function POST(request: Request) {
         })),
         skipDuplicates: true
       });
-      console.log('  ✅ Order statuses created');
 
       return { user, tenant };
       });
     });
-    console.log('✅ Transaction completed successfully');
 
-    // Send verification email (optional - doesn't block login)
     try {
-      await sendVerificationEmail({
-        email: normalizedEmail,
-        name
-      });
-      console.log(`✅ Verification email sent to ${normalizedEmail}`);
+      await sendVerificationEmail({ email: normalizedEmail, name });
     } catch (emailError) {
-      console.error('⚠️ Failed to send verification email, but user can still log in:', emailError);
-      // Don't fail registration if email fails - user can resend later
+      console.error('Failed to send verification email (non-blocking):', emailError);
     }
+
+    const nameParts = name.trim().split(/\s+/);
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
+    const clientUa = request.headers.get('user-agent') || '';
+    const eventId = request.headers.get('x-event-id') || crypto.randomUUID();
+
+    sendCAPIEvent({
+      eventName: 'CompleteRegistration',
+      eventId,
+      email: normalizedEmail,
+      phone: phone || undefined,
+      firstName,
+      lastName: lastName || undefined,
+      clientIpAddress: clientIp,
+      clientUserAgent: clientUa,
+    });
+
+    sendCAPIEvent({
+      eventName: 'StartTrial',
+      eventId: crypto.randomUUID(),
+      email: normalizedEmail,
+      firstName,
+      lastName: lastName || undefined,
+      clientIpAddress: clientIp,
+      clientUserAgent: clientUa,
+    });
 
     return NextResponse.json({
       success: true,
       message: 'Registration successful! You can now log in.',
       userId: result.user.id,
       tenantId: result.tenant.id,
-      requiresVerification: false,
-      requiresPhoneVerification: !!phone,
-      phone: phone || null,
     });
 
   } catch (error: any) {
-    console.error('❌ Registration error:', error);
-    console.error('Error details:', {
-      message: error?.message,
-      code: error?.code,
-      meta: error?.meta,
-      stack: error?.stack
-    });
+    console.error('Registration error:', error?.message, error?.code);
     
-    // Return more specific error message in development
     const errorMessage = process.env.NODE_ENV === 'development' 
       ? error?.message || 'Registration failed'
       : 'Registration failed. Please try again.';

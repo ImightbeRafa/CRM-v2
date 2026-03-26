@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/app/components/ui/alert';
 import { X, Mail, Lock, User, Eye, EyeOff, Phone, MapPin, Building2, ArrowRight, ArrowLeft, CheckCircle } from 'lucide-react';
 import { signIn } from 'next-auth/react';
 import Link from 'next/link';
+import { trackMetaEvent } from '@/app/components/MetaPixel';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -103,8 +104,20 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
       setError('Por favor ingresa tu email');
       return false;
     }
-    if (formData.password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres');
+    if (formData.password.length < 8) {
+      setError('La contraseña debe tener al menos 8 caracteres');
+      return false;
+    }
+    if (!/[A-Z]/.test(formData.password)) {
+      setError('La contraseña debe contener al menos una letra mayúscula');
+      return false;
+    }
+    if (!/[a-z]/.test(formData.password)) {
+      setError('La contraseña debe contener al menos una letra minúscula');
+      return false;
+    }
+    if (!/[0-9]/.test(formData.password)) {
+      setError('La contraseña debe contener al menos un número');
       return false;
     }
     if (formData.password !== formData.confirmPassword) {
@@ -151,17 +164,18 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
 
     try {
       const selectedCountry = COUNTRIES.find(c => c.code === formData.country);
+      const eventId = crypto.randomUUID();
       
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Event-Id': eventId,
         },
         body: JSON.stringify({
           name: formData.name,
           email: formData.email,
           password: formData.password,
-          // Business info
           businessName: formData.businessName || `${formData.name}'s Business`,
           phone: formData.phone,
           country: formData.country,
@@ -172,19 +186,20 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
       const data = await response.json();
 
       if (response.ok) {
-        await signIn('credentials', {
+        const signInResult = await signIn('credentials', {
           email: formData.email,
           password: formData.password,
           redirect: false,
         });
-        onClose();
 
-        if (data.requiresPhoneVerification && formData.phone) {
-          const phoneParam = encodeURIComponent(formData.phone);
-          window.location.href = `/auth/verify-phone?phone=${phoneParam}`;
-        } else {
-          window.location.href = '/dashboard';
+        if (signInResult?.error) {
+          setError('Cuenta creada pero hubo un error al iniciar sesión. Intenta iniciar sesión manualmente.');
+          return;
         }
+
+        trackMetaEvent('CompleteRegistration', { event_id: eventId });
+        onClose();
+        window.location.href = '/dashboard';
       } else {
         setError(data.error || 'Error en el registro');
       }
@@ -420,7 +435,7 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
                     id="signup-password"
                     name="password"
                     type={showPassword ? 'text' : 'password'}
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder="Mínimo 8 caracteres, mayúscula y número"
                     value={formData.password}
                     onChange={handleInputChange}
                     className="pl-10 pr-10"

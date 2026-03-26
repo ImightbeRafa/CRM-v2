@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { prisma } from '@/lib/db';
 import { verifyWebhookSharedSecret } from '@/lib/tilopay';
+import { sendCAPIEvent } from '@/lib/meta-capi';
 
 // Force dynamic rendering for webhooks
 export const dynamic = 'force-dynamic';
@@ -182,6 +184,25 @@ async function processRepeatEvent(eventType: string, tenantId: string, body: any
       }
 
       console.log(`✅ [Repeat API] Tenant ${tenantId} activated with BASIC plan until ${periodEnd.toISOString()}`);
+
+      sendCAPIEvent({
+        eventName: 'Subscribe',
+        eventId: crypto.randomUUID(),
+        email: body.email || undefined,
+        value: amount || undefined,
+        currency: 'CRC',
+      });
+
+      if (auth && amount > 0) {
+        sendCAPIEvent({
+          eventName: 'Purchase',
+          eventId: crypto.randomUUID(),
+          email: body.email || undefined,
+          value: amount,
+          currency: 'CRC',
+        });
+      }
+
       break;
 
     case 'payment':
@@ -221,6 +242,15 @@ async function processRepeatEvent(eventType: string, tenantId: string, body: any
       });
 
       console.log(`✅ [Repeat API] Tenant ${tenantId} renewed until ${newPeriodEnd.toISOString()}`);
+
+      sendCAPIEvent({
+        eventName: 'Purchase',
+        eventId: crypto.randomUUID(),
+        email: body.email || undefined,
+        value: amount,
+        currency: 'CRC',
+      });
+
       break;
 
     case 'rejected':
@@ -501,6 +531,13 @@ export async function POST(req: NextRequest) {
         });
         
         console.log(`✅ [Tilopay Webhook] Billing transaction created for ${tenantId}`);
+
+        sendCAPIEvent({
+          eventName: 'Purchase',
+          eventId: crypto.randomUUID(),
+          value: amount || undefined,
+          currency,
+        });
       } catch (txError) {
         logWebhookEvent('error', `Failed to create billing transaction [${webhookId}]`, {
           webhookId,

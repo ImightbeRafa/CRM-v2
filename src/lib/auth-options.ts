@@ -112,7 +112,6 @@ export const authOptions: NextAuthOptions = {
               password: true,
               active: true,
               emailVerified: true,
-              emailVerificationToken: true,
               defaultTenantId: true,
               memberships: {
                 where: { isActive: true },
@@ -133,18 +132,8 @@ export const authOptions: NextAuthOptions = {
             return null
           }
 
-          // Only enforce email verification for users who were sent a verification
-          // email (have a token). Legacy users created before the verification
-          // system was added have no token and are grandfathered in.
-          if (user.password && !user.emailVerified && user.emailVerificationToken) {
-            throw new Error('Please verify your email before signing in')
-          }
-
-          // Check if account is active
-          if (!user.active) {
-            // Allow login but they'll be restricted in the session callback
-            // until they verify their email
-          }
+          // Email verification is non-blocking: users can log in immediately
+          // after registration and verify their email later.
 
           // Verify password (bcrypt only - plaintext support removed for security)
           let passwordValid = false;

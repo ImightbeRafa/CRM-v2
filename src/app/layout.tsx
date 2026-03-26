@@ -8,6 +8,7 @@ import { ConfigProvider } from "./contexts/ConfigContext"
 import SubscriptionBanner from "./components/SubscriptionBanner"
 import { ClientProviders } from "./components/ClientProviders"
 import { ThemeProvider } from "./components/ThemeProvider"
+import MetaPixel from "./components/MetaPixel"
 import type { Metadata, Viewport } from 'next'
 
 const jakarta = Plus_Jakarta_Sans({
@@ -46,6 +47,7 @@ export default async function RootLayout({
         <meta name="facebook-domain-verification" content="0p9ljactuhfpuxjkd46xl1kh5m2tjd" />
       </head>
       <body className={`${jakarta.className} min-h-screen bg-background text-foreground`}>
+        <MetaPixel />
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <ErrorBoundary>
             <SessionProvider>

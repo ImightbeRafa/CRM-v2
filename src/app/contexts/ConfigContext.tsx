@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
+import { useSession } from 'next-auth/react';
 
 type FetchState<T> = {
   data: T;
@@ -53,7 +54,16 @@ const HIGH_PRIORITY_KEYS: ConfigKeys[] = [
 
 const LOW_PRIORITY_KEYS: ConfigKeys[] = ['inventory'];
 
+const UNAUTHENTICATED_STATE: FetchState<any[]> = {
+  data: [],
+  loading: false,
+  error: null,
+};
+
 export function ConfigProvider({ children }: { children: ReactNode }) {
+  const { status } = useSession();
+  const isAuthenticated = status === 'authenticated';
+
   const [states, setStates] = useState<Record<ConfigKeys, FetchState<any[]>>>(() => {
     return {
       statuses: { ...DEFAULT_STATE },
@@ -111,6 +121,8 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   }, [updateState]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     const abortController = new AbortController();
 
     HIGH_PRIORITY_KEYS.forEach((key) => {
@@ -118,7 +130,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     });
 
     return () => abortController.abort();
-  }, [fetchResource]);
+  }, [fetchResource, isAuthenticated]);
 
   const refresh = useCallback(async (keys?: ConfigKeys | ConfigKeys[]) => {
     const targetKeys = Array.isArray(keys)
@@ -131,8 +143,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   }, [fetchResource]);
 
   const getState = useCallback(<T,>(key: ConfigKeys): FetchState<T> => {
+    if (!isAuthenticated) return UNAUTHENTICATED_STATE as FetchState<T>;
     return states[key] as FetchState<T>;
-  }, [states]);
+  }, [states, isAuthenticated]);
 
   const value = useMemo(() => ({ getState, refresh }), [getState, refresh]);
 

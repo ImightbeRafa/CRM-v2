@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, type Variants } from 'framer-motion';
+import { trackMetaEvent } from '@/app/components/MetaPixel';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
@@ -331,6 +332,10 @@ export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
+    trackMetaEvent('ViewContent', { content_name: 'Landing Page', content_category: 'Marketing' });
+  }, []);
+
+  useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
@@ -548,8 +553,8 @@ export default function LandingPage() {
               </Button>
               <Button 
                 size="lg"
-                variant="outline"
-                className="border-white/20 text-gray-200 hover:bg-white/10 text-lg px-8 h-14 rounded-2xl hover:-translate-y-0.5 transition-all duration-300"
+                variant="ghost"
+                className="text-gray-300 hover:text-white hover:bg-white/5 text-lg px-8 h-14 rounded-2xl hover:-translate-y-0.5 transition-all duration-300"
                 onClick={() => document.getElementById('platform')?.scrollIntoView({ behavior: 'smooth' })}
               >
                 Ver Cómo Funciona

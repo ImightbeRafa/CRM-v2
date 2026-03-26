@@ -8,6 +8,7 @@ import Link from "next/link"
 import { Button } from "@/app/components/ui/button"
 import { Eye, EyeOff } from "lucide-react"
 import BetsyLogo from "@/BetsyLogo.png"
+import { trackMetaEvent } from "@/app/components/MetaPixel"
 
 function SignInPageInner() {
   const [email, setEmail] = useState("")
@@ -58,9 +59,10 @@ function SignInPageInner() {
     setError(null)
     
     try {
+      const eventId = crypto.randomUUID()
       const res = await fetch('/api/auth/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Event-Id': eventId },
         body: JSON.stringify({ email, password, name: name || email.split('@')[0] })
       })
       
@@ -86,12 +88,8 @@ function SignInPageInner() {
         setIsRegistering(false)
         return
       }
-      
-      if (data.requiresPhoneVerification && data.phone) {
-        const phoneParam = encodeURIComponent(data.phone)
-        window.location.href = `/auth/verify-phone?phone=${phoneParam}`
-        return
-      }
+
+      trackMetaEvent('CompleteRegistration', { event_id: eventId })
 
       if (intendedPlan && intendedPlan !== 'free') {
         const tilopayLinks: { [key: string]: string } = {
@@ -216,7 +214,7 @@ function SignInPageInner() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="block w-full rounded-md border border-border px-3 py-2 pr-10 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-background text-foreground"
-                placeholder={isRegistering ? "Mínimo 6 caracteres" : ""}
+                placeholder={isRegistering ? "Mínimo 8 caracteres, mayúscula y número" : ""}
                 minLength={isRegistering ? 6 : undefined}
                 required
               />

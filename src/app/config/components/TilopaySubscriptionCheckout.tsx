@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/app/components/ui/button';
 import { Card } from '@/app/components/ui/card';
 import { Loader2, CreditCard, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { trackMetaEvent } from '@/app/components/MetaPixel';
 
 /**
  * Tilopay Hosted Subscription Checkout Component
@@ -70,9 +71,8 @@ export default function TilopaySubscriptionCheckout({
       console.log('✅ Plan creation response:', data);
 
       if (data.paymentUrl) {
-        console.log('🔗 Redirecting to payment URL:', data.paymentUrl);
-        
-        // Redirect to Tilopay hosted page
+        trackMetaEvent('InitiateCheckout', { value: amount, currency: 'USD', content_name: planName });
+
         window.location.href = data.paymentUrl;
       } else {
         throw new Error('No payment URL received from server. Response: ' + JSON.stringify(data));

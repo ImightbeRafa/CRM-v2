@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { prisma } from '@/lib/db';
 import { verifyWebhookSharedSecret } from '@/lib/tilopay';
+import { sendCAPIEvent } from '@/lib/meta-capi';
 
 // Force dynamic rendering for webhooks
 export const dynamic = 'force-dynamic';
@@ -431,6 +433,24 @@ export async function POST(request: NextRequest) {
         });
       } catch (auditError) {
         console.error('⚠️ Failed to log audit:', auditError);
+      }
+
+      sendCAPIEvent({
+        eventName: 'Purchase',
+        eventId: crypto.randomUUID(),
+        email: subscriberEmail || undefined,
+        value: amount,
+        currency: currency === 'CRC' || isColones ? 'CRC' : 'USD',
+      });
+
+      if (tenant.plan === 'FREE' || !tenant.subscriptionStatus || tenant.subscriptionStatus !== 'active') {
+        sendCAPIEvent({
+          eventName: 'Subscribe',
+          eventId: crypto.randomUUID(),
+          email: subscriberEmail || undefined,
+          value: amount,
+          currency: currency === 'CRC' || isColones ? 'CRC' : 'USD',
+        });
       }
 
       return NextResponse.json({ 

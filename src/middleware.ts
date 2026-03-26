@@ -9,7 +9,8 @@ const CSP_HEADER = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: https: blob: https://*.facebook.com https://*.fbcdn.net https://storage.googleapis.com https://vercel.com https://vercel.live https://*.vercel.app https://*.vercel-storage.com",
-  "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://api.tokenex.com https://vercel.live https://*.vercel-storage.com https://accounts.google.com https://connect.facebook.net https://graph.facebook.com https://www.facebook.com https://static.cloudflareinsights.com",
+  "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://api.tokenex.com https://vercel.live https://*.vercel-storage.com https://accounts.google.com https://connect.facebook.net https://graph.facebook.com https://www.facebook.com https://static.cloudflareinsights.com https://*.ingest.us.sentry.io",
+  "worker-src 'self' blob:",
   "frame-src 'self' https://app.tilopay.com https://api.tokenex.com https://accounts.google.com https://www.facebook.com https://web.facebook.com",
   "object-src 'none'",
   "base-uri 'self'",
@@ -44,6 +45,7 @@ const PUBLIC_ROUTES = [
   '/terms',                                     // Terms of service (required for Meta verification)
   '/data-deletion',                             // Data deletion instructions (required for Meta)
   '/docs',                                      // Public documentation (no auth required)
+  '/monitoring',                                 // Sentry tunnel route (must be public for client-side error reporting)
 ];
 
 /**

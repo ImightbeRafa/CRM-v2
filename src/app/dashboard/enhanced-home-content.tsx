@@ -1,7 +1,6 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
@@ -12,12 +11,12 @@ import { useDashboardStats } from "@/app/hooks/useDashboardStats";
 import BetsyLogo from "@/BetsyLogo.png";
 import { Button } from "@/app/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/app/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/app/components/ui/dialog";
 import { 
-  Sparkles, Zap, Settings, TrendingUp, Users, Package, Truck,
-  ShoppingCart, Plus, BarChart3, DollarSign, ArrowUpRight, Clock, RefreshCw, MessageSquare
+  Zap, Settings, TrendingUp, Users, Package, Truck,
+  ShoppingCart, Plus, BarChart3, DollarSign, ArrowUpRight, Clock, RefreshCw
 } from "lucide-react";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
+import { SetupChecklist } from "./components/SetupChecklist";
 
 const pageTransition = {
   initial: { opacity: 0, y: 12 },
@@ -32,8 +31,6 @@ const cardHover = {
 
 export default function EnhancedHomeContent() {
   const { data: session, status } = useSession();
-  const router = useRouter();
-  const [showWizardModal, setShowWizardModal] = useState(false);
   const { stats, isLoading: isLoadingStats, refresh: refreshStats } = useDashboardStats();
   const statsScrollRef = useRef<HTMLDivElement>(null);
   const [activeStatCard, setActiveStatCard] = useState(0);
@@ -171,6 +168,11 @@ export default function EnhancedHomeContent() {
             📖 Centro de Ayuda
           </Link>
         </div>
+
+        {/* Setup Checklist - shown to admins until all setup is complete */}
+        {(session.user?.role === 'MASTER' || session.user?.role === 'OWNER') && (
+          <SetupChecklist />
+        )}
 
         {/* Quick Stats Cards -- horizontal snap-scroll on mobile, grid on desktop */}
         <div ref={statsScrollRef} className="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 snap-scroll-hide md:grid md:grid-cols-2 lg:grid-cols-4 md:gap-6 md:overflow-visible mb-2">
@@ -429,28 +431,6 @@ export default function EnhancedHomeContent() {
               </CardContent>
             </Card>
 
-            {/* System Info */}
-            <Card className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 border-blue-200 dark:border-blue-800">
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-purple-600" />
-                  ¿Nuevo en Betsy?
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-3">
-                  Configura tu sistema en minutos con nuestro asistente guiado
-                </p>
-                <Button
-                  size="sm"
-                  onClick={() => setShowWizardModal(true)}
-                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-                >
-                  <Sparkles className="h-4 w-4 mr-2" />
-                  Iniciar Asistente
-                </Button>
-              </CardContent>
-            </Card>
           </div>
         </div>
 
@@ -461,104 +441,7 @@ export default function EnhancedHomeContent() {
         </footer>
       </motion.main>
 
-      {/* Setup Wizard Floating Button (optional - can remove if button in sidebar) */}
-      <button
-        onClick={() => setShowWizardModal(true)}
-        className="fixed right-4 p-4 bg-gradient-to-br from-purple-600 to-blue-600 text-white rounded-full shadow-lg hover:shadow-xl transform hover:scale-110 transition-all duration-200 group z-40 lg:hidden"
-        style={{ bottom: 'calc(136px + env(safe-area-inset-bottom, 0px))' }}
-        title="Asistente de Configuración"
-      >
-        <Sparkles className="h-6 w-6 animate-pulse" />
-      </button>
-
       <MobileBottomNav />
-
-      {/* Setup Wizard Modal */}
-      <Dialog open={showWizardModal} onOpenChange={setShowWizardModal}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-2xl">
-              <Sparkles className="h-6 w-6 text-purple-600" />
-              Asistente de Configuración
-            </DialogTitle>
-            <DialogDescription className="text-base">
-              Te guiaremos paso a paso para configurar todo tu CRM
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-6 py-4">
-            {/* Quick Info */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
-                <div className="p-2 bg-blue-600 rounded-lg">
-                  <Zap className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <h4 className="font-semibold text-blue-900 dark:text-blue-300">Rápido</h4>
-                  <p className="text-sm text-blue-700 dark:text-blue-400">Solo 15-20 minutos</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3 p-4 bg-purple-50 dark:bg-purple-950/30 rounded-lg">
-                <div className="p-2 bg-purple-600 rounded-lg">
-                  <Settings className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <h4 className="font-semibold text-purple-900 dark:text-purple-300">Completo</h4>
-                  <p className="text-sm text-purple-700 dark:text-purple-400">Configura todo tu sistema</p>
-                </div>
-              </div>
-            </div>
-
-            {/* What will be configured */}
-            <div className="bg-muted rounded-lg p-4">
-              <h4 className="font-semibold text-foreground mb-3">Lo que configuraremos:</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li className="flex items-center gap-2">
-                  <div className="h-1.5 w-1.5 bg-blue-600 rounded-full"></div>
-                  Información del Negocio
-                </li>
-                <li className="flex items-center gap-2">
-                  <div className="h-1.5 w-1.5 bg-blue-600 rounded-full"></div>
-                  Campos Personalizados de Productos
-                </li>
-                <li className="flex items-center gap-2">
-                  <div className="h-1.5 w-1.5 bg-blue-600 rounded-full"></div>
-                  Estados de Pedidos (Flujo de Trabajo)
-                </li>
-                <li className="flex items-center gap-2">
-                  <div className="h-1.5 w-1.5 bg-blue-600 rounded-full"></div>
-                  Inventario, Clientes y Productos Frecuentes
-                </li>
-                <li className="flex items-center gap-2">
-                  <div className="h-1.5 w-1.5 bg-blue-600 rounded-full"></div>
-                  Vendedores y Métodos de Envío
-                </li>
-              </ul>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setShowWizardModal(false)}
-                className="flex-1"
-              >
-                Más Tarde
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowWizardModal(false);
-                  router.push('/setup-wizard');
-                }}
-                className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-              >
-                <Sparkles className="h-4 w-4 mr-2" />
-                Comenzar Ahora
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

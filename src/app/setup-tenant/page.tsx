@@ -11,9 +11,9 @@ export default function SetupTenantPage() {
   useEffect(() => {
     if (status === 'loading') return
 
-    // Redirect to setup-wizard if authenticated
+    // Authenticated users go straight to dashboard; setup wizard is optional
     if (session?.user) {
-      router.replace('/setup-wizard')
+      router.replace('/dashboard')
     } else {
       // Not authenticated, redirect to sign in
       router.replace('/auth/signin')

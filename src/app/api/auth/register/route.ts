@@ -164,15 +164,8 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('Registration error:', error?.message, error?.code);
     
-    const errorMessage = process.env.NODE_ENV === 'development' 
-      ? error?.message || 'Registration failed'
-      : 'Registration failed. Please try again.';
-    
     return NextResponse.json(
-      { 
-        error: errorMessage,
-        details: process.env.NODE_ENV === 'development' ? error?.message : undefined 
-      },
+      { error: error?.message || 'Registration failed. Please try again.' },
       { status: 500 }
     );
   }

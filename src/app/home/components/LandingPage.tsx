@@ -402,7 +402,7 @@ export default function LandingPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#0a0a0f]">
       {/* Navigation */}
       <nav className={`fixed top-0 w-full z-50 transition-all duration-500 ${
         scrolled ? 'bg-gray-950/80 backdrop-blur-2xl shadow-[0_1px_3px_rgba(0,0,0,0.2),0_8px_24px_rgba(0,0,0,0.15)] border-b border-white/10' : 'bg-transparent'
@@ -512,7 +512,7 @@ export default function LandingPage() {
             animate="visible"
           >
             <motion.div variants={heroItem}>
-              <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium tracking-wide uppercase bg-gradient-to-r from-blue-50 to-purple-50 text-blue-700 border border-blue-200/60 mb-8">
+              <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium tracking-wide uppercase bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-400 border border-blue-500/20 mb-8">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-500 opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600" />
@@ -521,16 +521,16 @@ export default function LandingPage() {
               </span>
             </motion.div>
             
-            <motion.h1 variants={heroItem} className="landing-hero text-foreground mb-8 max-w-3xl mx-auto">
+            <motion.h1 variants={heroItem} className="landing-hero text-white mb-8 max-w-3xl mx-auto">
               Vende más. Organízate mejor.
               <span className="block bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                 Crece más rápido.
               </span>
             </motion.h1>
             
-            <motion.p variants={heroItem} className="text-lg md:text-xl text-text-secondary mb-10 max-w-2xl mx-auto">
+            <motion.p variants={heroItem} className="text-lg md:text-xl text-gray-400 mb-10 max-w-2xl mx-auto">
               La plataforma de gestión de pedidos más simple para tu negocio. 
-              Ahora con <span className="font-semibold text-purple-600">AI Assistant</span> en 
+              Ahora con <span className="font-semibold text-purple-400">AI Assistant</span> en 
               <span className="inline-flex items-center gap-1 mx-1">
                 <span className="text-[#0088cc]">Telegram</span> y <span className="text-[#25D366]">WhatsApp</span>
               </span>
@@ -549,7 +549,7 @@ export default function LandingPage() {
               <Button 
                 size="lg"
                 variant="outline"
-                className="border-gray-300 text-foreground hover:bg-gray-50 text-lg px-8 h-14 rounded-2xl hover:-translate-y-0.5 transition-all duration-300"
+                className="border-white/20 text-gray-200 hover:bg-white/10 text-lg px-8 h-14 rounded-2xl hover:-translate-y-0.5 transition-all duration-300"
                 onClick={() => document.getElementById('platform')?.scrollIntoView({ behavior: 'smooth' })}
               >
                 Ver Cómo Funciona
@@ -557,7 +557,7 @@ export default function LandingPage() {
               </Button>
             </motion.div>
             
-            <motion.p variants={heroItem} className="text-sm text-text-secondary">
+            <motion.p variants={heroItem} className="text-sm text-gray-500">
               Sin tarjeta de crédito • 7 días gratis • Cancela cuando quieras
             </motion.p>
           </motion.div>
@@ -701,7 +701,7 @@ export default function LandingPage() {
       </section>
 
       {/* Platform Section */}
-      <section id="platform" className="py-20 lg:py-28 px-4 sm:px-6 lg:px-8 bg-background">
+      <section id="platform" className="py-20 lg:py-28 px-4 sm:px-6 lg:px-8 bg-[#0c0b14]">
         <div className="max-w-7xl mx-auto">
           <motion.div
             className="text-center mb-16"
@@ -710,13 +710,13 @@ export default function LandingPage() {
             whileInView="visible"
             viewport={{ once: true, amount: 0.3 }}
           >
-            <Badge className="mb-4 bg-blue-100 text-blue-700 border-blue-200">
+            <Badge className="mb-4 bg-blue-500/10 text-blue-400 border-blue-500/20">
               Plataforma Web
             </Badge>
-            <h2 className="landing-h2 text-foreground mb-4">
+            <h2 className="landing-h2 text-white mb-4">
               Todo lo que necesitas para crecer
             </h2>
-            <p className="text-xl text-text-secondary max-w-3xl mx-auto">
+            <p className="text-xl text-gray-400 max-w-3xl mx-auto">
               Herramientas simples y poderosas para vender más y mantenerte organizado
             </p>
           </motion.div>
@@ -730,16 +730,16 @@ export default function LandingPage() {
           >
             {platformFeatures.map((feature, index) => (
               <motion.div key={index} variants={fadeUp}>
-                <Card className="border border-gray-100/80 shadow-elevated hover:shadow-elevated-hover transition-all duration-300 hover:-translate-y-1.5 bg-background h-full overflow-hidden relative">
+                <Card className="border border-white/10 transition-all duration-300 hover:-translate-y-1.5 bg-white/5 hover:bg-white/[0.08] h-full overflow-hidden relative">
                   <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500 to-purple-500" />
                   <CardContent className="pt-7">
                     <div className="flex items-center space-x-3 mb-4">
-                      <div className="p-4 bg-surface-elevated rounded-xl text-blue-600 ring-1 ring-gray-100">
+                      <div className="p-4 bg-white/10 rounded-xl text-blue-400 ring-1 ring-white/10">
                         {feature.icon}
                       </div>
-                      <h3 className="text-lg font-semibold text-foreground">{feature.title}</h3>
+                      <h3 className="text-lg font-semibold text-white">{feature.title}</h3>
                     </div>
-                    <p className="text-text-secondary">{feature.description}</p>
+                    <p className="text-gray-400">{feature.description}</p>
                   </CardContent>
                 </Card>
               </motion.div>
@@ -909,7 +909,7 @@ export default function LandingPage() {
       <div className="section-divider" />
 
       {/* Pricing */}
-      <section id="pricing" className="py-20 lg:py-28 px-4 sm:px-6 lg:px-8 bg-background">
+      <section id="pricing" className="py-20 lg:py-28 px-4 sm:px-6 lg:px-8 bg-[#0c0b14]">
         <SimplePricingSection />
       </section>
 

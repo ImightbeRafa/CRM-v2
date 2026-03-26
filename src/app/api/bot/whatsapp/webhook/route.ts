@@ -32,7 +32,7 @@ import {
 } from '@/lib/bot/bot-session';
 import { validateBotAccessCode } from '@/lib/bot/access-code';
 import { processMessage } from '@/lib/bot/ai-agent';
-import { clearConversationHistory, getConversationState, setConversationState, clearConversationState } from '@/lib/bot/conversation-memory';
+import { clearConversationHistory, clearPendingConfirmation, getConversationState, setConversationState, clearConversationState } from '@/lib/bot/conversation-memory';
 
 console.log('🚀 WhatsApp Webhook module loaded');
 
@@ -288,6 +288,13 @@ async function handleWhatsAppMessage(message: WhatsAppMessage) {
       return;
     }
     
+    if (lowerText === '/new' || lowerText === '/nuevo' || lowerText === 'nuevo' || lowerText === 'nueva conversacion' || lowerText === 'nueva conversación') {
+      await clearConversationHistory('whatsapp', phoneNumber);
+      await clearPendingConfirmation('whatsapp', phoneNumber);
+      await sendWhatsAppMessage(phoneNumber, '🆕 *Nueva conversación iniciada*\n\nEl historial anterior fue limpiado. ¿En qué puedo ayudarte?');
+      return;
+    }
+    
     if (lowerText === '/status') {
       await handleStatusCommand(phoneNumber);
       return;
@@ -343,6 +350,7 @@ async function handleWhatsAppMessage(message: WhatsAppMessage) {
       text,
       {
         tenantId: tenantId,
+        tenantName: sessionContext.tenant?.name,
         userId: userId || `whatsapp-${phoneNumber}`,
         userName: userName,
         userRole: userRole,
@@ -430,6 +438,10 @@ async function handleStartCommand(phoneNumber: string, text: string, displayName
       return;
     }
 
+    // Wipe prior conversation data to prevent cross-tenant leakage (matching Telegram)
+    await clearConversationHistory('whatsapp', phoneNumber);
+    await clearPendingConfirmation('whatsapp', phoneNumber);
+
     // Code valid — ask for name for audit trail (same as Telegram)
     await setConversationState('whatsapp', phoneNumber, {
       awaitingName: true,
@@ -503,6 +515,10 @@ async function handleCodeProvided(phoneNumber: string, code: string, displayName
     return;
   }
   
+  // Wipe prior conversation data to prevent cross-tenant leakage
+  await clearConversationHistory('whatsapp', phoneNumber);
+  await clearPendingConfirmation('whatsapp', phoneNumber);
+
   // Code is valid - ask for name
   await setConversationState('whatsapp', phoneNumber, { 
     awaitingName: true,
@@ -544,8 +560,10 @@ async function handleNameProvided(phoneNumber: string, name: string, displayName
       throw new Error('Failed to create session');
     }
     
-    // Clear setup state
+    // Clear setup state and ensure fresh conversation for the new tenant
     await clearConversationState('whatsapp', phoneNumber);
+    await clearConversationHistory('whatsapp', phoneNumber);
+    await clearPendingConfirmation('whatsapp', phoneNumber);
     
     // Send welcome
     await sendWhatsAppMessage(
@@ -583,6 +601,7 @@ async function handleHelpCommand(phoneNumber: string) {
 
 *Comandos disponibles:*
 • /start - Iniciar o reconectar
+• /new o "nuevo" - Nueva conversación (limpia historial)
 • /help - Ver esta ayuda
 • /status - Ver estado de conexión
 • /clear - Limpiar historial

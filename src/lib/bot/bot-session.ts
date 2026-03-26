@@ -7,6 +7,7 @@
 
 import { prisma } from '@/lib/db';
 import { SignJWT, jwtVerify } from 'jose';
+import { clearConversationHistory, clearPendingConfirmation } from './conversation-memory';
 
 // JWT secret for magic link tokens (lazy-initialized to avoid crashing unrelated imports)
 let _botJwtSecret: Uint8Array | null = null;
@@ -100,6 +101,18 @@ export async function createBotSession(
     providedName?: string;
   }
 ): Promise<BotSessionData> {
+  // Defense-in-depth: detect tenant change and wipe stale conversation data
+  const existing = await prisma.botSession.findUnique({
+    where: { platform_platformId: { platform, platformId } },
+    select: { tenantId: true },
+  });
+
+  if (existing && existing.tenantId !== tenantId) {
+    console.log(`[BotSession] Tenant switch detected for ${platform}:${platformId}: ${existing.tenantId} -> ${tenantId}. Clearing conversation data.`);
+    await clearConversationHistory(platform, platformId);
+    await clearPendingConfirmation(platform, platformId);
+  }
+
   // Upsert - create if not exists, update if exists
   const session = await prisma.botSession.upsert({
     where: {
@@ -125,7 +138,7 @@ export async function createBotSession(
       displayName: metadata?.displayName || null,
       username: metadata?.username || null,
       isActive: true,
-      connectedAt: new Date(), // Update connection time on reconnect
+      connectedAt: new Date(),
     },
   });
   

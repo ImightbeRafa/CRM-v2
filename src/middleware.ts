@@ -83,7 +83,8 @@ export default async function middleware(request: Request) {
   }
 
   // Fast path: skip all work for public routes (no CORS, no auth)
-  if (isPublicRoute(pathname)) {
+  // Root path must be public so the page.tsx redirect to /home can execute
+  if (pathname === '/' || isPublicRoute(pathname)) {
     return NextResponse.next(cleanFwd);
   }
 

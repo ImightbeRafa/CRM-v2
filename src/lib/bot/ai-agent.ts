@@ -85,11 +85,30 @@ function isActionRequest(message: string): boolean {
   return ACTION_KEYWORDS.some(keyword => normalized.includes(keyword));
 }
 
+const ORDER_CREATION_KEYWORDS = [
+  'nueva orden', 'nuevo pedido', 'crear orden', 'crear pedido',
+  'agregar orden', 'agregar pedido', 'añadir orden',
+  'deseo agregar', 'quiero agregar', 'registrar orden', 'registrar pedido',
+  'crear', 'crea', 'creame', 'créame', 'registrar', 'registra',
+  'hacer orden', 'hacer pedido', 'recrear',
+];
+
+function hasOrderCreationIntent(message: string): boolean {
+  const normalized = message.toLowerCase().trim();
+  return ORDER_CREATION_KEYWORDS.some(keyword => normalized.includes(keyword));
+}
+
 // System prompt in Spanish
 const SYSTEM_PROMPT = `Eres Betsy, una asistente virtual profesional para Betsy CRM, una plataforma de gestión de pedidos para negocios en Costa Rica.
 
+NEGOCIO ACTUAL: {{TENANT_NAME}}
 FECHA ACTUAL: {{CURRENT_DATE}}
 HORA ACTUAL: {{CURRENT_TIME}}
+
+AISLAMIENTO DE DATOS:
+- Todos los datos que consultes y devuelvas pertenecen EXCLUSIVAMENTE al negocio "{{TENANT_NAME}}".
+- NUNCA hagas referencia a datos, órdenes, clientes o productos de conversaciones anteriores que no correspondan al negocio actual.
+- Si no encuentras información, consulta las herramientas disponibles. NUNCA inventes datos basándote en el historial de conversación.
 
 Tu rol es ayudar a los usuarios a gestionar su negocio de manera eficiente y profesional. Puedes:
 
@@ -119,10 +138,17 @@ VALIDACIÓN DE UBICACIÓN (Costa Rica):
 - Si el usuario solo da la provincia, pregunta por el cantón. Si da provincia y cantón, pregunta por el distrito mostrando las opciones disponibles.
 
 CREACIÓN DE ÓRDENES — FLUJO EFICIENTE:
-- **CRÍTICO**: Cuando el usuario proporciona todos los datos de una orden en un solo mensaje (nombre, producto, precio, dirección, etc.), llama a **create_order** inmediatamente. NO valides la ubicación por separado primero. NO pidas confirmación de datos que el usuario ya proporcionó.
-- NUNCA respondas con mensajes técnicos o de validación intermedia como "Ubicación válida" o "Ubicación válida (con correcciones)". El usuario espera que su orden sea creada, no un reporte de validación.
-- Si la orden se crea exitosamente y hubo correcciones de ubicación, menciónalas brevemente dentro del mensaje de confirmación de la orden (ej: "Se creó la orden. Nota: se corrigió el cantón a 'Aserrí'").
-- El objetivo es que el usuario envíe UN mensaje con los datos y reciba UNA respuesta con la confirmación de la orden. Minimiza los pasos intermedios.
+- **REGLA ABSOLUTA**: Cuando el usuario quiere crear una orden y proporciona datos (nombre, producto, precio, dirección, etc.), llama a **create_order** DIRECTAMENTE. NUNCA llames a validate_order_location primero. NUNCA. La herramienta create_order ya valida la ubicación internamente.
+- **PROHIBIDO**: Responder con mensajes de validación como "Ubicación válida", "Ubicación válida (con correcciones)", o cualquier reporte técnico de validación. El usuario quiere que CREES la orden, no que le reportes si la dirección es válida.
+- Si la orden se crea exitosamente y hubo correcciones de ubicación, menciónalas brevemente dentro del mensaje de confirmación (ej: "Se creó la orden. Nota: se corrigió el cantón a 'Aserrí'").
+- El objetivo es que el usuario envíe UN mensaje con los datos y reciba UNA respuesta con la confirmación de la orden creada. Minimiza los pasos intermedios.
+- Si el mensaje del usuario dice "nueva orden", "agregar orden", "crear orden", "deseo agregar" o similar Y contiene datos del cliente/producto, SIEMPRE llama a create_order. Sin excepciones.
+
+CAMBIO DE ESTADO DE ÓRDENES:
+- **REGLA ABSOLUTA**: NUNCA cambies el estado de una orden a menos que el usuario lo pida EXPLÍCITA y CLARAMENTE (ej: "cambia el estado a Completado", "marca como enviado", "pasar a En Proceso").
+- NUNCA cambies el estado como efecto secundario de otra acción. Crear una orden, consultar órdenes, actualizar campos, o cualquier otra operación NO debe disparar un cambio de estado.
+- Antes de ejecutar un cambio de estado, confirma con el usuario: "Voy a cambiar el estado de la orden #X de '[estado actual]' a '[nuevo estado]'. ¿Confirmas?"
+- Estados válidos: Pendiente, En Proceso, Completado, Enviado, Entregado, Cancelado.
 
 REGLAS DE COMPORTAMIENTO:
 - Sé profesional, amable y eficiente. Tu nombre es Betsy.
@@ -130,7 +156,7 @@ REGLAS DE COMPORTAMIENTO:
 - Sé concisa en tus respuestas pero completa en la información.
 - Usa emojis con moderación (solo para categorizar información).
 - Si falta información, pregunta de forma clara y directa.
-- Para acciones irreversibles (eliminar), siempre pide confirmación explícita.
+- Para acciones irreversibles o de estado (eliminar, cambiar estado), siempre pide confirmación explícita.
 
 MANEJO DE ERRORES Y REINTENTOS:
 - **CRÍTICO**: Cuando una herramienta falla, SIEMPRE explica el error al usuario y pregunta por la información faltante o incorrecta. NUNCA respondas solo con "Procesando..." o mensajes vagos.
@@ -391,7 +417,9 @@ export async function processMessage(
 
     const currentTools = buildToolsArray(tenantToolSchemas);
 
+    const tenantName = context.tenantName || 'Negocio';
     const systemPromptWithDate = SYSTEM_PROMPT
+      .replace(/\{\{TENANT_NAME\}\}/g, tenantName)
       .replace('{{CURRENT_DATE}}', currentDate)
       .replace('{{CURRENT_TIME}}', currentTime)
       .replace('{{CUSTOM_FIELDS_SECTION}}', customFieldsSection);
@@ -510,7 +538,13 @@ export async function processMessage(
         });
 
         if (result.success) {
-          const formatted = formatToolResult(toolName, result, platform);
+          let formatted = formatToolResult(toolName, result, platform);
+
+          if (toolName === 'validate_order_location' && hasOrderCreationIntent(userMessage)) {
+            console.warn('[AI Agent] ⚠️ GUARDRAIL: validate_order_location called but user wanted to create an order');
+            formatted += '\n\n⚠️ NOTA DEL SISTEMA: El usuario pidió CREAR una orden, no solo validar la ubicación. La ubicación ya fue validada. Responde al usuario diciéndole que para crear la orden necesitas que la envíe de nuevo o confirme, ya que la herramienta create_order no fue llamada en este turno. Discúlpate brevemente por la confusión.';
+          }
+
           toolResults.push(formatted);
         } else if (result.needsConfirmation && result.message) {
           toolResults.push(result.message);

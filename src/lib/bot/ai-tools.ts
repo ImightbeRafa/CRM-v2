@@ -24,6 +24,7 @@ import {
 // Tool execution context
 export interface ToolContext {
   tenantId: string;
+  tenantName?: string;
   userId: string;
   userName: string;
   userRole: string;
@@ -142,10 +143,10 @@ export const toolSchemas = {
   },
 
   update_order_status: {
-    description: 'Cambiar el estado de una orden.',
+    description: 'Cambiar el estado de una orden. SOLO usa esta herramienta cuando el usuario EXPLÍCITAMENTE pide cambiar el estado de una orden. NUNCA cambies el estado como efecto secundario de otra acción (crear, consultar, etc).',
     parameters: z.object({
       orderId: z.string().describe('ID de la orden'),
-      status: z.string().describe('Nuevo estado (Pendiente, En Proceso, Completado, Enviado, Entregado, etc)'),
+      status: z.enum(['Pendiente', 'En Proceso', 'Completado', 'Enviado', 'Entregado', 'Cancelado']).describe('Nuevo estado de la orden'),
     }),
   },
 
@@ -212,9 +213,9 @@ export const toolSchemas = {
     }),
   },
 
-  // Location validation
+  // Location validation (standalone only — create_order validates internally)
   validate_order_location: {
-    description: 'Validar provincia, cantón y distrito contra la jerarquía oficial de Costa Rica. Úsalo ANTES de crear órdenes EA o generar guías para verificar que la ubicación es correcta. Devuelve opciones disponibles si algo no coincide.',
+    description: 'SOLO para consultas de ubicación independientes. NO uses esta herramienta si vas a crear una orden — create_order ya valida la ubicación internamente. Úsalo ÚNICAMENTE cuando el usuario pide verificar una ubicación SIN crear orden, o necesita ver las opciones disponibles de cantones/distritos.',
     parameters: z.object({
       province: z.string().describe('Provincia de Costa Rica'),
       canton: z.string().optional().describe('Cantón (opcional, se valida dentro de la provincia)'),
@@ -1014,6 +1015,10 @@ export async function updateOrder(
   );
 }
 
+const VALID_ORDER_STATUSES = [
+  'Pendiente', 'En Proceso', 'Completado', 'Enviado', 'Entregado', 'Cancelado',
+] as const;
+
 /**
  * Update order status
  */
@@ -1025,9 +1030,15 @@ export async function updateOrderStatus(
     { tenantId: ctx.tenantId, userId: ctx.userId, userName: ctx.userName, userRole: ctx.userRole },
     async () => {
       try {
+        if (!VALID_ORDER_STATUSES.includes(params.status as any)) {
+          return {
+            success: false,
+            error: `Estado inválido: "${params.status}". Estados permitidos: ${VALID_ORDER_STATUSES.join(', ')}`,
+          };
+        }
+
         const tenantPrisma = getTenantPrisma(ctx.tenantId);
         
-        // Find the order first
         const existingOrder = await tenantPrisma.order.findFirst({
           where: {
             OR: [
@@ -1045,6 +1056,13 @@ export async function updateOrderStatus(
         }
         
         const oldStatus = existingOrder.status;
+
+        if (oldStatus === params.status) {
+          return {
+            success: false,
+            error: `La orden #${existingOrder.orderId} ya tiene el estado "${params.status}".`,
+          };
+        }
         
         const order = await tenantPrisma.order.update({
           where: { id: existingOrder.id },
@@ -1698,7 +1716,7 @@ export async function executeTool(
 ): Promise<ToolResult> {
   const WRITE_TOOLS: ToolName[] = [
     'create_order', 'update_order', 'update_order_status',
-    'update_inventory_stock', 'generate_guia', 'generate_guias_bulk',
+    'update_inventory_stock', 'generate_shipping_guia', 'generate_guias_bulk',
   ];
 
   if (WRITE_TOOLS.includes(toolName) && ctx.userRole === 'VIEWER') {

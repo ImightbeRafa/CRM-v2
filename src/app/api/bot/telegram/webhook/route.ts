@@ -19,7 +19,7 @@ import {
   verifyConnectionToken 
 } from '@/lib/bot/bot-session';
 import { processMessage, generateWelcomeMessage, generateUnauthorizedMessage } from '@/lib/bot/ai-agent';
-import { clearConversationHistory } from '@/lib/bot/conversation-memory';
+import { clearConversationHistory, clearPendingConfirmation } from '@/lib/bot/conversation-memory';
 import { escapeHtml } from '@/lib/validation';
 
 console.log('🚀 WEBHOOK MODULE LOADED SUCCESSFULLY 🚀');
@@ -358,6 +358,15 @@ async function handleMessage(message: any) {
       return;
     }
 
+    // Handle /new and /nuevo command (start fresh conversation)
+    if (text === '/new' || text === '/nuevo') {
+      console.log(`[Telegram] 🆕 Handling /new command for ${chatId}`);
+      await clearConversationHistory('telegram', chatId);
+      await clearPendingConfirmation('telegram', chatId);
+      await sendMessage(chatId, '🆕 <b>Nueva conversación iniciada</b>\n\nEl historial anterior fue limpiado. ¿En qué puedo ayudarte?');
+      return;
+    }
+
     // Handle /status command
     if (text === '/status') {
       console.log(`[Telegram] 📊 Handling /status command for ${chatId}`);
@@ -513,6 +522,7 @@ Usa /help para ver todos los comandos disponibles.`;
       text,
       {
         tenantId: sessionContext.session.tenantId,
+        tenantName: sessionContext.tenant.name,
         userId: sessionContext.user.id,
         userName: sessionContext.user.name || sessionContext.user.username || sessionContext.user.email || displayName,
         userRole: sessionContext.role,
@@ -578,8 +588,15 @@ Por favor verifica el código e intenta de nuevo.`);
       return;
     }
     
+    // Wipe prior conversation data to prevent cross-tenant leakage
+    const {
+      setConversationState,
+      clearPendingConfirmation,
+    } = await import('@/lib/bot/conversation-memory');
+    await clearConversationHistory('telegram', chatId);
+    await clearPendingConfirmation('telegram', chatId);
+
     // Code is valid! Ask for their name for audit trail
-    const { setConversationState } = await import('@/lib/bot/conversation-memory');
     await setConversationState('telegram', chatId, {
       awaitingName: true,
       tenantId: tenant.id,
@@ -683,6 +700,7 @@ async function handleHelpCommand(chatId: string) {
 
 <b>⚡ COMANDOS RÁPIDOS</b>
 /start - Reconectar
+/new - Nueva conversación (limpia historial)
 /status - Ver tu conexión
 /clear - Limpiar conversación
 /help - Esta ayuda

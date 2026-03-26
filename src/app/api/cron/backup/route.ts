@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { put, list, del } from '@vercel/blob';
+import { getDatabaseUrl } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
@@ -82,7 +83,7 @@ type BackupMode = 'auto' | 'manual';
 
 async function performBackup(mode: BackupMode) {
   const startedAt = new Date();
-  const prisma = new PrismaClient({ log: ['error', 'warn'], datasourceUrl: process.env.DATABASE_URL });
+  const prisma = new PrismaClient({ log: ['error', 'warn'], datasourceUrl: getDatabaseUrl() });
   const token = process.env.BLOB_READ_WRITE_TOKEN;
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const basePath = `betsy/backups/${ts}`;

@@ -87,87 +87,83 @@ export async function GET(request: Request) {
     }
 
     const userData = Array.isArray(user) ? user[0] : user;
-    console.log(`✅ Token valid for user: ${userData.email}`);
 
-    // Create tenant and update user in a transaction
+    const alreadyHasTenant = !!userData.defaultTenantId;
+
     const result = await prisma.$transaction(async (tx) => {
-      // Create tenant
-      // @ts-ignore - profileCompleted exists in schema, regenerate Prisma client if TypeScript complains
-      const tenant = await tx.tenant.create({
-        data: {
-          name: `${userData.username || userData.email.split('@')[0]}'s Organization`,
-          slug: userData.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-'),
-          plan: 'FREE',
-          isActive: true,
-          trialEndsAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
-          profileCompleted: false, // Will be prompted to complete profile on login
-        } as any
-      });
+      let tenantId = userData.defaultTenantId;
 
-      // Update user with tenant info and mark as active using raw query for mapped fields
+      if (!alreadyHasTenant) {
+        // Legacy/edge case: user has no tenant yet (e.g. created before register started making tenants)
+        const emailPrefix = userData.email.split('@')[0];
+        const tenantSlug = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now();
+
+        // @ts-ignore - profileCompleted exists in schema
+        const tenant = await tx.tenant.create({
+          data: {
+            name: `${userData.username || emailPrefix}'s Organization`,
+            slug: tenantSlug,
+            plan: 'FREE',
+            isActive: true,
+            trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            profileCompleted: false,
+          } as any
+        });
+        tenantId = tenant.id;
+
+        await tx.membership.create({
+          data: {
+            userId: userData.id,
+            tenantId: tenant.id,
+            role: 'OWNER',
+            isActive: true,
+            joinedAt: new Date().toISOString()
+          }
+        });
+
+        try {
+          const { DEFAULT_ORDER_STATUSES } = await import('@/lib/default-statuses');
+          await tx.orderStatus.createMany({
+            data: DEFAULT_ORDER_STATUSES.map(status => ({
+              ...status,
+              tenantId: tenant.id,
+              isActive: true,
+            })),
+            skipDuplicates: true
+          });
+        } catch (statusError) {
+          console.error('Failed to create default order statuses:', statusError);
+        }
+      }
+
       await tx.$executeRaw`
         UPDATE "User" 
         SET 
           "active" = true,
           "emailVerified" = NOW(),
-          "defaultTenantId" = ${tenant.id},
+          "defaultTenantId" = COALESCE("defaultTenantId", ${tenantId}),
           "emailVerificationToken" = NULL,
           "emailVerificationTokenExpires" = NULL
         WHERE id = ${userData.id}
       `;
 
-      // Create membership
-      await tx.membership.create({
-        data: {
-          userId: userData.id,
-          tenantId: tenant.id,
-          role: 'OWNER',
-          isActive: true,
-          joinedAt: new Date().toISOString()
-        }
-      });
-
-      // Create default order statuses for the new tenant
-      // Use transaction client directly to bypass tenant context requirement
-      try {
-        const { DEFAULT_ORDER_STATUSES } = await import('@/lib/default-statuses');
-        await tx.orderStatus.createMany({
-          data: DEFAULT_ORDER_STATUSES.map(status => ({
-            ...status,
-            tenantId: tenant.id,
-            isActive: true,
-          })),
-          skipDuplicates: true
-        });
-        console.log(`✅ Created default order statuses for tenant: ${tenant.id}`);
-      } catch (statusError) {
-        console.error('⚠️ Failed to create default order statuses:', statusError);
-        // Don't fail the entire verification if status creation fails
-      }
-
-      // Get updated user with memberships
       const updatedUser = await tx.user.findUnique({
         where: { id: userData.id },
         include: { memberships: true }
       });
 
-      return { user: updatedUser, tenant };
+      return { user: updatedUser, tenantId };
     });
 
     if (!result.user) {
       throw new Error('User not found after verification');
     }
 
-    console.log(`✅ Email verification completed for: ${userData.email}`);
-    console.log(`✅ Tenant created: ${result.tenant.id} - ${result.tenant.name}`);
-    console.log(`✅ User activated: ${result.user.id}`);
-
     return NextResponse.json({ 
       success: true,
       message: 'Email verified and account activated successfully',
       userId: result.user.id,
-      tenantId: result.tenant.id,
-      tenantName: result.tenant.name
+      tenantId: result.tenantId,
     });
   } catch (error) {
     console.error('Email verification error:', error);

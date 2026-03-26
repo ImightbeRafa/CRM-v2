@@ -10,8 +10,6 @@ import { Progress } from '@/app/components/ui/progress';
 import {
   Building2,
   Tags,
-  MessageSquare,
-  Bot,
   Package,
   CheckCircle2,
   Circle,
@@ -44,16 +42,12 @@ const DISMISS_HASH_KEY = 'betsy-setup-checklist-dismiss-hash';
 const ITEM_ICONS: Record<string, React.ComponentType<any>> = {
   'business-profile': Building2,
   'order-statuses': Tags,
-  'messaging-social': MessageSquare,
-  'whatsapp-bot': Bot,
   'inventory': Package,
 };
 
 const ITEM_COLORS: Record<string, string> = {
   'business-profile': 'from-blue-500 to-blue-600',
   'order-statuses': 'from-amber-500 to-orange-500',
-  'messaging-social': 'from-green-500 to-emerald-600',
-  'whatsapp-bot': 'from-purple-500 to-indigo-600',
   'inventory': 'from-rose-500 to-pink-600',
 };
 
@@ -209,7 +203,7 @@ export function SetupChecklist() {
                   ) : (
                     <>
                       {/* Checklist items */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         {data.items.map((item) => {
                           const Icon = ITEM_ICONS[item.id] || Package;
                           const gradient = ITEM_COLORS[item.id] || 'from-gray-500 to-gray-600';

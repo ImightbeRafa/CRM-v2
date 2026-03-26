@@ -31,21 +31,17 @@ export async function GET(request: NextRequest) {
     const tenantId = token.tenantId as string;
     const prisma = getTenantPrisma(tenantId);
 
-    const [tenant, statusCount, socialCount, inventoryCount] = await Promise.all([
+    const [tenant, statusCount, inventoryCount] = await Promise.all([
       globalPrisma.tenant.findUnique({
         where: { id: tenantId },
         select: {
           phone: true,
           country: true,
           businessName: true,
-          botAccessCode: true,
           profileCompleted: true,
         } as any,
       }),
       prisma.orderStatus.count({ where: { isActive: true } }),
-      (globalPrisma as any).socialAccount.count({
-        where: { tenantId, isActive: true },
-      }),
       prisma.inventoryItem.count({ where: { isActive: true } }),
     ]);
 
@@ -69,20 +65,6 @@ export async function GET(request: NextRequest) {
         description: 'Define el flujo de trabajo para tus órdenes',
         completed: statusCount > 0,
         href: '/config?tab=statuses',
-      },
-      {
-        id: 'messaging-social',
-        label: 'Mensajería Social',
-        description: 'Conecta WhatsApp o Instagram para atender clientes',
-        completed: socialCount > 0,
-        href: '/config/social',
-      },
-      {
-        id: 'whatsapp-bot',
-        label: 'Bot de WhatsApp',
-        description: 'Activa el asistente de IA para tu equipo',
-        completed: Boolean(t.botAccessCode),
-        href: '/config/ai-assistant',
       },
       {
         id: 'inventory',

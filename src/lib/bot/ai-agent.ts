@@ -29,7 +29,7 @@ import {
   getFormattedHistory,
   addUserMessage,
   addAssistantMessage,
-  getPendingConfirmation,
+  peekPendingConfirmation,
   setPendingConfirmation,
   clearPendingConfirmation,
 } from './conversation-memory';
@@ -138,11 +138,13 @@ VALIDACIÓN DE UBICACIÓN (Costa Rica):
 - Si el usuario solo da la provincia, pregunta por el cantón. Si da provincia y cantón, pregunta por el distrito mostrando las opciones disponibles.
 
 CREACIÓN DE ÓRDENES — FLUJO EFICIENTE:
-- **REGLA ABSOLUTA**: Cuando el usuario quiere crear una orden y proporciona datos (nombre, producto, precio, dirección, etc.), llama a **create_order** DIRECTAMENTE. NUNCA llames a validate_order_location primero. NUNCA. La herramienta create_order ya valida la ubicación internamente.
+- **REGLA ABSOLUTA**: Cuando el usuario quiere crear una orden y proporciona datos (nombre, producto, precio, dirección, etc.) EN SU MENSAJE ACTUAL, llama a **create_order** DIRECTAMENTE. NUNCA llames a validate_order_location primero. NUNCA. La herramienta create_order ya valida la ubicación internamente.
 - **PROHIBIDO**: Responder con mensajes de validación como "Ubicación válida", "Ubicación válida (con correcciones)", o cualquier reporte técnico de validación. El usuario quiere que CREES la orden, no que le reportes si la dirección es válida.
 - Si la orden se crea exitosamente y hubo correcciones de ubicación, menciónalas brevemente dentro del mensaje de confirmación (ej: "Se creó la orden. Nota: se corrigió el cantón a 'Aserrí'").
 - El objetivo es que el usuario envíe UN mensaje con los datos y reciba UNA respuesta con la confirmación de la orden creada. Minimiza los pasos intermedios.
-- Si el mensaje del usuario dice "nueva orden", "agregar orden", "crear orden", "deseo agregar" o similar Y contiene datos del cliente/producto, SIEMPRE llama a create_order. Sin excepciones.
+- Si el mensaje del usuario dice "nueva orden", "agregar orden", "crear orden", "deseo agregar" o similar Y contiene datos del cliente/producto EN ESE MISMO MENSAJE, SIEMPRE llama a create_order. Sin excepciones.
+- **CRÍTICO — DATOS FRESCOS**: Si el usuario pide crear una "nueva orden" o "agregar orden" pero NO proporciona datos del cliente/producto en su mensaje actual, SIEMPRE pregunta: "¡Claro! Por favor proporciona los datos de la nueva orden (nombre del cliente, producto, cantidad, precio, dirección si aplica)." NUNCA reutilices datos de órdenes anteriores del historial.
+- **PROHIBIDO REUTILIZAR DATOS**: Cada orden es independiente. NUNCA copies nombre, teléfono, producto, dirección ni ningún dato de una orden que ya fue creada exitosamente (marcada con "Orden #... creada exitosamente"). Esos datos son de una orden COMPLETADA y no deben reciclarse para nuevas órdenes.
 
 CAMBIO DE ESTADO DE ÓRDENES:
 - **REGLA ABSOLUTA**: NUNCA cambies el estado de una orden a menos que el usuario lo pida EXPLÍCITA y CLARAMENTE (ej: "cambia el estado a Completado", "marca como enviado", "pasar a En Proceso").
@@ -200,8 +202,8 @@ INTEGRACIÓN CON INVENTARIO AL CREAR ÓRDENES:
 - Si el producto tiene stock insuficiente o en 0, el sistema preguntará al usuario si desea continuar. Transmite la pregunta al usuario.
 - Si hay múltiples productos similares en inventario, el sistema mostrará las opciones. Presenta la lista al usuario y pídele que elija el correcto. Cuando el usuario elija, vuelve a llamar create_order con el nombre EXACTO del producto elegido por el usuario.
 - NUNCA inventes o asumas un nombre de producto. Usa el nombre exacto que el usuario proporciona.
-- Cuando el usuario confirme que desea proceder sin inventario (respondiendo "sí" o similar), el sistema normalmente crea la orden automáticamente.
-- IMPORTANTE FALLBACK: Si el historial de la conversación muestra que el usuario YA confirmó que desea proceder sin inventario (dijo "sí", "si", "ok", "confirmar", etc.) pero la orden NO se creó (no hay mensaje de éxito), entonces TÚ debes reintentar llamando create_order de nuevo con TODOS los mismos datos de la orden Y con skipInventoryCheck: true. No vuelvas a pedir confirmación al usuario si ya confirmó antes.
+- Cuando el usuario confirme que desea proceder sin inventario (respondiendo "sí" o similar), el sistema crea la orden automáticamente. No necesitas hacer nada — el sistema maneja la confirmación internamente.
+- **PROHIBIDO**: NUNCA llames a create_order con skipInventoryCheck: true por tu cuenta. El sistema maneja las confirmaciones de inventario automáticamente. Si ves en el historial que una confirmación de inventario quedó pendiente, NO la reintentes — pídele al usuario que lo intente de nuevo.
 
 GESTIÓN DE STOCK:
 - Cuando el usuario diga "agregar X al stock de [producto]", actualiza el inventario
@@ -372,20 +374,26 @@ export async function processMessage(
   context: ToolContext
 ): Promise<MessageResponse> {
   try {
-    // Check for pending confirmations first
-    const pending = await getPendingConfirmation(platform, platformId);
+    // Check for pending confirmations first (non-destructive peek)
+    const pending = await peekPendingConfirmation(platform, platformId);
     if (pending) {
       const confirmed = isConfirmation(userMessage);
       const denied = isDenial(userMessage);
 
       if (confirmed) {
-        const result = await executePendingAction(pending, context, platform);
         await clearPendingConfirmation(platform, platformId);
+        const result = await executePendingAction(pending, context, platform);
         return { text: result };
       } else if (denied) {
         await clearPendingConfirmation(platform, platformId);
         return { text: '✅ Entendido, acción cancelada.' };
       }
+      // Not a confirmation/denial — check if this is a new action request
+      if (isActionRequest(userMessage)) {
+        console.info(`[AI Agent] 🧹 Clearing stale pending confirmation — user started a new action: "${userMessage.substring(0, 60)}"`);
+        await clearPendingConfirmation(platform, platformId);
+      }
+      // Fall through to normal AI processing
     } else if (isConfirmation(userMessage)) {
       console.warn(`[AI Agent] ⚠️ Confirmation-like message "${userMessage}" received but no pending confirmation found. Pending may have expired or been lost. Falling through to AI with conversation context.`);
     }
@@ -502,6 +510,8 @@ export async function processMessage(
           if (result.data && typeof result.data === 'object' && 'orderId' in result.data) {
             console.log(`[AI Agent] 📦 Order created with ID: ${(result.data as any).orderId}`);
           }
+        } else if (result.needsConfirmation) {
+          console.log(`[AI Agent] 🔄 Tool ${toolName} needs confirmation: ${result.confirmationType}`);
         } else {
           console.error(`[AI Agent] ❌ Tool ${toolName} failed:`, result.error);
         }
@@ -725,11 +735,27 @@ async function executePendingAction(pending: any, context: ToolContext, platform
     const toolArgs = pending.data?.toolArgs || pending.toolArgs;
 
     if (!toolName) {
+      console.error('[AI Agent] executePendingAction - No toolName in pending data');
       return '❌ Error: acción pendiente inválida.';
     }
 
+    console.log('[AI Agent] executePendingAction:', {
+      toolName,
+      tenantId: context.tenantId,
+      toolArgsKeys: toolArgs ? Object.keys(toolArgs) : [],
+      hasForceFlag: !!(toolArgs as any)?._forceWithoutInventory,
+    });
+
     const { tenantToolSchemas } = await updateToolSchemasWithCustomFields(context.tenantId);
     const result = await executeTool(toolName as ToolName, context, toolArgs, tenantToolSchemas);
+
+    console.log('[AI Agent] executePendingAction result:', {
+      success: result.success,
+      hasData: !!result.data,
+      orderId: (result.data as any)?.orderId,
+      error: result.error,
+      needsConfirmation: result.needsConfirmation,
+    });
 
     if (result.success) {
       const formatted = formatToolResult(toolName as ToolName, result, platform);

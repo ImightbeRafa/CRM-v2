@@ -289,6 +289,38 @@ export async function getPendingConfirmation(
 }
 
 /**
+ * Peek at pending confirmation without deleting it.
+ * Use this to check for pending data before deciding whether to act on it.
+ * Call clearPendingConfirmation separately when the confirmation is consumed.
+ */
+export async function peekPendingConfirmation(
+  platform: string,
+  platformId: string
+): Promise<{ type: string; data: Record<string, unknown> } | null> {
+  const key = `betsy:pending:${platform}:${platformId}`;
+  const redis = getRedisClient();
+
+  if (redis) {
+    try {
+      const raw = await redis.get(key);
+      if (raw) {
+        return typeof raw === 'string' ? JSON.parse(raw) : (raw as any);
+      }
+    } catch (error) {
+      console.error('[ConversationMemory] Failed to peek pending confirmation:', error);
+    }
+    return null;
+  }
+
+  const pending = memoryStorage.get(`pending:${key}`);
+  if (pending && pending.length > 0) {
+    return pending[0] as any;
+  }
+
+  return null;
+}
+
+/**
  * Clear pending confirmation
  */
 export async function clearPendingConfirmation(

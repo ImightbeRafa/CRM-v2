@@ -763,6 +763,10 @@ export async function createOrder(
           data: orderData,
         });
 
+        console.log('[AI Tool] createOrder - Persisted:', {
+          dbId: order.id, orderId: order.orderId, tenantId: order.tenantId,
+        });
+
         // Sync client record (create or update) so bot clients appear in Config > Clientes
         try {
           await syncClientFromOrder(tenantPrisma, ctx, {

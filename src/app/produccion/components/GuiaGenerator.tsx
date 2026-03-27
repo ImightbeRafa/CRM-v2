@@ -389,9 +389,13 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
         );
         if (correosConfig) {
           setSelectedCarrier(correosConfig.carrier);
-          const settings = correosConfig.settings || {};
-          setHasCorreosConfig(!!settings.ws_username && !!settings.ws_password);
-        } else {
+        }
+        // WS credentials are now platform-level env vars — check via status endpoint
+        try {
+          const statusRes = await fetch('/api/config/correos-status', { credentials: 'include' });
+          const statusData = await statusRes.json();
+          setHasCorreosConfig(statusData.configured ?? false);
+        } catch {
           setHasCorreosConfig(false);
         }
       }

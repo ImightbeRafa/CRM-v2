@@ -8,44 +8,25 @@ import { Card } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { useToast } from '@/app/hooks/use-toast';
 import {
-  Truck,
-  Mail,
-  Lock,
-  Key,
   User,
   MapPin,
   Phone,
-  Hash,
   Loader2,
   CheckCircle2,
-  XCircle,
-  TestTube,
-  ExternalLink,
   Info,
   Save,
+  AlertCircle,
 } from 'lucide-react';
 import type { WizardStepProps } from '../SetupWizard';
 
-interface CorreosSettings {
-  ws_username: string;
-  ws_password: string;
-  ws_sistema: string;
-  ws_usuario_id: string;
-  ws_servicio_id: string;
-  ws_cod_cliente: string;
+interface SenderSettings {
   ws_sender_name: string;
   ws_sender_address: string;
   ws_sender_zip: string;
   ws_sender_phone: string;
 }
 
-const EMPTY_SETTINGS: CorreosSettings = {
-  ws_username: '',
-  ws_password: '',
-  ws_sistema: '',
-  ws_usuario_id: '',
-  ws_servicio_id: '',
-  ws_cod_cliente: '',
+const EMPTY_SETTINGS: SenderSettings = {
   ws_sender_name: '',
   ws_sender_address: '',
   ws_sender_zip: '',
@@ -53,21 +34,30 @@ const EMPTY_SETTINGS: CorreosSettings = {
 };
 
 export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: WizardStepProps) {
-  const [settings, setSettings] = useState<CorreosSettings>(EMPTY_SETTINGS);
-  const [initial, setInitial] = useState<CorreosSettings>(EMPTY_SETTINGS);
+  const [settings, setSettings] = useState<SenderSettings>(EMPTY_SETTINGS);
+  const [initial, setInitial] = useState<SenderSettings>(EMPTY_SETTINGS);
   const [existingConfigId, setExistingConfigId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
+  const [platformConfigured, setPlatformConfigured] = useState<boolean | null>(null);
   const { toast } = useToast();
 
-  useEffect(() => { loadConfig(); }, []);
+  useEffect(() => { loadConfig(); checkPlatformStatus(); }, []);
 
   useEffect(() => {
     const changed = JSON.stringify(settings) !== JSON.stringify(initial);
     markUnsavedChanges(changed);
   }, [settings, initial, markUnsavedChanges]);
+
+  const checkPlatformStatus = async () => {
+    try {
+      const res = await fetch('/api/config/correos-status', { credentials: 'include' });
+      const data = await res.json();
+      setPlatformConfigured(data.configured ?? false);
+    } catch {
+      setPlatformConfigured(false);
+    }
+  };
 
   const loadConfig = async () => {
     try {
@@ -78,13 +68,7 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
         if (correos) {
           setExistingConfigId(correos.id);
           const s = correos.settings || {};
-          const loaded: CorreosSettings = {
-            ws_username: s.ws_username || '',
-            ws_password: s.ws_password || '',
-            ws_sistema: s.ws_sistema || '',
-            ws_usuario_id: s.ws_usuario_id || '',
-            ws_servicio_id: s.ws_servicio_id || '',
-            ws_cod_cliente: s.ws_cod_cliente || '',
+          const loaded: SenderSettings = {
             ws_sender_name: s.ws_sender_name || '',
             ws_sender_address: s.ws_sender_address || '',
             ws_sender_zip: s.ws_sender_zip || '',
@@ -92,7 +76,7 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
           };
           setSettings(loaded);
           setInitial(loaded);
-          if (loaded.ws_username && loaded.ws_password) {
+          if (loaded.ws_sender_name) {
             markCompleted();
           }
         }
@@ -101,32 +85,8 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
     finally { setLoading(false); }
   };
 
-  const update = (key: keyof CorreosSettings, value: string) => {
+  const update = (key: keyof SenderSettings, value: string) => {
     setSettings(prev => ({ ...prev, [key]: value }));
-  };
-
-  const handleTest = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const res = await fetch('/api/config/correos-test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ settings }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setTestResult('success');
-        toast({ title: 'Conexión exitosa', description: 'Las credenciales de Correos CR son válidas.' });
-      } else {
-        setTestResult('error');
-        toast({ title: 'Error de conexión', description: data.error || 'No se pudo conectar con Correos CR.', variant: 'destructive' });
-      }
-    } catch {
-      setTestResult('error');
-      toast({ title: 'Error', description: 'No se pudo verificar la conexión.', variant: 'destructive' });
-    } finally { setTesting(false); }
   };
 
   const handleSave = async () => {
@@ -150,7 +110,7 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
         if (!existingConfigId && data.data?.id) setExistingConfigId(data.data.id);
         setInitial(settings);
         markCompleted();
-        toast({ title: '¡Guardado!', description: 'Configuración de Correos CR guardada.' });
+        toast({ title: '¡Guardado!', description: 'Datos del remitente guardados.' });
       } else {
         throw new Error();
       }
@@ -159,7 +119,7 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
     } finally { setSaving(false); }
   };
 
-  const hasCredentials = settings.ws_username && settings.ws_password;
+  const hasSender = !!settings.ws_sender_name;
 
   if (loading) {
     return (
@@ -176,92 +136,30 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
         <div className="flex items-start gap-3">
           <Info className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
           <div className="text-sm text-blue-800">
-            <p className="font-medium mb-1">¿No tenés credenciales de Correos de Costa Rica?</p>
+            <p className="font-medium mb-1">Correos de Costa Rica</p>
             <p className="text-blue-700">
-              Podés obtenerlas contactando a Correos de Costa Rica o visitando su portal de servicios.
-              Este paso es opcional &mdash; podés configurarlo después en Configuración &gt; Envíos.
+              Las credenciales del Web Service son administradas a nivel de plataforma.
+              Aquí solo necesitás configurar los datos de tu remitente (dirección de origen).
             </p>
-            <a
-              href="/docs/correos-cr-setup"
-              target="_blank"
-              className="inline-flex items-center gap-1 mt-2 text-blue-600 hover:text-blue-800 font-medium"
-            >
-              Ver guía completa <ExternalLink className="h-3.5 w-3.5" />
-            </a>
           </div>
         </div>
       </Card>
 
-      {/* Web Service Credentials */}
-      <div>
-        <h3 className="text-base font-semibold text-gray-900 mb-3 flex items-center gap-2">
-          <Key className="h-4 w-4 text-gray-500" />
-          Credenciales del Web Service
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <Label className="flex items-center gap-1.5 mb-1">
-              <Mail className="h-3.5 w-3.5 text-gray-400" /> Usuario WS
-            </Label>
-            <Input
-              value={settings.ws_username}
-              onChange={e => update('ws_username', e.target.value)}
-              placeholder="ccrWS..."
-            />
-          </div>
-          <div>
-            <Label className="flex items-center gap-1.5 mb-1">
-              <Lock className="h-3.5 w-3.5 text-gray-400" /> Contraseña WS
-            </Label>
-            <Input
-              type="password"
-              value={settings.ws_password}
-              onChange={e => update('ws_password', e.target.value)}
-              placeholder="••••••••"
-            />
-          </div>
-          <div>
-            <Label className="flex items-center gap-1.5 mb-1">
-              <Hash className="h-3.5 w-3.5 text-gray-400" /> Sistema
-            </Label>
-            <Input
-              value={settings.ws_sistema}
-              onChange={e => update('ws_sistema', e.target.value)}
-              placeholder="PYMEXPRESS"
-            />
-          </div>
-          <div>
-            <Label className="flex items-center gap-1.5 mb-1">
-              <Hash className="h-3.5 w-3.5 text-gray-400" /> Usuario ID
-            </Label>
-            <Input
-              value={settings.ws_usuario_id}
-              onChange={e => update('ws_usuario_id', e.target.value)}
-              placeholder="204835716"
-            />
-          </div>
-          <div>
-            <Label className="flex items-center gap-1.5 mb-1">
-              <Hash className="h-3.5 w-3.5 text-gray-400" /> Servicio ID
-            </Label>
-            <Input
-              value={settings.ws_servicio_id}
-              onChange={e => update('ws_servicio_id', e.target.value)}
-              placeholder="1564"
-            />
-          </div>
-          <div>
-            <Label className="flex items-center gap-1.5 mb-1">
-              <Hash className="h-3.5 w-3.5 text-gray-400" /> Código Cliente
-            </Label>
-            <Input
-              value={settings.ws_cod_cliente}
-              onChange={e => update('ws_cod_cliente', e.target.value)}
-              placeholder="7362097"
-            />
-          </div>
+      {platformConfigured === false && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 px-4 py-3 text-sm">
+          <AlertCircle className="h-4 w-4 flex-shrink-0" />
+          Las credenciales del Web Service no están configuradas a nivel de plataforma. Contacte al administrador.
         </div>
-      </div>
+      )}
+
+      {platformConfigured && (
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="border-emerald-300 text-emerald-700">
+            <CheckCircle2 className="h-3 w-3 mr-1" />
+            Servicio de Correos CR Activo
+          </Badge>
+        </div>
+      )}
 
       {/* Sender Info */}
       <div>
@@ -316,31 +214,14 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
       {/* Actions */}
       <div className="flex flex-col sm:flex-row gap-3 pt-2">
         <Button
-          variant="outline"
-          onClick={handleTest}
-          disabled={!hasCredentials || testing}
-          className="flex-1"
-        >
-          {testing ? (
-            <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Probando...</>
-          ) : testResult === 'success' ? (
-            <><CheckCircle2 className="h-4 w-4 mr-2 text-green-600" />Conexión Exitosa</>
-          ) : testResult === 'error' ? (
-            <><XCircle className="h-4 w-4 mr-2 text-red-600" />Falló - Reintentar</>
-          ) : (
-            <><TestTube className="h-4 w-4 mr-2" />Probar Conexión</>
-          )}
-        </Button>
-
-        <Button
           onClick={handleSave}
-          disabled={!hasCredentials || saving}
+          disabled={!hasSender || saving}
           className="flex-1"
         >
           {saving ? (
             <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Guardando...</>
           ) : (
-            <><Save className="h-4 w-4 mr-2" />Guardar Configuración</>
+            <><Save className="h-4 w-4 mr-2" />Guardar Datos del Remitente</>
           )}
         </Button>
       </div>

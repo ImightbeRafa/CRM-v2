@@ -6,9 +6,7 @@
 
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
-import { CorreosWebService, buildGuiaDescription, buildFullAddress } from '@/lib/correos';
-import type { CorreosWSCredentials } from '@/lib/correos';
-import { decrypt } from '@/lib/encryption';
+import { CorreosWebService, buildGuiaDescription, buildFullAddress, getCorreosWSCredentials } from '@/lib/correos';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -71,27 +69,28 @@ export async function generateGuiasForOrders(
 
   const settings = (shippingConfig?.settings as Record<string, any>) ?? {};
 
-  if (!shippingConfig || !settings.ws_username || !settings.ws_password) {
-    const detail = !shippingConfig
-      ? `No ShippingConfig found for tenant ${tenantId} with carrier containing 'correos'.`
-      : `Config found (carrier=${shippingConfig.carrier}, id=${shippingConfig.id}) but missing: ${!settings.ws_username ? 'ws_username ' : ''}${!settings.ws_password ? 'ws_password' : ''}`.trim();
-
-    console.error(`[GuiaService] Credentials check FAILED: ${detail}`);
-
+  let wsCreds;
+  try {
+    wsCreds = getCorreosWSCredentials();
+  } catch (e: any) {
+    console.error(`[GuiaService] Platform credentials check FAILED: ${e.message}`);
     return {
       results: orderIds.map(id => ({
         success: false,
         orderId: id,
-        error: 'Correos WS credentials not configured. Configure them in Configuración > Envíos.',
+        error: e.message || 'Correos WS platform credentials not configured.',
       })),
       successful: 0,
       failed: orderIds.length,
     };
   }
 
-  console.log(`[GuiaService] Using config carrier='${shippingConfig.carrier}' (id:${shippingConfig.id}) for tenant ${tenantId}`);
+  if (!shippingConfig) {
+    console.warn(`[GuiaService] No ShippingConfig found for tenant ${tenantId} — using default sender data.`);
+  } else {
+    console.log(`[GuiaService] Using config carrier='${shippingConfig.carrier}' (id:${shippingConfig.id}) for tenant ${tenantId}`);
+  }
 
-  // Fetch orders – match by business orderId, EA type only
   const orders = await tenantPrisma.order.findMany({
     where: { orderId: { in: orderIds }, tenantId },
   });
@@ -107,15 +106,6 @@ export async function generateGuiasForOrders(
       failed: orderIds.length,
     };
   }
-
-  const wsCreds: CorreosWSCredentials = {
-    username: settings.ws_username,
-    password: decrypt(settings.ws_password),
-    sistema: settings.ws_sistema || 'PYMEXPRESS',
-    usuarioId: Number(settings.ws_usuario_id) || 0,
-    servicioId: Number(settings.ws_servicio_id) || 0,
-    codCliente: settings.ws_cod_cliente || '',
-  };
 
   const sender: SenderInfo = {
     name: settings.ws_sender_name || '',

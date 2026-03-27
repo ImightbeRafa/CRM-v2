@@ -3,8 +3,7 @@ import { validateApiKey } from '@/lib/integration-auth';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
 import { withTenantContext } from '@/lib/tenantContext';
-import { CorreosWebService, buildGuiaDescription, buildFullAddress } from '@/lib/correos';
-import type { CorreosWSCredentials } from '@/lib/correos';
+import { CorreosWebService, buildGuiaDescription, buildFullAddress, getCorreosWSCredentials } from '@/lib/correos';
 import { logIntegrationActivity } from '@/lib/integration-logs';
 
 // Configure route for Vercel deployment
@@ -106,13 +105,16 @@ export async function POST(req: NextRequest) {
 
       const settings = (shippingConfig?.settings as Record<string, any>) ?? {};
 
-      if (!settings.ws_username || !settings.ws_password) {
+      let wsCreds;
+      try {
+        wsCreds = getCorreosWSCredentials();
+      } catch (e: any) {
         await logIntegrationActivity(tenantId, 'GUIA_GENERATION_FAILED', {
-          error: 'WS credentials not configured',
+          error: e.message || 'Platform WS credentials not configured',
           orderIds
         });
         return NextResponse.json(
-          { error: 'Correos Web Service credentials not configured. Please configure them in shipping settings.' },
+          { error: e.message || 'Correos WS platform credentials not configured.' },
           { status: 400 }
         );
       }
@@ -135,15 +137,6 @@ export async function POST(req: NextRequest) {
       if (orders.length !== orderIds.length) {
         console.warn(`[Guia API] Only found ${orders.length} of ${orderIds.length} requested orders`);
       }
-
-      const wsCreds: CorreosWSCredentials = {
-        username: settings.ws_username,
-        password: settings.ws_password,
-        sistema: settings.ws_sistema || 'PYMEXPRESS',
-        usuarioId: Number(settings.ws_usuario_id) || 0,
-        servicioId: Number(settings.ws_servicio_id) || 0,
-        codCliente: settings.ws_cod_cliente || '',
-      };
 
       const sender = {
         name: settings.ws_sender_name || '',

@@ -3,8 +3,7 @@ import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
 import { withTenantContext } from '@/lib/tenantContext';
-import { CorreosWebService, buildGuiaDescription, buildFullAddress } from '@/lib/correos';
-import type { CorreosWSCredentials } from '@/lib/correos';
+import { CorreosWebService, buildGuiaDescription, buildFullAddress, getCorreosWSCredentials } from '@/lib/correos';
 
 export async function POST(request: NextRequest) {
   try {
@@ -60,9 +59,12 @@ export async function POST(request: NextRequest) {
 
       const settings = (shippingConfig.settings as Record<string, any>) ?? {};
 
-      if (!settings.ws_username || !settings.ws_password) {
+      let wsCreds;
+      try {
+        wsCreds = getCorreosWSCredentials();
+      } catch (e: any) {
         return NextResponse.json(
-          { error: 'Correos Web Service credentials not configured. Go to Configuración → Envíos to set them up.' },
+          { error: e.message || 'Correos WS platform credentials not configured.' },
           { status: 400 }
         );
       }
@@ -74,15 +76,6 @@ export async function POST(request: NextRequest) {
       if (orders.length === 0) {
         return NextResponse.json({ error: 'No valid orders found for shipping' }, { status: 404 });
       }
-
-      const wsCreds: CorreosWSCredentials = {
-        username: settings.ws_username,
-        password: settings.ws_password,
-        sistema: settings.ws_sistema || 'PYMEXPRESS',
-        usuarioId: Number(settings.ws_usuario_id) || 0,
-        servicioId: Number(settings.ws_servicio_id) || 0,
-        codCliente: settings.ws_cod_cliente || '',
-      };
 
       const sender = {
         name: settings.ws_sender_name || '',

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui/card";
 import { Save, Loader, AlertCircle, CheckCircle, Clock, Banknote } from 'lucide-react';
-import { Checkbox } from "@/app/components/ui/checkbox";
+
 import { Alert, AlertDescription, AlertTitle } from "@/app/components/ui/alert";
 import { Button } from "@/app/components/ui/button";
 import OrderTypeToggle from './OrderTypeToggle';
@@ -772,8 +772,9 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
             </div>
 
             {/* Contra Entrega Toggle */}
-            <div
-              className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 ${
+            <button
+              type="button"
+              className={`w-full p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 text-left ${
                 orderInfo.contraEntrega
                   ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-400 dark:border-amber-600'
                   : 'bg-muted border-border hover:border-muted-foreground/30'
@@ -781,18 +782,17 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               onClick={() => setOrderInfo(prev => ({ ...prev, contraEntrega: !prev.contraEntrega }))}
             >
               <div className="flex items-center gap-3">
-                <Checkbox
-                  checked={orderInfo.contraEntrega || false}
-                  onCheckedChange={(checked) => {
-                    setOrderInfo(prev => ({ ...prev, contraEntrega: checked === true }));
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  className={`h-5 w-5 ${
+                <div
+                  className={`h-5 w-5 shrink-0 rounded-sm border flex items-center justify-center transition-colors ${
                     orderInfo.contraEntrega
-                      ? 'border-amber-500 data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500'
-                      : 'border-muted-foreground/30'
+                      ? 'bg-amber-500 border-amber-500 text-white'
+                      : 'border-muted-foreground/30 bg-background'
                   }`}
-                />
+                >
+                  {orderInfo.contraEntrega && (
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><polyline points="20 6 9 17 4 12" /></svg>
+                  )}
+                </div>
                 <Banknote className={`h-5 w-5 ${orderInfo.contraEntrega ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`} />
                 <div>
                   <span className={`font-semibold ${orderInfo.contraEntrega ? 'text-amber-800 dark:text-amber-400' : 'text-muted-foreground'}`}>
@@ -803,7 +803,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                   </p>
                 </div>
               </div>
-            </div>
+            </button>
 
             {/* Submit Button */}
             <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-4">

@@ -128,6 +128,7 @@ export function InventoryManagement() {
   const [stockFilter, setStockFilter] = useState('all');
 
   const [formData, setFormData] = useState(INITIAL_FORM);
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
 
   useEffect(() => { loadInventory(); }, []);
 
@@ -186,6 +187,7 @@ export function InventoryManagement() {
     setEditingItem(null);
     setFormData({ ...INITIAL_FORM });
     setShowAdvanced(false);
+    setIsCreatingCategory(false);
     setShowForm(true);
   };
 
@@ -209,6 +211,7 @@ export function InventoryManagement() {
     });
     const hasAdvanced = !!(item.supplier || item.location || item.minStock || item.maxStock || item.reorderPoint || item.reorderQuantity);
     setShowAdvanced(hasAdvanced);
+    setIsCreatingCategory(false);
     setShowForm(true);
   };
 
@@ -506,7 +509,7 @@ export function InventoryManagement() {
       )}
 
       {/* ======= CREATE / EDIT DIALOG ======= */}
-      <Dialog open={showForm} onOpenChange={open => { if (!open) { setShowForm(false); setEditingItem(null); } }}>
+      <Dialog open={showForm} onOpenChange={open => { if (!open) { setShowForm(false); setEditingItem(null); setIsCreatingCategory(false); } }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingItem ? 'Editar Producto' : 'Nuevo Producto'}</DialogTitle>
@@ -559,11 +562,12 @@ export function InventoryManagement() {
               {/* Category */}
               <div>
                 <Label>Categoría *</Label>
-                {categories.length > 0 ? (
+                {categories.length > 0 && !isCreatingCategory ? (
                   <Select
-                    value={formData.category}
+                    value={formData.category || undefined}
                     onValueChange={v => {
                       if (v === '__new__') {
+                        setIsCreatingCategory(true);
                         updateField('category', '');
                       } else {
                         updateField('category', v);
@@ -581,22 +585,29 @@ export function InventoryManagement() {
                     </SelectContent>
                   </Select>
                 ) : (
-                  <Input
-                    value={formData.category}
-                    onChange={e => updateField('category', e.target.value)}
-                    placeholder="ej. Ropa, Electrónica"
-                    required
-                  />
-                )}
-                {formData.category === '' && categories.length > 0 && (
-                  <Input
-                    value={formData.category}
-                    onChange={e => updateField('category', e.target.value)}
-                    placeholder="Nombre de la nueva categoría"
-                    className="mt-2"
-                    required
-                    autoFocus
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      value={formData.category}
+                      onChange={e => updateField('category', e.target.value)}
+                      placeholder="Nombre de la nueva categoría"
+                      required
+                      autoFocus
+                    />
+                    {categories.length > 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 self-center"
+                        onClick={() => {
+                          setIsCreatingCategory(false);
+                          updateField('category', '');
+                        }}
+                      >
+                        Cancelar
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
 

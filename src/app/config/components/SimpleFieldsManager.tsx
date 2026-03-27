@@ -570,7 +570,7 @@ export function SimpleFieldsManager() {
                           console.log('🔍 Setting editing field:', field);
                           setEditingField(field);
                         }}
-                        className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                        className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40"
                       >
                         <Edit className="w-4 h-4 mr-1" />
                         Editar
@@ -579,7 +579,7 @@ export function SimpleFieldsManager() {
                         variant="ghost"
                         size="sm"
                         onClick={() => handleDeleteField(field.id)}
-                        className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                        className="text-red-600 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40"
                       >
                         <Trash2 className="w-4 h-4 mr-1" />
                         Eliminar
@@ -676,7 +676,7 @@ export function SimpleFieldsManager() {
                     required
                     pattern="[a-zA-Z0-9_]+"
                     title="Solo letras, números y guiones bajos"
-                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="w-full p-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                     placeholder="ej: miCampoPersonalizado"
                   />
                 </div>
@@ -688,7 +688,7 @@ export function SimpleFieldsManager() {
                     type="text"
                     name="label"
                     required
-                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="w-full p-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                     placeholder="ej: Mi Campo Personalizado"
                   />
                 </div>
@@ -701,7 +701,7 @@ export function SimpleFieldsManager() {
                     required
                     value={newFieldType}
                     onChange={(e) => setNewFieldType(e.target.value)}
-                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="w-full p-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                   >
                     <option value="text">Texto</option>
                     <option value="number">Número</option>
@@ -719,7 +719,7 @@ export function SimpleFieldsManager() {
 
                 {/* Show option set selector when type is 'select' */}
                 {newFieldType === 'select' && (
-                  <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-xl p-5 space-y-4">
+                  <div className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-2 border-purple-300 dark:border-purple-700 rounded-xl p-5 space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <label className="block text-sm font-semibold text-muted-foreground mb-1">
@@ -737,7 +737,7 @@ export function SimpleFieldsManager() {
                           <select
                             value={newFieldOptionSetId}
                             onChange={(e) => setNewFieldOptionSetId(e.target.value)}
-                            className="flex-1 p-2.5 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-card shadow-sm font-medium"
+                            className="flex-1 p-2.5 border-2 border-purple-300 dark:border-purple-700 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-background text-foreground shadow-sm font-medium"
                             required
                           >
                             <option value="">-- Seleccionar conjunto existente --</option>
@@ -755,7 +755,7 @@ export function SimpleFieldsManager() {
                             variant="outline"
                             size="sm"
                             onClick={() => setShowQuickOptionSetCreator(true)}
-                            className="flex-1 border-2 border-purple-400 text-purple-700 hover:bg-purple-100 font-semibold"
+                            className="flex-1 border-2 border-purple-400 dark:border-purple-600 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-950/50 font-semibold"
                           >
                             + Crear conjunto nuevo
                           </Button>
@@ -767,23 +767,23 @@ export function SimpleFieldsManager() {
                               const optionsTab = document.querySelector('[data-section="options"]');
                               if (optionsTab) (optionsTab as HTMLElement).click();
                             }}
-                            className="flex-1 border-2 border-indigo-400 text-indigo-700 hover:bg-indigo-100"
+                            className="flex-1 border-2 border-indigo-400 dark:border-indigo-600 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-950/50"
                           >
                             📋 Ver todos los conjuntos
                           </Button>
                         </div>
 
                         {!newFieldOptionSetId && (
-                          <div className="bg-amber-50 border-l-4 border-amber-400 p-3 rounded">
-                            <p className="text-xs text-amber-800 font-medium flex items-center gap-2">
+                          <div className="bg-amber-50 dark:bg-amber-950/30 border-l-4 border-amber-400 dark:border-amber-600 p-3 rounded">
+                            <p className="text-xs text-amber-800 dark:text-amber-300 font-medium flex items-center gap-2">
                               <span className="text-lg">⚠️</span>
                               Debes seleccionar o crear un conjunto de opciones antes de guardar
                             </p>
                           </div>
                         )}
                         {newFieldOptionSetId && (
-                          <div className="bg-green-50 border-l-4 border-green-400 p-3 rounded">
-                            <p className="text-xs text-green-800 font-medium flex items-center gap-2">
+                          <div className="bg-green-50 dark:bg-green-950/30 border-l-4 border-green-400 dark:border-green-600 p-3 rounded">
+                            <p className="text-xs text-green-800 dark:text-green-300 font-medium flex items-center gap-2">
                               <span className="text-lg">✓</span>
                               Conjunto &quot;{optionSets.find(s => s.id === newFieldOptionSetId)?.name}&quot; seleccionado
                             </p>
@@ -1050,7 +1050,7 @@ export function SimpleFieldsManager() {
                     name="label"
                     defaultValue={editingField.label}
                     required
-                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full p-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
                 <div>
@@ -1061,7 +1061,7 @@ export function SimpleFieldsManager() {
                     name="type"
                     defaultValue={editingField.type}
                     required
-                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full p-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="text">Texto</option>
                     <option value="number">Número</option>
@@ -1080,7 +1080,7 @@ export function SimpleFieldsManager() {
                     name="order"
                     defaultValue={editingField.order}
                     required
-                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full p-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
                 <div className="flex items-center">
@@ -1157,7 +1157,7 @@ export function SimpleFieldsManager() {
                               <span className="flex-1 text-sm font-medium">{option.label}</span>
                               <Badge variant="outline" className="text-xs">{option.value}</Badge>
                               {option.priceDelta !== 0 && (
-                                <Badge className="text-xs bg-green-100 text-green-700">
+                                <Badge className="text-xs bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400">
                                   {option.priceDelta > 0 ? '+' : ''}₡{option.priceDelta}
                                 </Badge>
                               )}
@@ -1186,7 +1186,7 @@ export function SimpleFieldsManager() {
                     </div>
 
                     {/* Add New Option Form */}
-                    <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-md border border-blue-200">
+                    <div className="flex items-center gap-2 p-2 bg-blue-50 dark:bg-blue-950/30 rounded-md border border-blue-200 dark:border-blue-800">
                       <Input
                         value={newOptionLabel}
                         onChange={(e) => setNewOptionLabel(e.target.value)}

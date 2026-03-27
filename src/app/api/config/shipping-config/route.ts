@@ -1,8 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { getToken } from 'next-auth/jwt';
-import { encrypt, decrypt } from '@/lib/encryption';
+import { encrypt } from '@/lib/encryption';
 import { withTenantContext } from '@/lib/tenantContext';
+
+const WS_CREDENTIAL_KEYS = [
+  'ws_username', 'ws_password', 'ws_sistema',
+  'ws_usuario_id', 'ws_servicio_id', 'ws_cod_cliente',
+];
+
+function stripWSCredentials(settings: any): any {
+  if (!settings || typeof settings !== 'object') return settings ?? null;
+  const cleaned = { ...settings };
+  for (const key of WS_CREDENTIAL_KEYS) {
+    delete cleaned[key];
+  }
+  return cleaned;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -123,7 +137,7 @@ export async function POST(request: NextRequest) {
           apiKey: apiKeyToStore,
           baseUrl,
           isDefault,
-          settings: settings || null,
+          settings: stripWSCredentials(settings),
           tenantId
         }
       });
@@ -206,18 +220,7 @@ export async function PUT(request: NextRequest) {
       const passwordToStore = (password && password !== '***') ? encrypt(password) : undefined;
       const apiKeyToStore = apiKey ? encrypt(apiKey) : apiKey;
 
-      let mergedSettings = settings || null;
-      if (mergedSettings && typeof mergedSettings === 'object') {
-        if (!mergedSettings.ws_password || mergedSettings.ws_password === '***') {
-          const existing = await prisma.shippingConfig.findUnique({ where: { id }, select: { settings: true } });
-          const existingSettings = (existing?.settings as Record<string, any>) ?? {};
-          if (existingSettings.ws_password) {
-            mergedSettings = { ...mergedSettings, ws_password: existingSettings.ws_password };
-          } else {
-            delete mergedSettings.ws_password;
-          }
-        }
-      }
+      const mergedSettings = stripWSCredentials(settings);
 
       const updateData: any = {
         carrier,

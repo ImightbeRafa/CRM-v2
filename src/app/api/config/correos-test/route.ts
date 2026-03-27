@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { CorreosWebService } from '@/lib/correos';
-import type { CorreosWSCredentials } from '@/lib/correos';
+import { getCorreosWSCredentials } from '@/lib/correos';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,9 +10,8 @@ export const maxDuration = 30;
 /**
  * POST /api/config/correos-test
  *
- * Tenant-scoped Correos CR connection test.
- * Accepts credentials in the request body (not yet saved)
- * so users can test before committing.
+ * Tests the platform-level Correos CR SOAP connection using
+ * credentials from environment variables.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -26,24 +25,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
-    const body = await req.json();
-    const settings = body.settings;
-
-    if (!settings?.ws_username || !settings?.ws_password) {
-      return NextResponse.json(
-        { success: false, error: 'Se requieren usuario y contraseña del Web Service.' },
-        { status: 400 }
-      );
+    let creds;
+    try {
+      creds = getCorreosWSCredentials();
+    } catch (e: any) {
+      return NextResponse.json({
+        success: false,
+        error: e.message || 'Correos WS platform credentials not configured.',
+      });
     }
-
-    const creds: CorreosWSCredentials = {
-      username: settings.ws_username,
-      password: settings.ws_password,
-      sistema: settings.ws_sistema || 'PYMEXPRESS',
-      usuarioId: Number(settings.ws_usuario_id) || 0,
-      servicioId: Number(settings.ws_servicio_id) || 0,
-      codCliente: settings.ws_cod_cliente || '',
-    };
 
     const ws = new CorreosWebService(creds);
 

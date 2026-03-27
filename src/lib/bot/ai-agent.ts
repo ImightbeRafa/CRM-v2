@@ -495,7 +495,7 @@ export async function processMessage(
 
         console.log('[AI Agent] Executing tool: ' + toolName, toolArgs);
 
-        const result = await executeTool(toolName, context, toolArgs);
+        const result = await executeTool(toolName, context, toolArgs, tenantToolSchemas);
 
         if (result.success) {
           console.log(`[AI Agent] ✅ Tool ${toolName} executed successfully`);
@@ -728,7 +728,8 @@ async function executePendingAction(pending: any, context: ToolContext, platform
       return '❌ Error: acción pendiente inválida.';
     }
 
-    const result = await executeTool(toolName as ToolName, context, toolArgs);
+    const { tenantToolSchemas } = await updateToolSchemasWithCustomFields(context.tenantId);
+    const result = await executeTool(toolName as ToolName, context, toolArgs, tenantToolSchemas);
 
     if (result.success) {
       const formatted = formatToolResult(toolName as ToolName, result, platform);

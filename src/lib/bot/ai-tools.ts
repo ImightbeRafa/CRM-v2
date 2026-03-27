@@ -84,7 +84,42 @@ function createOrderSchemaWithCustomFields(customFieldsConfig: CustomFieldsData)
     description: 'Crear una nueva orden de venta. Úsalo cuando el usuario quiera registrar una nueva venta o pedido.',
     parameters: z.object({
       ...baseOrderSchema,
-      ...customFieldsSchema, // Add dynamic custom fields
+      ...customFieldsSchema,
+    }),
+  };
+}
+
+// Dynamic update_order schema that includes custom fields inside the updates object
+function updateOrderSchemaWithCustomFields(customFieldsConfig: CustomFieldsData) {
+  const customFieldsSchema = getCustomFieldsSchema(customFieldsConfig);
+
+  // All custom fields are optional for updates
+  const optionalCustomFields: Record<string, z.ZodTypeAny> = {};
+  for (const [key, schema] of Object.entries(customFieldsSchema)) {
+    optionalCustomFields[key] = schema instanceof z.ZodOptional ? schema : schema.optional();
+  }
+
+  return {
+    description: 'Actualizar campos de una orden existente.',
+    parameters: z.object({
+      orderId: z.string().describe('ID de la orden a actualizar'),
+      updates: z.object({
+        customerName: z.string().optional(),
+        phone: z.string().optional(),
+        email: z.union([z.string().email(), z.literal('')]).optional(),
+        product: z.string().optional(),
+        quantity: z.number().int().min(1).optional(),
+        size: z.string().optional(),
+        color: z.string().optional(),
+        total: z.number().min(0).optional(),
+        address: z.string().optional(),
+        province: z.string().optional(),
+        canton: z.string().optional(),
+        district: z.string().optional(),
+        courier: z.string().optional(),
+        comments: z.string().optional(),
+        ...optionalCustomFields,
+      }).describe('Campos a actualizar (incluye campos personalizados del negocio)'),
     }),
   };
 }
@@ -235,9 +270,17 @@ export const toolSchemas = {
 export async function updateToolSchemasWithCustomFields(tenantId: string) {
   try {
     const customFieldsConfig = await getTenantCustomFields(tenantId);
-    const dynamicSchema = createOrderSchemaWithCustomFields(customFieldsConfig);
+    const dynamicCreateSchema = createOrderSchemaWithCustomFields(customFieldsConfig);
+    const dynamicUpdateSchema = updateOrderSchemaWithCustomFields(customFieldsConfig);
     
-    return { customFieldsConfig, tenantToolSchemas: { ...toolSchemas, create_order: dynamicSchema } };
+    return {
+      customFieldsConfig,
+      tenantToolSchemas: {
+        ...toolSchemas,
+        create_order: dynamicCreateSchema,
+        update_order: dynamicUpdateSchema,
+      },
+    };
   } catch (error) {
     console.error('[AI Tools] Failed to update schemas with custom fields:', error);
     return { customFieldsConfig: { productFields: [], businessInfoFields: [] }, tenantToolSchemas: toolSchemas };
@@ -967,7 +1010,7 @@ export async function getOrderDetails(
  */
 export async function updateOrder(
   ctx: ToolContext,
-  params: z.infer<typeof toolSchemas.update_order.parameters>
+  params: any
 ): Promise<ToolResult> {
   return withTenantContext(
     { tenantId: ctx.tenantId, userId: ctx.userId, userName: ctx.userName, userRole: ctx.userRole },
@@ -975,7 +1018,6 @@ export async function updateOrder(
       try {
         const tenantPrisma = getTenantPrisma(ctx.tenantId);
         
-        // Find the order first
         const existingOrder = await tenantPrisma.order.findFirst({
           where: {
             OR: [
@@ -991,10 +1033,32 @@ export async function updateOrder(
             error: `No encontré ninguna orden con ID "${params.orderId}"`,
           };
         }
+
+        const baseUpdateKeys = new Set([
+          'customerName', 'phone', 'email', 'product', 'quantity',
+          'size', 'color', 'total', 'address', 'province', 'canton',
+          'district', 'courier', 'comments',
+        ]);
+
+        const baseUpdates: Record<string, unknown> = {};
+        const customFieldUpdates: Record<string, unknown> = {};
+
+        for (const [key, value] of Object.entries(params.updates as Record<string, unknown>)) {
+          if (baseUpdateKeys.has(key)) {
+            baseUpdates[key] = value;
+          } else {
+            customFieldUpdates[key] = value;
+          }
+        }
+
+        if (Object.keys(customFieldUpdates).length > 0) {
+          const existingCustomFields = (existingOrder.customFields as Record<string, unknown>) || {};
+          baseUpdates.customFields = { ...existingCustomFields, ...customFieldUpdates };
+        }
         
         const order = await tenantPrisma.order.update({
           where: { id: existingOrder.id },
-          data: params.updates,
+          data: baseUpdates,
         });
         
         const updatedFields = Object.keys(params.updates).join(', ');
@@ -1707,12 +1771,16 @@ const toolExecutors: Record<ToolName, (ctx: ToolContext, params: any) => Promise
 };
 
 /**
- * Execute a tool by name with given parameters
+ * Execute a tool by name with given parameters.
+ * @param schemaOverrides - Tenant-specific tool schemas (e.g. with custom fields).
+ *   When provided, validation uses these instead of the static toolSchemas so that
+ *   dynamic keys (custom fields) are not stripped by Zod.
  */
 export async function executeTool(
   toolName: ToolName,
   ctx: ToolContext,
-  params: unknown
+  params: unknown,
+  schemaOverrides?: Record<string, { description: string; parameters: z.ZodTypeAny }>
 ): Promise<ToolResult> {
   const WRITE_TOOLS: ToolName[] = [
     'create_order', 'update_order', 'update_order_status',
@@ -1745,7 +1813,7 @@ export async function executeTool(
       )
     : params;
 
-  const schema = toolSchemas[toolName].parameters;
+  const schema = (schemaOverrides?.[toolName]?.parameters) ?? toolSchemas[toolName].parameters;
   const parseResult = schema.safeParse(coercedParams);
   
   if (!parseResult.success) {

@@ -56,7 +56,8 @@ async function terminateOrders(orderIds: string[], correosCosts?: Record<string,
     const res = await fetch('/api/logistics/orders/terminate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `Terminate failed: ${res.status}`);
+        const details = Array.isArray(data.details) ? data.details.join('\n') : '';
+        throw new Error(details || data.error || `Terminate failed: ${res.status}`);
     }
     return res.json();
 }

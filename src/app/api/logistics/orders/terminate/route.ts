@@ -61,21 +61,34 @@ export async function POST(req: NextRequest) {
             crm_order_id: string; carrier: string | null;
             status: string; billed_week_id: number | null;
             correos_shipping_cost: number | null;
+            archived_at: Date | null;
         }[]>(
-            `SELECT crm_order_id, carrier, status, billed_week_id, correos_shipping_cost
+            `SELECT crm_order_id, carrier, status, billed_week_id, correos_shipping_cost, archived_at
              FROM lm_orders WHERE crm_order_id IN (${placeholders})`,
             ...orderIds
         );
 
         const orderMap = new Map(orders.map(o => [o.crm_order_id, o]));
 
+        // Orders that were previously billed but then restored (archived_at cleared).
+        // These only need re-archiving, not re-billing.
+        const rearchiveIds: string[] = [];
+
         const errors: string[] = [];
         for (const id of orderIds) {
             const o = orderMap.get(id);
             if (!o) { errors.push(`${id}: no existe en logistics`); continue; }
-            if (o.status !== 'Entregado') { errors.push(`${id}: estado ${o.status}, se requiere Entregado`); continue; }
-            if (o.billed_week_id != null) { errors.push(`${id}: ya facturada`); continue; }
-            if (o.carrier === 'correos') {
+            if (o.status !== 'Entregado' && o.status !== 'Devuelto') { errors.push(`${id}: estado ${o.status}, se requiere Entregado o Devuelto`); continue; }
+            if (o.billed_week_id != null) {
+                if (o.archived_at == null) {
+                    // Restored order — already billed, just needs re-archiving
+                    rearchiveIds.push(id);
+                } else {
+                    errors.push(`${id}: ya facturada y archivada`);
+                }
+                continue;
+            }
+            if (o.carrier === 'correos' && o.status === 'Entregado') {
                 const existingCost = o.correos_shipping_cost;
                 const providedCost = correosCosts?.[id];
                 if (existingCost == null && (providedCost == null || isNaN(providedCost) || providedCost < 0)) {
@@ -84,7 +97,10 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        if (errors.length > 0) {
+        // Filter out rearchive IDs from the main billing flow
+        const freshIds = orderIds.filter(id => !rearchiveIds.includes(id) && !errors.some(e => e.startsWith(id)));
+
+        if (errors.length > 0 && freshIds.length === 0 && rearchiveIds.length === 0) {
             return NextResponse.json({ error: 'Órdenes inválidas', details: errors }, { status: 400 });
         }
 
@@ -110,45 +126,62 @@ export async function POST(req: NextRequest) {
                 weekId = inserted[0].id;
             }
 
-            const nonCorreosIds = orderIds.filter((id: string) => {
-                const o = orderMap.get(id)!;
-                return !(o.carrier === 'correos' && correosCosts?.[id] != null);
-            });
-            if (nonCorreosIds.length > 0) {
+            // --- Fresh orders: full billing + archiving ---
+            if (freshIds.length > 0) {
+                const nonCorreosIds = freshIds.filter((id: string) => {
+                    const o = orderMap.get(id)!;
+                    return !(o.carrier === 'correos' && correosCosts?.[id] != null);
+                });
+                if (nonCorreosIds.length > 0) {
+                    await tx.$executeRawUnsafe(
+                        `UPDATE lm_orders
+                         SET billed_week_id = $1, billed_at = NOW(), archived_at = NOW()
+                         WHERE crm_order_id = ANY($2::text[]) AND billed_week_id IS NULL`,
+                        weekId, nonCorreosIds
+                    );
+                }
+
+                const correosWithCost = freshIds.filter((id: string) => {
+                    const o = orderMap.get(id)!;
+                    return o.carrier === 'correos' && correosCosts?.[id] != null;
+                });
+                for (const id of correosWithCost) {
+                    await tx.$executeRawUnsafe(
+                        `UPDATE lm_orders
+                         SET billed_week_id = $1, billed_at = NOW(), archived_at = NOW(),
+                             correos_shipping_cost = $2
+                         WHERE crm_order_id = $3 AND billed_week_id IS NULL`,
+                        weekId, correosCosts![id], id
+                    );
+                }
+            }
+
+            // --- Re-archive orders: already billed, just set archived_at ---
+            if (rearchiveIds.length > 0) {
                 await tx.$executeRawUnsafe(
                     `UPDATE lm_orders
-                     SET billed_week_id = $1, billed_at = NOW(), archived_at = NOW()
-                     WHERE crm_order_id = ANY($2::text[]) AND billed_week_id IS NULL`,
-                    weekId, nonCorreosIds
+                     SET archived_at = NOW()
+                     WHERE crm_order_id = ANY($1::text[]) AND archived_at IS NULL`,
+                    rearchiveIds
                 );
             }
 
-            const correosWithCost = orderIds.filter((id: string) => {
-                const o = orderMap.get(id)!;
-                return o.carrier === 'correos' && correosCosts?.[id] != null;
-            });
-            for (const id of correosWithCost) {
-                await tx.$executeRawUnsafe(
-                    `UPDATE lm_orders
-                     SET billed_week_id = $1, billed_at = NOW(), archived_at = NOW(),
-                         correos_shipping_cost = $2
-                     WHERE crm_order_id = $3 AND billed_week_id IS NULL`,
-                    weekId, correosCosts![id], id
-                );
-            }
-
+            // --- Log events for all processed orders ---
+            const allProcessedIds = [...freshIds, ...rearchiveIds];
             const payloadJson = JSON.stringify({ weekId, weekStart: monday, weekEnd: sunday });
-            const eventValues = orderIds.map((_: string, i: number) => {
+            const eventValues = allProcessedIds.map((_: string, i: number) => {
                 const base = i * 3;
                 return `($${base + 1}, 'terminated', $${base + 2}::jsonb, $${base + 3})`;
             }).join(', ');
-            const eventParams = orderIds.flatMap((id: string) => [id, payloadJson, actor]);
-            await tx.$executeRawUnsafe(
-                `INSERT INTO lm_order_events (crm_order_id, event_type, payload, actor) VALUES ${eventValues}`,
-                ...eventParams
-            );
+            const eventParams = allProcessedIds.flatMap((id: string) => [id, payloadJson, actor]);
+            if (allProcessedIds.length > 0) {
+                await tx.$executeRawUnsafe(
+                    `INSERT INTO lm_order_events (crm_order_id, event_type, payload, actor) VALUES ${eventValues}`,
+                    ...eventParams
+                );
+            }
 
-            return { weekId, billedCount: orderIds.length, weekStart: monday, weekEnd: sunday };
+            return { weekId, billedCount: freshIds.length, rearchivedCount: rearchiveIds.length, weekStart: monday, weekEnd: sunday };
         });
 
         return NextResponse.json({ success: true, ...result });

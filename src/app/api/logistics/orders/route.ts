@@ -216,7 +216,14 @@ export async function PATCH(req: NextRequest) {
             if (lmStatus !== undefined) { params.push(lmStatus); sets.unshift(`status=$${params.length}`); }
             if (isContraEntrega !== undefined) { params.push(isContraEntrega); sets.unshift(`is_contra_entrega=$${params.length}`); }
             if (contraEntregaCollected !== undefined) { params.push(contraEntregaCollected); sets.unshift(`contraentrega_collected=$${params.length}`); }
-            if (archivedAt !== undefined) { params.push(archivedAt ? new Date(archivedAt) : null); sets.unshift(`archived_at=$${params.length}`); }
+            if (archivedAt !== undefined) {
+                params.push(archivedAt ? new Date(archivedAt) : null);
+                sets.unshift(`archived_at=$${params.length}`);
+                if (!archivedAt) {
+                    // Restoring: also clear billing fields so the order can be re-terminated
+                    sets.push('billed_week_id=NULL', 'billed_at=NULL');
+                }
+            }
 
             if (lmStatus !== undefined) {
                 if (lmStatus === 'Entregado') {

@@ -3,194 +3,15 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/db';
 import ExcelJS from 'exceljs';
-
-interface ImportResult {
-  success: boolean;
-  imported: number;
-  failed: number;
-  errors: Array<{ row: number; message: string }>;
-}
-
-// Normalize header keys: lowercase, no accents, underscores
-function normalizeKey(key: string): string {
-  if (!key) return '';
-  return key
-    .toString()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .replace(/__+/g, '_');
-}
-
-// Convert Excel date serial to ISO date
-function excelDateToISO(val: any): string {
-  if (!val) return '';
-  if (typeof val === 'string') {
-    const s = val.trim();
-    if (!s) return '';
-    const d = new Date(s);
-    return isNaN(d.getTime()) ? s : d.toISOString().slice(0, 10);
-  }
-  if (typeof val === 'number') {
-    const ms = Math.round((val - 25569) * 86400 * 1000);
-    return new Date(ms).toISOString().slice(0, 10);
-  }
-  return '';
-}
-
-function toNumber(val: any): number {
-  if (val === null || val === undefined || val === '') return 0;
-  const n = Number(String(val).toString().replace(/[^0-9.-]/g, ''));
-  return isNaN(n) ? 0 : n;
-}
-
-// ============================================
-// ORDERS IMPORT - Flexible Column Mapping
-// ============================================
-const orderHeaderMap: Record<string, string> = {
-  // Order ID variations
-  'orderid': 'orderId',
-  'id_pedido': 'orderId',
-  'numero_orden': 'orderId',
-  'numero_de_orden': 'orderId',
-  'orden': 'orderId',
-  'pedido': 'orderId',
-  'no_orden': 'orderId',
-  
-  // Order Type (EA/RA)
-  'tipo': 'orderType',
-  'tipo_pedido': 'orderType',
-  'tipo_de_pedido': 'orderType',
-  'ea': 'orderType',
-  'ra': 'orderType',
-  'tipo_orden': 'orderType',
-  
-  // Status
-  'estado': 'status',
-  'estatus': 'status',
-  'status': 'status',
-  'estado_pedido': 'status',
-  
-  // Delivery
-  'entrega': 'delivery',
-  'estado_entrega': 'delivery',
-  
-  // Customer info
-  'cliente': 'customerName',
-  'nombre_cliente': 'customerName',
-  'nombre': 'customerName',
-  'nombre_del_cliente': 'customerName',
-  'comprador': 'customerName',
-  
-  'telefono': 'phone',
-  'phone': 'phone',
-  'tel': 'phone',
-  'celular': 'phone',
-  'movil': 'phone',
-  
-  'email': 'email',
-  'correo': 'email',
-  'correo_electronico': 'email',
-  'e_mail': 'email',
-  
-  'negocio': 'business',
-  'empresa': 'business',
-  'compania': 'business',
-  
-  // Product info
-  'producto': 'product',
-  'articulo': 'product',
-  'item': 'product',
-  'descripcion': 'product',
-  
-  'cantidad': 'quantity',
-  'qty': 'quantity',
-  'cant': 'quantity',
-  'unidades': 'quantity',
-  
-  'tamano': 'size',
-  'talla': 'size',
-  'medida': 'size',
-  
-  'color': 'color',
-  
-  'empaque': 'packaging',
-  'packaging': 'packaging',
-  'embalaje': 'packaging',
-  
-  'personalizacion': 'customization',
-  'personalizacion_detalle': 'customization',
-  'customizacion': 'customization',
-  'custom': 'customization',
-  
-  'comentarios': 'comments',
-  'comentario': 'comments',
-  'notas': 'comments',
-  'observaciones': 'comments',
-  
-  // Pricing
-  'total': 'total',
-  'precio': 'total',
-  'precio_total': 'total',
-  'monto': 'total',
-  
-  'iva': 'iva',
-  'impuesto': 'iva',
-  
-  'envio': 'shippingCost',
-  'costo_envio': 'shippingCost',
-  'costo_de_envio': 'shippingCost',
-  
-  'costo_producto': 'productCost',
-  'precio_producto': 'productCost',
-  'costo': 'productCost',
-  
-  // Address (for EA - shipping)
-  'direccion': 'address',
-  'domicilio': 'address',
-  'direccion_entrega': 'address',
-  
-  'provincia': 'province',
-  'canton': 'canton',
-  'distrito': 'district',
-  'barrio': 'district',
-  
-  'mensajeria': 'courier',
-  'courier': 'courier',
-  'paqueteria': 'courier',
-  'servicio_envio': 'courier',
-  
-  // Funnel/Source
-  'embudo': 'funnel',
-  'funnel': 'funnel',
-  'fuente': 'funnel',
-  'origen': 'funnel',
-  
-  // Dates
-  'fecha_esperada': 'expectedDate',
-  'fecha_entrega': 'expectedDate',
-  'fecha_de_entrega': 'expectedDate',
-  
-  'dia_de_venta': 'saleDate',
-  'fecha_venta': 'saleDate',
-  'fecha_de_venta': 'saleDate',
-  'fecha': 'saleDate',
-  
-  'timestamp': 'timestamp',
-  'fecha_hora': 'timestamp',
-  
-  'fecha_acordada': 'agreedDate',
-  'fecha_retirada': 'pickupDate',
-  'fecha_de_retiro': 'pickupDate',
-  
-  // Seller
-  'vendedor': 'seller',
-  'vendedora': 'seller',
-  'usuario': 'seller',
-  'username': 'seller',
-};
+import {
+  normalizeKey,
+  excelDateToISO,
+  toNumber,
+  orderHeaderMap,
+  inventoryHeaderMap,
+  parseExcelSheet,
+  type ImportResult,
+} from '@/lib/import-helpers';
 
 async function importOrders(rows: any[], tenantId: string): Promise<ImportResult> {
   const result: ImportResult = { success: true, imported: 0, failed: 0, errors: [] };
@@ -333,73 +154,8 @@ async function importOrders(rows: any[], tenantId: string): Promise<ImportResult
 }
 
 // ============================================
-// INVENTORY/PRODUCTS IMPORT - Flexible Column Mapping
+// INVENTORY/PRODUCTS IMPORT
 // ============================================
-const inventoryHeaderMap: Record<string, string> = {
-  // SKU variations
-  'codigo': 'sku',
-  'sku': 'sku',
-  'code': 'sku',
-  'id': 'sku',
-  'producto_id': 'sku',
-  
-  // Name components (will be combined)
-  'tipo': 'tipo',
-  'type': 'tipo',
-  'categoria_principal': 'tipo',
-  
-  'color': 'color',
-  'colour': 'color',
-  
-  'capacidad': 'capacidad',
-  'capacidad_oz': 'capacidad',
-  'capacity': 'capacidad',
-  'size': 'capacidad',
-  'tamano': 'capacidad',
-  
-  // Stock
-  'cant': 'currentStock',
-  'cantidad': 'currentStock',
-  'stock': 'currentStock',
-  'stock_actual': 'currentStock',
-  'existencia': 'currentStock',
-  'qty': 'currentStock',
-  
-  // Category
-  'categoria': 'category',
-  'category': 'category',
-  'tipo_producto': 'category',
-  
-  // Pricing
-  'precio_de_venta': 'sellingPrice',
-  'precio_venta': 'sellingPrice',
-  'precio': 'sellingPrice',
-  'price': 'sellingPrice',
-  'venta': 'sellingPrice',
-  
-  'costo_unitario': 'unitCost',
-  'costo': 'unitCost',
-  'cost': 'unitCost',
-  'precio_costo': 'unitCost',
-  
-  // Location
-  'ubicacion': 'location',
-  'location': 'location',
-  'almacen': 'location',
-  'bodega': 'location',
-  
-  // Description
-  'descripcion': 'description',
-  'description': 'description',
-  'detalles': 'description',
-  'notas': 'description',
-  
-  // Supplier
-  'proveedor': 'supplier',
-  'supplier': 'supplier',
-  'vendor': 'supplier',
-};
-
 async function importInventory(rows: any[], tenantId: string): Promise<ImportResult> {
   const result: ImportResult = { success: true, imported: 0, failed: 0, errors: [] };
   
@@ -565,27 +321,12 @@ export async function POST(request: NextRequest) {
     console.log('📄 Parsing Excel file...');
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);
-    const sheet = workbook.worksheets[0];
+    // Support sheet selection via form data
+    const sheetIndexParam = formData.get('sheetIndex') as string;
+    const sheetIdx = sheetIndexParam ? parseInt(sheetIndexParam, 10) : 0;
+    const sheet = workbook.worksheets[Math.min(sheetIdx, workbook.worksheets.length - 1)];
     const sheetName = sheet.name;
-    // Convert exceljs worksheet to array of objects (like xlsx sheet_to_json)
-    const headerRow = sheet.getRow(1);
-    const headers: string[] = [];
-    headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      headers[colNumber - 1] = cell.value?.toString() || '';
-    });
-    const rows: Record<string, any>[] = [];
-    for (let i = 2; i <= sheet.rowCount; i++) {
-      const row = sheet.getRow(i);
-      const rowData: Record<string, any> = {};
-      let hasData = false;
-      headers.forEach((header, idx) => {
-        const cell = row.getCell(idx + 1);
-        const value = cell.value;
-        rowData[header] = value !== null && value !== undefined ? value : '';
-        if (value !== null && value !== undefined && value !== '') hasData = true;
-      });
-      if (hasData) rows.push(rowData);
-    }
+    const { rows } = parseExcelSheet(sheet);
 
     console.log(`📊 Found ${rows.length} rows in sheet "${sheetName}"`);
 

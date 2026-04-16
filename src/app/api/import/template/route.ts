@@ -32,10 +32,10 @@ const templates = {
   products: {
     filename: 'plantilla_inventario.xlsx',
     headers: [
-      'Código', 'Tipo', 'Color', 'Capacidad (oz)', 'cant', 'Categoria', 'precio de venta', 'Ubicacion', 'costo unitario', 'descripcion'
+      'Código', 'Tipo', 'Color', 'Capacidad (oz)', 'cant', 'Categoria', 'precio de venta', 'Ubicacion', 'costo unitario', 'descripcion', 'Proveedor'
     ],
     example: [
-      'TAZA-001', 'Taza', 'Rojo', '12', '50', 'Vajilla', '5000', 'Estante A-3', '2500', 'Taza de cerámica roja con capacidad de 12 oz'
+      'TAZA-001', 'Taza', 'Rojo', '12', '50', 'Vajilla', '5000', 'Estante A-3', '2500', 'Taza de cerámica roja con capacidad de 12 oz', 'Proveedor XYZ'
     ]
   }
 };

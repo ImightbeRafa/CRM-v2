@@ -59,15 +59,15 @@ export async function GET(req: NextRequest) {
       dateFilter.lte = end;
     }
 
+    // NOTE: We intentionally DO NOT filter out unconfirmed contra-entrega (COD) orders here.
+    // /produccion counts every saved order, so stats must too or the totals won't reconcile.
     const whereClause: any = {
       tenantId,
-      NOT: { contraEntrega: true, cePaymentConfirmed: false },
     };
     if (Object.keys(dateFilter).length > 0) {
-      const saleDateFilter = {
-        gte: dateFilter.gte?.toISOString(),
-        lte: dateFilter.lte?.toISOString()
-      };
+      const saleDateFilter: any = {};
+      if (dateFilter.gte) saleDateFilter.gte = dateFilter.gte.toISOString();
+      if (dateFilter.lte) saleDateFilter.lte = dateFilter.lte.toISOString();
       whereClause.OR = [
         { saleDate: saleDateFilter },
         { saleDate: null, timestamp: dateFilter }

@@ -63,15 +63,15 @@ export async function GET(req: NextRequest) {
       dateFilter.lte = end;
     }
 
+    // NOTE: We intentionally DO NOT filter out unconfirmed contra-entrega (COD) orders here.
+    // /produccion counts every saved order, so stats must too or the totals won't reconcile.
     const whereClause: any = {
       tenantId,
-      NOT: { contraEntrega: true, cePaymentConfirmed: false },
     };
     if (Object.keys(dateFilter).length > 0) {
-      const saleDateFilter = {
-        gte: dateFilter.gte?.toISOString(),
-        lte: dateFilter.lte?.toISOString()
-      };
+      const saleDateFilter: any = {};
+      if (dateFilter.gte) saleDateFilter.gte = dateFilter.gte.toISOString();
+      if (dateFilter.lte) saleDateFilter.lte = dateFilter.lte.toISOString();
       whereClause.OR = [
         { saleDate: saleDateFilter },
         { saleDate: null, timestamp: dateFilter }
@@ -101,19 +101,32 @@ export async function GET(req: NextRequest) {
     // Calculate trends (compare with previous period)
     let trends = null;
     if (startDate && endDate) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
+      const start = new Date(startDate + 'T00:00:00');
+      const end = new Date(endDate + 'T23:59:59.999');
       const periodLength = end.getTime() - start.getTime();
-      
+
       const previousStart = new Date(start.getTime() - periodLength);
       const previousEnd = new Date(start.getTime());
 
-      const previousWhereClause = {
+      // Keep previous-period WHERE consistent with current-period logic:
+      // match on saleDate when available, else fall back to timestamp.
+      const previousWhereClause: any = {
         tenantId,
-        timestamp: {
-          gte: previousStart,
-          lt: previousEnd,
-        },
+        OR: [
+          {
+            saleDate: {
+              gte: previousStart.toISOString(),
+              lt: previousEnd.toISOString(),
+            },
+          },
+          {
+            saleDate: null,
+            timestamp: {
+              gte: previousStart,
+              lt: previousEnd,
+            },
+          },
+        ],
       };
 
       const [prevOrders, prevRevenue] = await Promise.all([

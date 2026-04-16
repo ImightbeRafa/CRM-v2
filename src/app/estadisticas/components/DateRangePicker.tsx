@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { Calendar } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import axios from 'axios';
+import { Calendar, Loader2 } from 'lucide-react';
 import { format, subDays, subMonths, startOfMonth, endOfMonth, startOfYear } from 'date-fns';
 
 interface DateRangePickerProps {
@@ -15,7 +16,55 @@ export default function DateRangePicker({
   endDate,
   onDateChange,
 }: DateRangePickerProps) {
-  const quickRanges = [
+  // Earliest date available for this tenant (first order / tenant creation).
+  // Used by the "Max" quick range to show all-time stats.
+  const [earliestDate, setEarliestDate] = useState<string | null>(null);
+  const [loadingMax, setLoadingMax] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await axios.get('/api/estadisticas/earliest-date');
+        if (!cancelled && res.data?.earliestDate) {
+          setEarliestDate(res.data.earliestDate);
+        }
+      } catch (err) {
+        // Non-fatal: the Max button will fetch on demand as a fallback.
+        console.warn('[DateRangePicker] Failed to prefetch earliest date', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleMaxClick = async () => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    if (earliestDate) {
+      onDateChange(earliestDate, today);
+      return;
+    }
+    try {
+      setLoadingMax(true);
+      const res = await axios.get('/api/estadisticas/earliest-date');
+      const fetched: string | undefined = res.data?.earliestDate;
+      if (fetched) {
+        setEarliestDate(fetched);
+        onDateChange(fetched, today);
+      } else {
+        // Absolute fallback: use a very early date to cover all history.
+        onDateChange('2000-01-01', today);
+      }
+    } catch (err) {
+      console.error('[DateRangePicker] Failed to load earliest date', err);
+      onDateChange('2000-01-01', today);
+    } finally {
+      setLoadingMax(false);
+    }
+  };
+
+  const quickRanges: Array<{ label: string; onClick: () => void; loading?: boolean }> = [
     {
       label: 'Últimos 7 días',
       onClick: () => {
@@ -58,6 +107,11 @@ export default function DateRangePicker({
         onDateChange(format(start, 'yyyy-MM-dd'), format(now, 'yyyy-MM-dd'));
       },
     },
+    {
+      label: 'Max',
+      onClick: handleMaxClick,
+      loading: loadingMax,
+    },
   ];
 
   return (
@@ -69,15 +123,31 @@ export default function DateRangePicker({
 
       {/* Quick Range Buttons */}
       <div className="flex flex-wrap gap-2">
-        {quickRanges.map((range) => (
-          <button
-            key={range.label}
-            onClick={range.onClick}
-            className="px-3 py-1.5 text-sm bg-muted hover:bg-accent text-muted-foreground hover:text-accent-foreground rounded-md transition-colors"
-          >
-            {range.label}
-          </button>
-        ))}
+        {quickRanges.map((range) => {
+          const isMax = range.label === 'Max';
+          return (
+            <button
+              key={range.label}
+              onClick={range.onClick}
+              disabled={range.loading}
+              title={
+                isMax
+                  ? earliestDate
+                    ? `Desde ${earliestDate} hasta hoy (todo el historial)`
+                    : 'Desde el inicio del negocio hasta hoy'
+                  : undefined
+              }
+              className={
+                isMax
+                  ? 'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors border border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300 hover:bg-blue-500/20 disabled:opacity-60 disabled:cursor-not-allowed'
+                  : 'px-3 py-1.5 text-sm bg-muted hover:bg-accent text-muted-foreground hover:text-accent-foreground rounded-md transition-colors'
+              }
+            >
+              {range.loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {range.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Custom Date Inputs */}

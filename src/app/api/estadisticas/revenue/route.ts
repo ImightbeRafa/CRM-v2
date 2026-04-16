@@ -63,11 +63,12 @@ export async function GET(req: NextRequest) {
     const end = new Date(endDate + 'T23:59:59.999');
 
     // Get all orders in the date range (with tenant isolation)
-    // Use saleDate when available for more accurate sales reporting
+    // Use saleDate when available for more accurate sales reporting.
+    // NOTE: We intentionally DO NOT filter out unconfirmed contra-entrega (COD) orders here.
+    // /produccion counts every saved order, so stats must too or the totals won't reconcile.
     const orders = await prisma.order.findMany({
       where: {
         tenantId,
-        NOT: { contraEntrega: true, cePaymentConfirmed: false },
         OR: [
           {
             saleDate: {

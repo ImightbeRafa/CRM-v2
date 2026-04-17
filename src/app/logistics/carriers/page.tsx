@@ -739,6 +739,27 @@ export default function CarriersPage() {
     const byDate = groupByDate(unassigned);
     const provinces = Array.from(new Set(orders.map(o => o.province).filter(Boolean))) as string[];
     const dates = Array.from(new Set(orders.map(o => dateKey(o.timestamp)))).sort((a, b) => b.localeCompare(a));
+    const selectedUnassigned = unassigned.filter(o => selectedIds.has(o.id));
+    const selectedUnassignedCount = selectedUnassigned.length;
+    const allVisibleUnassignedSelected = unassigned.length > 0 && selectedUnassignedCount === unassigned.length;
+
+    function toggleAllVisibleUnassigned() {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (allVisibleUnassignedSelected) {
+                unassigned.forEach(o => next.delete(o.id));
+            } else {
+                unassigned.forEach(o => next.add(o.id));
+            }
+            return next;
+        });
+    }
+
+    function assignSelectedUnassignedToCorreos() {
+        const ids = selectedUnassigned.map(o => o.id);
+        if (ids.length === 0) return;
+        openCorreosVerification(ids);
+    }
 
     if (loading) return (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
@@ -920,6 +941,19 @@ export default function CarriersPage() {
                                 </p>
                             </div>
                         </div>
+                        {unassigned.length > 0 && (
+                            <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+                                <button onClick={toggleAllVisibleUnassigned}
+                                    style={{ flex: 1, minWidth: 110, padding: '5px 8px', borderRadius: 6, border: '1px solid rgba(251,191,36,0.28)', background: allVisibleUnassignedSelected ? 'rgba(251,191,36,0.14)' : 'rgba(255,255,255,0.04)', color: allVisibleUnassignedSelected ? '#fbbf24' : 'rgba(255,255,255,0.5)', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                                    {allVisibleUnassignedSelected ? <CheckSquare size={11} /> : <Square size={11} />}
+                                    {allVisibleUnassignedSelected ? 'Deseleccionar' : 'Seleccionar todo'}
+                                </button>
+                                <button onClick={assignSelectedUnassignedToCorreos} disabled={selectedUnassignedCount === 0}
+                                    style={{ flex: 1, minWidth: 110, padding: '5px 8px', borderRadius: 6, border: '1px solid rgba(96,165,250,0.35)', background: selectedUnassignedCount > 0 ? 'rgba(96,165,250,0.12)' : 'transparent', color: selectedUnassignedCount > 0 ? '#60a5fa' : 'rgba(255,255,255,0.2)', fontSize: 10.5, fontWeight: 700, cursor: selectedUnassignedCount > 0 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                                    <Mail size={11} /> Correos {selectedUnassignedCount > 0 ? `(${selectedUnassignedCount})` : ''}
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     {/* Scrollable cards */}
@@ -940,12 +974,20 @@ export default function CarriersPage() {
                                 </span>
                                 {g.orders.map(o => {
                                     const tc = getTenantColor(o.tenantId);
+                                    const selected = selectedIds.has(o.id);
                                     return (
-                                        <div key={o.id} style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', marginBottom: 6, fontSize: 12 }}>
+                                        <div key={o.id} style={{ background: selected ? 'rgba(96,165,250,0.1)' : 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: selected ? '1px solid rgba(96,165,250,0.45)' : '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', marginBottom: 6, fontSize: 12 }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 5 }}>
-                                                <div>
-                                                    <p style={{ color: '#F2F2F2', fontWeight: 600, margin: 0, fontSize: 12 }}>{o.customerName}</p>
-                                                    <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 9.5 }}>#{o.orderId}</p>
+                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
+                                                    <button type="button" onClick={() => onToggleSelect(o.id)}
+                                                        style={{ marginTop: 1, background: 'none', border: 'none', padding: 0, color: selected ? '#60a5fa' : 'rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                                                        aria-label={selected ? 'Deseleccionar orden' : 'Seleccionar orden'}>
+                                                        {selected ? <CheckSquare size={14} /> : <Square size={14} />}
+                                                    </button>
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <p style={{ color: '#F2F2F2', fontWeight: 600, margin: 0, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.customerName}</p>
+                                                        <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 9.5 }}>#{o.orderId}</p>
+                                                    </div>
                                                 </div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end' }}>
                                                     <span style={{ padding: '1px 7px', borderRadius: 20, background: `${tc}20`, color: tc, fontSize: 9.5, fontWeight: 700 }}>{getTenantName(o.tenantId)}</span>

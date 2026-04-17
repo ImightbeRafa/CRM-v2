@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getToken } from 'next-auth/jwt'
+import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,86 +27,69 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing recipient or content' }, { status: 400 })
     }
 
-    let account: { id: string; platform: string; accountId: string } | null = null
+    let account: { id: string; platform: string; accountId: string; accessToken?: string | null } | null = null
 
     if (socialAccountId) {
       const found = await db.socialAccount.findFirst({ where: { id: socialAccountId, tenantId } })
       if (!found) return NextResponse.json({ error: 'Social account not found' }, { status: 404 })
-      account = { id: found.id, platform: found.platform, accountId: found.accountId }
+      account = { id: found.id, platform: found.platform, accountId: found.accountId, accessToken: found.accessToken }
     } else if (platform && accountId) {
       const found = await db.socialAccount.findFirst({ where: { tenantId, platform, accountId } })
       if (!found) return NextResponse.json({ error: 'Social account not found' }, { status: 404 })
-      account = { id: found.id, platform: found.platform, accountId: found.accountId }
+      account = { id: found.id, platform: found.platform, accountId: found.accountId, accessToken: found.accessToken }
     } else {
       return NextResponse.json({ error: 'Missing socialAccountId or platform+accountId' }, { status: 400 })
     }
 
-    const now = new Date()
-    const saved = await db.chatMessage.create({
-      data: {
-        tenantId,
-        socialAccountId: account.id,
-        clientId: clientId ?? undefined,
-        orderId: orderId ?? undefined,
-        direction: 'outbound',
-        content,
-        metadata: { 
-          to: recipient,
-          provider: account.platform,
-          platform: account.platform
-        },
-        sentAt: now,
-        receivedAt: null,
-      }
-    })
+    if (!account.accessToken) {
+      return NextResponse.json({ error: `Missing ${account.platform} access token` }, { status: 400 })
+    }
 
     // Provider dispatch
-    let dispatchResult = 'queued'
+    let dispatchResult = 'sent'
+    let providerMessageId: string | undefined
+    let providerResponse: any = null
+
     if (account.platform === 'instagram') {
       try {
-        const social = await db.socialAccount.findFirst({ where: { id: account.id, tenantId } })
-        if (!social?.accessToken) {
-          throw new Error('Missing Instagram access token')
-        }
-
-        // Instagram Graph API send (using Facebook Graph API for Instagram Business)
+        const sendUrl = addAppSecretProofToUrl(buildMetaGraphUrl('me/messages'), account.accessToken)
         const igRes = await fetch(
-          `https://graph.facebook.com/v21.0/me/messages?access_token=${social.accessToken}`,
+          sendUrl,
           {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              Authorization: `Bearer ${account.accessToken}`,
+              'Content-Type': 'application/json',
+            },
             body: JSON.stringify({
+              messaging_type: 'RESPONSE',
               recipient: { id: recipient },
               message: { text: content }
             })
           }
         )
+        providerResponse = await igRes.json().catch(() => null)
         if (!igRes.ok) {
-          const err = await igRes.text()
-          console.error('[chat/send] Instagram send failed', err)
-          dispatchResult = 'failed'
-        } else {
-          dispatchResult = 'sent'
+          console.error('[chat/send] Instagram send failed', providerResponse)
+          return NextResponse.json(
+            { error: providerResponse?.error?.message || 'Instagram send failed', providerResponse },
+            { status: 502 }
+          )
         }
+        providerMessageId = providerResponse?.message_id || providerResponse?.messages?.[0]?.id
       } catch (e: any) {
         console.error('[chat/send] Instagram send error', e)
-        dispatchResult = 'error'
+        return NextResponse.json({ error: e.message || 'Instagram send error' }, { status: 502 })
       }
     } else if (account.platform === 'whatsapp') {
       try {
-        const social = await db.socialAccount.findFirst({ where: { id: account.id, tenantId } })
-        if (!social?.accessToken) {
-          throw new Error('Missing WhatsApp access token')
-        }
-
-        // WhatsApp Cloud API send message
-        // The accountId is the Phone Number ID
+        const sendUrl = addAppSecretProofToUrl(buildMetaGraphUrl(`${account.accountId}/messages`), account.accessToken)
         const waRes = await fetch(
-          `https://graph.facebook.com/v21.0/${social.accountId}/messages`,
+          sendUrl,
           {
             method: 'POST',
             headers: { 
-              'Authorization': `Bearer ${social.accessToken}`,
+              'Authorization': `Bearer ${account.accessToken}`,
               'Content-Type': 'application/json' 
             },
             body: JSON.stringify({
@@ -122,25 +106,51 @@ export async function POST(request: Request) {
         )
         
         const waData = await waRes.json()
+        providerResponse = waData
         
         if (!waRes.ok) {
           console.error('[chat/send] WhatsApp send failed', waData)
-          dispatchResult = 'failed'
-        } else {
-          console.log('[chat/send] WhatsApp message sent', { 
-            messageId: waData.messages?.[0]?.id,
-            to: recipient 
-          })
-          dispatchResult = 'sent'
+          return NextResponse.json(
+            { error: waData?.error?.message || 'WhatsApp send failed', providerResponse: waData },
+            { status: 502 }
+          )
         }
+
+        providerMessageId = waData.messages?.[0]?.id
+        console.log('[chat/send] WhatsApp message sent', { messageId: providerMessageId, to: recipient })
       } catch (e: any) {
         console.error('[chat/send] WhatsApp send error', e)
-        dispatchResult = 'error'
+        return NextResponse.json({ error: e.message || 'WhatsApp send error' }, { status: 502 })
       }
+    } else {
+      return NextResponse.json({ error: `Unsupported platform: ${account.platform}` }, { status: 400 })
     }
+
+    const now = new Date()
+    const saved = await db.chatMessage.create({
+      data: {
+        tenantId,
+        socialAccountId: account.id,
+        clientId: clientId ?? undefined,
+        orderId: orderId ?? undefined,
+        direction: 'outbound',
+        content,
+        metadata: { 
+          to: recipient,
+          provider: account.platform,
+          platform: account.platform,
+          providerMessageId,
+          providerDispatch: dispatchResult,
+          providerResponse,
+        },
+        sentAt: now,
+        receivedAt: null,
+      }
+    })
 
     return NextResponse.json({ success: true, message: saved, providerDispatch: dispatchResult })
   } catch (error) {
+    console.error('[chat/send] Internal error', error)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

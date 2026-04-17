@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
-import { cookies } from 'next/headers'
+import { getMetaGraphApiVersion } from '@/lib/meta-api'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic'
  * IMPORTANT: Uses META_APP_ID (main BetsyCRM app) for both WhatsApp and Instagram
  */
 export async function GET() {
-  const baseUrl = 'https://www.facebook.com/v21.0/dialog/oauth'
+  const baseUrl = `https://www.facebook.com/${getMetaGraphApiVersion()}/dialog/oauth`
   
   const appId = process.env.META_APP_ID
   const redirectUri = `${process.env.NEXTAUTH_URL}/api/auth/instagram/callback`

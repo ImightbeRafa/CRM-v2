@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { getInstagramAuthUrl } from '@/lib/instagram-oauth'
 
 interface SocialAccount {
   id: string
@@ -23,6 +22,7 @@ export default function SocialConfigPage() {
   // WhatsApp manual link form
   const [platform, setPlatform] = useState<'whatsapp' | 'instagram'>('whatsapp')
   const [accountId, setAccountId] = useState('')
+  const [whatsappBusinessAccountId, setWhatsappBusinessAccountId] = useState('')
   const [accessToken, setAccessToken] = useState('')
   const [showWhatsAppGuide, setShowWhatsAppGuide] = useState(false)
   const [validationError, setValidationError] = useState('')
@@ -31,6 +31,7 @@ export default function SocialConfigPage() {
   const [fbReady, setFbReady] = useState(false)
   const META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID as string | undefined
   const FB_LOGIN_CONFIG_ID = process.env.NEXT_PUBLIC_FB_LOGIN_CONFIG_ID as string | undefined
+  const META_GRAPH_API_VERSION = (process.env.NEXT_PUBLIC_META_GRAPH_API_VERSION as string | undefined) || 'v24.0'
 
   const isOwnerOrMaster = session?.user?.membershipRole === 'OWNER' || session?.user?.role === 'MASTER'
 
@@ -60,13 +61,13 @@ export default function SocialConfigPage() {
           appId: META_APP_ID || '',
           autoLogAppEvents: true,
           xfbml: true,
-          version: 'v21.0',
+          version: META_GRAPH_API_VERSION,
         })
         setFbReady(true)
       }
     }
     document.body.appendChild(script)
-  }, [META_APP_ID])
+  }, [META_APP_ID, META_GRAPH_API_VERSION])
 
   // Capture WA Embedded Signup message events (IDs + signals)
   // Per Meta guidelines: parse JSON and check for WA_EMBEDDED_SIGNUP type
@@ -298,12 +299,18 @@ export default function SocialConfigPage() {
       const res = await fetch('/api/social/link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, accountId: accountId.trim(), accessToken: accessToken.trim() })
+        body: JSON.stringify({
+          platform,
+          accountId: accountId.trim(),
+          whatsappBusinessAccountId: whatsappBusinessAccountId.trim() || undefined,
+          accessToken: accessToken.trim()
+        })
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Error desconocido')
       alert('✅ Cuenta de WhatsApp vinculada exitosamente')
       setAccountId('')
+      setWhatsappBusinessAccountId('')
       setAccessToken('')
       setValidationError('')
       fetchAccounts()
@@ -485,7 +492,7 @@ export default function SocialConfigPage() {
               </li>
               <li className="flex gap-2">
                 <span className="font-bold min-w-[20px]">4.</span>
-                <span>Pega ambos valores en el formulario abajo y haz click en <strong>Vincular</strong></span>
+                <span>Pega los valores en el formulario abajo y haz click en <strong>Vincular</strong></span>
               </li>
             </ol>
             <div className="mt-4 pt-3 border-t border-blue-200">
@@ -526,6 +533,24 @@ export default function SocialConfigPage() {
             />
             <p className="text-xs text-muted-foreground mt-1">
               Copia esto de Meta Dashboard → WhatsApp → API Setup (debajo de tu número de prueba)
+            </p>
+          </div>
+
+          <div>
+            <label htmlFor="whatsappBusinessAccountId" className="block text-sm font-semibold mb-2">
+              WhatsApp Business Account ID <span className="text-muted-foreground font-normal">(opcional, recomendado)</span>
+            </label>
+            <input
+              id="whatsappBusinessAccountId"
+              type="text"
+              value={whatsappBusinessAccountId}
+              onChange={(e) => setWhatsappBusinessAccountId(e.target.value)}
+              className="border border-border rounded-lg px-4 py-3 w-full focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              placeholder="123456789012345"
+              disabled={linking}
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              En Meta aparece como WhatsApp Business Account ID. Ayuda a suscribir correctamente los webhooks.
             </p>
           </div>
 

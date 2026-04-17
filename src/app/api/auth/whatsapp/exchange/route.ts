@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { prisma } from '@/lib/db'
-import { addAppSecretProofToUrl } from '@/lib/meta-api'
+import { buildMetaGraphUrl, subscribeWhatsAppApp } from '@/lib/meta-api'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,6 +31,12 @@ export async function POST(request: NextRequest) {
     const phoneNumberId: string | null =
       message?.data?.phone_number_id ||
       message?.phone_number_id ||
+      null
+    const whatsappBusinessAccountId: string | null =
+      message?.data?.waba_id ||
+      message?.data?.whatsapp_business_account_id ||
+      message?.waba_id ||
+      message?.whatsapp_business_account_id ||
       null
 
     // Exchange code for business token (Embedded Signup)
@@ -86,7 +92,7 @@ export async function POST(request: NextRequest) {
         'https://www.facebook.com/connect/login_success.html',
       ].filter(uri => uri !== undefined) // Keep null, but remove undefined
       
-      const url = `https://graph.facebook.com/v24.0/oauth/access_token`
+      const url = buildMetaGraphUrl('oauth/access_token')
       
       // Try each redirect_uri candidate until one works
       for (let i = 0; i < redirectUriCandidates.length; i++) {
@@ -211,30 +217,22 @@ export async function POST(request: NextRequest) {
     // If we have phone number id and token, subscribe first
     if (phoneNumberId && businessToken) {
       try {
-        const subscribeUrl = `https://graph.facebook.com/v24.0/${encodeURIComponent(phoneNumberId)}/subscribed_apps`
-        const subscribeUrlWithProof = addAppSecretProofToUrl(subscribeUrl, businessToken)
-        
-        const form = new URLSearchParams({ 
-          access_token: businessToken,
-          subscribed_fields: 'messages'
+        const sub = await subscribeWhatsAppApp({
+          accessToken: businessToken,
+          phoneNumberId,
+          whatsappBusinessAccountId,
         })
-        
-        const subRes = await fetch(subscribeUrlWithProof, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: form,
-        })
-        const subText = await subRes.text()
-        if (!subRes.ok) {
+
+        if (!sub.ok) {
           console.warn('[wa/exchange] subscribed_apps failed', { 
             phoneNumberId, 
-            status: subRes.status, 
-            subText,
+            targetId: sub.targetId,
+            status: sub.status, 
+            data: sub.data,
             hasAppSecret: Boolean(process.env.META_APP_SECRET),
-            urlUsed: subscribeUrlWithProof.replace(/appsecret_proof=[^&]+/, 'appsecret_proof=***')
           })
         } else {
-          console.log('[wa/exchange] subscribed_apps success', { phoneNumberId, subText })
+          console.log('[wa/exchange] subscribed_apps success', { phoneNumberId, targetId: sub.targetId })
         }
       } catch (e) {
         console.warn('[wa/exchange] subscribed_apps error', e)

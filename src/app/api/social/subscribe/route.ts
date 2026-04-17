@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { prisma } from '@/lib/db'
+import { subscribeWhatsAppApp } from '@/lib/meta-api'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,20 +35,28 @@ export async function POST(request: NextRequest) {
     if (acc.platform === 'whatsapp') {
       if (!acc.accessToken) return NextResponse.json({ error: 'Missing access token for WhatsApp account' }, { status: 400 })
       try {
-        const subscribeUrl = `https://graph.facebook.com/v21.0/${encodeURIComponent(acc.accountId)}/subscribed_apps`
-        const form = new URLSearchParams({ access_token: acc.accessToken })
-        const subRes = await fetch(subscribeUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: form
+        const sub = await subscribeWhatsAppApp({
+          accessToken: acc.accessToken,
+          phoneNumberId: acc.accountId,
         })
-        const subText = await subRes.text()
-        if (!subRes.ok) {
-          console.warn('[social/subscribe] WhatsApp subscribed_apps failed', { id, status: subRes.status, subText })
-          return NextResponse.json({ success: false, status: subRes.status, message: 'Subscribe failed', details: subText })
+
+        if (!sub.ok) {
+          console.warn('[social/subscribe] WhatsApp subscribed_apps failed', {
+            id,
+            targetId: sub.targetId,
+            status: sub.status,
+            data: sub.data,
+          })
+          return NextResponse.json({
+            success: false,
+            status: sub.status,
+            message: 'Subscribe failed',
+            details: sub.data,
+          })
         }
-        console.log('[social/subscribe] WhatsApp subscribed_apps success', { id, subText })
-        return NextResponse.json({ success: true })
+
+        console.log('[social/subscribe] WhatsApp subscribed_apps success', { id, targetId: sub.targetId })
+        return NextResponse.json({ success: true, targetId: sub.targetId })
       } catch (e: any) {
         console.warn('[social/subscribe] WhatsApp subscribed_apps error', e)
         return NextResponse.json({ error: e.message || 'Subscribe error' }, { status: 500 })

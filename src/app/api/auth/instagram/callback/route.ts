@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getToken } from 'next-auth/jwt'
-import { addAppSecretProofToUrl } from '@/lib/meta-api'
+import { addAppSecretProofToUrl, buildMetaGraphUrl, subscribePageToInstagramMessages } from '@/lib/meta-api'
 import { timingSafeEqual } from 'crypto'
 
 export const runtime = 'nodejs'
@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
       return new NextResponse(html, { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
     }
     
-    const tokenUrl = `https://graph.facebook.com/v21.0/oauth/access_token?${new URLSearchParams({
+    const tokenUrl = `${buildMetaGraphUrl('oauth/access_token')}?${new URLSearchParams({
       client_id: appId,
       client_secret: appSecret,
       redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/instagram/callback`,
@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Step 2: Get Facebook Pages connected to this user
-    const pagesUrl = `https://graph.facebook.com/v21.0/me/accounts?access_token=${fbAccessToken}`
+    const pagesUrl = `${buildMetaGraphUrl('me/accounts')}?access_token=${fbAccessToken}`
     const pagesUrlWithProof = addAppSecretProofToUrl(pagesUrl, fbAccessToken)
     
     const pagesRes = await fetch(pagesUrlWithProof)
@@ -165,7 +165,7 @@ export async function GET(request: NextRequest) {
 
     for (const page of pages) {
       // Try multiple fields to find Instagram account
-      const igAccountUrl = `https://graph.facebook.com/v21.0/${page.id}?fields=instagram_business_account,connected_instagram_account,instagram_accounts,name&access_token=${page.access_token}`
+      const igAccountUrl = `${buildMetaGraphUrl(`${page.id}`)}?fields=instagram_business_account,connected_instagram_account,instagram_accounts,name&access_token=${page.access_token}`
       const igAccountUrlWithProof = addAppSecretProofToUrl(igAccountUrl, page.access_token)
       
       try {
@@ -230,7 +230,7 @@ export async function GET(request: NextRequest) {
       console.log('[instagram/callback] Trying alternative: Instagram API with user token...')
       try {
         // Try to get Instagram accounts directly from the user's connected accounts
-        const igDirectUrl = `https://graph.facebook.com/v21.0/me/accounts?fields=instagram_business_account{id,username,name},name,access_token&access_token=${fbAccessToken}`
+        const igDirectUrl = `${buildMetaGraphUrl('me/accounts')}?fields=instagram_business_account{id,username,name},name,access_token&access_token=${fbAccessToken}`
         const igDirectRes = await fetch(igDirectUrl)
         const igDirectData = await igDirectRes.json()
         
@@ -267,7 +267,7 @@ export async function GET(request: NextRequest) {
     if (!igBusinessAccountId) {
       console.log('[instagram/callback] Trying alternative: /me/instagram_accounts...')
       try {
-        const meIgUrl = `https://graph.facebook.com/v21.0/me?fields=instagram_accounts{id,username}&access_token=${fbAccessToken}`
+        const meIgUrl = `${buildMetaGraphUrl('me')}?fields=instagram_accounts{id,username}&access_token=${fbAccessToken}`
         const meIgRes = await fetch(meIgUrl)
         const meIgData = await meIgRes.json()
         
@@ -348,28 +348,15 @@ export async function GET(request: NextRequest) {
 
     // Subscribe the Page to this app for messaging webhooks (required for IG messaging delivery)
     try {
-      const subscribeUrl = `https://graph.facebook.com/v21.0/${pageId}/subscribed_apps`
-      const subscribeUrlWithProof = addAppSecretProofToUrl(subscribeUrl, pageAccessToken)
-      
-      const subscribeParams = new URLSearchParams({
-        access_token: pageAccessToken,
-        subscribed_fields: 'messages'
-      })
-      const subRes = await fetch(subscribeUrlWithProof, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: subscribeParams
-      })
-      const subText = await subRes.text()
-      if (!subRes.ok) {
+      const sub = await subscribePageToInstagramMessages(pageId, pageAccessToken)
+      if (!sub.ok) {
         console.warn('[instagram/callback] Page subscribe failed', { 
-          status: subRes.status, 
-          subText, 
+          status: sub.status, 
+          data: sub.data, 
           hasAppSecret: Boolean(process.env.META_APP_SECRET),
-          urlUsed: subscribeUrlWithProof.replace(/appsecret_proof=[^&]+/, 'appsecret_proof=***')
         })
       } else {
-        console.log('[instagram/callback] Page subscribed to app', subText)
+        console.log('[instagram/callback] Page subscribed to app', sub.data)
       }
     } catch (e) {
       console.warn('[instagram/callback] Page subscribe error', e)

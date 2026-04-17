@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getToken } from 'next-auth/jwt'
-import { addAppSecretProofToUrl } from '@/lib/meta-api'
+import { subscribeWhatsAppApp } from '@/lib/meta-api'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -21,38 +21,35 @@ export async function POST(request: Request) {
     const accessToken = body.accessToken ? String(body.accessToken) : null
     const refreshToken = body.refreshToken ? String(body.refreshToken) : null
     const expiresIn = body.expiresIn ? Number(body.expiresIn) : null
+    const whatsappBusinessAccountId = body.whatsappBusinessAccountId ? String(body.whatsappBusinessAccountId).trim() : null
 
     if (!platform || !accountId) {
       return NextResponse.json({ error: 'Missing platform or accountId' }, { status: 400 })
     }
 
+    if (!['instagram', 'whatsapp'].includes(platform)) {
+      return NextResponse.json({ error: 'Unsupported social platform' }, { status: 400 })
+    }
+
     // Auto-subscribe WhatsApp number to app so webhooks are delivered
     if (platform === 'whatsapp' && accountId && accessToken) {
       try {
-        const subscribeUrl = `https://graph.facebook.com/v18.0/${encodeURIComponent(accountId)}/subscribed_apps`
-        const urlWithProof = addAppSecretProofToUrl(subscribeUrl, accessToken)
-        
-        const body = new URLSearchParams({ 
-          access_token: accessToken,
-          subscribed_fields: 'messages'
+        const sub = await subscribeWhatsAppApp({
+          accessToken,
+          phoneNumberId: accountId,
+          whatsappBusinessAccountId,
         })
-        
-        const subRes = await fetch(urlWithProof, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body
-        })
-        const subText = await subRes.text()
-        if (!subRes.ok) {
+
+        if (!sub.ok) {
           console.warn('[social/link] WhatsApp subscribed_apps failed', { 
             accountId, 
-            status: subRes.status, 
-            subText, 
+            targetId: sub.targetId,
+            status: sub.status, 
+            data: sub.data,
             hasAppSecret: Boolean(process.env.META_APP_SECRET),
-            urlUsed: urlWithProof.replace(/appsecret_proof=[^&]+/, 'appsecret_proof=***')
           })
         } else {
-          console.log('[social/link] WhatsApp number subscribed_apps success', { accountId, subText })
+          console.log('[social/link] WhatsApp subscribed_apps success', { accountId, targetId: sub.targetId })
         }
       } catch (e) {
         console.warn('[social/link] WhatsApp subscribed_apps error', e)

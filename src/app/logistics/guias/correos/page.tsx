@@ -39,12 +39,28 @@ interface GuiaHistoryItem {
     id: string;
     orderId: string;
     guiaNumber: string;
+    trackingNumber?: string;
     status: string;
+    orderStatus?: string;
+    guiaStatus?: string;
     tenantName: string;
     customerName?: string;
     hasPdf: boolean;
     createdAt: string;
     errorMessage?: string;
+}
+
+function historyStatusStyle(item: GuiaHistoryItem) {
+    const status = (item.orderStatus || item.status || '').toLowerCase();
+    if (item.guiaStatus === 'failed') return { background: 'rgba(239,68,68,0.12)', color: '#ef4444' };
+    if (status.includes('entregado') || status.includes('completado')) return { background: 'rgba(52,211,153,0.12)', color: '#34d399' };
+    if (status.includes('transito') || status.includes('tránsito') || status.includes('guia') || status.includes('guía')) return { background: 'rgba(96,165,250,0.12)', color: '#60a5fa' };
+    return { background: 'rgba(251,191,36,0.12)', color: '#fbbf24' };
+}
+
+function historyStatusLabel(item: GuiaHistoryItem) {
+    const label = item.orderStatus || item.status || 'Pendiente';
+    return item.guiaStatus === 'failed' ? `${label} (guia fallida)` : label;
 }
 
 // ─── Location Selector Row ────────────────────────────────
@@ -283,6 +299,7 @@ export default function GuiaCorreosPage() {
         try {
             const payload = {
                 orders: verifiedOrders.map(o => ({
+                    id: o.id,
                     orderId: o.orderId,
                     province: o.province,
                     canton: o.canton,
@@ -437,10 +454,9 @@ export default function GuiaCorreosPage() {
                                                 <td style={{ padding: '9px 12px' }}>
                                                     <span style={{
                                                         padding: '2px 8px', borderRadius: 20, fontSize: 10.5, fontWeight: 600,
-                                                        background: g.status === 'completed' ? 'rgba(52,211,153,0.12)' : g.status === 'failed' ? 'rgba(239,68,68,0.12)' : 'rgba(251,191,36,0.12)',
-                                                        color: g.status === 'completed' ? '#34d399' : g.status === 'failed' ? '#ef4444' : '#fbbf24',
+                                                        ...historyStatusStyle(g),
                                                     }}>
-                                                        {g.status === 'completed' ? 'Completada' : g.status === 'failed' ? 'Fallida' : g.status}
+                                                        {historyStatusLabel(g)}
                                                     </span>
                                                     {g.errorMessage && <div style={{ color: 'rgba(239,68,68,0.7)', fontSize: 10, marginTop: 2 }}>{g.errorMessage}</div>}
                                                 </td>

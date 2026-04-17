@@ -20,6 +20,7 @@ let redisClient: Redis | null = null;
 
 // In-memory fallback storage (for development without Redis)
 const memoryStorage = new Map<string, ConversationMessage[]>();
+const stateStorage = new Map<string, Record<string, any>>();
 
 export interface ConversationMessage {
   role: 'user' | 'assistant' | 'system';
@@ -369,7 +370,7 @@ export async function setConversationState(
   
   // For in-memory
   console.log(`[ConversationMemory] Storing state in memory for ${key}`);
-  memoryStorage.set(`state:${key}`, [state]);
+  stateStorage.set(`state:${key}`, state);
 }
 
 /**
@@ -429,10 +430,8 @@ export async function getConversationState(
   }
   
   // For in-memory
-  const state = memoryStorage.get(`state:${key}`);
-  if (state && state.length > 0) {
-    return state[0];
-  }
+  const state = stateStorage.get(`state:${key}`);
+  if (state) return state;
   
   return null;
 }
@@ -456,6 +455,6 @@ export async function clearConversationState(
     return;
   }
   
-  memoryStorage.delete(`state:${key}`);
+  stateStorage.delete(`state:${key}`);
 }
 

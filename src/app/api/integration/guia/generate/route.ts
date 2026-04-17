@@ -68,7 +68,8 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
-    console.log(`[Guia API] Tenant validated: ${tenantId}`);
+    const activeTenantId = tenantId;
+    console.log(`[Guia API] Tenant validated: ${activeTenantId}`);
 
     // Parse request body
     const body = await req.json();
@@ -90,16 +91,16 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Guia API] Generating guías for ${orderIds.length} orders`);
 
-    return await withTenantContext({ tenantId, userId: 'system', role: 'SYSTEM', userRole: 'SYSTEM', userName: 'API' }, async () => {
+    return await withTenantContext({ tenantId: activeTenantId, userId: 'system', role: 'SYSTEM', userRole: 'SYSTEM', userName: 'API' }, async () => {
       // SECURITY: Always use tenant-isolated client
-      const prisma = getTenantPrisma(tenantId);
+      const prisma = getTenantPrisma(activeTenantId);
       
       // Validate shipping configuration exists
       const shippingConfig = await prisma.shippingConfig.findFirst({
         where: { 
           carrier,
           isActive: true,
-          tenantId: tenantId
+          tenantId: activeTenantId
         }
       });
 
@@ -109,7 +110,7 @@ export async function POST(req: NextRequest) {
       try {
         wsCreds = getCorreosWSCredentials();
       } catch (e: any) {
-        await logIntegrationActivity(tenantId, 'GUIA_GENERATION_FAILED', {
+        await logIntegrationActivity(activeTenantId, 'GUIA_GENERATION_FAILED', {
           error: e.message || 'Platform WS credentials not configured',
           orderIds
         });
@@ -123,7 +124,7 @@ export async function POST(req: NextRequest) {
         where: {
           orderId: { in: orderIds },
           orderType: 'EA',
-          tenantId: tenantId
+          tenantId: activeTenantId
         }
       });
 
@@ -201,7 +202,7 @@ export async function POST(req: NextRequest) {
               trackingNumber: result.trackingNumber || result.guiaNumber,
               status: 'completed',
               serviceType: 'standard',
-              tenant: { connect: { id: tenantId } }
+              tenant: { connect: { id: activeTenantId } }
             };
 
             if (result.pdfBuffer) {
@@ -216,7 +217,7 @@ export async function POST(req: NextRequest) {
             try {
               const order = orders.find(o => o.orderId === result.orderId);
               await prisma.order.update({
-                where: { tenantId_orderId: { tenantId: tenantId, orderId: result.orderId } },
+                where: { tenantId_orderId: { tenantId: activeTenantId, orderId: result.orderId } },
                 data: { status: 'Enviado', courier: carrier }
               });
 
@@ -224,7 +225,7 @@ export async function POST(req: NextRequest) {
                 try {
                   await globalPrisma.$executeRaw`
                     INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status)
-                    VALUES (${(order as any).id}, ${tenantId}, 'correos', 'Guía Creada')
+                    VALUES (${(order as any).id}, ${activeTenantId}, 'correos', 'Guía Creada')
                     ON CONFLICT (crm_order_id) DO UPDATE
                     SET carrier = 'correos', status = 'Guía Creada', updated_at = NOW()
                   `;
@@ -247,14 +248,14 @@ export async function POST(req: NextRequest) {
               status: 'failed',
               errorMessage: result.error || 'Failed to create guía',
               serviceType: 'standard',
-              tenant: { connect: { id: tenantId } }
+              tenant: { connect: { id: activeTenantId } }
             }
           });
         }
       }
 
       // Log successful integration
-      await logIntegrationActivity(tenantId, 'GUIA_GENERATED', {
+      await logIntegrationActivity(activeTenantId, 'GUIA_GENERATED', {
         orderIds,
         successful: results.filter(r => r.success).length,
         failed: results.filter(r => !r.success).length,

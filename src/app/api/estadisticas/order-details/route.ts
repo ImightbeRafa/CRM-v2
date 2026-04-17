@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
+import { buildStatsOrderDateWhere } from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -45,29 +46,11 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Handle timezone properly by treating dates as local
-    const start = new Date(startDate + 'T00:00:00');
-    const end = new Date(endDate + 'T23:59:59.999');
-
     // Fetch all orders in the date range
     const orders = await prisma.order.findMany({
       where: {
         tenantId,
-        OR: [
-          {
-            saleDate: {
-              gte: start.toISOString(),
-              lte: end.toISOString(),
-            },
-          },
-          {
-            saleDate: null,
-            timestamp: {
-              gte: start,
-              lte: end,
-            },
-          },
-        ],
+        ...buildStatsOrderDateWhere(startDate, endDate),
       },
       select: {
         id: true,

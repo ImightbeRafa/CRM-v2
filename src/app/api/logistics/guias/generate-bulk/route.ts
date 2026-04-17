@@ -8,6 +8,7 @@ export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 interface VerifiedOrder {
+    id?: string;
     orderId: string;
     province: string;
     canton: string;
@@ -15,6 +16,33 @@ interface VerifiedOrder {
     address: string;
     deliveryType: 'Domicilio' | 'Sucursal' | 'Punto de correo';
 }
+
+interface GuiaResult {
+    success: boolean;
+    orderId: string;
+    orderDbId: string;
+    guiaNumber?: string;
+    error?: string;
+    pdfBuffer?: Buffer;
+    pdfFileName?: string;
+}
+
+type DbOrder = {
+    id: string;
+    orderId: string;
+    tenantId: string;
+    customerName: string;
+    phone: string | null;
+    email: string | null;
+    product: string | null;
+    quantity: number;
+    productDetails: string | null;
+    province: string | null;
+    canton: string | null;
+    district: string | null;
+    address: string | null;
+    comments: string | null;
+};
 
 /** Messages from the Correos API are safe to surface to admin users. */
 function isCorreosError(msg: string): boolean {
@@ -24,7 +52,9 @@ function isCorreosError(msg: string): boolean {
 /**
  * POST /api/logistics/guias/generate-bulk
  *
- * Bulk-generates Correos de Costa Rica guías via the SOAP Web Service API.
+ * Generates Correos de Costa Rica guias via the SOAP Web Service API.
+ * Persistence is intentionally one-current-guia-per-order: regenerating a guia
+ * updates the current row and removes stale duplicate rows for that order.
  */
 export async function POST(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
@@ -40,7 +70,18 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'orders array is required' }, { status: 400 });
         }
 
-        // 1. Read ALL Correos config keys
+        const requestKeys = new Set<string>();
+        for (const order of verifiedOrders) {
+            const key = order.id || order.orderId;
+            if (!key) {
+                return NextResponse.json({ error: 'Each order requires id or orderId' }, { status: 400 });
+            }
+            if (requestKeys.has(key)) {
+                return NextResponse.json({ error: `Duplicate order in request: ${order.orderId}` }, { status: 400 });
+            }
+            requestKeys.add(key);
+        }
+
         const credRows = await prisma.$queryRaw<{ key: string; value: string }[]>`
             SELECT key, value FROM lm_carrier_configs
             WHERE key LIKE 'correos_%'
@@ -48,15 +89,37 @@ export async function POST(req: NextRequest) {
         const cfg: Record<string, string> = {};
         for (const row of credRows) cfg[row.key] = row.value;
 
-        // 2. Fetch order details from DB
+        if (!cfg.correos_ws_username || !cfg.correos_ws_password) {
+            return NextResponse.json(
+                { error: 'Correos Web Service credentials not configured. Go to Configuracion -> Correos CR to set them up.' },
+                { status: 400 }
+            );
+        }
+
+        const crmOrderIds = verifiedOrders
+            .map(o => o.id)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0);
         const orderIds = verifiedOrders.map(o => o.orderId);
+
         const dbOrders = await prisma.order.findMany({
-            where: { orderId: { in: orderIds } },
+            where: crmOrderIds.length > 0
+                ? { OR: [{ id: { in: crmOrderIds } }, { orderId: { in: orderIds } }] }
+                : { orderId: { in: orderIds } },
             select: {
-                id: true, orderId: true, tenantId: true, customerName: true,
-                phone: true, email: true, product: true, quantity: true,
+                id: true,
+                orderId: true,
+                tenantId: true,
+                customerName: true,
+                phone: true,
+                email: true,
+                product: true,
+                quantity: true,
                 productDetails: true,
-                province: true, canton: true, district: true, address: true, comments: true,
+                province: true,
+                canton: true,
+                district: true,
+                address: true,
+                comments: true,
             },
         });
 
@@ -64,13 +127,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'No valid orders found' }, { status: 404 });
         }
 
-        const orderMap = new Map(dbOrders.map(o => [o.orderId, o]));
-
-        if (!cfg.correos_ws_username || !cfg.correos_ws_password) {
-            return NextResponse.json(
-                { error: 'Correos Web Service credentials not configured. Go to Configuración → Correos CR to set them up.' },
-                { status: 400 }
-            );
+        const orderMap = new Map<string, DbOrder>();
+        for (const order of dbOrders) {
+            orderMap.set(order.id, order);
+            orderMap.set(order.orderId, order);
         }
 
         const wsCreds: CorreosWSCredentials = {
@@ -90,24 +150,32 @@ export async function POST(req: NextRequest) {
         };
 
         const ws = new CorreosWebService(wsCreds);
-        const results: { success: boolean; orderId: string; guiaNumber?: string; error?: string; pdfBuffer?: Buffer }[] = [];
+        const results: GuiaResult[] = [];
 
-        console.log(`[Logistics Guía Bulk WS] Starting generation for ${verifiedOrders.length} orders...`);
+        console.log(`[Logistics Guia WS] Starting generation for ${verifiedOrders.length} orders...`);
 
         for (const verified of verifiedOrders) {
-            const dbOrder = orderMap.get(verified.orderId);
+            const dbOrder = orderMap.get(verified.id || verified.orderId);
             if (!dbOrder) continue;
 
             try {
+                await prisma.order.update({
+                    where: { id: dbOrder.id },
+                    data: {
+                        province: verified.province,
+                        canton: verified.canton,
+                        district: verified.district,
+                        address: verified.address || dbOrder.address,
+                    },
+                });
+
                 let destZip = '10101';
                 try {
                     destZip = await ws.getPostalCode(verified.province, verified.canton, verified.district);
-                    console.log(`[WS] Postal code resolved: ${verified.province}/${verified.canton}/${verified.district} → ${destZip}`);
+                    console.log(`[WS] Postal code resolved: ${verified.province}/${verified.canton}/${verified.district} -> ${destZip}`);
                 } catch (geoErr: any) {
                     console.warn(`[WS] Could not resolve postal code for ${verified.province}/${verified.canton}/${verified.district}: ${geoErr.message}`);
                 }
-
-                console.log(`[WS] Generating guía for ${verified.orderId} (zip: ${destZip})...`);
 
                 const result = await ws.generateAndRegisterGuia({
                     customerName: dbOrder.customerName || 'Destinatario',
@@ -128,23 +196,22 @@ export async function POST(req: NextRequest) {
                     description: buildGuiaDescription(dbOrder),
                 });
 
-                console.log(`[WS] Guía result for ${verified.orderId}: success=${result.success}, guia=${result.guiaNumber}, msg=${result.responseMessage}`);
-
                 results.push({
                     success: result.success,
-                    orderId: verified.orderId,
+                    orderId: dbOrder.orderId,
+                    orderDbId: dbOrder.id,
                     guiaNumber: result.guiaNumber || undefined,
                     error: result.error,
                     pdfBuffer: result.pdfBuffer,
                 });
             } catch (err: any) {
-                console.error(`[WS] Exception generating guía for ${verified.orderId}:`, err.message);
                 const safeMsg = isCorreosError(err.message)
                     ? err.message
-                    : 'Guía generation failed due to a connection or service error';
+                    : 'Guia generation failed due to a connection or service error';
                 results.push({
                     success: false,
-                    orderId: verified.orderId,
+                    orderId: dbOrder.orderId,
+                    orderDbId: dbOrder.id,
                     error: safeMsg,
                 });
             }
@@ -155,8 +222,6 @@ export async function POST(req: NextRequest) {
         const successful = results.filter(r => r.success).length;
         const failed = results.filter(r => !r.success).length;
 
-        console.log(`[Logistics Guía Bulk WS] Done! ${successful} ok, ${failed} failed. ${processingTime}ms`);
-
         return NextResponse.json({
             success: true,
             data: {
@@ -164,10 +229,18 @@ export async function POST(req: NextRequest) {
                     success: r.success,
                     orderId: r.orderId,
                     guiaNumber: r.guiaNumber,
+                    trackingNumber: r.guiaNumber,
                     error: r.error,
                     pdfDownloaded: !!r.pdfBuffer,
                 })),
-                savedGuias: savedGuias.map(g => ({ id: g.id, orderId: g.orderId, guiaNumber: g.guiaNumber, hasPdf: !!g.pdfData })),
+                savedGuias: savedGuias.map(g => ({
+                    id: g.id,
+                    orderId: g.orderId,
+                    guiaNumber: g.guiaNumber,
+                    trackingNumber: g.trackingNumber,
+                    status: g.status,
+                    hasPdf: !!g.pdfData,
+                })),
                 successful,
                 failed,
             },
@@ -175,89 +248,116 @@ export async function POST(req: NextRequest) {
         });
     } catch (error: any) {
         const processingTime = Date.now() - startTime;
-        console.error('[Logistics Guía Bulk] Error:', error);
+        console.error('[Logistics Guia] Error:', error);
         return NextResponse.json(
-            { error: 'Failed to generate guías', processingTime },
+            { error: 'Failed to generate guias', processingTime },
             { status: 500 }
         );
     }
 }
 
-// ─── Shared: persist guía results regardless of mode ────────────────────────
-
-async function persistGuiaResults(
-    results: { success: boolean; orderId: string; guiaNumber?: string; error?: string; pdfBuffer?: Buffer; pdfFileName?: string }[],
-    orderMap: Map<string, { id: string; tenantId: string; orderId: string }>
-) {
+async function persistGuiaResults(results: GuiaResult[], orderMap: Map<string, DbOrder>) {
     const savedGuias = [];
 
     for (const result of results) {
-        const dbOrder = orderMap.get(result.orderId);
+        const dbOrder = orderMap.get(result.orderDbId) || orderMap.get(result.orderId);
         if (!dbOrder) continue;
 
-        if (result.success && result.guiaNumber) {
-            try {
-                const guiaData: any = {
-                    orderId: result.orderId,
+        try {
+            const guia = await prisma.$transaction(async (tx) => {
+                await tx.$executeRaw`
+                    SELECT pg_advisory_xact_lock(hashtext(${`${dbOrder.tenantId}:${dbOrder.orderId}:shipping-guia`}))
+                `;
+
+                const existingGuias = await tx.shippingGuia.findMany({
+                    where: {
+                        tenantId: dbOrder.tenantId,
+                        orderId: dbOrder.orderId,
+                        carrier: 'correos_cr',
+                    },
+                    orderBy: { createdAt: 'desc' },
+                    select: { id: true },
+                });
+
+                const currentGuia = existingGuias[0] ?? null;
+                const duplicateIds = existingGuias.slice(1).map(g => g.id);
+                if (duplicateIds.length > 0) {
+                    await tx.shippingGuia.deleteMany({ where: { id: { in: duplicateIds } } });
+                }
+
+                if (result.success && result.guiaNumber) {
+                    const data: any = {
+                        orderId: dbOrder.orderId,
+                        carrier: 'correos_cr',
+                        guiaNumber: result.guiaNumber,
+                        trackingNumber: result.guiaNumber,
+                        status: 'completed',
+                        progress: null,
+                        errorMessage: null,
+                        serviceType: 'standard',
+                    };
+
+                    if (result.pdfBuffer) {
+                        const buf = Buffer.isBuffer(result.pdfBuffer) ? result.pdfBuffer : Buffer.from(result.pdfBuffer as any);
+                        data.pdfData = buf;
+                        data.pdfFileName = result.pdfFileName || `guia-${result.guiaNumber}.pdf`;
+                    }
+
+                    return currentGuia
+                        ? tx.shippingGuia.update({ where: { id: currentGuia.id }, data })
+                        : tx.shippingGuia.create({ data: { ...data, tenant: { connect: { id: dbOrder.tenantId } } } });
+                }
+
+                const failedData = {
                     carrier: 'correos_cr',
-                    guiaNumber: result.guiaNumber,
-                    trackingNumber: result.guiaNumber,
-                    status: 'completed',
+                    status: 'failed',
+                    progress: null,
+                    errorMessage: result.error || 'Failed to create guia',
                     serviceType: 'standard',
-                    tenant: { connect: { id: dbOrder.tenantId } },
                 };
 
-                if (result.pdfBuffer) {
-                    const buf = Buffer.isBuffer(result.pdfBuffer) ? result.pdfBuffer : Buffer.from(result.pdfBuffer as any);
-                    guiaData.pdfData = buf;
-                    guiaData.pdfFileName = result.pdfFileName || `guia-${result.guiaNumber}.pdf`;
-                }
+                return currentGuia
+                    ? tx.shippingGuia.update({ where: { id: currentGuia.id }, data: failedData })
+                    : tx.shippingGuia.create({
+                        data: {
+                            ...failedData,
+                            orderId: dbOrder.orderId,
+                            tenant: { connect: { id: dbOrder.tenantId } },
+                        },
+                    });
+            });
 
-                const guia = await prisma.shippingGuia.create({ data: guiaData });
-                savedGuias.push(guia);
+            savedGuias.push(guia);
 
-                try {
-                    await prisma.$executeRaw`
-                        INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status)
-                        VALUES (${dbOrder.id}, ${dbOrder.tenantId}, 'correos', 'Guía Creada')
-                        ON CONFLICT (crm_order_id) DO UPDATE
-                        SET carrier = 'correos', status = 'Guía Creada', updated_at = NOW()
-                    `;
-                } catch (e) {
-                    console.warn(`[Guía Persist] Failed to upsert lm_orders for ${dbOrder.id}:`, e);
-                }
-
-                try {
-                    await prisma.$executeRaw`
-                        INSERT INTO lm_order_events (crm_order_id, event_type, payload)
-                        VALUES (${dbOrder.id}, 'guia_generated', ${JSON.stringify({
-                            carrier: 'correos',
-                            guiaNumber: result.guiaNumber,
-                            automated: true,
-                        })}::jsonb)
-                    `;
-                } catch { /* non-critical */ }
-
-                console.log(`[Guía] Saved ${result.orderId}: ${result.guiaNumber}`);
-            } catch (error) {
-                console.error(`[Guía] Failed to save for ${result.orderId}:`, error);
-            }
-        } else {
+            const nextStatus = result.success && result.guiaNumber ? 'Guía Creada' : 'Pendiente';
             try {
-                await prisma.shippingGuia.create({
-                    data: {
-                        orderId: result.orderId,
-                        carrier: 'correos_cr',
-                        guiaNumber: `PENDING-${result.orderId}`,
-                        status: 'failed',
-                        errorMessage: result.error || 'Failed to create guía',
-                        serviceType: 'standard',
-                        tenant: { connect: { id: dbOrder.tenantId } },
-                    },
-                });
+                await prisma.$executeRaw`
+                    INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status)
+                    VALUES (${dbOrder.id}, ${dbOrder.tenantId}, 'correos', ${nextStatus})
+                    ON CONFLICT (crm_order_id) DO UPDATE
+                    SET carrier = 'correos', status = ${nextStatus}, updated_at = NOW()
+                `;
             } catch (e) {
-                console.error(`[Guía] Failed to save failed record for ${result.orderId}:`, e);
+                console.warn(`[Guia Persist] Failed to upsert lm_orders for ${dbOrder.id}:`, e);
             }
+
+            try {
+                await prisma.$executeRaw`
+                    INSERT INTO lm_order_events (crm_order_id, event_type, payload)
+                    VALUES (${dbOrder.id}, 'guia_generated', ${JSON.stringify({
+                        carrier: 'correos',
+                        guiaNumber: result.guiaNumber,
+                        success: result.success,
+                        error: result.error,
+                        automated: true,
+                        replacedExisting: true,
+                    })}::jsonb)
+                `;
+            } catch {
+                // Non-critical audit trail.
+            }
+        } catch (error) {
+            console.error(`[Guia] Failed to persist current guia for ${result.orderId}:`, error);
         }
     }
 

@@ -96,8 +96,8 @@ async function fetchSalesData(filters: SalesStreamOptions['filters'] = {}): Prom
   if (result.status === 'error') throw new Error(result.error || 'Unknown error');
 
   const parsedSales = result.data.map(parseOrder).filter((s: Sale | null): s is Sale => s !== null);
-  const uniqueSales: Sale[] = Array.from(
-    new Map(parsedSales.map((sale: Sale) => [sale.orderId, sale])).values()
+  const uniqueSales = Array.from(
+    new Map<string, Sale>(parsedSales.map((sale: Sale) => [sale.orderId, sale])).values()
   );
 
   return uniqueSales;

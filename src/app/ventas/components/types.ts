@@ -53,12 +53,17 @@ export interface SubmitStatus {
 }
 
 export interface ProductTemplate {
+  id?: string;
+  name?: string;
   type: string;
   color: string;
   baseCost: number;
+  tamano?: string;
   category?: string;
   sku?: string;
   currentStock?: number;
+  isFavorite?: boolean;
+  lastUsed?: string | Date;
 }
 
 export interface CustomerSuggestion {
@@ -72,4 +77,7 @@ export interface CustomerSuggestion {
   address?: string;
   business?: string;
   username?: string;
+  totalOrders?: number;
+  totalSpent?: number;
+  lastOrder?: string | Date;
 }

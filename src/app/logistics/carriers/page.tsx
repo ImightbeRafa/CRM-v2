@@ -1,8 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Package, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2, DollarSign } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
+import {
+    costaRicaLocations,
+    provinceNames,
+    type ProvinceData,
+    type CantonData,
+} from '@/app/ventas/components/costaRicaLocations';
 
 interface Order {
     id: string; orderId: string; tenantId: string; status: string; timestamp: string;
@@ -11,6 +17,24 @@ interface Order {
     address: string | null; total: number; comments: string | null; delivery: string | null;
     lmCarrier: string | null; lmStatus: string | null; isContraEntrega: boolean; contraEntregaCollected: boolean;
     archivedAt: string | null; correosShippingCost: number | null;
+    guiaId: string | null; guiaNumber: string | null; trackingNumber: string | null;
+    guiaStatus: string | null; guiaError: string | null; hasGuiaPdf: boolean;
+}
+
+interface VerifiedOrder {
+    id: string;
+    orderId: string;
+    customerName: string;
+    province: string;
+    canton: string;
+    district: string;
+    address: string;
+    deliveryType: 'Domicilio' | 'Sucursal' | 'Punto de correo';
+    valid: boolean;
+    originalProvince: string;
+    originalCanton: string;
+    originalDistrict: string;
+    originalAddress: string;
 }
 
 const STATUSES = ['Pendiente', 'En Proceso', 'Guía Creada', 'En Tránsito', 'Entregado', 'Devuelto'];
@@ -32,6 +56,17 @@ const glass = {
     backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
     border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12,
 } as const;
+
+const normalizeText = (value: string | undefined | null) => {
+    const safeValue = (value ?? '').toString();
+    return safeValue.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+};
+
+const findProvince = (name: string): ProvinceData | undefined =>
+    costaRicaLocations.find(p => normalizeText(p.nombre) === normalizeText(name));
+
+const findCanton = (province: ProvinceData | undefined, name: string): CantonData | undefined =>
+    province?.cantones.find(c => normalizeText(c.nombre) === normalizeText(name));
 
 function dateKey(ts: string) {
     const d = new Date(ts);
@@ -144,6 +179,109 @@ function orderAge(ts: string) {
 }
 
 // ─── Order Card (kanban) ──────────────────────────────────────────────────────
+function LocationRow({ order, onChange }: { order: VerifiedOrder; onChange: (updated: Partial<VerifiedOrder>) => void }) {
+    const [cantonSearch, setCantonSearch] = useState(order.canton);
+    const [districtSearch, setDistrictSearch] = useState(order.district);
+    const [cantonOpen, setCantonOpen] = useState(false);
+    const [districtOpen, setDistrictOpen] = useState(false);
+
+    const province = useMemo(() => findProvince(order.province), [order.province]);
+    const canton = useMemo(() => findCanton(province, order.canton), [province, order.canton]);
+
+    const cantonResults = useMemo(() => {
+        if (!province) return [];
+        const search = normalizeText(cantonSearch);
+        const list = province.cantones.map(c => ({ province: province.nombre, canton: c.nombre }));
+        return (search ? list.filter(item => normalizeText(item.canton).includes(search)) : list).slice(0, 15);
+    }, [cantonSearch, province]);
+
+    const districtResults = useMemo(() => {
+        if (!province || !canton) return [];
+        const search = normalizeText(districtSearch);
+        const list = canton.distritos.map(d => ({ province: province.nombre, canton: canton.nombre, district: d }));
+        return (search ? list.filter(item => normalizeText(item.district).includes(search)) : list).slice(0, 15);
+    }, [districtSearch, province, canton]);
+
+    useEffect(() => { setCantonSearch(order.canton); }, [order.canton]);
+    useEffect(() => { setDistrictSearch(order.district); }, [order.district]);
+
+    const isValid = !!province && !!canton && canton.distritos.some(d => normalizeText(d) === normalizeText(order.district)) && !!order.address.trim();
+    const hasChanges =
+        order.province !== order.originalProvince ||
+        order.canton !== order.originalCanton ||
+        order.district !== order.originalDistrict ||
+        order.address !== order.originalAddress;
+
+    return (
+        <div style={{ ...glass, padding: '14px 16px', marginBottom: 10, borderColor: isValid ? 'rgba(52,211,153,0.25)' : 'rgba(251,191,36,0.35)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                {isValid ? <CheckCircle2 size={14} style={{ color: '#34d399', flexShrink: 0 }} /> : <Clock size={14} style={{ color: '#fbbf24', flexShrink: 0 }} />}
+                <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13 }}>{order.customerName}</span>
+                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>#{order.orderId}</span>
+                {hasChanges && <span style={{ marginLeft: 'auto', color: '#fbbf24', fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 10, background: 'rgba(251,191,36,0.12)' }}>Modificado</span>}
+            </div>
+
+            <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', marginBottom: 10 }}>
+                <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Datos actuales</div>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 11.5 }}>
+                    <span style={{ color: 'rgba(255,255,255,0.5)' }}><strong style={{ color: 'rgba(255,255,255,0.25)' }}>Prov:</strong> {order.originalProvince || '-'}</span>
+                    <span style={{ color: 'rgba(255,255,255,0.5)' }}><strong style={{ color: 'rgba(255,255,255,0.25)' }}>Canton:</strong> {order.originalCanton || '-'}</span>
+                    <span style={{ color: 'rgba(255,255,255,0.5)' }}><strong style={{ color: 'rgba(255,255,255,0.25)' }}>Distrito:</strong> {order.originalDistrict || '-'}</span>
+                </div>
+                {order.originalAddress && <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 3 }}><strong style={{ color: 'rgba(255,255,255,0.25)' }}>Dir:</strong> {order.originalAddress}</div>}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <div>
+                    <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Provincia</label>
+                    <select value={province?.nombre || order.province}
+                        onChange={e => { const p = costaRicaLocations.find(pr => pr.nombre === e.target.value); onChange({ province: p?.nombre || e.target.value, canton: '', district: '' }); setCantonSearch(''); setDistrictSearch(''); }}
+                        style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: province ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(251,191,36,0.4)', background: 'rgba(0,0,0,0.3)', color: '#F2F2F2', fontSize: 12, outline: 'none' }}>
+                        <option value="">Seleccione</option>
+                        {provinceNames.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                    <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Canton</label>
+                    <input value={cantonSearch} onChange={e => { setCantonSearch(e.target.value); setCantonOpen(true); }} onFocus={() => setCantonOpen(true)} onBlur={() => setTimeout(() => setCantonOpen(false), 150)} disabled={!province} placeholder={province ? 'Buscar canton' : 'Elige provincia'}
+                        style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: canton ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(251,191,36,0.4)', background: 'rgba(0,0,0,0.3)', color: province ? '#F2F2F2' : 'rgba(255,255,255,0.25)', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                    {cantonOpen && cantonResults.length > 0 && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, maxHeight: 200, overflowY: 'auto', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: '#1a1a2e', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                            {cantonResults.map(r => (
+                                <button key={`${r.province}-${r.canton}`} type="button" onMouseDown={e => { e.preventDefault(); onChange({ province: r.province, canton: r.canton, district: '' }); setCantonSearch(r.canton); setDistrictSearch(''); setCantonOpen(false); }}
+                                    style={{ width: '100%', textAlign: 'left', padding: '7px 10px', border: 'none', background: 'transparent', color: '#F2F2F2', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                    {r.canton}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                    <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Distrito</label>
+                    <input value={districtSearch} onChange={e => { setDistrictSearch(e.target.value); setDistrictOpen(true); }} onFocus={() => setDistrictOpen(true)} onBlur={() => setTimeout(() => setDistrictOpen(false), 150)} disabled={!canton} placeholder={canton ? 'Buscar distrito' : 'Elige canton'}
+                        style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: isValid ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(251,191,36,0.4)', background: 'rgba(0,0,0,0.3)', color: canton ? '#F2F2F2' : 'rgba(255,255,255,0.25)', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                    {districtOpen && districtResults.length > 0 && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, maxHeight: 200, overflowY: 'auto', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: '#1a1a2e', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                            {districtResults.map(r => (
+                                <button key={`${r.province}-${r.canton}-${r.district}`} type="button" onMouseDown={e => { e.preventDefault(); onChange({ district: r.district }); setDistrictSearch(r.district); setDistrictOpen(false); }}
+                                    style={{ width: '100%', textAlign: 'left', padding: '7px 10px', border: 'none', background: 'transparent', color: '#F2F2F2', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                    {r.district}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Direccion exacta</label>
+            <input value={order.address} onChange={e => onChange({ address: e.target.value })} placeholder="Senas exactas de direccion"
+                style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: order.address.trim() ? '1px solid rgba(52,211,153,0.2)' : '1px solid rgba(251,191,36,0.3)', background: 'rgba(0,0,0,0.3)', color: '#F2F2F2', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+        </div>
+    );
+}
+
 function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCollected, onArchive, carrier, getTenantName, getTenantColor, bulkMode, selected, onToggleSelect }: {
     order: Order; onMoveStatus: (id: string, s: string, c: string) => void; onMoveCarrier: (id: string, c: string) => void;
     onToggleCOD: (id: string, v: boolean) => void; onToggleCollected: (id: string, v: boolean) => void;
@@ -165,6 +303,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
     const age = orderAge(order.timestamp);
     const canArchive = order.lmStatus === 'Entregado' || order.lmStatus === 'Devuelto';
     const location = [order.province, order.canton].filter(Boolean).join(', ');
+    const trackingCode = order.trackingNumber || order.guiaNumber;
 
     async function handleSync() { setSyncing(true); await syncCrm(order.id, order.lmStatus || 'Pendiente'); setSyncing(false); setSynced(true); setTimeout(() => setSynced(false), 2500); }
     function handleCopyPhone(e: React.MouseEvent) { e.stopPropagation(); if (order.phone) { navigator.clipboard.writeText(order.phone); setCopied(true); setTimeout(() => setCopied(false), 1500); } }
@@ -227,6 +366,12 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
                     {location && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>📍 {location}</span>}
                     {order.product && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{order.product}{order.quantity && order.quantity > 1 ? ` ×${order.quantity}` : ''}</span>}
+                    {carrier === 'correos' && trackingCode && order.guiaStatus !== 'failed' && (
+                        <span style={{ color: '#60a5fa', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 6, padding: '1px 6px', fontSize: 10.5, fontWeight: 700 }}>Guia {trackingCode}</span>
+                    )}
+                    {carrier === 'correos' && order.guiaStatus === 'failed' && (
+                        <span title={order.guiaError || 'Error al generar guia'} style={{ color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 6, padding: '1px 6px', fontSize: 10.5, fontWeight: 700 }}>Guia fallida</span>
+                    )}
                     <span style={{ color: '#34d399', fontWeight: 700, fontSize: 11, marginLeft: 'auto' }}>₡{order.total.toLocaleString('es-CR')}</span>
                 </div>
                 {showHistorial && <HistorialPanel orderId={order.id} />}
@@ -349,6 +494,11 @@ export default function CarriersPage() {
     const [costModal, setCostModal] = useState<{ orderId: string; customerName: string; ordRef: string } | null>(null);
     const [costValue, setCostValue] = useState('');
     const [costSaving, setCostSaving] = useState(false);
+    const [showVerification, setShowVerification] = useState(false);
+    const [verifiedOrders, setVerifiedOrders] = useState<VerifiedOrder[]>([]);
+    const [deliveryType, setDeliveryType] = useState<'Domicilio' | 'Sucursal' | 'Punto de correo'>('Domicilio');
+    const [generating, setGenerating] = useState(false);
+    const [generationResults, setGenerationResults] = useState<any>(null);
 
     const load = useCallback(async () => {
         try {
@@ -361,9 +511,126 @@ export default function CarriersPage() {
 
     useEffect(() => { load(); }, [load]);
 
+    const buildVerifiedOrder = useCallback((order: Order): VerifiedOrder => {
+        const prov = findProvince(order.province || '');
+        const cant = findCanton(prov, order.canton || '');
+        const dist = order.district || '';
+        const addr = order.address || '';
+        const valid = !!(prov && cant && cant.distritos.some(d => normalizeText(d) === normalizeText(dist)) && addr.trim());
+        return {
+            id: order.id,
+            orderId: order.orderId,
+            customerName: order.customerName || '',
+            province: order.province || '',
+            canton: order.canton || '',
+            district: dist,
+            address: addr,
+            deliveryType,
+            valid,
+            originalProvince: order.province || '',
+            originalCanton: order.canton || '',
+            originalDistrict: order.district || '',
+            originalAddress: addr,
+        };
+    }, [deliveryType]);
+
+    const openCorreosVerification = useCallback((ids: string[]) => {
+        const idSet = new Set(ids);
+        const selectedOrders = orders.filter(o => idSet.has(o.id));
+        if (selectedOrders.length === 0) return;
+        setVerifiedOrders(selectedOrders.map(buildVerifiedOrder));
+        setGenerationResults(null);
+        setShowVerification(true);
+    }, [orders, buildVerifiedOrder]);
+
+    const updateVerifiedOrder = useCallback((idx: number, updates: Partial<VerifiedOrder>) => {
+        setVerifiedOrders(prev => {
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...updates };
+            const prov = findProvince(next[idx].province);
+            const cant = findCanton(prov, next[idx].canton);
+            next[idx].valid = !!(prov && cant && cant.distritos.some(d => normalizeText(d) === normalizeText(next[idx].district)) && next[idx].address.trim());
+            return next;
+        });
+    }, []);
+
+    const allVerifiedValid = verifiedOrders.length > 0 && verifiedOrders.every(o => o.valid);
+
+    const generateCorreosGuias = useCallback(async () => {
+        setGenerating(true);
+        setGenerationResults(null);
+        try {
+            const payload = {
+                orders: verifiedOrders.map(o => ({
+                    id: o.id,
+                    orderId: o.orderId,
+                    province: o.province,
+                    canton: o.canton,
+                    district: o.district,
+                    address: o.address,
+                    deliveryType: o.deliveryType,
+                })),
+            };
+            const res = await fetch('/api/logistics/guias/generate-bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setGenerationResults({ error: data.error || 'Error generating guias' });
+                return;
+            }
+
+            const results = data.data?.results || [];
+            const byOrderId = new Map(results.map((r: any) => [String(r.orderId), r]));
+            setOrders(prev => prev.map(order => {
+                const submitted = verifiedOrders.find(o => o.id === order.id);
+                if (!submitted) return order;
+                const result: any = byOrderId.get(submitted.orderId);
+                return {
+                    ...order,
+                    province: submitted.province,
+                    canton: submitted.canton,
+                    district: submitted.district,
+                    address: submitted.address,
+                    lmCarrier: 'correos',
+                    lmStatus: result?.success ? 'Guía Creada' : 'Pendiente',
+                    guiaNumber: result?.success ? result.guiaNumber : order.guiaNumber,
+                    trackingNumber: result?.success ? result.trackingNumber || result.guiaNumber : order.trackingNumber,
+                    guiaStatus: result?.success ? 'completed' : 'failed',
+                    guiaError: result?.success ? null : result?.error || 'Error al generar guia',
+                    hasGuiaPdf: result?.success ? true : order.hasGuiaPdf,
+                };
+            }));
+            setGenerationResults(data.data);
+            await load();
+        } catch (e: any) {
+            setGenerationResults({ error: e.message || 'Network error' });
+        } finally {
+            setGenerating(false);
+        }
+    }, [verifiedOrders, load]);
+
     const onMove = useCallback((id: string, s: string, c: string) => { setOrders(p => p.map(o => o.id === id ? { ...o, lmStatus: s, lmCarrier: c } : o)); patchOrder(id, { lmCarrier: c, lmStatus: s }); logEvent(id, 'status_change', { to: s }); }, []);
-    const onMoveC = useCallback((id: string, c: string) => { setOrders(p => p.map(o => o.id === id ? { ...o, lmCarrier: c, lmStatus: o.lmStatus || 'Pendiente' } : o)); patchOrder(id, { lmCarrier: c }); logEvent(id, 'carrier_assigned', { carrier: c }); }, []);
-    const onAssign = useCallback((id: string, c: string) => { setOrders(p => p.map(o => o.id === id ? { ...o, lmCarrier: c, lmStatus: 'Pendiente' } : o)); patchOrder(id, { lmCarrier: c, lmStatus: 'Pendiente' }); logEvent(id, 'carrier_assigned', { carrier: c }); }, []);
+    const onMoveC = useCallback((id: string, c: string) => {
+        if (c === 'correos') {
+            openCorreosVerification([id]);
+            return;
+        }
+        setOrders(p => p.map(o => o.id === id ? { ...o, lmCarrier: c, lmStatus: o.lmStatus || 'Pendiente' } : o));
+        patchOrder(id, { lmCarrier: c });
+        logEvent(id, 'carrier_assigned', { carrier: c });
+    }, [openCorreosVerification]);
+    const onAssign = useCallback((id: string, c: string) => {
+        if (c === 'correos') {
+            openCorreosVerification([id]);
+            return;
+        }
+        setOrders(p => p.map(o => o.id === id ? { ...o, lmCarrier: c, lmStatus: 'Pendiente' } : o));
+        patchOrder(id, { lmCarrier: c, lmStatus: 'Pendiente' });
+        logEvent(id, 'carrier_assigned', { carrier: c });
+    }, [openCorreosVerification]);
     const onCOD = useCallback((id: string, v: boolean) => { setOrders(p => p.map(o => o.id === id ? { ...o, isContraEntrega: v } : o)); patchOrder(id, { isContraEntrega: v }); }, []);
     const onColl = useCallback((id: string, v: boolean) => { setOrders(p => p.map(o => o.id === id ? { ...o, contraEntregaCollected: v } : o)); patchOrder(id, { contraEntregaCollected: v }); if (v) logEvent(id, 'ce_confirmed', {}); }, []);
     const onToggleSelect = useCallback((id: string) => { setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; }); }, []);
@@ -442,6 +709,12 @@ export default function CarriersPage() {
     const applyBulk = useCallback(async () => {
         const ids = [...selectedIds];
         if (!ids.length || (!bulkStatus && !bulkCarrier)) return;
+        if (bulkCarrier === 'correos') {
+            openCorreosVerification(ids);
+            setBulkStatus('');
+            setBulkCarrier('');
+            return;
+        }
         setApplying(true);
         const patch: any = {};
         if (bulkStatus) patch.lmStatus = bulkStatus;
@@ -452,7 +725,7 @@ export default function CarriersPage() {
         setBulkStatus('');
         setBulkCarrier('');
         setApplying(false);
-    }, [selectedIds, bulkStatus, bulkCarrier]);
+    }, [selectedIds, bulkStatus, bulkCarrier, openCorreosVerification]);
 
     const applyFilters = (list: Order[]) => {
         if (provinceFilter) list = list.filter(o => o.province?.toLowerCase().includes(provinceFilter.toLowerCase()));
@@ -684,7 +957,7 @@ export default function CarriersPage() {
                                                 <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>📍 {o.canton || o.province || '—'}</span>
                                                 <span style={{ color: '#34d399', fontWeight: 700, fontSize: 11 }}>₡{o.total.toLocaleString('es-CR')}</span>
                                             </div>
-                                            {o.comments && <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, margin: '0 0 8px', fontStyle: 'italic' }}>"{o.comments.slice(0, 55)}{o.comments.length > 55 ? '…' : ''}"</p>}
+                                            {o.comments && <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, margin: '0 0 8px', fontStyle: 'italic' }}>&quot;{o.comments.slice(0, 55)}{o.comments.length > 55 ? '…' : ''}&quot;</p>}
                                             <div style={{ display: 'flex', gap: 5 }}>
                                                 <button onClick={() => onAssign(o.id, 'mensajeria')} style={{ flex: 1, padding: '5px 6px', borderRadius: 6, border: '1px solid rgba(139,135,255,0.35)', background: 'rgba(139,135,255,0.08)', color: '#8b87ff', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
                                                     <Truck size={9} /> Mensajería
@@ -702,6 +975,92 @@ export default function CarriersPage() {
                 </div>
 
             </div>{/* end body split */}
+
+            {showVerification && (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
+                    onClick={e => { if (e.target === e.currentTarget && !generating) setShowVerification(false); }}>
+                    <div style={{ width: '90%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', background: '#12121a', borderRadius: 16, border: '1px solid rgba(255,255,255,0.1)', padding: '24px 28px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                            <div>
+                                <h2 style={{ color: '#F2F2F2', fontSize: 18, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <Mail size={18} style={{ color: '#60a5fa' }} /> Verificar ubicacion para Correos
+                                </h2>
+                                <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: '4px 0 0' }}>
+                                    La guia se genera al confirmar. Si la orden ya tenia guia, esta nueva reemplaza la guia actual en el tablero e historial. {verifiedOrders.filter(o => o.valid).length}/{verifiedOrders.length} verificadas.
+                                </p>
+                            </div>
+                            {!generating && (
+                                <button onClick={() => setShowVerification(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 4 }}>
+                                    <X size={20} />
+                                </button>
+                            )}
+                        </div>
+
+                        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600 }}>Tipo de envio:</label>
+                            <select value={deliveryType}
+                                onChange={e => {
+                                    const val = e.target.value as typeof deliveryType;
+                                    setDeliveryType(val);
+                                    setVerifiedOrders(prev => prev.map(o => ({ ...o, deliveryType: val })));
+                                }}
+                                style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(96,165,250,0.3)', background: 'rgba(0,0,0,0.3)', color: '#F2F2F2', fontSize: 12, outline: 'none' }}>
+                                <option value="Domicilio">Domicilio</option>
+                                <option value="Sucursal">Sucursal</option>
+                                <option value="Punto de correo">Punto de correo</option>
+                            </select>
+                        </div>
+
+                        <div style={{ maxHeight: 450, overflowY: 'auto', marginBottom: 16 }}>
+                            {verifiedOrders.map((o, idx) => (
+                                <LocationRow key={o.id} order={o} onChange={updates => updateVerifiedOrder(idx, updates)} />
+                            ))}
+                        </div>
+
+                        {generationResults && (
+                            <div style={{ marginBottom: 16, ...glass, padding: '14px 18px', borderColor: generationResults.error ? 'rgba(239,68,68,0.3)' : 'rgba(52,211,153,0.3)' }}>
+                                {generationResults.error ? (
+                                    <p style={{ color: '#ef4444', margin: 0, fontSize: 13 }}>{generationResults.error}</p>
+                                ) : (
+                                    <div>
+                                        <p style={{ color: '#34d399', fontWeight: 700, fontSize: 14, margin: '0 0 8px' }}>
+                                            {generationResults.successful} exitosa{generationResults.successful !== 1 ? 's' : ''}, {generationResults.failed} fallida{generationResults.failed !== 1 ? 's' : ''}
+                                        </p>
+                                        {generationResults.results?.map((r: any, i: number) => (
+                                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12 }}>
+                                                {r.success ? <CheckCircle2 size={12} style={{ color: '#34d399' }} /> : <Clock size={12} style={{ color: '#ef4444' }} />}
+                                                <span style={{ color: '#F2F2F2' }}>{r.orderId}</span>
+                                                {r.guiaNumber && <span style={{ color: '#60a5fa', fontWeight: 700 }}>#{r.guiaNumber}</span>}
+                                                {r.error && <span style={{ color: 'rgba(239,68,68,0.7)' }}>- {r.error}</span>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                            {!generating && !generationResults && (
+                                <button onClick={() => setShowVerification(false)}
+                                    style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.5)', fontSize: 13, cursor: 'pointer' }}>
+                                    Cancelar
+                                </button>
+                            )}
+                            {generationResults ? (
+                                <button onClick={() => { setShowVerification(false); setSelectedIds(new Set()); }}
+                                    style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid rgba(96,165,250,0.4)', background: 'rgba(96,165,250,0.12)', color: '#60a5fa', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                                    Listo
+                                </button>
+                            ) : (
+                                <button onClick={generateCorreosGuias} disabled={!allVerifiedValid || generating}
+                                    style={{ padding: '10px 24px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.5)', background: allVerifiedValid ? 'rgba(52,211,153,0.15)' : 'transparent', color: allVerifiedValid ? '#34d399' : 'rgba(255,255,255,0.2)', fontWeight: 700, fontSize: 13, cursor: allVerifiedValid ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 7, opacity: allVerifiedValid ? 1 : 0.5 }}>
+                                    {generating ? <><RefreshCcw size={13} style={{ animation: 'spin 1s linear infinite' }} /> Generando...</> : <><Mail size={13} /> Confirmar y generar ({verifiedOrders.length})</>}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Correos CR Cost Modal */}
             {costModal && (

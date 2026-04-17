@@ -239,6 +239,23 @@ export default function EstadisticasDashboard() {
     return `${format(start, "d 'de' MMMM, yyyy", { locale: es })} - ${format(end, "d 'de' MMMM, yyyy", { locale: es })}`;
   };
 
+  const parseDisplayDate = (value: string | null | undefined): Date | null => {
+    if (!value) return null;
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (match && !value.includes('T')) {
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const formatOrderDisplayDate = (order: OrderDetail) => {
+    const parsed = parseDisplayDate(order.saleDate) || parseDisplayDate(order.timestamp);
+    return parsed ? format(parsed, 'dd/MM/yyyy') : 'Fecha invalida';
+  };
+
   return (
     <div className="space-y-4 md:space-y-6">
       {/* Header */}
@@ -387,7 +404,7 @@ export default function EstadisticasDashboard() {
                         {orderDetails.map((order, idx) => (
                           <tr key={order.id} className={idx % 2 === 0 ? 'bg-card' : 'bg-muted'}>
                             <td className="p-2">
-                              {format(new Date(order.saleDate || order.timestamp), 'dd/MM/yyyy')}
+                              {formatOrderDisplayDate(order)}
                             </td>
                             <td className="p-2 font-mono text-xs">{order.orderId}</td>
                             <td className="p-2">{order.customerName}</td>

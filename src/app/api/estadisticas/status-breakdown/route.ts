@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
+import { buildStatsOrderDateWhere } from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -47,32 +48,15 @@ export async function GET(req: NextRequest) {
     }
     
     const prisma = getTenantPrisma(tenantId);
+    const orderModel = prisma.order as any;
 
-    // Build date filter - use saleDate when available, fallback to timestamp
-    const dateFilter: any = {};
-    if (startDate) {
-      const start = new Date(startDate + 'T00:00:00');
-      dateFilter.gte = start;
-    }
-    if (endDate) {
-      const end = new Date(endDate + 'T23:59:59.999');
-      dateFilter.lte = end;
-    }
-
-    const whereClause: any = { tenantId };
-    if (Object.keys(dateFilter).length > 0) {
-      const saleDateFilter = {
-        gte: dateFilter.gte?.toISOString(),
-        lte: dateFilter.lte?.toISOString()
-      };
-      whereClause.OR = [
-        { saleDate: saleDateFilter },
-        { saleDate: null, timestamp: dateFilter }
-      ];
-    }
+    const whereClause: any = {
+      tenantId,
+      ...buildStatsOrderDateWhere(startDate, endDate),
+    };
 
     // Group orders by status
-    const statusGroups = await prisma.order.groupBy({
+    const statusGroups = await orderModel.groupBy({
       by: ['status'],
       where: whereClause,
       _count: {

@@ -91,3 +91,6 @@ holama/
 **/public/worker-*.js.map
 # Sentry Config File
 .env.sentry-build-plugin
+
+
+PRODUCTION_READINESS_REPORT.md

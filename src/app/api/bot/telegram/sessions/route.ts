@@ -61,11 +61,13 @@ export async function GET(request: NextRequest) {
         displayName: s.displayName,
         username: s.username,
         connectedAt: s.connectedAt,
-        user: {
-          id: s.user.id,
-          email: s.user.email,
-          name: s.user.name || s.user.username,
-        },
+        user: s.user
+          ? {
+              id: s.user.id,
+              email: s.user.email,
+              name: s.user.name || s.user.username,
+            }
+          : null,
       })),
     });
   } catch (error: any) {

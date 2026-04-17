@@ -1,13 +1,14 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 
-function ShimmerBlock({ className }: { className?: string }) {
+function ShimmerBlock({ className, style }: { className?: string; style?: React.CSSProperties }) {
   return (
     <div
       className={cn(
         'rounded-md bg-gradient-to-r from-muted via-muted/60 to-muted bg-[length:200%_100%] animate-shimmer',
         className
       )}
+      style={style}
     />
   );
 }

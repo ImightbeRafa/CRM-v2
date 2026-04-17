@@ -50,7 +50,7 @@ export function TenantSettingsPanel() {
   const { user } = useCurrentUser();
   const { refreshSettings } = useTenantSettings();
   const [isOpen, setIsOpen] = useState(false);
-  const [currency, setCurrency] = useState<Currency>(CURRENCIES[0]);
+  const [currency, setCurrency] = useState<CurrencyWithLocale>(CURRENCIES[0]);
   const [language, setLanguage] = useState<Language>(LANGUAGES[0]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);

@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const rawIds = Array.isArray(body?.ids) ? body.ids : [];
     const ids = rawIds
-      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)
       .slice(0, 100);
 
     if (ids.length === 0) {
@@ -34,14 +34,14 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const guiaById = new Map(guias.map((guia) => [guia.id, guia]));
+    const guiaById = new Map(guias.map((guia: any) => [guia.id, guia]));
     const orderedGuias = ids
-      .map((id) => guiaById.get(id))
-      .filter((guia): guia is NonNullable<typeof guia> => Boolean(guia));
+      .map((id: string) => guiaById.get(id))
+      .filter((guia: any): guia is any => Boolean(guia));
 
     const validPdfBuffers = orderedGuias
-      .filter((guia) => guia.pdfData)
-      .map((guia) => Buffer.from(guia.pdfData as Uint8Array));
+      .filter((guia: any) => guia.pdfData)
+      .map((guia: any) => Buffer.from(guia.pdfData as Uint8Array));
 
     if (validPdfBuffers.length === 0) {
       return NextResponse.json({ error: 'No PDFs available for the selected guías' }, { status: 400 });

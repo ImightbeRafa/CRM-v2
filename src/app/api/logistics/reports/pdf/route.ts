@@ -95,7 +95,15 @@ export async function GET(req: NextRequest) {
                 sg."guiaNumber"
             FROM "Order" o
             INNER JOIN lm_orders lm ON lm.crm_order_id = o.id
-            LEFT JOIN "ShippingGuia" sg ON sg."orderId" = o.id
+            LEFT JOIN LATERAL (
+                SELECT sg."guiaNumber"
+                FROM "ShippingGuia" sg
+                WHERE sg."tenantId" = o."tenantId"
+                  AND sg."orderId" = o."orderId"
+                  AND sg.carrier = 'correos_cr'
+                ORDER BY sg."updatedAt" DESC, sg."createdAt" DESC
+                LIMIT 1
+            ) sg ON TRUE
             WHERE lm.billed_week_id = $1
             ORDER BY o.id, o.timestamp ASC
         `, Number(weekId));

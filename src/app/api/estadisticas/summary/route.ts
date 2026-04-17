@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
+import { buildStatsOrderDateWhere, getPreviousStatsPeriod } from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -48,47 +49,26 @@ export async function GET(req: NextRequest) {
     }
     
     const prisma = getTenantPrisma(tenantId);
-
-    // Build date filter - use saleDate if available, fallback to timestamp
-    // Handle timezone properly by treating dates as local
-    const dateFilter: any = {};
-    if (startDate) {
-      // Start of day in local timezone
-      const start = new Date(startDate + 'T00:00:00');
-      dateFilter.gte = start;
-    }
-    if (endDate) {
-      // End of day in local timezone (23:59:59.999)
-      const end = new Date(endDate + 'T23:59:59.999');
-      dateFilter.lte = end;
-    }
+    const orderModel = prisma.order as any;
 
     // NOTE: We intentionally DO NOT filter out unconfirmed contra-entrega (COD) orders here.
     // /produccion counts every saved order, so stats must too or the totals won't reconcile.
     const whereClause: any = {
       tenantId,
+      ...buildStatsOrderDateWhere(startDate, endDate),
     };
-    if (Object.keys(dateFilter).length > 0) {
-      const saleDateFilter: any = {};
-      if (dateFilter.gte) saleDateFilter.gte = dateFilter.gte.toISOString();
-      if (dateFilter.lte) saleDateFilter.lte = dateFilter.lte.toISOString();
-      whereClause.OR = [
-        { saleDate: saleDateFilter },
-        { saleDate: null, timestamp: dateFilter }
-      ];
-    }
 
     // Get current period data
     const [orders, totalRevenue] = await Promise.all([
-      prisma.order.count({ where: whereClause }),
-      prisma.order.aggregate({
+      orderModel.count({ where: whereClause }),
+      orderModel.aggregate({
         where: whereClause,
         _sum: { total: true },
       }),
     ]);
 
     // Get unique clients
-    const uniqueClients = await prisma.order.groupBy({
+    const uniqueClients = await orderModel.groupBy({
       by: ['customerName'],
       where: whereClause,
     });
@@ -101,50 +81,34 @@ export async function GET(req: NextRequest) {
     // Calculate trends (compare with previous period)
     let trends = null;
     if (startDate && endDate) {
-      const start = new Date(startDate + 'T00:00:00');
-      const end = new Date(endDate + 'T23:59:59.999');
-      const periodLength = end.getTime() - start.getTime();
+      const previousPeriod = getPreviousStatsPeriod(startDate, endDate);
+      if (!previousPeriod) {
+        trends = null;
+      } else {
+        // Keep previous-period WHERE consistent with current-period logic:
+        // match on saleDate when available, else fall back to timestamp.
+        const previousWhereClause: any = {
+          tenantId,
+          ...buildStatsOrderDateWhere(previousPeriod.startDate, previousPeriod.endDate),
+        };
 
-      const previousStart = new Date(start.getTime() - periodLength);
-      const previousEnd = new Date(start.getTime());
+        const [prevOrders, prevRevenue] = await Promise.all([
+          orderModel.count({ where: previousWhereClause }),
+          orderModel.aggregate({
+            where: previousWhereClause,
+            _sum: { total: true },
+          }),
+        ]);
 
-      // Keep previous-period WHERE consistent with current-period logic:
-      // match on saleDate when available, else fall back to timestamp.
-      const previousWhereClause: any = {
-        tenantId,
-        OR: [
-          {
-            saleDate: {
-              gte: previousStart.toISOString(),
-              lt: previousEnd.toISOString(),
-            },
-          },
-          {
-            saleDate: null,
-            timestamp: {
-              gte: previousStart,
-              lt: previousEnd,
-            },
-          },
-        ],
-      };
+        const prevTotal = prevRevenue._sum.total || 0;
+        const prevAvg = prevOrders > 0 ? prevTotal / prevOrders : 0;
 
-      const [prevOrders, prevRevenue] = await Promise.all([
-        prisma.order.count({ where: previousWhereClause }),
-        prisma.order.aggregate({
-          where: previousWhereClause,
-          _sum: { total: true },
-        }),
-      ]);
-
-      const prevTotal = prevRevenue._sum.total || 0;
-      const prevAvg = prevOrders > 0 ? prevTotal / prevOrders : 0;
-
-      trends = {
-        sales: prevOrders > 0 ? ((totalSales - prevOrders) / prevOrders) * 100 : 0,
-        revenue: prevTotal > 0 ? ((revenue - prevTotal) / prevTotal) * 100 : 0,
-        avgOrderValue: prevAvg > 0 ? ((averageOrderValue - prevAvg) / prevAvg) * 100 : 0,
-      };
+        trends = {
+          sales: prevOrders > 0 ? ((totalSales - prevOrders) / prevOrders) * 100 : 0,
+          revenue: prevTotal > 0 ? ((revenue - prevTotal) / prevTotal) * 100 : 0,
+          avgOrderValue: prevAvg > 0 ? ((averageOrderValue - prevAvg) / prevAvg) * 100 : 0,
+        };
+      }
     }
 
     const result = {

@@ -23,9 +23,23 @@ const RevenueChartInner = ({ data, height = 300, currencySymbol = '₡', locale 
     return null;
   }
 
+  const parseDateKeyForDisplay = (value: string): Date => {
+    if (/^\d{4}-\d{2}$/.test(value)) {
+      const [year, month] = value.split('-').map(Number);
+      return new Date(year, month - 1, 1);
+    }
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (match) {
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+
+    return new Date(value);
+  };
+
   const formattedData = data.map((item) => ({
     ...item,
-    displayDate: format(new Date(item.date), 'dd/MM'),
+    displayDate: format(parseDateKeyForDisplay(item.date), item.date.length === 7 ? 'MM/yyyy' : 'dd/MM'),
   }));
 
   const formatCurrency = (value: number) => {

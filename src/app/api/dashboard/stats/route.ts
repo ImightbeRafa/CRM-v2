@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
-import { prisma as globalPrisma } from '@/lib/db';
 
 const statsCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 30000;
@@ -24,7 +23,7 @@ function pruneCache() {
 }
 
 // Helper to clear cache for a specific tenant (useful for debugging)
-export function clearStatsCache(tenantId?: string) {
+function clearStatsCache(tenantId?: string) {
   if (tenantId) {
     statsCache.delete(tenantId);
   } else {

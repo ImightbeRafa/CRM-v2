@@ -4,7 +4,7 @@ import { useSession } from 'next-auth/react';
 interface User {
   id: string;
   username: string;
-  role: 'MASTER' | 'REGULAR';
+  role: 'MASTER' | 'REGULAR' | 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES' | 'PRODUCTION' | 'VIEWER';
   active: boolean;
 }
 

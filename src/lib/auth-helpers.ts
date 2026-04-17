@@ -35,8 +35,8 @@ export async function requireAuth() {
 export async function requirePermission(permission: Permission) {
   const session = await requireAuth();
 
-  const userRole = (session.user as any).role as Role;
-  const membershipRole = (session.user as any).membershipRole as Role;
+  const userRole = (session.user as any).role as string | undefined;
+  const membershipRole = (session.user as any).membershipRole as string | undefined;
   const tenantId = (session.user as any).tenantId;
 
   // Use membership role if available, fallback to user role
@@ -214,4 +214,3 @@ export function getSessionRole(session: any): Role {
 export function getSessionTenantId(session: any): string | null {
   return session?.user?.tenantId || null;
 }
-

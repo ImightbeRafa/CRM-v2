@@ -10,6 +10,10 @@ import { createApiKey } from '@/lib/integration-auth';
  */
 export async function POST(req: NextRequest) {
   try {
+    if (process.env.NODE_ENV === 'production') {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
     const auth = await authenticateAPI(req);
     if (!auth.ok) {
       return auth.response;

@@ -21,7 +21,7 @@ import { SetupChecklist } from "./components/SetupChecklist";
 const pageTransition = {
   initial: { opacity: 0, y: 12 },
   animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] },
+  transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] as const },
 };
 
 const cardHover = {
@@ -91,6 +91,10 @@ export default function EnhancedHomeContent() {
       </div>
     );
   }
+
+  const isOwner = session.user?.role === 'MASTER'
+    || session.user?.membershipRole === 'OWNER'
+    || session.user?.currentTenant?.role === 'OWNER';
 
   // Main content for authenticated users
   return (
@@ -170,7 +174,7 @@ export default function EnhancedHomeContent() {
         </div>
 
         {/* Setup Checklist - shown to admins until all setup is complete */}
-        {(session.user?.role === 'MASTER' || session.user?.role === 'OWNER') && (
+        {isOwner && (
           <SetupChecklist />
         )}
 

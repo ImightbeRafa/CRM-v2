@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
+import { buildStatsOrderDateWhere } from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -48,31 +49,12 @@ export async function GET(req: NextRequest) {
     
     const prisma = getTenantPrisma(tenantId);
 
-    // Build date filter - use saleDate when available, fallback to timestamp
-    const dateFilter: any = {};
-    if (startDate) {
-      const start = new Date(startDate + 'T00:00:00');
-      dateFilter.gte = start;
-    }
-    if (endDate) {
-      const end = new Date(endDate + 'T23:59:59.999');
-      dateFilter.lte = end;
-    }
-
     // NOTE: We intentionally DO NOT filter out unconfirmed contra-entrega (COD) orders here.
     // /produccion counts every saved order, so stats must too or the totals won't reconcile.
     const whereClause: any = {
       tenantId,
+      ...buildStatsOrderDateWhere(startDate, endDate),
     };
-    if (Object.keys(dateFilter).length > 0) {
-      const saleDateFilter: any = {};
-      if (dateFilter.gte) saleDateFilter.gte = dateFilter.gte.toISOString();
-      if (dateFilter.lte) saleDateFilter.lte = dateFilter.lte.toISOString();
-      whereClause.OR = [
-        { saleDate: saleDateFilter },
-        { saleDate: null, timestamp: dateFilter }
-      ];
-    }
 
     // Get EA orders
     const eaOrders = await prisma.order.aggregate({

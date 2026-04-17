@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
-import { format } from 'date-fns';
+import { formatStatsDateKey, normalizeStatsDateInput } from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -58,7 +58,13 @@ export async function GET(req: NextRequest) {
         select: { timestamp: true },
       }),
       prisma.order.findFirst({
-        where: { tenantId, saleDate: { not: null } },
+        where: {
+          tenantId,
+          AND: [
+            { saleDate: { not: null } },
+            { saleDate: { not: '' } },
+          ],
+        },
         orderBy: { saleDate: 'asc' },
         select: { saleDate: true },
       }),
@@ -69,8 +75,8 @@ export async function GET(req: NextRequest) {
       candidates.push(new Date(oldestByTimestamp.timestamp));
     }
     if (oldestBySaleDate?.saleDate) {
-      const d = new Date(oldestBySaleDate.saleDate);
-      if (!Number.isNaN(d.getTime())) candidates.push(d);
+      const dateKey = normalizeStatsDateInput(oldestBySaleDate.saleDate);
+      if (dateKey) candidates.push(new Date(`${dateKey}T12:00:00.000Z`));
     }
     if (tenantCreatedAt) {
       candidates.push(new Date(tenantCreatedAt));
@@ -82,7 +88,7 @@ export async function GET(req: NextRequest) {
       : new Date('2000-01-01T00:00:00');
 
     const result = {
-      earliestDate: format(earliest, 'yyyy-MM-dd'),
+      earliestDate: formatStatsDateKey(earliest),
       hasOrders: Boolean(oldestByTimestamp),
     };
 

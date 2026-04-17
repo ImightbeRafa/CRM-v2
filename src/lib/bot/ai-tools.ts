@@ -1277,6 +1277,7 @@ export async function getStatisticsSummary(
     async () => {
       try {
         const tenantPrisma = getTenantPrisma(ctx.tenantId);
+        const orderModel = tenantPrisma.order as any;
         
         // Default to last 30 days if no dates provided
         const now = new Date();
@@ -1294,12 +1295,12 @@ export async function getStatisticsSummary(
         };
         
         const [totalOrders, revenue, uniqueClients] = await Promise.all([
-          tenantPrisma.order.count({ where: whereClause }),
-          tenantPrisma.order.aggregate({
+          orderModel.count({ where: whereClause }),
+          orderModel.aggregate({
             where: whereClause,
             _sum: { total: true },
           }),
-          tenantPrisma.order.groupBy({
+          orderModel.groupBy({
             by: ['customerName'],
             where: whereClause,
           }),
@@ -1309,7 +1310,7 @@ export async function getStatisticsSummary(
         const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
         
         // Get top products
-        const topProducts = await tenantPrisma.order.groupBy({
+        const topProducts = await orderModel.groupBy({
           by: ['product'],
           where: whereClause,
           _count: { product: true },

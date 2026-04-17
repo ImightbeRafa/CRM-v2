@@ -259,6 +259,7 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response
     
     const { tenantId, userId, role } = auth
+    const userName = auth.session?.user?.name || auth.session?.user?.email || userId || 'System'
     const tenantPrisma = getTenantPrisma(tenantId)
     const body = await request.json()
 

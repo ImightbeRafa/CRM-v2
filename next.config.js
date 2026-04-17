@@ -20,10 +20,10 @@ const nextConfig = {
   compress: true,
   reactStrictMode: true,
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   // Server-side packages that should not be bundled
   serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium', 'soap', 'axios'],

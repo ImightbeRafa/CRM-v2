@@ -2,10 +2,10 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
-    FileDown, Printer, TrendingUp, Package, Truck, Mail,
+    FileDown, Printer, TrendingUp, Package, Truck,
     DollarSign, RefreshCw, AlertTriangle, ChevronDown, ChevronRight,
     CheckSquare, Square, Layers, Lock, Unlock, Clock, History,
-    X, Check,
+    X, Check, Calendar,
 } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 
@@ -18,6 +18,32 @@ const fmtDate = (d: string) => {
         return new Date(d + 'T12:00:00').toLocaleDateString('es-CR', { weekday: 'short', day: '2-digit', month: 'short' });
     } catch { return d; }
 };
+const CR_TZ = 'America/Costa_Rica';
+const toDateKeyCR = (date = new Date()) => date.toLocaleDateString('en-CA', { timeZone: CR_TZ });
+const parseDateKey = (key: string) => {
+    const [year, month, day] = key.split('-').map(Number);
+    return new Date(year, month - 1, day, 12);
+};
+const startOfMonthKey = (key: string) => {
+    const date = parseDateKey(key);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+};
+const startOfYearKey = (key: string) => `${key.slice(0, 4)}-01-01`;
+const previousMonthRange = (key: string) => {
+    const date = parseDateKey(startOfMonthKey(key));
+    date.setMonth(date.getMonth() - 1);
+    const from = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+    const next = parseDateKey(from);
+    next.setMonth(next.getMonth() + 1);
+    next.setDate(next.getDate() - 1);
+    return { from, to: toDateKeyCR(next) };
+};
+const formatPeriodLabel = (from?: string | null, to?: string | null) => {
+    if (!from && !to) return 'Todo el historial';
+    if (from && to) return `${fmtDate(from)} - ${fmtDate(to)}`;
+    if (from) return `Desde ${fmtDate(from)}`;
+    return `Hasta ${fmtDate(to!)}`;
+};
 
 const MANAGED_IDS = [
     'cmh32z0ol0000k004hvx9tg3p', 'cmhsibjue0004js04gie724nx', 'cmhutd1th0000jp04oqibtz54',
@@ -26,6 +52,8 @@ const MANAGED_IDS = [
 ];
 
 /* ─── Types ───────────────────────────────────────────── */
+type ReportPeriodMode = 'currentWeek' | 'custom';
+
 interface ReportOrder {
     id: string;
     orderId: string;
@@ -34,6 +62,9 @@ interface ReportOrder {
     timestamp: string;
     timestampCR: string;
     dateCR: string;
+    reportDate: string;
+    reportTimestampCR: string;
+    reportDateCR: string;
     province: string | null;
     product: string | null;
     shippingCost: number | null;
@@ -49,7 +80,7 @@ interface ReportOrder {
 }
 
 interface ReportData {
-    period: { dateFrom: string; dateTo: string };
+    period: { dateFrom: string | null; dateTo: string | null };
     tenantId: string;
     correos: {
         packages: number; shippingCost: number; pendingCostCount: number;
@@ -108,6 +139,9 @@ export default function ReportsPage() {
     // Report controls — default to all tenants for the live dashboard
     const [selectedTenants, setSelectedTenants] = useState<string[]>([...MANAGED_IDS]);
     const [staffName, setStaffName] = useState('Marlenn');
+    const [reportMode, setReportMode] = useState<ReportPeriodMode>('currentWeek');
+    const [dateFrom, setDateFrom] = useState(() => startOfMonthKey(toDateKeyCR()));
+    const [dateTo, setDateTo] = useState(() => toDateKeyCR());
 
     // Current billing week metadata
     const [weekInfo, setWeekInfo] = useState<{ id: number; week_start: string; week_end: string; finalized_at: string | null } | null>(null);
@@ -137,6 +171,41 @@ export default function ReportsPage() {
     const weekLabel = weekInfo
         ? `${fmtDate(weekInfo.week_start.slice(0, 10))} — ${fmtDate(weekInfo.week_end.slice(0, 10))}`
         : '';
+    const firstReportPeriod = reports[0]?.data.period;
+    const customLabelFrom = firstReportPeriod?.dateFrom ?? (dateFrom || null);
+    const customLabelTo = firstReportPeriod?.dateTo ?? (dateTo || null);
+    const periodLabel = reportMode === 'currentWeek'
+        ? (weekLabel || (firstReportPeriod ? formatPeriodLabel(firstReportPeriod.dateFrom, firstReportPeriod.dateTo) : 'Semana actual'))
+        : formatPeriodLabel(customLabelFrom, customLabelTo);
+
+    const clearPeriodResults = () => {
+        setReports([]);
+        setExpanded({});
+        setExcludedOrders(new Set());
+        setError('');
+    };
+
+    const selectCurrentWeek = () => {
+        setReportMode('currentWeek');
+        setWeekInfo(null);
+        clearPeriodResults();
+    };
+
+    const selectCustomRange = (from: string, to: string) => {
+        setReportMode('custom');
+        setDateFrom(from);
+        setDateTo(to);
+        setWeekInfo(null);
+        clearPeriodResults();
+    };
+
+    const selectMaxRange = () => {
+        setReportMode('custom');
+        setDateFrom('');
+        setDateTo('');
+        setWeekInfo(null);
+        clearPeriodResults();
+    };
 
     // ─── Tenant toggles ────────────────────────────────
     const toggleTenant = (id: string) => {
@@ -154,21 +223,31 @@ export default function ReportsPage() {
         const tenants = selectedTenants.length > 0 ? selectedTenants : MANAGED_IDS;
         if (tenants.length === 0) return;
 
+        if (reportMode === 'custom' && dateFrom && dateTo && dateFrom > dateTo) {
+            setError('La fecha inicial no puede ser mayor que la fecha final.');
+            return;
+        }
+
         setLoading(true); setError(''); setExcludedOrders(new Set());
         try {
             const settled = await Promise.allSettled(
                 tenants.map(async (tenantId) => {
                     const p = new URLSearchParams({
                         tenantId,
-                        currentWeek: 'true',
                         staffName,
                     });
+                    if (reportMode === 'currentWeek') {
+                        p.set('currentWeek', 'true');
+                    } else {
+                        p.set('includeBilled', 'true');
+                        if (dateFrom) p.set('dateFrom', dateFrom);
+                        if (dateTo) p.set('dateTo', dateTo);
+                    }
                     const res = await fetch(`/api/logistics/reports?${p}`);
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                     const d = await res.json();
                     if (d.error) throw new Error(d.error);
-                    if (d.billingWeek && !weekInfo) setWeekInfo(d.billingWeek);
-                    else if (d.billingWeek) setWeekInfo(d.billingWeek);
+                    if (reportMode === 'currentWeek' && d.billingWeek) setWeekInfo(d.billingWeek);
                     return { tenantId, data: d } as ReportEntry;
                 })
             );
@@ -195,7 +274,7 @@ export default function ReportsPage() {
             }
         } catch (e: any) { setError(e.message || 'Error generando reportes'); }
         finally { setLoading(false); }
-    }, [selectedTenants, staffName, getTenantName, weekInfo]);
+    }, [selectedTenants, staffName, getTenantName, reportMode, dateFrom, dateTo]);
 
     // ─── Auto-load on mount ────────────────────────────
     useEffect(() => { generate(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -203,28 +282,17 @@ export default function ReportsPage() {
     // ─── Auto-refresh every 60 seconds ─────────────────
     useEffect(() => {
         if (activeTab !== 'reports') return;
+        if (reportMode !== 'currentWeek') return;
         const interval = setInterval(generate, 60000);
         return () => clearInterval(interval);
-    }, [activeTab, generate]);
+    }, [activeTab, reportMode, generate]);
 
     // ─── Refresh on focus ──────────────────────────────
     useEffect(() => {
-        const onFocus = () => { if (activeTab === 'reports') generate(); };
+        const onFocus = () => { if (activeTab === 'reports' && reportMode === 'currentWeek') generate(); };
         window.addEventListener('focus', onFocus);
         return () => window.removeEventListener('focus', onFocus);
-    }, [activeTab, generate]);
-
-    // ─── Get all orders across all reports ──────────────
-    const allOrders = useMemo(() => {
-        const orders: (ReportOrder & { tenantId: string })[] = [];
-        for (const entry of reports) {
-            for (const o of entry.data.correos.orders) orders.push({ ...o, tenantId: entry.tenantId });
-            for (const o of entry.data.mensajeria.orders) orders.push({ ...o, tenantId: entry.tenantId });
-        }
-        return orders;
-    }, [reports]);
-
-    const selectedOrders = useMemo(() => allOrders.filter(o => !excludedOrders.has(o.id)), [allOrders, excludedOrders]);
+    }, [activeTab, reportMode, generate]);
 
     // ─── Compute selected totals per tenant ─────────────
     const computeTenantTotals = useCallback((entry: ReportEntry) => {
@@ -385,7 +453,7 @@ export default function ReportsPage() {
     function exportAllCSV() {
         if (reports.length === 0) return;
         const rows: string[][] = [];
-        rows.push(['REPORTE DE LOGÍSTICA'], [`Periodo: ${weekLabel}`], []);
+        rows.push(['REPORTE DE LOGÍSTICA'], [`Periodo: ${periodLabel}`], []);
 
         for (const entry of reports) {
             const name = getTenantName(entry.tenantId);
@@ -396,7 +464,7 @@ export default function ReportsPage() {
                 .filter(o => !excludedOrders.has(o.id));
             for (const o of allOrd) {
                 rows.push([
-                    o.orderId, o.customerName, o.timestampCR, o.product ?? '',
+                    o.orderId, o.customerName, o.reportTimestampCR ?? o.timestampCR, o.product ?? '',
                     o.carrier, o.province ?? '', `${o.total}`,
                     `${o.correosShippingCost ?? ''}`, `${o.handlingCost}`,
                     o.guiaNumber ?? '', o.isContraEntrega ? 'Sí' : '',
@@ -415,14 +483,19 @@ export default function ReportsPage() {
         ]);
 
         const csv = rows.map(r => r.map(csvEscape).join(',')).join('\n');
-        const ws = weekInfo?.week_start?.slice(0, 10) ?? 'semana';
-        const we = weekInfo?.week_end?.slice(0, 10) ?? 'actual';
+        const reportPeriod = reports[0]?.data.period;
+        const ws = reportPeriod?.dateFrom ?? weekInfo?.week_start?.slice(0, 10) ?? 'inicio';
+        const we = reportPeriod?.dateTo ?? weekInfo?.week_end?.slice(0, 10) ?? 'hoy';
         downloadCSV(csv, `reporte_${ws}_${we}.csv`);
     }
 
     const allSelected = selectedTenants.length === MANAGED_IDS.length;
     const hasReports = reports.length > 0;
     const isWeekFinalized = weekInfo?.finalized_at != null;
+    const isCustomReport = reportMode === 'custom';
+    const canManageLiveWeek = reportMode === 'currentWeek' && !isWeekFinalized;
+    const todayKey = toDateKeyCR();
+    const lastMonth = previousMonthRange(todayKey);
 
     return (
         <div>
@@ -474,15 +547,15 @@ export default function ReportsPage() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                 <span style={{
                                     padding: '4px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-                                    background: isWeekFinalized ? 'rgba(52,211,153,0.15)' : 'rgba(139,135,255,0.15)',
-                                    color: isWeekFinalized ? '#34d399' : '#8b87ff',
-                                    border: `1px solid ${isWeekFinalized ? 'rgba(52,211,153,0.35)' : 'rgba(139,135,255,0.35)'}`,
-                                    animation: isWeekFinalized ? 'none' : 'pulse 2s ease-in-out infinite',
+                                    background: isCustomReport ? 'rgba(96,165,250,0.12)' : isWeekFinalized ? 'rgba(52,211,153,0.15)' : 'rgba(139,135,255,0.15)',
+                                    color: isCustomReport ? '#60a5fa' : isWeekFinalized ? '#34d399' : '#8b87ff',
+                                    border: `1px solid ${isCustomReport ? 'rgba(96,165,250,0.3)' : isWeekFinalized ? 'rgba(52,211,153,0.35)' : 'rgba(139,135,255,0.35)'}`,
+                                    animation: isCustomReport || isWeekFinalized ? 'none' : 'pulse 2s ease-in-out infinite',
                                 }}>
-                                    {isWeekFinalized ? 'Finalizada' : 'En vivo'}
+                                    {isCustomReport ? 'Consulta' : isWeekFinalized ? 'Finalizada' : 'En vivo'}
                                 </span>
                                 <h2 style={{ color: '#F2F2F2', fontSize: 16, fontWeight: 700, margin: 0 }}>
-                                    {weekLabel || 'Semana actual'}
+                                    {periodLabel || 'Semana actual'}
                                 </h2>
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -493,8 +566,50 @@ export default function ReportsPage() {
                                 <button onClick={generate} disabled={loading}
                                     style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid rgba(139,135,255,0.4)', background: 'rgba(139,135,255,0.1)', color: '#8b87ff', cursor: loading ? 'wait' : 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, opacity: loading ? 0.6 : 1 }}>
                                     <RefreshCw size={12} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
-                                    {loading ? 'Cargando...' : 'Actualizar'}
+                                    {loading ? 'Cargando...' : isCustomReport ? 'Generar' : 'Actualizar'}
                                 </button>
+                            </div>
+                        </div>
+
+                        {/* Period controls */}
+                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 14, marginBottom: 14 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+                                <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <Calendar size={12} /> Periodo
+                                </label>
+                                <span style={{ color: 'rgba(255,255,255,0.32)', fontSize: 11 }}>
+                                    {isCustomReport ? 'Incluye periodos cerrados y abiertos en el rango.' : 'Control semanal: cierre automatico domingo 12:00 PM.'}
+                                </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                {[
+                                    { label: 'Semana actual', onClick: selectCurrentWeek, active: reportMode === 'currentWeek' },
+                                    { label: 'Este mes', onClick: () => selectCustomRange(startOfMonthKey(todayKey), todayKey), active: isCustomReport && dateFrom === startOfMonthKey(todayKey) && dateTo === todayKey },
+                                    { label: 'Mes pasado', onClick: () => selectCustomRange(lastMonth.from, lastMonth.to), active: isCustomReport && dateFrom === lastMonth.from && dateTo === lastMonth.to },
+                                    { label: 'Este ano', onClick: () => selectCustomRange(startOfYearKey(todayKey), todayKey), active: isCustomReport && dateFrom === startOfYearKey(todayKey) && dateTo === todayKey },
+                                    { label: 'Max', onClick: selectMaxRange, active: isCustomReport && !dateFrom && !dateTo },
+                                ].map(item => (
+                                    <button key={item.label} onClick={item.onClick}
+                                        style={{
+                                            padding: '7px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                                            background: item.active ? 'rgba(96,165,250,0.14)' : 'rgba(255,255,255,0.03)',
+                                            border: `1px solid ${item.active ? 'rgba(96,165,250,0.35)' : 'rgba(255,255,255,0.08)'}`,
+                                            color: item.active ? '#60a5fa' : 'rgba(255,255,255,0.48)',
+                                        }}>
+                                        {item.label}
+                                    </button>
+                                ))}
+                                <input type="date" value={dateFrom} onChange={e => { setReportMode('custom'); setDateFrom(e.target.value); setWeekInfo(null); clearPeriodResults(); }}
+                                    style={{ padding: '7px 10px', ...glass, color: '#F2F2F2', fontSize: 12, outline: 'none', borderRadius: 8 }} />
+                                <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 12 }}>a</span>
+                                <input type="date" value={dateTo} onChange={e => { setReportMode('custom'); setDateTo(e.target.value); setWeekInfo(null); clearPeriodResults(); }}
+                                    style={{ padding: '7px 10px', ...glass, color: '#F2F2F2', fontSize: 12, outline: 'none', borderRadius: 8 }} />
+                                {isCustomReport && (
+                                    <button onClick={() => { setDateFrom(''); setDateTo(''); clearPeriodResults(); }}
+                                        style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', fontSize: 11, cursor: 'pointer', padding: '4px 6px' }}>
+                                        Limpiar fechas
+                                    </button>
+                                )}
                             </div>
                         </div>
 
@@ -531,7 +646,7 @@ export default function ReportsPage() {
                     </div>
 
                     {/* Finalized week notice */}
-                    {hasReports && isWeekFinalized && (
+                    {hasReports && reportMode === 'currentWeek' && isWeekFinalized && (
                         <div style={{ ...glass, padding: '10px 18px', marginBottom: 20, borderColor: 'rgba(52,211,153,0.3)', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <Lock size={13} style={{ color: '#34d399', flexShrink: 0 }} />
                             <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, margin: 0 }}>
@@ -541,11 +656,21 @@ export default function ReportsPage() {
                     )}
 
                     {/* Live dashboard info */}
-                    {hasReports && !isWeekFinalized && (
+                    {hasReports && reportMode === 'currentWeek' && !isWeekFinalized && (
                         <div style={{ ...glass, padding: '10px 18px', marginBottom: 20, borderColor: 'rgba(139,135,255,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <TrendingUp size={13} style={{ color: '#8b87ff', flexShrink: 0 }} />
                             <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, margin: 0 }}>
                                 Dashboard en vivo — se actualiza cada 60 segundos. Las órdenes aparecen aquí al hacer clic en <strong style={{ color: '#34d399' }}>Terminar</strong> desde el tablero.
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Custom dashboard info */}
+                    {hasReports && isCustomReport && (
+                        <div style={{ ...glass, padding: '10px 18px', marginBottom: 20, borderColor: 'rgba(96,165,250,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <Calendar size={13} style={{ color: '#60a5fa', flexShrink: 0 }} />
+                            <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, margin: 0 }}>
+                                Consulta de rango personalizado. Este reporte es solo visualizacion y no cambia los cierres semanales.
                             </p>
                         </div>
                     )}
@@ -560,7 +685,7 @@ export default function ReportsPage() {
                                 const isExpanded = expanded[entry.tenantId] ?? true;
                                 const t = computeTenantTotals(entry);
                                 const allTenantOrders = [...r.correos.orders, ...r.mensajeria.orders]
-                                    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+                                    .sort((a, b) => new Date(a.reportDate ?? a.timestamp).getTime() - new Date(b.reportDate ?? b.timestamp).getTime());
 
                                 return (
                                     <div key={entry.tenantId} style={{ marginBottom: 16 }}>
@@ -667,7 +792,7 @@ export default function ReportsPage() {
                                                                                 }}
                                                                                 className="lm-table-row">
                                                                                 <td style={{ padding: '6px 8px' }}>
-                                                                                    {!isExcluded && !isWeekFinalized && (
+                                                                                    {!isExcluded && canManageLiveWeek && (
                                                                                         <button onClick={() => setPendingConfirm({ orderId: o.id, orderDisplayId: o.orderId })}
                                                                                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#34d399', padding: 2 }}>
                                                                                             <CheckSquare size={14} />
@@ -678,7 +803,7 @@ export default function ReportsPage() {
                                                                                             <Square size={14} />
                                                                                         </span>
                                                                                     )}
-                                                                                    {isWeekFinalized && !isExcluded && (
+                                                                                    {!canManageLiveWeek && !isExcluded && (
                                                                                         <Lock size={12} style={{ color: 'rgba(255,255,255,0.2)' }} />
                                                                                     )}
                                                                                 </td>
@@ -687,7 +812,7 @@ export default function ReportsPage() {
                                                                                 <td style={{ padding: '6px 8px', color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap' }}>
                                                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                                                                         <Clock size={10} style={{ color: 'rgba(255,255,255,0.25)', flexShrink: 0 }} />
-                                                                                        {o.timestampCR}
+                                                                                        {o.reportTimestampCR ?? o.timestampCR}
                                                                                     </div>
                                                                                 </td>
                                                                                 <td style={{ padding: '6px 8px', color: 'rgba(255,255,255,0.5)', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.product ?? '—'}</td>
@@ -741,7 +866,7 @@ export default function ReportsPage() {
                                                     <Layers size={18} style={{ color: '#8b87ff' }} />
                                                     <h2 style={{ color: '#F2F2F2', fontSize: 18, fontWeight: 700, margin: 0 }}>Resumen Combinado</h2>
                                                     <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>
-                                                        {reports.length} cuenta{reports.length !== 1 ? 's' : ''} · {weekLabel}
+                                                        {reports.length} cuenta{reports.length !== 1 ? 's' : ''} · {periodLabel}
                                                     </span>
                                                 </div>
                                                 <div style={{ display: 'flex', gap: 8 }}>
@@ -846,7 +971,7 @@ export default function ReportsPage() {
                                             </div>
 
                                             {/* Auto-finalization notice */}
-                                            {!isWeekFinalized && (
+                                            {canManageLiveWeek && (
                                                 <div style={{ marginTop: 16, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                                                     <Clock size={13} style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }} />
                                                     <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11.5, margin: 0 }}>
@@ -954,7 +1079,7 @@ export default function ReportsPage() {
                                 const tenantColor = getTenantColor(entry.tenantId);
                                 const tenantName = getTenantName(entry.tenantId);
                                 const allOrd = [...entry.data.correos.orders, ...entry.data.mensajeria.orders]
-                                    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+                                    .sort((a, b) => new Date(a.reportDate ?? a.timestamp).getTime() - new Date(b.reportDate ?? b.timestamp).getTime());
 
                                 return (
                                     <div key={entry.tenantId} style={{ ...glass, padding: '16px 20px', marginBottom: 12 }}>
@@ -977,7 +1102,7 @@ export default function ReportsPage() {
                                                         <tr key={o.id} className="lm-table-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                                                             <td style={{ padding: '5px 8px', color: '#F2F2F2', fontFamily: 'monospace', fontSize: 10 }}>{o.orderId}</td>
                                                             <td style={{ padding: '5px 8px', color: 'rgba(255,255,255,0.6)' }}>{o.customerName}</td>
-                                                            <td style={{ padding: '5px 8px', color: 'rgba(255,255,255,0.5)' }}>{o.timestampCR}</td>
+                                                            <td style={{ padding: '5px 8px', color: 'rgba(255,255,255,0.5)' }}>{o.reportTimestampCR ?? o.timestampCR}</td>
                                                             <td style={{ padding: '5px 8px' }}>
                                                                 <span style={{ padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 600, background: o.carrier === 'correos' ? 'rgba(96,165,250,0.12)' : 'rgba(139,135,255,0.12)', color: o.carrier === 'correos' ? '#60a5fa' : '#8b87ff' }}>
                                                                     {o.carrier === 'correos' ? 'Correos' : 'GD'}

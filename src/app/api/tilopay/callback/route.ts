@@ -116,9 +116,7 @@ export async function POST(request: NextRequest) {
               tilopaySubscriptionId: cardToken || transactionId,
               currentPeriodStart: now,
               currentPeriodEnd: periodEnd,
-              cancelAtPeriodEnd: false, // Clear any cancellation flags
-              stripeSubscriptionId: null,
-              stripeCustomerId: null
+              cancelAtPeriodEnd: false // Clear any cancellation flags
             }
           });
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { MemberRole } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import { createSuccessResponse, createErrorResponse, handleApiError, validatePassword } from '@/lib/apiUtils'
 import { requireAdmin } from '@/lib/apiAuth'
@@ -18,7 +19,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const updateData: any = {}
     
     if (username !== undefined) updateData.username = username
-    if (role !== undefined) updateData.role = role
     if (active !== undefined) updateData.active = active
     
     if (password && password.length > 0) {
@@ -43,15 +43,32 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
     
+    if (role !== undefined) {
+      if (!Object.values(MemberRole).includes(role)) {
+        return createErrorResponse('Rol invalido', 400)
+      }
+
+      await prisma.membership.updateMany({
+        where: { userId },
+        data: { role }
+      })
+    }
+
     const user = await prisma.user.update({
       where: { id: userId },
       data: updateData,
       select: {
         id: true,
         username: true,
-        role: true,
         active: true,
-        updatedAt: true
+        updatedAt: true,
+        memberships: {
+          select: {
+            role: true,
+            tenantId: true,
+            isActive: true
+          }
+        }
       }
     })
     
@@ -76,7 +93,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       where: { id: userId }
     })
     
-    if (user?.role === 'MASTER') {
+    if (user?.isSuperAdmin) {
       return createErrorResponse('No se puede eliminar el usuario maestro', 400)
     }
     

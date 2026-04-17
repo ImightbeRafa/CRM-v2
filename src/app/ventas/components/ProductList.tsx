@@ -242,7 +242,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-2 text-sm text-muted-foreground">
                       <span className="whitespace-nowrap">Cantidad: {product.cantidad}</span>
                       <span className="whitespace-nowrap">Color: {getFieldDisplayValue('color', product.color)}</span>
-                      <span className="whitespace-nowrap">Tamaño: {getFieldDisplayValue('tamano', product.tamano)}</span>
+                      <span className="whitespace-nowrap">Tamaño: {getFieldDisplayValue('tamano', product.tamano || '')}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 w-full sm:w-auto">

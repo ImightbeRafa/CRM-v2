@@ -18,8 +18,9 @@ const MANAGED_TENANT_IDS = [
 
 /**
  * GET /api/logistics/guias/history
- * 
- * Returns recent ShippingGuia records across all managed tenants.
+ *
+ * Returns one current guia per managed order. The visible status is the
+ * logistics/order status, not the internal guia persistence status.
  */
 export async function GET(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
@@ -28,72 +29,77 @@ export async function GET(req: NextRequest) {
     try {
         const { searchParams } = new URL(req.url);
         const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 200);
-        const carrier = searchParams.get('carrier') || undefined;
+        const carrier = searchParams.get('carrier') || null;
 
-        const where: any = {
-            tenantId: { in: MANAGED_TENANT_IDS },
-        };
-        if (carrier) where.carrier = carrier;
+        const params: any[] = [MANAGED_TENANT_IDS, limit];
+        let carrierSql = '';
+        if (carrier) {
+            params.push(carrier);
+            carrierSql = `AND sg.carrier = $${params.length}`;
+        }
 
-        const guias = await prisma.shippingGuia.findMany({
-            where,
-            orderBy: { createdAt: 'desc' },
-            take: limit,
-            select: {
-                id: true,
-                tenantId: true,
-                orderId: true,
-                carrier: true,
-                guiaNumber: true,
-                trackingNumber: true,
-                status: true,
-                progress: true,
-                errorMessage: true,
-                pdfFileName: true,
-                createdAt: true,
-                updatedAt: true,
-                // Exclude pdfData from listing (too large)
-            },
-        });
-
-        const pdfChecks = await prisma.shippingGuia.findMany({
-            where: { id: { in: guias.map(g => g.id) } },
-            select: { id: true, pdfData: true },
-        });
-        const pdfSet = new Set(pdfChecks.filter(p => p.pdfData).map(p => p.id));
-        const guiasWithPdfCheck = guias.map(g => ({ ...g, hasPdf: pdfSet.has(g.id) }));
-
-        // Get tenant names for enrichment
-        const tenants = await prisma.tenant.findMany({
-            where: { id: { in: MANAGED_TENANT_IDS } },
-            select: { id: true, name: true },
-        });
-        const tenantNames: Record<string, string> = {};
-        for (const t of tenants) tenantNames[t.id] = t.name || t.id;
-
-        // Get customer names by looking up orders
-        const orderIds = [...new Set(guias.map(g => g.orderId))];
-        const orders = orderIds.length > 0
-            ? await prisma.order.findMany({
-                where: {
-                    orderId: { in: orderIds },
-                    tenantId: { in: MANAGED_TENANT_IDS },
-                },
-                select: { orderId: true, tenantId: true, customerName: true },
-            })
-            : [];
-        const customerNameMap: Record<string, string> = {};
-        for (const o of orders) customerNameMap[`${o.tenantId}:${o.orderId}`] = o.customerName;
+        const guias = await prisma.$queryRawUnsafe<any[]>(`
+            WITH current_guias AS (
+                SELECT DISTINCT ON (sg."tenantId", sg."orderId", sg.carrier)
+                    sg.id,
+                    sg."tenantId",
+                    sg."orderId",
+                    sg.carrier,
+                    sg."guiaNumber",
+                    sg."trackingNumber",
+                    sg.status AS guia_status,
+                    sg.progress,
+                    sg."errorMessage",
+                    sg."pdfFileName",
+                    (sg."pdfData" IS NOT NULL) AS has_pdf,
+                    sg."createdAt",
+                    sg."updatedAt"
+                FROM "ShippingGuia" sg
+                WHERE sg."tenantId" = ANY($1::text[])
+                  ${carrierSql}
+                ORDER BY sg."tenantId", sg."orderId", sg.carrier, sg."updatedAt" DESC, sg."createdAt" DESC
+            )
+            SELECT
+                cg.*,
+                t.name AS tenant_name,
+                o.id AS crm_order_id,
+                o."customerName",
+                o.status AS crm_status,
+                lm.status AS lm_status
+            FROM current_guias cg
+            LEFT JOIN "Tenant" t ON t.id = cg."tenantId"
+            LEFT JOIN "Order" o ON o."tenantId" = cg."tenantId" AND o."orderId" = cg."orderId"
+            LEFT JOIN lm_orders lm ON lm.crm_order_id = o.id
+            ORDER BY cg."updatedAt" DESC, cg."createdAt" DESC
+            LIMIT $2
+        `, ...params);
 
         return NextResponse.json({
-            guias: guiasWithPdfCheck.map(g => ({
-                ...g,
-                tenantName: tenantNames[g.tenantId] || g.tenantId,
-                customerName: customerNameMap[`${g.tenantId}:${g.orderId}`] || '',
-            })),
+            guias: guias.map(g => {
+                const orderStatus = g.lm_status || g.crm_status || g.guia_status;
+                return {
+                    id: g.id,
+                    tenantId: g.tenantId,
+                    orderId: g.orderId,
+                    carrier: g.carrier,
+                    guiaNumber: g.guiaNumber,
+                    trackingNumber: g.trackingNumber,
+                    status: orderStatus,
+                    orderStatus,
+                    guiaStatus: g.guia_status,
+                    progress: g.progress,
+                    errorMessage: g.errorMessage,
+                    pdfFileName: g.pdfFileName,
+                    createdAt: g.createdAt,
+                    updatedAt: g.updatedAt,
+                    hasPdf: !!g.has_pdf,
+                    tenantName: g.tenant_name || g.tenantId,
+                    customerName: g.customerName || '',
+                };
+            }),
         });
     } catch (error) {
         console.error('[logistics/guias/history GET]', error);
-        return NextResponse.json({ error: 'Failed to fetch guía history' }, { status: 500 });
+        return NextResponse.json({ error: 'Failed to fetch guia history' }, { status: 500 });
     }
 }

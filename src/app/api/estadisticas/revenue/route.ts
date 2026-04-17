@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
-import { startOfDay, startOfWeek, startOfMonth, format } from 'date-fns';
+import {
+  buildStatsOrderDateWhere,
+  getOrderStatsDateKey,
+  toStatsPeriodKey,
+  type StatsGroupBy,
+} from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -40,7 +45,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
-    const groupBy = searchParams.get('groupBy') || 'day'; // day, week, month
+    const requestedGroupBy = searchParams.get('groupBy') || 'day';
+    const groupBy: StatsGroupBy = requestedGroupBy === 'week' || requestedGroupBy === 'month' ? requestedGroupBy : 'day';
     
     // Check cache
     const cacheKey = `${tenantId}-${startDate}-${endDate}-${groupBy}`;
@@ -58,10 +64,6 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Handle timezone properly by treating dates as local
-    const start = new Date(startDate + 'T00:00:00');
-    const end = new Date(endDate + 'T23:59:59.999');
-
     // Get all orders in the date range (with tenant isolation)
     // Use saleDate when available for more accurate sales reporting.
     // NOTE: We intentionally DO NOT filter out unconfirmed contra-entrega (COD) orders here.
@@ -69,21 +71,7 @@ export async function GET(req: NextRequest) {
     const orders = await prisma.order.findMany({
       where: {
         tenantId,
-        OR: [
-          {
-            saleDate: {
-              gte: start.toISOString(),
-              lte: end.toISOString(),
-            },
-          },
-          {
-            saleDate: null,
-            timestamp: {
-              gte: start,
-              lte: end,
-            },
-          },
-        ],
+        ...buildStatsOrderDateWhere(startDate, endDate),
       },
       select: {
         timestamp: true,
@@ -100,18 +88,10 @@ export async function GET(req: NextRequest) {
     const grouped = new Map<string, { revenue: number; orderCount: number }>();
 
     orders.forEach((order: { timestamp: Date; saleDate: string | null; total: number | null }) => {
-      let key: string;
-      // Use saleDate if available, otherwise use timestamp
-      const orderDate = order.saleDate ? new Date(order.saleDate) : new Date(order.timestamp);
+      const orderDateKey = getOrderStatsDateKey(order);
+      if (!orderDateKey) return;
 
-      if (groupBy === 'week') {
-        key = format(startOfWeek(orderDate), 'yyyy-MM-dd');
-      } else if (groupBy === 'month') {
-        key = format(startOfMonth(orderDate), 'yyyy-MM');
-      } else {
-        // default to day
-        key = format(startOfDay(orderDate), 'yyyy-MM-dd');
-      }
+      const key = toStatsPeriodKey(orderDateKey, groupBy);
 
       const existing = grouped.get(key) || { revenue: 0, orderCount: 0 };
       grouped.set(key, {

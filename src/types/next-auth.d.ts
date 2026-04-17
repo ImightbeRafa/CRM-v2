@@ -1,6 +1,6 @@
 import NextAuth, { DefaultSession } from "next-auth"
 
-type MemberRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+type MemberRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES' | 'PRODUCTION' | 'MEMBER' | 'VIEWER';
 
 interface Tenant {
   id: string;

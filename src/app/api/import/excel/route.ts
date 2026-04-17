@@ -320,7 +320,7 @@ export async function POST(request: NextRequest) {
     // Parse Excel
     console.log('📄 Parsing Excel file...');
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
+    await workbook.xlsx.load(buffer as any);
     // Support sheet selection via form data
     const sheetIndexParam = formData.get('sheetIndex') as string;
     const sheetIdx = sheetIndexParam ? parseInt(sheetIndexParam, 10) : 0;

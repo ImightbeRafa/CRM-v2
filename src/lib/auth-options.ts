@@ -7,7 +7,7 @@ import { verifyPassword, isBcryptHash } from './password'
 import { createDefaultOrderStatuses } from './default-statuses'
 import { withoutTenantIsolation } from './tenantContext'
 
-type MemberRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+type MemberRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES' | 'PRODUCTION' | 'MEMBER' | 'VIEWER';
 
 interface Tenant {
   id: string;

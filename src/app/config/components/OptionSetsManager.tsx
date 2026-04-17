@@ -221,7 +221,7 @@ export function OptionSetsManager() {
               <Database className="w-16 h-16 text-muted-foreground/50 mx-auto mb-4" />
               <p className="text-muted-foreground text-lg font-medium">No hay conjuntos de opciones</p>
               <p className="text-muted-foreground text-sm mt-2">
-                Crea campos de tipo "Selección" para empezar
+                Crea campos de tipo &quot;Selección&quot; para empezar
               </p>
             </div>
           ) : (

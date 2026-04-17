@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
+import { buildStatsOrderDateWhere } from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -34,31 +35,20 @@ export async function GET(req: NextRequest) {
     
     // CRITICAL: Use tenant-isolated prisma client
     const prisma = getTenantPrisma(tenantId);
+    const orderModel = prisma.order as any;
 
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const limit = parseInt(searchParams.get('limit') || '10');
 
-    // Build date filter
-    const dateFilter: any = {};
-    if (startDate) {
-      const start = new Date(startDate + 'T00:00:00');
-      dateFilter.gte = start;
-    }
-    if (endDate) {
-      const end = new Date(endDate + 'T23:59:59.999');
-      dateFilter.lte = end;
-    }
-
-    const whereClause: any = { tenantId };
-    if (Object.keys(dateFilter).length > 0) {
-      // Since saleDate is a String field, we only filter by timestamp
-      whereClause.timestamp = dateFilter;
-    }
+    const whereClause: any = {
+      tenantId,
+      ...buildStatsOrderDateWhere(startDate, endDate),
+    };
 
     // Get top customers by total revenue
-    const topCustomersByRevenue = await prisma.order.groupBy({
+    const topCustomersByRevenue = await orderModel.groupBy({
       by: ['customerName'],
       where: whereClause,
       _sum: {
@@ -76,7 +66,7 @@ export async function GET(req: NextRequest) {
     });
 
     // Get top customers by order count
-    const topCustomersByOrders = await prisma.order.groupBy({
+    const topCustomersByOrders = await orderModel.groupBy({
       by: ['customerName'],
       where: whereClause,
       _count: {
@@ -94,7 +84,7 @@ export async function GET(req: NextRequest) {
     });
 
     // Get customer activity data (recent orders, average order value, etc.)
-    const customerActivity = await prisma.order.groupBy({
+    const customerActivity = await orderModel.groupBy({
       by: ['customerName'],
       where: whereClause,
       _sum: {
@@ -117,8 +107,22 @@ export async function GET(req: NextRequest) {
       take: limit,
     });
 
+    const allCustomerGroups = await orderModel.groupBy({
+      by: ['customerName'],
+      where: whereClause,
+      _sum: {
+        total: true,
+      },
+      _count: {
+        _all: true,
+      },
+      _max: {
+        timestamp: true,
+      },
+    });
+
     // Calculate additional metrics for each customer
-    const enhancedCustomerData = customerActivity.map(customer => {
+    const enhancedCustomerData = customerActivity.map((customer: any) => {
       const revenue = customer._sum.total || 0;
       const orderCount = customer._count._all;
       const avgOrderValue = orderCount > 0 ? revenue / orderCount : 0;
@@ -146,20 +150,28 @@ export async function GET(req: NextRequest) {
     });
 
     // Get customer distribution by status
-    const customerStatusDistribution = enhancedCustomerData.reduce((acc, customer) => {
+    const customerStatusDistribution = enhancedCustomerData.reduce((acc: Record<string, number>, customer: any) => {
       const status = customer.customerStatus;
       acc[status] = (acc[status] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
+    const totalRevenue = allCustomerGroups.reduce((sum: number, customer: any) => sum + (customer._sum.total || 0), 0);
+    const totalOrders = allCustomerGroups.reduce((sum: number, customer: any) => sum + customer._count._all, 0);
+    const activeCustomers = allCustomerGroups.filter((customer: any) => {
+      if (!customer._max.timestamp) return false;
+      const daysSinceLastOrder = Math.floor((Date.now() - new Date(customer._max.timestamp).getTime()) / (1000 * 60 * 60 * 24));
+      return daysSinceLastOrder <= 30;
+    }).length;
+
     return NextResponse.json({
-      topCustomersByRevenue: topCustomersByRevenue.map(customer => ({
+      topCustomersByRevenue: topCustomersByRevenue.map((customer: any) => ({
         customerName: customer.customerName,
         totalRevenue: customer._sum.total || 0,
         orderCount: customer._count._all,
         averageOrderValue: customer._count._all > 0 ? (customer._sum.total || 0) / customer._count._all : 0
       })),
-      topCustomersByOrders: topCustomersByOrders.map(customer => ({
+      topCustomersByOrders: topCustomersByOrders.map((customer: any) => ({
         customerName: customer.customerName,
         orderCount: customer._count._all,
         totalRevenue: customer._sum.total || 0,
@@ -168,10 +180,10 @@ export async function GET(req: NextRequest) {
       customerActivity: enhancedCustomerData,
       customerStatusDistribution,
       summary: {
-        totalCustomers: enhancedCustomerData.length,
-        activeCustomers: enhancedCustomerData.filter(c => c.customerStatus === 'Very Active' || c.customerStatus === 'Active').length,
-        totalRevenue: enhancedCustomerData.reduce((sum, c) => sum + c.totalRevenue, 0),
-        averageOrderValue: enhancedCustomerData.reduce((sum, c) => sum + c.averageOrderValue, 0) / enhancedCustomerData.length || 0
+        totalCustomers: allCustomerGroups.length,
+        activeCustomers,
+        totalRevenue,
+        averageOrderValue: totalOrders > 0 ? totalRevenue / totalOrders : 0
       }
     });
   } catch (error) {

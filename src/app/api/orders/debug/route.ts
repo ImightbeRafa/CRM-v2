@@ -6,11 +6,14 @@ import { prismaRaw } from '@/lib/prisma-tenant';
 export const dynamic = 'force-dynamic';
 
 /**
- * DEBUG ENDPOINT - Remove after troubleshooting
- * This endpoint bypasses middleware to check raw database state
+ * Development-only tenant diagnostics.
  */
 export async function GET(request: NextRequest) {
   try {
+    if (process.env.NODE_ENV === 'production') {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
     const auth = await authenticateAPI(request);
     if (!auth.ok) return auth.response;
     
@@ -47,28 +50,6 @@ export async function GET(request: NextRequest) {
       take: 10
     });
     
-    // Get ALL orders from raw database (for comparison)
-    const allOrdersRaw = await prismaRaw.order.findMany({
-      select: {
-        id: true,
-        orderId: true,
-        customerName: true,
-        status: true,
-        tenantId: true,
-        timestamp: true
-      },
-      orderBy: { timestamp: 'desc' },
-      take: 20
-    });
-    
-    // Count by tenant
-    const ordersByTenant = await prismaRaw.$queryRaw`
-      SELECT "tenantId", COUNT(*)::int as count
-      FROM "Order"
-      GROUP BY "tenantId"
-      ORDER BY count DESC
-    `;
-    
     return NextResponse.json({
       status: 'success',
       debug: {
@@ -81,11 +62,6 @@ export async function GET(request: NextRequest) {
           count: ordersRaw.length,
           orders: ordersRaw
         },
-        allOrdersRaw: {
-          count: allOrdersRaw.length,
-          orders: allOrdersRaw
-        },
-        ordersByTenant,
         analysis: {
           middlewareWorking: ordersWithMiddleware.length === ordersRaw.length,
           potentialIssue: ordersWithMiddleware.length === 0 && ordersRaw.length > 0 

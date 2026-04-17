@@ -117,7 +117,7 @@ export function StatusManager({ statuses, loading = false, onRefresh }: StatusMa
           <div className="text-center py-8 text-muted-foreground">Cargando...</div>
         ) : statuses.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            No hay estados configurados. Haz click en "Nuevo Estado" para agregar uno.
+            No hay estados configurados. Haz click en &quot;Nuevo Estado&quot; para agregar uno.
           </div>
         ) : (
           <div className="grid gap-3">

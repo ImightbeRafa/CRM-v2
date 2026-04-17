@@ -6,167 +6,96 @@ import ExcelJS from 'exceljs';
 
 export async function GET(request: NextRequest) {
   try {
-    // Authenticate and check permissions
-    const session = await authenticateAPIWithPermission(request, 'view_sales');
-    
+    const auth = await authenticateAPIWithPermission(request, 'view_sales');
+    if (!auth.ok) return auth.response;
+
     const { searchParams } = new URL(request.url);
     const format = searchParams.get('format') || 'json';
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
-    const groupBy = searchParams.get('groupBy') || 'day'; // day, week, month, year
-    
-    // Validate format
+    const groupBy = searchParams.get('groupBy') || 'day';
+
     if (!['json', 'csv', 'xlsx'].includes(format)) {
       return NextResponse.json(
         { error: 'Invalid format. Supported: json, csv, xlsx' },
         { status: 400 }
       );
     }
-    
-    const prisma = getTenantPrisma(session.user.tenantId);
-    
-    // Build where clause for filtering
+
+    const prisma = getTenantPrisma(auth.tenantId);
     const whereClause: any = {};
-    
+
     if (startDate || endDate) {
-      whereClause.createdAt = {};
-      if (startDate) whereClause.createdAt.gte = new Date(startDate);
-      if (endDate) whereClause.createdAt.lte = new Date(endDate);
+      whereClause.timestamp = {};
+      if (startDate) whereClause.timestamp.gte = new Date(startDate);
+      if (endDate) whereClause.timestamp.lte = new Date(endDate);
     }
-    
-    // Fetch sales data with aggregations
+
     const orders = await prisma.order.findMany({
       where: whereClause,
-      include: {
-        client: {
-          select: {
-            name: true,
-            email: true,
-          }
-        },
-        seller: {
-          select: {
-            name: true,
-            email: true,
-          }
-        },
-        orderItems: {
-          include: {
-            product: {
-              select: {
-                name: true,
-                price: true,
-                category: true,
-              }
-            }
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
+      orderBy: { timestamp: 'desc' },
+      take: 10000,
     });
-    
-    // Process and aggregate sales data
+
     const salesData = orders.map(order => {
-      const orderDate = new Date(order.createdAt);
-      const dateKey = getDateKey(orderDate, groupBy);
-      
+      const orderDate = new Date(order.timestamp);
+
       return {
         id: order.id,
-        orderNumber: order.orderNumber,
-        date: dateKey,
+        orderNumber: order.orderId,
+        date: getDateKey(orderDate, groupBy),
+        status: order.status,
+        orderType: order.orderType,
         total: order.total,
-        clientName: order.client?.name || 'N/A',
-        clientEmail: order.client?.email || 'N/A',
-        sellerName: order.seller?.name || 'N/A',
-        sellerEmail: order.client?.email || 'N/A',
-        itemsCount: order.orderItems.length,
-        items: order.orderItems.map(item => ({
-          productName: item.product?.name || 'N/A',
-          category: item.product?.category || 'N/A',
-          quantity: item.quantity,
-          price: item.product?.price || 0,
-          subtotal: item.quantity * (item.product?.price || 0)
-        })),
-        createdAt: order.createdAt.toISOString(),
-        updatedAt: order.updatedAt.toISOString(),
+        clientName: order.customerName || 'N/A',
+        clientEmail: order.email || 'N/A',
+        clientPhone: order.phone || 'N/A',
+        sellerName: order.seller || order.username || 'N/A',
+        product: order.product || 'N/A',
+        quantity: order.quantity,
+        productCost: order.productCost || 0,
+        shippingCost: order.shippingCost || 0,
+        iva: order.iva || 0,
+        createdAt: order.timestamp.toISOString(),
       };
     });
-    
-    // Group by date if requested
-    let exportData = salesData;
-    if (groupBy !== 'none') {
-      exportData = groupSalesByDate(salesData, groupBy);
-    }
-    
-    // Generate export based on format
+
+    const exportData = groupBy === 'none' ? salesData : groupSalesByDate(salesData);
+    const timestamp = new Date().toISOString().split('T')[0];
+
     let exportContent: string | Buffer;
     let contentType: string;
     let filename: string;
-    
-    const timestamp = new Date().toISOString().split('T')[0];
-    
+
     switch (format) {
       case 'json':
         exportContent = JSON.stringify(exportData, null, 2);
         contentType = 'application/json';
         filename = `sales-export-${timestamp}.json`;
         break;
-        
-      case 'csv':
-        const csvParser = new Parser({
-          fields: [
-            'id',
-            'orderNumber',
-            'date',
-            'total',
-            'clientName',
-            'clientEmail',
-            'sellerName',
-            'sellerEmail',
-            'itemsCount',
-            'createdAt',
-            'updatedAt'
-          ]
-        });
+
+      case 'csv': {
+        const csvParser = new Parser();
         exportContent = csvParser.parse(exportData);
         contentType = 'text/csv';
         filename = `sales-export-${timestamp}.csv`;
         break;
-        
-      case 'xlsx':
-        // Create workbook with multiple sheets
+      }
+
+      case 'xlsx': {
         const workbook = new ExcelJS.Workbook();
-        
-        // Sales data sheet
-        const salesWs = workbook.addWorksheet('Sales');
-        if (exportData.length > 0) {
-          salesWs.columns = Object.keys(exportData[0]).map(key => ({ header: key, key, width: 15 }));
-          exportData.forEach((row: any) => salesWs.addRow(row));
-          salesWs.getRow(1).font = { bold: true };
-        }
-        
-        // Summary sheet
-        const summaryData = generateSalesSummary(exportData);
-        const summaryWs = workbook.addWorksheet('Summary');
-        if (summaryData.length > 0) {
-          summaryWs.columns = Object.keys(summaryData[0]).map(key => ({ header: key, key, width: 15 }));
-          summaryData.forEach((row: any) => summaryWs.addRow(row));
-          summaryWs.getRow(1).font = { bold: true };
-        }
-        
-        // Generate buffer
+        addJsonSheet(workbook, 'Sales', exportData);
+        addJsonSheet(workbook, 'Summary', generateSalesSummary(salesData));
         exportContent = Buffer.from(await workbook.xlsx.writeBuffer());
         contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         filename = `sales-export-${timestamp}.xlsx`;
         break;
-        
+      }
+
       default:
         throw new Error('Unsupported format');
     }
-    
-    // Return file download
+
     return new NextResponse(exportContent, {
       status: 200,
       headers: {
@@ -175,7 +104,6 @@ export async function GET(request: NextRequest) {
         'Content-Length': exportContent.length.toString(),
       },
     });
-    
   } catch (error) {
     console.error('Error exporting sales:', error);
     return NextResponse.json(
@@ -185,13 +113,12 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Helper function to get date key for grouping
 function getDateKey(date: Date, groupBy: string): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   const week = Math.ceil(date.getDate() / 7);
-  
+
   switch (groupBy) {
     case 'day':
       return `${year}-${month}-${day}`;
@@ -206,8 +133,7 @@ function getDateKey(date: Date, groupBy: string): string {
   }
 }
 
-// Helper function to group sales by date
-function groupSalesByDate(salesData: any[], groupBy: string): any[] {
+function groupSalesByDate(salesData: any[]): any[] {
   const grouped = salesData.reduce((acc, sale) => {
     const key = sale.date;
     if (!acc[key]) {
@@ -215,23 +141,21 @@ function groupSalesByDate(salesData: any[], groupBy: string): any[] {
         date: key,
         totalSales: 0,
         ordersCount: 0,
-        clientsCount: new Set(),
-        sellersCount: new Set(),
+        clientsCount: new Set<string>(),
+        sellersCount: new Set<string>(),
         itemsCount: 0,
-        orders: []
       };
     }
-    
+
     acc[key].totalSales += sale.total;
     acc[key].ordersCount += 1;
     acc[key].clientsCount.add(sale.clientName);
     acc[key].sellersCount.add(sale.sellerName);
-    acc[key].itemsCount += sale.itemsCount;
-    acc[key].orders.push(sale);
-    
+    acc[key].itemsCount += sale.quantity || 0;
+
     return acc;
-  }, {});
-  
+  }, {} as Record<string, any>);
+
   return Object.values(grouped).map((group: any) => ({
     date: group.date,
     totalSales: group.totalSales,
@@ -239,48 +163,36 @@ function groupSalesByDate(salesData: any[], groupBy: string): any[] {
     clientsCount: group.clientsCount.size,
     sellersCount: group.sellersCount.size,
     itemsCount: group.itemsCount,
-    averageOrderValue: group.totalSales / group.ordersCount,
+    averageOrderValue: group.ordersCount > 0 ? group.totalSales / group.ordersCount : 0,
   }));
 }
 
-// Helper function to generate sales summary
 function generateSalesSummary(salesData: any[]): any[] {
   const totalSales = salesData.reduce((sum, sale) => sum + sale.total, 0);
   const totalOrders = salesData.length;
   const uniqueClients = new Set(salesData.map(sale => sale.clientName)).size;
   const uniqueSellers = new Set(salesData.map(sale => sale.sellerName)).size;
-  const totalItems = salesData.reduce((sum, sale) => sum + sale.itemsCount, 0);
-  
+  const totalItems = salesData.reduce((sum, sale) => sum + (sale.quantity || 0), 0);
+
   return [
-    {
-      metric: 'Total Sales',
-      value: totalSales,
-      currency: 'USD'
-    },
-    {
-      metric: 'Total Orders',
-      value: totalOrders,
-      currency: 'count'
-    },
-    {
-      metric: 'Unique Clients',
-      value: uniqueClients,
-      currency: 'count'
-    },
-    {
-      metric: 'Unique Sellers',
-      value: uniqueSellers,
-      currency: 'count'
-    },
-    {
-      metric: 'Total Items',
-      value: totalItems,
-      currency: 'count'
-    },
+    { metric: 'Total Sales', value: totalSales, currency: 'CRC' },
+    { metric: 'Total Orders', value: totalOrders, currency: 'count' },
+    { metric: 'Unique Clients', value: uniqueClients, currency: 'count' },
+    { metric: 'Unique Sellers', value: uniqueSellers, currency: 'count' },
+    { metric: 'Total Items', value: totalItems, currency: 'count' },
     {
       metric: 'Average Order Value',
       value: totalOrders > 0 ? totalSales / totalOrders : 0,
-      currency: 'USD'
-    }
+      currency: 'CRC',
+    },
   ];
+}
+
+function addJsonSheet(workbook: ExcelJS.Workbook, name: string, data: any[]) {
+  const worksheet = workbook.addWorksheet(name);
+  if (data.length === 0) return;
+
+  worksheet.columns = Object.keys(data[0]).map(key => ({ header: key, key, width: 18 }));
+  data.forEach(row => worksheet.addRow(row));
+  worksheet.getRow(1).font = { bold: true };
 }

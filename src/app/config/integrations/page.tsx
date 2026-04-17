@@ -483,7 +483,7 @@ export default function IntegrationsPage() {
             {/* Request Body */}
             <h4 className="text-lg font-semibold mt-6">Formato del body (JSON):</h4>
             <p className="text-sm text-muted-foreground mb-2">
-              Todos los campos son <strong>requeridos</strong> salvo los marcados como <em>// opcional</em>.
+              Todos los campos son <strong>requeridos</strong> salvo los marcados como <em>{'// opcional'}</em>.
             </p>
             <pre className="bg-muted p-4 rounded text-xs overflow-x-auto">
               {`{

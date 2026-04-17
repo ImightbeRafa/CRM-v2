@@ -22,6 +22,11 @@ export interface BaseOrder {
   customFields?: Record<string, any> | string | null;
   contraEntrega?: boolean;
   cePaymentConfirmed?: boolean;
+  province?: string;
+  canton?: string;
+  district?: string;
+  address?: string;
+  shippingCost?: number;
 }
 
 export interface EAOrder extends BaseOrder {

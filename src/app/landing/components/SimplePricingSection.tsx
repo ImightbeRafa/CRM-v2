@@ -6,7 +6,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app
 import { Badge } from '@/app/components/ui/badge';
 import { CheckCircle, Loader2 } from 'lucide-react';
 
-const pricingPlans = [
+interface PricingPlan {
+  name: string;
+  price: string;
+  originalPrice?: string;
+  period: string;
+  description: string;
+  features: string[];
+  cta: string;
+  popular: boolean;
+  priceId: string | null;
+  tilopayLink: string | null;
+}
+
+const pricingPlans: PricingPlan[] = [
   {
     name: "Prueba Gratis",
     price: "$0",
@@ -52,7 +65,7 @@ const pricingPlans = [
 export default function SimplePricingSection() {
   const [loading, setLoading] = useState<string | null>(null);
 
-  const handlePlanSelect = async (plan: typeof pricingPlans[0]) => {
+  const handlePlanSelect = async (plan: PricingPlan) => {
     if (plan.priceId === null) {
       // Free plan - redirect to sign up page
       window.location.href = '/auth/signin?signup=true&plan=free';

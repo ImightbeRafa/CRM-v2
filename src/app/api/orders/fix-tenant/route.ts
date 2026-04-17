@@ -5,12 +5,14 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 export const dynamic = 'force-dynamic';
 
 /**
- * ADMIN ENDPOINT - Fix orders with wrong tenant ID
- * This endpoint allows moving orders from one tenant to another
- * USE WITH EXTREME CAUTION
+ * Development-only repair endpoint for tenant assignment issues.
  */
 export async function POST(request: NextRequest) {
   try {
+    if (process.env.NODE_ENV === 'production') {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
     const auth = await authenticateAPIWithPermission(request, 'manage_tenant');
     if (!auth.ok) return auth.response;
     

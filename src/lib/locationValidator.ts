@@ -155,8 +155,8 @@ export function validateLocation(
     province: provResult,
     canton: cantResult,
     district: distResult,
-    correctedProvince: provMatch.name !== provInput ? provMatch.name : undefined,
-    correctedCanton: cantMatch.name !== cantInput ? cantMatch.name : undefined,
+    correctedProvince: provMatch!.name !== provInput ? provMatch!.name : undefined,
+    correctedCanton: cantMatch!.name !== cantInput ? cantMatch!.name : undefined,
     correctedDistrict: distMatch && distMatch.name !== distInput ? distMatch.name : undefined,
   };
 }

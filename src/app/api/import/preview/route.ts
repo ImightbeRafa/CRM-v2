@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     // Parse Excel
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
+    await workbook.xlsx.load(buffer as any);
 
     // Get sheet names
     const sheets = workbook.worksheets.map((ws, idx) => ({

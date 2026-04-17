@@ -22,7 +22,7 @@ export default function DataDeletionPage() {
             <ol className="list-decimal list-inside space-y-2 ml-4">
               <li>Inicia sesión en tu cuenta de Betsy CRM</li>
               <li>Ve a <strong>Configuración → Cuentas Sociales</strong></li>
-              <li>Haz clic en "Desvincular" en la cuenta que deseas eliminar</li>
+              <li>Haz clic en &quot;Desvincular&quot; en la cuenta que deseas eliminar</li>
               <li>Tus datos serán eliminados inmediatamente</li>
             </ol>
           </section>

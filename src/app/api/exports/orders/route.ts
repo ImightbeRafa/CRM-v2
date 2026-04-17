@@ -3,6 +3,7 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { Parser } from 'json2csv';
 import { exportRateLimit } from '@/lib/rate-limit';
+import ExcelJS from 'exceljs';
 
 export async function GET(request: NextRequest) {
   try {
@@ -114,17 +115,18 @@ export async function GET(request: NextRequest) {
         break;
         
       case 'xlsx':
-        // Dynamic import to reduce bundle size for non-xlsx exports
-        const XLSX = await import('xlsx');
-        // Create workbook and worksheet
-        const workbook = XLSX.utils.book_new();
-        const worksheet = XLSX.utils.json_to_sheet(exportData);
-        
-        // Add worksheet to workbook
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Orders');
-        
-        // Generate buffer
-        exportContent = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Orders');
+
+        if (exportData.length > 0) {
+          worksheet.columns = Object.keys(exportData[0])
+            .filter(key => key !== 'items')
+            .map(key => ({ header: key, key, width: 18 }));
+          exportData.forEach(({ items, ...row }) => worksheet.addRow(row));
+          worksheet.getRow(1).font = { bold: true };
+        }
+
+        exportContent = Buffer.from(await workbook.xlsx.writeBuffer());
         contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         filename = `orders-export-${timestamp}.xlsx`;
         break;

@@ -122,6 +122,7 @@ export async function GET(req: NextRequest) {
         // Enrich with lm_orders data (logistics carrier + logistics status)
         const orderIds = orders.map((o) => o.id);
         const lmData: Record<string, { lmCarrier: string | null; lmStatus: string | null; isContraEntrega: boolean; contraEntregaCollected: boolean; archivedAt: string | null; correosShippingCost: number | null }> = {};
+        const guiaData: Record<string, { guiaId: string; guiaNumber: string | null; trackingNumber: string | null; guiaStatus: string | null; guiaError: string | null; hasGuiaPdf: boolean }> = {};
         if (orderIds.length > 0) {
             try {
                 const lmRows = await prisma.$queryRaw<{ crm_order_id: string; carrier: string | null; status: string | null; is_contra_entrega: boolean; contraentrega_collected: boolean; archived_at: string | null }[]>`
@@ -156,6 +157,45 @@ export async function GET(req: NextRequest) {
             } catch {
                 // correos_shipping_cost column may not exist yet; ignore
             }
+
+            try {
+                const guiaRows = await prisma.shippingGuia.findMany({
+                    where: {
+                        tenantId: { in: [...new Set(orders.map(o => o.tenantId))] },
+                        orderId: { in: orders.map(o => o.orderId) },
+                        carrier: 'correos_cr',
+                    },
+                    orderBy: [
+                        { updatedAt: 'desc' },
+                        { createdAt: 'desc' },
+                    ],
+                    select: {
+                        id: true,
+                        tenantId: true,
+                        orderId: true,
+                        guiaNumber: true,
+                        trackingNumber: true,
+                        status: true,
+                        errorMessage: true,
+                        pdfFileName: true,
+                    },
+                });
+
+                for (const row of guiaRows) {
+                    const key = `${row.tenantId}:${row.orderId}`;
+                    if (guiaData[key]) continue;
+                    guiaData[key] = {
+                        guiaId: row.id,
+                        guiaNumber: row.guiaNumber ?? null,
+                        trackingNumber: row.trackingNumber ?? null,
+                        guiaStatus: row.status ?? null,
+                        guiaError: row.errorMessage ?? null,
+                        hasGuiaPdf: !!row.pdfFileName,
+                    };
+                }
+            } catch {
+                // Continue without guia enrichment if the table is unavailable.
+            }
         }
 
         const enriched = orders.map((o) => ({
@@ -166,6 +206,12 @@ export async function GET(req: NextRequest) {
             lmStatus: lmData[o.id]?.lmStatus ?? null,
             archivedAt: lmData[o.id]?.archivedAt ?? null,
             correosShippingCost: lmData[o.id]?.correosShippingCost ?? null,
+            guiaId: guiaData[`${o.tenantId}:${o.orderId}`]?.guiaId ?? null,
+            guiaNumber: guiaData[`${o.tenantId}:${o.orderId}`]?.guiaNumber ?? null,
+            trackingNumber: guiaData[`${o.tenantId}:${o.orderId}`]?.trackingNumber ?? null,
+            guiaStatus: guiaData[`${o.tenantId}:${o.orderId}`]?.guiaStatus ?? null,
+            guiaError: guiaData[`${o.tenantId}:${o.orderId}`]?.guiaError ?? null,
+            hasGuiaPdf: guiaData[`${o.tenantId}:${o.orderId}`]?.hasGuiaPdf ?? false,
         }));
 
         // Filter by carrier

@@ -46,6 +46,8 @@ export async function GET(req: NextRequest) {
 
     try {
         let weekMeta: { id: number; week_start: string; week_end: string; finalized_at: string | null } | null = null;
+        let periodDateFrom = dateFrom;
+        let periodDateTo = dateTo;
 
         if (currentWeek && !billedWeekId) {
             const monday = getMondayCR();
@@ -68,6 +70,20 @@ export async function GET(req: NextRequest) {
                 weekMeta = inserted[0];
                 billedWeekId = String(inserted[0].id);
             }
+        }
+
+        if (billedWeekId && !weekMeta) {
+            const weekRows = await prisma.$queryRawUnsafe<{ id: number; week_start: string; week_end: string; finalized_at: string | null }[]>(
+                `SELECT id, week_start::text, week_end::text, finalized_at::text
+                 FROM lm_billing_weeks WHERE id = $1`,
+                Number(billedWeekId)
+            );
+            weekMeta = weekRows[0] ?? null;
+        }
+
+        if (weekMeta) {
+            periodDateFrom = weekMeta.week_start.slice(0, 10);
+            periodDateTo = weekMeta.week_end.slice(0, 10);
         }
 
         // 1. Fetch rates config
@@ -116,6 +132,7 @@ export async function GET(req: NextRequest) {
         const orders = await prisma.$queryRawUnsafe<any[]>(`
             SELECT DISTINCT ON (o.id)
                 o.id, o."orderId", o."customerName", o.total, o.timestamp,
+                ${dateCol} AS report_date,
                 o.province, o.product, o."shippingCost",
                 lm.carrier, lm.status AS lm_status,
                 lm.is_contra_entrega, lm.contraentrega_collected,
@@ -123,7 +140,15 @@ export async function GET(req: NextRequest) {
                 sg."guiaNumber", sg."trackingNumber"
             FROM "Order" o
             INNER JOIN lm_orders lm ON lm.crm_order_id = o.id
-            LEFT JOIN "ShippingGuia" sg ON sg."orderId" = o.id
+            LEFT JOIN LATERAL (
+                SELECT sg."guiaNumber", sg."trackingNumber"
+                FROM "ShippingGuia" sg
+                WHERE sg."tenantId" = o."tenantId"
+                  AND sg."orderId" = o."orderId"
+                  AND sg.carrier = 'correos_cr'
+                ORDER BY sg."updatedAt" DESC, sg."createdAt" DESC
+                LIMIT 1
+            ) sg ON TRUE
             WHERE o."tenantId" = $1
               AND lm.status = 'Entregado'
               ${billedFilter}
@@ -131,8 +156,8 @@ export async function GET(req: NextRequest) {
             ORDER BY o.id, o.timestamp ASC
         `, ...params);
 
-        // Re-sort by timestamp after DISTINCT ON removed duplicates
-        orders.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        // Re-sort by the same effective date used for filtering after DISTINCT ON removed duplicates.
+        orders.sort((a, b) => new Date(a.report_date ?? a.timestamp).getTime() - new Date(b.report_date ?? b.timestamp).getTime());
 
         // 4. Segment by carrier
         const correoOrders = orders.filter(o => o.carrier === 'correos');
@@ -143,7 +168,7 @@ export async function GET(req: NextRequest) {
         // 5. Per-day breakdown for mensajeria using CR timezone
         const dayMap: Record<string, { date: string; packages: number; total: number; ce: number }> = {};
         for (const o of mensajeriaOrders) {
-            const d = toCRDate(o.timestamp);
+            const d = toCRDate(o.report_date ?? o.timestamp);
             if (!dayMap[d]) dayMap[d] = { date: d, packages: 0, total: 0, ce: 0 };
             dayMap[d].packages++;
             dayMap[d].total += Number(o.total);
@@ -154,8 +179,8 @@ export async function GET(req: NextRequest) {
         // 6. Work days in date range
         let workDaySql = 'SELECT id, staff_name, work_date, notes FROM lm_work_days WHERE staff_name = $1';
         const workDayParams: any[] = [staffName];
-        if (dateFrom) { workDayParams.push(dateFrom); workDaySql += ` AND work_date >= $${workDayParams.length}::date`; }
-        if (dateTo) { workDayParams.push(dateTo); workDaySql += ` AND work_date <= $${workDayParams.length}::date`; }
+        if (periodDateFrom) { workDayParams.push(periodDateFrom); workDaySql += ` AND work_date >= $${workDayParams.length}::date`; }
+        if (periodDateTo) { workDayParams.push(periodDateTo); workDaySql += ` AND work_date <= $${workDayParams.length}::date`; }
         workDaySql += ' ORDER BY work_date ASC';
         const workDays = await prisma.$queryRawUnsafe<any[]>(workDaySql, ...workDayParams);
 
@@ -187,6 +212,9 @@ export async function GET(req: NextRequest) {
             timestamp: o.timestamp,
             timestampCR: formatCRDateTime(o.timestamp),
             dateCR: toCRDate(o.timestamp),
+            reportDate: o.report_date ?? o.timestamp,
+            reportTimestampCR: formatCRDateTime(o.report_date ?? o.timestamp),
+            reportDateCR: toCRDate(o.report_date ?? o.timestamp),
             province: o.province,
             product: o.product,
             shippingCost: o.shippingCost != null ? Number(o.shippingCost) : null,
@@ -202,7 +230,7 @@ export async function GET(req: NextRequest) {
         }));
 
         return NextResponse.json({
-            period: { dateFrom, dateTo },
+            period: { dateFrom: periodDateFrom, dateTo: periodDateTo },
             tenantId,
             staffName,
             ...(weekMeta ? { billingWeek: weekMeta } : {}),

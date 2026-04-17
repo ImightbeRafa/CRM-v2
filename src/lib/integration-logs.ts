@@ -10,7 +10,7 @@ export async function logIntegrationActivity(
       data: {
         tenantId,
         action,
-        data: data ? JSON.stringify(data) : null,
+        data: data === undefined || data === null ? undefined : data,
       },
     });
   } catch (error) {

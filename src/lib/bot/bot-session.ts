@@ -79,7 +79,7 @@ export async function verifyConnectionToken(
 ): Promise<ConnectionTokenPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getBotJwtSecret());
-    return payload as ConnectionTokenPayload;
+    return payload as unknown as ConnectionTokenPayload;
   } catch (error) {
     console.error('[BotSession] Token verification failed:', error);
     return null;

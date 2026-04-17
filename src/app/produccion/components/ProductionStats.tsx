@@ -241,6 +241,24 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
     );
   });
 
+  StatCard.displayName = 'ProductionStatCard';
+
+  const handleTotalClick = React.useCallback(() => {
+    onFilterChange?.('all');
+  }, [onFilterChange]);
+
+  const handleEAClick = React.useCallback(() => {
+    onFilterChange?.('EA');
+  }, [onFilterChange]);
+
+  const handleRAClick = React.useCallback(() => {
+    onFilterChange?.('RA');
+  }, [onFilterChange]);
+
+  const handleUrgentClick = React.useCallback(() => {
+    onFilterChange?.('urgent');
+  }, [onFilterChange]);
+
   if (detailed) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -405,22 +423,6 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
       </div>
     );
   }
-
-  const handleTotalClick = React.useCallback(() => {
-    onFilterChange?.('all');
-  }, [onFilterChange]);
-
-  const handleEAClick = React.useCallback(() => {
-    onFilterChange?.('EA');
-  }, [onFilterChange]);
-
-  const handleRAClick = React.useCallback(() => {
-    onFilterChange?.('RA');
-  }, [onFilterChange]);
-
-  const handleUrgentClick = React.useCallback(() => {
-    onFilterChange?.('urgent');
-  }, [onFilterChange]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

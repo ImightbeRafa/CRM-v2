@@ -465,7 +465,7 @@ export default function SocialConfigPage() {
                   <div className="font-semibold mb-1">Obtener Phone Number ID:</div>
                   <ul className="ml-4 space-y-1 text-xs">
                     <li>• Selecciona tu app → <strong>WhatsApp</strong> → <strong>API Setup</strong></li>
-                    <li>• En la sección "Send and receive messages", verás tu número de prueba</li>
+                    <li>• En la sección &quot;Send and receive messages&quot;, verás tu número de prueba</li>
                     <li>• Debajo del número, copia el <strong>Phone number ID</strong> (empieza con números largos)</li>
                     <li>• <span className="bg-yellow-100 px-1">Ejemplo: 123456789012345</span></li>
                   </ul>
@@ -476,7 +476,7 @@ export default function SocialConfigPage() {
                 <div>
                   <div className="font-semibold mb-1">Obtener Access Token:</div>
                   <ul className="ml-4 space-y-1 text-xs">
-                    <li>• En la misma página, busca "Temporary access token"</li>
+                    <li>• En la misma página, busca &quot;Temporary access token&quot;</li>
                     <li>• Click en <strong>Copy</strong> para copiar el token</li>
                     <li>• <span className="text-orange-700">⚠️ Este token expira en 24 horas (solo para pruebas)</span></li>
                     <li>• Para producción: Ve a <strong>Business Settings</strong> → <strong>System Users</strong> → Crea un token permanente</li>

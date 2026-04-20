@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
+import { syncLogisticsStatusToCrmOrders } from '@/lib/logistics-crm-sync';
 
 // POST /api/logistics/orders/return-to-pending
 // Body: { orderIds: string[], reason: string }
@@ -51,6 +52,8 @@ export async function POST(req: NextRequest) {
                 completed_at = NULL, completed_by = NULL
             WHERE crm_order_id IN (${placeholders})
         `, ...orderIds);
+
+        await syncLogisticsStatusToCrmOrders(prisma, orderIds, 'Pendiente', { allowNonTerminal: true });
 
         // Batch insert events in a single query
         const actor = req.headers.get('x-user-email') ?? 'system';

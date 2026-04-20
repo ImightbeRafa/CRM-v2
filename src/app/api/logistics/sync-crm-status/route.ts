@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
-
-// Logistics → CRM status mapping
-const LM_TO_CRM_STATUS: Record<string, string> = {
-    'Pendiente': 'Pendiente',
-    'En Proceso': 'En Proceso',
-    'Guía Creada': 'Enviado',
-    'En Tránsito': 'Enviado',
-    'Entregado': 'Completado',
-    'Devuelto': 'Devuelto',
-};
+import {
+    mapLogisticsStatusToCrmStatus,
+    syncLogisticsStatusToCrmOrders,
+} from '@/lib/logistics-crm-sync';
 
 /**
  * POST /api/logistics/sync-crm-status
@@ -27,21 +21,25 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'orderId and lmStatus required' }, { status: 400 });
     }
 
-    const crmStatus = LM_TO_CRM_STATUS[lmStatus];
+    const crmStatus = mapLogisticsStatusToCrmStatus(lmStatus);
     if (!crmStatus) {
         return NextResponse.json({ error: `No CRM mapping for lmStatus: ${lmStatus}` }, { status: 400 });
     }
 
     try {
-        // Direct prisma update — bypasses tenant context intentionally for cross-tenant logistics admin
-        const updated = await prisma.order.update({
+        // Direct prisma update bypasses tenant context intentionally for cross-tenant logistics admin.
+        const sync = await syncLogisticsStatusToCrmOrders(prisma, [orderId], lmStatus, { allowNonTerminal: true });
+        if (sync.count === 0) {
+            return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+        }
+
+        const updated = await prisma.order.findUnique({
             where: { id: orderId },
-            data: { status: crmStatus },
             select: { id: true, orderId: true, status: true, tenantId: true },
         });
 
-        console.log(`[logistics/sync-crm-status] Order ${updated.orderId} (tenant ${updated.tenantId}): status → ${crmStatus}`);
-        return NextResponse.json({ success: true, orderId: updated.orderId, crmStatus });
+        console.log(`[logistics/sync-crm-status] Order ${updated?.orderId ?? orderId} (tenant ${updated?.tenantId ?? 'unknown'}): status -> ${crmStatus}`);
+        return NextResponse.json({ success: true, orderId: updated?.orderId ?? orderId, crmStatus });
     } catch (e) {
         console.error('[logistics/sync-crm-status]', e);
         return NextResponse.json({ error: 'Failed to sync status' }, { status: 500 });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
+import { syncLogisticsStatusToCrmOrders } from '@/lib/logistics-crm-sync';
 
 const CR_TZ = 'America/Costa_Rica';
 
@@ -168,6 +169,15 @@ export async function POST(req: NextRequest) {
 
             // --- Log events for all processed orders ---
             const allProcessedIds = [...freshIds, ...rearchiveIds];
+            const deliveredIds = allProcessedIds.filter((id) => orderMap.get(id)?.status === 'Entregado');
+            const returnedIds = allProcessedIds.filter((id) => orderMap.get(id)?.status === 'Devuelto');
+            if (deliveredIds.length > 0) {
+                await syncLogisticsStatusToCrmOrders(tx, deliveredIds, 'Entregado');
+            }
+            if (returnedIds.length > 0) {
+                await syncLogisticsStatusToCrmOrders(tx, returnedIds, 'Devuelto');
+            }
+
             const payloadJson = JSON.stringify({ weekId, weekStart: monday, weekEnd: sunday });
             const eventValues = allProcessedIds.map((_: string, i: number) => {
                 const base = i * 3;

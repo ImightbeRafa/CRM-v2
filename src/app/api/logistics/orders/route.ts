@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
+import {
+    mapLogisticsStatusToCrmStatus,
+    shouldAutoSyncLogisticsStatus,
+} from '@/lib/logistics-crm-sync';
 
 const MANAGED_TENANT_IDS = [
     'cmh32z0ol0000k004hvx9tg3p',
@@ -298,10 +302,13 @@ export async function PATCH(req: NextRequest) {
             await prisma.$executeRaw`INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status, is_contra_entrega, contraentrega_collected, archived_at, completed_at, completed_by) VALUES (${orderId},${crm_tenant_id},${c},${s},${ce},${cc},${archVal},${completedAt},${completedBy})`;
         }
 
-        // Sync CE fields to the core Order model
+        // Sync logistics completion and CE fields back to the tenant-visible Order model.
         const orderUpdate: any = {};
         if (isContraEntrega !== undefined) orderUpdate.contraEntrega = isContraEntrega;
         if (contraEntregaCollected !== undefined) orderUpdate.cePaymentConfirmed = contraEntregaCollected;
+        if (shouldAutoSyncLogisticsStatus(lmStatus)) {
+            orderUpdate.status = mapLogisticsStatusToCrmStatus(lmStatus);
+        }
         if (Object.keys(orderUpdate).length > 0) {
             try {
                 await prisma.order.update({
@@ -309,7 +316,10 @@ export async function PATCH(req: NextRequest) {
                     data: orderUpdate,
                 });
             } catch (syncErr) {
-                console.error('[logistics/orders PATCH] Order model sync failed (non-fatal):', syncErr);
+                console.error('[logistics/orders PATCH] Order model sync failed:', syncErr);
+                if ('status' in orderUpdate) {
+                    throw syncErr;
+                }
             }
         }
 

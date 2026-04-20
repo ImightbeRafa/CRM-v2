@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
+import { syncLogisticsStatusToCrmOrders } from '@/lib/logistics-crm-sync';
 
 // POST /api/logistics/bulk-patch
 // Body: { orderIds: string[], patch: { lmCarrier?, lmStatus? } }
@@ -73,6 +74,10 @@ export async function POST(req: NextRequest) {
                     ON CONFLICT (crm_order_id) DO NOTHING
                 `;
             }
+        }
+
+        if (patch.lmStatus !== undefined) {
+            await syncLogisticsStatusToCrmOrders(prisma, orderIds, patch.lmStatus);
         }
 
         // Log bulk event for each order

@@ -48,7 +48,7 @@ const STATUS_CFG: Record<string, { color: string; glow: string }> = {
 };
 const LM_TO_CRM: Record<string, string> = {
     'Pendiente': 'Pendiente', 'En Proceso': 'En Proceso',
-    'Guía Creada': 'Enviado', 'En Tránsito': 'Enviado', 'Entregado': 'Completado', 'Devuelto': 'Devuelto',
+    'Guía Creada': 'Enviado', 'En Tránsito': 'Enviado', 'Entregado': 'Entregado', 'Devuelto': 'Devuelto',
 };
 
 const glass = {

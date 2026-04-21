@@ -15,7 +15,7 @@ interface Order {
 const STATUS_COLORS: Record<string, string> = {
     'Pendiente': '#94a3b8', 'En Proceso': '#8b87ff', 'Urgente': '#f87171',
     'Completado': '#34d399', 'Enviado': '#c084fc', 'Entregado': '#10b981', 'Devuelto': '#fbbf24',
-    'En Tránsito': '#c084fc', 'Guía Creada': '#60a5fa',
+    'En Tránsito': '#c084fc', 'Guía Creada': '#60a5fa', 'Impreso': '#22d3ee',
 };
 const CARRIER_COLORS: Record<string, string> = { 'mensajeria': '#8b87ff', 'correos': '#60a5fa' };
 
@@ -53,6 +53,7 @@ export default function LogisticsDashboardPage() {
     const total = orders.length;
     const today = orders.filter(o => { const d = new Date(o.timestamp), n = new Date(); return d.getDate() === n.getDate() && d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear(); }).length;
     const pending = orders.filter(o => o.status === 'Pendiente').length;
+    const printed = orders.filter(o => o.lmStatus === 'Impreso').length;
     const transit = orders.filter(o => o.lmStatus === 'En Tránsito').length;
     const delivered = orders.filter(o => o.lmStatus === 'Entregado').length;
     const unassigned = orders.filter(o => !o.lmCarrier).length;
@@ -88,6 +89,7 @@ export default function LogisticsDashboardPage() {
                     { label: 'Total', value: total, color: '#8b87ff' },
                     { label: 'Hoy', value: today, color: '#34d399' },
                     { label: 'Pendientes', value: pending, color: '#fbbf24' },
+                    { label: 'Impresos', value: printed, color: '#22d3ee' },
                     { label: 'En Tránsito', value: transit, color: '#c084fc' },
                     { label: 'Entregados', value: delivered, color: '#10b981' },
                     { label: 'Sin Carrier', value: unassigned, color: '#f87171' },

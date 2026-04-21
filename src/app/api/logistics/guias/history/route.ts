@@ -28,15 +28,43 @@ export async function GET(req: NextRequest) {
 
     try {
         const { searchParams } = new URL(req.url);
-        const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 200);
+        const requestedLimit = parseInt(searchParams.get('limit') || '50', 10);
+        const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 50, 1), 500);
         const carrier = searchParams.get('carrier') || null;
+        const archived = searchParams.get('archived');
+        const search = (searchParams.get('search') || '').trim();
 
-        const params: any[] = [MANAGED_TENANT_IDS, limit];
-        let carrierSql = '';
+        const params: any[] = [MANAGED_TENANT_IDS];
+        const guiaWhere: string[] = ['sg."tenantId" = ANY($1::text[])'];
+        const outerWhere: string[] = [];
+
         if (carrier) {
             params.push(carrier);
-            carrierSql = `AND sg.carrier = $${params.length}`;
+            guiaWhere.push(`sg.carrier = $${params.length}`);
         }
+
+        if (archived === 'true') {
+            outerWhere.push('lm.archived_at IS NOT NULL');
+        } else if (archived === 'false') {
+            outerWhere.push('lm.archived_at IS NULL');
+        }
+
+        if (search) {
+            params.push(`%${search}%`);
+            outerWhere.push(`(
+                o."orderId" ILIKE $${params.length}
+                OR o."customerName" ILIKE $${params.length}
+                OR o.phone ILIKE $${params.length}
+                OR o.address ILIKE $${params.length}
+                OR cg."guiaNumber" ILIKE $${params.length}
+                OR cg."trackingNumber" ILIKE $${params.length}
+                OR t.name ILIKE $${params.length}
+                OR t."businessName" ILIKE $${params.length}
+            )`);
+        }
+
+        params.push(limit);
+        const limitParam = params.length;
 
         const guias = await prisma.$queryRawUnsafe<any[]>(`
             WITH current_guias AS (
@@ -55,23 +83,32 @@ export async function GET(req: NextRequest) {
                     sg."createdAt",
                     sg."updatedAt"
                 FROM "ShippingGuia" sg
-                WHERE sg."tenantId" = ANY($1::text[])
-                  ${carrierSql}
+                WHERE ${guiaWhere.join(' AND ')}
                 ORDER BY sg."tenantId", sg."orderId", sg.carrier, sg."updatedAt" DESC, sg."createdAt" DESC
             )
             SELECT
                 cg.*,
                 t.name AS tenant_name,
+                t."businessName" AS tenant_business_name,
                 o.id AS crm_order_id,
                 o."customerName",
+                o.phone,
+                o.address,
+                o.province,
+                o.canton,
+                o.district,
+                o.total,
                 o.status AS crm_status,
-                lm.status AS lm_status
+                lm.status AS lm_status,
+                lm.carrier AS lm_carrier,
+                lm.archived_at
             FROM current_guias cg
             LEFT JOIN "Tenant" t ON t.id = cg."tenantId"
             LEFT JOIN "Order" o ON o."tenantId" = cg."tenantId" AND o."orderId" = cg."orderId"
             LEFT JOIN lm_orders lm ON lm.crm_order_id = o.id
+            ${outerWhere.length > 0 ? `WHERE ${outerWhere.join(' AND ')}` : ''}
             ORDER BY cg."updatedAt" DESC, cg."createdAt" DESC
-            LIMIT $2
+            LIMIT $${limitParam}
         `, ...params);
 
         return NextResponse.json({
@@ -93,8 +130,16 @@ export async function GET(req: NextRequest) {
                     createdAt: g.createdAt,
                     updatedAt: g.updatedAt,
                     hasPdf: !!g.has_pdf,
-                    tenantName: g.tenant_name || g.tenantId,
+                    tenantName: g.tenant_business_name || g.tenant_name || g.tenantId,
                     customerName: g.customerName || '',
+                    phone: g.phone || '',
+                    address: g.address || '',
+                    province: g.province || '',
+                    canton: g.canton || '',
+                    district: g.district || '',
+                    total: g.total != null ? Number(g.total) : null,
+                    lmCarrier: g.lm_carrier || null,
+                    archivedAt: g.archived_at || null,
                 };
             }),
         });

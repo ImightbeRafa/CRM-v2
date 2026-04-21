@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Package, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2, DollarSign } from 'lucide-react';
+import { Package, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2, FileText, Download } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import {
     costaRicaLocations,
@@ -37,18 +37,42 @@ interface VerifiedOrder {
     originalAddress: string;
 }
 
-const STATUSES = ['Pendiente', 'En Proceso', 'Guía Creada', 'En Tránsito', 'Entregado', 'Devuelto'];
+interface ArchivedGuia {
+    id: string;
+    orderId: string;
+    guiaNumber: string | null;
+    trackingNumber?: string | null;
+    status: string | null;
+    orderStatus?: string | null;
+    guiaStatus?: string | null;
+    tenantName: string;
+    customerName?: string;
+    phone?: string;
+    address?: string;
+    province?: string;
+    canton?: string;
+    district?: string;
+    total?: number | null;
+    hasPdf: boolean;
+    createdAt: string;
+    updatedAt: string;
+    archivedAt?: string | null;
+    errorMessage?: string | null;
+}
+
+const STATUSES = ['Pendiente', 'En Proceso', 'Guía Creada', 'Impreso', 'En Tránsito', 'Entregado', 'Devuelto'];
 const STATUS_CFG: Record<string, { color: string; glow: string }> = {
     'Pendiente': { color: '#94a3b8', glow: 'rgba(148,163,184,0.15)' },
     'En Proceso': { color: '#8b87ff', glow: 'rgba(139,135,255,0.15)' },
     'Guía Creada': { color: '#60a5fa', glow: 'rgba(96,165,250,0.15)' },
+    'Impreso': { color: '#22d3ee', glow: 'rgba(34,211,238,0.15)' },
     'En Tránsito': { color: '#c084fc', glow: 'rgba(192,132,252,0.15)' },
     'Entregado': { color: '#34d399', glow: 'rgba(52,211,153,0.15)' },
     'Devuelto': { color: '#fbbf24', glow: 'rgba(251,191,36,0.15)' },
 };
 const LM_TO_CRM: Record<string, string> = {
     'Pendiente': 'Pendiente', 'En Proceso': 'En Proceso',
-    'Guía Creada': 'Enviado', 'En Tránsito': 'Enviado', 'Entregado': 'Entregado', 'Devuelto': 'Devuelto',
+    'Guía Creada': 'Enviado', 'Impreso': 'Enviado', 'En Tránsito': 'Enviado', 'Entregado': 'Entregado', 'Devuelto': 'Devuelto',
 };
 
 const glass = {
@@ -488,12 +512,12 @@ export default function CarriersPage() {
     const [bulkCarrier, setBulkCarrier] = useState('');
     const [applying, setApplying] = useState(false);
     const [showArchive, setShowArchive] = useState(false);
+    const [archiveTab, setArchiveTab] = useState<'orders' | 'guias'>('orders');
     const [archivedOrders, setArchivedOrders] = useState<Order[]>([]);
+    const [archivedGuias, setArchivedGuias] = useState<ArchivedGuia[]>([]);
     const [archiveLoading, setArchiveLoading] = useState(false);
+    const [archiveGuiasLoading, setArchiveGuiasLoading] = useState(false);
     const [archiveSearch, setArchiveSearch] = useState('');
-    const [costModal, setCostModal] = useState<{ orderId: string; customerName: string; ordRef: string } | null>(null);
-    const [costValue, setCostValue] = useState('');
-    const [costSaving, setCostSaving] = useState(false);
     const [showVerification, setShowVerification] = useState(false);
     const [verifiedOrders, setVerifiedOrders] = useState<VerifiedOrder[]>([]);
     const [deliveryType, setDeliveryType] = useState<'Domicilio' | 'Sucursal' | 'Punto de correo'>('Domicilio');
@@ -510,7 +534,6 @@ export default function CarriersPage() {
     }, [search]);
 
     useEffect(() => { load(); }, [load]);
-
     const buildVerifiedOrder = useCallback((order: Order): VerifiedOrder => {
         const prov = findProvince(order.province || '');
         const cant = findCanton(prov, order.canton || '');
@@ -636,11 +659,6 @@ export default function CarriersPage() {
     const onToggleSelect = useCallback((id: string) => { setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; }); }, []);
     const onArchiveOrder = useCallback(async (id: string) => {
         const order = orders.find(o => o.id === id);
-        if (order && order.lmCarrier === 'correos' && order.lmStatus === 'Entregado' && order.correosShippingCost == null) {
-            setCostModal({ orderId: id, customerName: order.customerName, ordRef: order.orderId });
-            setCostValue('');
-            return;
-        }
         setOrders(p => p.filter(o => o.id !== id));
         try {
             await terminateOrders([id]);
@@ -649,18 +667,6 @@ export default function CarriersPage() {
             alert(err.message || 'Error al terminar la orden. Por favor intente de nuevo.');
         }
     }, [orders]);
-    const confirmCorreosCostAndArchive = useCallback(async () => {
-        if (!costModal || !costValue || isNaN(Number(costValue)) || Number(costValue) < 0) return;
-        setCostSaving(true);
-        try {
-            await terminateOrders([costModal.orderId], { [costModal.orderId]: Number(costValue) });
-            setOrders(p => p.filter(o => o.id !== costModal.orderId));
-            setCostModal(null);
-            setCostValue('');
-        } catch (err: any) {
-            alert(err.message || 'Error al guardar costo y terminar. Por favor intente de nuevo.');
-        } finally { setCostSaving(false); }
-    }, [costModal, costValue]);
     const onRestoreOrder = useCallback(async (id: string) => {
         const restored = archivedOrders.find(o => o.id === id);
         if (restored) {
@@ -687,14 +693,22 @@ export default function CarriersPage() {
             setArchivedOrders(data.orders || []);
         } catch (e) { console.error(e); } finally { setArchiveLoading(false); }
     }, [archiveSearch]);
+    const loadArchivedGuias = useCallback(async () => {
+        setArchiveGuiasLoading(true);
+        try {
+            const p = new URLSearchParams({ carrier: 'correos_cr', archived: 'true', limit: '200' });
+            if (archiveSearch) p.set('search', archiveSearch);
+            const data = await (await fetch(`/api/logistics/guias/history?${p}`)).json();
+            setArchivedGuias(data.guias || []);
+        } catch (e) { console.error(e); } finally { setArchiveGuiasLoading(false); }
+    }, [archiveSearch]);
+    const loadArchiveContent = useCallback(() => {
+        if (archiveTab === 'guias') loadArchivedGuias();
+        else loadArchived();
+    }, [archiveTab, loadArchived, loadArchivedGuias]);
     const bulkArchive = useCallback(async () => {
         const ids = [...selectedIds];
         if (!ids.length) return;
-        const correosPending = orders.filter(o => ids.includes(o.id) && o.lmCarrier === 'correos' && o.lmStatus === 'Entregado' && o.correosShippingCost == null);
-        if (correosPending.length > 0) {
-            alert(`${correosPending.length} orden(es) de Correos CR necesitan costo de envío antes de terminar. Por favor, termínelas individualmente usando el botón Terminar de cada tarjeta.`);
-            return;
-        }
         setApplying(true);
         try {
             await terminateOrders(ids);
@@ -704,7 +718,7 @@ export default function CarriersPage() {
         } catch (err: any) {
             alert(err.message || 'Error al terminar las órdenes. Por favor intente de nuevo.');
         } finally { setApplying(false); }
-    }, [selectedIds, orders]);
+    }, [selectedIds]);
 
     const applyBulk = useCallback(async () => {
         const ids = [...selectedIds];
@@ -742,6 +756,7 @@ export default function CarriersPage() {
     const selectedUnassigned = unassigned.filter(o => selectedIds.has(o.id));
     const selectedUnassignedCount = selectedUnassigned.length;
     const allVisibleUnassignedSelected = unassigned.length > 0 && selectedUnassignedCount === unassigned.length;
+    const archiveBusy = archiveTab === 'guias' ? archiveGuiasLoading : archiveLoading;
 
     function toggleAllVisibleUnassigned() {
         setSelectedIds(prev => {
@@ -783,9 +798,9 @@ export default function CarriersPage() {
                         </p>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => { setShowArchive(a => { if (!a) loadArchived(); return !a; }); }}
+                        <button onClick={() => { const opening = !showArchive; setShowArchive(opening); if (opening) loadArchiveContent(); }}
                             style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 16px', borderRadius: 9, border: `1px solid ${showArchive ? 'rgba(52,211,153,0.5)' : 'rgba(255,255,255,0.1)'}`, background: showArchive ? 'rgba(52,211,153,0.12)' : 'transparent', color: showArchive ? '#34d399' : 'rgba(255,255,255,0.45)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, transition: 'all 0.15s' }}>
-                            <Archive size={13} /> Archivo {archivedOrders.length > 0 && <span style={{ background: 'rgba(52,211,153,0.2)', color: '#34d399', padding: '0 6px', borderRadius: 10, fontSize: 10 }}>{archivedOrders.length}</span>}
+                            <Archive size={13} /> Archivo {(archivedOrders.length > 0 || archivedGuias.length > 0) && <span style={{ background: 'rgba(52,211,153,0.2)', color: '#34d399', padding: '0 6px', borderRadius: 10, fontSize: 10 }}>{archiveTab === 'guias' ? archivedGuias.length : archivedOrders.length}</span>}
                         </button>
                         <button onClick={() => { setBulkMode(b => !b); setSelectedIds(new Set()); }}
                             style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 16px', borderRadius: 9, border: `1px solid ${bulkMode ? 'rgba(139,135,255,0.5)' : 'rgba(255,255,255,0.1)'}`, background: bulkMode ? 'rgba(139,135,255,0.12)' : 'transparent', color: bulkMode ? '#8b87ff' : 'rgba(255,255,255,0.45)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, transition: 'all 0.15s' }}>
@@ -848,21 +863,31 @@ export default function CarriersPage() {
                 <div style={{ flexShrink: 0, marginBottom: 14, ...glass, padding: '14px 16px', maxHeight: 320, display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <Archive size={14} style={{ color: '#34d399' }} />
-                            <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13 }}>Órdenes Archivadas</span>
-                            <span style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399', padding: '1px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{archivedOrders.length}</span>
+                            {archiveTab === 'guias' ? <FileText size={14} style={{ color: '#60a5fa' }} /> : <Archive size={14} style={{ color: '#34d399' }} />}
+                            <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13 }}>{archiveTab === 'guias' ? 'Guias Archivadas de Correos' : 'Ordenes Archivadas'}</span>
+                            <span style={{ background: archiveTab === 'guias' ? 'rgba(96,165,250,0.15)' : 'rgba(52,211,153,0.15)', color: archiveTab === 'guias' ? '#60a5fa' : '#34d399', padding: '1px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{archiveTab === 'guias' ? archivedGuias.length : archivedOrders.length}</span>
                         </div>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <div style={{ display: 'flex', gap: 4, padding: 2, borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                <button onClick={() => { setArchiveTab('orders'); if (showArchive) loadArchived(); }}
+                                    style={{ padding: '4px 9px', borderRadius: 6, border: 'none', background: archiveTab === 'orders' ? 'rgba(52,211,153,0.14)' : 'transparent', color: archiveTab === 'orders' ? '#34d399' : 'rgba(255,255,255,0.35)', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>
+                                    Ordenes
+                                </button>
+                                <button onClick={() => { setArchiveTab('guias'); loadArchivedGuias(); }}
+                                    style={{ padding: '4px 9px', borderRadius: 6, border: 'none', background: archiveTab === 'guias' ? 'rgba(96,165,250,0.14)' : 'transparent', color: archiveTab === 'guias' ? '#60a5fa' : 'rgba(255,255,255,0.35)', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>
+                                    Guias Correos
+                                </button>
+                            </div>
                             <div style={{ position: 'relative' }}>
                                 <Search size={11} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.25)', pointerEvents: 'none' }} />
                                 <input value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)}
-                                    onKeyDown={e => e.key === 'Enter' && loadArchived()}
+                                    onKeyDown={e => e.key === 'Enter' && loadArchiveContent()}
                                     placeholder="Buscar en archivo..."
                                     style={{ padding: '5px 10px 5px 26px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: '#F2F2F2', fontSize: 11, outline: 'none', width: 180 }} />
                             </div>
-                            <button onClick={loadArchived} disabled={archiveLoading}
+                            <button onClick={loadArchiveContent} disabled={archiveBusy}
                                 style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.08)', color: '#34d399', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>
-                                {archiveLoading ? '...' : 'Buscar'}
+                                {archiveBusy ? '...' : 'Buscar'}
                             </button>
                             <button onClick={() => setShowArchive(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}>
                                 <X size={14} />
@@ -870,7 +895,48 @@ export default function CarriersPage() {
                         </div>
                     </div>
                     <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-                        {archiveLoading ? (
+                        {archiveTab === 'guias' ? (
+                            archiveGuiasLoading ? (
+                                <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, textAlign: 'center', margin: '20px 0' }}>Cargando guias archivadas...</p>
+                            ) : archivedGuias.length === 0 ? (
+                                <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 12, textAlign: 'center', margin: '20px 0' }}>No hay guias archivadas de Correos</p>
+                            ) : (
+                                <div style={{ display: 'grid', gap: 6 }}>
+                                    {archivedGuias.map(g => {
+                                        const address = [g.address, g.district, g.canton, g.province].filter(Boolean).join(', ');
+                                        return (
+                                            <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'rgba(96,165,250,0.04)', border: '1px solid rgba(96,165,250,0.12)', borderRadius: 8 }}>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
+                                                        <span style={{ color: '#60a5fa', fontWeight: 800, fontSize: 12 }}>{g.guiaNumber || g.trackingNumber || 'Sin numero'}</span>
+                                                        <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10 }}>Orden #{g.orderId}</span>
+                                                        <span style={{ padding: '1px 6px', borderRadius: 20, background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.45)', fontSize: 9, fontWeight: 700 }}>{g.tenantName}</span>
+                                                        {g.archivedAt && <span style={{ color: 'rgba(255,255,255,0.24)', fontSize: 10 }}>Archivado {new Date(g.archivedAt).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}</span>}
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, minWidth: 0, flexWrap: 'wrap' }}>
+                                                        <span style={{ color: '#F2F2F2', fontWeight: 600 }}>{g.customerName || 'Cliente sin nombre'}</span>
+                                                        {g.phone && <span style={{ color: 'rgba(255,255,255,0.35)' }}>{g.phone}</span>}
+                                                        <span style={{ color: 'rgba(255,255,255,0.35)' }}>{g.orderStatus || g.status || 'Sin estado'}</span>
+                                                        {g.total != null && <span style={{ color: '#34d399', fontWeight: 700 }}>CRC {g.total.toLocaleString('es-CR')}</span>}
+                                                    </div>
+                                                    {address && <div style={{ color: 'rgba(255,255,255,0.28)', fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>{address}</div>}
+                                                    {g.errorMessage && <div style={{ color: 'rgba(239,68,68,0.75)', fontSize: 10.5, marginTop: 2 }}>{g.errorMessage}</div>}
+                                                </div>
+                                                {g.hasPdf ? (
+                                                    <a href={`/api/logistics/guias/download/${g.id}`} target="_blank" rel="noopener noreferrer"
+                                                        style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid rgba(96,165,250,0.35)', background: 'rgba(96,165,250,0.08)', color: '#60a5fa', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, textDecoration: 'none' }}>
+                                                        <Download size={11} /> PDF
+                                                    </a>
+                                                ) : (
+                                                    <span style={{ color: 'rgba(255,255,255,0.18)', fontSize: 11, flexShrink: 0 }}>Sin PDF</span>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )
+                        ) : (
+                            archiveLoading ? (
                             <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, textAlign: 'center', margin: '20px 0' }}>Cargando archivo...</p>
                         ) : archivedOrders.length === 0 ? (
                             <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 12, textAlign: 'center', margin: '20px 0' }}>No hay órdenes archivadas</p>
@@ -885,6 +951,9 @@ export default function CarriersPage() {
                                                     <span style={{ color: '#F2F2F2', fontWeight: 600, fontSize: 12 }}>{o.customerName}</span>
                                                     <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>#{o.orderId}</span>
                                                     <span style={{ padding: '1px 6px', borderRadius: 20, background: `${tc}20`, color: tc, fontSize: 9, fontWeight: 700 }}>{getTenantName(o.tenantId)}</span>
+                                                    {o.lmCarrier === 'correos' && (o.guiaNumber || o.trackingNumber) && (
+                                                        <span style={{ padding: '1px 6px', borderRadius: 20, background: 'rgba(96,165,250,0.12)', color: '#60a5fa', fontSize: 9, fontWeight: 800 }}>Guia {o.guiaNumber || o.trackingNumber}</span>
+                                                    )}
                                                 </div>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11 }}>
                                                     <span style={{ color: 'rgba(255,255,255,0.35)' }}>{o.lmCarrier === 'mensajeria' ? '🚚 Mensajería' : o.lmCarrier === 'correos' ? '📮 Correos' : '—'}</span>
@@ -893,6 +962,12 @@ export default function CarriersPage() {
                                                     {o.archivedAt && <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>Archivado {new Date(o.archivedAt).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}</span>}
                                                 </div>
                                             </div>
+                                            {o.lmCarrier === 'correos' && o.guiaId && o.hasGuiaPdf && (
+                                                <a href={`/api/logistics/guias/download/${o.guiaId}`} target="_blank" rel="noopener noreferrer"
+                                                    style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(96,165,250,0.35)', background: 'rgba(96,165,250,0.08)', color: '#60a5fa', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, textDecoration: 'none' }}>
+                                                    <Download size={11} /> PDF
+                                                </a>
+                                            )}
                                             <button onClick={() => onRestoreOrder(o.id)}
                                                 style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid rgba(139,135,255,0.35)', background: 'rgba(139,135,255,0.08)', color: '#8b87ff', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                                                 <ArchiveRestore size={11} /> Restaurar
@@ -901,6 +976,7 @@ export default function CarriersPage() {
                                     );
                                 })}
                             </div>
+                        )
                         )}
                     </div>
                 </div>
@@ -1099,55 +1175,6 @@ export default function CarriersPage() {
                                     {generating ? <><RefreshCcw size={13} style={{ animation: 'spin 1s linear infinite' }} /> Generando...</> : <><Mail size={13} /> Confirmar y generar ({verifiedOrders.length})</>}
                                 </button>
                             )}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Correos CR Cost Modal */}
-            {costModal && (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
-                    onClick={() => setCostModal(null)}>
-                    <div onClick={e => e.stopPropagation()} style={{ width: 380, background: '#1a1a2e', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 16, padding: '28px 28px 22px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-                            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(96,165,250,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <DollarSign size={18} style={{ color: '#60a5fa' }} />
-                            </div>
-                            <div>
-                                <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 15, margin: 0 }}>Costo de Envío — Correos CR</p>
-                                <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11.5, margin: '2px 0 0' }}>Requerido antes de terminar la orden</p>
-                            </div>
-                        </div>
-
-                        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '12px 14px', marginBottom: 18 }}>
-                            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, margin: '0 0 3px' }}>#{costModal.ordRef}</p>
-                            <p style={{ color: '#F2F2F2', fontWeight: 600, fontSize: 13, margin: 0 }}>{costModal.customerName}</p>
-                        </div>
-
-                        <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Costo de envío Correos CR</label>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-                            <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 16, fontWeight: 700 }}>₡</span>
-                            <input
-                                type="number"
-                                value={costValue}
-                                onChange={e => setCostValue(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && confirmCorreosCostAndArchive()}
-                                placeholder="0"
-                                autoFocus
-                                style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(96,165,250,0.4)', background: 'rgba(0,0,0,0.3)', color: '#60a5fa', fontSize: 18, fontWeight: 700, outline: 'none' }}
-                            />
-                        </div>
-
-                        <div style={{ display: 'flex', gap: 10 }}>
-                            <button onClick={() => setCostModal(null)}
-                                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(255,255,255,0.45)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                                Cancelar
-                            </button>
-                            <button onClick={confirmCorreosCostAndArchive}
-                                disabled={costSaving || !costValue || isNaN(Number(costValue)) || Number(costValue) < 0}
-                                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.12)', color: '#34d399', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                <Archive size={13} /> {costSaving ? 'Guardando...' : 'Guardar y Terminar'}
-                            </button>
                         </div>
                     </div>
                 </div>

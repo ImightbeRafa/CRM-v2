@@ -10,6 +10,7 @@ const LOGISTICS_TO_CRM_STATUS: Record<string, string> = {
   pendiente: 'Pendiente',
   'en proceso': 'En Proceso',
   'guia creada': 'Enviado',
+  impreso: 'Enviado',
   'en transito': 'Enviado',
   entregado: 'Entregado',
   devuelto: 'Devuelto',

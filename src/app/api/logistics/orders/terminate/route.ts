@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { syncLogisticsStatusToCrmOrders } from '@/lib/logistics-crm-sync';
+import { getCorreosAutomatedShippingCost } from '@/lib/correos-gam-pricing';
 
 const CR_TZ = 'America/Costa_Rica';
 
@@ -63,13 +64,20 @@ export async function POST(req: NextRequest) {
             status: string; billed_week_id: number | null;
             correos_shipping_cost: number | null;
             archived_at: Date | null;
+            province: string | null;
+            canton: string | null;
         }[]>(
-            `SELECT crm_order_id, carrier, status, billed_week_id, correos_shipping_cost, archived_at
-             FROM lm_orders WHERE crm_order_id IN (${placeholders})`,
+            `SELECT lm.crm_order_id, lm.carrier, lm.status, lm.billed_week_id, lm.correos_shipping_cost, lm.archived_at,
+                    o.province, o.canton
+             FROM lm_orders lm
+             LEFT JOIN "Order" o ON o.id = lm.crm_order_id
+             WHERE lm.crm_order_id IN (${placeholders})`,
             ...orderIds
         );
 
         const orderMap = new Map(orders.map(o => [o.crm_order_id, o]));
+        const automatedCorreosCosts: Record<string, number> = {};
+        const automatedCorreosCostMeta: Record<string, { zone: string; reason: string }> = {};
 
         // Orders that were previously billed but then restored (archived_at cleared).
         // These only need re-archiving, not re-billing.
@@ -92,8 +100,28 @@ export async function POST(req: NextRequest) {
             if (o.carrier === 'correos' && o.status === 'Entregado') {
                 const existingCost = o.correos_shipping_cost;
                 const providedCost = correosCosts?.[id];
-                if (existingCost == null && (providedCost == null || isNaN(providedCost) || providedCost < 0)) {
-                    errors.push(`${id}: orden Correos requiere costo de envío`);
+                if (existingCost == null) {
+                    if (providedCost != null && !isNaN(providedCost) && providedCost >= 0) {
+                        automatedCorreosCosts[id] = Number(providedCost);
+                        automatedCorreosCostMeta[id] = { zone: 'manual', reason: 'Costo enviado en request' };
+                        continue;
+                    }
+
+                    const calculated = getCorreosAutomatedShippingCost({
+                        province: o.province,
+                        canton: o.canton,
+                    });
+
+                    if (calculated.cost == null || !calculated.zone) {
+                        errors.push(`${id}: no se pudo calcular costo Correos (${calculated.reason})`);
+                        continue;
+                    }
+
+                    automatedCorreosCosts[id] = calculated.cost;
+                    automatedCorreosCostMeta[id] = {
+                        zone: calculated.zone,
+                        reason: calculated.reason,
+                    };
                 }
             }
         }
@@ -131,7 +159,7 @@ export async function POST(req: NextRequest) {
             if (freshIds.length > 0) {
                 const nonCorreosIds = freshIds.filter((id: string) => {
                     const o = orderMap.get(id)!;
-                    return !(o.carrier === 'correos' && correosCosts?.[id] != null);
+                    return !(o.carrier === 'correos' && automatedCorreosCosts[id] != null);
                 });
                 if (nonCorreosIds.length > 0) {
                     await tx.$executeRawUnsafe(
@@ -144,7 +172,7 @@ export async function POST(req: NextRequest) {
 
                 const correosWithCost = freshIds.filter((id: string) => {
                     const o = orderMap.get(id)!;
-                    return o.carrier === 'correos' && correosCosts?.[id] != null;
+                    return o.carrier === 'correos' && automatedCorreosCosts[id] != null;
                 });
                 for (const id of correosWithCost) {
                     await tx.$executeRawUnsafe(
@@ -152,7 +180,7 @@ export async function POST(req: NextRequest) {
                          SET billed_week_id = $1, billed_at = NOW(), archived_at = NOW(),
                              correos_shipping_cost = $2
                          WHERE crm_order_id = $3 AND billed_week_id IS NULL`,
-                        weekId, correosCosts![id], id
+                        weekId, automatedCorreosCosts[id], id
                     );
                 }
             }
@@ -178,7 +206,13 @@ export async function POST(req: NextRequest) {
                 await syncLogisticsStatusToCrmOrders(tx, returnedIds, 'Devuelto');
             }
 
-            const payloadJson = JSON.stringify({ weekId, weekStart: monday, weekEnd: sunday });
+            const payloadJson = JSON.stringify({
+                weekId,
+                weekStart: monday,
+                weekEnd: sunday,
+                automatedCorreosCosts,
+                automatedCorreosCostMeta,
+            });
             const eventValues = allProcessedIds.map((_: string, i: number) => {
                 const base = i * 3;
                 return `($${base + 1}, 'terminated', $${base + 2}::jsonb, $${base + 3})`;
@@ -191,7 +225,7 @@ export async function POST(req: NextRequest) {
                 );
             }
 
-            return { weekId, billedCount: freshIds.length, rearchivedCount: rearchiveIds.length, weekStart: monday, weekEnd: sunday };
+            return { weekId, billedCount: freshIds.length, rearchivedCount: rearchiveIds.length, weekStart: monday, weekEnd: sunday, automatedCorreosCosts };
         });
 
         return NextResponse.json({ success: true, ...result });

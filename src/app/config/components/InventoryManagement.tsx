@@ -130,10 +130,18 @@ export function InventoryManagement() {
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
 
+  // Pagination for large catalogs (Excel imports can easily produce 300+ items)
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
+
   useEffect(() => { loadInventory(); }, []);
 
+  // Unique categories for the Select dropdown. We MUST exclude empty-string
+  // values because Radix <Select.Item> throws a hard runtime error on value="",
+  // which previously crashed the whole page after bulk imports without a
+  // "categoria" column.
   const categories = useMemo(
-    () => [...new Set(inventory.map(i => i.category))].sort(),
+    () => [...new Set(inventory.map(i => (i.category || '').trim()).filter(Boolean))].sort(),
     [inventory]
   );
 
@@ -163,6 +171,20 @@ export function InventoryManagement() {
     else if (stockFilter === 'normal') filtered = filtered.filter(i => i.currentStock > i.minStock);
     return filtered;
   }, [inventory, searchTerm, categoryFilter, stockFilter]);
+
+  // Reset page when filters change so the user never lands on a blank page.
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, categoryFilter, stockFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredInventory.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pagedInventory = useMemo(
+    () => filteredInventory.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [filteredInventory, currentPage]
+  );
+  const firstItemIndex = filteredInventory.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const lastItemIndex = Math.min(currentPage * PAGE_SIZE, filteredInventory.length);
 
   const margin = useMemo(() => {
     const cost = Number(formData.unitCost) || 0;
@@ -420,7 +442,7 @@ export function InventoryManagement() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredInventory.map(item => {
+                  {pagedInventory.map(item => {
                     const status = getStockStatus(item);
                     const StatusIcon = status.icon;
                     const itemMargin = getMargin(item.unitCost, item.sellingPrice);
@@ -484,6 +506,35 @@ export function InventoryManagement() {
                 </tbody>
               </table>
             </div>
+            {/* Pagination controls: only shown when there is more than one page */}
+            {totalPages > 1 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t bg-muted/20">
+                <p className="text-xs text-muted-foreground">
+                  Mostrando {firstItemIndex}-{lastItemIndex} de {filteredInventory.length} productos
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1}
+                  >
+                    Anterior
+                  </Button>
+                  <span className="text-xs text-muted-foreground min-w-[80px] text-center">
+                    Página {currentPage} de {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages}
+                  >
+                    Siguiente
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : (

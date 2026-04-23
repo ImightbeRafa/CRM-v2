@@ -202,12 +202,12 @@ export const toolSchemas = {
   },
 
   search_inventory: {
-    description: 'Buscar productos en el inventario. Si el usuario pide "todo el inventario", usa un límite alto (50).',
+    description: 'Buscar productos en el inventario. Devuelve como máximo 15 ítems por llamada — NUNCA listes el catálogo completo al cliente: si tiene cientos de productos, pide que refine la búsqueda por nombre, SKU o categoría. Si el usuario pide "todo el inventario", responde con un resumen por categoría en vez de listar todos los productos.',
     parameters: z.object({
-      query: z.string().optional().describe('Término de búsqueda (nombre, SKU, categoría). Vacío para listar todo'),
+      query: z.string().optional().describe('Término de búsqueda (nombre, SKU, categoría). Vacío devuelve solo los primeros resultados.'),
       category: z.string().optional().describe('Filtrar por categoría'),
       lowStock: z.boolean().optional().describe('Solo mostrar productos con stock bajo'),
-      limit: z.number().int().min(1).max(100).default(10).describe('Cantidad máxima de resultados. Usa 50+ para "todo el inventario"'),
+      limit: z.number().int().min(1).max(15).default(5).describe('Cantidad máxima de resultados (máx 15). Mantener bajo para no saturar el chat.'),
     }),
   },
 
@@ -673,16 +673,32 @@ export async function createOrder(
 
             matchedInventoryItem = match;
           } else {
-            const optionsList = topMatches.slice(0, 10).map((m, i) =>
+            // Cap at top-3 to keep WhatsApp messages short and model context small.
+            // Catalogs of 300+ items would otherwise produce unreadable menus and
+            // risk exceeding platform message limits.
+            const TOP_MATCHES_LIMIT = 3;
+            const shown = topMatches.slice(0, TOP_MATCHES_LIMIT);
+            const optionsList = shown.map((m, i) =>
               `${i + 1}. ${m.name} (SKU: ${m.sku}) — Stock: ${m.currentStock} — ₡${m.sellingPrice.toLocaleString('es-CR')}`
             ).join('\n');
 
-            console.log('[AI Tool] createOrder - Multiple matches, asking user to pick');
+            const moreCount = topMatches.length - shown.length;
+            const tail = moreCount > 0
+              ? `\n\nHay ${moreCount} coincidencia(s) más. Si ninguna de arriba es la correcta, dame más detalles (SKU, color, capacidad, etc).`
+              : '';
+
+            console.log(
+              '[AI Tool] createOrder - Multiple matches, asking user to pick (showing top',
+              shown.length,
+              'of',
+              topMatches.length,
+              ')'
+            );
             return {
               success: false,
               needsConfirmation: true,
               confirmationType: 'multiple_matches',
-              message: `Encontré ${topMatches.length} productos similares a "${params.product}":\n\n${optionsList}\n\n¿Cuál es el producto correcto?`,
+              message: `Encontré varios productos similares a "${params.product}". Estas son las ${shown.length} mejores coincidencias:\n\n${optionsList}${tail}\n\n¿Cuál es el producto correcto?`,
               pendingOrderData: { ...params },
             };
           }
@@ -1218,9 +1234,9 @@ export async function searchInventory(
     async () => {
       try {
         const tenantPrisma = getTenantPrisma(ctx.tenantId);
-        
+
         const whereClause: any = { isActive: true };
-        
+
         if (params.query) {
           whereClause.OR = [
             { name: { contains: params.query, mode: 'insensitive' } },
@@ -1229,20 +1245,67 @@ export async function searchInventory(
             { description: { contains: params.query, mode: 'insensitive' } },
           ];
         }
-        
+
         if (params.category) {
           whereClause.category = { contains: params.category, mode: 'insensitive' };
         }
-        
+
         if (params.lowStock) {
           // Find items where currentStock <= minStock
           whereClause.currentStock = { lte: prisma.inventoryItem.fields.minStock };
         }
-        
+
+        // Cap the effective page size to protect WhatsApp message length and
+        // the LLM context. The schema already enforces max 15, but we re-cap
+        // defensively in case an older client sends a higher value.
+        const HARD_TAKE_CAP = 15;
+        const effectiveLimit = Math.min(params.limit || 5, HARD_TAKE_CAP);
+
+        // Large-catalog guard: if the caller did not provide any filter (no
+        // query, no category, no lowStock), we assume the user asked for
+        // "todo el inventario". Listing hundreds of products is unreadable in
+        // WhatsApp and balloons the model context, so we return a category
+        // summary instead and let the LLM prompt the user to refine.
+        const noFiltersProvided =
+          !params.query && !params.category && !params.lowStock;
+
+        if (noFiltersProvided) {
+          const totalActive = await tenantPrisma.inventoryItem.count({
+            where: { isActive: true },
+          });
+          const LARGE_CATALOG_THRESHOLD = 20;
+
+          if (totalActive > LARGE_CATALOG_THRESHOLD) {
+            // Cast through `any` because the tenant Prisma proxy loses the
+            // overloaded groupBy signature that the base Prisma client exposes.
+            const grouped = (await (tenantPrisma.inventoryItem as any).groupBy({
+              by: ['category'],
+              where: { isActive: true },
+              _count: { _all: true },
+              orderBy: { _count: { category: 'desc' } },
+              take: 10,
+            })) as Array<{ category: string | null; _count: { _all: number } }>;
+
+            const categorySummary = grouped
+              .map(g => `• ${g.category || 'Sin categoría'}: ${g._count?._all ?? 0}`)
+              .join('\n');
+
+            return {
+              success: true,
+              data: [], // Intentionally empty so platform formatters don't dump items
+              message:
+                `Tengo ${totalActive} productos en inventario. ` +
+                `Son demasiados para listarlos todos aquí. ` +
+                `Pídeme que busque por nombre, SKU o categoría.\n\n` +
+                `Principales categorías:\n${categorySummary}`,
+            };
+          }
+        }
+
         const items = await tenantPrisma.inventoryItem.findMany({
           where: whereClause,
           orderBy: { currentStock: 'asc' },
-          take: params.limit || 5,
+          take: effectiveLimit,
           select: {
             id: true,
             name: true,
@@ -1254,7 +1317,7 @@ export async function searchInventory(
             unitCost: true,
           },
         });
-        
+
         return {
           success: true,
           data: items,

@@ -699,7 +699,7 @@ function formatToolResult(toolName: ToolName, result: ToolResult, platform: stri
       if (result.data) {
         return formatInventory(result.data);
       }
-      return 'Producto no encontrado.';
+      return 'Producto no encontrado.'; // Changed this line
 
     case 'search_inventory':
       if (Array.isArray(result.data) && result.data.length > 0) {
@@ -709,7 +709,10 @@ function formatToolResult(toolName: ToolName, result: ToolResult, platform: stri
           )
           .join('\n\n');
       }
-      return 'No se encontraron productos.';
+      // Empty data with a message means the tool intentionally summarized
+      // (e.g. large-catalog guard) — relay that instead of a generic miss.
+      if (result.message) return result.message;
+      return 'No se encontraron productos.'; // Changed this line
 
     case 'get_statistics_summary':
       if (result.data) {

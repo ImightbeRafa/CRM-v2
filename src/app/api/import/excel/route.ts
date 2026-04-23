@@ -195,7 +195,16 @@ async function importInventory(rows: any[], tenantId: string): Promise<ImportRes
       
       // Ensure SKU exists
       const sku = String(mapped.sku).trim();
-      
+
+      // Normalize optional strings. Category MUST be non-empty because
+      // the UI feeds it into a Radix <Select>, which crashes on empty-string
+      // values. Fall back to "General" when the sheet has no category column.
+      const categoryRaw = mapped.category ? String(mapped.category).trim() : '';
+      const category = categoryRaw || 'General';
+      const location = mapped.location ? String(mapped.location).trim() : '';
+      const supplier = mapped.supplier ? String(mapped.supplier).trim() : '';
+      const description = mapped.description ? String(mapped.description).trim() : '';
+
       // Create or update inventory item
       await prisma.inventoryItem.upsert({
         where: {
@@ -206,20 +215,20 @@ async function importInventory(rows: any[], tenantId: string): Promise<ImportRes
         },
         update: {
           name: productName,
-          category: mapped.category ? String(mapped.category).trim() : '',
+          category,
           currentStock: currentStock,
           minStock: minStock,
           maxStock: maxStock,
           unitCost: unitCost,
           sellingPrice: sellingPrice,
-          location: mapped.location ? String(mapped.location).trim() : '',
-          supplier: mapped.supplier ? String(mapped.supplier).trim() : '',
-          description: mapped.description ? String(mapped.description).trim() : '',
+          location,
+          supplier,
+          description,
         },
         create: {
           sku: sku,
           name: productName,
-          category: mapped.category ? String(mapped.category).trim() : '',
+          category,
           currentStock: currentStock,
           minStock: minStock,
           maxStock: maxStock,
@@ -227,9 +236,9 @@ async function importInventory(rows: any[], tenantId: string): Promise<ImportRes
           reorderQuantity: 20, // Default
           unitCost: unitCost,
           sellingPrice: sellingPrice,
-          location: mapped.location ? String(mapped.location).trim() : '',
-          supplier: mapped.supplier ? String(mapped.supplier).trim() : '',
-          description: mapped.description ? String(mapped.description).trim() : '',
+          location,
+          supplier,
+          description,
           createdBy: 'excel-import', // System identifier for Excel imports
           tenantId: tenantId,
         }

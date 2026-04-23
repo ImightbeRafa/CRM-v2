@@ -51,6 +51,14 @@ interface Sale {
   orderType: 'EA' | 'RA';
 }
 
+const CR_TZ = 'America/Costa_Rica';
+const getTodayRangeCR = () => {
+  const [year, month, day] = new Date().toLocaleDateString('en-CA', { timeZone: CR_TZ }).split('-').map(Number);
+  const start = new Date(Date.UTC(year, month - 1, day, 6, 0, 0, 0));
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+  return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
+};
+
 export const SalesDashboard = React.memo(function SalesDashboard() {
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [orderTypeFilter, setOrderTypeFilter] = useState<'ALL' | 'EA' | 'RA'>('ALL');
@@ -75,8 +83,10 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
   }, [handleKpiScroll]);
   const updateStatus = useUpdateOrderStatus();
 
+  const todayRange = React.useMemo(() => getTodayRangeCR(), []);
   const { sales, isLoading, error, refresh, stats } = useSalesStream({
-    pollingInterval: 30000 // 30 seconds
+    pollingInterval: 30000, // 30 seconds
+    filters: todayRange,
   });
 
   const filteredSales = sales
@@ -157,13 +167,8 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                     <Clock className="h-5 w-5 text-orange-600" />
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Esta Semana</p>
-                    <p className="text-xl md:text-lg font-bold">{sales.filter(s => {
-                      const saleDate = new Date(s.timestamp);
-                      const weekAgo = new Date();
-                      weekAgo.setDate(weekAgo.getDate() - 7);
-                      return saleDate >= weekAgo;
-                    }).length}</p>
+                    <p className="text-xs text-muted-foreground">Hoy</p>
+                    <p className="text-xl md:text-lg font-bold">{stats.total || 0}</p>
                   </div>
                 </div>
               </CardContent>
@@ -197,7 +202,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
             <div>
               <CardTitle className="text-lg font-semibold">Historial de Ventas</CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
-                Últimas 10 órdenes • {filteredSales.length} {filteredSales.length === 1 ? 'resultado' : 'resultados'}
+                Órdenes de hoy • {filteredSales.length} {filteredSales.length === 1 ? 'resultado' : 'resultados'}
               </p>
             </div>
             <Button 

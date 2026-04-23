@@ -38,6 +38,7 @@ import { formatOrderForWhatsApp, formatInventoryForWhatsApp, formatStatsForWhats
 import { z } from 'zod';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { getTenantCustomFields, formatCustomFieldsForTelegram } from '@/lib/customFields';
+import { getCurrentStatsDateKey, STATS_TIME_ZONE } from '@/lib/statistics-dates';
 
 // xAI client (OpenAI-compatible API)
 const xai = new OpenAI({
@@ -75,14 +76,26 @@ const ACTION_KEYWORDS = [
   'verificar ubicación', 'verificar ubicacion', 'validar ubicación', 'validar ubicacion',
   'verificar dirección', 'verificar direccion', 'validar provincia', 'validar cantón',
   'validar canton', 'verificar distrito',
+  // Statistics and reporting queries must use tools instead of model memory.
+  'ventas de hoy', 'venta de hoy', 'ventas del dia',
+  'total en ventas', 'total de ventas', 'resumen de ventas', 'ingresos de hoy',
+  'cuanto vend',
 ];
+
+function normalizeSpanishText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
 
 /**
  * Check if a message looks like an action request that requires tool execution
  */
 function isActionRequest(message: string): boolean {
-  const normalized = message.toLowerCase().trim();
-  return ACTION_KEYWORDS.some(keyword => normalized.includes(keyword));
+  const normalized = normalizeSpanishText(message);
+  return ACTION_KEYWORDS.some(keyword => normalized.includes(normalizeSpanishText(keyword)));
 }
 
 const ORDER_CREATION_KEYWORDS = [
@@ -94,8 +107,28 @@ const ORDER_CREATION_KEYWORDS = [
 ];
 
 function hasOrderCreationIntent(message: string): boolean {
-  const normalized = message.toLowerCase().trim();
-  return ORDER_CREATION_KEYWORDS.some(keyword => normalized.includes(keyword));
+  const normalized = normalizeSpanishText(message);
+  return ORDER_CREATION_KEYWORDS.some(keyword => normalized.includes(normalizeSpanishText(keyword)));
+}
+
+const TODAY_QUERY_RE = /\b(hoy|dia de hoy|del dia)\b/i;
+
+function applyRelativeDateGuards(toolName: ToolName, toolArgs: any, userMessage: string): any {
+  if (!toolArgs || typeof toolArgs !== 'object') return toolArgs;
+  if (toolName !== 'get_statistics_summary' && toolName !== 'get_orders') return toolArgs;
+  const normalizedMessage = normalizeSpanishText(userMessage);
+  const isTodayQuery =
+    TODAY_QUERY_RE.test(normalizedMessage) ||
+    normalizedMessage.includes('dia de hoy') ||
+    normalizedMessage.includes('del dia');
+  if (!isTodayQuery) return toolArgs;
+
+  const todayKey = getCurrentStatsDateKey();
+  return {
+    ...toolArgs,
+    dateFrom: todayKey,
+    dateTo: todayKey,
+  };
 }
 
 // System prompt in Spanish
@@ -104,6 +137,7 @@ const SYSTEM_PROMPT = `Eres Betsy, una asistente virtual profesional para Betsy 
 NEGOCIO ACTUAL: {{TENANT_NAME}}
 FECHA ACTUAL: {{CURRENT_DATE}}
 HORA ACTUAL: {{CURRENT_TIME}}
+ZONA HORARIA: Costa Rica (America/Costa_Rica)
 
 AISLAMIENTO DE DATOS:
 - Todos los datos que consultes y devuelvas pertenecen EXCLUSIVAMENTE al negocio "{{TENANT_NAME}}".
@@ -407,12 +441,14 @@ export async function processMessage(
     // Inject current date and time into system prompt
     const now = new Date();
     const currentDate = now.toLocaleDateString('es-CR', {
+      timeZone: STATS_TIME_ZONE,
       weekday: 'long',
       year: 'numeric',
       month: 'long',
       day: 'numeric'
     });
     const currentTime = now.toLocaleTimeString('es-CR', {
+      timeZone: STATS_TIME_ZONE,
       hour: '2-digit',
       minute: '2-digit'
     });
@@ -500,6 +536,8 @@ export async function processMessage(
         } catch {
           toolArgs = {};
         }
+
+        toolArgs = applyRelativeDateGuards(toolName, toolArgs, userMessage);
 
         console.log('[AI Agent] Executing tool: ' + toolName, toolArgs);
 

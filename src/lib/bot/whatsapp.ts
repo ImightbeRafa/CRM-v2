@@ -713,8 +713,15 @@ export function formatInventoryForWhatsApp(item: any): string {
  * Format statistics summary for WhatsApp display
  */
 export function formatStatsForWhatsApp(stats: any): string {
+  const dateRange = stats.dateRange
+    ? stats.dateRange.from === stats.dateRange.to
+      ? stats.dateRange.from
+      : `${stats.dateRange.from} a ${stats.dateRange.to}`
+    : null;
+
   return [
     `📊 *Resumen de Ventas*`,
+    dateRange ? `*Fecha:* ${dateRange}` : null,
     ``,
     `🛒 *Total Órdenes:* ${stats.totalSales || 0}`,
     `💰 *Ingresos:* ₡${(stats.totalRevenue || 0).toLocaleString('es-CR')}`,

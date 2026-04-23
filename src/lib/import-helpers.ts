@@ -33,6 +33,58 @@ export function toNumber(val: any): number {
   return isNaN(n) ? 0 : n;
 }
 
+export const MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+const SUPPORTED_XLSX_MIME_TYPES = new Set([
+  '',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/octet-stream',
+  'application/zip',
+]);
+
+export function validateXlsxUpload(file: { name?: string; size?: number; type?: string } | null | undefined): string | null {
+  if (!file) return 'No file provided';
+
+  const fileName = file.name || '';
+  const lowerName = fileName.toLowerCase();
+  const mimeType = (file.type || '').toLowerCase();
+
+  if (file.size !== undefined && file.size > MAX_IMPORT_FILE_SIZE) {
+    return 'El archivo excede el tamano maximo de 10MB';
+  }
+
+  if (lowerName.endsWith('.xls')) {
+    return 'Los archivos .xls antiguos no son compatibles. Guarde el archivo como .xlsx e intente de nuevo.';
+  }
+
+  if (!lowerName.endsWith('.xlsx')) {
+    return 'Solo se permiten archivos Excel .xlsx';
+  }
+
+  if (!SUPPORTED_XLSX_MIME_TYPES.has(mimeType)) {
+    return 'Solo se permiten archivos Excel .xlsx';
+  }
+
+  return null;
+}
+
+function cellValueToImportValue(value: any): any {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value;
+
+  if (typeof value === 'object') {
+    if (Array.isArray(value.richText)) {
+      return value.richText.map((part: any) => part?.text || '').join('');
+    }
+
+    if ('result' in value) return cellValueToImportValue(value.result);
+    if ('text' in value) return cellValueToImportValue(value.text);
+    if ('hyperlink' in value && 'text' in value) return cellValueToImportValue(value.text);
+  }
+
+  return value;
+}
+
 // ============================================
 // ORDERS IMPORT - Flexible Column Mapping
 // ============================================
@@ -364,10 +416,15 @@ export function parseExcelSheet(
   worksheet: any,
   sheetIndex?: number
 ): { headers: string[]; rows: Record<string, any>[] } {
+  if (!worksheet) {
+    throw new Error('Hoja de Excel no encontrada');
+  }
+
   const headerRow = worksheet.getRow(1);
   const headers: string[] = [];
   headerRow.eachCell({ includeEmpty: true }, (cell: any, colNumber: number) => {
-    headers[colNumber - 1] = cell.value?.toString() || '';
+    const value = cellValueToImportValue(cell.value);
+    headers[colNumber - 1] = value?.toString().trim() || '';
   });
 
   const rows: Record<string, any>[] = [];
@@ -377,7 +434,7 @@ export function parseExcelSheet(
     let hasData = false;
     headers.forEach((header, idx) => {
       const cell = row.getCell(idx + 1);
-      const value = cell.value;
+      const value = cellValueToImportValue(cell.value);
       rowData[header] = value !== null && value !== undefined ? value : '';
       if (value !== null && value !== undefined && value !== '') hasData = true;
     });

@@ -340,8 +340,15 @@ export function formatInventoryForTelegram(item: any): string {
  * Format statistics summary for Telegram display
  */
 export function formatStatsForTelegram(stats: any): string {
+  const dateRange = stats.dateRange
+    ? stats.dateRange.from === stats.dateRange.to
+      ? stats.dateRange.from
+      : `${stats.dateRange.from} a ${stats.dateRange.to}`
+    : null;
+
   return [
     `📊 <b>Resumen de Ventas</b>`,
+    dateRange ? `<b>Fecha:</b> ${dateRange}` : null,
     ``,
     `🛒 <b>Total Órdenes:</b> ${stats.totalSales || 0}`,
     `💰 <b>Ingresos:</b> ₡${(stats.totalRevenue || 0).toLocaleString('es-CR')}`,

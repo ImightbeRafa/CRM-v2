@@ -30,10 +30,38 @@ async function getBrowser() {
 }
 
 const fmt = (n: number) => `₡${(n || 0).toLocaleString('es-CR')}`;
+function escapeHtml(value: unknown): string {
+    return String(value ?? '—')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+const CORREOS_TAX_RATE = 0.13;
+function getCorreosTax(cost: unknown): number {
+    if (cost == null) return 0;
+    const amount = Number(cost);
+    if (!Number.isFinite(amount) || amount <= 0) return 0;
+    return Math.round(amount * CORREOS_TAX_RATE);
+}
 const fmtDate = (d: string) => {
     try { return new Date(d + 'T12:00:00').toLocaleDateString('es-CR', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }); }
     catch { return d; }
 };
+
+function getWorkUnits(notes: unknown): number {
+    if (typeof notes !== 'string' || !notes.trim()) return 1;
+    try {
+        const parsed = JSON.parse(notes);
+        const units = Number(parsed?.units);
+        if (units === 0.5 || units === 1) return units;
+        return parsed?.dayType === 'half' ? 0.5 : 1;
+    } catch {
+        return 1;
+    }
+}
 
 /**
  * GET /api/logistics/reports/pdf?weekId=<id>
@@ -110,18 +138,19 @@ export async function GET(req: NextRequest) {
 
         orders.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-        const workDays = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT work_date FROM lm_work_days
-             WHERE staff_name = 'Marlenn'
+        const workDays = (await prisma.$queryRawUnsafe<any[]>(
+            `SELECT work_date, notes FROM lm_work_days
+             WHERE staff_name IN ('Ma', 'JKY')
                AND work_date >= $1::date AND work_date <= $2::date
              ORDER BY work_date`,
             ws, we
-        );
+        )).map((day) => ({ ...day, work_units: getWorkUnits(day.notes) }));
 
         interface TenantBlock {
             tenantId: string; tenantName: string;
             correosOrders: any[]; mensajeriaOrders: any[];
             correosShipping: number; correosHandling: number;
+            correosTax: number;
             mensajeriaRecoleccion: number; mensajeriaHandling: number;
             subtotal: number;
         }
@@ -130,6 +159,7 @@ export async function GET(req: NextRequest) {
         let grandTotalPackages = 0;
         let grandTotalShipping = 0;
         let grandTotalHandling = 0;
+        let grandTotalTax = 0;
         let grandSubtotalLogistics = 0;
 
         for (const tenantId of MANAGED_IDS) {
@@ -139,26 +169,28 @@ export async function GET(req: NextRequest) {
             const cOrders = tOrders.filter(o => o.carrier === 'correos');
             const mOrders = tOrders.filter(o => o.carrier === 'mensajeria');
             const cShip = cOrders.reduce((s: number, o: any) => s + (o.correos_shipping_cost != null ? Number(o.correos_shipping_cost) : 0), 0);
+            const cTax = cOrders.reduce((s: number, o: any) => s + getCorreosTax(o.correos_shipping_cost), 0);
             const cHandl = cOrders.length * handlingRate;
             const mRecol = mOrders.length > 0 ? gdRecoleccionCost : 0;
             const mHandl = mOrders.length * handlingRate;
-            const sub = cShip + cHandl + mRecol + mHandl;
+            const sub = cShip + cTax + cHandl + mRecol + mHandl;
 
             grandTotalPackages += tOrders.length;
             grandTotalShipping += cShip + mRecol;
             grandTotalHandling += cHandl + mHandl;
+            grandTotalTax += cTax;
             grandSubtotalLogistics += sub;
 
             tenantBlocks.push({
                 tenantId, tenantName: tenantNameMap[tenantId] || tenantId,
                 correosOrders: cOrders, mensajeriaOrders: mOrders,
-                correosShipping: cShip, correosHandling: cHandl,
+                correosShipping: cShip, correosTax: cTax, correosHandling: cHandl,
                 mensajeriaRecoleccion: mRecol, mensajeriaHandling: mHandl,
                 subtotal: sub,
             });
         }
 
-        const salaryDays = workDays.length;
+        const salaryDays = workDays.reduce((sum, day) => sum + Number(day.work_units ?? 1), 0);
         const salaryTotal = salaryDays * salaryRate;
         const grandTotal = grandSubtotalLogistics + salaryTotal;
 
@@ -166,7 +198,7 @@ export async function GET(req: NextRequest) {
             weekStart: ws, weekEnd: we,
             finalizedAt: week.finalized_at,
             tenantBlocks,
-            grandTotalPackages, grandTotalShipping, grandTotalHandling,
+            grandTotalPackages, grandTotalShipping, grandTotalTax, grandTotalHandling,
             grandSubtotalLogistics,
             salaryDays, salaryRate, salaryTotal, grandTotal,
             handlingRate,
@@ -201,7 +233,7 @@ export async function GET(req: NextRequest) {
 function buildReportHTML(data: {
     weekStart: string; weekEnd: string; finalizedAt: string | null;
     tenantBlocks: any[];
-    grandTotalPackages: number; grandTotalShipping: number; grandTotalHandling: number;
+    grandTotalPackages: number; grandTotalShipping: number; grandTotalTax: number; grandTotalHandling: number;
     grandSubtotalLogistics: number;
     salaryDays: number; salaryRate: number; salaryTotal: number; grandTotal: number;
     handlingRate: number;
@@ -212,23 +244,24 @@ function buildReportHTML(data: {
 
         const orderRows = allOrders.map((o: any) => `
             <tr>
-                <td>${o.orderId}</td>
-                <td>${o.customerName}</td>
+                <td>${escapeHtml(o.orderId)}</td>
+                <td>${escapeHtml(o.customerName)}</td>
                 <td>${o.carrier === 'correos' ? 'Correos' : 'GD'}</td>
-                <td>${o.province ?? '—'}</td>
+                <td>${escapeHtml(o.province)}</td>
                 <td style="text-align:right">${fmt(Number(o.total))}</td>
                 <td style="text-align:right">${o.carrier === 'correos' && o.correos_shipping_cost != null ? fmt(Number(o.correos_shipping_cost)) : '—'}</td>
+                <td style="text-align:right">${o.carrier === 'correos' && o.correos_shipping_cost != null ? fmt(getCorreosTax(o.correos_shipping_cost)) : '—'}</td>
                 <td style="text-align:right">${fmt(data.handlingRate)}</td>
-                <td>${o.guiaNumber ?? '—'}</td>
+                <td>${escapeHtml(o.guiaNumber)}</td>
             </tr>
         `).join('');
 
         return `
             <div class="tenant-block">
-                <h3>${t.tenantName}</h3>
+                <h3>${escapeHtml(t.tenantName)}</h3>
                 <div class="summary-row">
                     <span>Paquetes: <strong>${t.correosOrders.length + t.mensajeriaOrders.length}</strong></span>
-                    <span>Correos: <strong>${t.correosOrders.length}</strong> (envío: ${fmt(t.correosShipping)}, manejo: ${fmt(t.correosHandling)})</span>
+                    <span>Correos: <strong>${t.correosOrders.length}</strong> (envío: ${fmt(t.correosShipping)}, impuestos: ${fmt(t.correosTax)}, manejo: ${fmt(t.correosHandling)})</span>
                     <span>GD: <strong>${t.mensajeriaOrders.length}</strong> (recol: ${fmt(t.mensajeriaRecoleccion)}, manejo: ${fmt(t.mensajeriaHandling)})</span>
                     <span>Subtotal: <strong>${fmt(t.subtotal)}</strong></span>
                 </div>
@@ -238,6 +271,7 @@ function buildReportHTML(data: {
                             <th>Orden</th><th>Cliente</th><th>Carrier</th><th>Provincia</th>
                             <th style="text-align:right">Total</th>
                             <th style="text-align:right">Envío</th>
+                            <th style="text-align:right">Impuestos</th>
                             <th style="text-align:right">Manejo</th>
                             <th>Guía</th>
                         </tr>
@@ -268,7 +302,7 @@ function buildReportHTML(data: {
     th { background: #f5f5f5; font-weight: bold; font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; }
     .grand-total { margin-top: 20px; padding: 16px; border: 2px solid #1a1a2e; border-radius: 8px; page-break-inside: avoid; }
     .grand-total h2 { margin-top: 0; color: #1a1a2e; }
-    .gt-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
+    .gt-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 12px; }
     .gt-item { text-align: center; }
     .gt-item .label { color: #666; font-size: 10px; text-transform: uppercase; }
     .gt-item .value { font-size: 16px; font-weight: bold; margin-top: 4px; }
@@ -290,6 +324,7 @@ function buildReportHTML(data: {
     <div class="gt-grid">
       <div class="gt-item"><div class="label">Paquetes</div><div class="value">${data.grandTotalPackages}</div></div>
       <div class="gt-item"><div class="label">Envíos</div><div class="value">${fmt(data.grandTotalShipping)}</div></div>
+      <div class="gt-item"><div class="label">Impuestos</div><div class="value">${fmt(data.grandTotalTax)}</div></div>
       <div class="gt-item"><div class="label">Manejo</div><div class="value">${fmt(data.grandTotalHandling)}</div></div>
       <div class="gt-item"><div class="label">Subtotal Logística</div><div class="value">${fmt(data.grandSubtotalLogistics)}</div></div>
     </div>

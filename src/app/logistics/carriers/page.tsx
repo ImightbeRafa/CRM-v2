@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Package, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2, FileText, Download } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import {
@@ -445,10 +445,58 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
     getTenantName: (id: string) => string; getTenantColor: (id: string) => string;
     bulkMode: boolean; selectedIds: Set<string>; onToggleSelect: (id: string) => void;
 }) {
+    const scrollRef = useRef<HTMLDivElement | null>(null);
+    const panRef = useRef({
+        active: false,
+        pointerId: -1,
+        startX: 0,
+        scrollLeft: 0,
+        moved: false,
+    });
+    const [isPanning, setIsPanning] = useState(false);
     const cols = STATUSES.map(s => ({ status: s, orders: orders.filter(o => (o.lmStatus || 'Pendiente') === s) }));
     const isMens = carrier === 'mensajeria';
     const cod = isMens ? orders.filter(o => o.isContraEntrega).length : 0;
     const cobrado = isMens ? orders.filter(o => o.isContraEntrega && o.contraEntregaCollected).length : 0;
+
+    const shouldIgnorePan = (target: EventTarget | null) => {
+        if (!(target instanceof HTMLElement)) return false;
+        return !!target.closest('button, a, input, select, textarea, [role="button"], .lm-order-card');
+    };
+
+    const endPan = (pointerId?: number) => {
+        const el = scrollRef.current;
+        if (el && pointerId != null && el.hasPointerCapture(pointerId)) {
+            el.releasePointerCapture(pointerId);
+        }
+        panRef.current.active = false;
+        setIsPanning(false);
+    };
+
+    const handlePanStart = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (e.button !== 0 || shouldIgnorePan(e.target)) return;
+        const el = scrollRef.current;
+        if (!el || el.scrollWidth <= el.clientWidth) return;
+        panRef.current = {
+            active: true,
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            scrollLeft: el.scrollLeft,
+            moved: false,
+        };
+        el.setPointerCapture(e.pointerId);
+        setIsPanning(true);
+    };
+
+    const handlePanMove = (e: React.PointerEvent<HTMLDivElement>) => {
+        const pan = panRef.current;
+        const el = scrollRef.current;
+        if (!pan.active || !el || pan.pointerId !== e.pointerId) return;
+        const deltaX = e.clientX - pan.startX;
+        if (Math.abs(deltaX) > 2) pan.moved = true;
+        el.scrollLeft = pan.scrollLeft - deltaX;
+        e.preventDefault();
+    };
 
     return (
         <div style={{ marginBottom: 14 }}>
@@ -461,18 +509,28 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
                 </div>
             </div>
             {/* Columns — horizontally scrollable, vertically capped */}
-            <div style={{
+            <div
+                ref={scrollRef}
+                onPointerDown={handlePanStart}
+                onPointerMove={handlePanMove}
+                onPointerUp={e => endPan(e.pointerId)}
+                onPointerCancel={e => endPan(e.pointerId)}
+                className="lm-board-scroll"
+                style={{
                 display: 'flex', gap: 8, overflowX: 'auto', overflowY: 'hidden',
                 padding: '10px', background: 'rgba(0,0,0,0.3)',
                 backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
                 border: `1px solid ${accentColor}22`, borderRadius: '0 0 12px 12px',
+                cursor: isPanning ? 'grabbing' : 'grab',
+                userSelect: isPanning ? 'none' : 'auto',
+                touchAction: 'pan-y',
             }}>
                 {cols.map(({ status, orders: col }) => {
                     const sc = STATUS_CFG[status];
                     return (
                         <div key={status} style={{ minWidth: 270, flex: '0 0 270px', display: 'flex', flexDirection: 'column' }}>
                             {/* Column header */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, padding: '5px 10px', borderRadius: 7, background: sc.glow, border: `1px solid ${sc.color}35`, flexShrink: 0 }}>
+                            <div title="Arrastra para mover el tablero" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, padding: '7px 10px', borderRadius: 7, background: sc.glow, border: `1px solid ${sc.color}45`, flexShrink: 0, cursor: isPanning ? 'grabbing' : 'grab', boxShadow: `inset 0 0 0 1px ${sc.color}10` }}>
                                 <span style={{ color: sc.color, fontWeight: 600, fontSize: 11 }}>{status}</span>
                                 <span style={{ background: `${sc.color}30`, color: sc.color, padding: '1px 7px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{col.length}</span>
                             </div>
@@ -1180,7 +1238,7 @@ export default function CarriersPage() {
                 </div>
             )}
 
-            <style>{`.lm-order-card:hover{border-color:rgba(255,255,255,0.18)!important} @keyframes spin{to{transform:rotate(360deg)}} ::-webkit-scrollbar{width:4px;height:4px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}`}</style>
+            <style>{`.lm-order-card:hover{border-color:rgba(255,255,255,0.18)!important}.lm-board-scroll{scrollbar-width:thin;scrollbar-color:rgba(139,135,255,0.55) rgba(255,255,255,0.08)}.lm-board-scroll::-webkit-scrollbar{height:10px}.lm-board-scroll::-webkit-scrollbar-track{background:rgba(255,255,255,0.08);border-radius:999px}.lm-board-scroll::-webkit-scrollbar-thumb{background:linear-gradient(90deg,rgba(139,135,255,0.7),rgba(96,165,250,0.7));border-radius:999px;border:2px solid rgba(0,0,0,0.3)}.lm-board-scroll::-webkit-scrollbar-thumb:hover{background:linear-gradient(90deg,rgba(139,135,255,0.95),rgba(96,165,250,0.95))}@keyframes spin{to{transform:rotate(360deg)}} ::-webkit-scrollbar{width:4px;height:4px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}`}</style>
         </div>
     );
 }

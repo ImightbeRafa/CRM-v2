@@ -1,4 +1,4 @@
-const STATS_TIME_ZONE = 'America/Costa_Rica';
+export const STATS_TIME_ZONE = 'America/Costa_Rica';
 const STATS_UTC_OFFSET_MINUTES = -6 * 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DATE_KEY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -54,6 +54,10 @@ export function formatStatsDateKey(date: Date): string {
   const day = parts.find((part) => part.type === 'day')?.value;
 
   return year && month && day ? `${year}-${month}-${day}` : '';
+}
+
+export function getCurrentStatsDateKey(now = new Date()): string {
+  return formatStatsDateKey(now);
 }
 
 export function normalizeStatsDateInput(value: unknown): string | null {

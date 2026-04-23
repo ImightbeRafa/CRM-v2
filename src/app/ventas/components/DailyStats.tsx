@@ -18,20 +18,23 @@ interface DailyStats {
   raAmount: number;
 }
 
-function isToday(dateString: string): boolean {
-  const saleDate = new Date(dateString);
-  const today = new Date();
-  
-  return saleDate.getDate() === today.getDate() &&
-         saleDate.getMonth() === today.getMonth() &&
-         saleDate.getFullYear() === today.getFullYear();
-}
+const CR_TZ = 'America/Costa_Rica';
+const getTodayKeyCR = () => new Date().toLocaleDateString('en-CA', { timeZone: CR_TZ });
+const getTodayRangeCR = () => {
+  const [year, month, day] = getTodayKeyCR().split('-').map(Number);
+  const start = new Date(Date.UTC(year, month - 1, day, 6, 0, 0, 0));
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+  return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
+};
 
 export default function DailyStats() {
-  const { sales, isLoading, error } = useSalesStream();
+  const todayRange = React.useMemo(() => getTodayRangeCR(), []);
+  const { sales, isLoading, error } = useSalesStream({
+    filters: todayRange,
+  });
   const { formatCurrency } = useTenantSettings();
 
-  // Calculate daily stats from filtered sales
+  // Calculate daily stats from today's sales.
   const stats = React.useMemo(() => {
     const initialStats: DailyStats = {
       totalSales: 0,
@@ -45,9 +48,6 @@ export default function DailyStats() {
     if (!sales?.length) return initialStats;
 
     return sales.reduce((acc, sale) => {
-      // Skip if not today's sale
-      if (!isToday(sale.timestamp)) return acc;
-
       const amount = Number(sale.total) || 0;
 
       if (sale.orderType === 'EA') {
@@ -106,6 +106,7 @@ export default function DailyStats() {
           Resumen del Día
           <span className="ml-2 text-sm text-muted-foreground">
             {new Date().toLocaleDateString('es-CR', {
+              timeZone: CR_TZ,
               weekday: 'long',
               year: 'numeric',
               month: 'long',

@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import ExcelJS from 'exceljs';
-import { parseExcelSheet, mapInventoryRow } from '@/lib/import-helpers';
+import { parseExcelSheet, mapInventoryRow, validateXlsxUpload } from '@/lib/import-helpers';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+const PREVIEW_RESPONSE_ROW_LIMIT = 500;
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,6 +29,11 @@ export async function POST(request: NextRequest) {
     const sheetIndexParam = formData.get('sheetIndex') as string;
     const sheetIndex = sheetIndexParam ? parseInt(sheetIndexParam, 10) : 0;
 
+    const uploadError = validateXlsxUpload(file);
+    if (uploadError) {
+      return NextResponse.json({ error: uploadError }, { status: 400 });
+    }
+
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
@@ -33,14 +41,6 @@ export async function POST(request: NextRequest) {
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json({ error: 'El archivo excede el tamaño máximo de 10MB' }, { status: 400 });
-    }
-
-    const allowedTypes = [
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-excel',
-    ];
-    if (file.type && !allowedTypes.includes(file.type)) {
-      return NextResponse.json({ error: 'Solo se permiten archivos Excel (.xlsx, .xls)' }, { status: 400 });
     }
 
     // Read file buffer
@@ -63,7 +63,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Select sheet
-    const selectedIndex = Math.min(sheetIndex, sheets.length - 1);
+    const selectedIndex = Number.isFinite(sheetIndex)
+      ? Math.max(0, Math.min(sheetIndex, sheets.length - 1))
+      : 0;
     const worksheet = workbook.worksheets[selectedIndex];
 
     // Parse sheet
@@ -86,6 +88,7 @@ export async function POST(request: NextRequest) {
 
     const validRows = preview.filter(r => r.isValid).length;
     const errorRows = preview.filter(r => !r.isValid).length;
+    const responsePreview = preview.slice(0, PREVIEW_RESPONSE_ROW_LIMIT);
 
     return NextResponse.json({
       sheets,
@@ -94,7 +97,7 @@ export async function POST(request: NextRequest) {
       totalRows: rows.length,
       validRows,
       errorRows,
-      preview: preview.map(r => ({
+      preview: responsePreview.map(r => ({
         rowIndex: r.rowIndex,
         mapped: r.mapped,
         errors: r.errors,

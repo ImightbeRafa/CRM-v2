@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { Fragment, useState, useRef, useCallback } from 'react';
 import { Card, CardContent } from '@/app/components/ui/card';
 import { Alert, AlertTitle, AlertDescription } from '@/app/components/ui/alert';
 import { Badge } from '@/app/components/ui/badge';
@@ -95,6 +95,21 @@ const PREVIEW_COLUMNS = [
 
 const MAX_PREVIEW_ROWS = 100;
 
+async function readJsonResponse(res: Response) {
+  const text = await res.text();
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      error: res.ok
+        ? 'Respuesta inesperada del servidor'
+        : 'Error inesperado del servidor al procesar el archivo',
+    };
+  }
+}
+
 export function ExcelImporter() {
   const [step, setStep] = useState<Step>('upload');
   const [file, setFile] = useState<File | null>(null);
@@ -144,11 +159,17 @@ export function ExcelImporter() {
     // Validate file type
     const validTypes = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-excel',
+      'application/octet-stream',
+      'application/zip',
     ];
-    const isValidExtension = selectedFile.name.endsWith('.xlsx') || selectedFile.name.endsWith('.xls');
-    if (!isValidExtension && selectedFile.type && !validTypes.includes(selectedFile.type)) {
-      setError('Solo se permiten archivos Excel (.xlsx, .xls)');
+    const lowerName = selectedFile.name.toLowerCase();
+    const isValidExtension = lowerName.endsWith('.xlsx');
+    if (lowerName.endsWith('.xls')) {
+      setError('Los archivos .xls antiguos no son compatibles. Guarde el archivo como .xlsx e intente de nuevo.');
+      return;
+    }
+    if (!isValidExtension || (selectedFile.type && !validTypes.includes(selectedFile.type))) {
+      setError('Solo se permiten archivos Excel .xlsx');
       return;
     }
 
@@ -177,7 +198,7 @@ export function ExcelImporter() {
         body: formData,
       });
 
-      const data = await res.json();
+      const data = await readJsonResponse(res);
 
       if (!res.ok) {
         setError(data.error || 'Error procesando el archivo');
@@ -186,7 +207,7 @@ export function ExcelImporter() {
       }
 
       setPreviewData(data);
-      setSelectedSheetIndex(sheetIndex);
+      setSelectedSheetIndex(data.selectedSheet ?? sheetIndex);
       setStep('preview');
     } catch {
       setError('Error de conexión al procesar el archivo');
@@ -218,7 +239,7 @@ export function ExcelImporter() {
         body: formData,
       });
 
-      const data = await res.json();
+      const data = await readJsonResponse(res);
 
       if (!res.ok) {
         setError(data.error || 'Error importando los datos');
@@ -320,7 +341,7 @@ export function ExcelImporter() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx,.xls"
+                accept=".xlsx"
                 className="hidden"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
@@ -342,7 +363,7 @@ export function ExcelImporter() {
                       Arrastra un archivo Excel aquí o haz clic para seleccionar
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Formatos: .xlsx, .xls — Máximo 10MB
+                      Formato: .xlsx — Máximo 10MB
                     </p>
                   </div>
                 </div>
@@ -564,7 +585,7 @@ export function ExcelImporter() {
                       const errorFields = new Set(row.errors.map(e => e.field));
 
                       return (
-                        <>
+                        <Fragment key={row.rowIndex}>
                           <TableRow
                             key={row.rowIndex}
                             className={`${hasErrors ? 'bg-red-50/50 dark:bg-red-950/10 hover:bg-red-50/80 dark:hover:bg-red-950/20' : ''} ${hasErrors ? 'cursor-pointer' : ''}`}
@@ -622,7 +643,7 @@ export function ExcelImporter() {
                               </TableCell>
                             </TableRow>
                           )}
-                        </>
+                        </Fragment>
                       );
                     })}
                   </TableBody>

@@ -11,6 +11,16 @@ const glassHi = { background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(24
 const fmt = (n: number) => `₡${n.toLocaleString('es-CR')}`;
 
 type Tab = 'resumen' | 'correos-cr' | 'contra-entregas' | 'dias-trabajados' | 'gd-balance';
+type WorkDayType = 'full' | 'half';
+
+const STAFF_OPTIONS = ['Ma', 'JKY'];
+const CR_TZ = 'America/Costa_Rica';
+const toDateKeyCR = (date = new Date()) => date.toLocaleDateString('en-CA', { timeZone: CR_TZ });
+const startOfMonthKey = (key: string) => `${key.slice(0, 7)}-01`;
+const WORK_DAY_OPTIONS: Record<WorkDayType, { label: string; units: number; amount: number }> = {
+    full: { label: 'Dia completo', units: 1, amount: 10000 },
+    half: { label: 'Medio dia', units: 0.5, amount: 5000 },
+};
 
 // ─── Resumen Tab ──────────────────────────────────────────────────────────────
 function ResumenTab({ rates }: { rates: Rates }) {
@@ -498,12 +508,17 @@ function ContraEntregasTab() {
 function DiasTrabajadosTab({ dailyRate }: { dailyRate: number }) {
     const [workDays, setWorkDays] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [staffName, setStaffName] = useState('Marlenn');
-    const [dateFrom, setDateFrom] = useState('');
-    const [dateTo, setDateTo] = useState('');
-    const [newDate, setNewDate] = useState('');
+    const [staffName, setStaffName] = useState(STAFF_OPTIONS[0]);
+    const [dateFrom, setDateFrom] = useState(() => startOfMonthKey(toDateKeyCR()));
+    const [dateTo, setDateTo] = useState(() => toDateKeyCR());
+    const [newDate, setNewDate] = useState(() => toDateKeyCR());
+    const [dayType, setDayType] = useState<WorkDayType>('full');
     const [adding, setAdding] = useState(false);
     const [deleting, setDeleting] = useState<string | null>(null);
+
+    const effectiveDailyRate = dailyRate || 10000;
+    const getUnits = (day: any) => Number(day.work_units ?? (day.day_type === 'half' ? 0.5 : 1));
+    const getDayAmount = (day: any) => getUnits(day) * effectiveDailyRate;
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -522,8 +537,7 @@ function DiasTrabajadosTab({ dailyRate }: { dailyRate: number }) {
         if (!newDate) return;
         setAdding(true);
         try {
-            await fetch('/api/logistics/work-days', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staffName, workDate: newDate }) });
-            setNewDate('');
+            await fetch('/api/logistics/work-days', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staffName, workDate: newDate, dayType }) });
             await load();
         } finally { setAdding(false); }
     }
@@ -536,8 +550,10 @@ function DiasTrabajadosTab({ dailyRate }: { dailyRate: number }) {
         } finally { setDeleting(null); }
     }
 
-    const daysCount = workDays.length;
-    const salaryTotal = daysCount * dailyRate;
+    const workUnits = workDays.reduce((sum, day) => sum + getUnits(day), 0);
+    const daysCount = workUnits;
+    const salaryTotal = workDays.reduce((sum, day) => sum + getDayAmount(day), 0);
+    const selectedDateEntry = workDays.find(d => String(d.work_date).slice(0, 10) === newDate);
 
     return (
         <div>
@@ -559,7 +575,7 @@ function DiasTrabajadosTab({ dailyRate }: { dailyRate: number }) {
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
                     <select value={staffName} onChange={e => setStaffName(e.target.value)}
                         style={{ padding: '7px 14px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', cursor: 'pointer' }}>
-                        {['Marlenn', 'Otro'].map(n => <option key={n} value={n}>{n}</option>)}
+                        {STAFF_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
                     </select>
                     <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ padding: '7px 12px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', borderRadius: 8 }} />
                     <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>→</span>
@@ -569,11 +585,26 @@ function DiasTrabajadosTab({ dailyRate }: { dailyRate: number }) {
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                     <DollarSign size={14} style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }} />
                     <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} style={{ flex: 1, padding: '8px 14px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', borderRadius: 8 }} />
+                    {(Object.keys(WORK_DAY_OPTIONS) as WorkDayType[]).map(type => {
+                        const option = WORK_DAY_OPTIONS[type];
+                        const selected = dayType === type;
+                        return (
+                            <button key={type} onClick={() => setDayType(type)}
+                                style={{ padding: '8px 14px', borderRadius: 8, border: selected ? '1px solid rgba(52,211,153,0.45)' : '1px solid rgba(255,255,255,0.1)', background: selected ? 'rgba(52,211,153,0.1)' : 'rgba(255,255,255,0.04)', color: selected ? '#34d399' : 'rgba(255,255,255,0.55)', cursor: 'pointer', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                {option.label} - {fmt(option.units * effectiveDailyRate)}
+                            </button>
+                        );
+                    })}
                     <button onClick={addDay} disabled={!newDate || adding}
                         style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: 'pointer', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                         <PlusCircle size={13} /> {adding ? 'Agregando...' : 'Agregar Día'}
                     </button>
                 </div>
+                {selectedDateEntry && (
+                    <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: '12px 0 0' }}>
+                        Ya existe un registro para esta fecha. Guardar reemplaza la jornada actual.
+                    </p>
+                )}
             </div>
 
             {/* Work days list */}
@@ -598,8 +629,13 @@ function DiasTrabajadosTab({ dailyRate }: { dailyRate: number }) {
                                     <tr key={d.id} style={{ borderBottom: idx < workDays.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }} className="lm-table-row">
                                         <td style={{ padding: '10px 14px', color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>{idx + 1}</td>
                                         <td style={{ padding: '10px 14px', color: '#F2F2F2', fontWeight: 600 }}>{new Date(d.work_date + 'T12:00:00').toLocaleDateString('es-CR', { weekday: 'long', day: '2-digit', month: 'long' })}</td>
-                                        <td style={{ padding: '10px 14px', color: 'rgba(255,255,255,0.6)' }}>{d.staff_name}</td>
-                                        <td style={{ padding: '10px 14px', color: '#34d399', fontWeight: 700 }}>{fmt(dailyRate)}</td>
+                                        <td style={{ padding: '10px 14px', color: 'rgba(255,255,255,0.6)' }}>
+                                            {d.staff_name}
+                                            <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 20, background: getUnits(d) === 0.5 ? 'rgba(96,165,250,0.14)' : 'rgba(52,211,153,0.12)', color: getUnits(d) === 0.5 ? '#60a5fa' : '#34d399', fontSize: 11, fontWeight: 700 }}>
+                                                {getUnits(d) === 0.5 ? 'Medio dia' : 'Dia completo'}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '10px 14px', color: '#34d399', fontWeight: 700 }}>{fmt(getDayAmount(d))}</td>
                                         <td style={{ padding: '10px 14px' }}>
                                             <button onClick={() => removeDay(d.id)} disabled={deleting === d.id}
                                                 style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(248,113,113,0.25)', background: 'rgba(248,113,113,0.06)', color: '#f87171', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>

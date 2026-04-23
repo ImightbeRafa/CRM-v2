@@ -13,6 +13,11 @@ import { useTenantConfig } from '@/hooks/useTenantConfig';
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14 } as const;
 const glassHi = { background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 14 } as const;
 const fmt = (n: number) => `₡${(n || 0).toLocaleString('es-CR')}`;
+const CORREOS_TAX_RATE = 0.13;
+const getCorreosTax = (cost: number | null | undefined) => {
+    if (cost == null || !Number.isFinite(Number(cost)) || Number(cost) <= 0) return 0;
+    return Math.round(Number(cost) * CORREOS_TAX_RATE);
+};
 const fmtDate = (d: string) => {
     try {
         return new Date(d + 'T12:00:00').toLocaleDateString('es-CR', { weekday: 'short', day: '2-digit', month: 'short' });
@@ -72,6 +77,7 @@ interface ReportOrder {
     isContraEntrega: boolean;
     contraentregaCollected: boolean;
     correosShippingCost: number | null;
+    correosTax?: number;
     handlingCost: number;
     guiaNumber: string | null;
     trackingNumber: string | null;
@@ -84,6 +90,7 @@ interface ReportData {
     tenantId: string;
     correos: {
         packages: number; shippingCost: number; pendingCostCount: number;
+        taxRate?: number; taxCost?: number;
         handlingRate: number; handlingCost: number; montoTotal: number;
         orders: ReportOrder[];
     };
@@ -99,6 +106,7 @@ interface ReportData {
     };
     totals: {
         totalPackages: number; correosShipping: number; correosHandling: number;
+        correosTax?: number;
         mensajeriaRecoleccion: number; mensajeriaHandling: number;
         totalShipping: number; totalHandling: number; subtotalLogistics: number;
         salary: number; grandTotal: number;
@@ -138,7 +146,7 @@ export default function ReportsPage() {
 
     // Report controls — default to all tenants for the live dashboard
     const [selectedTenants, setSelectedTenants] = useState<string[]>([...MANAGED_IDS]);
-    const [staffName, setStaffName] = useState('Marlenn');
+    const [staffName, setStaffName] = useState('Ma');
     const [reportMode, setReportMode] = useState<ReportPeriodMode>('currentWeek');
     const [dateFrom, setDateFrom] = useState(() => startOfMonthKey(toDateKeyCR()));
     const [dateTo, setDateTo] = useState(() => toDateKeyCR());
@@ -303,19 +311,21 @@ export default function ReportsPage() {
         const selectedMensajeria = selected.filter(o => o.carrier === 'mensajeria');
 
         const correosShipping = selectedCorreos.reduce((s, o) => s + (o.correosShippingCost ?? 0), 0);
+        const correosTax = selectedCorreos.reduce((s, o) => s + (o.correosTax ?? getCorreosTax(o.correosShippingCost)), 0);
         const correosHandling = selectedCorreos.length * hRate;
         const mensajeriaRecoleccion = selectedMensajeria.length > 0 ? entry.data.mensajeria.recoleccionCost : 0;
         const mensajeriaHandling = selectedMensajeria.length * hRate;
 
         const totalShipping = correosShipping + mensajeriaRecoleccion;
         const totalHandling = correosHandling + mensajeriaHandling;
-        const subtotal = totalShipping + totalHandling;
+        const subtotal = totalShipping + totalHandling + correosTax;
 
         return {
             packages: selected.length,
             correosPackages: selectedCorreos.length,
             mensajeriaPackages: selectedMensajeria.length,
             correosShipping,
+            correosTax,
             correosHandling,
             mensajeriaRecoleccion,
             mensajeriaHandling,
@@ -330,7 +340,7 @@ export default function ReportsPage() {
 
     // ─── Compute combined totals ────────────────────────
     const computeCombined = useCallback(() => {
-        let totalPackages = 0, totalShipping = 0, totalHandling = 0, subtotalLogistics = 0;
+        let totalPackages = 0, totalShipping = 0, totalHandling = 0, totalTaxes = 0, subtotalLogistics = 0;
 
         const perTenant: { tenantId: string; packages: number; subtotal: number }[] = [];
 
@@ -339,6 +349,7 @@ export default function ReportsPage() {
             totalPackages += t.packages;
             totalShipping += t.totalShipping;
             totalHandling += t.totalHandling;
+            totalTaxes += t.correosTax;
             subtotalLogistics += t.subtotal;
             perTenant.push({ tenantId: entry.tenantId, packages: t.packages, subtotal: t.subtotal });
         }
@@ -346,7 +357,7 @@ export default function ReportsPage() {
         const salary = reports.length > 0 ? reports[0].data.salary.total : 0;
         const grandTotal = subtotalLogistics + salary;
 
-        return { totalPackages, totalShipping, totalHandling, subtotalLogistics, salary, grandTotal, perTenant };
+        return { totalPackages, totalShipping, totalHandling, totalTaxes, subtotalLogistics, salary, grandTotal, perTenant };
     }, [reports, computeTenantTotals]);
 
     // ─── Exclude order (return to pending) ──────────────
@@ -459,14 +470,16 @@ export default function ReportsPage() {
             const name = getTenantName(entry.tenantId);
             const t = computeTenantTotals(entry);
             rows.push([`=== ${name} ===`]);
-            rows.push(['Orden', 'Cliente', 'Fecha/Hora', 'Producto', 'Carrier', 'Provincia', 'Total', 'Envío', 'Manejo', 'Guía', 'CE']);
+            rows.push(['Orden', 'Cliente', 'Fecha/Hora', 'Producto', 'Carrier', 'Provincia', 'Total', 'Envío', 'Impuestos', 'Manejo', 'Guía', 'CE']);
             const allOrd = [...entry.data.correos.orders, ...entry.data.mensajeria.orders]
                 .filter(o => !excludedOrders.has(o.id));
             for (const o of allOrd) {
                 rows.push([
                     o.orderId, o.customerName, o.reportTimestampCR ?? o.timestampCR, o.product ?? '',
                     o.carrier, o.province ?? '', `${o.total}`,
-                    `${o.correosShippingCost ?? ''}`, `${o.handlingCost}`,
+                    `${o.correosShippingCost ?? ''}`,
+                    o.carrier === 'correos' && o.correosShippingCost != null ? `${o.correosTax ?? getCorreosTax(o.correosShippingCost)}` : '',
+                    `${o.handlingCost}`,
                     o.guiaNumber ?? '', o.isContraEntrega ? 'Sí' : '',
                 ]);
             }
@@ -476,9 +489,9 @@ export default function ReportsPage() {
 
         const combined = computeCombined();
         rows.push(['=== RESUMEN COMBINADO ===']);
-        rows.push(['Total Paquetes', 'Envíos', 'Manejo', 'Subtotal Logística', 'Salario', 'GRAN TOTAL']);
+        rows.push(['Total Paquetes', 'Envíos', 'Impuestos', 'Manejo', 'Subtotal Logística', 'Salario', 'GRAN TOTAL']);
         rows.push([
-            `${combined.totalPackages}`, fmt(combined.totalShipping), fmt(combined.totalHandling),
+            `${combined.totalPackages}`, fmt(combined.totalShipping), fmt(combined.totalTaxes), fmt(combined.totalHandling),
             fmt(combined.subtotalLogistics), fmt(combined.salary), fmt(combined.grandTotal),
         ]);
 
@@ -561,7 +574,7 @@ export default function ReportsPage() {
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                                 <select value={staffName} onChange={e => setStaffName(e.target.value)}
                                     style={{ padding: '7px 12px', ...glass, color: '#F2F2F2', fontSize: 12, outline: 'none', cursor: 'pointer', borderRadius: 8 }}>
-                                    {['Marlenn', 'Otro'].map(n => <option key={n} value={n} style={{ background: '#1a1a2e' }}>{n}</option>)}
+                                    {['Ma', 'JKY'].map(n => <option key={n} value={n} style={{ background: '#1a1a2e' }}>{n}</option>)}
                                 </select>
                                 <button onClick={generate} disabled={loading}
                                     style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid rgba(139,135,255,0.4)', background: 'rgba(139,135,255,0.1)', color: '#8b87ff', cursor: loading ? 'wait' : 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, opacity: loading ? 0.6 : 1 }}>
@@ -734,12 +747,13 @@ export default function ReportsPage() {
                                                 )}
 
                                                 {/* Cost breakdown cards */}
-                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 16 }}>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, marginBottom: 16 }}>
                                                     {[
                                                         { label: 'Paquetes', value: `${t.packages}`, sub: `${t.correosPackages} correos · ${t.mensajeriaPackages} mensajería`, color: tenantColor },
                                                         { label: 'Envíos', value: fmt(t.totalShipping), sub: `Correos: ${fmt(t.correosShipping)} + Recol: ${fmt(t.mensajeriaRecoleccion)}`, color: '#60a5fa' },
+                                                        { label: 'Impuestos', value: fmt(t.correosTax), sub: '13% Correos Regular', color: '#fb7185' },
                                                         { label: `Manejo (${fmt(r.correos.handlingRate)} × ${t.packages})`, value: fmt(t.totalHandling), sub: `Correos: ${fmt(t.correosHandling)} + GD: ${fmt(t.mensajeriaHandling)}`, color: '#fbbf24' },
-                                                        { label: 'Subtotal Cuenta', value: fmt(t.subtotal), sub: `${fmt(t.totalShipping)} + ${fmt(t.totalHandling)}`, color: '#34d399' },
+                                                        { label: 'Subtotal Cuenta', value: fmt(t.subtotal), sub: `${fmt(t.totalShipping)} + ${fmt(t.correosTax)} + ${fmt(t.totalHandling)}`, color: '#34d399' },
                                                     ].map(({ label, value, sub, color }) => (
                                                         <div key={label} style={{ background: `${color}08`, padding: '12px 14px', borderRadius: 10, border: `1px solid ${color}15` }}>
                                                             <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 9, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
@@ -772,10 +786,10 @@ export default function ReportsPage() {
                                                             </span>
                                                         </div>
                                                         <div style={{ overflowX: 'auto' }}>
-                                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 900 }}>
+                                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 980 }}>
                                                                 <thead>
                                                                     <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                                                                        {['', 'Orden', 'Cliente', 'Fecha y Hora', 'Producto', 'Carrier', 'Provincia', 'Total', 'Envío', 'Manejo', 'Guía', 'CE'].map(h => (
+                                                                        {['', 'Orden', 'Cliente', 'Fecha y Hora', 'Producto', 'Carrier', 'Provincia', 'Total', 'Envío', 'Impuestos', 'Manejo', 'Guía', 'CE'].map(h => (
                                                                             <th key={h} style={{ padding: '7px 8px', textAlign: 'left', color: 'rgba(255,255,255,0.3)', fontWeight: 600, fontSize: 9.5, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                                                                         ))}
                                                                     </tr>
@@ -831,6 +845,9 @@ export default function ReportsPage() {
                                                                                 <td style={{ padding: '6px 8px', color: o.correosShippingCost != null ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)' }}>
                                                                                     {o.carrier === 'correos' ? (o.correosShippingCost != null ? fmt(o.correosShippingCost) : '⚠ sin costo') : '—'}
                                                                                 </td>
+                                                                                <td style={{ padding: '6px 8px', color: o.carrier === 'correos' ? '#fb7185' : 'rgba(255,255,255,0.2)' }}>
+                                                                                    {o.carrier === 'correos' && o.correosShippingCost != null ? fmt(o.correosTax ?? getCorreosTax(o.correosShippingCost)) : '—'}
+                                                                                </td>
                                                                                 <td style={{ padding: '6px 8px', color: 'rgba(255,255,255,0.5)' }}>{fmt(o.handlingCost)}</td>
                                                                                 <td style={{ padding: '6px 8px', color: o.guiaNumber ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.15)', fontFamily: 'monospace', fontSize: 10 }}>{o.guiaNumber ?? '—'}</td>
                                                                                 <td style={{ padding: '6px 8px' }}>
@@ -880,10 +897,11 @@ export default function ReportsPage() {
                                             </div>
 
                                             {/* Combined KPIs */}
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, marginBottom: 20 }}>
                                                 {[
                                                     { label: 'Total Paquetes', value: `${combined.totalPackages}`, color: '#8b87ff', icon: <Package size={15} /> },
                                                     { label: 'Envíos', value: fmt(combined.totalShipping), color: '#60a5fa', icon: <Truck size={15} /> },
+                                                    { label: 'Impuestos', value: fmt(combined.totalTaxes), color: '#fb7185', icon: <DollarSign size={15} /> },
                                                     { label: 'Manejo', value: fmt(combined.totalHandling), color: '#fbbf24', icon: <Package size={15} /> },
                                                     { label: 'Subtotal Logística', value: fmt(combined.subtotalLogistics), color: '#34d399', icon: <TrendingUp size={15} /> },
                                                 ].map(({ label, value, color, icon }) => (
@@ -952,9 +970,10 @@ export default function ReportsPage() {
                                         {/* Grand Total + Finalize */}
                                         <div style={{ ...glassHi, padding: '24px 26px', borderColor: 'rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.04)' }}>
                                             <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, margin: '0 0 16px' }}>Total a Pagar — Todas las Cuentas</p>
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 12, marginBottom: 16 }}>
                                                 {[
                                                     { label: 'Envíos', value: combined.totalShipping, color: '#60a5fa' },
+                                                    { label: 'Impuestos', value: combined.totalTaxes, color: '#fb7185' },
                                                     { label: 'Manejo', value: combined.totalHandling, color: '#8b87ff' },
                                                     { label: 'Salario', value: combined.salary, color: '#34d399' },
                                                     { label: 'Logística Total', value: combined.subtotalLogistics, color: '#fbbf24' },
@@ -1089,10 +1108,10 @@ export default function ReportsPage() {
                                             <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>{allOrd.length} órdenes</span>
                                         </div>
                                         <div style={{ overflowX: 'auto' }}>
-                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 700 }}>
+                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 780 }}>
                                                 <thead>
                                                     <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                                                        {['Orden', 'Cliente', 'Fecha y Hora', 'Carrier', 'Total', 'Envío', 'Manejo', 'Guía'].map(h => (
+                                                        {['Orden', 'Cliente', 'Fecha y Hora', 'Carrier', 'Total', 'Envío', 'Impuestos', 'Manejo', 'Guía'].map(h => (
                                                             <th key={h} style={{ padding: '6px 8px', textAlign: 'left', color: 'rgba(255,255,255,0.3)', fontWeight: 600, fontSize: 9, textTransform: 'uppercase' }}>{h}</th>
                                                         ))}
                                                     </tr>
@@ -1110,6 +1129,7 @@ export default function ReportsPage() {
                                                             </td>
                                                             <td style={{ padding: '5px 8px', color: '#F2F2F2', fontWeight: 600 }}>{fmt(o.total)}</td>
                                                             <td style={{ padding: '5px 8px', color: 'rgba(255,255,255,0.5)' }}>{o.correosShippingCost != null ? fmt(o.correosShippingCost) : '—'}</td>
+                                                            <td style={{ padding: '5px 8px', color: o.carrier === 'correos' ? '#fb7185' : 'rgba(255,255,255,0.2)' }}>{o.carrier === 'correos' && o.correosShippingCost != null ? fmt(o.correosTax ?? getCorreosTax(o.correosShippingCost)) : '—'}</td>
                                                             <td style={{ padding: '5px 8px', color: 'rgba(255,255,255,0.5)' }}>{fmt(o.handlingCost)}</td>
                                                             <td style={{ padding: '5px 8px', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', fontSize: 10 }}>{o.guiaNumber ?? '—'}</td>
                                                         </tr>

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 
+export const runtime = 'nodejs';
+
 // Template definitions with examples
 const templates = {
   orders: {
@@ -83,7 +85,7 @@ export async function GET(request: NextRequest) {
       ['1. Complete los datos en la hoja "Datos"'],
       ['2. Los nombres de columnas son flexibles (vea sección de COLUMNAS)'],
       ['3. La primera fila (ejemplo) puede eliminarse o reemplazarse'],
-      ['4. Guarde el archivo como .xlsx o .xls'],
+      ['4. Guarde el archivo como .xlsx'],
       ['5. Importe el archivo desde: Config → Importar Excel'],
       [''],
       ['═══════════════════════════════════════════════════════════'],
@@ -313,4 +315,3 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
-

@@ -3,6 +3,14 @@ import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 
 const CR_TZ = 'America/Costa_Rica';
+const CORREOS_TAX_RATE = 0.13;
+
+function getCorreosTax(cost: unknown): number {
+    if (cost == null) return 0;
+    const amount = Number(cost);
+    if (!Number.isFinite(amount) || amount <= 0) return 0;
+    return Math.round(amount * CORREOS_TAX_RATE);
+}
 
 function getMondayCR(): string {
     const now = new Date();
@@ -28,6 +36,18 @@ function getSundayCR(monday: string): string {
     return `${yy}-${mm}-${dd}`;
 }
 
+function getWorkUnits(notes: unknown): number {
+    if (typeof notes !== 'string' || !notes.trim()) return 1;
+    try {
+        const parsed = JSON.parse(notes);
+        const units = Number(parsed?.units);
+        if (units === 0.5 || units === 1) return units;
+        return parsed?.dayType === 'half' ? 0.5 : 1;
+    } catch {
+        return 1;
+    }
+}
+
 // GET /api/logistics/reports?tenantId=&dateFrom=&dateTo=&staffName=&includeBilled=&billedWeekId=&currentWeek=true
 export async function GET(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
@@ -37,7 +57,7 @@ export async function GET(req: NextRequest) {
     const tenantId = url.searchParams.get('tenantId');
     const dateFrom = url.searchParams.get('dateFrom');
     const dateTo = url.searchParams.get('dateTo');
-    const staffName = url.searchParams.get('staffName') ?? 'Marlenn';
+    const staffName = url.searchParams.get('staffName') ?? 'Ma';
     const includeBilled = url.searchParams.get('includeBilled') === 'true';
     let billedWeekId = url.searchParams.get('billedWeekId');
     const currentWeek = url.searchParams.get('currentWeek') === 'true';
@@ -182,12 +202,20 @@ export async function GET(req: NextRequest) {
         if (periodDateFrom) { workDayParams.push(periodDateFrom); workDaySql += ` AND work_date >= $${workDayParams.length}::date`; }
         if (periodDateTo) { workDayParams.push(periodDateTo); workDaySql += ` AND work_date <= $${workDayParams.length}::date`; }
         workDaySql += ' ORDER BY work_date ASC';
-        const workDays = await prisma.$queryRawUnsafe<any[]>(workDaySql, ...workDayParams);
+        const workDays = (await prisma.$queryRawUnsafe<any[]>(workDaySql, ...workDayParams)).map((day) => {
+            const units = getWorkUnits(day.notes);
+            return {
+                ...day,
+                work_units: units,
+                day_type: units === 0.5 ? 'half' : 'full',
+            };
+        });
 
         // 7. Cost calculations — flat, unambiguous structure
         const correosShipping = correoOrders.reduce(
             (s, o) => s + (o.correos_shipping_cost != null ? Number(o.correos_shipping_cost) : 0), 0
         );
+        const correosTax = correoOrders.reduce((s, o) => s + getCorreosTax(o.correos_shipping_cost), 0);
         const correosPendingCost = correoOrders.filter(o => o.correos_shipping_cost == null).length;
         const correosHandling = correoOrders.length * handlingRate;
 
@@ -197,9 +225,9 @@ export async function GET(req: NextRequest) {
 
         const totalShipping = correosShipping + mensajeriaRecoleccion;
         const totalHandling = correosHandling + mensajeriaHandling;
-        const subtotalLogistics = totalShipping + totalHandling;
+        const subtotalLogistics = totalShipping + totalHandling + correosTax;
 
-        const salaryDays = workDays.length;
+        const salaryDays = workDays.reduce((sum, day) => sum + Number(day.work_units ?? 1), 0);
         const salaryTotal = salaryDays * salaryRate;
         const grandTotal = subtotalLogistics + salaryTotal;
 
@@ -222,6 +250,7 @@ export async function GET(req: NextRequest) {
             isContraEntrega: o.is_contra_entrega ?? false,
             contraentregaCollected: o.contraentrega_collected ?? false,
             correosShippingCost: o.correos_shipping_cost != null ? Number(o.correos_shipping_cost) : null,
+            correosTax: getCorreosTax(o.correos_shipping_cost),
             handlingCost: handlingRate,
             guiaNumber: o.guiaNumber ?? null,
             trackingNumber: o.trackingNumber ?? null,
@@ -238,9 +267,11 @@ export async function GET(req: NextRequest) {
                 packages: correoOrders.length,
                 shippingCost: correosShipping,
                 pendingCostCount: correosPendingCost,
+                taxRate: CORREOS_TAX_RATE,
+                taxCost: correosTax,
                 handlingRate,
                 handlingCost: correosHandling,
-                montoTotal: correosShipping + correosHandling,
+                montoTotal: correosShipping + correosTax + correosHandling,
                 orders: formatOrders(correoOrders),
             },
             mensajeria: {
@@ -264,6 +295,7 @@ export async function GET(req: NextRequest) {
             totals: {
                 totalPackages: orders.length,
                 correosShipping,
+                correosTax,
                 correosHandling,
                 mensajeriaRecoleccion,
                 mensajeriaHandling,

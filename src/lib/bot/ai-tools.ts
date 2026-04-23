@@ -12,6 +12,13 @@ import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { prisma } from '@/lib/db';
 import { checkOrderLimit } from '@/lib/plan-enforcement';
+import {
+  addDaysToStatsDateKey,
+  buildStatsDateRange,
+  buildStatsOrderDateWhere,
+  getCurrentStatsDateKey,
+  normalizeStatsDateInput,
+} from '@/lib/statistics-dates';
 import { 
   getTenantCustomFields, 
   extractCustomFields, 
@@ -909,14 +916,13 @@ export async function getOrders(
         }
         
         if (params.dateFrom || params.dateTo) {
+          const range = buildStatsDateRange(params.dateFrom, params.dateTo);
           whereClause.timestamp = {};
-          if (params.dateFrom) {
-            whereClause.timestamp.gte = new Date(params.dateFrom);
+          if (range.start) {
+            whereClause.timestamp.gte = range.start;
           }
-          if (params.dateTo) {
-            const endDate = new Date(params.dateTo);
-            endDate.setHours(23, 59, 59, 999);
-            whereClause.timestamp.lte = endDate;
+          if (range.end) {
+            whereClause.timestamp.lte = range.end;
           }
         }
         
@@ -1279,20 +1285,9 @@ export async function getStatisticsSummary(
         const tenantPrisma = getTenantPrisma(ctx.tenantId);
         const orderModel = tenantPrisma.order as any;
         
-        // Default to last 30 days if no dates provided
-        const now = new Date();
-        const defaultStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        
-        const startDate = params.dateFrom ? new Date(params.dateFrom) : defaultStart;
-        const endDate = params.dateTo ? new Date(params.dateTo) : now;
-        endDate.setHours(23, 59, 59, 999);
-        
-        const whereClause = {
-          timestamp: {
-            gte: startDate,
-            lte: endDate,
-          },
-        };
+        const endKey = normalizeStatsDateInput(params.dateTo) || getCurrentStatsDateKey();
+        const startKey = normalizeStatsDateInput(params.dateFrom) || addDaysToStatsDateKey(endKey, -29);
+        const whereClause = buildStatsOrderDateWhere(startKey, endKey);
         
         const [totalOrders, revenue, uniqueClients] = await Promise.all([
           orderModel.count({ where: whereClause }),
@@ -1327,8 +1322,8 @@ export async function getStatisticsSummary(
             averageOrderValue: avgOrderValue,
             activeClients: uniqueClients.length,
             dateRange: {
-              from: startDate.toISOString().split('T')[0],
-              to: endDate.toISOString().split('T')[0],
+              from: startKey,
+              to: endKey,
             },
             topProducts: topProducts.map((p: { product: string | null; _count: { product: number }; _sum: { total: number | null } }) => ({
               product: p.product,

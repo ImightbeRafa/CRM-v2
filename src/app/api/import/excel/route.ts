@@ -8,8 +8,9 @@ import {
   excelDateToISO,
   toNumber,
   orderHeaderMap,
-  inventoryHeaderMap,
   parseExcelSheet,
+  mapInventoryRow,
+  validateXlsxUpload,
   type ImportResult,
 } from '@/lib/import-helpers';
 
@@ -169,45 +170,31 @@ async function importInventory(rows: any[], tenantId: string): Promise<ImportRes
     
     try {
       const rawRow = rows[i];
-      const mapped: any = {};
-      
-      // Map headers
-      for (const [k, v] of Object.entries(rawRow)) {
-        const norm = normalizeKey(k as string);
-        const target = inventoryHeaderMap[norm] || norm;
-        mapped[target] = v;
+
+      const validation = mapInventoryRow(rawRow, i);
+      if (!validation.isValid) {
+        result.failed++;
+        result.errors.push({
+          row: i + 2,
+          message: validation.errors.map(e => `${e.field}: ${e.message}`).join('; '),
+        });
+        continue;
       }
+
+      const mapped = validation.mapped;
       
       // Build product name from Tipo + Color + Capacidad
-      let productName = '';
-      const nameParts: string[] = [];
-      
-      if (mapped.tipo) nameParts.push(String(mapped.tipo).trim());
-      if (mapped.color) nameParts.push(String(mapped.color).trim());
-      if (mapped.capacidad) nameParts.push(String(mapped.capacidad).trim());
-      
-      productName = nameParts.join(' ');
-      
-      // If no name parts, use description or SKU
-      if (!productName && mapped.description) {
-        productName = String(mapped.description).trim().substring(0, 100);
-      }
-      if (!productName && mapped.sku) {
-        productName = `Producto ${String(mapped.sku).trim()}`;
-      }
-      if (!productName) {
-        productName = `Producto ${i + 1}`;
-      }
+      const productName = mapped.productName;
       
       // Process numeric fields
-      const currentStock = toNumber(mapped.currentStock);
+      const currentStock = Math.trunc(toNumber(mapped.currentStock));
       const minStock = 0; // Default
       const maxStock = 100; // Default
       const sellingPrice = toNumber(mapped.sellingPrice);
       const unitCost = toNumber(mapped.unitCost);
       
       // Ensure SKU exists
-      const sku = mapped.sku ? String(mapped.sku).trim() : `SKU-${Date.now()}-${i}`;
+      const sku = String(mapped.sku).trim();
       
       // Create or update inventory item
       await prisma.inventoryItem.upsert({
@@ -266,6 +253,7 @@ async function importInventory(rows: any[], tenantId: string): Promise<ImportRes
 // Increase timeout for large imports (30 minutes)
 export const maxDuration = 300; // 5 minutes for Vercel
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
@@ -293,17 +281,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
+    const uploadError = validateXlsxUpload(file);
+    if (uploadError) {
+      return NextResponse.json({ error: uploadError }, { status: 400 });
+    }
+
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json({ error: 'El archivo excede el tamaño máximo de 10MB' }, { status: 400 });
-    }
-
-    const allowedTypes = [
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-excel',
-    ];
-    if (file.type && !allowedTypes.includes(file.type)) {
-      return NextResponse.json({ error: 'Solo se permiten archivos Excel (.xlsx, .xls)' }, { status: 400 });
     }
 
     // Validate import type
@@ -321,10 +306,18 @@ export async function POST(request: NextRequest) {
     console.log('📄 Parsing Excel file...');
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as any);
+
+    if (workbook.worksheets.length === 0) {
+      return NextResponse.json({ error: 'El archivo Excel no contiene hojas' }, { status: 400 });
+    }
+
     // Support sheet selection via form data
     const sheetIndexParam = formData.get('sheetIndex') as string;
     const sheetIdx = sheetIndexParam ? parseInt(sheetIndexParam, 10) : 0;
-    const sheet = workbook.worksheets[Math.min(sheetIdx, workbook.worksheets.length - 1)];
+    const selectedSheetIndex = Number.isFinite(sheetIdx)
+      ? Math.max(0, Math.min(sheetIdx, workbook.worksheets.length - 1))
+      : 0;
+    const sheet = workbook.worksheets[selectedSheetIndex];
     const sheetName = sheet.name;
     const { rows } = parseExcelSheet(sheet);
 

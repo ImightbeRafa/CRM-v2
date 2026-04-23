@@ -328,6 +328,9 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
     const canArchive = order.lmStatus === 'Entregado' || order.lmStatus === 'Devuelto';
     const location = [order.province, order.canton].filter(Boolean).join(', ');
     const trackingCode = order.trackingNumber || order.guiaNumber;
+    const detailRowStyle = { display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr)', gap: 8, marginBottom: 5, alignItems: 'start' } as const;
+    const detailLabelStyle = { color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' } as const;
+    const detailValueStyle = { color: 'rgba(255,255,255,0.72)', minWidth: 0, overflowWrap: 'anywhere', lineHeight: 1.45 } as const;
 
     async function handleSync() { setSyncing(true); await syncCrm(order.id, order.lmStatus || 'Pendiente'); setSyncing(false); setSynced(true); setTimeout(() => setSynced(false), 2500); }
     function handleCopyPhone(e: React.MouseEvent) { e.stopPropagation(); if (order.phone) { navigator.clipboard.writeText(order.phone); setCopied(true); setTimeout(() => setCopied(false), 1500); } }
@@ -335,6 +338,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
     return (
         <div
             onClick={bulkMode ? () => onToggleSelect(order.id) : undefined}
+            aria-expanded={expanded}
             style={{
                 background: selected ? 'rgba(139,135,255,0.1)' : (order.isContraEntrega && carrier === 'mensajeria') ? 'rgba(251,191,36,0.06)' : 'rgba(255,255,255,0.04)',
                 backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
@@ -344,7 +348,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
             {order.isContraEntrega && carrier === 'mensajeria' && (
                 <div style={{ background: 'rgba(251,191,36,0.1)', padding: '4px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(251,191,36,0.15)' }}>
                     <span style={{ color: '#fbbf24', fontSize: 10, fontWeight: 700 }}>💵 CONTRA ENTREGA</span>
-                    <button onClick={() => onToggleCollected(order.id, !order.contraEntregaCollected)}
+                    <button type="button" onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onToggleCollected(order.id, !order.contraEntregaCollected); }}
                         style={{ padding: '2px 9px', borderRadius: 20, border: `1px solid ${order.contraEntregaCollected ? 'rgba(52,211,153,0.4)' : 'rgba(251,191,36,0.35)'}`, background: order.contraEntregaCollected ? 'rgba(52,211,153,0.12)' : 'transparent', color: order.contraEntregaCollected ? '#34d399' : '#fbbf24', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>
                         {order.contraEntregaCollected ? '✓ Cobrado' : '○ Pendiente cobro'}
                     </button>
@@ -369,10 +373,10 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                     </div>
                     <div style={{ display: 'flex', gap: 5, flexShrink: 0, marginLeft: 6 }}>
                         <span style={{ padding: '1px 7px', borderRadius: 20, background: `${color}22`, color, fontSize: 9.5, fontWeight: 700 }}>{getTenantName(order.tenantId)}</span>
-                        <button onClick={e => { e.stopPropagation(); setShowHistorial(!showHistorial); }} style={{ background: 'none', border: 'none', color: showHistorial ? '#8b87ff' : 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }} title="Historial">
+                        <button type="button" onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setShowHistorial(!showHistorial); }} style={{ width: 24, height: 24, borderRadius: 6, background: showHistorial ? 'rgba(139,135,255,0.12)' : 'transparent', border: '1px solid transparent', color: showHistorial ? '#8b87ff' : 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Historial" aria-pressed={showHistorial}>
                             <Clock size={11} />
                         </button>
-                        <button onClick={e => { e.stopPropagation(); setExpanded(!expanded); }} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}>
+                        <button type="button" onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setExpanded(prev => !prev); }} style={{ width: 26, height: 24, borderRadius: 6, border: `1px solid ${expanded ? 'rgba(139,135,255,0.35)' : 'transparent'}`, background: expanded ? 'rgba(139,135,255,0.12)' : 'rgba(255,255,255,0.04)', color: expanded ? '#8b87ff' : 'rgba(255,255,255,0.45)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} title={expanded ? 'Ocultar detalles' : 'Ver detalles'} aria-expanded={expanded} aria-label={expanded ? 'Ocultar detalles de la orden' : 'Ver detalles de la orden'}>
                             {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                         </button>
                     </div>
@@ -381,7 +385,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                 {order.phone && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
                         <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>📞 {order.phone}</span>
-                        <button onClick={handleCopyPhone} style={{ background: 'none', border: 'none', color: copied ? '#34d399' : 'rgba(255,255,255,0.25)', cursor: 'pointer', padding: 1, display: 'flex', alignItems: 'center' }} title="Copiar teléfono">
+                        <button type="button" onPointerDown={e => e.stopPropagation()} onClick={handleCopyPhone} style={{ background: 'none', border: 'none', color: copied ? '#34d399' : 'rgba(255,255,255,0.25)', cursor: 'pointer', padding: 1, display: 'flex', alignItems: 'center' }} title="Copiar teléfono">
                             {copied ? <CheckCircle2 size={10} /> : <Copy size={10} />}
                         </button>
                     </div>
@@ -400,13 +404,13 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                 </div>
                 {showHistorial && <HistorialPanel orderId={order.id} />}
                 {expanded && (
-                    <div style={{ padding: '10px 12px', background: 'rgba(0,0,0,0.25)', borderRadius: 8, marginBottom: 8, border: '1px solid rgba(255,255,255,0.06)', fontSize: 11 }}>
-                        {order.product && <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}><span style={{ color: 'rgba(255,255,255,0.3)', minWidth: 56 }}>Producto</span><span style={{ color: 'rgba(255,255,255,0.7)' }}>{order.product}{order.quantity ? ` × ${order.quantity}` : ''}</span></div>}
-                        {addr && <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}><span style={{ color: 'rgba(255,255,255,0.3)', minWidth: 56 }}>Dirección</span><span style={{ color: 'rgba(255,255,255,0.7)' }}>{addr}</span></div>}
-                        {order.delivery && <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}><span style={{ color: 'rgba(255,255,255,0.3)', minWidth: 56 }}>Entrega</span><span style={{ color: 'rgba(255,255,255,0.7)' }}>{order.delivery}</span></div>}
+                    <div onClick={e => e.stopPropagation()} style={{ padding: '10px 12px', background: 'rgba(0,0,0,0.25)', borderRadius: 8, marginBottom: 8, border: '1px solid rgba(255,255,255,0.08)', fontSize: 11, overflow: 'visible' }}>
+                        {order.product && <div style={detailRowStyle}><span style={detailLabelStyle}>Producto</span><span style={detailValueStyle}>{order.product}{order.quantity ? ` × ${order.quantity}` : ''}</span></div>}
+                        {addr && <div style={detailRowStyle}><span style={detailLabelStyle}>Dirección</span><span style={detailValueStyle}>{addr}</span></div>}
+                        {order.delivery && <div style={detailRowStyle}><span style={detailLabelStyle}>Entrega</span><span style={detailValueStyle}>{order.delivery}</span></div>}
                         {order.comments && <div style={{ marginTop: 6, padding: '6px 9px', background: 'rgba(255,255,255,0.04)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.07)' }}>
                             <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, margin: '0 0 2px', textTransform: 'uppercase' }}>Comentarios</p>
-                            <p style={{ color: 'rgba(255,255,255,0.6)', margin: 0, fontSize: 11, lineHeight: 1.5 }}>{order.comments}</p>
+                            <p style={{ color: 'rgba(255,255,255,0.65)', margin: 0, fontSize: 11, lineHeight: 1.5, overflowWrap: 'anywhere' }}>{order.comments}</p>
                         </div>}
                         {carrier === 'mensajeria' && (
                             <button onClick={e => { e.stopPropagation(); onToggleCOD(order.id, !order.isContraEntrega); }} style={{ marginTop: 8, padding: '4px 10px', borderRadius: 6, border: `1px solid ${order.isContraEntrega ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.12)'}`, background: order.isContraEntrega ? 'rgba(251,191,36,0.08)' : 'transparent', color: order.isContraEntrega ? '#fbbf24' : 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>

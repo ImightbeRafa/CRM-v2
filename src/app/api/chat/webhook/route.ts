@@ -140,10 +140,6 @@ export async function POST(request: NextRequest) {
     const signatureValid = verifyMetaWebhookSignature(raw, request.headers.get('x-hub-signature-256'))
 
     if (process.env.NODE_ENV === 'production' && !signatureValid) {
-      console.error('[chat/webhook][POST] Rejecting webhook with invalid Meta signature', {
-        headers: getHeaderSnapshot(request),
-        hasAppSecret: Boolean(process.env.META_APP_SECRET),
-      })
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
 

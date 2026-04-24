@@ -60,6 +60,8 @@ export async function GET(req: NextRequest) {
         customerName: true,
         total: true,
         saleDate: true,
+        seller: true,
+        salesChannel: true,
         timestamp: true,
       },
       orderBy: [
@@ -77,6 +79,8 @@ export async function GET(req: NextRequest) {
       customerName: order.customerName || 'Sin nombre',
       total: order.total || 0,
       saleDate: order.saleDate,
+      seller: order.seller || null,
+      salesChannel: order.salesChannel || null,
       timestamp: order.timestamp?.toISOString() || new Date().toISOString(),
     }));
 

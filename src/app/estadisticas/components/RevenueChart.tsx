@@ -12,6 +12,8 @@ interface RevenueChartProps {
   height?: number;
   currencySymbol?: string;
   locale?: string;
+  selectedDate?: string;
+  onSelectDate?: (date: string) => void;
 }
 
 function RevenueChartSkeleton({ height = 300 }: { height?: number }) {

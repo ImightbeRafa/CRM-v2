@@ -104,6 +104,27 @@ function groupByDate(orders: Order[]) {
     for (const o of orders) { const k = dateKey(o.timestamp); if (!m[k]) m[k] = []; m[k].push(o); }
     return Object.entries(m).sort(([a], [b]) => b.localeCompare(a)).map(([k, v]) => ({ dateKey: k, dateLabel: formatDate(v[0].timestamp), orders: v }));
 }
+function orderMatchesColumnSearch(order: Order, query: string, getTenantName: (id: string) => string) {
+    const needle = normalizeText(query);
+    if (!needle) return true;
+    const haystack = [
+        order.customerName,
+        order.orderId,
+        order.phone,
+        order.email,
+        order.product,
+        order.address,
+        order.province,
+        order.canton,
+        order.district,
+        order.comments,
+        order.delivery,
+        order.guiaNumber,
+        order.trackingNumber,
+        getTenantName(order.tenantId),
+    ].map(normalizeText).join(' ');
+    return haystack.includes(needle);
+}
 
 async function patchOrder(orderId: string, patch: object) {
     const res = await fetch('/api/logistics/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, ...patch }) });
@@ -441,13 +462,15 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
 }
 
 // ─── Kanban Board (single carrier) ───────────────────────────────────────────
-function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCOD, onToggleCollected, onArchive, accentColor, getTenantName, getTenantColor, bulkMode, selectedIds, onToggleSelect }: {
+function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCOD, onToggleCollected, onArchive, onArchiveStatus, accentColor, getTenantName, getTenantColor, bulkMode, selectedIds, onToggleSelect, terminatingStatus }: {
     title: string; icon: React.ReactNode; carrier: string; orders: Order[]; accentColor: string;
     onMove: (id: string, s: string, c: string) => void; onMoveCarrier: (id: string, c: string) => void;
     onToggleCOD: (id: string, v: boolean) => void; onToggleCollected: (id: string, v: boolean) => void;
     onArchive: (id: string) => void;
+    onArchiveStatus: (ids: string[], carrier: string, status: string) => void;
     getTenantName: (id: string) => string; getTenantColor: (id: string) => string;
     bulkMode: boolean; selectedIds: Set<string>; onToggleSelect: (id: string) => void;
+    terminatingStatus: string | null;
 }) {
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const panRef = useRef({
@@ -458,7 +481,13 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
         moved: false,
     });
     const [isPanning, setIsPanning] = useState(false);
-    const cols = STATUSES.map(s => ({ status: s, orders: orders.filter(o => (o.lmStatus || 'Pendiente') === s) }));
+    const [columnSearch, setColumnSearch] = useState<Record<string, string>>({});
+    const cols = STATUSES.map(s => {
+        const statusOrders = orders.filter(o => (o.lmStatus || 'Pendiente') === s);
+        const query = columnSearch[s] || '';
+        const visibleOrders = statusOrders.filter(o => orderMatchesColumnSearch(o, query, getTenantName));
+        return { status: s, orders: visibleOrders, total: statusOrders.length, query };
+    });
     const isMens = carrier === 'mensajeria';
     const cod = isMens ? orders.filter(o => o.isContraEntrega).length : 0;
     const cobrado = isMens ? orders.filter(o => o.isContraEntrega && o.contraEntregaCollected).length : 0;
@@ -529,14 +558,50 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
                 userSelect: isPanning ? 'none' : 'auto',
                 touchAction: 'pan-y',
             }}>
-                {cols.map(({ status, orders: col }) => {
+                {cols.map(({ status, orders: col, total, query }) => {
                     const sc = STATUS_CFG[status];
+                    const isEntregado = status === 'Entregado';
+                    const isTerminating = terminatingStatus === `${carrier}:${status}`;
+                    const filtered = query.trim().length > 0 && col.length !== total;
                     return (
                         <div key={status} style={{ minWidth: 270, flex: '0 0 270px', display: 'flex', flexDirection: 'column' }}>
                             {/* Column header */}
-                            <div title="Arrastra para mover el tablero" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, padding: '7px 10px', borderRadius: 7, background: sc.glow, border: `1px solid ${sc.color}45`, flexShrink: 0, cursor: isPanning ? 'grabbing' : 'grab', boxShadow: `inset 0 0 0 1px ${sc.color}10` }}>
+                            <div title="Arrastra para mover el tablero" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, padding: '7px 10px', borderRadius: 7, background: sc.glow, border: `1px solid ${sc.color}45`, flexShrink: 0, cursor: isPanning ? 'grabbing' : 'grab', boxShadow: `inset 0 0 0 1px ${sc.color}10` }}>
                                 <span style={{ color: sc.color, fontWeight: 600, fontSize: 11 }}>{status}</span>
-                                <span style={{ background: `${sc.color}30`, color: sc.color, padding: '1px 7px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{col.length}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                                    {isEntregado && (
+                                        <button
+                                            type="button"
+                                            onClick={e => { e.stopPropagation(); onArchiveStatus(orders.filter(o => (o.lmStatus || 'Pendiente') === status).map(o => o.id), carrier, status); }}
+                                            disabled={total === 0 || isTerminating}
+                                            title={total === 0 ? 'No hay ordenes entregadas' : `Terminar ${total} orden(es) entregadas`}
+                                            style={{ height: 22, padding: '0 7px', borderRadius: 6, border: `1px solid ${total > 0 ? 'rgba(52,211,153,0.4)' : 'rgba(255,255,255,0.08)'}`, background: total > 0 ? 'rgba(52,211,153,0.1)' : 'transparent', color: total > 0 ? '#34d399' : 'rgba(255,255,255,0.18)', fontSize: 9.5, fontWeight: 800, cursor: total > 0 && !isTerminating ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 4 }}
+                                        >
+                                            <Archive size={10} /> {isTerminating ? '...' : 'Terminar'}
+                                        </button>
+                                    )}
+                                    <span style={{ background: `${sc.color}30`, color: sc.color, padding: '1px 7px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{filtered ? `${col.length}/${total}` : total}</span>
+                                </div>
+                            </div>
+                            <div style={{ position: 'relative', marginBottom: 8, flexShrink: 0 }}>
+                                <Search size={11} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: query ? sc.color : 'rgba(255,255,255,0.22)', pointerEvents: 'none' }} />
+                                <input
+                                    value={query}
+                                    onChange={e => setColumnSearch(prev => ({ ...prev, [status]: e.target.value }))}
+                                    placeholder="Buscar en columna..."
+                                    aria-label={`Buscar ordenes en ${title} ${status}`}
+                                    style={{ width: '100%', boxSizing: 'border-box', padding: '6px 26px 6px 27px', borderRadius: 7, border: `1px solid ${query ? `${sc.color}55` : 'rgba(255,255,255,0.08)'}`, background: query ? `${sc.color}10` : 'rgba(255,255,255,0.035)', color: '#F2F2F2', fontSize: 11, outline: 'none' }}
+                                />
+                                {query && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setColumnSearch(prev => ({ ...prev, [status]: '' }))}
+                                        aria-label={`Limpiar busqueda de ${status}`}
+                                        style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 18, height: 18, borderRadius: 5, border: 'none', background: 'transparent', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                    >
+                                        <X size={11} />
+                                    </button>
+                                )}
                             </div>
                             {/* Scrollable cards */}
                             <div style={{ overflowY: 'auto', maxHeight: 520, paddingRight: 2 }}>
@@ -573,6 +638,7 @@ export default function CarriersPage() {
     const [bulkStatus, setBulkStatus] = useState('');
     const [bulkCarrier, setBulkCarrier] = useState('');
     const [applying, setApplying] = useState(false);
+    const [terminatingStatus, setTerminatingStatus] = useState<string | null>(null);
     const [showArchive, setShowArchive] = useState(false);
     const [archiveTab, setArchiveTab] = useState<'orders' | 'guias'>('orders');
     const [archivedOrders, setArchivedOrders] = useState<Order[]>([]);
@@ -727,6 +793,30 @@ export default function CarriersPage() {
         } catch (err: any) {
             if (order) setOrders(p => [...p, order]);
             alert(err.message || 'Error al terminar la orden. Por favor intente de nuevo.');
+        }
+    }, [orders]);
+    const onArchiveStatus = useCallback(async (ids: string[], carrier: string, status: string) => {
+        if (status !== 'Entregado' || ids.length === 0) return;
+        const key = `${carrier}:${status}`;
+        setTerminatingStatus(key);
+        const idSet = new Set(ids);
+        const removedOrders = orders.filter(o => idSet.has(o.id));
+        setOrders(p => p.filter(o => !idSet.has(o.id)));
+        try {
+            await terminateOrders(ids);
+            setSelectedIds(prev => {
+                const next = new Set(prev);
+                ids.forEach(id => next.delete(id));
+                return next;
+            });
+        } catch (err: any) {
+            setOrders(p => {
+                const currentIds = new Set(p.map(o => o.id));
+                return [...p, ...removedOrders.filter(o => !currentIds.has(o.id))];
+            });
+            alert(err.message || 'Error al terminar las ordenes entregadas. Por favor intente de nuevo.');
+        } finally {
+            setTerminatingStatus(null);
         }
     }, [orders]);
     const onRestoreOrder = useCallback(async (id: string) => {
@@ -1051,14 +1141,14 @@ export default function CarriersPage() {
                 <div style={{ flex: 1, overflowY: 'auto', minWidth: 0, paddingRight: 4 }}>
                     <Board title="Mensajería Privada" icon={<Truck size={17} />} carrier="mensajeria" orders={mensajeria}
                         onMove={onMove} onMoveCarrier={onMoveC} onToggleCOD={onCOD} onToggleCollected={onColl}
-                        onArchive={onArchiveOrder}
+                        onArchive={onArchiveOrder} onArchiveStatus={onArchiveStatus}
                         accentColor="#8b87ff" getTenantName={getTenantName} getTenantColor={getTenantColor}
-                        bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} />
+                        bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} terminatingStatus={terminatingStatus} />
                     <Board title="Correos de Costa Rica" icon={<Mail size={17} />} carrier="correos" orders={correos}
                         onMove={onMove} onMoveCarrier={onMoveC} onToggleCOD={onCOD} onToggleCollected={onColl}
-                        onArchive={onArchiveOrder}
+                        onArchive={onArchiveOrder} onArchiveStatus={onArchiveStatus}
                         accentColor="#60a5fa" getTenantName={getTenantName} getTenantColor={getTenantColor}
-                        bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} />
+                        bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} terminatingStatus={terminatingStatus} />
                 </div>
 
                 {/* RIGHT: Sin Asignar inbox */}

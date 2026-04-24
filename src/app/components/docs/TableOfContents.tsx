@@ -59,7 +59,7 @@ export function TableOfContents({ headings }: TableOfContentsProps) {
                 block w-full text-left text-xs py-1 transition-colors border-l-2
                 ${heading.depth === 3 ? 'pl-5' : 'pl-3'}
                 ${isActive
-                  ? 'border-blue-600 text-blue-700 font-medium'
+                  ? 'border-blue-600 text-blue-700 font-medium dark:border-blue-400 dark:text-blue-300'
                   : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
                 }
               `}

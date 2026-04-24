@@ -65,7 +65,10 @@ export function DocsSidebar({ docs, currentSlug, basePath, onNavigate }: DocsSid
               onClick={() => toggleCategory(cat)}
               className={`
                 w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-colors
-                ${hasActive ? 'text-blue-700 bg-blue-50/50' : 'text-muted-foreground hover:bg-muted'}
+                ${hasActive
+                  ? 'text-blue-700 bg-blue-50/70 dark:text-blue-300 dark:bg-blue-950/30'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }
               `}
             >
               <Icon className="h-4 w-4 shrink-0" />
@@ -85,7 +88,7 @@ export function DocsSidebar({ docs, currentSlug, basePath, onNavigate }: DocsSid
                       className={`
                         flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors
                         ${isActive
-                          ? 'bg-blue-50 text-blue-700 font-medium border-l-2 border-blue-600 -ml-[1px] pl-[11px]'
+                          ? 'bg-blue-50 text-blue-700 font-medium border-l-2 border-blue-600 -ml-[1px] pl-[11px] dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-400'
                           : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                         }
                       `}

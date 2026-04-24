@@ -25,13 +25,13 @@ export function DocsPagination({ docs, currentSlug, basePath }: DocsPaginationPr
       {prev ? (
         <Link
           href={`${basePath}/${prev.slug}`}
-          className="group flex flex-col items-start gap-1 p-4 rounded-lg border hover:border-blue-200 hover:bg-blue-50/30 transition-all"
+          className="group flex flex-col items-start gap-1 p-4 rounded-lg border border-border bg-card hover:border-blue-300 hover:bg-blue-50/50 dark:hover:border-blue-800 dark:hover:bg-blue-950/20 transition-all"
         >
           <span className="flex items-center gap-1 text-xs text-muted-foreground group-hover:text-blue-600 transition-colors">
             <ChevronLeft className="h-3 w-3" />
             Anterior
           </span>
-          <span className="text-sm font-medium text-muted-foreground group-hover:text-blue-700 transition-colors">
+          <span className="text-sm font-medium text-muted-foreground group-hover:text-blue-700 dark:group-hover:text-blue-300 transition-colors">
             {prev.title}
           </span>
         </Link>
@@ -41,13 +41,13 @@ export function DocsPagination({ docs, currentSlug, basePath }: DocsPaginationPr
       {next ? (
         <Link
           href={`${basePath}/${next.slug}`}
-          className="group flex flex-col items-end gap-1 p-4 rounded-lg border hover:border-blue-200 hover:bg-blue-50/30 transition-all"
+          className="group flex flex-col items-end gap-1 p-4 rounded-lg border border-border bg-card hover:border-blue-300 hover:bg-blue-50/50 dark:hover:border-blue-800 dark:hover:bg-blue-950/20 transition-all"
         >
           <span className="flex items-center gap-1 text-xs text-muted-foreground group-hover:text-blue-600 transition-colors">
             Siguiente
             <ChevronRight className="h-3 w-3" />
           </span>
-          <span className="text-sm font-medium text-muted-foreground group-hover:text-blue-700 transition-colors">
+          <span className="text-sm font-medium text-muted-foreground group-hover:text-blue-700 dark:group-hover:text-blue-300 transition-colors">
             {next.title}
           </span>
         </Link>

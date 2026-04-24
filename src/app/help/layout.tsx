@@ -3,8 +3,8 @@ import { BookOpen } from 'lucide-react';
 
 export default function HelpLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-card flex flex-col">
-      <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-40">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <header className="border-b border-border bg-background/85 backdrop-blur-sm sticky top-0 z-40">
         <div className="max-w-[1400px] mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-foreground transition-colors">

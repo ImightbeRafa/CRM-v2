@@ -27,7 +27,7 @@ function SearchTrigger({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground bg-muted rounded-lg hover:bg-accent transition-colors w-full max-w-xs"
+      className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground bg-muted rounded-lg border border-transparent hover:border-border hover:bg-accent hover:text-foreground transition-colors w-full max-w-xs"
     >
       <Search className="h-4 w-4" />
       <span className="flex-1 text-left">Buscar...</span>
@@ -88,7 +88,7 @@ function SearchModal({ docs, basePath, onClose }: SearchDocsProps & { onClose: (
     <div className="fixed inset-0 z-[100]">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative max-w-lg mx-auto mt-[15vh]">
-        <div className="bg-card rounded-xl shadow-2xl border border-border overflow-hidden mx-4">
+        <div className="bg-card text-card-foreground rounded-xl shadow-2xl border border-border overflow-hidden mx-4">
           <div className="flex items-center gap-3 px-4 border-b">
             <Search className="h-5 w-5 text-muted-foreground shrink-0" />
             <input
@@ -118,12 +118,12 @@ function SearchModal({ docs, basePath, onClose }: SearchDocsProps & { onClose: (
                   onMouseEnter={() => setSelectedIndex(i)}
                   className={`
                     w-full flex items-start gap-3 px-3 py-2.5 rounded-lg text-left transition-colors
-                    ${i === selectedIndex ? 'bg-blue-50' : 'hover:bg-muted'}
+                    ${i === selectedIndex ? 'bg-blue-50 dark:bg-blue-950/30' : 'hover:bg-muted'}
                   `}
                 >
-                  <FileText className={`h-4 w-4 mt-0.5 shrink-0 ${i === selectedIndex ? 'text-blue-600' : 'text-muted-foreground'}`} />
+                  <FileText className={`h-4 w-4 mt-0.5 shrink-0 ${i === selectedIndex ? 'text-blue-600 dark:text-blue-300' : 'text-muted-foreground'}`} />
                   <div className="min-w-0 flex-1">
-                    <p className={`text-sm font-medium truncate ${i === selectedIndex ? 'text-blue-700' : 'text-foreground'}`}>
+                    <p className={`text-sm font-medium truncate ${i === selectedIndex ? 'text-blue-700 dark:text-blue-300' : 'text-foreground'}`}>
                       {doc.title}
                     </p>
                     <p className="text-xs text-muted-foreground truncate">{doc.description}</p>

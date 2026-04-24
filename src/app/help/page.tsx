@@ -23,16 +23,16 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string; iconBg: string }> = {
-  'getting-started': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', iconBg: 'bg-blue-100' },
-  'shipping': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', iconBg: 'bg-orange-100' },
-  'api': { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200', iconBg: 'bg-violet-100' },
+  'getting-started': { bg: 'bg-blue-50 dark:bg-blue-950/30', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', iconBg: 'bg-blue-100 dark:bg-blue-950/50' },
+  'shipping': { bg: 'bg-orange-50 dark:bg-orange-950/30', text: 'text-orange-700 dark:text-orange-300', border: 'border-orange-200 dark:border-orange-800', iconBg: 'bg-orange-100 dark:bg-orange-950/50' },
+  'api': { bg: 'bg-violet-50 dark:bg-violet-950/30', text: 'text-violet-700 dark:text-violet-300', border: 'border-violet-200 dark:border-violet-800', iconBg: 'bg-violet-100 dark:bg-violet-950/50' },
   'config': { bg: 'bg-muted', text: 'text-muted-foreground', border: 'border-border', iconBg: 'bg-muted' },
-  'billing': { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', iconBg: 'bg-emerald-100' },
-  'general': { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200', iconBg: 'bg-sky-100' },
-  'ventas': { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200', iconBg: 'bg-pink-100' },
-  'produccion': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', iconBg: 'bg-amber-100' },
-  'estadisticas': { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', iconBg: 'bg-cyan-100' },
-  'integraciones': { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', iconBg: 'bg-indigo-100' },
+  'billing': { bg: 'bg-emerald-50 dark:bg-emerald-950/30', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-800', iconBg: 'bg-emerald-100 dark:bg-emerald-950/50' },
+  'general': { bg: 'bg-sky-50 dark:bg-sky-950/30', text: 'text-sky-700 dark:text-sky-300', border: 'border-sky-200 dark:border-sky-800', iconBg: 'bg-sky-100 dark:bg-sky-950/50' },
+  'ventas': { bg: 'bg-pink-50 dark:bg-pink-950/30', text: 'text-pink-700 dark:text-pink-300', border: 'border-pink-200 dark:border-pink-800', iconBg: 'bg-pink-100 dark:bg-pink-950/50' },
+  'produccion': { bg: 'bg-amber-50 dark:bg-amber-950/30', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800', iconBg: 'bg-amber-100 dark:bg-amber-950/50' },
+  'estadisticas': { bg: 'bg-cyan-50 dark:bg-cyan-950/30', text: 'text-cyan-700 dark:text-cyan-300', border: 'border-cyan-200 dark:border-cyan-800', iconBg: 'bg-cyan-100 dark:bg-cyan-950/50' },
+  'integraciones': { bg: 'bg-indigo-50 dark:bg-indigo-950/30', text: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-200 dark:border-indigo-800', iconBg: 'bg-indigo-100 dark:bg-indigo-950/50' },
 };
 
 function getCategoryIcon(cat: string) {
@@ -61,7 +61,7 @@ export default function HelpIndex() {
     <div className="max-w-5xl mx-auto px-4 py-10">
       {/* Hero */}
       <div className="text-center mb-10">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 mb-4 shadow-lg shadow-blue-200">
+        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 mb-4 shadow-lg shadow-blue-200 dark:shadow-blue-950/40">
           <BookOpen className="h-7 w-7 text-white" />
         </div>
         <h1 className="text-3xl font-bold text-foreground mb-2">Centro de Ayuda</h1>
@@ -77,7 +77,7 @@ export default function HelpIndex() {
       {featuredDoc && (
         <Link
           href={`/help/${featuredDoc.slug}`}
-          className="group block mb-10 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-6 text-white hover:shadow-xl hover:shadow-blue-200/50 transition-all"
+          className="group block mb-10 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-6 text-white hover:shadow-xl hover:shadow-blue-200/50 dark:hover:shadow-blue-950/40 transition-all"
         >
           <div className="flex items-start justify-between">
             <div>
@@ -115,10 +115,10 @@ export default function HelpIndex() {
                 <Link
                   key={doc.slug}
                   href={`/help/${doc.slug}`}
-                  className="group flex items-start gap-3 bg-card border border-border rounded-xl p-4 hover:shadow-md hover:border-blue-200 transition-all"
+                  className="group flex items-start gap-3 bg-card border border-border rounded-xl p-4 hover:shadow-md hover:border-blue-300 hover:bg-accent/40 dark:hover:border-blue-800 transition-all"
                 >
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-medium text-foreground group-hover:text-blue-600 transition-colors text-sm mb-1">
+                    <h3 className="font-medium text-foreground group-hover:text-blue-600 dark:group-hover:text-blue-300 transition-colors text-sm mb-1">
                       {doc.title}
                     </h3>
                     <p className="text-xs text-muted-foreground line-clamp-2">{doc.description}</p>

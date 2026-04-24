@@ -1,95 +1,45 @@
 ---
 title: "Configurar Correos de Costa Rica"
-description: "Cómo obtener tus credenciales de Correos CR y configurarlas en BetsyCRM para generar guías automáticamente."
+description: "Qué necesita configurar cada negocio para generar guías de Correos CR desde BetsyCRM."
 visibility: both
 category: shipping
 order: 10
 ---
 
-## ¿Qué es la Integración con Correos CR?
+## Cómo funciona ahora
 
-BetsyCRM se conecta directamente con el Web Service SOAP de Correos de Costa Rica para:
+BetsyCRM usa una integración central con el Web Service SOAP de Correos de Costa Rica. Las credenciales del servicio se administran a nivel de plataforma; cada negocio solo debe guardar sus datos de remitente.
 
-- Generar guías de envío (números de rastreo) automáticamente
-- Descargar etiquetas en PDF listas para imprimir
-- Consultar tarifas por peso y destino
-- Rastrear envíos en tiempo real
+Con esto puedes generar guías desde Producción, descargar el PDF de la etiqueta y guardar el número de rastreo en el pedido.
 
 <Callout type="info">
-Esta integración requiere una cuenta con Correos de Costa Rica que incluya acceso al Web Service SOAP. Si no tienes una cuenta, contacta a Correos CR para solicitarla.
+Si el servicio aparece inactivo, no intentes cambiar credenciales en tu cuenta. Contacta al administrador de BetsyCRM para revisar la configuración de plataforma.
 </Callout>
 
-## Requisitos Previos
+## Qué debes configurar
 
-Necesitas una cuenta activa con Correos de Costa Rica que incluya acceso al Web Service. Contacta a Correos CR para solicitar:
+Ve a **Configuración** → **Envíos (Correos CR)** y completa:
 
-1. **Usuario y contraseña del Web Service** (diferente a tu cuenta web normal)
-2. **Sistema** (generalmente `PYMEXPRESS`)
-3. **Usuario ID** y **Servicio ID** (números proporcionados por Correos)
-4. **Código de Cliente** (tu código de facturación con Correos)
+- **Nombre del remitente:** nombre del negocio o persona que envía.
+- **Dirección del remitente:** dirección física de origen.
+- **Código postal:** código postal de 5 dígitos.
+- **Teléfono:** número que aparecerá en la guía.
 
-<Callout type="warning">
-Las credenciales del Web Service son diferentes a tu usuario y contraseña del portal web de Correos. Asegúrate de solicitar específicamente las credenciales del Web Service SOAP.
-</Callout>
+Guarda los cambios. Si ves la etiqueta **Servicio Activo**, ya puedes generar guías.
 
-## Configuración desde el Asistente
+## Generar guías
 
-Si es tu primera vez configurando BetsyCRM, el paso 3 del asistente de configuración te guía:
+Una vez guardados los datos del remitente, entra a **Producción**, selecciona los pedidos y usa la opción de generar guía automática con Correos CR.
 
-<Steps>
-  <Step title="Credenciales del Web Service">Ingresa el usuario, contraseña, sistema, usuario ID, servicio ID y código de cliente.</Step>
-  <Step title="Datos del remitente">Completa tu nombre o empresa, dirección, código postal y teléfono. Estos datos aparecerán en las etiquetas de envío.</Step>
-  <Step title="Probar conexión">Haz clic en **Probar Conexión** para verificar que las credenciales sean correctas.</Step>
-  <Step title="Guardar">Si la prueba es exitosa, guarda la configuración.</Step>
-</Steps>
+<LinkCard href="/help/shipping-labels" title="Generar Guías de Envío" description="Crea guías individuales o en lote desde Producción." />
 
-## Configuración desde Ajustes
+## Problemas comunes
 
-Si ya completaste el asistente y necesitas modificar la configuración:
+| Problema | Qué hacer |
+|----------|-----------|
+| **Servicio inactivo** | Contacta al administrador para revisar las credenciales de plataforma. |
+| **Código postal inválido** | Verifica que el código postal tenga 5 dígitos y sea válido en Costa Rica. |
+| **Datos del remitente incorrectos** | Actualiza la información en Configuración → Envíos (Correos CR). |
+| **Error temporal de Correos** | Intenta de nuevo en unos minutos. |
 
-<Steps>
-  <Step title="Ir a Envíos">Navega a **Configuración** → pestaña **Envíos (Correos CR)**.</Step>
-  <Step title="Editar configuración">Haz clic en **Editar** o **Agregar Configuración** si es la primera vez.</Step>
-  <Step title="Completar campos">Ingresa o actualiza las credenciales del Web Service y los datos del remitente.</Step>
-  <Step title="Probar y guardar">Prueba la conexión y guarda los cambios.</Step>
-</Steps>
-
-## Campos Requeridos
-
-| Campo | Descripción | Ejemplo |
-|-------|-------------|---------|
-| **Usuario WS** | Username del Web Service | `ccrWS...` |
-| **Contraseña WS** | Password del Web Service | `••••••••` |
-| **Sistema** | Tipo de servicio | `PYMEXPRESS` |
-| **Usuario ID** | ID numérico de usuario | `204835716` |
-| **Servicio ID** | ID del servicio contratado | `1564` |
-| **Código Cliente** | Código de facturación | `7362097` |
-| **Nombre Remitente** | Nombre o empresa del remitente | `Mi Tienda S.A.` |
-| **Dirección** | Dirección física del remitente | `Barrio Los Yoses, San Pedro` |
-| **Código Postal** | Código postal del remitente | `10107` |
-| **Teléfono** | Teléfono del remitente | `22345678` |
-
-## Generar tu Primera Guía
-
-Una vez configurado, ya puedes generar guías desde el módulo de Producción.
-
-<LinkCard href="/help/shipping-labels" title="Generar Guías de Envío" description="Guía paso a paso para crear guías y descargar etiquetas." />
-
-## Solución de Problemas
-
-| Problema | Solución |
-|----------|----------|
-| **Error de conexión** | Verifica que el usuario y contraseña sean del Web Service SOAP (no de la cuenta web de Correos) |
-| **Error de código postal** | Asegúrate de que el código postal sea válido y tenga 5 dígitos |
-| **Error de servicio** | Contacta a Correos CR para verificar que tu servicio PYMEXPRESS esté activo |
-| **Timeout en la conexión** | Puede ser un problema temporal del servidor de Correos. Intenta de nuevo en unos minutos |
-| **Credenciales incorrectas** | Solicita a Correos CR que verifiquen tus credenciales del Web Service |
-
-<Callout type="tip">
-Si acabas de recibir tus credenciales de Correos CR y no funcionan, espera 24 horas. A veces las cuentas nuevas tardan un día en activarse completamente.
-</Callout>
-
-## Próximos Pasos
-
-<LinkCard href="/help/shipping-labels" title="Generar Guías de Envío" description="Crea guías individuales o en lote." />
-<LinkCard href="/help/production-kanban" title="Tablero Kanban" description="Gestiona pedidos y envíos desde el tablero." />
+<LinkCard href="/help/production-kanban" title="Tablero de Producción" description="Gestiona pedidos y envíos desde el tablero." />

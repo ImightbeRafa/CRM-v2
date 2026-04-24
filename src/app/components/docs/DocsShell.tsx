@@ -22,9 +22,9 @@ export function DocsShell({ docs, currentSlug, basePath, children, rightSidebar 
       {/* Mobile sidebar overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closeMobile} />
-          <div className="absolute left-0 top-0 bottom-0 w-72 bg-card shadow-xl overflow-y-auto">
-            <div className="flex items-center justify-between px-4 py-3 border-b">
+          <div className="absolute inset-0 bg-black/45 backdrop-blur-sm" onClick={closeMobile} />
+          <div className="absolute left-0 top-0 bottom-0 w-72 bg-card text-card-foreground shadow-xl overflow-y-auto">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <span className="font-semibold text-foreground text-sm">Navegación</span>
               <button onClick={closeMobile} className="p-1 rounded-md hover:bg-muted">
                 <X className="h-5 w-5 text-muted-foreground" />
@@ -47,14 +47,14 @@ export function DocsShell({ docs, currentSlug, basePath, children, rightSidebar 
       </button>
 
       {/* Desktop sidebar */}
-      <aside className="hidden lg:block w-64 shrink-0 border-r bg-muted/50 overflow-y-auto sticky top-[57px] h-[calc(100vh-57px)]">
+      <aside className="hidden lg:block w-64 shrink-0 border-r border-border bg-muted/35 overflow-y-auto sticky top-[57px] h-[calc(100vh-57px)]">
         <div className="p-4">
           <DocsSidebar docs={docs} currentSlug={currentSlug} basePath={basePath} />
         </div>
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 min-w-0 px-6 py-8 lg:px-10">
+      <main className="flex-1 min-w-0 px-6 py-8 lg:px-10 bg-background">
         <div className="max-w-3xl mx-auto">
           {children}
         </div>

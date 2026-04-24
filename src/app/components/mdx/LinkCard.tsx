@@ -19,17 +19,17 @@ export function LinkCard({ href, title, description, external }: LinkCardProps) 
       href={href}
       target={isExternal ? '_blank' : undefined}
       rel={isExternal ? 'noopener noreferrer' : undefined}
-      className="not-prose group my-3 flex items-center gap-4 rounded-lg border bg-white p-4 transition-all hover:border-blue-200 hover:shadow-md no-underline"
+      className="not-prose group my-3 flex items-center gap-4 rounded-lg border border-border bg-card p-4 transition-all hover:border-blue-300 hover:bg-accent/50 hover:shadow-md dark:hover:border-blue-800 no-underline"
     >
       <div className="min-w-0 flex-1">
-        <p className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors text-sm m-0">
+        <p className="font-semibold text-foreground group-hover:text-blue-600 dark:group-hover:text-blue-300 transition-colors text-sm m-0">
           {title}
         </p>
         {description && (
-          <p className="text-xs text-gray-500 mt-0.5 m-0">{description}</p>
+          <p className="text-xs text-muted-foreground mt-0.5 m-0">{description}</p>
         )}
       </div>
-      <Icon className="h-4 w-4 shrink-0 text-gray-400 group-hover:text-blue-600 transition-colors" />
+      <Icon className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-blue-600 dark:group-hover:text-blue-300 transition-colors" />
     </a>
   );
 }

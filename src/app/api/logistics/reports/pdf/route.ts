@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
+import { calculateTilopayFees, isTilopayOrder } from '@/lib/tilopay-fees';
 
 export const dynamic = 'force-dynamic';
 
@@ -117,7 +118,7 @@ export async function GET(req: NextRequest) {
         const orders = await prisma.$queryRawUnsafe<any[]>(`
             SELECT DISTINCT ON (o.id)
                 o.id, o."orderId", o."customerName", o.total, o.timestamp,
-                o.province, o.product, o."tenantId",
+                o.province, o.product, o."tenantId", o.comments, o."customFields", o."salesChannel",
                 lm.carrier, lm.status AS lm_status,
                 lm.is_contra_entrega, lm.correos_shipping_cost,
                 sg."guiaNumber"
@@ -152,6 +153,8 @@ export async function GET(req: NextRequest) {
             correosShipping: number; correosHandling: number;
             correosTax: number;
             mensajeriaRecoleccion: number; mensajeriaHandling: number;
+            tilopayOrders: number; tilopayCommission: number; tilopayTransactionCost: number;
+            tilopayServiceTax: number; tilopayFees: number;
             subtotal: number;
         }
 
@@ -160,6 +163,7 @@ export async function GET(req: NextRequest) {
         let grandTotalShipping = 0;
         let grandTotalHandling = 0;
         let grandTotalTax = 0;
+        let grandTotalTilopay = 0;
         let grandSubtotalLogistics = 0;
 
         for (const tenantId of MANAGED_IDS) {
@@ -173,12 +177,19 @@ export async function GET(req: NextRequest) {
             const cHandl = cOrders.length * handlingRate;
             const mRecol = mOrders.length > 0 ? gdRecoleccionCost : 0;
             const mHandl = mOrders.length * handlingRate;
-            const sub = cShip + cTax + cHandl + mRecol + mHandl;
+            const tilopayFeeRows = tOrders.map((o: any) => calculateTilopayFees(o.total, isTilopayOrder(o)));
+            const tTilopayOrders = tilopayFeeRows.filter((fee) => fee.isTilopay).length;
+            const tTilopayCommission = tilopayFeeRows.reduce((s: number, fee) => s + fee.commission, 0);
+            const tTilopayTransactionCost = tilopayFeeRows.reduce((s: number, fee) => s + fee.transactionCost, 0);
+            const tTilopayServiceTax = tilopayFeeRows.reduce((s: number, fee) => s + fee.serviceTax, 0);
+            const tTilopayTotal = tilopayFeeRows.reduce((s: number, fee) => s + fee.total, 0);
+            const sub = cShip + cTax + cHandl + mRecol + mHandl + tTilopayTotal;
 
             grandTotalPackages += tOrders.length;
             grandTotalShipping += cShip + mRecol;
             grandTotalHandling += cHandl + mHandl;
             grandTotalTax += cTax;
+            grandTotalTilopay += tTilopayTotal;
             grandSubtotalLogistics += sub;
 
             tenantBlocks.push({
@@ -186,6 +197,9 @@ export async function GET(req: NextRequest) {
                 correosOrders: cOrders, mensajeriaOrders: mOrders,
                 correosShipping: cShip, correosTax: cTax, correosHandling: cHandl,
                 mensajeriaRecoleccion: mRecol, mensajeriaHandling: mHandl,
+                tilopayOrders: tTilopayOrders, tilopayCommission: tTilopayCommission,
+                tilopayTransactionCost: tTilopayTransactionCost, tilopayServiceTax: tTilopayServiceTax,
+                tilopayFees: tTilopayTotal,
                 subtotal: sub,
             });
         }
@@ -199,6 +213,7 @@ export async function GET(req: NextRequest) {
             finalizedAt: week.finalized_at,
             tenantBlocks,
             grandTotalPackages, grandTotalShipping, grandTotalTax, grandTotalHandling,
+            grandTotalTilopay,
             grandSubtotalLogistics,
             salaryDays, salaryRate, salaryTotal, grandTotal,
             handlingRate,
@@ -234,6 +249,7 @@ function buildReportHTML(data: {
     weekStart: string; weekEnd: string; finalizedAt: string | null;
     tenantBlocks: any[];
     grandTotalPackages: number; grandTotalShipping: number; grandTotalTax: number; grandTotalHandling: number;
+    grandTotalTilopay: number;
     grandSubtotalLogistics: number;
     salaryDays: number; salaryRate: number; salaryTotal: number; grandTotal: number;
     handlingRate: number;
@@ -242,7 +258,9 @@ function buildReportHTML(data: {
         const allOrders = [...t.correosOrders, ...t.mensajeriaOrders]
             .sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-        const orderRows = allOrders.map((o: any) => `
+        const orderRows = allOrders.map((o: any) => {
+            const tilopayFee = calculateTilopayFees(o.total, isTilopayOrder(o));
+            return `
             <tr>
                 <td>${escapeHtml(o.orderId)}</td>
                 <td>${escapeHtml(o.customerName)}</td>
@@ -252,9 +270,11 @@ function buildReportHTML(data: {
                 <td style="text-align:right">${o.carrier === 'correos' && o.correos_shipping_cost != null ? fmt(Number(o.correos_shipping_cost)) : '—'}</td>
                 <td style="text-align:right">${o.carrier === 'correos' && o.correos_shipping_cost != null ? fmt(getCorreosTax(o.correos_shipping_cost)) : '—'}</td>
                 <td style="text-align:right">${fmt(data.handlingRate)}</td>
+                <td style="text-align:right">${tilopayFee.isTilopay ? fmt(tilopayFee.total) : '—'}</td>
                 <td>${escapeHtml(o.guiaNumber)}</td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
 
         return `
             <div class="tenant-block">
@@ -263,6 +283,7 @@ function buildReportHTML(data: {
                     <span>Paquetes: <strong>${t.correosOrders.length + t.mensajeriaOrders.length}</strong></span>
                     <span>Correos: <strong>${t.correosOrders.length}</strong> (envío: ${fmt(t.correosShipping)}, impuestos: ${fmt(t.correosTax)}, manejo: ${fmt(t.correosHandling)})</span>
                     <span>GD: <strong>${t.mensajeriaOrders.length}</strong> (recol: ${fmt(t.mensajeriaRecoleccion)}, manejo: ${fmt(t.mensajeriaHandling)})</span>
+                    <span>Tilopay: <strong>${t.tilopayOrders}</strong> (comision: ${fmt(t.tilopayCommission)}, transaccion: ${fmt(t.tilopayTransactionCost)}, IVA: ${fmt(t.tilopayServiceTax)})</span>
                     <span>Subtotal: <strong>${fmt(t.subtotal)}</strong></span>
                 </div>
                 <table>
@@ -273,6 +294,7 @@ function buildReportHTML(data: {
                             <th style="text-align:right">Envío</th>
                             <th style="text-align:right">Impuestos</th>
                             <th style="text-align:right">Manejo</th>
+                            <th style="text-align:right">Tilopay</th>
                             <th>Guía</th>
                         </tr>
                     </thead>
@@ -302,7 +324,7 @@ function buildReportHTML(data: {
     th { background: #f5f5f5; font-weight: bold; font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; }
     .grand-total { margin-top: 20px; padding: 16px; border: 2px solid #1a1a2e; border-radius: 8px; page-break-inside: avoid; }
     .grand-total h2 { margin-top: 0; color: #1a1a2e; }
-    .gt-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 12px; }
+    .gt-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 12px; }
     .gt-item { text-align: center; }
     .gt-item .label { color: #666; font-size: 10px; text-transform: uppercase; }
     .gt-item .value { font-size: 16px; font-weight: bold; margin-top: 4px; }
@@ -326,6 +348,7 @@ function buildReportHTML(data: {
       <div class="gt-item"><div class="label">Envíos</div><div class="value">${fmt(data.grandTotalShipping)}</div></div>
       <div class="gt-item"><div class="label">Impuestos</div><div class="value">${fmt(data.grandTotalTax)}</div></div>
       <div class="gt-item"><div class="label">Manejo</div><div class="value">${fmt(data.grandTotalHandling)}</div></div>
+      <div class="gt-item"><div class="label">Tilopay</div><div class="value">${fmt(data.grandTotalTilopay)}</div></div>
       <div class="gt-item"><div class="label">Subtotal Logística</div><div class="value">${fmt(data.grandSubtotalLogistics)}</div></div>
     </div>
     <div class="gt-grid">

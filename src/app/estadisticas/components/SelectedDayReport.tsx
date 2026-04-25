@@ -6,7 +6,6 @@ import {
   CalendarDays,
   DollarSign,
   PackageCheck,
-  RefreshCw,
   ShoppingBag,
   Store,
   Truck,
@@ -55,14 +54,12 @@ export interface DailyOrderDetail {
 interface SelectedDayReportProps {
   startDate: string;
   endDate: string;
-  onDateRangeChange: (startDate: string, endDate: string) => void;
   summary: SummaryData | null;
   typeBreakdown: TypeBreakdown | null;
   statusBreakdown: StatusBreakdown[];
   orders: DailyOrderDetail[];
   loading: boolean;
   error: string;
-  onRefresh: () => void;
   currencySymbol?: string;
   locale?: string;
 }
@@ -75,14 +72,12 @@ function parseDateKey(value: string): Date {
 export default function SelectedDayReport({
   startDate,
   endDate,
-  onDateRangeChange,
   summary,
   typeBreakdown,
   statusBreakdown,
   orders,
   loading,
   error,
-  onRefresh,
   currencySymbol = '₡',
   locale = 'es-CR',
 }: SelectedDayReportProps) {
@@ -94,7 +89,6 @@ export default function SelectedDayReport({
   const selectedPeriod = isSingleDay
     ? format(parseDateKey(startDate), "EEEE d 'de' MMMM, yyyy", { locale: es })
     : `${format(parseDateKey(startDate), "d 'de' MMMM, yyyy", { locale: es })} - ${format(parseDateKey(endDate), "d 'de' MMMM, yyyy", { locale: es })}`;
-  const todayKey = format(new Date(), 'yyyy-MM-dd');
 
   const topOrder = orders.reduce<DailyOrderDetail | null>((current, order) => {
     if (!current) return order;
@@ -148,60 +142,20 @@ export default function SelectedDayReport({
   return (
     <Card className="overflow-hidden">
       <CardHeader className="border-b border-border pb-4">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <CalendarDays className="h-5 w-5 text-blue-600" />
-              Reporte seleccionado
-            </CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground capitalize">{selectedPeriod}</p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-            <div className="grid grid-cols-2 gap-2">
-              <label className="min-w-0">
-                <span className="sr-only">Fecha inicio</span>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => onDateRangeChange(event.target.value, endDate)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-              </label>
-              <label className="min-w-0">
-                <span className="sr-only">Fecha fin</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(event) => onDateRangeChange(startDate, event.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-              </label>
-            </div>
-            <button
-              type="button"
-              onClick={() => onDateRangeChange(todayKey, todayKey)}
-              className="h-10 rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-            >
-              Hoy
-            </button>
-            <button
-              type="button"
-              onClick={onRefresh}
-              disabled={loading}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              Actualizar
-            </button>
-          </div>
+        <div>
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <CalendarDays className="h-5 w-5 text-blue-600" />
+            Reporte seleccionado
+          </CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground capitalize">{selectedPeriod}</p>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-5 p-4 md:p-6">
         <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-200">
           {isSingleDay
-            ? 'Este reporte refleja un solo día. Para revisar un rango, selecciona una fecha de inicio y una fecha final.'
-            : 'Este reporte acumula todos los pedidos dentro del rango seleccionado, incluyendo la fecha de inicio y la fecha final.'}
+            ? 'Este reporte refleja un solo día. Usa el rango global de arriba para cambiar la fecha o seleccionar un período.'
+            : 'Este reporte acumula todos los pedidos dentro del rango global seleccionado, incluyendo la fecha de inicio y la fecha final.'}
         </div>
 
         {error && (
@@ -270,7 +224,7 @@ export default function SelectedDayReport({
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No hay estados para este día.</p>
+              <p className="text-sm text-muted-foreground">No hay estados para este período.</p>
             )}
           </div>
 

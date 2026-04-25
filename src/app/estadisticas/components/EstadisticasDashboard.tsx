@@ -75,8 +75,6 @@ export default function EstadisticasDashboard() {
 
   const [startDate, setStartDate] = useState(() => format(subDays(new Date(), 29), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(() => initialToday);
-  const [reportStartDate, setReportStartDate] = useState(() => initialToday);
-  const [reportEndDate, setReportEndDate] = useState(() => initialToday);
 
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [revenueData, setRevenueData] = useState<RevenueData[]>([]);
@@ -131,7 +129,7 @@ export default function EstadisticasDashboard() {
     setLoadingReport(true);
     setReportError('');
     try {
-      const params = { startDate: reportStartDate, endDate: reportEndDate };
+      const params = { startDate, endDate };
       const [summaryRes, typeRes, statusRes, ordersRes] = await Promise.all([
         axios.get('/api/estadisticas/summary', { params, signal }),
         axios.get('/api/estadisticas/type-breakdown', { params, signal }),
@@ -150,7 +148,7 @@ export default function EstadisticasDashboard() {
     } finally {
       setLoadingReport(false);
     }
-  }, [reportStartDate, reportEndDate]);
+  }, [startDate, endDate]);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -173,39 +171,13 @@ export default function EstadisticasDashboard() {
   const handleDateRangeChange = (start: string, end: string) => {
     setStartDate(start);
     setEndDate(end);
-
-    if (reportStartDate < start || reportEndDate > end) {
-      setReportStartDate(start);
-      setReportEndDate(end);
-    }
   };
 
   const handleSelectedDateChange = (date: string) => {
     if (!date) return;
 
-    setReportStartDate(date);
-    setReportEndDate(date);
-
-    if (date < startDate || date > endDate) {
-      const parsed = parseDateKey(date);
-      setStartDate(format(subDays(parsed, 29), 'yyyy-MM-dd'));
-      setEndDate(date);
-    }
-  };
-
-  const handleReportRangeChange = (start: string, end: string) => {
-    if (!start || !end) return;
-
-    const normalizedStart = start <= end ? start : end;
-    const normalizedEnd = start <= end ? end : start;
-
-    setReportStartDate(normalizedStart);
-    setReportEndDate(normalizedEnd);
-
-    if (normalizedStart < startDate || normalizedEnd > endDate) {
-      setStartDate(normalizedStart);
-      setEndDate(normalizedEnd);
-    }
+    setStartDate(date);
+    setEndDate(date);
   };
 
   const refreshAllData = () => {
@@ -253,23 +225,21 @@ export default function EstadisticasDashboard() {
             height={340}
             currencySymbol={settings.currencySymbol}
             locale={settings.locale}
-            selectedDate={reportStartDate === reportEndDate ? reportStartDate : undefined}
+            selectedDate={startDate === endDate ? startDate : undefined}
             onSelectDate={handleSelectedDateChange}
           />
         </ChartContainer>
       </div>
 
       <SelectedDayReport
-        startDate={reportStartDate}
-        endDate={reportEndDate}
-        onDateRangeChange={handleReportRangeChange}
+        startDate={startDate}
+        endDate={endDate}
         summary={reportSummary}
         typeBreakdown={reportTypeBreakdown}
         statusBreakdown={reportStatusBreakdown}
         orders={reportOrders}
         loading={loadingReport}
         error={reportError}
-        onRefresh={() => fetchSelectedReportData()}
         currencySymbol={settings.currencySymbol}
         locale={settings.locale}
       />

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
+import { calculateTilopayFees, isTilopayOrder, TILOPAY_FEE_RATES } from '@/lib/tilopay-fees';
 
 const CR_TZ = 'America/Costa_Rica';
 const CORREOS_TAX_RATE = 0.13;
@@ -153,7 +154,7 @@ export async function GET(req: NextRequest) {
             SELECT DISTINCT ON (o.id)
                 o.id, o."orderId", o."customerName", o.total, o.timestamp,
                 ${dateCol} AS report_date,
-                o.province, o.product, o."shippingCost",
+                o.province, o.product, o."shippingCost", o.comments, o."customFields", o."salesChannel",
                 lm.carrier, lm.status AS lm_status,
                 lm.is_contra_entrega, lm.contraentrega_collected,
                 lm.correos_shipping_cost, lm.billed_week_id, lm.completed_at,
@@ -222,41 +223,58 @@ export async function GET(req: NextRequest) {
         const mensajeriaRecoleccion = mensajeriaOrders.length > 0 ? gdRecoleccionCost : 0;
         const mensajeriaHandling = mensajeriaOrders.length * handlingRate;
         const mensajeriaCeAmount = ceOrders.reduce((s, o) => s + Number(o.total), 0);
+        const orderTilopayFees = new Map<string, ReturnType<typeof calculateTilopayFees>>(
+            orders.map((o): [string, ReturnType<typeof calculateTilopayFees>] => [o.id, calculateTilopayFees(o.total, isTilopayOrder(o))])
+        );
+        const tilopayFeeRows = orders.map((o) => orderTilopayFees.get(o.id)!);
+        const tilopayOrderCount = tilopayFeeRows.filter((fee) => fee.isTilopay).length;
+        const tilopayCommission = tilopayFeeRows.reduce((s, fee) => s + fee.commission, 0);
+        const tilopayTransactionCost = tilopayFeeRows.reduce((s, fee) => s + fee.transactionCost, 0);
+        const tilopayServiceTax = tilopayFeeRows.reduce((s, fee) => s + fee.serviceTax, 0);
+        const tilopayFees = tilopayFeeRows.reduce((s, fee) => s + fee.total, 0);
 
         const totalShipping = correosShipping + mensajeriaRecoleccion;
         const totalHandling = correosHandling + mensajeriaHandling;
-        const subtotalLogistics = totalShipping + totalHandling + correosTax;
+        const subtotalLogistics = totalShipping + totalHandling + correosTax + tilopayFees;
 
         const salaryDays = workDays.reduce((sum, day) => sum + Number(day.work_units ?? 1), 0);
         const salaryTotal = salaryDays * salaryRate;
         const grandTotal = subtotalLogistics + salaryTotal;
 
         // 8. Format order data with CR timezone timestamps
-        const formatOrders = (list: any[]) => list.map(o => ({
-            id: o.id,
-            orderId: o.orderId,
-            customerName: o.customerName,
-            total: Number(o.total),
-            timestamp: o.timestamp,
-            timestampCR: formatCRDateTime(o.timestamp),
-            dateCR: toCRDate(o.timestamp),
-            reportDate: o.report_date ?? o.timestamp,
-            reportTimestampCR: formatCRDateTime(o.report_date ?? o.timestamp),
-            reportDateCR: toCRDate(o.report_date ?? o.timestamp),
-            province: o.province,
-            product: o.product,
-            shippingCost: o.shippingCost != null ? Number(o.shippingCost) : null,
-            carrier: o.carrier,
-            isContraEntrega: o.is_contra_entrega ?? false,
-            contraentregaCollected: o.contraentrega_collected ?? false,
-            correosShippingCost: o.correos_shipping_cost != null ? Number(o.correos_shipping_cost) : null,
-            correosTax: getCorreosTax(o.correos_shipping_cost),
-            handlingCost: handlingRate,
-            guiaNumber: o.guiaNumber ?? null,
-            trackingNumber: o.trackingNumber ?? null,
-            billedWeekId: o.billed_week_id,
-            completedAt: o.completed_at ?? null,
-        }));
+        const formatOrders = (list: any[]) => list.map(o => {
+            const tilopayFee = orderTilopayFees.get(o.id) ?? calculateTilopayFees(o.total, isTilopayOrder(o));
+            return {
+                id: o.id,
+                orderId: o.orderId,
+                customerName: o.customerName,
+                total: Number(o.total),
+                timestamp: o.timestamp,
+                timestampCR: formatCRDateTime(o.timestamp),
+                dateCR: toCRDate(o.timestamp),
+                reportDate: o.report_date ?? o.timestamp,
+                reportTimestampCR: formatCRDateTime(o.report_date ?? o.timestamp),
+                reportDateCR: toCRDate(o.report_date ?? o.timestamp),
+                province: o.province,
+                product: o.product,
+                shippingCost: o.shippingCost != null ? Number(o.shippingCost) : null,
+                carrier: o.carrier,
+                isContraEntrega: o.is_contra_entrega ?? false,
+                contraentregaCollected: o.contraentrega_collected ?? false,
+                correosShippingCost: o.correos_shipping_cost != null ? Number(o.correos_shipping_cost) : null,
+                correosTax: getCorreosTax(o.correos_shipping_cost),
+                handlingCost: handlingRate,
+                isTilopay: tilopayFee.isTilopay,
+                tilopayCommission: tilopayFee.commission,
+                tilopayTransactionCost: tilopayFee.transactionCost,
+                tilopayServiceTax: tilopayFee.serviceTax,
+                tilopayFee: tilopayFee.total,
+                guiaNumber: o.guiaNumber ?? null,
+                trackingNumber: o.trackingNumber ?? null,
+                billedWeekId: o.billed_week_id,
+                completedAt: o.completed_at ?? null,
+            };
+        });
 
         return NextResponse.json({
             period: { dateFrom: periodDateFrom, dateTo: periodDateTo },
@@ -292,6 +310,16 @@ export async function GET(req: NextRequest) {
                 total: salaryTotal,
                 workDays,
             },
+            tilopay: {
+                orders: tilopayOrderCount,
+                commissionRate: TILOPAY_FEE_RATES.commissionRate,
+                transactionCostRate: TILOPAY_FEE_RATES.transactionCostRate,
+                serviceTaxRate: TILOPAY_FEE_RATES.serviceTaxRate,
+                commission: tilopayCommission,
+                transactionCost: tilopayTransactionCost,
+                serviceTax: tilopayServiceTax,
+                total: tilopayFees,
+            },
             totals: {
                 totalPackages: orders.length,
                 correosShipping,
@@ -299,6 +327,7 @@ export async function GET(req: NextRequest) {
                 correosHandling,
                 mensajeriaRecoleccion,
                 mensajeriaHandling,
+                tilopayFees,
                 totalShipping,
                 totalHandling,
                 subtotalLogistics,

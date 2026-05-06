@@ -81,6 +81,15 @@ const glass = {
     border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12,
 } as const;
 
+const compactOrderNameStyle = {
+    color: '#F2F2F2',
+    fontWeight: 600,
+    margin: 0,
+    lineHeight: 1.25,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
+} as const;
+
 const normalizeText = (value: string | undefined | null) => {
     const safeValue = (value ?? '').toString();
     return safeValue.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -385,7 +394,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                             </div>
                         )}
                         <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={{ color: '#F2F2F2', fontWeight: 600, margin: 0, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customerName}</p>
+                            <p title={order.customerName} style={{ ...compactOrderNameStyle, fontSize: 12.5 }}>{order.customerName}</p>
                             <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 10 }}>
                                 #{order.orderId} · {new Date(order.timestamp).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}
                                 {age && <span style={{ color: '#fbbf24', fontWeight: 600 }}> · {age}</span>}
@@ -1206,14 +1215,14 @@ export default function CarriersPage() {
                                     return (
                                         <div key={o.id} style={{ background: selected ? 'rgba(96,165,250,0.1)' : 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: selected ? '1px solid rgba(96,165,250,0.45)' : '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', marginBottom: 6, fontSize: 12 }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 5 }}>
-                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
+                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0, flex: 1 }}>
                                                     <button type="button" onClick={() => onToggleSelect(o.id)}
                                                         style={{ marginTop: 1, background: 'none', border: 'none', padding: 0, color: selected ? '#60a5fa' : 'rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}
                                                         aria-label={selected ? 'Deseleccionar orden' : 'Seleccionar orden'}>
                                                         {selected ? <CheckSquare size={14} /> : <Square size={14} />}
                                                     </button>
-                                                    <div style={{ minWidth: 0 }}>
-                                                        <p style={{ color: '#F2F2F2', fontWeight: 600, margin: 0, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.customerName}</p>
+                                                    <div style={{ minWidth: 0, flex: 1 }}>
+                                                        <p title={o.customerName} style={{ ...compactOrderNameStyle, fontSize: 12 }}>{o.customerName}</p>
                                                         <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 9.5 }}>#{o.orderId}</p>
                                                     </div>
                                                 </div>

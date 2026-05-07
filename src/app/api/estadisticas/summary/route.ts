@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
-import { prisma as globalPrisma } from '@/lib/db';
+import { resolveTenantId } from '@/lib/api-tenant';
 import { buildStatsOrderDateWhere, getPreviousStatsPeriod } from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
@@ -19,23 +19,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user's tenant through memberships
-    const user = await globalPrisma.user.findUnique({
-      where: { id: token.sub },
-      select: {
-        memberships: {
-          where: { isActive: true },
-          select: { tenantId: true },
-          take: 1
-        }
-      }
-    });
-
-    if (!user || !user.memberships || user.memberships.length === 0) {
+    const tenantId = await resolveTenantId(req, token);
+    if (!tenantId) {
       return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
     }
-
-    const tenantId = user.memberships[0].tenantId;
     
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get('startDate');

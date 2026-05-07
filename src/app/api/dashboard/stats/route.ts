@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { authenticateAPI } from '@/lib/auth-helpers';
 
 const statsCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 30000;
@@ -33,13 +33,10 @@ function clearStatsCache(tenantId?: string) {
 
 export async function GET(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-    
-    if (!token || !token.tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await authenticateAPI(request);
+    if (!auth.ok) return auth.response;
 
-    const tenantId = token.tenantId as string;
+    const tenantId = auth.tenantId;
     
     // Check for force refresh parameter
     const { searchParams } = new URL(request.url);

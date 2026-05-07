@@ -11,12 +11,15 @@ export const getDatabaseUrl = () => {
 
   const hasParams = baseUrl.includes('?');
   const params: string[] = [];
+  const defaultConnectionLimit = process.env.NODE_ENV === 'production' ? '1' : '5';
+  const connectionLimit = process.env.PRISMA_CONNECTION_LIMIT || defaultConnectionLimit;
+  const poolTimeout = process.env.PRISMA_POOL_TIMEOUT || '30';
 
   if (!baseUrl.includes('connection_limit')) {
-    params.push('connection_limit=15');
+    params.push(`connection_limit=${connectionLimit}`);
   }
   if (!baseUrl.includes('pool_timeout')) {
-    params.push('pool_timeout=20');
+    params.push(`pool_timeout=${poolTimeout}`);
   }
   if (!baseUrl.includes('pgbouncer') && baseUrl.includes(':6543')) {
     params.push('pgbouncer=true');

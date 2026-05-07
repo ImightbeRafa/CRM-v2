@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
+import { resolveTenantId } from '@/lib/api-tenant';
 import { formatStatsDateKey, normalizeStatsDateInput } from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
@@ -19,28 +20,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Resolve tenant through active membership + fetch tenant createdAt as fallback.
-    const user = await globalPrisma.user.findUnique({
-      where: { id: token.sub },
-      select: {
-        memberships: {
-          where: { isActive: true },
-          select: {
-            tenantId: true,
-            tenant: { select: { createdAt: true } },
-          },
-          take: 1,
-        },
-      },
-    });
-
-    if (!user || !user.memberships || user.memberships.length === 0) {
+    const tenantId = await resolveTenantId(req, token);
+    if (!tenantId) {
       return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
     }
 
-    const membership = user.memberships[0];
-    const tenantId = membership.tenantId;
-    const tenantCreatedAt = membership.tenant?.createdAt ?? null;
+    const tenant = await globalPrisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { createdAt: true },
+    });
+    const tenantCreatedAt = tenant?.createdAt ?? null;
 
     const cached = earliestCache.get(tenantId);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {

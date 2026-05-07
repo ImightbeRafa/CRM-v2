@@ -10,7 +10,7 @@ Sentry.init({
     Sentry.replayIntegration(),
     Sentry.consoleLoggingIntegration({ levels: ["warn", "error"] }),
   ],
-  tracePropagationTargets: ["localhost", /^https:\/\/betsycrm\.com\/api/],
+  tracePropagationTargets: ["localhost", /^https:\/\/(www\.)?betsycrm\.com\/api/],
 
   replaysSessionSampleRate: 0.1,
   replaysOnErrorSampleRate: 1.0,

@@ -163,7 +163,7 @@ export default withSentryConfig(bundleAnalyzer(nextConfig), {
   project: "javascript-nextjs",
   silent: !process.env.CI,
   widenClientFileUpload: true,
-  tunnelRoute: "/monitoring",
+  ...(process.env.SENTRY_TUNNEL_ROUTE ? { tunnelRoute: process.env.SENTRY_TUNNEL_ROUTE } : {}),
   webpack: {
     automaticVercelMonitors: true,
     treeshake: { removeDebugLogging: true },

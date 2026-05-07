@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
+import { authenticateAPI } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,13 +22,10 @@ export interface SetupStatusResponse {
 
 export async function GET(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    const auth = await authenticateAPI(request);
+    if (!auth.ok) return auth.response;
 
-    if (!token || !token.tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const tenantId = token.tenantId as string;
+    const tenantId = auth.tenantId;
     const prisma = getTenantPrisma(tenantId);
 
     const [tenant, statusCount, inventoryCount] = await Promise.all([

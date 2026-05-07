@@ -38,11 +38,7 @@ export async function createDefaultOrderStatuses(tenantId: string, tenantName?: 
       
       try {
         await withoutTenantIsolation(async () => {
-          // Import db directly to get the raw Prisma client without middleware
-          const { PrismaClient } = await import('@prisma/client');
-          const rawPrisma = new PrismaClient();
-          
-          await rawPrisma.orderStatus.createMany({
+          await prisma.orderStatus.createMany({
             data: DEFAULT_ORDER_STATUSES.map(status => ({
               ...status,
               tenantId,
@@ -50,8 +46,6 @@ export async function createDefaultOrderStatuses(tenantId: string, tenantName?: 
             })),
             skipDuplicates: true
           });
-          
-          await rawPrisma.$disconnect();
         });
         
         console.log(`✅ Created ${DEFAULT_ORDER_STATUSES.length} default order statuses for tenant: ${tenantName || tenantId}`);

@@ -57,7 +57,9 @@ function getWorkUnits(notes: unknown): number {
     try {
         const parsed = JSON.parse(notes);
         const units = Number(parsed?.units);
-        if (units === 0.5 || units === 1) return units;
+        if (Number.isFinite(units) && units >= 0 && units <= 1) return units;
+        const hours = Number(parsed?.hours);
+        if (Number.isFinite(hours) && hours >= 0) return Math.min(hours, 8) / 8;
         return parsed?.dayType === 'half' ? 0.5 : 1;
     } catch {
         return 1;
@@ -141,7 +143,7 @@ export async function GET(req: NextRequest) {
 
         const workDays = (await prisma.$queryRawUnsafe<any[]>(
             `SELECT work_date, notes FROM lm_work_days
-             WHERE staff_name IN ('Ma', 'JKY')
+             WHERE staff_name IN ('Ma', 'Lau', 'JKY')
                AND work_date >= $1::date AND work_date <= $2::date
              ORDER BY work_date`,
             ws, we

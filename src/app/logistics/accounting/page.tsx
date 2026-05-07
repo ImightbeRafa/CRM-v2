@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Package, TrendingUp, Truck, Mail, FileDown, CheckCircle, Calendar, DollarSign, PlusCircle, Trash2, AlertCircle, Wallet, Save, RefreshCw } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 
@@ -11,15 +11,44 @@ const glassHi = { background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(24
 const fmt = (n: number) => `₡${n.toLocaleString('es-CR')}`;
 
 type Tab = 'resumen' | 'correos-cr' | 'contra-entregas' | 'dias-trabajados' | 'gd-balance';
-type WorkDayType = 'full' | 'half';
+type StaffName = 'Ma' | 'Lau';
+type WorkDayType = 'off' | 'full' | 'short' | 'custom';
 
-const STAFF_OPTIONS = ['Ma', 'JKY'];
+const STAFF_OPTIONS: StaffName[] = ['Ma', 'Lau'];
 const CR_TZ = 'America/Costa_Rica';
+const HOURLY_RATE = 1250;
+const HOURS_PER_FULL_DAY = 8;
 const toDateKeyCR = (date = new Date()) => date.toLocaleDateString('en-CA', { timeZone: CR_TZ });
 const startOfMonthKey = (key: string) => `${key.slice(0, 7)}-01`;
-const WORK_DAY_OPTIONS: Record<WorkDayType, { label: string; units: number; amount: number }> = {
-    full: { label: 'Dia completo', units: 1, amount: 10000 },
-    half: { label: 'Medio dia', units: 0.5, amount: 5000 },
+const WORK_DAY_OPTIONS: Record<WorkDayType, { label: string; hours: number; units: number; amount: number; color: string }> = {
+    off: { label: 'Libre', hours: 0, units: 0, amount: 0, color: 'rgba(255,255,255,0.35)' },
+    full: { label: 'FULL', hours: 8, units: 1, amount: 10000, color: '#34d399' },
+    short: { label: '2 horas', hours: 2, units: 0.25, amount: 2500, color: '#60a5fa' },
+    custom: { label: 'Horas', hours: 0, units: 0, amount: 0, color: '#fbbf24' },
+};
+const START_TIME_OPTIONS = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '12:00', '13:00', '17:00', '17:30', '18:00'];
+const WEEK_DAYS = [
+    { key: 0, label: 'Lunes', short: 'Lun' },
+    { key: 1, label: 'Martes', short: 'Mar' },
+    { key: 2, label: 'Miercoles', short: 'Mie' },
+    { key: 3, label: 'Jueves', short: 'Jue' },
+    { key: 4, label: 'Viernes', short: 'Vie' },
+    { key: 5, label: 'Sabado', short: 'Sab' },
+];
+const BASE_SCHEDULE: Record<StaffName, Record<number, { dayType: WorkDayType; hours: number; startTime: string; notes?: string }>> = {
+    Ma: {
+        1: { dayType: 'full', hours: 8, startTime: '09:00' },
+        2: { dayType: 'full', hours: 8, startTime: '09:00' },
+        4: { dayType: 'full', hours: 8, startTime: '09:00' },
+    },
+    Lau: {
+        0: { dayType: 'full', hours: 8, startTime: '10:00' },
+        1: { dayType: 'short', hours: 2, startTime: '18:00' },
+        2: { dayType: 'short', hours: 2, startTime: '18:00' },
+        3: { dayType: 'full', hours: 8, startTime: '10:00' },
+        4: { dayType: 'short', hours: 2, startTime: '18:00' },
+        5: { dayType: 'full', hours: 8, startTime: '10:00' },
+    },
 };
 
 // ─── Resumen Tab ──────────────────────────────────────────────────────────────
@@ -508,7 +537,7 @@ function ContraEntregasTab() {
 function DiasTrabajadosTab({ dailyRate }: { dailyRate: number }) {
     const [workDays, setWorkDays] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [staffName, setStaffName] = useState(STAFF_OPTIONS[0]);
+    const [staffName, setStaffName] = useState<string>(STAFF_OPTIONS[0]);
     const [dateFrom, setDateFrom] = useState(() => startOfMonthKey(toDateKeyCR()));
     const [dateTo, setDateTo] = useState(() => toDateKeyCR());
     const [newDate, setNewDate] = useState(() => toDateKeyCR());
@@ -659,6 +688,484 @@ function DiasTrabajadosTab({ dailyRate }: { dailyRate: number }) {
 }
 
 // ─── GD Balance Tab ───────────────────────────────────────────────────────────
+type ShiftDraft = {
+    id?: string;
+    staffName: StaffName;
+    workDate: string;
+    dayType: WorkDayType;
+    hours: string;
+    startTime: string;
+    lunchMinutes: number;
+    timeLabel: string;
+    notes: string;
+    persisted: boolean;
+};
+
+function toDateKeyLocal(date: Date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+function addDaysKey(key: string, days: number) {
+    const [y, m, d] = key.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + days);
+    return toDateKeyLocal(dt);
+}
+
+function getWeekStartKey(key: string) {
+    const [y, m, d] = key.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    const day = dt.getDay();
+    dt.setDate(dt.getDate() + (day === 0 ? -6 : 1 - day));
+    return toDateKeyLocal(dt);
+}
+
+function draftKey(staffName: StaffName, workDate: string) {
+    return `${staffName}:${workDate}`;
+}
+
+function defaultShift(staffName: StaffName, workDate: string, dayIndex: number): ShiftDraft {
+    const base = BASE_SCHEDULE[staffName][dayIndex];
+    if (!base) return { staffName, workDate, dayType: 'off', hours: '0', startTime: '09:00', lunchMinutes: 0, timeLabel: '', notes: '', persisted: false };
+    return { staffName, workDate, dayType: base.dayType, hours: String(base.hours), startTime: base.startTime, lunchMinutes: base.hours >= 8 ? 60 : 0, timeLabel: '', notes: base.notes || '', persisted: false };
+}
+
+function normalizeShiftType(value: unknown, hours: number): WorkDayType {
+    if (value === 'off' || value === 'full' || value === 'short' || value === 'custom') return value;
+    if (hours === 8) return 'full';
+    if (hours === 2) return 'short';
+    return hours > 0 ? 'custom' : 'off';
+}
+
+function minutesFromTime(time: string) {
+    const [hour, minute] = time.split(':').map(Number);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return 9 * 60;
+    return hour * 60 + minute;
+}
+
+function timeFromMinutes(totalMinutes: number) {
+    const normalized = ((Math.round(totalMinutes) % 1440) + 1440) % 1440;
+    const hour = Math.floor(normalized / 60);
+    const minute = normalized % 60;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function formatTimeLabel(time: string) {
+    const [hourRaw, minuteRaw] = time.split(':').map(Number);
+    const hour = Number.isFinite(hourRaw) ? hourRaw : 9;
+    const minute = Number.isFinite(minuteRaw) ? minuteRaw : 0;
+    const suffix = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 || 12;
+    return `${displayHour}:${String(minute).padStart(2, '0')} ${suffix}`;
+}
+
+function parseStartTime(value: unknown, fallback = '09:00') {
+    if (typeof value === 'string' && /^\d{2}:\d{2}$/.test(value)) return value;
+    if (typeof value !== 'string') return fallback;
+    const match = value.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/i);
+    if (!match) return fallback;
+    let hour = Number(match[1]);
+    const minute = Number(match[2] || '0');
+    const suffix = match[3]?.toUpperCase();
+    if (suffix === 'PM' && hour < 12) hour += 12;
+    if (suffix === 'AM' && hour === 12) hour = 0;
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return fallback;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function buildTimeLabel(startTime: string, paidHours: number, lunchMinutes: number) {
+    if (paidHours <= 0) return 'Libre';
+    const start = minutesFromTime(startTime);
+    const end = timeFromMinutes(start + paidHours * 60 + lunchMinutes);
+    return `${formatTimeLabel(startTime)} - ${formatTimeLabel(end)}`;
+}
+
+function DiasTrabajadosScheduleTab({ dailyRate }: { dailyRate: number }) {
+    const [workDays, setWorkDays] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [weekStart, setWeekStart] = useState(() => getWeekStartKey(toDateKeyCR()));
+    const [draft, setDraft] = useState<Record<string, ShiftDraft>>({});
+    const [savingWeek, setSavingWeek] = useState(false);
+    const [deleting, setDeleting] = useState<string | null>(null);
+    const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+    const effectiveDailyRate = dailyRate || 10000;
+    const hourlyRate = Math.round(effectiveDailyRate / HOURS_PER_FULL_DAY) || HOURLY_RATE;
+    const weekDates = useMemo(() => WEEK_DAYS.map(day => addDaysKey(weekStart, day.key)), [weekStart]);
+    const weekEnd = weekDates[weekDates.length - 1];
+    const todayKey = toDateKeyCR();
+    const currentWeekStart = getWeekStartKey(todayKey);
+    const nextWeekStart = addDaysKey(currentWeekStart, 7);
+
+    const getShiftHours = (shift: ShiftDraft) => {
+        const hours = Number(shift.hours);
+        return Number.isFinite(hours) ? Math.max(0, Math.min(HOURS_PER_FULL_DAY, hours)) : 0;
+    };
+    const getShiftAmount = (shift: ShiftDraft) => getShiftHours(shift) * hourlyRate;
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        try {
+            const p = new URLSearchParams({ dateFrom: weekStart, dateTo: weekEnd });
+            const d = await (await fetch(`/api/logistics/work-days?${p}`)).json();
+            const rows = (d.workDays || []).filter((day: any) => STAFF_OPTIONS.includes(day.staff_name));
+            const nextDraft: Record<string, ShiftDraft> = {};
+
+            for (const staffName of STAFF_OPTIONS) {
+                weekDates.forEach((date, dayIndex) => {
+                    const row = rows.find((entry: any) => entry.staff_name === staffName && String(entry.work_date).slice(0, 10) === date);
+                    if (!row) {
+                        nextDraft[draftKey(staffName, date)] = defaultShift(staffName, date, dayIndex);
+                        return;
+                    }
+                    const rowHours = Number(row.hours ?? (Number(row.work_units ?? 1) * HOURS_PER_FULL_DAY));
+                    const safeHours = Number.isFinite(rowHours) ? Math.max(0, Math.min(HOURS_PER_FULL_DAY, rowHours)) : HOURS_PER_FULL_DAY;
+                    nextDraft[draftKey(staffName, date)] = {
+                        id: row.id,
+                        staffName,
+                        workDate: date,
+                        dayType: normalizeShiftType(row.day_type, safeHours),
+                        hours: String(safeHours),
+                        startTime: parseStartTime(row.start_time || row.time_label, staffName === 'Lau' ? '10:00' : '09:00'),
+                        lunchMinutes: Number.isFinite(Number(row.lunch_minutes)) ? Number(row.lunch_minutes) : (safeHours >= 8 ? 60 : 0),
+                        timeLabel: row.time_label || '',
+                        notes: row.notes || '',
+                        persisted: true,
+                    };
+                });
+            }
+
+            setWorkDays(rows);
+            setDraft(nextDraft);
+        } catch (e) { console.error(e); } finally { setLoading(false); }
+    }, [weekStart, weekEnd, weekDates]);
+
+    useEffect(() => { load(); }, [load]);
+
+    function updateShift(staffName: StaffName, workDate: string, patch: Partial<ShiftDraft>) {
+        setDraft(prev => {
+            const current = prev[draftKey(staffName, workDate)];
+            if (!current) return prev;
+            const next = { ...current, ...patch, persisted: false };
+            if (patch.dayType) {
+                const option = WORK_DAY_OPTIONS[patch.dayType];
+                next.hours = patch.dayType === 'custom' ? (Number(current.hours) > 0 ? current.hours : '8') : String(option.hours);
+                next.lunchMinutes = Number(next.hours) >= 8 ? 60 : 0;
+                if (patch.dayType === 'off') next.startTime = current.startTime || '09:00';
+                if (patch.dayType === 'short' && current.dayType === 'off') next.startTime = '18:00';
+            }
+            return { ...prev, [draftKey(staffName, workDate)]: next };
+        });
+    }
+
+    function loadBaseSchedule() {
+        const nextDraft: Record<string, ShiftDraft> = {};
+        for (const staffName of STAFF_OPTIONS) {
+            weekDates.forEach((date, dayIndex) => {
+                const existing = draft[draftKey(staffName, date)];
+                nextDraft[draftKey(staffName, date)] = { ...defaultShift(staffName, date, dayIndex), id: existing?.id, persisted: existing?.persisted || false };
+            });
+        }
+        setDraft(nextDraft);
+        setSaveStatus({ type: 'success', message: 'Horario base cargado. Revisa y guarda la semana para aplicarlo.' });
+    }
+
+    async function workDayRequest(input: RequestInfo | URL, init?: RequestInit) {
+        const response = await fetch(input, init);
+        if (response.ok) return response;
+
+        let detail = '';
+        try {
+            const data = await response.json();
+            detail = data?.error || data?.message || '';
+        } catch {
+            detail = await response.text().catch(() => '');
+        }
+        throw new Error(detail ? `${response.status} ${detail}` : `HTTP ${response.status}`);
+    }
+
+    async function copyToNextWeek() {
+        const targetStart = addDaysKey(weekStart, 7);
+        setSavingWeek(true);
+        setSaveStatus(null);
+        try {
+            await Promise.all(Object.values(draft).map(shift => {
+                const dayIndex = weekDates.indexOf(shift.workDate);
+                const targetDate = addDaysKey(targetStart, dayIndex);
+                const hours = getShiftHours(shift);
+                if (hours <= 0 || shift.dayType === 'off') {
+                    return workDayRequest('/api/logistics/work-days', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ staffName: shift.staffName, workDate: targetDate }),
+                    });
+                }
+                return workDayRequest('/api/logistics/work-days', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        staffName: shift.staffName,
+                        workDate: targetDate,
+                        dayType: shift.dayType,
+                        hours,
+                        startTime: shift.startTime,
+                        lunchMinutes: shift.lunchMinutes,
+                        timeLabel: buildTimeLabel(shift.startTime, hours, shift.lunchMinutes),
+                        label: WORK_DAY_OPTIONS[shift.dayType]?.label || 'Horas',
+                        notes: shift.notes,
+                    }),
+                });
+            }));
+            setWeekStart(targetStart);
+            setSaveStatus({ type: 'success', message: 'La proxima semana fue creada. Puedes revisarla y hacer cambios encima.' });
+        } catch (error) {
+            console.error('[schedule copy]', error);
+            setSaveStatus({ type: 'error', message: `No se pudo copiar la semana: ${error instanceof Error ? error.message : 'error desconocido'}` });
+        } finally { setSavingWeek(false); }
+    }
+
+    async function saveWeek() {
+        setSavingWeek(true);
+        setSaveStatus(null);
+        try {
+            await Promise.all(Object.values(draft).map(shift => {
+                const hours = getShiftHours(shift);
+                if (hours <= 0 || shift.dayType === 'off') {
+                    return workDayRequest('/api/logistics/work-days', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: shift.id, staffName: shift.staffName, workDate: shift.workDate }),
+                    });
+                }
+                return workDayRequest('/api/logistics/work-days', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        staffName: shift.staffName,
+                        workDate: shift.workDate,
+                        dayType: shift.dayType,
+                        hours,
+                        startTime: shift.startTime,
+                        lunchMinutes: shift.lunchMinutes,
+                        timeLabel: buildTimeLabel(shift.startTime, hours, shift.lunchMinutes),
+                        label: WORK_DAY_OPTIONS[shift.dayType]?.label || 'Horas',
+                        notes: shift.notes,
+                    }),
+                });
+            }));
+            await load();
+            setSaveStatus({ type: 'success', message: 'Semana guardada correctamente.' });
+        } catch (error) {
+            console.error('[schedule save]', error);
+            setSaveStatus({ type: 'error', message: `No se pudo guardar: ${error instanceof Error ? error.message : 'error desconocido'}` });
+        } finally { setSavingWeek(false); }
+    }
+
+    async function removeDay(id: string) {
+        setDeleting(id);
+        setSaveStatus(null);
+        try {
+            await workDayRequest('/api/logistics/work-days', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+            await load();
+            setSaveStatus({ type: 'success', message: 'Turno eliminado.' });
+        } catch (error) {
+            console.error('[schedule delete]', error);
+            setSaveStatus({ type: 'error', message: `No se pudo eliminar: ${error instanceof Error ? error.message : 'error desconocido'}` });
+        } finally { setDeleting(null); }
+    }
+
+    const paidShifts = Object.values(draft).filter(shift => getShiftHours(shift) > 0);
+    const totalHours = paidShifts.reduce((sum, shift) => sum + getShiftHours(shift), 0);
+    const salaryTotal = paidShifts.reduce((sum, shift) => sum + getShiftAmount(shift), 0);
+    const accruedTotal = paidShifts.filter(shift => shift.workDate <= todayKey).reduce((sum, shift) => sum + getShiftAmount(shift), 0);
+    const remainingTotal = Math.max(0, salaryTotal - accruedTotal);
+    const savedCount = workDays.filter((day: any) => STAFF_OPTIONS.includes(day.staff_name)).length;
+    const hasUnsavedPlan = paidShifts.some(shift => !shift.persisted) || paidShifts.length !== savedCount;
+    const employeeTotals = STAFF_OPTIONS.map(staffName => {
+        const employeeShifts = paidShifts.filter(shift => shift.staffName === staffName);
+        const total = employeeShifts.reduce((sum, shift) => sum + getShiftAmount(shift), 0);
+        const accrued = employeeShifts.filter(shift => shift.workDate <= todayKey).reduce((sum, shift) => sum + getShiftAmount(shift), 0);
+        return {
+            staffName,
+            hours: employeeShifts.reduce((sum, shift) => sum + getShiftHours(shift), 0),
+            total,
+            accrued,
+            pending: Math.max(0, total - accrued),
+        };
+    });
+
+    return (
+        <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 18 }}>
+                {[{ label: 'Total semana', value: fmt(salaryTotal), color: '#34d399' },
+                { label: 'Acumulado hoy', value: fmt(accruedTotal), color: '#60a5fa' },
+                { label: 'Pendiente sabado', value: fmt(remainingTotal), color: '#fbbf24' },
+                { label: 'Horas plan', value: `${totalHours}h`, color: '#8b87ff' },
+                ].map(({ label, value, color }) => (
+                    <div key={label} style={{ ...glassHi, padding: '18px 20px' }}>
+                        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</p>
+                        <p style={{ color, fontSize: 24, fontWeight: 800, margin: 0 }}>{value}</p>
+                    </div>
+                ))}
+            </div>
+
+            <div style={{ ...glass, padding: '18px 20px', marginBottom: 18 }}>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        {[{ label: 'Semana actual', value: currentWeekStart }, { label: 'Proxima semana', value: nextWeekStart }].map(item => {
+                            const selected = weekStart === item.value;
+                            return (
+                                <button key={item.value} onClick={() => setWeekStart(item.value)}
+                                    style={{ padding: '9px 14px', borderRadius: 8, border: selected ? '1px solid rgba(139,135,255,0.5)' : '1px solid rgba(255,255,255,0.1)', background: selected ? 'rgba(139,135,255,0.12)' : 'rgba(255,255,255,0.035)', color: selected ? '#F2F2F2' : 'rgba(255,255,255,0.55)', cursor: 'pointer', fontSize: 12, fontWeight: 800 }}>
+                                    {item.label}
+                                </button>
+                            );
+                        })}
+                        <input type="date" value={weekStart} onChange={e => setWeekStart(getWeekStartKey(e.target.value))} style={{ padding: '8px 12px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', borderRadius: 8 }} />
+                        <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>Lun {new Date(weekStart + 'T12:00:00').toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })} - Sab {new Date(weekEnd + 'T12:00:00').toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <button onClick={copyToNextWeek} disabled={savingWeek || loading}
+                            style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(251,191,36,0.28)', background: 'rgba(251,191,36,0.08)', color: '#fbbf24', cursor: 'pointer', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <PlusCircle size={12} /> Copiar a proxima
+                        </button>
+                        <button onClick={loadBaseSchedule} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(96,165,250,0.25)', background: 'rgba(96,165,250,0.08)', color: '#60a5fa', cursor: 'pointer', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <RefreshCw size={12} /> Horario base
+                        </button>
+                        <button onClick={saveWeek} disabled={savingWeek || loading}
+                            style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.35)', background: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Save size={13} /> {savingWeek ? 'Guardando...' : 'Guardar semana'}
+                        </button>
+                    </div>
+                </div>
+                <p style={{ color: hasUnsavedPlan ? '#fbbf24' : 'rgba(255,255,255,0.35)', fontSize: 12, margin: 0 }}>
+                    Selecciona solo la hora de entrada. FULL calcula 9 horas en sitio: 8 pagadas + 1 de comida. Los turnos cortos no agregan comida.
+                </p>
+                {saveStatus && (
+                    <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 8, border: `1px solid ${saveStatus.type === 'error' ? 'rgba(248,113,113,0.35)' : 'rgba(52,211,153,0.25)'}`, background: saveStatus.type === 'error' ? 'rgba(248,113,113,0.08)' : 'rgba(52,211,153,0.08)', color: saveStatus.type === 'error' ? '#f87171' : '#34d399', fontSize: 12, fontWeight: 700 }}>
+                        {saveStatus.message}
+                    </div>
+                )}
+            </div>
+
+            {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)' }}>Cargando...</div> : (
+                <>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18 }}>
+                        {employeeTotals.map(employee => (
+                            <div key={employee.staffName} style={{ ...glassHi, padding: '18px 20px', borderColor: employee.staffName === 'Ma' ? 'rgba(139,135,255,0.22)' : 'rgba(96,165,250,0.22)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, marginBottom: 14 }}>
+                                    <div>
+                                        <p style={{ color: '#F2F2F2', fontSize: 18, fontWeight: 800, margin: '0 0 4px' }}>{employee.staffName}</p>
+                                        <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: 0 }}>{employee.hours} horas planificadas</p>
+                                    </div>
+                                    <p style={{ color: '#34d399', fontSize: 22, fontWeight: 800, margin: 0 }}>{fmt(employee.total)}</p>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                                    <div style={{ padding: 10, borderRadius: 8, background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.14)' }}>
+                                        <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, margin: '0 0 5px', textTransform: 'uppercase' }}>Acumulado</p>
+                                        <p style={{ color: '#60a5fa', fontWeight: 800, margin: 0 }}>{fmt(employee.accrued)}</p>
+                                    </div>
+                                    <div style={{ padding: 10, borderRadius: 8, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.14)' }}>
+                                        <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, margin: '0 0 5px', textTransform: 'uppercase' }}>Pendiente</p>
+                                        <p style={{ color: '#fbbf24', fontWeight: 800, margin: 0 }}>{fmt(employee.pending)}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(310px,1fr))', gap: 14 }}>
+                        {weekDates.map((date, dayIndex) => (
+                            <div key={date} style={{ ...glass, padding: 16, borderColor: date === todayKey ? 'rgba(96,165,250,0.35)' : 'rgba(255,255,255,0.1)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+                                    <div>
+                                        <p style={{ color: '#F2F2F2', fontWeight: 800, fontSize: 16, margin: '0 0 3px' }}>{WEEK_DAYS[dayIndex].label}</p>
+                                        <p style={{ color: date === todayKey ? '#60a5fa' : 'rgba(255,255,255,0.35)', fontSize: 12, margin: 0 }}>{new Date(date + 'T12:00:00').toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}</p>
+                                    </div>
+                                    {date === todayKey && <span style={{ color: '#60a5fa', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>Hoy</span>}
+                                </div>
+
+                                <div style={{ display: 'grid', gap: 10 }}>
+                                    {STAFF_OPTIONS.map(staffName => {
+                                        const shift = draft[draftKey(staffName, date)];
+                                        if (!shift) return null;
+                                        const hours = getShiftHours(shift);
+                                        const amount = getShiftAmount(shift);
+                                        const option = WORK_DAY_OPTIONS[shift.dayType];
+                                        const lunchMinutes = hours >= 8 ? shift.lunchMinutes : 0;
+                                        const scheduleLabel = buildTimeLabel(shift.startTime, hours, lunchMinutes);
+                                        return (
+                                            <div key={staffName} style={{ padding: 12, borderRadius: 8, background: hours > 0 ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.025)', border: `1px solid ${hours > 0 ? 'rgba(52,211,153,0.16)' : 'rgba(255,255,255,0.07)'}` }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 10 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                        <span style={{ width: 28, height: 28, borderRadius: 8, background: staffName === 'Ma' ? 'rgba(139,135,255,0.16)' : 'rgba(96,165,250,0.16)', color: staffName === 'Ma' ? '#8b87ff' : '#60a5fa', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 12 }}>{staffName.slice(0, 2)}</span>
+                                                        <div>
+                                                            <p style={{ color: '#F2F2F2', fontWeight: 800, fontSize: 13, margin: 0 }}>{staffName}</p>
+                                                            <p style={{ color: hours > 0 ? option.color : 'rgba(255,255,255,0.3)', fontSize: 11, fontWeight: 800, margin: 0 }}>{WORK_DAY_OPTIONS[shift.dayType].label}</p>
+                                                        </div>
+                                                    </div>
+                                                    {shift.id ? (
+                                                        <button onClick={() => removeDay(shift.id!)} disabled={deleting === shift.id}
+                                                            title="Quitar turno"
+                                                            style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.05)', color: '#f87171', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                            <Trash2 size={12} />
+                                                        </button>
+                                                    ) : null}
+                                                </div>
+
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                                                    <label style={{ display: 'grid', gap: 5 }}>
+                                                        <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Tipo</span>
+                                                        <select value={shift.dayType} onChange={e => updateShift(staffName, date, { dayType: e.target.value as WorkDayType })}
+                                                            style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${hours > 0 ? 'rgba(52,211,153,0.24)' : 'rgba(255,255,255,0.1)'}`, background: 'rgba(11,15,25,0.72)', color: option.color, fontSize: 12, fontWeight: 800, outline: 'none', cursor: 'pointer' }}>
+                                                            {(Object.keys(WORK_DAY_OPTIONS) as WorkDayType[]).map(type => <option key={type} value={type}>{WORK_DAY_OPTIONS[type].label}</option>)}
+                                                        </select>
+                                                    </label>
+                                                    <label style={{ display: 'grid', gap: 5 }}>
+                                                        <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Entrada</span>
+                                                        <select value={shift.startTime} disabled={hours <= 0} onChange={e => updateShift(staffName, date, { startTime: e.target.value })}
+                                                            style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: hours > 0 ? 'rgba(11,15,25,0.72)' : 'rgba(255,255,255,0.025)', color: hours > 0 ? '#F2F2F2' : 'rgba(255,255,255,0.25)', fontSize: 12, fontWeight: 700, outline: 'none', cursor: hours > 0 ? 'pointer' : 'default' }}>
+                                                            {START_TIME_OPTIONS.map(time => <option key={time} value={time}>{formatTimeLabel(time)}</option>)}
+                                                        </select>
+                                                    </label>
+                                                </div>
+
+                                                {shift.dayType === 'custom' && (
+                                                    <label style={{ display: 'grid', gap: 5, marginBottom: 10 }}>
+                                                        <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Horas pagadas</span>
+                                                        <select value={shift.hours} onChange={e => updateShift(staffName, date, { hours: e.target.value, lunchMinutes: Number(e.target.value) >= 8 ? 60 : 0 })}
+                                                            style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(251,191,36,0.25)', background: 'rgba(11,15,25,0.72)', color: '#fbbf24', fontSize: 12, fontWeight: 800, outline: 'none', cursor: 'pointer' }}>
+                                                            {['1', '2', '3', '4', '5', '6', '7', '8'].map(h => <option key={h} value={h}>{h} horas</option>)}
+                                                        </select>
+                                                    </label>
+                                                )}
+
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center', padding: '10px 11px', borderRadius: 8, background: hours > 0 ? 'rgba(52,211,153,0.07)' : 'rgba(255,255,255,0.025)', border: `1px solid ${hours > 0 ? 'rgba(52,211,153,0.14)' : 'rgba(255,255,255,0.06)'}`, marginBottom: 10 }}>
+                                                    <div>
+                                                        <p style={{ color: hours > 0 ? '#F2F2F2' : 'rgba(255,255,255,0.35)', fontWeight: 800, fontSize: 13, margin: '0 0 2px' }}>{scheduleLabel}</p>
+                                                        <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, margin: 0 }}>{hours > 0 ? `${hours}h pagadas${lunchMinutes ? ' + 1h comida' : ''}` : 'Sin turno'}</p>
+                                                    </div>
+                                                    <p style={{ color: hours > 0 ? '#34d399' : 'rgba(255,255,255,0.25)', fontWeight: 900, fontSize: 13, margin: 0 }}>{fmt(amount)}</p>
+                                                </div>
+
+                                                <input type="text" value={shift.notes} onChange={e => updateShift(staffName, date, { notes: e.target.value })} placeholder="Nota de cambio"
+                                                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.025)', color: 'rgba(255,255,255,0.68)', fontSize: 12, outline: 'none' }} />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
 function GdBalanceTab() {
     const [entries, setEntries] = useState<any[]>([]);
     const [balance, setBalance] = useState(0);
@@ -820,7 +1327,7 @@ export default function AccountingPage() {
             {tab === 'resumen' && <ResumenTab rates={rates} />}
             {tab === 'correos-cr' && <CorreosCRTab />}
             {tab === 'contra-entregas' && <ContraEntregasTab />}
-            {tab === 'dias-trabajados' && <DiasTrabajadosTab dailyRate={rates.salary_daily_rate} />}
+            {tab === 'dias-trabajados' && <DiasTrabajadosScheduleTab dailyRate={rates.salary_daily_rate} />}
             {tab === 'gd-balance' && <GdBalanceTab />}
 
             <style>{`.lm-table-row:hover{background:rgba(255,255,255,0.03)!important} .lm-btn-accent:hover{background:rgba(139,135,255,0.12)!important;box-shadow:0 0 16px rgba(139,135,255,0.2)}`}</style>

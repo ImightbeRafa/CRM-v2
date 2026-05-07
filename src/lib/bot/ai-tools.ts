@@ -1613,6 +1613,8 @@ export async function generateShippingGuia(
         }
 
         const pdfFileName = `guia-manual-${order.orderId}.pdf`;
+        const pdfData = new Uint8Array(pdfBuffer.byteLength);
+        pdfData.set(pdfBuffer);
         const guia = await tenantPrisma.shippingGuia.create({
           data: {
             tenantId: ctx.tenantId,
@@ -1621,7 +1623,7 @@ export async function generateShippingGuia(
             guiaNumber,
             status: 'completed',
             serviceType: 'manual',
-            pdfData: pdfBuffer,
+            pdfData,
             pdfFileName,
             progress: `Guía manual generada por ${ctx.userName}`,
           },

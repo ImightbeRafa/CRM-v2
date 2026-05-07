@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 
@@ -122,12 +123,14 @@ export async function POST(req: NextRequest) {
     });
 
     try {
-        await prisma.$executeRaw`
-            INSERT INTO lm_work_days (staff_name, work_date, notes)
-            VALUES (${staffName}, ${workDate}::date, ${metadata})
-            ON CONFLICT (staff_name, work_date)
-            DO UPDATE SET notes = EXCLUDED.notes
-        `;
+        const id = randomUUID();
+        await prisma.$transaction([
+            prisma.$executeRaw`DELETE FROM lm_work_days WHERE staff_name = ${staffName} AND work_date = ${workDate}::date`,
+            prisma.$executeRaw`
+                INSERT INTO lm_work_days (id, staff_name, work_date, notes)
+                VALUES (${id}::uuid, ${staffName}, ${workDate}::date, ${metadata})
+            `,
+        ]);
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error('[work-days POST]', error);

@@ -701,6 +701,20 @@ type ShiftDraft = {
     persisted: boolean;
 };
 
+type WeeklyPayrollReport = {
+    weekStart: string;
+    weekEnd: string;
+    savedCells: number;
+    hours: number;
+    total: number;
+    employees: {
+        staffName: StaffName;
+        hours: number;
+        total: number;
+        shifts: ShiftDraft[];
+    }[];
+};
+
 function toDateKeyLocal(date: Date) {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -783,6 +797,26 @@ function buildTimeLabel(startTime: string, paidHours: number, lunchMinutes: numb
     return `${formatTimeLabel(startTime)} - ${formatTimeLabel(end)}`;
 }
 
+function parseWorkDayRow(row: any, fallbackStaffName?: StaffName): ShiftDraft {
+    const staffName = (STAFF_OPTIONS.includes(row.staff_name) ? row.staff_name : fallbackStaffName || STAFF_OPTIONS[0]) as StaffName;
+    const workDate = String(row.work_date || row.work_date_key || '').slice(0, 10);
+    const rowHours = Number(row.hours ?? (Number(row.work_units ?? 1) * HOURS_PER_FULL_DAY));
+    const safeHours = Number.isFinite(rowHours) ? Math.max(0, Math.min(HOURS_PER_FULL_DAY, rowHours)) : HOURS_PER_FULL_DAY;
+
+    return {
+        id: row.id,
+        staffName,
+        workDate,
+        dayType: normalizeShiftType(row.day_type, safeHours),
+        hours: String(safeHours),
+        startTime: parseStartTime(row.start_time || row.time_label, staffName === 'Lau' ? '10:00' : '09:00'),
+        lunchMinutes: Number.isFinite(Number(row.lunch_minutes)) ? Number(row.lunch_minutes) : (safeHours >= 8 ? 60 : 0),
+        timeLabel: row.time_label || '',
+        notes: row.notes || '',
+        persisted: true,
+    };
+}
+
 function DiasTrabajadosScheduleTab({ dailyRate }: { dailyRate: number }) {
     const [workDays, setWorkDays] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -791,6 +825,8 @@ function DiasTrabajadosScheduleTab({ dailyRate }: { dailyRate: number }) {
     const [savingWeek, setSavingWeek] = useState(false);
     const [deleting, setDeleting] = useState<string | null>(null);
     const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+    const [reportRows, setReportRows] = useState<any[]>([]);
+    const [loadingReports, setLoadingReports] = useState(false);
 
     const effectiveDailyRate = dailyRate || 10000;
     const hourlyRate = Math.round(effectiveDailyRate / HOURS_PER_FULL_DAY) || HOURLY_RATE;
@@ -799,51 +835,74 @@ function DiasTrabajadosScheduleTab({ dailyRate }: { dailyRate: number }) {
     const todayKey = toDateKeyCR();
     const currentWeekStart = getWeekStartKey(todayKey);
     const nextWeekStart = addDaysKey(currentWeekStart, 7);
+    const reportStart = addDaysKey(currentWeekStart, -11 * 7);
 
     const getShiftHours = (shift: ShiftDraft) => {
         const hours = Number(shift.hours);
         return Number.isFinite(hours) ? Math.max(0, Math.min(HOURS_PER_FULL_DAY, hours)) : 0;
     };
     const getShiftAmount = (shift: ShiftDraft) => getShiftHours(shift) * hourlyRate;
+    const getRowDateKey = (row: any) => String(row.work_date || row.work_date_key || '').slice(0, 10);
+
+    const buildDraftFromRows = useCallback((rows: any[]) => {
+        const nextDraft: Record<string, ShiftDraft> = {};
+
+        for (const staffName of STAFF_OPTIONS) {
+            weekDates.forEach((date, dayIndex) => {
+                const row = rows.find((entry: any) => entry.staff_name === staffName && getRowDateKey(entry) === date);
+                if (!row) {
+                    nextDraft[draftKey(staffName, date)] = defaultShift(staffName, date, dayIndex);
+                    return;
+                }
+                nextDraft[draftKey(staffName, date)] = parseWorkDayRow(row, staffName);
+            });
+        }
+
+        return nextDraft;
+    }, [weekDates]);
 
     const load = useCallback(async () => {
         setLoading(true);
         try {
             const p = new URLSearchParams({ dateFrom: weekStart, dateTo: weekEnd });
-            const d = await (await fetch(`/api/logistics/work-days?${p}`)).json();
-            const rows = (d.workDays || []).filter((day: any) => STAFF_OPTIONS.includes(day.staff_name));
-            const nextDraft: Record<string, ShiftDraft> = {};
-
-            for (const staffName of STAFF_OPTIONS) {
-                weekDates.forEach((date, dayIndex) => {
-                    const row = rows.find((entry: any) => entry.staff_name === staffName && String(entry.work_date).slice(0, 10) === date);
-                    if (!row) {
-                        nextDraft[draftKey(staffName, date)] = defaultShift(staffName, date, dayIndex);
-                        return;
-                    }
-                    const rowHours = Number(row.hours ?? (Number(row.work_units ?? 1) * HOURS_PER_FULL_DAY));
-                    const safeHours = Number.isFinite(rowHours) ? Math.max(0, Math.min(HOURS_PER_FULL_DAY, rowHours)) : HOURS_PER_FULL_DAY;
-                    nextDraft[draftKey(staffName, date)] = {
-                        id: row.id,
-                        staffName,
-                        workDate: date,
-                        dayType: normalizeShiftType(row.day_type, safeHours),
-                        hours: String(safeHours),
-                        startTime: parseStartTime(row.start_time || row.time_label, staffName === 'Lau' ? '10:00' : '09:00'),
-                        lunchMinutes: Number.isFinite(Number(row.lunch_minutes)) ? Number(row.lunch_minutes) : (safeHours >= 8 ? 60 : 0),
-                        timeLabel: row.time_label || '',
-                        notes: row.notes || '',
-                        persisted: true,
-                    };
-                });
+            const response = await fetch(`/api/logistics/work-days?${p}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => null);
+                throw new Error(errorData?.error || `HTTP ${response.status}`);
             }
+            const d = await response.json();
+            const rows = (d.workDays || []).filter((day: any) => STAFF_OPTIONS.includes(day.staff_name));
 
             setWorkDays(rows);
-            setDraft(nextDraft);
-        } catch (e) { console.error(e); } finally { setLoading(false); }
-    }, [weekStart, weekEnd, weekDates]);
+            setDraft(buildDraftFromRows(rows));
+        } catch (e) {
+            console.error(e);
+            setSaveStatus({ type: 'error', message: `No se pudo cargar el horario: ${e instanceof Error ? e.message : 'error desconocido'}` });
+        } finally { setLoading(false); }
+    }, [weekStart, weekEnd, buildDraftFromRows]);
 
     useEffect(() => { load(); }, [load]);
+
+    const loadReports = useCallback(async () => {
+        setLoadingReports(true);
+        try {
+            const p = new URLSearchParams({ dateFrom: reportStart, dateTo: weekEnd });
+            const response = await fetch(`/api/logistics/work-days?${p}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => null);
+                throw new Error(errorData?.error || `HTTP ${response.status}`);
+            }
+            const d = await response.json();
+            setReportRows((d.workDays || []).filter((day: any) => STAFF_OPTIONS.includes(day.staff_name)));
+        } catch (error) {
+            console.error('[schedule reports]', error);
+            setSaveStatus({ type: 'error', message: `No se pudieron cargar reportes: ${error instanceof Error ? error.message : 'error desconocido'}` });
+        } finally {
+            setLoadingReports(false);
+        }
+    }, [reportStart, weekEnd]);
+
+    useEffect(() => { loadReports(); }, [loadReports]);
 
     function updateShift(staffName: StaffName, workDate: string, patch: Partial<ShiftDraft>) {
         setDraft(prev => {
@@ -887,38 +946,46 @@ function DiasTrabajadosScheduleTab({ dailyRate }: { dailyRate: number }) {
         throw new Error(detail ? `${response.status} ${detail}` : `HTTP ${response.status}`);
     }
 
+    async function workDayJson(input: RequestInfo | URL, init?: RequestInit) {
+        const response = await workDayRequest(input, init);
+        return response.json();
+    }
+
+    function buildSaveEntries(targetStart = weekStart) {
+        return Object.values(draft).map(shift => {
+            const dayIndex = weekDates.indexOf(shift.workDate);
+            const workDate = dayIndex >= 0 ? addDaysKey(targetStart, dayIndex) : shift.workDate;
+            const hours = getShiftHours(shift);
+            return {
+                staffName: shift.staffName,
+                workDate,
+                dayType: shift.dayType,
+                hours,
+                startTime: shift.startTime,
+                lunchMinutes: shift.lunchMinutes,
+                timeLabel: buildTimeLabel(shift.startTime, hours, shift.lunchMinutes),
+                label: WORK_DAY_OPTIONS[shift.dayType]?.label || 'Horas',
+                notes: shift.notes,
+            };
+        });
+    }
+
     async function copyToNextWeek() {
         const targetStart = addDaysKey(weekStart, 7);
+        const targetEnd = addDaysKey(targetStart, WEEK_DAYS.length - 1);
         setSavingWeek(true);
         setSaveStatus(null);
         try {
-            await Promise.all(Object.values(draft).map(shift => {
-                const dayIndex = weekDates.indexOf(shift.workDate);
-                const targetDate = addDaysKey(targetStart, dayIndex);
-                const hours = getShiftHours(shift);
-                if (hours <= 0 || shift.dayType === 'off') {
-                    return workDayRequest('/api/logistics/work-days', {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ staffName: shift.staffName, workDate: targetDate }),
-                    });
-                }
-                return workDayRequest('/api/logistics/work-days', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        staffName: shift.staffName,
-                        workDate: targetDate,
-                        dayType: shift.dayType,
-                        hours,
-                        startTime: shift.startTime,
-                        lunchMinutes: shift.lunchMinutes,
-                        timeLabel: buildTimeLabel(shift.startTime, hours, shift.lunchMinutes),
-                        label: WORK_DAY_OPTIONS[shift.dayType]?.label || 'Horas',
-                        notes: shift.notes,
-                    }),
-                });
-            }));
+            await workDayJson('/api/logistics/work-days', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    dateFrom: targetStart,
+                    dateTo: targetEnd,
+                    staffNames: STAFF_OPTIONS,
+                    entries: buildSaveEntries(targetStart),
+                }),
+            });
             setWeekStart(targetStart);
             setSaveStatus({ type: 'success', message: 'La proxima semana fue creada. Puedes revisarla y hacer cambios encima.' });
         } catch (error) {
@@ -931,33 +998,27 @@ function DiasTrabajadosScheduleTab({ dailyRate }: { dailyRate: number }) {
         setSavingWeek(true);
         setSaveStatus(null);
         try {
-            await Promise.all(Object.values(draft).map(shift => {
-                const hours = getShiftHours(shift);
-                if (hours <= 0 || shift.dayType === 'off') {
-                    return workDayRequest('/api/logistics/work-days', {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id: shift.id, staffName: shift.staffName, workDate: shift.workDate }),
-                    });
-                }
-                return workDayRequest('/api/logistics/work-days', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        staffName: shift.staffName,
-                        workDate: shift.workDate,
-                        dayType: shift.dayType,
-                        hours,
-                        startTime: shift.startTime,
-                        lunchMinutes: shift.lunchMinutes,
-                        timeLabel: buildTimeLabel(shift.startTime, hours, shift.lunchMinutes),
-                        label: WORK_DAY_OPTIONS[shift.dayType]?.label || 'Horas',
-                        notes: shift.notes,
-                    }),
+            const data = await workDayJson('/api/logistics/work-days', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    dateFrom: weekStart,
+                    dateTo: weekEnd,
+                    staffNames: STAFF_OPTIONS,
+                    entries: buildSaveEntries(),
+                }),
+            });
+            const rows = (data.workDays || []).filter((day: any) => STAFF_OPTIONS.includes(day.staff_name));
+            setWorkDays(rows);
+            setDraft(buildDraftFromRows(rows));
+            setReportRows(prev => {
+                const outsideWeek = prev.filter((row: any) => {
+                    const key = getRowDateKey(row);
+                    return key < weekStart || key > weekEnd || !STAFF_OPTIONS.includes(row.staff_name);
                 });
-            }));
-            await load();
-            setSaveStatus({ type: 'success', message: 'Semana guardada correctamente.' });
+                return [...outsideWeek, ...rows];
+            });
+            setSaveStatus({ type: 'success', message: `Semana guardada correctamente (${data.saved ?? rows.length} turnos).` });
         } catch (error) {
             console.error('[schedule save]', error);
             setSaveStatus({ type: 'error', message: `No se pudo guardar: ${error instanceof Error ? error.message : 'error desconocido'}` });
@@ -982,8 +1043,7 @@ function DiasTrabajadosScheduleTab({ dailyRate }: { dailyRate: number }) {
     const salaryTotal = paidShifts.reduce((sum, shift) => sum + getShiftAmount(shift), 0);
     const accruedTotal = paidShifts.filter(shift => shift.workDate <= todayKey).reduce((sum, shift) => sum + getShiftAmount(shift), 0);
     const remainingTotal = Math.max(0, salaryTotal - accruedTotal);
-    const savedCount = workDays.filter((day: any) => STAFF_OPTIONS.includes(day.staff_name)).length;
-    const hasUnsavedPlan = paidShifts.some(shift => !shift.persisted) || paidShifts.length !== savedCount;
+    const hasUnsavedPlan = Object.values(draft).some(shift => !shift.persisted);
     const employeeTotals = STAFF_OPTIONS.map(staffName => {
         const employeeShifts = paidShifts.filter(shift => shift.staffName === staffName);
         const total = employeeShifts.reduce((sum, shift) => sum + getShiftAmount(shift), 0);
@@ -996,6 +1056,49 @@ function DiasTrabajadosScheduleTab({ dailyRate }: { dailyRate: number }) {
             pending: Math.max(0, total - accrued),
         };
     });
+    const weeklyReports = useMemo<WeeklyPayrollReport[]>(() => {
+        const rowsByWeek = new Map<string, any[]>();
+        for (const row of reportRows) {
+            const dateKey = getRowDateKey(row);
+            if (!dateKey) continue;
+            const rowWeekStart = getWeekStartKey(dateKey);
+            if (rowWeekStart > currentWeekStart) continue;
+            const existing = rowsByWeek.get(rowWeekStart) || [];
+            existing.push(row);
+            rowsByWeek.set(rowWeekStart, existing);
+        }
+
+        return Array.from(rowsByWeek.entries())
+            .sort(([a], [b]) => b.localeCompare(a))
+            .map(([rowWeekStart, rows]) => {
+                const rowWeekEnd = addDaysKey(rowWeekStart, WEEK_DAYS.length - 1);
+                const shifts = rows
+                    .map((row: any) => parseWorkDayRow(row))
+                    .filter((shift: ShiftDraft) => STAFF_OPTIONS.includes(shift.staffName));
+                const employees = STAFF_OPTIONS.map(staffName => {
+                    const employeeShifts = WEEK_DAYS.map(day => {
+                        const date = addDaysKey(rowWeekStart, day.key);
+                        return shifts.find(shift => shift.staffName === staffName && shift.workDate === date)
+                            || { staffName, workDate: date, dayType: 'off' as WorkDayType, hours: '0', startTime: '09:00', lunchMinutes: 0, timeLabel: '', notes: '', persisted: false };
+                    });
+                    const hours = employeeShifts.reduce((sum, shift) => sum + getShiftHours(shift), 0);
+                    return {
+                        staffName,
+                        hours,
+                        total: hours * hourlyRate,
+                        shifts: employeeShifts,
+                    };
+                });
+                return {
+                    weekStart: rowWeekStart,
+                    weekEnd: rowWeekEnd,
+                    savedCells: rows.length,
+                    hours: employees.reduce((sum, employee) => sum + employee.hours, 0),
+                    total: employees.reduce((sum, employee) => sum + employee.total, 0),
+                    employees,
+                };
+            });
+    }, [reportRows, currentWeekStart, hourlyRate]);
 
     return (
         <div>
@@ -1107,9 +1210,9 @@ function DiasTrabajadosScheduleTab({ dailyRate }: { dailyRate: number }) {
                                                             <p style={{ color: hours > 0 ? option.color : 'rgba(255,255,255,0.3)', fontSize: 11, fontWeight: 800, margin: 0 }}>{WORK_DAY_OPTIONS[shift.dayType].label}</p>
                                                         </div>
                                                     </div>
-                                                    {shift.id ? (
-                                                        <button onClick={() => removeDay(shift.id!)} disabled={deleting === shift.id}
-                                                            title="Quitar turno"
+                                                    {hours > 0 ? (
+                                                        <button onClick={() => updateShift(staffName, date, { dayType: 'off' })}
+                                                            title="Marcar libre"
                                                             style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.05)', color: '#f87171', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                             <Trash2 size={12} />
                                                         </button>
@@ -1159,6 +1262,80 @@ function DiasTrabajadosScheduleTab({ dailyRate }: { dailyRate: number }) {
                                 </div>
                             </div>
                         ))}
+                    </div>
+
+                    <div style={{ marginTop: 24 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, marginBottom: 14 }}>
+                            <div>
+                                <p style={{ color: '#F2F2F2', fontSize: 18, fontWeight: 900, margin: '0 0 4px' }}>Reportes semanales guardados</p>
+                                <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: 0 }}>
+                                    Historial de semanas guardadas con horas, detalle diario y pago por colaborador.
+                                </p>
+                            </div>
+                            <button onClick={loadReports} disabled={loadingReports}
+                                style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(139,135,255,0.25)', background: 'rgba(139,135,255,0.08)', color: '#8b87ff', cursor: loadingReports ? 'default' : 'pointer', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <RefreshCw size={12} /> {loadingReports ? 'Cargando...' : 'Actualizar reportes'}
+                            </button>
+                        </div>
+
+                        {loadingReports ? (
+                            <div style={{ ...glass, padding: 26, textAlign: 'center', color: 'rgba(255,255,255,0.32)', fontSize: 13 }}>Cargando reportes...</div>
+                        ) : weeklyReports.length === 0 ? (
+                            <div style={{ ...glass, padding: 26, textAlign: 'center', color: 'rgba(255,255,255,0.32)', fontSize: 13 }}>
+                                Todavia no hay semanas guardadas para reportar. Guarda la semana actual para crear el primer reporte.
+                            </div>
+                        ) : (
+                            <div style={{ display: 'grid', gap: 14 }}>
+                                {weeklyReports.map(report => (
+                                    <div key={report.weekStart} style={{ ...glassHi, padding: 18 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', marginBottom: 16 }}>
+                                            <div>
+                                                <p style={{ color: '#F2F2F2', fontSize: 16, fontWeight: 900, margin: '0 0 4px' }}>
+                                                    Semana {new Date(report.weekStart + 'T12:00:00').toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })} - {new Date(report.weekEnd + 'T12:00:00').toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}
+                                                </p>
+                                                <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, margin: 0 }}>
+                                                    {report.savedCells}/12 registros guardados · {report.hours} horas totales
+                                                </p>
+                                            </div>
+                                            <div style={{ textAlign: 'right' }}>
+                                                <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, margin: '0 0 5px', textTransform: 'uppercase', fontWeight: 800 }}>Total a pagar</p>
+                                                <p style={{ color: '#34d399', fontSize: 22, fontWeight: 900, margin: 0 }}>{fmt(report.total)}</p>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 12 }}>
+                                            {report.employees.map(employee => (
+                                                <div key={`${report.weekStart}-${employee.staffName}`} style={{ padding: 14, borderRadius: 10, background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+                                                        <div>
+                                                            <p style={{ color: '#F2F2F2', fontSize: 15, fontWeight: 900, margin: 0 }}>{employee.staffName}</p>
+                                                            <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, margin: '3px 0 0' }}>{employee.hours} horas · {fmt(hourlyRate)}/h</p>
+                                                        </div>
+                                                        <p style={{ color: '#34d399', fontSize: 18, fontWeight: 900, margin: 0 }}>{fmt(employee.total)}</p>
+                                                    </div>
+
+                                                    <div style={{ display: 'grid', gap: 7 }}>
+                                                        {employee.shifts.map(shift => {
+                                                            const hours = getShiftHours(shift);
+                                                            const lunchMinutes = hours >= 8 ? shift.lunchMinutes : 0;
+                                                            return (
+                                                                <div key={`${shift.staffName}-${shift.workDate}`} style={{ display: 'grid', gridTemplateColumns: '58px 1fr auto', gap: 8, alignItems: 'center', padding: '7px 8px', borderRadius: 8, background: hours > 0 ? 'rgba(52,211,153,0.06)' : 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                                                    <span style={{ color: 'rgba(255,255,255,0.42)', fontSize: 11, fontWeight: 800 }}>{WEEK_DAYS.find(day => addDaysKey(report.weekStart, day.key) === shift.workDate)?.short || shift.workDate.slice(5)}</span>
+                                                                    <span style={{ color: hours > 0 ? '#F2F2F2' : 'rgba(255,255,255,0.32)', fontSize: 11, fontWeight: 700 }}>
+                                                                        {buildTimeLabel(shift.startTime, hours, lunchMinutes)}
+                                                                    </span>
+                                                                    <span style={{ color: hours > 0 ? '#34d399' : 'rgba(255,255,255,0.28)', fontSize: 11, fontWeight: 900 }}>{hours}h</span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </>
             )}

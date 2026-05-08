@@ -57,6 +57,14 @@ export interface ToolResult<T = unknown> {
   pendingOrderData?: Record<string, unknown>;
 }
 
+function redactOrderParamsForLog(params: Record<string, unknown>) {
+  const redacted = { ...params };
+  for (const key of ['customerName', 'phone', 'email', 'address', 'comments']) {
+    if (key in redacted) redacted[key] = '[redacted]';
+  }
+  return redacted;
+}
+
 // ============================================================================
 // TOOL SCHEMAS (for AI function calling)
 // ============================================================================
@@ -777,7 +785,7 @@ export async function createOrder(
         
         console.log('[AI Tool] createOrder - Final order data:', {
           orderId: orderData.orderId,
-          customerName: orderData.customerName,
+          customerName: '[redacted]',
           inventoryMatch: matchedInventoryItem?.name || 'none',
           customFieldsCount: Object.keys(orderData.customFields || {}).length,
         });
@@ -786,8 +794,31 @@ export async function createOrder(
           data: orderData,
         });
 
+        const persistedOrder = await tenantPrisma.order.findFirst({
+          where: {
+            id: order.id,
+            orderId: order.orderId,
+          },
+          select: {
+            id: true,
+            orderId: true,
+            tenantId: true,
+          },
+        });
+
+        if (!persistedOrder) {
+          console.error('[AI Tool] createOrder - Persistence verification failed:', {
+            dbId: order.id,
+            orderId: order.orderId,
+            tenantId: ctx.tenantId,
+          });
+          throw new Error('ORDER_PERSISTENCE_VERIFICATION_FAILED');
+        }
+
         console.log('[AI Tool] createOrder - Persisted:', {
-          dbId: order.id, orderId: order.orderId, tenantId: order.tenantId,
+          dbId: persistedOrder.id,
+          orderId: persistedOrder.orderId,
+          tenantId: persistedOrder.tenantId,
         });
 
         // Sync client record (create or update) so bot clients appear in Config > Clientes
@@ -851,7 +882,7 @@ export async function createOrder(
         };
       } catch (error: any) {
         console.error('[AI Tool] createOrder error:', error);
-        console.error('[AI Tool] createOrder params:', JSON.stringify(params, null, 2));
+        console.error('[AI Tool] createOrder params:', JSON.stringify(redactOrderParamsForLog(params), null, 2));
         console.error('[AI Tool] createOrder error details:', {
           name: error.name,
           message: error.message,
@@ -881,6 +912,8 @@ export async function createOrder(
           } else {
             userFriendlyError = `❌ Error de validación al crear la orden. Verifica los datos e intenta de nuevo.`;
           }
+        } else if (error.message === 'ORDER_PERSISTENCE_VERIFICATION_FAILED') {
+          userFriendlyError = `No pude confirmar que la orden quedara guardada en Betsy. Por seguridad no la marcare como creada; revisa el panel antes de reenviarla para evitar duplicados.`;
         } else if (error.message) {
           console.error('[AI Tool] createOrder - Unhandled error:', error.message);
           userFriendlyError = `❌ Error al crear la orden. Por favor intenta de nuevo o contacta a soporte.`;

@@ -111,6 +111,19 @@ function hasOrderCreationIntent(message: string): boolean {
   return ORDER_CREATION_KEYWORDS.some(keyword => normalized.includes(normalizeSpanishText(keyword)));
 }
 
+const MUTATING_TOOLS = new Set<ToolName>([
+  'create_order',
+  'update_order',
+  'update_order_status',
+  'update_inventory_stock',
+  'generate_shipping_guia',
+  'generate_guias_bulk',
+]);
+
+function isMutatingTool(toolName: string): boolean {
+  return MUTATING_TOOLS.has(toolName as ToolName);
+}
+
 const TODAY_QUERY_RE = /\b(hoy|dia de hoy|del dia)\b/i;
 
 function applyRelativeDateGuards(toolName: ToolName, toolArgs: any, userMessage: string): any {
@@ -599,6 +612,12 @@ export async function processMessage(
         } else {
           toolResults.push('❌ Error: ' + result.error);
         }
+      }
+
+      if (toolCallsLog.some((call) => isMutatingTool(call.name))) {
+        const directResponse = toolResults.join('\n\n') || 'Operacion procesada.';
+        await addAssistantMessage(platform, platformId, directResponse);
+        return { text: directResponse, attachments: allAttachments.length > 0 ? allAttachments : undefined };
       }
 
       // Get a natural language response about the tool results

@@ -474,12 +474,63 @@ interface InventoryMatch {
   confidence: number; // 1 = exact SKU, 2 = exact name, 3 = partial name, 4 = category, 5 = description
 }
 
+interface ParsedOrderProduct {
+  raw: string;
+  name: string;
+  quantity: number;
+}
+
+interface MatchedOrderProduct {
+  requested: ParsedOrderProduct;
+  match: InventoryMatch | null;
+}
+
 function normalizeText(text: string): string {
   return text
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
+}
+
+function parseOrderProducts(product: string, fallbackQuantity: number): ParsedOrderProduct[] {
+  const rawParts = String(product || '')
+    .split(/\r?\n|[;,]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const parts = rawParts.length > 0 ? rawParts : [String(product || '').trim()].filter(Boolean);
+
+  const parsed = parts.map((raw) => {
+    let name = raw.replace(/^[-*•]\s*/, '').trim();
+    let quantity = 1;
+
+    const trailingQuantity = name.match(/\b(?:x|\*)\s*(\d+)\s*$/i)
+      || name.match(/\b(\d+)\s*(?:unidades?|uds?|u)\s*$/i);
+
+    if (trailingQuantity) {
+      quantity = Math.max(1, Number(trailingQuantity[1]) || 1);
+      name = name.slice(0, trailingQuantity.index).trim();
+    } else {
+      const leadingQuantity = name.match(/^(\d+)\s+(.*)$/);
+      if (leadingQuantity) {
+        quantity = Math.max(1, Number(leadingQuantity[1]) || 1);
+        name = leadingQuantity[2].trim();
+      }
+    }
+
+    return {
+      raw,
+      name: name || raw,
+      quantity,
+    };
+  });
+
+  if (parsed.length === 1 && fallbackQuantity > 1 && parsed[0].quantity === 1) {
+    parsed[0].quantity = fallbackQuantity;
+  }
+
+  return parsed;
 }
 
 /**
@@ -564,7 +615,6 @@ export async function createOrder(
             error: `❌ ${planCheck.message}`,
           };
         }
-
         const tenantPrisma = getTenantPrisma(ctx.tenantId);
         
         const timestamp = Date.now();
@@ -633,28 +683,65 @@ export async function createOrder(
         }
         
         // STEP 4: Inventory lookup (unless forced to skip)
-        let matchedInventoryItem: InventoryMatch | null = null;
-        const quantity = params.quantity || 1;
+        const requestedProducts = parseOrderProducts(params.product, params.quantity || 1);
+        const quantity = requestedProducts.reduce((sum, product) => sum + product.quantity, 0);
+        const matchedProducts: MatchedOrderProduct[] = requestedProducts.map((requested) => ({
+          requested,
+          match: null,
+        }));
 
         if (!params._forceWithoutInventory && !params.skipInventoryCheck) {
-          const matches = await findInventoryMatches(params.product, tenantPrisma);
-          console.log('[AI Tool] createOrder - Inventory matches:', matches.length, 'for product:', params.product);
+          for (let i = 0; i < matchedProducts.length; i += 1) {
+            const entry = matchedProducts[i];
+            const matches = await findInventoryMatches(entry.requested.name, tenantPrisma);
+            console.log('[AI Tool] createOrder - Inventory matches:', {
+              count: matches.length,
+              productIndex: i + 1,
+              productName: entry.requested.name,
+            });
 
-          if (matches.length === 0) {
-            console.log('[AI Tool] createOrder - No inventory match, requesting confirmation');
-            return {
-              success: false,
-              needsConfirmation: true,
-              confirmationType: 'no_match',
-              message: `No se encontró "${params.product}" en el inventario. ¿Deseas registrar esta venta de todas maneras?`,
-              pendingOrderData: { ...params },
-            };
-          }
+            if (matches.length === 0) {
+              console.log('[AI Tool] createOrder - No inventory match, requesting confirmation');
+              return {
+                success: false,
+                needsConfirmation: true,
+                confirmationType: 'no_match',
+                message: `No se encontro "${entry.requested.name}" en el inventario. Deseas registrar esta venta de todas maneras?`,
+                pendingOrderData: { ...params },
+              };
+            }
 
-          const bestConfidence = matches[0].confidence;
-          const topMatches = matches.filter(m => m.confidence === bestConfidence);
+            const bestConfidence = matches[0].confidence;
+            const topMatches = matches.filter(m => m.confidence === bestConfidence);
 
-          if (topMatches.length === 1) {
+            if (topMatches.length !== 1) {
+              const TOP_MATCHES_LIMIT = 3;
+              const shown = topMatches.slice(0, TOP_MATCHES_LIMIT);
+              const optionsList = shown.map((m, optionIndex) =>
+                `${optionIndex + 1}. ${m.name} (SKU: ${m.sku}) - Stock: ${m.currentStock} - CRC ${m.sellingPrice.toLocaleString('es-CR')}`
+              ).join('\n');
+
+              const moreCount = topMatches.length - shown.length;
+              const tail = moreCount > 0
+                ? `\n\nHay ${moreCount} coincidencia(s) mas. Si ninguna de arriba es la correcta, dame mas detalles (SKU, color, capacidad, etc).`
+                : '';
+
+              console.log(
+                '[AI Tool] createOrder - Multiple matches for product, asking user to pick (showing top',
+                shown.length,
+                'of',
+                topMatches.length,
+                ')'
+              );
+              return {
+                success: false,
+                needsConfirmation: true,
+                confirmationType: 'multiple_matches',
+                message: `Encontre varios productos similares a "${entry.requested.name}" en la linea ${i + 1}. Estas son las ${shown.length} mejores coincidencias:\n\n${optionsList}${tail}\n\nCual es el producto correcto?`,
+                pendingOrderData: { ...params },
+              };
+            }
+
             const match = topMatches[0];
 
             if (match.currentStock <= 0) {
@@ -663,50 +750,42 @@ export async function createOrder(
                 success: false,
                 needsConfirmation: true,
                 confirmationType: 'zero_stock',
-                message: `"${match.name}" (SKU: ${match.sku}) tiene 0 unidades en stock. ¿Deseas registrar esta venta de todas maneras?`,
+                message: `"${match.name}" (SKU: ${match.sku}) tiene 0 unidades en stock. Deseas registrar esta venta de todas maneras?`,
                 pendingOrderData: { ...params },
               };
             }
 
-            if (match.currentStock < quantity) {
-              console.log('[AI Tool] createOrder - Insufficient stock:', match.currentStock, 'requested:', quantity);
+            if (match.currentStock < entry.requested.quantity) {
+              console.log('[AI Tool] createOrder - Insufficient stock:', match.currentStock, 'requested:', entry.requested.quantity);
               return {
                 success: false,
                 needsConfirmation: true,
                 confirmationType: 'zero_stock',
-                message: `"${match.name}" solo tiene ${match.currentStock} unidad(es) en stock pero se solicitan ${quantity}. ¿Deseas registrar esta venta de todas maneras?`,
+                message: `"${match.name}" solo tiene ${match.currentStock} unidad(es) en stock pero se solicitan ${entry.requested.quantity}. Deseas registrar esta venta de todas maneras?`,
                 pendingOrderData: { ...params },
               };
             }
 
-            matchedInventoryItem = match;
-          } else {
-            // Cap at top-3 to keep WhatsApp messages short and model context small.
-            // Catalogs of 300+ items would otherwise produce unreadable menus and
-            // risk exceeding platform message limits.
-            const TOP_MATCHES_LIMIT = 3;
-            const shown = topMatches.slice(0, TOP_MATCHES_LIMIT);
-            const optionsList = shown.map((m, i) =>
-              `${i + 1}. ${m.name} (SKU: ${m.sku}) — Stock: ${m.currentStock} — ₡${m.sellingPrice.toLocaleString('es-CR')}`
-            ).join('\n');
+            entry.match = match;
+          }
+        }
 
-            const moreCount = topMatches.length - shown.length;
-            const tail = moreCount > 0
-              ? `\n\nHay ${moreCount} coincidencia(s) más. Si ninguna de arriba es la correcta, dame más detalles (SKU, color, capacidad, etc).`
-              : '';
-
-            console.log(
-              '[AI Tool] createOrder - Multiple matches, asking user to pick (showing top',
-              shown.length,
-              'of',
-              topMatches.length,
-              ')'
-            );
+        const matchedQuantityByInventoryId = new Map<string, { match: InventoryMatch; quantity: number }>();
+        for (const entry of matchedProducts) {
+          if (!entry.match) continue;
+          const current = matchedQuantityByInventoryId.get(entry.match.id);
+          matchedQuantityByInventoryId.set(entry.match.id, {
+            match: entry.match,
+            quantity: (current?.quantity || 0) + entry.requested.quantity,
+          });
+        }
+        for (const { match, quantity: matchedQuantity } of matchedQuantityByInventoryId.values()) {
+          if (match.currentStock < matchedQuantity) {
             return {
               success: false,
               needsConfirmation: true,
-              confirmationType: 'multiple_matches',
-              message: `Encontré varios productos similares a "${params.product}". Estas son las ${shown.length} mejores coincidencias:\n\n${optionsList}${tail}\n\n¿Cuál es el producto correcto?`,
+              confirmationType: 'zero_stock',
+              message: `"${match.name}" solo tiene ${match.currentStock} unidad(es) en stock pero la orden solicita ${matchedQuantity}. Deseas registrar esta venta de todas maneras?`,
               pendingOrderData: { ...params },
             };
           }
@@ -722,6 +801,20 @@ export async function createOrder(
         }
         const finalComments = commentParts.join('\n');
 
+        const productDetails = matchedProducts.map((entry) => ({
+          type: entry.match?.name || entry.requested.name,
+          cantidad: entry.requested.quantity,
+          color: params.color || '',
+          tamano: params.size || '',
+          ...(entry.match ? {
+            inventoryItemId: entry.match.id,
+            inventoryItemSku: entry.match.sku,
+          } : {}),
+        }));
+        const orderProductLabel = productDetails
+          .map((product) => `${product.type} x${product.cantidad}`)
+          .join(', ');
+
         // Prepare order data with proper field mapping
         const orderData: any = {
           tenantId: ctx.tenantId,
@@ -731,7 +824,7 @@ export async function createOrder(
           customerName: params.customerName,
           phone: params.phone || '',
           email: params.email || '',
-          product: matchedInventoryItem ? matchedInventoryItem.name : params.product,
+          product: orderProductLabel || params.product,
           quantity,
           size: params.size || '',
           color: params.color || '',
@@ -753,15 +846,8 @@ export async function createOrder(
         };
 
         // Populate productDetails for consistency with web UI orders
-        if (matchedInventoryItem) {
-          orderData.productDetails = JSON.stringify([{
-            type: matchedInventoryItem.name,
-            cantidad: quantity,
-            color: params.color || '',
-            tamano: params.size || '',
-            inventoryItemId: matchedInventoryItem.id,
-            inventoryItemSku: matchedInventoryItem.sku,
-          }]);
+        if (productDetails.length > 0) {
+          orderData.productDetails = JSON.stringify(productDetails);
         }
         
         // Extract known fields from custom fields if they exist
@@ -786,7 +872,8 @@ export async function createOrder(
         console.log('[AI Tool] createOrder - Final order data:', {
           orderId: orderData.orderId,
           customerName: '[redacted]',
-          inventoryMatch: matchedInventoryItem?.name || 'none',
+          inventoryMatches: matchedProducts.filter((entry) => entry.match).length,
+          productCount: productDetails.length,
           customFieldsCount: Object.keys(orderData.customFields || {}).length,
         });
         
@@ -839,27 +926,37 @@ export async function createOrder(
 
         // Deduct inventory stock if we matched an item
         let inventoryMessage = '';
-        if (matchedInventoryItem) {
+        const inventoryMessages: string[] = [];
+        for (const entry of matchedProducts) {
+          if (!entry.match) continue;
+
           try {
-            const oldStock = matchedInventoryItem.currentStock;
-            const newStock = Math.max(0, oldStock - quantity);
+            const currentItem = await tenantPrisma.inventoryItem.findUnique({
+              where: { id: entry.match.id },
+              select: { currentStock: true },
+            });
+            const oldStock = currentItem?.currentStock ?? entry.match.currentStock;
+            const newStock = Math.max(0, oldStock - entry.requested.quantity);
             await tenantPrisma.inventoryItem.update({
-              where: { id: matchedInventoryItem.id },
+              where: { id: entry.match.id },
               data: {
                 currentStock: newStock,
-                totalSold: { increment: quantity },
+                totalSold: { increment: entry.requested.quantity },
                 lastSold: new Date(),
                 lastUpdated: new Date(),
               },
             });
-            inventoryMessage = `\n📦 Inventario: "${matchedInventoryItem.name}" ${oldStock} → ${newStock}`;
-            console.log(`[AI Tool] createOrder - Stock updated: ${matchedInventoryItem.name} ${oldStock} → ${newStock}`);
+            inventoryMessages.push(`"${entry.match.name}" ${oldStock} -> ${newStock}`);
+            console.log(`[AI Tool] createOrder - Stock updated: ${entry.match.name} ${oldStock} -> ${newStock}`);
           } catch (invError) {
             console.error('[AI Tool] createOrder - Failed to deduct inventory:', invError);
-            inventoryMessage = `\n⚠️ No se pudo actualizar inventario para "${matchedInventoryItem.name}"`;
+            inventoryMessages.push(`No se pudo actualizar inventario para "${entry.match.name}"`);
           }
         }
-        
+        if (inventoryMessages.length > 0) {
+          inventoryMessage = `\nInventario:\n${inventoryMessages.map((line) => `- ${line}`).join('\n')}`;
+        }
+
         // Format custom fields for success message
         const customFieldsLines = formatCustomFieldsForTelegram(
           orderData.customFields || {}, 

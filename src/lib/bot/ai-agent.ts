@@ -124,6 +124,17 @@ function isMutatingTool(toolName: string): boolean {
   return MUTATING_TOOLS.has(toolName as ToolName);
 }
 
+function redactToolArgsForLog(toolName: string, toolArgs: any) {
+  if (!toolArgs || typeof toolArgs !== 'object') return toolArgs;
+  if (toolName !== 'create_order' && toolName !== 'update_order') return toolArgs;
+
+  const redacted = { ...toolArgs };
+  for (const key of ['customerName', 'phone', 'email', 'address', 'comments']) {
+    if (key in redacted) redacted[key] = '[redacted]';
+  }
+  return redacted;
+}
+
 const TODAY_QUERY_RE = /\b(hoy|dia de hoy|del dia)\b/i;
 
 function applyRelativeDateGuards(toolName: ToolName, toolArgs: any, userMessage: string): any {
@@ -552,7 +563,7 @@ export async function processMessage(
 
         toolArgs = applyRelativeDateGuards(toolName, toolArgs, userMessage);
 
-        console.log('[AI Agent] Executing tool: ' + toolName, toolArgs);
+        console.log('[AI Agent] Executing tool: ' + toolName, redactToolArgsForLog(toolName, toolArgs));
 
         const result = await executeTool(toolName, context, toolArgs, tenantToolSchemas);
 

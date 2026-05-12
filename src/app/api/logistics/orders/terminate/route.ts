@@ -66,9 +66,10 @@ export async function POST(req: NextRequest) {
             archived_at: Date | null;
             province: string | null;
             canton: string | null;
+            district: string | null;
         }[]>(
             `SELECT lm.crm_order_id, lm.carrier, lm.status, lm.billed_week_id, lm.correos_shipping_cost, lm.archived_at,
-                    o.province, o.canton
+                    o.province, o.canton, o.district
              FROM lm_orders lm
              LEFT JOIN "Order" o ON o.id = lm.crm_order_id
              WHERE lm.crm_order_id IN (${placeholders})`,
@@ -110,6 +111,7 @@ export async function POST(req: NextRequest) {
                     const calculated = getCorreosAutomatedShippingCost({
                         province: o.province,
                         canton: o.canton,
+                        district: o.district,
                     });
 
                     if (calculated.cost == null || !calculated.zone) {

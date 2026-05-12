@@ -69,6 +69,7 @@ async function resolveCurrentGuiaGamZone(tenantId: string, orderId: string) {
             id: true,
             province: true,
             canton: true,
+            district: true,
         },
     });
 
@@ -86,5 +87,6 @@ async function resolveCurrentGuiaGamZone(tenantId: string, orderId: string) {
     return getCorreosAutomatedShippingCost({
         province: order.province,
         canton: order.canton,
+        district: order.district,
     }).zone;
 }

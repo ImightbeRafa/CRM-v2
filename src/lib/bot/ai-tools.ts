@@ -70,11 +70,18 @@ function redactOrderParamsForLog(params: Record<string, unknown>) {
 // ============================================================================
 
 // Base order schema without custom fields
+const orderProductSchema = z.object({
+  name: z.string().optional().describe('Nombre exacto del producto'),
+  sku: z.string().optional().describe('SKU exacto del producto si el usuario lo proporciona'),
+  quantity: z.number().int().min(1).default(1).describe('Cantidad de este producto'),
+});
+
 const baseOrderSchema = {
   customerName: z.string().describe('Nombre completo del cliente'),
   phone: z.string().optional().describe('Número de teléfono del cliente'),
   email: z.union([z.string().email(), z.literal('')]).optional().describe('Email del cliente'),
-  product: z.string().describe('Nombre o descripción del producto'),
+  product: z.string().optional().describe('Producto unico o resumen de productos. Para una orden con varios SKUs, no llames create_order varias veces: usa products con una linea por SKU.'),
+  products: z.array(orderProductSchema).optional().describe('Lista de productos de UNA SOLA orden. Usa esto cuando el pedido tenga varios productos o varios SKUs.'),
   quantity: z.number().int().min(1).default(1).describe('Cantidad del producto'),
   total: z.number().min(0).describe('Total de la orden en colones'),
   address: z.string().optional().describe('Dirección de entrega completa'),
@@ -344,7 +351,15 @@ function validateBaseOrderFields(params: any): { isValid: boolean; errors: strin
     errors.push('Nombre del cliente es requerido');
   }
   
-  if (!params.product || params.product.trim() === '') {
+  const hasProductText = typeof params.product === 'string' && params.product.trim() !== '';
+  const hasProductLines = Array.isArray(params.products) && params.products.some((product: any) =>
+    product && typeof product === 'object' && (
+      (typeof product.name === 'string' && product.name.trim() !== '') ||
+      (typeof product.sku === 'string' && product.sku.trim() !== '')
+    )
+  );
+
+  if (!hasProductText && !hasProductLines) {
     errors.push('Producto es requerido');
   }
   
@@ -477,6 +492,7 @@ interface InventoryMatch {
 interface ParsedOrderProduct {
   raw: string;
   name: string;
+  sku?: string;
   quantity: number;
 }
 
@@ -531,6 +547,39 @@ function parseOrderProducts(product: string, fallbackQuantity: number): ParsedOr
   }
 
   return parsed;
+}
+
+function parseExplicitOrderProducts(products: unknown): ParsedOrderProduct[] {
+  if (!Array.isArray(products)) return [];
+
+  const parsed: ParsedOrderProduct[] = [];
+  products.forEach((product, index) => {
+    if (!product || typeof product !== 'object') return;
+    const item = product as Record<string, unknown>;
+    const name = typeof item.name === 'string' ? item.name.trim() : '';
+    const sku = typeof item.sku === 'string' ? item.sku.trim() : '';
+    const quantity = Math.max(1, Number(item.quantity) || 1);
+
+    if (!name && !sku) return;
+
+    parsed.push({
+      raw: name && sku ? `${name} ${sku}` : (name || sku || `Producto ${index + 1}`),
+      name: name || sku,
+      sku: sku || undefined,
+      quantity,
+    });
+  });
+
+  return parsed;
+}
+
+function getRequestedOrderProducts(params: any): ParsedOrderProduct[] {
+  const explicitProducts = parseExplicitOrderProducts(params.products);
+  if (explicitProducts.length > 0) {
+    return explicitProducts;
+  }
+
+  return parseOrderProducts(params.product, params.quantity || 1);
 }
 
 /**
@@ -595,6 +644,101 @@ async function findInventoryMatches(
 
   matches.sort((a, b) => a.confidence - b.confidence);
   return matches;
+}
+
+async function findInventoryMatchesForRequestedProduct(
+  requested: ParsedOrderProduct,
+  tenantPrisma: any
+): Promise<InventoryMatch[]> {
+  if (requested.sku) {
+    const skuMatches = await findInventoryMatches(requested.sku, tenantPrisma);
+    const exactSkuMatches = skuMatches.filter((match) => normalizeText(match.sku || '') === normalizeText(requested.sku || ''));
+    if (exactSkuMatches.length > 0) return exactSkuMatches;
+  }
+
+  const searchText = requested.sku && requested.name
+    ? `${requested.name} ${requested.sku}`
+    : requested.name;
+  return findInventoryMatches(searchText, tenantPrisma);
+}
+
+const BOT_ORDER_DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
+
+function normalizePhone(value: unknown): string {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function normalizeMoney(value: unknown): number {
+  return Math.round((Number(value) || 0) * 100);
+}
+
+function normalizeProductDetailsForDuplicate(value: unknown): string {
+  if (!value) return '';
+
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((product) => {
+          const item = product || {};
+          const sku = normalizeText(String(item.inventoryItemSku || item.sku || ''));
+          const name = normalizeText(String(item.type || item.name || ''));
+          const quantity = Number(item.cantidad || item.quantity || 0) || 0;
+          return `${sku}|${name}|${quantity}`;
+        })
+        .sort()
+        .join(';');
+    }
+  } catch {
+    // Fall through to text normalization for legacy/non-JSON values.
+  }
+
+  return normalizeText(String(value));
+}
+
+function isDuplicateBotOrder(existingOrder: any, orderData: any): boolean {
+  return normalizeText(existingOrder.customerName || '') === normalizeText(orderData.customerName || '')
+    && normalizePhone(existingOrder.phone) === normalizePhone(orderData.phone)
+    && normalizeText(existingOrder.orderType || '') === normalizeText(orderData.orderType || '')
+    && normalizeText(existingOrder.address || '') === normalizeText(orderData.address || '')
+    && normalizeText(existingOrder.province || '') === normalizeText(orderData.province || '')
+    && normalizeText(existingOrder.canton || '') === normalizeText(orderData.canton || '')
+    && normalizeText(existingOrder.district || '') === normalizeText(orderData.district || '')
+    && normalizeMoney(existingOrder.total) === normalizeMoney(orderData.total)
+    && normalizeProductDetailsForDuplicate(existingOrder.productDetails || existingOrder.product)
+      === normalizeProductDetailsForDuplicate(orderData.productDetails || orderData.product);
+}
+
+async function findRecentDuplicateBotOrder(
+  tenantPrisma: ReturnType<typeof getTenantPrisma>,
+  orderData: any,
+): Promise<any | null> {
+  const recentOrders = await tenantPrisma.order.findMany({
+    where: {
+      timestamp: { gte: new Date(Date.now() - BOT_ORDER_DUPLICATE_WINDOW_MS) },
+      phone: orderData.phone || '',
+      orderType: orderData.orderType,
+    },
+    orderBy: { timestamp: 'desc' },
+    take: 10,
+    select: {
+      id: true,
+      orderId: true,
+      orderType: true,
+      customerName: true,
+      phone: true,
+      product: true,
+      productDetails: true,
+      quantity: true,
+      total: true,
+      address: true,
+      province: true,
+      canton: true,
+      district: true,
+    },
+  });
+
+  return recentOrders.find((order) => isDuplicateBotOrder(order, orderData)) || null;
 }
 
 /**
@@ -683,7 +827,13 @@ export async function createOrder(
         }
         
         // STEP 4: Inventory lookup (unless forced to skip)
-        const requestedProducts = parseOrderProducts(params.product, params.quantity || 1);
+        const requestedProducts = getRequestedOrderProducts(params);
+        if (requestedProducts.length === 0) {
+          return {
+            success: false,
+            error: 'Producto es requerido para crear la orden.',
+          };
+        }
         const quantity = requestedProducts.reduce((sum, product) => sum + product.quantity, 0);
         const matchedProducts: MatchedOrderProduct[] = requestedProducts.map((requested) => ({
           requested,
@@ -693,7 +843,7 @@ export async function createOrder(
         if (!params._forceWithoutInventory && !params.skipInventoryCheck) {
           for (let i = 0; i < matchedProducts.length; i += 1) {
             const entry = matchedProducts[i];
-            const matches = await findInventoryMatches(entry.requested.name, tenantPrisma);
+            const matches = await findInventoryMatchesForRequestedProduct(entry.requested, tenantPrisma);
             console.log('[AI Tool] createOrder - Inventory matches:', {
               count: matches.length,
               productIndex: i + 1,
@@ -806,6 +956,7 @@ export async function createOrder(
           cantidad: entry.requested.quantity,
           color: params.color || '',
           tamano: params.size || '',
+          ...(entry.requested.sku ? { requestedSku: entry.requested.sku } : {}),
           ...(entry.match ? {
             inventoryItemId: entry.match.id,
             inventoryItemSku: entry.match.sku,
@@ -876,83 +1027,97 @@ export async function createOrder(
           productCount: productDetails.length,
           customFieldsCount: Object.keys(orderData.customFields || {}).length,
         });
-        
-        const order = await tenantPrisma.order.create({
-          data: orderData,
-        });
+        const inventoryMessages: string[] = [];
 
-        const persistedOrder = await tenantPrisma.order.findFirst({
-          where: {
-            id: order.id,
-            orderId: order.orderId,
-          },
-          select: {
-            id: true,
-            orderId: true,
-            tenantId: true,
-          },
-        });
-
-        if (!persistedOrder) {
-          console.error('[AI Tool] createOrder - Persistence verification failed:', {
-            dbId: order.id,
-            orderId: order.orderId,
+        const duplicateOrder = await findRecentDuplicateBotOrder(tenantPrisma, orderData);
+        if (duplicateOrder) {
+          console.warn('[AI Tool] createOrder - Duplicate bot order blocked:', {
+            existingOrderId: duplicateOrder.orderId,
+            attemptedOrderId: orderData.orderId,
             tenantId: ctx.tenantId,
           });
-          throw new Error('ORDER_PERSISTENCE_VERIFICATION_FAILED');
+          return {
+            success: true,
+            data: duplicateOrder,
+            message: `⚠️ Pedido duplicado detectado. No cree otra orden ni volvi a descontar inventario.\n\nOrden existente: #${duplicateOrder.orderId}`,
+          };
         }
 
-        console.log('[AI Tool] createOrder - Persisted:', {
-          dbId: persistedOrder.id,
-          orderId: persistedOrder.orderId,
-          tenantId: persistedOrder.tenantId,
-        });
-
-        // Sync client record (create or update) so bot clients appear in Config > Clientes
-        try {
-          await syncClientFromOrder(tenantPrisma, ctx, {
-            customerName: orderData.customerName,
-            phone: orderData.phone,
-            email: orderData.email,
-            address: orderData.address,
-            province: orderData.province,
-            canton: orderData.canton,
-            district: orderData.district,
-            total: orderData.total,
+        const order = await (tenantPrisma as any).$transaction(async (tx: any) => {
+          const createdOrder = await tx.order.create({
+            data: orderData,
           });
-        } catch (clientSyncError) {
-          console.error('[AI Tool] createOrder - Client sync failed (order still created):', clientSyncError);
-        }
 
-        // Deduct inventory stock if we matched an item
-        let inventoryMessage = '';
-        const inventoryMessages: string[] = [];
-        for (const entry of matchedProducts) {
-          if (!entry.match) continue;
+          const persistedOrder = await tx.order.findFirst({
+            where: {
+              id: createdOrder.id,
+              orderId: createdOrder.orderId,
+            },
+            select: {
+              id: true,
+              orderId: true,
+              tenantId: true,
+            },
+          });
+
+          if (!persistedOrder) {
+            console.error('[AI Tool] createOrder - Persistence verification failed:', {
+              dbId: createdOrder.id,
+              orderId: createdOrder.orderId,
+              tenantId: ctx.tenantId,
+            });
+            throw new Error('ORDER_PERSISTENCE_VERIFICATION_FAILED');
+          }
+
+          console.log('[AI Tool] createOrder - Persisted:', {
+            dbId: persistedOrder.id,
+            orderId: persistedOrder.orderId,
+            tenantId: persistedOrder.tenantId,
+          });
 
           try {
-            const currentItem = await tenantPrisma.inventoryItem.findUnique({
-              where: { id: entry.match.id },
-              select: { currentStock: true },
+            await syncClientFromOrder(tx, ctx, {
+              customerName: orderData.customerName,
+              phone: orderData.phone,
+              email: orderData.email,
+              address: orderData.address,
+              province: orderData.province,
+              canton: orderData.canton,
+              district: orderData.district,
+              total: orderData.total,
             });
-            const oldStock = currentItem?.currentStock ?? entry.match.currentStock;
-            const newStock = Math.max(0, oldStock - entry.requested.quantity);
-            await tenantPrisma.inventoryItem.update({
-              where: { id: entry.match.id },
+          } catch (clientSyncError) {
+            console.error('[AI Tool] createOrder - Client sync failed (order still created):', clientSyncError);
+          }
+
+          for (const { match, quantity: matchedQuantity } of matchedQuantityByInventoryId.values()) {
+            const oldStock = match.currentStock;
+            const newStock = oldStock - matchedQuantity;
+            const updated = await tx.inventoryItem.updateMany({
+              where: {
+                id: match.id,
+                currentStock: { gte: matchedQuantity },
+              },
               data: {
-                currentStock: newStock,
-                totalSold: { increment: entry.requested.quantity },
+                currentStock: { decrement: matchedQuantity },
+                totalSold: { increment: matchedQuantity },
                 lastSold: new Date(),
                 lastUpdated: new Date(),
               },
             });
-            inventoryMessages.push(`"${entry.match.name}" ${oldStock} -> ${newStock}`);
-            console.log(`[AI Tool] createOrder - Stock updated: ${entry.match.name} ${oldStock} -> ${newStock}`);
-          } catch (invError) {
-            console.error('[AI Tool] createOrder - Failed to deduct inventory:', invError);
-            inventoryMessages.push(`No se pudo actualizar inventario para "${entry.match.name}"`);
+
+            if (updated.count !== 1) {
+              throw new Error(`INVENTORY_STOCK_CHANGED:${match.name}`);
+            }
+
+            inventoryMessages.push(`"${match.name}" ${oldStock} -> ${newStock}`);
+            console.log(`[AI Tool] createOrder - Stock updated: ${match.name} ${oldStock} -> ${newStock}`);
           }
-        }
+
+          return createdOrder;
+        });
+
+        let inventoryMessage = '';
         if (inventoryMessages.length > 0) {
           inventoryMessage = `\nInventario:\n${inventoryMessages.map((line) => `- ${line}`).join('\n')}`;
         }
@@ -1011,6 +1176,9 @@ export async function createOrder(
           }
         } else if (error.message === 'ORDER_PERSISTENCE_VERIFICATION_FAILED') {
           userFriendlyError = `No pude confirmar que la orden quedara guardada en Betsy. Por seguridad no la marcare como creada; revisa el panel antes de reenviarla para evitar duplicados.`;
+        } else if (typeof error.message === 'string' && error.message.startsWith('INVENTORY_STOCK_CHANGED:')) {
+          const productName = error.message.replace('INVENTORY_STOCK_CHANGED:', '');
+          userFriendlyError = `El stock de "${productName}" cambio mientras se creaba la orden. No cree la orden ni descuente inventario; revisa el inventario e intenta de nuevo.`;
         } else if (error.message) {
           console.error('[AI Tool] createOrder - Unhandled error:', error.message);
           userFriendlyError = `❌ Error al crear la orden. Por favor intenta de nuevo o contacta a soporte.`;

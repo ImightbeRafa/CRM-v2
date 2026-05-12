@@ -91,6 +91,7 @@ async function resolveCurrentGuiaGamZones(guias: Array<{ id: string; tenantId: s
       orderId: true,
       province: true,
       canton: true,
+      district: true,
     },
   });
 
@@ -120,6 +121,7 @@ async function resolveCurrentGuiaGamZones(guias: Array<{ id: string; tenantId: s
     const calculated = getCorreosAutomatedShippingCost({
       province: order.province,
       canton: order.canton,
+      district: order.district,
     });
     if (calculated.zone) zoneByGuiaId.set(guia.id, calculated.zone);
   }

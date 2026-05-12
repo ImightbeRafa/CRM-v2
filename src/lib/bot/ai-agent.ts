@@ -135,6 +135,128 @@ function redactToolArgsForLog(toolName: string, toolArgs: any) {
   return redacted;
 }
 
+type PreparedToolCall = {
+  id: string;
+  name: ToolName;
+  args: any;
+  original: OpenAI.Chat.Completions.ChatCompletionMessageToolCall;
+};
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function normalizeToolText(value: unknown): string {
+  return normalizeSpanishText(String(value || '')).replace(/\s+/g, ' ');
+}
+
+function createOrderIdentity(args: any): string {
+  return [
+    normalizeToolText(args.customerName),
+    String(args.phone || '').replace(/\D/g, ''),
+    normalizeToolText(args.address),
+    normalizeToolText(args.province),
+    normalizeToolText(args.canton),
+    normalizeToolText(args.district),
+    normalizeToolText(args.orderType),
+    normalizeToolText(args.paymentMethod),
+    String(args.contraEntrega === true),
+  ].join('|');
+}
+
+function orderProductsFromArgs(args: any): Array<{ name?: string; sku?: string; quantity: number }> {
+  if (Array.isArray(args.products) && args.products.length > 0) {
+    return args.products
+      .map((product: any) => ({
+        name: typeof product?.name === 'string' ? product.name.trim() : undefined,
+        sku: typeof product?.sku === 'string' ? product.sku.trim() : undefined,
+        quantity: Math.max(1, Number(product?.quantity) || 1),
+      }))
+      .filter((product: { name?: string; sku?: string; quantity: number }) => product.name || product.sku);
+  }
+
+  return [{
+    name: typeof args.product === 'string' ? args.product.trim() : undefined,
+    quantity: Math.max(1, Number(args.quantity) || 1),
+  }].filter((product: { name?: string; quantity: number }) => product.name);
+}
+
+function mergeCreateOrderCalls(calls: PreparedToolCall[]): PreparedToolCall[] {
+  const result: PreparedToolCall[] = [];
+  const createOrderGroups = new Map<string, PreparedToolCall[]>();
+  const seenCreateOrderSignatures = new Set<string>();
+
+  for (const call of calls) {
+    if (call.name !== 'create_order') {
+      result.push(call);
+      continue;
+    }
+
+    const signature = stableStringify(call.args);
+    if (seenCreateOrderSignatures.has(signature)) {
+      console.warn('[AI Agent] Skipping duplicate create_order tool call in same model response');
+      continue;
+    }
+    seenCreateOrderSignatures.add(signature);
+
+    const identity = createOrderIdentity(call.args);
+    const group = createOrderGroups.get(identity) || [];
+    group.push(call);
+    createOrderGroups.set(identity, group);
+  }
+
+  for (const group of createOrderGroups.values()) {
+    if (group.length === 1) {
+      result.push(group[0]);
+      continue;
+    }
+
+    const base = { ...group[0].args };
+    const productsByKey = new Map<string, { name?: string; sku?: string; quantity: number }>();
+    for (const call of group) {
+      for (const product of orderProductsFromArgs(call.args)) {
+        const key = `${normalizeToolText(product.sku)}|${normalizeToolText(product.name)}`;
+        const existing = productsByKey.get(key);
+        productsByKey.set(key, {
+          name: product.name,
+          sku: product.sku,
+          quantity: (existing?.quantity || 0) + product.quantity,
+        });
+      }
+    }
+
+    const totals = group.map((call) => Number(call.args.total) || 0);
+    const uniqueTotals = Array.from(new Set(totals));
+    base.products = Array.from(productsByKey.values());
+    base.product = base.products
+      .map((product: any) => [product.name, product.sku].filter(Boolean).join(' '))
+      .join('\n');
+    base.quantity = base.products.reduce((sum: number, product: any) => sum + product.quantity, 0);
+    base.total = uniqueTotals.length === 1 ? uniqueTotals[0] : totals.reduce((sum, total) => sum + total, 0);
+
+    console.warn('[AI Agent] Merged multiple create_order tool calls into one multi-product order', {
+      mergedCalls: group.length,
+      productLines: base.products.length,
+    });
+
+    result.push({
+      ...group[0],
+      args: base,
+    });
+  }
+
+  return result;
+}
+
 const TODAY_QUERY_RE = /\b(hoy|dia de hoy|del dia)\b/i;
 
 function applyRelativeDateGuards(toolName: ToolName, toolArgs: any, userMessage: string): any {
@@ -201,6 +323,7 @@ CREACIÓN DE ÓRDENES — FLUJO EFICIENTE:
 - Si la orden se crea exitosamente y hubo correcciones de ubicación, menciónalas brevemente dentro del mensaje de confirmación (ej: "Se creó la orden. Nota: se corrigió el cantón a 'Aserrí'").
 - El objetivo es que el usuario envíe UN mensaje con los datos y reciba UNA respuesta con la confirmación de la orden creada. Minimiza los pasos intermedios.
 - Si el mensaje del usuario dice "nueva orden", "agregar orden", "crear orden", "deseo agregar" o similar Y contiene datos del cliente/producto EN ESE MISMO MENSAJE, SIEMPRE llama a create_order. Sin excepciones.
+- Si una sola orden contiene varios productos, varias lineas o varios SKU, llama a create_order UNA SOLA VEZ usando products: [{ name, sku, quantity }]. NUNCA crees una orden separada por cada SKU del mismo cliente/pedido.
 - **CRÍTICO — DATOS FRESCOS**: Si el usuario pide crear una "nueva orden" o "agregar orden" pero NO proporciona datos del cliente/producto en su mensaje actual, SIEMPRE pregunta: "¡Claro! Por favor proporciona los datos de la nueva orden (nombre del cliente, producto, cantidad, precio, dirección si aplica)." NUNCA reutilices datos de órdenes anteriores del historial.
 - **PROHIBIDO REUTILIZAR DATOS**: Cada orden es independiente. NUNCA copies nombre, teléfono, producto, dirección ni ningún dato de una orden que ya fue creada exitosamente (marcada con "Orden #... creada exitosamente"). Esos datos son de una orden COMPLETADA y no deben reciclarse para nuevas órdenes.
 
@@ -334,6 +457,57 @@ async function getCustomFieldsSection(tenantId: string): Promise<string> {
   }
 }
 
+function zodFieldToJsonSchema(zodField: z.ZodTypeAny): any {
+  const fieldDef = zodField._def;
+  let innerType = zodField;
+
+  if (fieldDef.typeName === 'ZodOptional') {
+    innerType = fieldDef.innerType;
+  } else if (fieldDef.typeName === 'ZodDefault') {
+    innerType = fieldDef.innerType;
+    if (innerType._def?.typeName === 'ZodOptional') {
+      innerType = innerType._def.innerType;
+    }
+  }
+
+  const innerDef = innerType._def;
+  let fieldSchema: any = { type: 'string' };
+
+  if (innerDef.typeName === 'ZodString' || innerDef.typeName === 'ZodUnion') {
+    fieldSchema = { type: 'string' };
+  } else if (innerDef.typeName === 'ZodNumber') {
+    fieldSchema = { type: 'number' };
+  } else if (innerDef.typeName === 'ZodBoolean') {
+    fieldSchema = { type: 'boolean' };
+  } else if (innerDef.typeName === 'ZodEnum') {
+    fieldSchema = { type: 'string', enum: innerDef.values };
+  } else if (innerDef.typeName === 'ZodArray') {
+    fieldSchema = {
+      type: 'array',
+      items: zodFieldToJsonSchema(innerDef.type),
+    };
+  } else if (innerDef.typeName === 'ZodObject') {
+    const properties: Record<string, any> = {};
+    const required: string[] = [];
+    for (const [key, value] of Object.entries((innerType as any).shape)) {
+      const child = value as z.ZodTypeAny;
+      properties[key] = zodFieldToJsonSchema(child);
+      const childType = child._def.typeName;
+      if (childType !== 'ZodOptional' && childType !== 'ZodDefault') {
+        required.push(key);
+      }
+    }
+    fieldSchema = { type: 'object', properties };
+    if (required.length > 0) fieldSchema.required = required;
+  }
+
+  if (zodField.description) {
+    fieldSchema.description = zodField.description;
+  }
+
+  return fieldSchema;
+}
+
 // Convert Zod schemas to OpenAI function definitions
 function zodToOpenAITool(name: string, schema: { description: string; parameters: z.ZodType<any> }) {
   const zodSchema = schema.parameters;
@@ -350,58 +524,11 @@ function zodToOpenAITool(name: string, schema: { description: string; parameters
 
     for (const [key, value] of Object.entries(shape)) {
       const zodField = value as z.ZodTypeAny;
-      const fieldDef = zodField._def;
-
-      let fieldSchema: any = { type: 'string' };
-
-      // Get the inner type if it's optional
-      let innerType = zodField;
-      if (fieldDef.typeName === 'ZodOptional') {
-        innerType = fieldDef.innerType;
-      } else {
+      const typeName = zodField._def.typeName;
+      if (typeName !== 'ZodOptional' && typeName !== 'ZodDefault') {
         jsonSchema.required.push(key);
       }
-
-      const innerDef = innerType._def;
-
-      // Determine the type
-      if (innerDef.typeName === 'ZodString') {
-        fieldSchema = { type: 'string' };
-      } else if (innerDef.typeName === 'ZodNumber') {
-        fieldSchema = { type: 'number' };
-      } else if (innerDef.typeName === 'ZodBoolean') {
-        fieldSchema = { type: 'boolean' };
-      } else if (innerDef.typeName === 'ZodEnum') {
-        fieldSchema = { type: 'string', enum: innerDef.values };
-      } else if (innerDef.typeName === 'ZodDefault') {
-        let defaultInner = innerDef.innerType._def;
-        if (defaultInner.typeName === 'ZodOptional') {
-          defaultInner = defaultInner.innerType._def;
-        }
-        if (defaultInner.typeName === 'ZodNumber') {
-          fieldSchema = { type: 'number' };
-        } else if (defaultInner.typeName === 'ZodString') {
-          fieldSchema = { type: 'string' };
-        } else if (defaultInner.typeName === 'ZodBoolean') {
-          fieldSchema = { type: 'boolean' };
-        } else if (defaultInner.typeName === 'ZodEnum') {
-          fieldSchema = { type: 'string', enum: defaultInner.values };
-        }
-        jsonSchema.required = jsonSchema.required.filter((r: string) => r !== key);
-      } else if (innerDef.typeName === 'ZodArray') {
-        const itemDef = innerDef.type?._def;
-        const itemType = itemDef?.typeName === 'ZodNumber' ? 'number' : 'string';
-        fieldSchema = { type: 'array', items: { type: itemType } };
-      } else if (innerDef.typeName === 'ZodObject') {
-        fieldSchema = { type: 'object', properties: {} };
-      }
-
-      // Add description if available
-      if (zodField.description) {
-        fieldSchema.description = zodField.description;
-      }
-
-      jsonSchema.properties[key] = fieldSchema;
+      jsonSchema.properties[key] = zodFieldToJsonSchema(zodField);
     }
   }
 
@@ -550,8 +677,7 @@ export async function processMessage(
       const toolResults: string[] = [];
       const toolCallsLog: any[] = [];
       const allAttachments: ToolAttachment[] = [];
-
-      for (const toolCall of message.tool_calls) {
+      const preparedToolCalls = mergeCreateOrderCalls(message.tool_calls.map((toolCall) => {
         const toolName = toolCall.function.name as ToolName;
         let toolArgs: any;
 
@@ -561,7 +687,17 @@ export async function processMessage(
           toolArgs = {};
         }
 
-        toolArgs = applyRelativeDateGuards(toolName, toolArgs, userMessage);
+        return {
+          id: toolCall.id,
+          name: toolName,
+          args: applyRelativeDateGuards(toolName, toolArgs, userMessage),
+          original: toolCall,
+        };
+      }));
+
+      for (const toolCall of preparedToolCalls) {
+        const toolName = toolCall.name;
+        const toolArgs = toolCall.args;
 
         console.log('[AI Agent] Executing tool: ' + toolName, redactToolArgsForLog(toolName, toolArgs));
 

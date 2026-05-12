@@ -87,6 +87,7 @@ async function resolveCurrentGuiaGamZone(prisma: ReturnType<typeof getTenantPris
       id: true,
       province: true,
       canton: true,
+      district: true,
     },
   });
 
@@ -104,5 +105,6 @@ async function resolveCurrentGuiaGamZone(prisma: ReturnType<typeof getTenantPris
   return getCorreosAutomatedShippingCost({
     province: order.province,
     canton: order.canton,
+    district: order.district,
   }).zone;
 }

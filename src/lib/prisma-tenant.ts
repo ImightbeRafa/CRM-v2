@@ -100,6 +100,20 @@ const MAX_TENANT_CACHE_SIZE = 50; // Limit to 50 tenant clients max
 const tenantPrismaCache = new Map<string, ReturnType<typeof createTenantPrismaUncached>>();
 const tenantAccessOrder: string[] = []; // Track access order for LRU
 
+function scheduleAuditLog(data: Parameters<typeof logAudit>[0]) {
+  const run = () => {
+    void logAudit(data).catch((error) => {
+      console.error('Failed to log audit:', error);
+    });
+  };
+
+  if (typeof setImmediate === 'function') {
+    setImmediate(run);
+  } else {
+    setTimeout(run, 0);
+  }
+}
+
 /**
  * Create a Prisma client extension that automatically injects tenantId (uncached version)
  */
@@ -260,7 +274,10 @@ function createTenantPrismaUncached(tenantId: string) {
                   upsert: 'UPDATE',
                 } as const;
 
-                await logAudit({
+                // Do not await automatic audit writes here. Interactive transactions
+                // keep a DB connection open; awaiting a second audit query can deadlock
+                // small pools and expire the transaction before the next business query.
+                scheduleAuditLog({
                   action: actionMap[operation] || 'UPDATE',
                   entityType: modelName || 'System',
                   entityId,

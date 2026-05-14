@@ -1115,6 +1115,9 @@ export async function createOrder(
           }
 
           return createdOrder;
+        }, {
+          maxWait: 10000,
+          timeout: 20000,
         });
 
         let inventoryMessage = '';

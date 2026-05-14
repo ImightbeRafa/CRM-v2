@@ -65,6 +65,78 @@ function redactOrderParamsForLog(params: Record<string, unknown>) {
   return redacted;
 }
 
+const COMMENT_FIELD_KEYWORDS = [
+  'comentario', 'comentarios', 'comment', 'comments',
+  'observacion', 'observaciones', 'observación', 'observaciones',
+  'nota', 'notas', 'note', 'notes',
+  'descripcion', 'descripción', 'description',
+];
+
+const COURIER_FIELD_KEYS = ['courier', 'metodoEnvio', 'shippingMethod', 'mensajeria'];
+
+function normalizeFieldKey(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function getNonEmptyText(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text ? text : null;
+}
+
+function addUniqueText(target: string[], seen: Set<string>, value: unknown) {
+  const text = getNonEmptyText(value);
+  if (!text) return;
+  const normalized = normalizeFieldKey(text);
+  if (seen.has(normalized)) return;
+  seen.add(normalized);
+  target.push(text);
+}
+
+function isCommentLikeField(key: string, label?: string | null): boolean {
+  const searchable = normalizeFieldKey(`${key} ${label || ''}`);
+  return COMMENT_FIELD_KEYWORDS.some((keyword) => searchable.includes(normalizeFieldKey(keyword)));
+}
+
+function extractCommentPartsFromCustomFields(
+  customFields: Record<string, unknown>,
+  customFieldsConfig: CustomFieldsData,
+): string[] {
+  const parts: string[] = [];
+  const seen = new Set<string>();
+
+  for (const field of customFieldsConfig.productFields) {
+    if (isCommentLikeField(field.key, field.label)) {
+      addUniqueText(parts, seen, customFields[field.key]);
+    }
+  }
+
+  for (const field of customFieldsConfig.businessInfoFields) {
+    if (isCommentLikeField(field.name, field.label)) {
+      addUniqueText(parts, seen, customFields[field.name]);
+    }
+  }
+
+  for (const [key, value] of Object.entries(customFields)) {
+    if (isCommentLikeField(key)) {
+      addUniqueText(parts, seen, value);
+    }
+  }
+
+  return parts;
+}
+
+function getCourierFromParams(params: Record<string, unknown>, customFields: Record<string, unknown>): string {
+  for (const key of COURIER_FIELD_KEYS) {
+    const value = getNonEmptyText(params[key] ?? customFields[key]);
+    if (value) return value;
+  }
+  return '';
+}
+
 // ============================================================================
 // TOOL SCHEMAS (for AI function calling)
 // ============================================================================
@@ -89,6 +161,9 @@ const baseOrderSchema = {
   canton: z.string().optional().describe('Cantón'),
   district: z.string().optional().describe('Distrito'),
   courier: z.string().optional().describe('Método de envío o courier'),
+  metodoEnvio: z.string().optional().describe('Alias de courier/mensajeria. Usar solo si el usuario lo expresa como metodo de envio.'),
+  shippingMethod: z.string().optional().describe('Alias de courier/mensajeria. NO es metodo de pago.'),
+  mensajeria: z.string().optional().describe('Alias de courier/mensajeria para envios EA.'),
   paymentMethod: z.string().optional().describe('Método de pago del cliente (SINPE Móvil, transferencia, efectivo, etc). NO es el método de envío/courier.'),
   comments: z.string().optional().describe('Comentarios o notas adicionales'),
   orderType: z.enum(['EA', 'RA']).describe('REQUERIDO: Tipo de orden. EA = Envío a Domicilio (requiere dirección), RA = Retiro en Local (NO requiere dirección). SIEMPRE debe especificarse.'),
@@ -377,6 +452,12 @@ function validateBaseOrderFields(params: any): { isValid: boolean; errors: strin
   if (orderType === 'EA') {
     if (!params.province || params.province.trim() === '') {
       errors.push('Provincia es requerida para envío a domicilio (EA). Pregunta la provincia al cliente.');
+    }
+    if (!params.canton || params.canton.trim() === '') {
+      errors.push('Cantón es requerido para envío a domicilio (EA). Pregunta el cantón al cliente.');
+    }
+    if (!params.district || params.district.trim() === '') {
+      errors.push('Distrito es requerido para envío a domicilio (EA). Pregunta el distrito al cliente.');
     }
     if (!params.address || params.address.trim() === '') {
       errors.push('Dirección es requerida para envío a domicilio (EA). Pregunta la dirección al cliente.');
@@ -941,13 +1022,18 @@ export async function createOrder(
           }
         }
 
-        // Build comments including payment method (Order model has no paymentMethod column)
+        const courier = getCourierFromParams(params, extractedCustomFields);
+
+        // Build comments including payment method and configured comment/note fields.
+        // Order has no paymentMethod column, so payment method stays visible in comments.
         const commentParts: string[] = [];
+        const seenCommentParts = new Set<string>();
         if (params.paymentMethod) {
-          commentParts.push(`Pago: ${params.paymentMethod}`);
+          addUniqueText(commentParts, seenCommentParts, `Pago: ${params.paymentMethod}`);
         }
-        if (params.comments) {
-          commentParts.push(params.comments);
+        addUniqueText(commentParts, seenCommentParts, params.comments);
+        for (const commentPart of extractCommentPartsFromCustomFields(extractedCustomFields, customFieldsConfig)) {
+          addUniqueText(commentParts, seenCommentParts, commentPart);
         }
         const finalComments = commentParts.join('\n');
 
@@ -986,7 +1072,7 @@ export async function createOrder(
           province: params.province || '',
           canton: params.canton || '',
           district: params.district || '',
-          courier: params.courier || '',
+          courier,
           shippingCost: undefined,
           comments: finalComments,
           seller: ctx.userName,
@@ -1006,6 +1092,7 @@ export async function createOrder(
           packaging: ['packaging', 'empaque'],
           customization: ['customization', 'personalizacion'],
           shippingCost: ['shippingCost', 'costoEnvio'],
+          courier: COURIER_FIELD_KEYS,
         };
         
         Object.entries(knownFieldMappings).forEach(([targetField, possibleKeys]) => {
@@ -1120,25 +1207,31 @@ export async function createOrder(
           timeout: 20000,
         });
 
-        let inventoryMessage = '';
-        if (inventoryMessages.length > 0) {
-          inventoryMessage = `\nInventario:\n${inventoryMessages.map((line) => `- ${line}`).join('\n')}`;
-        }
-
-        // Format custom fields for success message
-        const customFieldsLines = formatCustomFieldsForTelegram(
-          orderData.customFields || {}, 
-          customFieldsConfig
-        );
-        
         let successMessage = `✅ Orden #${order.orderId} creada exitosamente para ${params.customerName}`;
-        if (locationCorrections.length > 0) {
-          successMessage += `\n📍 Correcciones de ubicación aplicadas:\n${locationCorrections.map(c => `  - ${c}`).join('\n')}`;
+        try {
+          let inventoryMessage = '';
+          if (inventoryMessages.length > 0) {
+            inventoryMessage = `\nInventario:\n${inventoryMessages.map((line) => `- ${line}`).join('\n')}`;
+          }
+
+          // Format custom fields for success message. This runs after the
+          // transaction, so failures here must never turn a committed order
+          // into a false creation error for the bot user.
+          const customFieldsLines = formatCustomFieldsForTelegram(
+            orderData.customFields || {},
+            customFieldsConfig
+          );
+
+          if (locationCorrections.length > 0) {
+            successMessage += `\n📍 Correcciones de ubicación aplicadas:\n${locationCorrections.map(c => `  - ${c}`).join('\n')}`;
+          }
+          if (customFieldsLines.length > 0) {
+            successMessage += `\n\nCampos personalizados:\n${customFieldsLines.join('\n')}`;
+          }
+          successMessage += inventoryMessage;
+        } catch (formatError) {
+          console.error('[AI Tool] createOrder - Success message formatting failed (order already created):', formatError);
         }
-        if (customFieldsLines.length > 0) {
-          successMessage += `\n\nCampos personalizados:\n${customFieldsLines.join('\n')}`;
-        }
-        successMessage += inventoryMessage;
         
         return {
           success: true,

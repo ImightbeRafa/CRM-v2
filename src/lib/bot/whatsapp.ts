@@ -676,6 +676,7 @@ export function formatOrderForWhatsApp(order: any, customFieldLines?: string[]):
     `📍 *Estado:* ${order.status}`,
     order.province ? `🌍 *Ubicación:* ${[order.province, order.canton, order.district].filter(Boolean).join(', ')}` : null,
     order.address ? `📫 *Dirección:* ${order.address}` : null,
+    order.comments ? `💬 *Comentarios:* ${order.comments}` : null,
   ].filter(Boolean);
 
   if (customFieldLines && customFieldLines.length > 0) {

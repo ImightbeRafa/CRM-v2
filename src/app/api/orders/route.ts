@@ -286,16 +286,20 @@ export async function POST(request: NextRequest) {
        console.log('[Order.create] Creating order:', body.orderId)
      }
 
-     // Map comments from dynamic custom fields
+     // Map comments from direct order comments first, then dynamic custom fields.
      const commentKeywords = ['comentario','comentarios','comment','comments','observacion','observaciones','nota','notas','note','notes','descripcion','description']
-     let commentValue: string | undefined
+     let commentValue: string | undefined = body.comments !== undefined && body.comments !== null
+       ? String(body.comments).trim()
+       : undefined
      
-     for (const k of Object.keys(customFields)) {
-       if (commentKeywords.some(w => k.toLowerCase().includes(w))) {
-         const v = (customFields as any)[k]
-         if (v !== undefined && v !== null && String(v).trim() !== '') { 
-           commentValue = String(v).trim()
-           break 
+     if (!commentValue) {
+       for (const k of Object.keys(customFields)) {
+         if (commentKeywords.some(w => k.toLowerCase().includes(w))) {
+           const v = (customFields as any)[k]
+           if (v !== undefined && v !== null && String(v).trim() !== '') { 
+             commentValue = String(v).trim()
+             break 
+           }
          }
        }
      }

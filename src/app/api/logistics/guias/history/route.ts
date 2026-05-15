@@ -33,34 +33,42 @@ export async function GET(req: NextRequest) {
         const carrier = searchParams.get('carrier') || null;
         const archived = searchParams.get('archived');
         const search = (searchParams.get('search') || '').trim();
+        const statusFilter = (searchParams.get('status') || searchParams.get('estado') || '').trim();
 
-        const params: any[] = [MANAGED_TENANT_IDS];
+        const baseParams: any[] = [MANAGED_TENANT_IDS];
         const guiaWhere: string[] = ['sg."tenantId" = ANY($1::text[])'];
-        const outerWhere: string[] = [];
+        const baseOuterWhere: string[] = [];
 
         if (carrier) {
-            params.push(carrier);
-            guiaWhere.push(`sg.carrier = $${params.length}`);
+            baseParams.push(carrier);
+            guiaWhere.push(`sg.carrier = $${baseParams.length}`);
         }
 
         if (archived === 'true') {
-            outerWhere.push('lm.archived_at IS NOT NULL');
+            baseOuterWhere.push('lm.archived_at IS NOT NULL');
         } else if (archived === 'false') {
-            outerWhere.push('lm.archived_at IS NULL');
+            baseOuterWhere.push('lm.archived_at IS NULL');
         }
 
         if (search) {
-            params.push(`%${search}%`);
-            outerWhere.push(`(
-                o."orderId" ILIKE $${params.length}
-                OR o."customerName" ILIKE $${params.length}
-                OR o.phone ILIKE $${params.length}
-                OR o.address ILIKE $${params.length}
-                OR cg."guiaNumber" ILIKE $${params.length}
-                OR cg."trackingNumber" ILIKE $${params.length}
-                OR t.name ILIKE $${params.length}
-                OR t."businessName" ILIKE $${params.length}
+            baseParams.push(`%${search}%`);
+            baseOuterWhere.push(`(
+                o."orderId" ILIKE $${baseParams.length}
+                OR o."customerName" ILIKE $${baseParams.length}
+                OR o.phone ILIKE $${baseParams.length}
+                OR o.address ILIKE $${baseParams.length}
+                OR cg."guiaNumber" ILIKE $${baseParams.length}
+                OR cg."trackingNumber" ILIKE $${baseParams.length}
+                OR t.name ILIKE $${baseParams.length}
+                OR t."businessName" ILIKE $${baseParams.length}
             )`);
+        }
+
+        const params = [...baseParams];
+        const outerWhere = [...baseOuterWhere];
+        if (statusFilter) {
+            params.push(statusFilter);
+            outerWhere.push(`LOWER(COALESCE(lm.status, o.status, cg.guia_status)) = LOWER($${params.length})`);
         }
 
         params.push(limit);
@@ -88,6 +96,7 @@ export async function GET(req: NextRequest) {
             )
             SELECT
                 cg.*,
+                COUNT(*) OVER() AS total_count,
                 t.name AS tenant_name,
                 t."businessName" AS tenant_business_name,
                 o.id AS crm_order_id,
@@ -111,7 +120,38 @@ export async function GET(req: NextRequest) {
             LIMIT $${limitParam}
         `, ...params);
 
+        const statuses = await prisma.$queryRawUnsafe<any[]>(`
+            WITH current_guias AS (
+                SELECT DISTINCT ON (sg."tenantId", sg."orderId", sg.carrier)
+                    sg.id,
+                    sg."tenantId",
+                    sg."orderId",
+                    sg.carrier,
+                    sg.status AS guia_status,
+                    sg."createdAt",
+                    sg."updatedAt"
+                FROM "ShippingGuia" sg
+                WHERE ${guiaWhere.join(' AND ')}
+                ORDER BY sg."tenantId", sg."orderId", sg.carrier, sg."updatedAt" DESC, sg."createdAt" DESC
+            )
+            SELECT
+                COALESCE(lm.status, o.status, cg.guia_status) AS status,
+                COUNT(*)::int AS count
+            FROM current_guias cg
+            LEFT JOIN "Tenant" t ON t.id = cg."tenantId"
+            LEFT JOIN "Order" o ON o."tenantId" = cg."tenantId" AND o."orderId" = cg."orderId"
+            LEFT JOIN lm_orders lm ON lm.crm_order_id = o.id
+            ${baseOuterWhere.length > 0 ? `WHERE ${baseOuterWhere.join(' AND ')}` : ''}
+            GROUP BY COALESCE(lm.status, o.status, cg.guia_status)
+            ORDER BY count DESC, status ASC
+        `, ...baseParams);
+
         return NextResponse.json({
+            total: guias.length > 0 ? Number(guias[0].total_count) : 0,
+            limit,
+            statuses: statuses
+                .filter(s => s.status)
+                .map(s => ({ status: s.status, count: Number(s.count) })),
             guias: guias.map(g => {
                 const orderStatus = g.lm_status || g.crm_status || g.guia_status;
                 return {
@@ -123,6 +163,8 @@ export async function GET(req: NextRequest) {
                     trackingNumber: g.trackingNumber,
                     status: orderStatus,
                     orderStatus,
+                    crmStatus: g.crm_status || null,
+                    lmStatus: g.lm_status || null,
                     guiaStatus: g.guia_status,
                     progress: g.progress,
                     errorMessage: g.errorMessage,

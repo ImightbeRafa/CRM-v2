@@ -15,12 +15,17 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const rawIds = Array.isArray(body?.ids) ? body.ids : [];
+    const maxBulkDownload = 500;
     const ids = rawIds
       .filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)
-      .slice(0, 100);
+      .slice(0, maxBulkDownload);
 
     if (ids.length === 0) {
       return NextResponse.json({ error: 'No guía IDs provided' }, { status: 400 });
+    }
+
+    if (rawIds.length > maxBulkDownload) {
+      return NextResponse.json({ error: `Maximum ${maxBulkDownload} guias per bulk download` }, { status: 400 });
     }
 
     const guias = await prisma.shippingGuia.findMany({

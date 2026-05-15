@@ -40,8 +40,13 @@ interface VerifiedOrder {
 
 interface GuiaHistoryItem {
     id: string; orderId: string; guiaNumber: string; trackingNumber?: string; status: string;
-    orderStatus?: string; guiaStatus?: string; tenantName: string; customerName?: string;
+    orderStatus?: string; crmStatus?: string | null; lmStatus?: string | null; guiaStatus?: string; tenantName: string; customerName?: string;
     hasPdf: boolean; createdAt: string; errorMessage?: string;
+}
+
+interface GuiaHistoryStatusOption {
+    status: string;
+    count: number;
 }
 
 function historyStatusStyle(item: GuiaHistoryItem) {
@@ -193,6 +198,9 @@ export default function GuiasPage() {
     const [historyLoading, setHistoryLoading] = useState(false);
     const [selectedHistoryIds, setSelectedHistoryIds] = useState<Set<string>>(new Set());
     const [downloadingBulkHistoryPdf, setDownloadingBulkHistoryPdf] = useState(false);
+    const [historyStatusFilter, setHistoryStatusFilter] = useState('all');
+    const [historyStatuses, setHistoryStatuses] = useState<GuiaHistoryStatusOption[]>([]);
+    const [historyTotal, setHistoryTotal] = useState(0);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -213,9 +221,13 @@ export default function GuiasPage() {
     const loadHistory = useCallback(async () => {
         setHistoryLoading(true);
         try {
-            const data = await (await fetch('/api/logistics/guias/history?carrier=correos_cr&limit=50')).json();
+            const p = new URLSearchParams({ carrier: 'correos_cr', archived: 'false', limit: '500' });
+            if (historyStatusFilter !== 'all') p.set('status', historyStatusFilter);
+            const data = await (await fetch(`/api/logistics/guias/history?${p}`)).json();
             const guias = data.guias || [];
             setHistory(guias);
+            setHistoryStatuses(data.statuses || []);
+            setHistoryTotal(Number(data.total || guias.length));
             setSelectedHistoryIds(prev => {
                 const next = new Set<string>();
                 const availableIds = new Set(guias.filter((g: GuiaHistoryItem) => g.hasPdf).map((g: GuiaHistoryItem) => g.id));
@@ -225,9 +237,12 @@ export default function GuiasPage() {
                 return next;
             });
         } catch (e) { console.error(e); } finally { setHistoryLoading(false); }
-    }, []);
+    }, [historyStatusFilter]);
 
     useEffect(() => { load(); }, [load]);
+    useEffect(() => {
+        if (showHistory) loadHistory();
+    }, [showHistory, loadHistory]);
 
     const afterTab = tab === 'all' ? orders : orders.filter(o => o.lmCarrier === tab);
     const afterTenant = tenantFilter ? afterTab.filter(o => o.tenantId === tenantFilter) : afterTab;
@@ -442,7 +457,7 @@ export default function GuiasPage() {
                     )}
 
                     {/* History */}
-                    <button onClick={() => { setShowHistory(true); loadHistory(); }}
+                    <button onClick={() => setShowHistory(true)}
                         style={{ padding: '7px 12px', ...glass, color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
                         <Clock size={12} /> Historial
                     </button>
@@ -575,7 +590,7 @@ export default function GuiasPage() {
                                     </button>
                                 )}
                                 {generationResults ? (
-                                    <button onClick={() => { setShowVerification(false); setSelected(new Set()); setShowHistory(true); loadHistory(); }}
+                                    <button onClick={() => { setShowVerification(false); setSelected(new Set()); setShowHistory(true); }}
                                         style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid rgba(96,165,250,0.4)', background: 'rgba(96,165,250,0.12)', color: '#60a5fa', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                                         Ver Historial
                                     </button>
@@ -652,6 +667,31 @@ export default function GuiasPage() {
                                     <button onClick={loadHistory} style={{ padding: '6px 10px', ...glass, color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}><RefreshCw size={12} /></button>
                                     <button onClick={() => setShowHistory(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 4 }}><X size={20} /></button>
                                 </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <label htmlFor="history-status-filter" style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase' }}>
+                                        Estado
+                                    </label>
+                                    <select
+                                        id="history-status-filter"
+                                        value={historyStatusFilter}
+                                        onChange={e => setHistoryStatusFilter(e.target.value)}
+                                        disabled={historyLoading}
+                                        style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.25)', color: '#F2F2F2', fontSize: 12, outline: 'none', cursor: historyLoading ? 'default' : 'pointer' }}
+                                    >
+                                        <option value="all">Todos los estados</option>
+                                        {historyStatuses.map(option => (
+                                            <option key={option.status} value={option.status}>
+                                                {option.status} ({option.count})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <span style={{ color: 'rgba(255,255,255,0.32)', fontSize: 11.5 }}>
+                                    Mostrando {history.length} de {historyTotal}{historyStatusFilter !== 'all' ? ` en ${historyStatusFilter}` : ' guías actuales'}
+                                    {historyTotal > history.length ? ' (usa un estado para acotar)' : ''}
+                                </span>
                             </div>
                             {historyLoading ? (
                                 <div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)' }}><Clock size={20} style={{ display: 'block', margin: '0 auto 8px', opacity: 0.3 }} />Cargando...</div>

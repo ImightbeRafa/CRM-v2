@@ -190,6 +190,152 @@ function orderProductsFromArgs(args: any): Array<{ name?: string; sku?: string; 
   }].filter((product: { name?: string; quantity: number }) => product.name);
 }
 
+function hasCreateOrderProduct(args: any): boolean {
+  if (typeof args.product === 'string' && args.product.trim()) return true;
+  return Array.isArray(args.products) && args.products.some((product: any) =>
+    product && typeof product === 'object' && (
+      (typeof product.name === 'string' && product.name.trim()) ||
+      (typeof product.sku === 'string' && product.sku.trim())
+    )
+  );
+}
+
+function stripChatMarkdown(value: string): string {
+  return value
+    .replace(/^[\s>*_~-]+|[\s*_~]+$/g, '')
+    .replace(/\*/g, '')
+    .trim();
+}
+
+function isOrderSectionLabel(line: string): boolean {
+  const normalized = normalizeSpanishText(stripChatMarkdown(line));
+  return /^(cantidad(\s+total)?|total(\s+en\s+\w+)?|tipo\s+de\s+orden|metodo\s+de\s+pago|metodo\s+de\s+envio|entrega|comentario|comentarios?|cliente|nombre|telefono|direccion|provincia|canton|distrito)\b/.test(normalized);
+}
+
+function extractProductTextFromMessage(message: string): string | undefined {
+  const lines = message.split(/\r?\n/);
+  const products: string[] = [];
+  let collecting = false;
+
+  for (const rawLine of lines) {
+    const line = stripChatMarkdown(rawLine);
+    if (!line) {
+      if (collecting && products.length > 0) break;
+      continue;
+    }
+
+    const inlineProduct = line.match(/^productos?\s*(?:\([^)]*\))?\s*:\s*(.+)$/i)
+      || line.match(/^producto\s*(?:\([^)]*\))?\s*:\s*(.+)$/i);
+    if (inlineProduct) {
+      collecting = true;
+      const value = stripChatMarkdown(inlineProduct[1]);
+      if (value) products.push(value);
+      continue;
+    }
+
+    const productLabelOnly = /^productos?\s*(?:\([^)]*\))?\s*:?\s*$/i.test(line)
+      || /^producto\s*(?:\([^)]*\))?\s*:?\s*$/i.test(line);
+    if (productLabelOnly) {
+      collecting = true;
+      continue;
+    }
+
+    if (collecting) {
+      if (isOrderSectionLabel(line)) break;
+      products.push(line);
+    }
+  }
+
+  return products.length > 0 ? products.join('\n') : undefined;
+}
+
+function extractPhoneFromMessage(message: string): string | undefined {
+  const match = message.match(/\b(?:\+?506[\s-]?)?(\d{4})[\s-]?(\d{4})\b/);
+  return match ? `${match[1]}${match[2]}` : undefined;
+}
+
+function extractTotalFromMessage(message: string): number | undefined {
+  const match = message.match(/\btotal(?:\s+en\s+\w+)?\s*[:=]?\s*(?:CRC|₡|¢)?\s*([\d.,]+)/i);
+  if (!match) return undefined;
+  const amount = Number(match[1].replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.'));
+  return Number.isFinite(amount) ? amount : undefined;
+}
+
+function inferCreateOrderArgsFromMessage(args: any, userMessage: string): any {
+  const inferred = { ...args };
+  const repairedFields: string[] = [];
+
+  if (!hasCreateOrderProduct(inferred)) {
+    const product = extractProductTextFromMessage(userMessage);
+    if (product) {
+      inferred.product = product;
+      repairedFields.push('product');
+    }
+  }
+
+  if (!inferred.phone) {
+    const phone = extractPhoneFromMessage(userMessage);
+    if (phone) {
+      inferred.phone = phone;
+      repairedFields.push('phone');
+    }
+  }
+
+  if ((inferred.total === undefined || inferred.total === null) && /\btotal\b/i.test(userMessage)) {
+    const total = extractTotalFromMessage(userMessage);
+    if (total !== undefined) {
+      inferred.total = total;
+      repairedFields.push('total');
+    }
+  }
+
+  const normalizedMessage = normalizeSpanishText(userMessage);
+  if (!inferred.orderType) {
+    if (/\bra\b/.test(normalizedMessage) || normalizedMessage.includes('retiro')) {
+      inferred.orderType = 'RA';
+      repairedFields.push('orderType');
+    } else if (/\bea\b/.test(normalizedMessage) || normalizedMessage.includes('envio')) {
+      inferred.orderType = 'EA';
+      repairedFields.push('orderType');
+    }
+  }
+
+  if (!inferred.paymentMethod) {
+    const paymentMatch = userMessage.match(/m[eé]todo\s+de\s+pago\s*:\s*([^\n\r]+)/i);
+    if (paymentMatch?.[1]) {
+      inferred.paymentMethod = stripChatMarkdown(paymentMatch[1]);
+      repairedFields.push('paymentMethod');
+    }
+  }
+
+  if (inferred.contraEntrega !== true && normalizedMessage.includes('contra entrega')) {
+    inferred.contraEntrega = true;
+    repairedFields.push('contraEntrega');
+  }
+
+  if (repairedFields.length > 0) {
+    console.info('[AI Agent] Repaired create_order args from user message:', repairedFields);
+  }
+
+  return inferred;
+}
+
+function looksLikeOrderFieldReply(message: string): boolean {
+  const normalized = normalizeSpanishText(message);
+  return /^productos?\s*(?:\([^)]*\))?\s*:/im.test(message)
+    || /^producto\s*(?:\([^)]*\))?\s*:/im.test(message)
+    || /\btotal(?:\s+en\s+\w+)?\s*[:=]/i.test(message)
+    || /m[eé]todo\s+de\s+pago\s*:/i.test(message)
+    || /\b(?:\+?506[\s-]?)?\d{4}[\s-]?\d{4}\b/.test(message)
+    || /\b(ra|ea)\b/.test(normalized)
+    || normalized.includes('contra entrega');
+}
+
+function shouldStoreCreateOrderRepair(result: ToolResult): boolean {
+  const error = result.error || '';
+  return /producto es requerido|campos faltantes|campos personalizados faltantes/i.test(error);
+}
+
 function mergeCreateOrderCalls(calls: PreparedToolCall[]): PreparedToolCall[] {
   const result: PreparedToolCall[] = [];
   const createOrderGroups = new Map<string, PreparedToolCall[]>();
@@ -562,6 +708,32 @@ export async function processMessage(
     // Check for pending confirmations first (non-destructive peek)
     const pending = await peekPendingConfirmation(platform, platformId);
     if (pending) {
+      if (pending.type === 'order_repair') {
+        if (isDenial(userMessage)) {
+          await clearPendingConfirmation(platform, platformId);
+          return { text: 'Entendido, deje la orden sin procesar.' };
+        }
+
+        if (isConfirmation(userMessage)) {
+          const responseText = 'Para completar la orden necesito el dato faltante. Enviamelo asi: producto: ENERGY PATCH X1';
+          await addAssistantMessage(platform, platformId, responseText);
+          return { text: responseText };
+        }
+
+        if (isActionRequest(userMessage)) {
+          console.info(`[AI Agent] Clearing pending order repair because user started a new action: "${userMessage.substring(0, 60)}"`);
+          await clearPendingConfirmation(platform, platformId);
+        } else if (looksLikeOrderFieldReply(userMessage)) {
+          await clearPendingConfirmation(platform, platformId);
+          await addUserMessage(platform, platformId, userMessage);
+
+          const repairedArgs = inferCreateOrderArgsFromMessage(pending.data?.toolArgs || {}, userMessage);
+          const repairResponse = await executeCreateOrderRepair(repairedArgs, context, platform, platformId);
+          await addAssistantMessage(platform, platformId, repairResponse);
+          return { text: repairResponse };
+        }
+      }
+
       const confirmed = isConfirmation(userMessage);
       const denied = isDenial(userMessage);
 
@@ -687,10 +859,14 @@ export async function processMessage(
           toolArgs = {};
         }
 
+        const guardedArgs = applyRelativeDateGuards(toolName, toolArgs, userMessage);
+
         return {
           id: toolCall.id,
           name: toolName,
-          args: applyRelativeDateGuards(toolName, toolArgs, userMessage),
+          args: toolName === 'create_order'
+            ? inferCreateOrderArgsFromMessage(guardedArgs, userMessage)
+            : guardedArgs,
           original: toolCall,
         };
       }));
@@ -757,7 +933,17 @@ export async function processMessage(
         } else if (result.needsConfirmation && result.message) {
           toolResults.push(result.message);
         } else {
-          toolResults.push('❌ Error: ' + result.error);
+          if (toolName === 'create_order' && shouldStoreCreateOrderRepair(result)) {
+            await setPendingConfirmation(platform, platformId, {
+              type: 'order_repair',
+              data: {
+                toolName: 'create_order',
+                toolArgs,
+              },
+              expiresAt: Date.now() + 120_000,
+            });
+          }
+          toolResults.push(formatToolError(toolName, result));
         }
       }
 
@@ -910,6 +1096,32 @@ function formatToolResult(toolName: ToolName, result: ToolResult, platform: stri
   }
 }
 
+function formatToolError(toolName: ToolName, result: ToolResult): string {
+  const error = result.error || 'No pude completar la operacion.';
+
+  if (toolName === 'create_order') {
+    if (/producto es requerido/i.test(error)) {
+      return [
+        'No pude identificar el producto de la orden.',
+        '',
+        'Enviame el producto en una linea clara, por ejemplo:',
+        'producto: ENERGY PATCH X1',
+        '',
+        'Cuando lo reciba, si no aparece en inventario te preguntare si deseas registrar la venta de todas maneras.',
+      ].join('\n');
+    }
+
+    if (/campos faltantes|campos personalizados faltantes/i.test(error)) {
+      return error
+        .replace(/^❌\s*/i, '')
+        .replace(/^Error:\s*/i, '')
+        + '\n\nEnviame solo los datos faltantes y vuelvo a procesar la orden.';
+    }
+  }
+
+  return `Error: ${error}`;
+}
+
 /**
  * Check if message is a confirmation
  */
@@ -930,6 +1142,48 @@ function isDenial(message: string): boolean {
     'detener', 'detener', 'parar', 'alto', 'negar', 'negado'
   ];
   return denials.includes(message.toLowerCase().trim());
+}
+
+async function executeCreateOrderRepair(
+  toolArgs: any,
+  context: ToolContext,
+  platform: string,
+  platformId: string,
+): Promise<string> {
+  const { tenantToolSchemas } = await updateToolSchemasWithCustomFields(context.tenantId);
+  const result = await executeTool('create_order', context, toolArgs, tenantToolSchemas);
+
+  if (result.success) {
+    return formatToolResult('create_order', result, platform);
+  }
+
+  if (result.needsConfirmation && result.message) {
+    const cType = result.confirmationType;
+    if (cType === 'no_match' || cType === 'zero_stock') {
+      await setPendingConfirmation(platform, platformId, {
+        type: 'inventory_confirm',
+        data: {
+          toolName: 'create_order',
+          toolArgs: { ...result.pendingOrderData, _forceWithoutInventory: true },
+        },
+        expiresAt: Date.now() + 120_000,
+      });
+    }
+    return result.message;
+  }
+
+  if (shouldStoreCreateOrderRepair(result)) {
+    await setPendingConfirmation(platform, platformId, {
+      type: 'order_repair',
+      data: {
+        toolName: 'create_order',
+        toolArgs,
+      },
+      expiresAt: Date.now() + 120_000,
+    });
+  }
+
+  return formatToolError('create_order', result);
 }
 
 /**
@@ -968,7 +1222,7 @@ async function executePendingAction(pending: any, context: ToolContext, platform
       const formatted = formatToolResult(toolName as ToolName, result, platform);
       return '✅ Acción confirmada:\n\n' + formatted;
     } else {
-      return '❌ Error al ejecutar la acción: ' + result.error;
+      return formatToolError(toolName as ToolName, result);
     }
   } catch (error) {
     console.error('[AI Agent] Error executing pending action:', error);

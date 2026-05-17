@@ -39,6 +39,7 @@ console.log('🚀 WhatsApp Webhook module loaded');
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 // Rate limiting
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();

@@ -1,12 +1,41 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { PackageCheck, Search, RefreshCw, Phone, MapPin, Calendar, Clock, User, Copy, Check } from 'lucide-react';
+import { PackageCheck, Search, RefreshCw, Phone, MapPin, Calendar, Clock, User, Copy, Check, DollarSign, Archive } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12 } as const;
 
 type StatusFilter = 'all' | 'Pendiente' | 'Entregado';
+
+function effectiveStatus(order: any) {
+    return order.lmStatus || order.delivery || order.status || 'Pendiente';
+}
+
+async function patchLogisticsOrder(orderId: string, patch: object) {
+    const res = await fetch('/api/logistics/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, ...patch }),
+    });
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `PATCH failed: ${res.status}`);
+    }
+}
+
+async function terminateOrders(orderIds: string[]) {
+    const res = await fetch('/api/logistics/orders/terminate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderIds }),
+    });
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const details = Array.isArray(data.details) ? data.details.join('\n') : '';
+        throw new Error(details || data.error || `Terminate failed: ${res.status}`);
+    }
+}
 
 export default function RetirosPage() {
     const { tenants, getTenantName, getTenantColor } = useTenantConfig();
@@ -17,6 +46,7 @@ export default function RetirosPage() {
     const [tenantFilter, setTenantFilter] = useState('');
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [copiedId, setCopiedId] = useState<string | null>(null);
+    const [actionId, setActionId] = useState<string | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -33,14 +63,18 @@ export default function RetirosPage() {
     useEffect(() => { load(); }, [load]);
 
     const afterStatus = statusFilter === 'all' ? orders : orders.filter(o => {
-        if (statusFilter === 'Pendiente') return o.delivery !== 'Entregado' && o.delivery !== 'Devuelto';
-        return o.delivery === statusFilter;
+        const status = effectiveStatus(o);
+        if (statusFilter === 'Pendiente') return status !== 'Entregado' && status !== 'Devuelto';
+        return status === statusFilter;
     });
     const visible = tenantFilter ? afterStatus.filter(o => o.tenantId === tenantFilter) : afterStatus;
     const activeTenantIds = Array.from(new Set(orders.map(o => o.tenantId)));
 
-    const pendingCount = orders.filter(o => o.delivery !== 'Entregado' && o.delivery !== 'Devuelto').length;
-    const completedCount = orders.filter(o => o.delivery === 'Entregado').length;
+    const pendingCount = orders.filter(o => {
+        const status = effectiveStatus(o);
+        return status !== 'Entregado' && status !== 'Devuelto';
+    }).length;
+    const completedCount = orders.filter(o => effectiveStatus(o) === 'Entregado').length;
 
     function copyPhone(phone: string, id: string) {
         navigator.clipboard.writeText(phone).then(() => {
@@ -56,6 +90,74 @@ export default function RetirosPage() {
     function formatDate(d: string | null | undefined) {
         if (!d) return '—';
         try { return new Date(d).toLocaleDateString('es-CR', { day: 'numeric', month: 'short' }); } catch { return d; }
+    }
+
+    async function assignToRetiros(order: any) {
+        setActionId(order.id);
+        try {
+            await patchLogisticsOrder(order.id, { lmCarrier: 'retiro', lmStatus: order.lmStatus || 'Pendiente' });
+            setOrders(prev => prev.map(o => o.id === order.id ? { ...o, lmCarrier: 'retiro', lmStatus: o.lmStatus || 'Pendiente' } : o));
+        } catch (e: any) {
+            alert(e.message || 'No se pudo asignar el retiro.');
+        } finally {
+            setActionId(null);
+        }
+    }
+
+    async function toggleContraEntrega(order: any, value: boolean) {
+        setActionId(order.id);
+        try {
+            await patchLogisticsOrder(order.id, { isContraEntrega: value, ...(value ? {} : { contraEntregaCollected: false }) });
+            setOrders(prev => prev.map(o => o.id === order.id ? { ...o, isContraEntrega: value, contraEntrega: value, contraEntregaCollected: value ? o.contraEntregaCollected : false, cePaymentConfirmed: value ? o.cePaymentConfirmed : false } : o));
+        } catch (e: any) {
+            alert(e.message || 'No se pudo actualizar contra entrega.');
+        } finally {
+            setActionId(null);
+        }
+    }
+
+    async function confirmPayment(order: any) {
+        setActionId(order.id);
+        try {
+            if (!order.lmCarrier) {
+                await patchLogisticsOrder(order.id, { lmCarrier: 'retiro', lmStatus: order.lmStatus || 'Pendiente', isContraEntrega: true });
+            } else if (!order.isContraEntrega && !order.contraEntrega) {
+                await patchLogisticsOrder(order.id, { isContraEntrega: true });
+            }
+            const res = await fetch('/api/logistics/contra-entrega', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderId: order.id, amount: order.total || 0, notes: 'Confirmado en retiros' }),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || 'No se pudo confirmar el pago.');
+            }
+            setOrders(prev => prev.map(o => o.id === order.id ? { ...o, lmCarrier: o.lmCarrier || 'retiro', lmStatus: o.lmStatus || 'Pendiente', isContraEntrega: true, contraEntrega: true, contraEntregaCollected: true, cePaymentConfirmed: true } : o));
+        } catch (e: any) {
+            alert(e.message || 'No se pudo confirmar el pago.');
+        } finally {
+            setActionId(null);
+        }
+    }
+
+    async function markDeliveredAndArchive(order: any) {
+        const isContraEntrega = order.isContraEntrega || order.contraEntrega;
+        const isCollected = order.contraEntregaCollected || order.cePaymentConfirmed;
+        if (isContraEntrega && !isCollected) {
+            alert('Este retiro es contra entrega. Confirme el pago antes de marcarlo como Entregado.');
+            return;
+        }
+        setActionId(order.id);
+        try {
+            await patchLogisticsOrder(order.id, { lmCarrier: order.lmCarrier || 'retiro', lmStatus: 'Entregado' });
+            await terminateOrders([order.id]);
+            setOrders(prev => prev.filter(o => o.id !== order.id));
+        } catch (e: any) {
+            alert(e.message || 'No se pudo entregar y archivar el retiro.');
+        } finally {
+            setActionId(null);
+        }
     }
 
     return (
@@ -136,7 +238,12 @@ export default function RetirosPage() {
                     {visible.map(o => {
                         const age = daysSince(o.timestamp);
                         const isExpanded = expandedId === o.id;
-                        const isDelivered = o.delivery === 'Entregado';
+                        const status = effectiveStatus(o);
+                        const isDelivered = status === 'Entregado';
+                        const isAssignedRetiro = o.lmCarrier === 'retiro';
+                        const isCOD = o.isContraEntrega || o.contraEntrega;
+                        const isCollected = o.contraEntregaCollected || o.cePaymentConfirmed;
+                        const busy = actionId === o.id;
                         const tColor = getTenantColor(o.tenantId);
                         const agreedDate = o.agreedDate || o.pickupDate;
 
@@ -197,7 +304,7 @@ export default function RetirosPage() {
                                         background: isDelivered ? 'rgba(34,197,94,0.15)' : 'rgba(251,191,36,0.12)',
                                         color: isDelivered ? '#22c55e' : '#fbbf24',
                                     }}>
-                                        {isDelivered ? 'Entregado' : o.delivery || 'Pendiente'}
+                                        {isDelivered ? 'Entregado' : status || 'Pendiente'}
                                     </span>
                                 </div>
 
@@ -261,6 +368,32 @@ export default function RetirosPage() {
                                                 💬 {o.comments}
                                             </div>
                                         )}
+
+                                        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                                            {!isAssignedRetiro && (
+                                                <button onClick={e => { e.stopPropagation(); assignToRetiros(o); }} disabled={busy}
+                                                    style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid rgba(34,197,94,0.35)', background: 'rgba(34,197,94,0.08)', color: '#22c55e', fontSize: 12, fontWeight: 700, cursor: busy ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                    <PackageCheck size={12} /> Asignar a retiros
+                                                </button>
+                                            )}
+                                            <button onClick={e => { e.stopPropagation(); toggleContraEntrega(o, !isCOD); }} disabled={busy || isDelivered}
+                                                style={{ padding: '7px 12px', borderRadius: 7, border: `1px solid ${isCOD ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.12)'}`, background: isCOD ? 'rgba(251,191,36,0.08)' : 'transparent', color: isCOD ? '#fbbf24' : 'rgba(255,255,255,0.45)', fontSize: 12, fontWeight: 700, cursor: busy || isDelivered ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                <DollarSign size={12} /> {isCOD ? 'Quitar contra entrega' : 'Marcar contra entrega'}
+                                            </button>
+                                            {isCOD && !isCollected && (
+                                                <button onClick={e => { e.stopPropagation(); confirmPayment(o); }} disabled={busy || isDelivered}
+                                                    style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.1)', color: '#22c55e', fontSize: 12, fontWeight: 700, cursor: busy || isDelivered ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                    <Check size={12} /> Confirmar pago
+                                                </button>
+                                            )}
+                                            {!isDelivered && (
+                                                <button onClick={e => { e.stopPropagation(); markDeliveredAndArchive(o); }} disabled={busy || (isCOD && !isCollected)}
+                                                    title={isCOD && !isCollected ? 'Confirme el pago contra entrega primero' : 'Marcar Entregado y archivar'}
+                                                    style={{ marginLeft: 'auto', padding: '7px 12px', borderRadius: 7, border: `1px solid ${isCOD && !isCollected ? 'rgba(255,255,255,0.1)' : 'rgba(34,197,94,0.45)'}`, background: isCOD && !isCollected ? 'transparent' : 'rgba(34,197,94,0.12)', color: isCOD && !isCollected ? 'rgba(255,255,255,0.25)' : '#22c55e', fontSize: 12, fontWeight: 800, cursor: busy || (isCOD && !isCollected) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                    <Archive size={12} /> {busy ? 'Procesando...' : 'Entregado y archivar'}
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
                             </div>

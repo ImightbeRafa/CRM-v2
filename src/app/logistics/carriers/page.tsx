@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Package, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2, FileText, Download } from 'lucide-react';
+import { Package, PackageCheck, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2, FileText, Download } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import {
     costaRicaLocations,
@@ -11,7 +11,7 @@ import {
 } from '@/app/ventas/components/costaRicaLocations';
 
 interface Order {
-    id: string; orderId: string; tenantId: string; status: string; timestamp: string;
+    id: string; orderId: string; tenantId: string; orderType: string; status: string; timestamp: string;
     customerName: string; phone: string | null; email: string | null; product: string | null;
     quantity: number | null; province: string | null; canton: string | null; district: string | null;
     address: string | null; total: number; comments: string | null; delivery: string | null;
@@ -772,7 +772,19 @@ export default function CarriersPage() {
         }
     }, [verifiedOrders, load]);
 
-    const onMove = useCallback((id: string, s: string, c: string) => { setOrders(p => p.map(o => o.id === id ? { ...o, lmStatus: s, lmCarrier: c } : o)); patchOrder(id, { lmCarrier: c, lmStatus: s }); logEvent(id, 'status_change', { to: s }); }, []);
+    const onMove = useCallback((id: string, s: string, c: string) => {
+        const order = orders.find(o => o.id === id);
+        if (s === 'Entregado' && order?.isContraEntrega && !order.contraEntregaCollected) {
+            alert('No se puede marcar como Entregado hasta confirmar el pago contra entrega.');
+            return;
+        }
+        setOrders(p => p.map(o => o.id === id ? { ...o, lmStatus: s, lmCarrier: c } : o));
+        patchOrder(id, { lmCarrier: c, lmStatus: s }).catch((err) => {
+            if (order) setOrders(p => p.map(o => o.id === id ? order : o));
+            alert(err.message || 'No se pudo actualizar la orden.');
+        });
+        logEvent(id, 'status_change', { to: s });
+    }, [orders]);
     const onMoveC = useCallback((id: string, c: string) => {
         if (c === 'correos') {
             openCorreosVerification([id]);
@@ -894,13 +906,27 @@ export default function CarriersPage() {
         const patch: any = {};
         if (bulkStatus) patch.lmStatus = bulkStatus;
         if (bulkCarrier) patch.lmCarrier = bulkCarrier;
-        await fetch('/api/logistics/bulk-patch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderIds: ids, patch }) });
+        if (bulkStatus === 'Entregado') {
+            const blocked = orders.filter(o => selectedIds.has(o.id) && o.isContraEntrega && !o.contraEntregaCollected);
+            if (blocked.length > 0) {
+                alert(`${blocked.length} orden(es) contra entrega requieren pago confirmado antes de marcar Entregado.`);
+                setApplying(false);
+                return;
+            }
+        }
+        const res = await fetch('/api/logistics/bulk-patch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderIds: ids, patch }) });
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            alert(data.error || 'No se pudo aplicar la actualizacion masiva.');
+            setApplying(false);
+            return;
+        }
         setOrders(p => p.map(o => selectedIds.has(o.id) ? { ...o, ...{ lmStatus: bulkStatus || o.lmStatus, lmCarrier: bulkCarrier || o.lmCarrier } } : o));
         setSelectedIds(new Set());
         setBulkStatus('');
         setBulkCarrier('');
         setApplying(false);
-    }, [selectedIds, bulkStatus, bulkCarrier, openCorreosVerification]);
+    }, [selectedIds, bulkStatus, bulkCarrier, openCorreosVerification, orders]);
 
     const applyFilters = (list: Order[]) => {
         if (provinceFilter) list = list.filter(o => o.province?.toLowerCase().includes(provinceFilter.toLowerCase()));
@@ -916,6 +942,8 @@ export default function CarriersPage() {
     const dates = Array.from(new Set(orders.map(o => dateKey(o.timestamp)))).sort((a, b) => b.localeCompare(a));
     const selectedUnassigned = unassigned.filter(o => selectedIds.has(o.id));
     const selectedUnassignedCount = selectedUnassigned.length;
+    const selectedUnassignedRetiros = selectedUnassigned.filter(o => o.orderType === 'RA');
+    const selectedUnassignedRetirosCount = selectedUnassignedRetiros.length;
     const allVisibleUnassignedSelected = unassigned.length > 0 && selectedUnassignedCount === unassigned.length;
     const archiveBusy = archiveTab === 'guias' ? archiveGuiasLoading : archiveLoading;
 
@@ -935,6 +963,25 @@ export default function CarriersPage() {
         const ids = selectedUnassigned.map(o => o.id);
         if (ids.length === 0) return;
         openCorreosVerification(ids);
+    }
+
+    async function assignSelectedUnassignedToRetiros() {
+        const ids = selectedUnassignedRetiros.map(o => o.id);
+        if (ids.length === 0) return;
+        const previous = orders;
+        setOrders(p => p.map(o => ids.includes(o.id) ? { ...o, lmCarrier: 'retiro', lmStatus: 'Pendiente' } : o));
+        try {
+            await Promise.all(ids.map(id => patchOrder(id, { lmCarrier: 'retiro', lmStatus: 'Pendiente' })));
+            ids.forEach(id => logEvent(id, 'carrier_assigned', { carrier: 'retiro' }));
+            setSelectedIds(prev => {
+                const next = new Set(prev);
+                ids.forEach(id => next.delete(id));
+                return next;
+            });
+        } catch (err: any) {
+            setOrders(previous);
+            alert(err.message || 'No se pudieron asignar los retiros.');
+        }
     }
 
     if (loading) return (
@@ -1189,6 +1236,10 @@ export default function CarriersPage() {
                                     style={{ flex: 1, minWidth: 110, padding: '5px 8px', borderRadius: 6, border: '1px solid rgba(96,165,250,0.35)', background: selectedUnassignedCount > 0 ? 'rgba(96,165,250,0.12)' : 'transparent', color: selectedUnassignedCount > 0 ? '#60a5fa' : 'rgba(255,255,255,0.2)', fontSize: 10.5, fontWeight: 700, cursor: selectedUnassignedCount > 0 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
                                     <Mail size={11} /> Correos {selectedUnassignedCount > 0 ? `(${selectedUnassignedCount})` : ''}
                                 </button>
+                                <button onClick={assignSelectedUnassignedToRetiros} disabled={selectedUnassignedRetirosCount === 0}
+                                    style={{ flex: 1, minWidth: 110, padding: '5px 8px', borderRadius: 6, border: '1px solid rgba(34,197,94,0.35)', background: selectedUnassignedRetirosCount > 0 ? 'rgba(34,197,94,0.12)' : 'transparent', color: selectedUnassignedRetirosCount > 0 ? '#22c55e' : 'rgba(255,255,255,0.2)', fontSize: 10.5, fontWeight: 700, cursor: selectedUnassignedRetirosCount > 0 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                                    <PackageCheck size={11} /> Retiros {selectedUnassignedRetirosCount > 0 ? `(${selectedUnassignedRetirosCount})` : ''}
+                                </button>
                             </div>
                         )}
                     </div>
@@ -1244,6 +1295,11 @@ export default function CarriersPage() {
                                                 <button onClick={() => onAssign(o.id, 'correos')} style={{ flex: 1, padding: '5px 6px', borderRadius: 6, border: '1px solid rgba(96,165,250,0.35)', background: 'rgba(96,165,250,0.08)', color: '#60a5fa', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
                                                     <Mail size={9} /> Correos
                                                 </button>
+                                                {o.orderType === 'RA' && (
+                                                    <button onClick={() => onAssign(o.id, 'retiro')} style={{ flex: 1, padding: '5px 6px', borderRadius: 6, border: '1px solid rgba(34,197,94,0.35)', background: 'rgba(34,197,94,0.08)', color: '#22c55e', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+                                                        <PackageCheck size={9} /> Retiro
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     );

@@ -252,9 +252,34 @@ export async function PATCH(req: NextRequest) {
     if (!orderId) return NextResponse.json({ error: 'orderId required' }, { status: 400 });
 
     try {
-        const existing = await prisma.$queryRaw<{ id: string }[]>`
-            SELECT id FROM lm_orders WHERE crm_order_id = ${orderId} LIMIT 1
-        `;
+        const [existing, crmOrder] = await Promise.all([
+            prisma.$queryRaw<{ id: string; is_contra_entrega: boolean; contraentrega_collected: boolean }[]>`
+                SELECT id, is_contra_entrega, contraentrega_collected FROM lm_orders WHERE crm_order_id = ${orderId} LIMIT 1
+            `,
+            prisma.order.findUnique({
+                where: { id: orderId },
+                select: { tenantId: true, contraEntrega: true, cePaymentConfirmed: true },
+            }),
+        ]);
+
+        if (!crmOrder) {
+            return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+        }
+
+        const existingLm = existing[0];
+        const effectiveContraEntrega = isContraEntrega !== undefined
+            ? Boolean(isContraEntrega)
+            : Boolean(crmOrder.contraEntrega || existingLm?.is_contra_entrega);
+        const effectiveCollected = contraEntregaCollected !== undefined
+            ? Boolean(contraEntregaCollected)
+            : Boolean(crmOrder.cePaymentConfirmed || existingLm?.contraentrega_collected);
+
+        if (lmStatus === 'Entregado' && effectiveContraEntrega && !effectiveCollected) {
+            return NextResponse.json(
+                { error: 'Payment must be confirmed before marking contra entrega as Entregado' },
+                { status: 400 },
+            );
+        }
 
         const actor = req.headers.get('x-user-email') ?? 'system';
 
@@ -290,7 +315,6 @@ export async function PATCH(req: NextRequest) {
             await prisma.$executeRawUnsafe(sql, ...params);
         } else {
             // Look up crm_tenant_id — required NOT NULL on lm_orders
-            const crmOrder = await prisma.order.findUnique({ where: { id: orderId }, select: { tenantId: true } });
             const crm_tenant_id = crmOrder?.tenantId ?? '';
             const c = lmCarrier ?? null;
             const s = lmStatus ?? 'Pendiente';

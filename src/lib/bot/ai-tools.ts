@@ -450,20 +450,14 @@ function validateBaseOrderFields(params: any): { isValid: boolean; errors: strin
   // For EA (shipping orders), address fields are important
   const orderType = params.orderType;
   if (orderType === 'EA') {
-    if (!params.province || params.province.trim() === '') {
-      errors.push('Provincia es requerida para envío a domicilio (EA). Pregunta la provincia al cliente.');
-    }
-    if (!params.canton || params.canton.trim() === '') {
-      errors.push('Cantón es requerido para envío a domicilio (EA). Pregunta el cantón al cliente.');
-    }
-    if (!params.district || params.district.trim() === '') {
-      errors.push('Distrito es requerido para envío a domicilio (EA). Pregunta el distrito al cliente.');
-    }
-    if (!params.address || params.address.trim() === '') {
-      errors.push('Dirección es requerida para envío a domicilio (EA). Pregunta la dirección al cliente.');
+    const hasDeliveryLocation = [params.address, params.province, params.canton, params.district]
+      .some((value) => typeof value === 'string' && value.trim() !== '');
+
+    if (!hasDeliveryLocation) {
+      errors.push('Dirección o ubicación es requerida para envío a domicilio (EA). Pregunta la dirección o la ubicación al cliente.');
     }
   }
-  
+
   // Phone validation (optional but should be valid format if provided)
   if (params.phone && params.phone.trim() !== '') {
     const cleanPhone = params.phone.replace(/\D/g, '');
@@ -858,7 +852,7 @@ export async function createOrder(
 
         // STEP 1.5: Validate location hierarchy for EA orders
         const locationCorrections: string[] = [];
-        if (params.orderType === 'EA' && params.province) {
+        if (params.orderType === 'EA' && params.province && params.canton && params.district) {
           const { validateLocation, formatValidationMessage } = await import('@/lib/locationValidator');
           const locResult = validateLocation(params.province, params.canton, params.district);
 

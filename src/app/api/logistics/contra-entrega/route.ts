@@ -42,8 +42,8 @@ export async function GET(req: NextRequest) {
                 o.province,
                 lm.carrier      AS "lmCarrier",
                 lm.status       AS "lmStatus",
-                COALESCE(o."contraEntrega", lm.is_contra_entrega) AS "isContraEntrega",
-                COALESCE(o."cePaymentConfirmed", lm.contraentrega_collected) AS "collected"
+                (COALESCE(o."contraEntrega", FALSE) OR COALESCE(lm.is_contra_entrega, FALSE)) AS "isContraEntrega",
+                (COALESCE(o."cePaymentConfirmed", FALSE) OR COALESCE(lm.contraentrega_collected, FALSE)) AS "collected"
             FROM "Order" o
             LEFT JOIN lm_orders lm ON lm.crm_order_id = o.id
             WHERE (lm.is_contra_entrega = TRUE OR o."contraEntrega" = TRUE)
@@ -103,11 +103,26 @@ export async function POST(req: NextRequest) {
     if (!orderId) return NextResponse.json({ error: 'orderId required' }, { status: 400 });
 
     try {
-        // Derive tenantId from the order itself, not from the request body
-        const orderRow: any[] = await prisma.$queryRaw`
-            SELECT crm_tenant_id FROM lm_orders WHERE crm_order_id = ${orderId} LIMIT 1
+        // Derive tenantId from persisted data, not from the request body.
+        const [orderRow, crmOrder] = await Promise.all([
+            prisma.$queryRaw<any[]>`
+                SELECT crm_tenant_id FROM lm_orders WHERE crm_order_id = ${orderId} LIMIT 1
+            `,
+            prisma.order.findUnique({ where: { id: orderId }, select: { tenantId: true } }),
+        ]);
+        const derivedTenantId = orderRow?.[0]?.crm_tenant_id ?? crmOrder?.tenantId;
+        if (!derivedTenantId) {
+            return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+        }
+
+        await prisma.$executeRaw`
+            INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status, is_contra_entrega)
+            VALUES (${orderId}, ${derivedTenantId}, 'retiro', 'Pendiente', TRUE)
+            ON CONFLICT (crm_order_id) DO UPDATE
+            SET is_contra_entrega = TRUE,
+                carrier = COALESCE(lm_orders.carrier, EXCLUDED.carrier),
+                updated_at = NOW()
         `;
-        const derivedTenantId = orderRow?.[0]?.crm_tenant_id ?? '';
 
         await prisma.$executeRaw`
             UPDATE lm_orders SET contraentrega_collected = TRUE, updated_at = NOW()
@@ -129,7 +144,7 @@ export async function POST(req: NextRequest) {
         try {
             await prisma.order.update({
                 where: { id: orderId },
-                data: { cePaymentConfirmed: true },
+                data: { contraEntrega: true, cePaymentConfirmed: true },
             });
         } catch (syncErr) {
             console.error('[contra-entrega POST] Order model sync failed (non-fatal):', syncErr);

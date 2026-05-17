@@ -21,8 +21,15 @@ export interface LocationValidationResult {
 
 // ── Text normalisation (shared with UI components) ───────────────────────────
 
+function decodeEscapedUnicodeText(value: string): string {
+  if (!/\\u[0-9a-fA-F]{4}/.test(value)) return value;
+  return value.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) =>
+    String.fromCharCode(parseInt(hex, 16))
+  );
+}
+
 function normalizeText(value: string | undefined | null): string {
-  const s = (value ?? '').toString();
+  const s = decodeEscapedUnicodeText((value ?? '').toString());
   return s
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')

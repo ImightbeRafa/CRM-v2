@@ -39,11 +39,13 @@ import { z } from 'zod';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { getTenantCustomFields, formatCustomFieldsForTelegram } from '@/lib/customFields';
 import { getCurrentStatsDateKey, STATS_TIME_ZONE } from '@/lib/statistics-dates';
+import { validateLocation } from '@/lib/locationValidator';
 
 // xAI client (OpenAI-compatible API)
 const xai = new OpenAI({
   apiKey: process.env.XAI_API_KEY,
   baseURL: 'https://api.x.ai/v1',
+  timeout: Number(process.env.XAI_TIMEOUT_MS || 15_000),
 });
 
 // Model configuration
@@ -88,6 +90,13 @@ function normalizeSpanishText(value: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
+}
+
+function decodeEscapedUnicodeText(value: string): string {
+  if (!/\\u[0-9a-fA-F]{4}/.test(value)) return value;
+  return value.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) =>
+    String.fromCharCode(parseInt(hex, 16))
+  );
 }
 
 /**
@@ -313,6 +322,20 @@ function inferCreateOrderArgsFromMessage(args: any, userMessage: string): any {
     repairedFields.push('contraEntrega');
   }
 
+  const location = extractLocationFromMessage(userMessage);
+  for (const field of ['province', 'canton', 'district', 'address'] as const) {
+    if (!inferred[field] && location[field]) {
+      inferred[field] = location[field];
+      repairedFields.push(field);
+    } else if (typeof inferred[field] === 'string') {
+      const decoded = decodeEscapedUnicodeText(inferred[field]);
+      if (decoded !== inferred[field]) {
+        inferred[field] = decoded;
+        repairedFields.push(field);
+      }
+    }
+  }
+
   if (repairedFields.length > 0) {
     console.info('[AI Agent] Repaired create_order args from user message:', repairedFields);
   }
@@ -334,6 +357,262 @@ function looksLikeOrderFieldReply(message: string): boolean {
 function shouldStoreCreateOrderRepair(result: ToolResult): boolean {
   const error = result.error || '';
   return /producto es requerido|campos faltantes|campos personalizados faltantes/i.test(error);
+}
+
+function getLabelValue(message: string, labels: string[]): string | undefined {
+  const lines = message.split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = stripChatMarkdown(rawLine).replace(/^[^\p{L}\p{N}]+/u, '').trim();
+    const separatorIndex = line.indexOf(':');
+    if (separatorIndex < 0) continue;
+
+    const key = normalizeSpanishText(line.slice(0, separatorIndex)).replace(/\s+/g, ' ');
+    const value = stripChatMarkdown(line.slice(separatorIndex + 1));
+    if (!value) continue;
+
+    if (labels.some((label) => key.includes(normalizeSpanishText(label)))) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function looksLikeNonAddressOrderLine(line: string): boolean {
+  if (!line) return true;
+  if (extractPhoneFromMessage(line)) return true;
+  if (hasOrderCreationIntent(line)) return true;
+  if (isOrderSectionLabel(line)) return true;
+  if (/^productos?\s*(?:\([^)]*\))?\s*:?/i.test(line)) return true;
+  if (/^producto\s*(?:\([^)]*\))?\s*:?/i.test(line)) return true;
+  if (/^[-*•]?\s*[\w\s]+(?:patch|producto|sku)\b/i.test(line) && /\bx\s*\d+\b/i.test(line)) return true;
+  return false;
+}
+
+function splitDistrictAndAddress(rawDistrictPart: string, matchedDistrict: string): { district: string; address?: string } {
+  const districtPart = stripChatMarkdown(decodeEscapedUnicodeText(rawDistrictPart));
+  const sentenceSplit = districtPart.match(/^(.+?)\.\s*(.+)$/);
+  if (sentenceSplit?.[2]) {
+    return {
+      district: matchedDistrict,
+      address: stripChatMarkdown(sentenceSplit[2]),
+    };
+  }
+
+  const normalizedPart = normalizeSpanishText(districtPart);
+  const normalizedDistrict = normalizeSpanishText(matchedDistrict);
+  if (normalizedPart.startsWith(normalizedDistrict) && normalizedPart.length > normalizedDistrict.length) {
+    const districtWords = matchedDistrict.trim().split(/\s+/).length;
+    const words = districtPart.trim().split(/\s+/);
+    const rest = words.slice(districtWords).join(' ').replace(/^[,.;:\s-]+/, '').trim();
+    if (rest) return { district: matchedDistrict, address: rest };
+  }
+
+  return { district: matchedDistrict };
+}
+
+function extractLocationFromMessage(message: string): {
+  province?: string;
+  canton?: string;
+  district?: string;
+  address?: string;
+} {
+  const labeledProvince = getLabelValue(message, ['provincia']);
+  const labeledCanton = getLabelValue(message, ['canton']);
+  const labeledDistrict = getLabelValue(message, ['distrito']);
+  const labeledAddress = getLabelValue(message, ['direccion exacta', 'direccion', 'address']);
+
+  const result: { province?: string; canton?: string; district?: string; address?: string } = {};
+  if (labeledProvince) result.province = decodeEscapedUnicodeText(labeledProvince);
+  if (labeledCanton) result.canton = decodeEscapedUnicodeText(labeledCanton);
+  if (labeledDistrict) result.district = decodeEscapedUnicodeText(labeledDistrict);
+  if (labeledAddress) result.address = decodeEscapedUnicodeText(labeledAddress);
+
+  const lines = message
+    .split(/\r?\n/)
+    .map((line) => stripChatMarkdown(line))
+    .filter(Boolean);
+
+  for (const line of lines) {
+    if (looksLikeNonAddressOrderLine(line)) continue;
+    if (!line.includes(',')) continue;
+
+    const parts = line.split(',').map((part) => stripChatMarkdown(part)).filter(Boolean);
+    if (parts.length < 3) continue;
+
+    const provinceCandidate = decodeEscapedUnicodeText(parts[0]);
+    const cantonCandidate = decodeEscapedUnicodeText(parts[1]);
+    const districtCandidate = decodeEscapedUnicodeText(parts.slice(2).join(', '));
+    const validation = validateLocation(provinceCandidate, cantonCandidate, districtCandidate);
+    if (!validation.province.valid || !validation.canton.valid) continue;
+
+    result.province ||= validation.correctedProvince || validation.province.match || provinceCandidate;
+    result.canton ||= validation.correctedCanton || validation.canton.match || cantonCandidate;
+
+    const matchedDistrict = validation.correctedDistrict || validation.district.match;
+    if (matchedDistrict) {
+      const split = splitDistrictAndAddress(districtCandidate, matchedDistrict);
+      result.district ||= split.district;
+      if (!result.address && split.address) result.address = split.address;
+    } else {
+      result.district ||= districtCandidate;
+    }
+
+    if (!result.address) result.address = line;
+    break;
+  }
+
+  return result;
+}
+
+function extractQuantityFromMessage(message: string): number | undefined {
+  const explicit = message.match(/cantidad(?:\s+total)?\s*[:=]?\s*(\d+)/i);
+  if (explicit) {
+    const quantity = Number(explicit[1]);
+    if (Number.isInteger(quantity) && quantity > 0) return quantity;
+  }
+
+  const product = extractProductTextFromMessage(message);
+  const productQuantity = product?.match(/\b(?:x|\*)\s*(\d+)\b/i);
+  if (productQuantity) {
+    const quantity = Number(productQuantity[1]);
+    if (Number.isInteger(quantity) && quantity > 0) return quantity;
+  }
+
+  return undefined;
+}
+
+function inferCustomerNameFromMessage(message: string): string | undefined {
+  const labeled = getLabelValue(message, ['nombre completo', 'cliente', 'nombre']);
+  if (labeled) return labeled;
+
+  const lines = message
+    .split(/\r?\n/)
+    .map((line) => stripChatMarkdown(line))
+    .filter(Boolean);
+
+  const firstOrderLineIndex = lines.findIndex((line) => hasOrderCreationIntent(line));
+  const startIndex = firstOrderLineIndex >= 0 ? firstOrderLineIndex + 1 : 0;
+
+  for (let i = startIndex; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (extractPhoneFromMessage(line)) continue;
+    if (/^productos?\s*(?:\([^)]*\))?\s*:?$/i.test(line)) break;
+    if (/^producto\s*(?:\([^)]*\))?\s*:?$/i.test(line)) break;
+    if (isOrderSectionLabel(line)) continue;
+    if (/[:=]/.test(line)) continue;
+    return line;
+  }
+
+  return undefined;
+}
+
+function buildStructuredOrderArgs(userMessage: string): any | null {
+  if (!hasOrderCreationIntent(userMessage)) return null;
+
+  const normalized = normalizeSpanishText(userMessage);
+  const hasOrderTemplateSignal =
+    /^productos?\s*(?:\([^)]*\))?\s*:/im.test(userMessage)
+    || /^producto\s*(?:\([^)]*\))?\s*:/im.test(userMessage)
+    || normalized.includes('nombre completo')
+    || normalized.includes('telefono')
+    || /\btotal(?:\s+en\s+\w+)?\b/i.test(userMessage)
+    || /\bdeseo crear una nueva orden\b/i.test(userMessage);
+
+  if (!hasOrderTemplateSignal) return null;
+
+  const args: any = {};
+  const customerName = inferCustomerNameFromMessage(userMessage);
+  const product = extractProductTextFromMessage(userMessage);
+  const phone = extractPhoneFromMessage(userMessage);
+  const total = extractTotalFromMessage(userMessage);
+  const quantity = extractQuantityFromMessage(userMessage);
+
+  if (customerName) args.customerName = customerName;
+  if (product) args.product = product;
+  if (phone) args.phone = phone;
+  if (total !== undefined) args.total = total;
+  if (quantity !== undefined) args.quantity = quantity;
+
+  if (/\bra\b/.test(normalized) || normalized.includes('retiro')) {
+    args.orderType = 'RA';
+  } else if (/\bea\b/.test(normalized) || normalized.includes('envio')) {
+    args.orderType = 'EA';
+  }
+
+  const paymentMethod = getLabelValue(userMessage, ['metodo de pago', 'forma de pago', 'pago']);
+  if (paymentMethod) args.paymentMethod = paymentMethod;
+
+  const comments = getLabelValue(userMessage, ['comentario', 'comentarios', 'observacion', 'nota']);
+  if (comments) args.comments = comments;
+
+  const location = extractLocationFromMessage(userMessage);
+  if (location.address) args.address = location.address;
+  if (location.province) args.province = location.province;
+  if (location.canton) args.canton = location.canton;
+  if (location.district) args.district = location.district;
+
+  const courier = getLabelValue(userMessage, ['metodo de envio', 'mensajeria', 'courier', 'entrega']);
+  if (courier) args.courier = courier;
+
+  if (normalized.includes('contra entrega') || normalized.includes('paga contra entrega')) {
+    args.contraEntrega = true;
+  }
+
+  return Object.keys(args).length > 0 ? args : null;
+}
+
+async function executeStructuredCreateOrder(
+  args: any,
+  context: ToolContext,
+  platform: string,
+  platformId: string,
+): Promise<MessageResponse> {
+  console.info('[AI Agent] Structured order fast path detected', {
+    hasCustomer: !!args.customerName,
+    hasProduct: !!args.product,
+    hasTotal: args.total !== undefined,
+    orderType: args.orderType,
+  });
+
+  const { tenantToolSchemas } = await updateToolSchemasWithCustomFields(context.tenantId);
+  const result = await executeTool('create_order', context, args, tenantToolSchemas);
+
+  if (result.success) {
+    const text = formatToolResult('create_order', result, platform);
+    await addAssistantMessage(platform, platformId, text);
+    return { text, attachments: result.attachments && result.attachments.length > 0 ? result.attachments : undefined };
+  }
+
+  if (result.needsConfirmation && result.message) {
+    const cType = result.confirmationType;
+    if (cType === 'no_match' || cType === 'zero_stock') {
+      await setPendingConfirmation(platform, platformId, {
+        type: 'inventory_confirm',
+        data: {
+          toolName: 'create_order',
+          toolArgs: { ...result.pendingOrderData, _forceWithoutInventory: true },
+        },
+        expiresAt: Date.now() + 120_000,
+      });
+    }
+    await addAssistantMessage(platform, platformId, result.message);
+    return { text: result.message };
+  }
+
+  if (shouldStoreCreateOrderRepair(result)) {
+    await setPendingConfirmation(platform, platformId, {
+      type: 'order_repair',
+      data: {
+        toolName: 'create_order',
+        toolArgs: args,
+      },
+      expiresAt: Date.now() + 120_000,
+    });
+  }
+
+  const text = formatToolError('create_order', result);
+  await addAssistantMessage(platform, platformId, text);
+  return { text };
 }
 
 function mergeCreateOrderCalls(calls: PreparedToolCall[]): PreparedToolCall[] {
@@ -757,6 +1036,11 @@ export async function processMessage(
 
     // Add user message to history
     await addUserMessage(platform, platformId, userMessage);
+
+    const structuredOrderArgs = buildStructuredOrderArgs(userMessage);
+    if (structuredOrderArgs) {
+      return executeStructuredCreateOrder(structuredOrderArgs, context, platform, platformId);
+    }
 
     // Get conversation history
     const history = await getFormattedHistory(platform, platformId);

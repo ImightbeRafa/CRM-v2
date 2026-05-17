@@ -27,6 +27,23 @@ export async function POST(req: NextRequest) {
     }
 
     try {
+        if (patch.lmStatus === 'Entregado') {
+            const blocked = await prisma.$queryRaw<{ id: string; order_ref: string | null }[]>`
+                SELECT o.id, o."orderId" AS order_ref
+                FROM "Order" o
+                LEFT JOIN lm_orders lm ON lm.crm_order_id = o.id
+                WHERE o.id = ANY(${orderIds}::text[])
+                  AND (COALESCE(o."contraEntrega", FALSE) = TRUE OR COALESCE(lm.is_contra_entrega, FALSE) = TRUE)
+                  AND (COALESCE(o."cePaymentConfirmed", FALSE) = FALSE AND COALESCE(lm.contraentrega_collected, FALSE) = FALSE)
+            `;
+            if (blocked.length > 0) {
+                return NextResponse.json({
+                    error: `${blocked.length} contra entrega order(s) require confirmed payment before Entregado`,
+                    blocked: blocked.map(o => o.order_ref || o.id),
+                }, { status: 400 });
+            }
+        }
+
         // Fetch current lm_orders rows
         const existing = await prisma.$queryRaw<{ crm_order_id: string }[]>`
             SELECT crm_order_id FROM lm_orders

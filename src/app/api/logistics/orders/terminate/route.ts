@@ -64,11 +64,18 @@ export async function POST(req: NextRequest) {
             status: string; billed_week_id: number | null;
             correos_shipping_cost: number | null;
             archived_at: Date | null;
+            is_contra_entrega: boolean;
+            contraentrega_collected: boolean;
+            order_contra_entrega: boolean;
+            order_ce_payment_confirmed: boolean;
             province: string | null;
             canton: string | null;
             district: string | null;
         }[]>(
             `SELECT lm.crm_order_id, lm.carrier, lm.status, lm.billed_week_id, lm.correos_shipping_cost, lm.archived_at,
+                    lm.is_contra_entrega, lm.contraentrega_collected,
+                    o."contraEntrega" AS order_contra_entrega,
+                    o."cePaymentConfirmed" AS order_ce_payment_confirmed,
                     o.province, o.canton, o.district
              FROM lm_orders lm
              LEFT JOIN "Order" o ON o.id = lm.crm_order_id
@@ -89,6 +96,10 @@ export async function POST(req: NextRequest) {
             const o = orderMap.get(id);
             if (!o) { errors.push(`${id}: no existe en logistics`); continue; }
             if (o.status !== 'Entregado' && o.status !== 'Devuelto') { errors.push(`${id}: estado ${o.status}, se requiere Entregado o Devuelto`); continue; }
+            if (o.status === 'Entregado' && (o.is_contra_entrega || o.order_contra_entrega) && !(o.contraentrega_collected || o.order_ce_payment_confirmed)) {
+                errors.push(`${id}: contra entrega sin pago confirmado`);
+                continue;
+            }
             if (o.billed_week_id != null) {
                 if (o.archived_at == null) {
                     // Restored order — already billed, just needs re-archiving

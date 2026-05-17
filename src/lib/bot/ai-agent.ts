@@ -761,49 +761,138 @@ function splitDistrictAndAddress(rawDistrictPart: string, matchedDistrict: strin
 }
 
 /**
- * Extract Provincia/Cantón/Distrito from lines that omit the colon, like:
+ * Known field labels that may appear inline within a single comma-separated
+ * line. Used by `splitMultiLabelLines` to insert a newline before each
+ * subsequent label so each label-value pair ends up on its own line.
+ *
+ * Real example we have to handle:
+ *   "distrito primero, direccion Hospital Tony Facio Castro, departamento de archivo."
+ * After splitting it becomes:
+ *   distrito primero
+ *   direccion Hospital Tony Facio Castro, departamento de archivo.
+ */
+const INLINE_LABEL_KEYWORDS: string[] = [
+  'nombre completo', 'nombre', 'cliente',
+  'telefono', 'teléfono', 'tel',
+  'provincia', 'cantón', 'canton', 'distrito',
+  'dirección', 'direccion', 'address',
+  'email', 'correo',
+  'metodo de pago', 'método de pago', 'forma de pago',
+  'metodo de envio', 'método de envío', 'mensajeria', 'courier',
+  'producto', 'productos',
+  'cantidad', 'total', 'tipo de orden',
+  'comentario', 'comentarios', 'observacion', 'nota',
+];
+
+/**
+ * Insert a newline before any known label that appears mid-line after a comma
+ * (with no preceding colon for that segment). Only used by the colonless
+ * extractors so the colon-based path is unaffected.
+ */
+function splitMultiLabelLines(message: string): string {
+  let result = message;
+  // Process longest labels first so multi-word labels don't get clipped by
+  // shorter prefixes (e.g. "metodo de pago" should match before "pago").
+  const sortedLabels = [...INLINE_LABEL_KEYWORDS].sort((a, b) => b.length - a.length);
+  for (const label of sortedLabels) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // (,\s*) match a comma boundary, then the label, then a separator (space/colon/end of line).
+    const re = new RegExp(`(,\\s*)(${escaped})(?=\\s|:|$)`, 'gi');
+    result = result.replace(re, '\n$2');
+  }
+  return result;
+}
+
+/**
+ * Extract Provincia/Cantón/Distrito/Dirección from lines that omit the colon,
+ * like:
  *   Provincia San José
  *   Cantón Desamparados
  *   Distrito San Antonio
+ *   Direccion Hospital Tony Facio Castro
  * `getLabelValue` requires `:`, so without this fallback the structured
  * fast-path silently drops the location and the bot incorrectly reports the
  * fields as missing. We require the label to be the FIRST word of the line
- * and we skip lines that already have a colon (those are handled upstream).
+ * (after preprocessing comma-mashed labels) and skip lines that already have
+ * a colon (those are handled upstream).
  */
 function extractColonlessLocationFromMessage(message: string): {
   province?: string;
   canton?: string;
   district?: string;
+  address?: string;
 } {
-  const result: { province?: string; canton?: string; district?: string } = {};
-  const lines = message
+  const result: { province?: string; canton?: string; district?: string; address?: string } = {};
+
+  // Pre-process: split lines like "distrito primero, direccion Hospital..."
+  // so each known label starts a fresh line.
+  const preprocessed = splitMultiLabelLines(message);
+
+  const lines = preprocessed
     .split(/\r?\n/)
     .map((line) => stripChatMarkdown(line))
     .filter(Boolean);
+
+  // Strip trailing punctuation like commas, semicolons, periods that users
+  // commonly leave at the end of a line.
+  const cleanValue = (value: string): string =>
+    decodeEscapedUnicodeText(stripChatMarkdown(value)).replace(/[\s,;:.]+$/, '').trim();
 
   for (const line of lines) {
     if (line.includes(':')) continue;
 
     const provMatch = line.match(/^\s*provincia\s+(.+)$/i);
     if (provMatch && !result.province) {
-      result.province = decodeEscapedUnicodeText(stripChatMarkdown(provMatch[1]));
+      result.province = cleanValue(provMatch[1]);
       continue;
     }
 
     const cantMatch = line.match(/^\s*cant[óo]n\s+(.+)$/i);
     if (cantMatch && !result.canton) {
-      result.canton = decodeEscapedUnicodeText(stripChatMarkdown(cantMatch[1]));
+      result.canton = cleanValue(cantMatch[1]);
       continue;
     }
 
     const distMatch = line.match(/^\s*distrito\s+(.+)$/i);
     if (distMatch && !result.district) {
-      result.district = decodeEscapedUnicodeText(stripChatMarkdown(distMatch[1]));
+      result.district = cleanValue(distMatch[1]);
+      continue;
+    }
+
+    const addrMatch = line.match(/^\s*direcci[óo]n\s+(.+)$/i);
+    if (addrMatch && !result.address) {
+      // Preserve commas inside the address (e.g. "Hospital X, dpto archivo").
+      result.address = decodeEscapedUnicodeText(stripChatMarkdown(addrMatch[1])).replace(/[\s.;]+$/, '').trim();
       continue;
     }
   }
 
   return result;
+}
+
+/**
+ * Extract a customer name when the user wrote `nombre <value>` without a
+ * colon. Mirrors the colonless location extractor.
+ */
+function extractColonlessCustomerName(message: string): string | undefined {
+  const preprocessed = splitMultiLabelLines(message);
+  const lines = preprocessed
+    .split(/\r?\n/)
+    .map((line) => stripChatMarkdown(line))
+    .filter(Boolean);
+
+  for (const line of lines) {
+    if (line.includes(':')) continue;
+    // Skip if a phone is on the same line (we want the name only).
+    const m = line.match(/^\s*(?:nombre\s+completo|nombre|cliente)\s+(.+)$/i);
+    if (!m) continue;
+    const value = stripChatMarkdown(m[1]).replace(/[\s,;:.]+$/, '').trim();
+    if (value && !extractPhoneFromMessage(value)) {
+      return decodeEscapedUnicodeText(value);
+    }
+  }
+
+  return undefined;
 }
 
 function extractLocationFromMessage(message: string): {
@@ -824,11 +913,12 @@ function extractLocationFromMessage(message: string): {
   if (labeledAddress) result.address = decodeEscapedUnicodeText(labeledAddress);
 
   // Fallback: capture colonless location labels (very common in WhatsApp messages).
-  if (!result.province || !result.canton || !result.district) {
+  if (!result.province || !result.canton || !result.district || !result.address) {
     const colonless = extractColonlessLocationFromMessage(message);
     if (!result.province && colonless.province) result.province = colonless.province;
     if (!result.canton && colonless.canton) result.canton = colonless.canton;
     if (!result.district && colonless.district) result.district = colonless.district;
+    if (!result.address && colonless.address) result.address = colonless.address;
   }
 
   const lines = message
@@ -887,7 +977,13 @@ function extractQuantityFromMessage(message: string): number | undefined {
 
 function inferCustomerNameFromMessage(message: string): string | undefined {
   const labeled = getLabelValue(message, ['nombre completo', 'cliente', 'nombre']);
-  if (labeled) return labeled;
+  if (labeled) return labeled.replace(/[\s,;:.]+$/, '').trim();
+
+  // Colonless variant: `nombre Karen Lizeth Reyes Zamora` (lowercase, no colon,
+  // possibly with a trailing comma). isOrderSectionLabel would otherwise skip
+  // this line because it begins with "nombre".
+  const colonlessName = extractColonlessCustomerName(message);
+  if (colonlessName) return colonlessName;
 
   const lines = message
     .split(/\r?\n/)
@@ -904,13 +1000,70 @@ function inferCustomerNameFromMessage(message: string): string | undefined {
     if (/^producto\s*(?:\([^)]*\))?\s*:?$/i.test(line)) break;
     if (isOrderSectionLabel(line)) continue;
     if (/[:=]/.test(line)) continue;
-    return line;
+    return line.replace(/[\s,;:.]+$/, '').trim();
   }
 
   return undefined;
 }
 
-function buildStructuredOrderArgs(userMessage: string): any | null {
+/**
+ * Look up a tenant custom field's value in a free-form user message. Tries
+ * exact match on the field's label first (so "Comentarios importantes:" does
+ * not get hijacked by the more general "Comentario" matcher), then falls back
+ * to includes-match for forgiveness.
+ */
+function getCustomFieldValueFromMessage(message: string, label: string, key: string): string | undefined {
+  const candidates = Array.from(new Set([label, key].filter(Boolean)));
+  if (candidates.length === 0) return undefined;
+
+  const normalizedCandidates = candidates.map((c) => normalizeSpanishText(c));
+
+  // Pass 1: exact-match on the normalized key (after stripping the colon part).
+  const lines = message.split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = stripChatMarkdown(rawLine).replace(/^[^\p{L}\p{N}]+/u, '').trim();
+    const sep = line.indexOf(':');
+    if (sep < 0) continue;
+    const key1 = normalizeSpanishText(line.slice(0, sep)).replace(/\s+/g, ' ');
+    const value = stripChatMarkdown(line.slice(sep + 1));
+    if (!value) continue;
+    if (normalizedCandidates.some((c) => key1 === c)) {
+      return value.replace(/[\s,;:.]+$/, '').trim();
+    }
+  }
+
+  // Pass 2: includes-match (forgiving) using getLabelValue.
+  const fallback = getLabelValue(message, candidates);
+  return fallback ? fallback.replace(/[\s,;:.]+$/, '').trim() : undefined;
+}
+
+function extractCustomFieldsFromMessage(
+  message: string,
+  customFieldsConfig: CustomFieldsData | undefined,
+): Record<string, any> {
+  const result: Record<string, any> = {};
+  if (!customFieldsConfig) return result;
+
+  const allFields: Array<{ key: string; label: string }> = [
+    ...customFieldsConfig.productFields.map((f) => ({ key: f.key, label: f.label })),
+    ...customFieldsConfig.businessInfoFields.map((f) => ({ key: f.name, label: f.label })),
+  ];
+
+  for (const field of allFields) {
+    if (!field.key) continue;
+    const value = getCustomFieldValueFromMessage(message, field.label, field.key);
+    if (value !== undefined && value !== '') {
+      result[field.key] = value;
+    }
+  }
+
+  return result;
+}
+
+function buildStructuredOrderArgs(
+  userMessage: string,
+  customFieldsConfig?: CustomFieldsData,
+): any | null {
   if (!hasOrderCreationIntent(userMessage)) return null;
 
   const normalized = normalizeSpanishText(userMessage);
@@ -960,6 +1113,19 @@ function buildStructuredOrderArgs(userMessage: string): any | null {
 
   if (normalized.includes('contra entrega') || normalized.includes('paga contra entrega')) {
     args.contraEntrega = true;
+  }
+
+  // Tenant-specific custom fields. The structured fast-path previously dropped
+  // these entirely, so even when the user clearly wrote "Usuario: Marlenn",
+  // "Negocio: WAS", etc. the validator reported every required custom field as
+  // missing. We now look up each tenant-configured field by its label or key
+  // and store the matches in args.customFields, which is what extractCustomFields
+  // (and downstream validators) consume.
+  if (customFieldsConfig) {
+    const customFields = extractCustomFieldsFromMessage(userMessage, customFieldsConfig);
+    if (Object.keys(customFields).length > 0) {
+      args.customFields = customFields;
+    }
   }
 
   return Object.keys(args).length > 0 ? args : null;
@@ -1495,7 +1661,18 @@ export async function processMessage(
     // review and do NOT persist the raw order data in conversation history.
     // This way, if the pending review expires before the user confirms, the
     // LLM cannot re-create the order from leftover history on the next turn.
-    const structuredOrderArgs = buildStructuredOrderArgs(userMessage);
+    //
+    // We need the tenant's custom-field config here so the structured fast-path
+    // can populate args.customFields from the user's message labels (e.g.
+    // "Usuario: Marlenn", "Negocio: WAS"). Without this, the validator would
+    // report every required custom field as missing.
+    let structuredCustomFieldsConfig: CustomFieldsData | undefined;
+    try {
+      structuredCustomFieldsConfig = await getTenantCustomFields(context.tenantId);
+    } catch (e) {
+      console.warn('[AI Agent] Failed to load custom fields config for structured fast-path:', e);
+    }
+    const structuredOrderArgs = buildStructuredOrderArgs(userMessage, structuredCustomFieldsConfig);
     if (structuredOrderArgs) {
       return executeStructuredCreateOrder(structuredOrderArgs, context, platform, platformId);
     }

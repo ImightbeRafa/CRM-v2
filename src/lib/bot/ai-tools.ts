@@ -175,7 +175,12 @@ const baseOrderSchema = {
 
 // Dynamic schema generator that includes custom fields
 function createOrderSchemaWithCustomFields(customFieldsConfig: CustomFieldsData) {
-  const customFieldsSchema = getCustomFieldsSchema(customFieldsConfig);
+  const customFieldsSchema = Object.fromEntries(
+    Object.entries(getCustomFieldsSchema(customFieldsConfig)).map(([key, schema]) => [
+      key,
+      schema instanceof z.ZodOptional ? schema : schema.optional(),
+    ])
+  );
   
   return {
     description: 'Crear una nueva orden de venta. Úsalo cuando el usuario quiera registrar una nueva venta o pedido.',
@@ -2270,9 +2275,17 @@ export async function executeTool(
   const parseResult = schema.safeParse(coercedParams);
   
   if (!parseResult.success) {
+    const issueLines = parseResult.error.issues.map((issue) => {
+      const field = issue.path.length > 0 ? issue.path.join('.') : 'parametros';
+      if (issue.code === 'invalid_type' && issue.received === 'undefined') {
+        return `- ${field} es requerido`;
+      }
+      return `- ${field}: ${issue.message}`;
+    });
+
     return {
       success: false,
-      error: `Invalid parameters: ${parseResult.error.message}`,
+      error: `Parametros invalidos:\n${issueLines.join('\n')}`,
     };
   }
   

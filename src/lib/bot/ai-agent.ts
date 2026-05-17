@@ -37,7 +37,12 @@ import { formatOrderForTelegram, formatInventoryForTelegram, formatStatsForTeleg
 import { formatOrderForWhatsApp, formatInventoryForWhatsApp, formatStatsForWhatsApp } from './whatsapp';
 import { z } from 'zod';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
-import { getTenantCustomFields, formatCustomFieldsForTelegram } from '@/lib/customFields';
+import {
+  getTenantCustomFields,
+  formatCustomFieldsForTelegram,
+  extractCustomFields,
+  validateCustomFields,
+} from '@/lib/customFields';
 import { getCurrentStatsDateKey, STATS_TIME_ZONE } from '@/lib/statistics-dates';
 import { validateLocation } from '@/lib/locationValidator';
 
@@ -49,7 +54,7 @@ const xai = new OpenAI({
 });
 
 // Model configuration
-const MODEL = process.env.XAI_MODEL || 'grok-4-1-fast-reasoning';
+const MODEL = process.env.XAI_MODEL || 'grok-4.3';
 const MAX_TOKENS = 1000;
 const TEMPERATURE = 0.7;
 
@@ -69,6 +74,9 @@ const ACTION_KEYWORDS = [
   // Inventory
   'agregar stock', 'añadir stock', 'reducir stock', 'aumentar stock',
   'descontar', 'restar', 'sumar al inventario',
+  'reconoces este codigo', 'reconoce este codigo', 'reconoces este cÃ³digo',
+  'reconoce este cÃ³digo', 'buscar codigo', 'buscar cÃ³digo',
+  'buscar sku', 'precio de', 'stock de',
   // Shipping — individual and bulk guía generation
   'generar guía', 'genera guía', 'crear guía', 'guía de envío',
   'generar guia', 'genera guia', 'crear guia', 'guia de envio',
@@ -105,6 +113,11 @@ function decodeEscapedUnicodeText(value: string): string {
 function isActionRequest(message: string): boolean {
   const normalized = normalizeSpanishText(message);
   return ACTION_KEYWORDS.some(keyword => normalized.includes(normalizeSpanishText(keyword)));
+}
+
+function hasInventoryLookupIntent(message: string): boolean {
+  const normalized = normalizeSpanishText(message);
+  return /\b(reconoces?|buscar|busca|stock|precio|inventario|sku|codigo)\b/.test(normalized);
 }
 
 const ORDER_CREATION_KEYWORDS = [
@@ -264,10 +277,36 @@ function extractPhoneFromMessage(message: string): string | undefined {
 }
 
 function extractTotalFromMessage(message: string): number | undefined {
+  const explicitTotal = extractExplicitTotalFromMessage(message);
+  if (explicitTotal !== undefined) return explicitTotal;
+
   const match = message.match(/\btotal(?:\s+en\s+\w+)?\s*[:=]?\s*(?:CRC|₡|¢)?\s*([\d.,]+)/i);
   if (!match) return undefined;
   const amount = Number(match[1].replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.'));
   return Number.isFinite(amount) ? amount : undefined;
+}
+
+function extractExplicitTotalFromMessage(message: string): number | undefined {
+  const parseAmount = (value: string): number | undefined => {
+    const amount = Number(value.replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.'));
+    return Number.isFinite(amount) ? amount : undefined;
+  };
+
+  for (const rawLine of message.split(/\r?\n/)) {
+    const line = stripChatMarkdown(rawLine);
+    const separatorIndex = line.search(/[:=]/);
+    if (separatorIndex < 0) continue;
+
+    const label = normalizeSpanishText(line.slice(0, separatorIndex)).replace(/\s+/g, ' ');
+    if (!/^total(?:\s+en\s+\w+)?$/.test(label)) continue;
+
+    const valueMatch = line.slice(separatorIndex + 1).match(/(\d[\d.,]*)/);
+    if (valueMatch) return parseAmount(valueMatch[1]);
+  }
+
+  const match = message.match(/\btotal(?:\s+en\s+\w+)?\b[^\d\r\n]*(\d[\d.,]*)/i);
+  if (!match) return undefined;
+  return parseAmount(match[1]);
 }
 
 function inferCreateOrderArgsFromMessage(args: any, userMessage: string): any {
@@ -290,7 +329,7 @@ function inferCreateOrderArgsFromMessage(args: any, userMessage: string): any {
     }
   }
 
-  if ((inferred.total === undefined || inferred.total === null) && /\btotal\b/i.test(userMessage)) {
+  if (/\btotal\b/i.test(userMessage)) {
     const total = extractTotalFromMessage(userMessage);
     if (total !== undefined) {
       inferred.total = total;
@@ -357,6 +396,171 @@ function looksLikeOrderFieldReply(message: string): boolean {
 function shouldStoreCreateOrderRepair(result: ToolResult): boolean {
   const error = result.error || '';
   return /producto es requerido|campos faltantes|campos personalizados faltantes/i.test(error);
+}
+
+const CREATE_ORDER_REVIEW_FIELDS = new Set([
+  'customerName',
+  'phone',
+  'email',
+  'product',
+  'products',
+  'quantity',
+  'total',
+  'address',
+  'province',
+  'canton',
+  'district',
+  'courier',
+  'metodoEnvio',
+  'shippingMethod',
+  'mensajeria',
+  'paymentMethod',
+  'comments',
+  'orderType',
+  'size',
+  'color',
+  'contraEntrega',
+  'skipInventoryCheck',
+  '_forceWithoutInventory',
+  '_finalReviewConfirmed',
+]);
+
+function formatCrcAmount(value: unknown): string {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return 'SIN TOTAL';
+  return `CRC ${amount.toLocaleString('es-CR')}`;
+}
+
+function formatReviewValue(value: unknown): string {
+  if (value === undefined || value === null || value === '') return '-';
+  if (typeof value === 'boolean') return value ? 'Si' : 'No';
+  return String(value);
+}
+
+function getCreateOrderReviewMissingFields(args: any): string[] {
+  const missing: string[] = [];
+
+  if (!args.customerName || !String(args.customerName).trim()) missing.push('Nombre del cliente');
+  if (!hasCreateOrderProduct(args)) missing.push('Producto(s)');
+  if (args.total === undefined || args.total === null || Number(args.total) < 0 || !Number.isFinite(Number(args.total))) {
+    missing.push('Total');
+  }
+  if (!args.orderType) missing.push('Tipo de orden (EA o RA)');
+
+  if (args.orderType === 'EA') {
+    if (!args.address || !String(args.address).trim()) missing.push('Direccion');
+    if (!args.province || !String(args.province).trim()) missing.push('Provincia');
+    if (!args.canton || !String(args.canton).trim()) missing.push('Canton');
+    if (!args.district || !String(args.district).trim()) missing.push('Distrito');
+  }
+
+  return missing;
+}
+
+function getCreateOrderReviewProductLines(args: any): string[] {
+  const products = orderProductsFromArgs(args);
+  if (products.length === 0 && typeof args.product === 'string' && args.product.trim()) {
+    return [args.product.trim()];
+  }
+
+  return products.map((product) => {
+    const name = [product.name, product.sku ? `(SKU: ${product.sku})` : ''].filter(Boolean).join(' ');
+    return `${name || 'Producto'} x${product.quantity}`;
+  });
+}
+
+function buildCreateOrderFinalReview(args: any): string {
+  const productLines = getCreateOrderReviewProductLines(args);
+  const totalQuantity = productLines.length > 0
+    ? orderProductsFromArgs(args).reduce((sum, product) => sum + product.quantity, 0)
+    : Number(args.quantity) || 0;
+
+  const lines = [
+    'Revision final antes de crear la orden.',
+    '',
+    'Estos son los datos que se enviaran a Betsy:',
+    `Cliente: ${formatReviewValue(args.customerName)}`,
+    `Telefono: ${formatReviewValue(args.phone)}`,
+    'Producto(s):',
+    ...(productLines.length > 0 ? productLines.map((line) => `- ${line}`) : ['- SIN PRODUCTO']),
+    `Cantidad total: ${totalQuantity || '-'}`,
+    `Total: ${formatCrcAmount(args.total)}`,
+    `Tipo de orden: ${formatReviewValue(args.orderType)}`,
+    `Metodo de pago: ${formatReviewValue(args.paymentMethod)}`,
+  ];
+
+  if (args.orderType === 'EA') {
+    lines.push(
+      `Metodo de envio: ${formatReviewValue(args.courier || args.metodoEnvio || args.shippingMethod || args.mensajeria)}`,
+      `Provincia: ${formatReviewValue(args.province)}`,
+      `Canton: ${formatReviewValue(args.canton)}`,
+      `Distrito: ${formatReviewValue(args.district)}`,
+      `Direccion: ${formatReviewValue(args.address)}`,
+    );
+  }
+
+  if (args.comments) lines.push(`Comentarios: ${formatReviewValue(args.comments)}`);
+  if (args.contraEntrega === true) lines.push('Contra entrega: Si');
+
+  const extraFields = Object.entries(args)
+    .filter(([key, value]) => !CREATE_ORDER_REVIEW_FIELDS.has(key) && value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${key}: ${formatReviewValue(value)}`);
+
+  if (extraFields.length > 0) {
+    lines.push('', 'Campos adicionales:', ...extraFields);
+  }
+
+  lines.push('', 'Responde SI para crear la orden, NO para cancelarla, o envia la correccion exacta.');
+  return lines.join('\n');
+}
+
+async function requestCreateOrderFinalConfirmation(
+  args: any,
+  context: ToolContext,
+  platform: string,
+  platformId: string,
+): Promise<MessageResponse> {
+  const customFieldsConfig = await getTenantCustomFields(context.tenantId);
+  const extractedCustomFields = extractCustomFields(args, customFieldsConfig);
+  const customValidation = validateCustomFields(extractedCustomFields, customFieldsConfig);
+  const missing = [
+    ...getCreateOrderReviewMissingFields(args),
+    ...customValidation.errors,
+  ];
+
+  if (missing.length > 0) {
+    await setPendingConfirmation(platform, platformId, {
+      type: 'order_repair',
+      data: {
+        toolName: 'create_order',
+        toolArgs: args,
+      },
+      expiresAt: Date.now() + 120_000,
+    });
+
+    const text = [
+      'No creare la orden todavia. Faltan campos requeridos:',
+      ...missing.map((field) => `- ${field}`),
+      '',
+      'Enviame esos datos y preparo la revision final antes de crearla.',
+    ].join('\n');
+
+    await addAssistantMessage(platform, platformId, text);
+    return { text };
+  }
+
+  await setPendingConfirmation(platform, platformId, {
+    type: 'order_final_confirm',
+    data: {
+      toolName: 'create_order',
+      toolArgs: args,
+    },
+    expiresAt: Date.now() + 120_000,
+  });
+
+  const text = buildCreateOrderFinalReview(args);
+  await addAssistantMessage(platform, platformId, text);
+  return { text };
 }
 
 function getLabelValue(message: string, labels: string[]): string | undefined {
@@ -574,45 +778,7 @@ async function executeStructuredCreateOrder(
     orderType: args.orderType,
   });
 
-  const { tenantToolSchemas } = await updateToolSchemasWithCustomFields(context.tenantId);
-  const result = await executeTool('create_order', context, args, tenantToolSchemas);
-
-  if (result.success) {
-    const text = formatToolResult('create_order', result, platform);
-    await addAssistantMessage(platform, platformId, text);
-    return { text, attachments: result.attachments && result.attachments.length > 0 ? result.attachments : undefined };
-  }
-
-  if (result.needsConfirmation && result.message) {
-    const cType = result.confirmationType;
-    if (cType === 'no_match' || cType === 'zero_stock') {
-      await setPendingConfirmation(platform, platformId, {
-        type: 'inventory_confirm',
-        data: {
-          toolName: 'create_order',
-          toolArgs: { ...result.pendingOrderData, _forceWithoutInventory: true },
-        },
-        expiresAt: Date.now() + 120_000,
-      });
-    }
-    await addAssistantMessage(platform, platformId, result.message);
-    return { text: result.message };
-  }
-
-  if (shouldStoreCreateOrderRepair(result)) {
-    await setPendingConfirmation(platform, platformId, {
-      type: 'order_repair',
-      data: {
-        toolName: 'create_order',
-        toolArgs: args,
-      },
-      expiresAt: Date.now() + 120_000,
-    });
-  }
-
-  const text = formatToolError('create_order', result);
-  await addAssistantMessage(platform, platformId, text);
-  return { text };
+  return requestCreateOrderFinalConfirmation(args, context, platform, platformId);
 }
 
 function mergeCreateOrderCalls(calls: PreparedToolCall[]): PreparedToolCall[] {
@@ -1008,9 +1174,38 @@ export async function processMessage(
 
           const repairedArgs = inferCreateOrderArgsFromMessage(pending.data?.toolArgs || {}, userMessage);
           const repairResponse = await executeCreateOrderRepair(repairedArgs, context, platform, platformId);
-          await addAssistantMessage(platform, platformId, repairResponse);
           return { text: repairResponse };
         }
+      }
+
+      if (pending.type === 'order_final_confirm') {
+        if (isDenial(userMessage)) {
+          await clearPendingConfirmation(platform, platformId);
+          const text = 'Entendido, orden cancelada antes de crearla.';
+          await addAssistantMessage(platform, platformId, text);
+          return { text };
+        }
+
+        if (isConfirmation(userMessage)) {
+          await clearPendingConfirmation(platform, platformId);
+          const confirmedPending = {
+            ...pending,
+            data: {
+              ...pending.data,
+              toolArgs: {
+                ...(pending.data?.toolArgs || {}),
+                _finalReviewConfirmed: true,
+              },
+            },
+          };
+          const result = await executePendingAction(confirmedPending, context, platform, platformId);
+          await addAssistantMessage(platform, platformId, result);
+          return { text: result };
+        }
+
+        const updatedArgs = inferCreateOrderArgsFromMessage(pending.data?.toolArgs || {}, userMessage);
+        await clearPendingConfirmation(platform, platformId);
+        return requestCreateOrderFinalConfirmation(updatedArgs, context, platform, platformId);
       }
 
       const confirmed = isConfirmation(userMessage);
@@ -1018,7 +1213,8 @@ export async function processMessage(
 
       if (confirmed) {
         await clearPendingConfirmation(platform, platformId);
-        const result = await executePendingAction(pending, context, platform);
+        const result = await executePendingAction(pending, context, platform, platformId);
+        await addAssistantMessage(platform, platformId, result);
         return { text: result };
       } else if (denied) {
         await clearPendingConfirmation(platform, platformId);
@@ -1155,6 +1351,14 @@ export async function processMessage(
         };
       }));
 
+      const createOrderCall = preparedToolCalls.find((toolCall) =>
+        toolCall.name === 'create_order' && !toolCall.args?._finalReviewConfirmed
+      );
+      if (createOrderCall) {
+        console.log('[AI Agent] create_order requires final user review before execution');
+        return requestCreateOrderFinalConfirmation(createOrderCall.args, context, platform, platformId);
+      }
+
       for (const toolCall of preparedToolCalls) {
         const toolName = toolCall.name;
         const toolArgs = toolCall.args;
@@ -1235,6 +1439,16 @@ export async function processMessage(
         const directResponse = toolResults.join('\n\n') || 'Operacion procesada.';
         await addAssistantMessage(platform, platformId, directResponse);
         return { text: directResponse, attachments: allAttachments.length > 0 ? allAttachments : undefined };
+      }
+
+      const inventoryLookupOnly = toolCallsLog.length > 0
+        && toolCallsLog.every((call) => call.name === 'get_inventory_item' || call.name === 'search_inventory')
+        && !hasOrderCreationIntent(userMessage);
+
+      if (inventoryLookupOnly) {
+        const directResponse = toolResults.join('\n\n') || 'No encontre productos con esos criterios.';
+        await addAssistantMessage(platform, platformId, directResponse);
+        return { text: directResponse };
       }
 
       // Get a natural language response about the tool results
@@ -1434,47 +1648,15 @@ async function executeCreateOrderRepair(
   platform: string,
   platformId: string,
 ): Promise<string> {
-  const { tenantToolSchemas } = await updateToolSchemasWithCustomFields(context.tenantId);
-  const result = await executeTool('create_order', context, toolArgs, tenantToolSchemas);
-
-  if (result.success) {
-    return formatToolResult('create_order', result, platform);
-  }
-
-  if (result.needsConfirmation && result.message) {
-    const cType = result.confirmationType;
-    if (cType === 'no_match' || cType === 'zero_stock') {
-      await setPendingConfirmation(platform, platformId, {
-        type: 'inventory_confirm',
-        data: {
-          toolName: 'create_order',
-          toolArgs: { ...result.pendingOrderData, _forceWithoutInventory: true },
-        },
-        expiresAt: Date.now() + 120_000,
-      });
-    }
-    return result.message;
-  }
-
-  if (shouldStoreCreateOrderRepair(result)) {
-    await setPendingConfirmation(platform, platformId, {
-      type: 'order_repair',
-      data: {
-        toolName: 'create_order',
-        toolArgs,
-      },
-      expiresAt: Date.now() + 120_000,
-    });
-  }
-
-  return formatToolError('create_order', result);
+  const response = await requestCreateOrderFinalConfirmation(toolArgs, context, platform, platformId);
+  return response.text;
 }
 
 /**
  * Execute a pending action.
  * Pending confirmations are stored as { type, data: { toolName, toolArgs }, expiresAt }.
  */
-async function executePendingAction(pending: any, context: ToolContext, platform: string): Promise<string> {
+async function executePendingAction(pending: any, context: ToolContext, platform: string, platformId: string): Promise<string> {
   try {
     const toolName = pending.data?.toolName || pending.toolName;
     const toolArgs = pending.data?.toolArgs || pending.toolArgs;
@@ -1505,9 +1687,39 @@ async function executePendingAction(pending: any, context: ToolContext, platform
     if (result.success) {
       const formatted = formatToolResult(toolName as ToolName, result, platform);
       return '✅ Acción confirmada:\n\n' + formatted;
-    } else {
-      return formatToolError(toolName as ToolName, result);
     }
+
+    if (result.needsConfirmation && result.message) {
+      const cType = result.confirmationType;
+      if (toolName === 'create_order' && (cType === 'no_match' || cType === 'zero_stock')) {
+        await setPendingConfirmation(platform, platformId, {
+          type: 'inventory_confirm',
+          data: {
+            toolName: 'create_order',
+            toolArgs: {
+              ...result.pendingOrderData,
+              _forceWithoutInventory: true,
+              _finalReviewConfirmed: true,
+            },
+          },
+          expiresAt: Date.now() + 120_000,
+        });
+      }
+      return result.message;
+    }
+
+    if (toolName === 'create_order' && shouldStoreCreateOrderRepair(result)) {
+      await setPendingConfirmation(platform, platformId, {
+        type: 'order_repair',
+        data: {
+          toolName: 'create_order',
+          toolArgs,
+        },
+        expiresAt: Date.now() + 120_000,
+      });
+    }
+
+    return formatToolError(toolName as ToolName, result);
   } catch (error) {
     console.error('[AI Agent] Error executing pending action:', error);
     return '❌ Error al ejecutar la acción solicitada.';

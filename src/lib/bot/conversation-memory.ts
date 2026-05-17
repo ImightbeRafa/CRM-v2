@@ -159,6 +159,44 @@ export async function addAssistantMessage(
 }
 
 /**
+ * Remove the most recent user message from history.
+ * Used when the bot routes a turn into a pending confirmation flow and we
+ * don't want the order data to linger in conversation history (so if pending
+ * expires, the LLM cannot accidentally re-create the order from the leftover
+ * user message). Safe to call even if the last message isn't a user message —
+ * it only pops when role === 'user'.
+ */
+export async function removeLastUserMessage(
+  platform: string,
+  platformId: string
+): Promise<void> {
+  const key = getConversationKey(platform, platformId);
+  const redis = getRedisClient();
+
+  if (redis) {
+    try {
+      const last = await redis.lrange<ConversationMessage>(key, -1, -1);
+      const lastMsg = last && last[0];
+      if (lastMsg && (lastMsg as ConversationMessage).role === 'user') {
+        await redis.rpop(key);
+      }
+    } catch (error) {
+      console.error('[ConversationMemory] Failed to remove last user message:', error);
+    }
+    return;
+  }
+
+  // Fallback to in-memory
+  const existing = memoryStorage.get(key);
+  if (!existing || existing.length === 0) return;
+  const lastMsg = existing[existing.length - 1];
+  if (lastMsg && lastMsg.role === 'user') {
+    existing.pop();
+    memoryStorage.set(key, existing);
+  }
+}
+
+/**
  * Clear conversation history
  */
 export async function clearConversationHistory(

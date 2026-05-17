@@ -32,6 +32,7 @@ import {
   peekPendingConfirmation,
   setPendingConfirmation,
   clearPendingConfirmation,
+  removeLastUserMessage,
 } from './conversation-memory';
 import { formatOrderForTelegram, formatInventoryForTelegram, formatStatsForTelegram } from './telegram';
 import { formatOrderForWhatsApp, formatInventoryForWhatsApp, formatStatsForWhatsApp } from './whatsapp';
@@ -42,6 +43,7 @@ import {
   formatCustomFieldsForTelegram,
   extractCustomFields,
   validateCustomFields,
+  type CustomFieldsData,
 } from '@/lib/customFields';
 import { getCurrentStatsDateKey, STATS_TIME_ZONE } from '@/lib/statistics-dates';
 import { validateLocation } from '@/lib/locationValidator';
@@ -54,9 +56,30 @@ const xai = new OpenAI({
 });
 
 // Model configuration
+// IMPORTANT: For deterministic tool-calling, keep TEMPERATURE low (0.0-0.2).
+// REASONING_EFFORT is supported by grok-4.3 and dramatically improves rule
+// adherence on a long system prompt. MAX_TOKENS must be large enough to fit
+// multi-product tool-call JSON without truncation.
 const MODEL = process.env.XAI_MODEL || 'grok-4.3';
-const MAX_TOKENS = 1000;
-const TEMPERATURE = 0.7;
+const MAX_TOKENS = Number(process.env.XAI_MAX_TOKENS || 2000);
+const TEMPERATURE = (() => {
+  const raw = process.env.XAI_TEMPERATURE;
+  if (raw === undefined || raw === '') return 0.1;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : 0.1;
+})();
+const REASONING_EFFORT: 'low' | 'medium' | 'high' = (() => {
+  const raw = (process.env.XAI_REASONING_EFFORT || 'medium').toLowerCase();
+  if (raw === 'low' || raw === 'high') return raw;
+  return 'medium';
+})();
+
+console.log('[AI Agent] xAI model config:', {
+  model: MODEL,
+  maxTokens: MAX_TOKENS,
+  temperature: TEMPERATURE,
+  reasoningEffort: REASONING_EFFORT,
+});
 
 // Action keywords that require tool calls (to prevent AI hallucination)
 // When these keywords are detected, we force tool_choice: 'required'
@@ -333,7 +356,19 @@ function inferCreateOrderArgsFromMessage(args: any, userMessage: string): any {
     const total = extractTotalFromMessage(userMessage);
     if (total !== undefined) {
       inferred.total = total;
+      delete inferred._totalsMismatch;
       repairedFields.push('total');
+    }
+  } else if (Array.isArray(inferred._totalsMismatch) && /^\s*[¢₡$]?\s*\d[\d.,]*\s*$/.test(userMessage.trim())) {
+    // User is replying to a totals-mismatch question with a bare number.
+    const bareMatch = userMessage.match(/(\d[\d.,]*)/);
+    if (bareMatch) {
+      const parsed = Number(bareMatch[1].replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.'));
+      if (Number.isFinite(parsed) && parsed > 0) {
+        inferred.total = parsed;
+        delete inferred._totalsMismatch;
+        repairedFields.push('total');
+      }
     }
   }
 
@@ -384,13 +419,16 @@ function inferCreateOrderArgsFromMessage(args: any, userMessage: string): any {
 
 function looksLikeOrderFieldReply(message: string): boolean {
   const normalized = normalizeSpanishText(message);
+  const trimmed = message.trim();
   return /^productos?\s*(?:\([^)]*\))?\s*:/im.test(message)
     || /^producto\s*(?:\([^)]*\))?\s*:/im.test(message)
     || /\btotal(?:\s+en\s+\w+)?\s*[:=]/i.test(message)
     || /m[eé]todo\s+de\s+pago\s*:/i.test(message)
     || /\b(?:\+?506[\s-]?)?\d{4}[\s-]?\d{4}\b/.test(message)
     || /\b(ra|ea)\b/.test(normalized)
-    || normalized.includes('contra entrega');
+    || normalized.includes('contra entrega')
+    // Bare numeric reply (e.g. answering a totals-mismatch question with "47900").
+    || /^[¢₡$]?\s*\d[\d.,]*\s*$/.test(trimmed);
 }
 
 function shouldStoreCreateOrderRepair(result: ToolResult): boolean {
@@ -469,7 +507,7 @@ function getCreateOrderReviewProductLines(args: any): string[] {
   });
 }
 
-function buildCreateOrderFinalReview(args: any): string {
+function buildCreateOrderFinalReview(args: any, customFieldsConfig?: CustomFieldsData): string {
   const productLines = getCreateOrderReviewProductLines(args);
   const totalQuantity = productLines.length > 0
     ? orderProductsFromArgs(args).reduce((sum, product) => sum + product.quantity, 0)
@@ -502,9 +540,31 @@ function buildCreateOrderFinalReview(args: any): string {
   if (args.comments) lines.push(`Comentarios: ${formatReviewValue(args.comments)}`);
   if (args.contraEntrega === true) lines.push('Contra entrega: Si');
 
-  const extraFields = Object.entries(args)
-    .filter(([key, value]) => !CREATE_ORDER_REVIEW_FIELDS.has(key) && value !== undefined && value !== null && value !== '')
-    .map(([key, value]) => `${key}: ${formatReviewValue(value)}`);
+  // Prefer the tenant's configured field labels for custom fields. Falls back
+  // to raw key:value pairs when the config is not provided.
+  let extraFields: string[] = [];
+  if (customFieldsConfig) {
+    try {
+      const extracted = extractCustomFields(args, customFieldsConfig);
+      // formatCustomFieldsForTelegram returns lines like "*Negocio:* ACME" —
+      // strip the markdown asterisks so the plain final review reads cleanly.
+      extraFields = formatCustomFieldsForTelegram(extracted, customFieldsConfig)
+        .map((line) => line.replace(/\*/g, '').trim())
+        .filter(Boolean);
+    } catch (error) {
+      console.warn('[AI Agent] Failed to format custom fields for review:', error);
+    }
+  }
+
+  if (extraFields.length === 0) {
+    extraFields = Object.entries(args)
+      .filter(([key, value]) =>
+        !CREATE_ORDER_REVIEW_FIELDS.has(key)
+        && !key.startsWith('_')
+        && value !== undefined && value !== null && value !== ''
+      )
+      .map(([key, value]) => `${key}: ${formatReviewValue(value)}`);
+  }
 
   if (extraFields.length > 0) {
     lines.push('', 'Campos adicionales:', ...extraFields);
@@ -521,6 +581,35 @@ async function requestCreateOrderFinalConfirmation(
   platformId: string,
 ): Promise<MessageResponse> {
   const customFieldsConfig = await getTenantCustomFields(context.tenantId);
+
+  // If the model emitted multiple create_order calls with diverging totals,
+  // mergeCreateOrderCalls flagged it instead of silently summing. Refuse to
+  // commit and ask the user which total is correct.
+  const totalsMismatch = Array.isArray((args as any)._totalsMismatch)
+    ? ((args as any)._totalsMismatch as number[])
+    : null;
+
+  if (totalsMismatch && totalsMismatch.length > 1) {
+    await setPendingConfirmation(platform, platformId, {
+      type: 'order_repair',
+      data: {
+        toolName: 'create_order',
+        toolArgs: args,
+      },
+      expiresAt: Date.now() + 120_000,
+    });
+
+    const text = [
+      'Detecté varios totales en tu mensaje y no quiero adivinar:',
+      ...totalsMismatch.map((t) => `- ${formatCrcAmount(t)}`),
+      '',
+      '¿Cuál es el total correcto? Envíame el número y preparo la revisión final.',
+    ].join('\n');
+
+    await addAssistantMessage(platform, platformId, text);
+    return { text };
+  }
+
   const extractedCustomFields = extractCustomFields(args, customFieldsConfig);
   const customValidation = validateCustomFields(extractedCustomFields, customFieldsConfig);
   const missing = [
@@ -558,7 +647,7 @@ async function requestCreateOrderFinalConfirmation(
     expiresAt: Date.now() + 120_000,
   });
 
-  const text = buildCreateOrderFinalReview(args);
+  const text = buildCreateOrderFinalReview(args, customFieldsConfig);
   await addAssistantMessage(platform, platformId, text);
   return { text };
 }
@@ -825,18 +914,28 @@ function mergeCreateOrderCalls(calls: PreparedToolCall[]): PreparedToolCall[] {
       }
     }
 
-    const totals = group.map((call) => Number(call.args.total) || 0);
+    const totals = group.map((call) => Number(call.args.total)).filter((t) => Number.isFinite(t) && t > 0);
     const uniqueTotals = Array.from(new Set(totals));
     base.products = Array.from(productsByKey.values());
     base.product = base.products
       .map((product: any) => [product.name, product.sku].filter(Boolean).join(' '))
       .join('\n');
     base.quantity = base.products.reduce((sum: number, product: any) => sum + product.quantity, 0);
-    base.total = uniqueTotals.length === 1 ? uniqueTotals[0] : totals.reduce((sum, total) => sum + total, 0);
+
+    if (uniqueTotals.length <= 1) {
+      base.total = uniqueTotals[0] ?? 0;
+      delete base._totalsMismatch;
+    } else {
+      // Don't silently sum diverging totals — flag for user clarification.
+      base.total = uniqueTotals[0];
+      base._totalsMismatch = uniqueTotals;
+      console.warn('[AI Agent] Merged create_order had divergent totals; asking user to clarify', uniqueTotals);
+    }
 
     console.warn('[AI Agent] Merged multiple create_order tool calls into one multi-product order', {
       mergedCalls: group.length,
       productLines: base.products.length,
+      totalsMismatch: uniqueTotals.length > 1,
     });
 
     result.push({
@@ -1149,6 +1248,13 @@ export async function processMessage(
   userMessage: string,
   context: ToolContext
 ): Promise<MessageResponse> {
+  // Tracks whether a mutating tool already committed during this turn. If so,
+  // and a later step throws, the global catch surfaces the success message
+  // instead of a misleading "ocurrió un error" that would contradict reality
+  // (the order is already in the DB).
+  let mutationSuccessText: string | null = null;
+  let mutationSuccessAttachments: ToolAttachment[] | undefined;
+
   try {
     // Check for pending confirmations first (non-destructive peek)
     const pending = await peekPendingConfirmation(platform, platformId);
@@ -1203,9 +1309,22 @@ export async function processMessage(
           return { text: result };
         }
 
-        const updatedArgs = inferCreateOrderArgsFromMessage(pending.data?.toolArgs || {}, userMessage);
-        await clearPendingConfirmation(platform, platformId);
-        return requestCreateOrderFinalConfirmation(updatedArgs, context, platform, platformId);
+        // If the user is starting a brand-new order rather than correcting the
+        // pending one, discard the pending review entirely so old fields don't
+        // leak into the new order. Falls through to normal processing, which
+        // will pick up the structured fast-path or call the LLM.
+        const incomingStructured = buildStructuredOrderArgs(userMessage);
+        const looksLikeNewOrder = !!incomingStructured || hasOrderCreationIntent(userMessage);
+
+        if (looksLikeNewOrder) {
+          console.info('[AI Agent] 🧹 Discarding pending order_final_confirm — user started a new order');
+          await clearPendingConfirmation(platform, platformId);
+          // Do NOT return; fall through to normal processing below.
+        } else {
+          const updatedArgs = inferCreateOrderArgsFromMessage(pending.data?.toolArgs || {}, userMessage);
+          await clearPendingConfirmation(platform, platformId);
+          return requestCreateOrderFinalConfirmation(updatedArgs, context, platform, platformId);
+        }
       }
 
       const confirmed = isConfirmation(userMessage);
@@ -1226,17 +1345,32 @@ export async function processMessage(
         await clearPendingConfirmation(platform, platformId);
       }
       // Fall through to normal AI processing
-    } else if (isConfirmation(userMessage)) {
-      console.warn(`[AI Agent] ⚠️ Confirmation-like message "${userMessage}" received but no pending confirmation found. Pending may have expired or been lost. Falling through to AI with conversation context.`);
+    } else if (isConfirmation(userMessage) || isDenial(userMessage)) {
+      // The user sent a bare yes/no but there's no pending action. The most
+      // common cause is that a final review expired (2 min TTL). We must NOT
+      // fall through to the LLM here: history still contains the assistant's
+      // review message, and the model might helpfully re-invoke create_order
+      // using that stale data. Give the user a clear, friendly stop instead.
+      console.warn(`[AI Agent] ⚠️ Yes/No message "${userMessage}" received with no pending confirmation. Likely an expired review. Stopping safely.`);
+      const text = isConfirmation(userMessage)
+        ? 'No tengo nada pendiente que confirmar en este momento. La revisión anterior caducó. Si querés crear la orden, envíame los datos completos de nuevo y preparo la revisión final.'
+        : 'No hay ninguna acción pendiente que cancelar. Si necesitás algo más, decime qué hacemos.';
+      await addAssistantMessage(platform, platformId, text);
+      return { text };
     }
 
-    // Add user message to history
-    await addUserMessage(platform, platformId, userMessage);
-
+    // Detect a structured order BEFORE writing to history: when the message
+    // is a structured order template, we route it straight into the final
+    // review and do NOT persist the raw order data in conversation history.
+    // This way, if the pending review expires before the user confirms, the
+    // LLM cannot re-create the order from leftover history on the next turn.
     const structuredOrderArgs = buildStructuredOrderArgs(userMessage);
     if (structuredOrderArgs) {
       return executeStructuredCreateOrder(structuredOrderArgs, context, platform, platformId);
     }
+
+    // Non-structured messages go to the LLM, which needs them in history.
+    await addUserMessage(platform, platformId, userMessage);
 
     // Get conversation history
     const history = await getFormattedHistory(platform, platformId);
@@ -1292,6 +1426,7 @@ export async function processMessage(
       tool_choice: requiresToolCall ? 'required' : 'auto',
       max_tokens: MAX_TOKENS,
       temperature: TEMPERATURE,
+      reasoning_effort: REASONING_EFFORT,
     });
 
     const message = response.choices[0]?.message;
@@ -1351,12 +1486,56 @@ export async function processMessage(
         };
       }));
 
-      const createOrderCall = preparedToolCalls.find((toolCall) =>
+      const createOrderCalls = preparedToolCalls.filter((toolCall) =>
         toolCall.name === 'create_order' && !toolCall.args?._finalReviewConfirmed
       );
-      if (createOrderCall) {
-        console.log('[AI Agent] create_order requires final user review before execution');
-        return requestCreateOrderFinalConfirmation(createOrderCall.args, context, platform, platformId);
+
+      if (createOrderCalls.length >= 1) {
+        // Evict the user message we just added — order data should not linger
+        // in conversation history while we wait for the user to confirm the
+        // review. If the pending review later expires, the LLM won't be able
+        // to re-create the order from leftover history.
+        await removeLastUserMessage(platform, platformId);
+
+        if (createOrderCalls.length === 1) {
+          console.log('[AI Agent] create_order requires final user review before execution');
+          return requestCreateOrderFinalConfirmation(createOrderCalls[0].args, context, platform, platformId);
+        }
+
+        // Multiple distinct orders detected — mergeCreateOrderCalls already
+        // collapsed same-identity duplicates, so anything left here is a
+        // different customer/order. Present all of them and start the review
+        // of the first; ask the user to send the others afterwards.
+        console.warn(`[AI Agent] Multiple distinct create_order calls detected (${createOrderCalls.length}). Asking user to confirm one by one.`);
+
+        const summaries = createOrderCalls.map((call, idx) => {
+          const a = call.args as any;
+          const parts: string[] = [`${idx + 1}. ${a.customerName || 'Cliente sin nombre'}`];
+          if (a.phone) parts.push(`(${a.phone})`);
+          if (a.total !== undefined && a.total !== null) parts.push(`— ${formatCrcAmount(a.total)}`);
+          return parts.join(' ');
+        });
+
+        const firstReview = await requestCreateOrderFinalConfirmation(
+          createOrderCalls[0].args, context, platform, platformId,
+        );
+
+        const headerText = [
+          `Detecté ${createOrderCalls.length} pedidos diferentes en tu mensaje. Vamos uno a la vez para no equivocarnos.`,
+          '',
+          'Pedidos detectados:',
+          ...summaries,
+          '',
+          'Cuando terminemos con el primero, envíame los datos del siguiente.',
+          '',
+          '— — — Primer pedido — — —',
+          '',
+        ].join('\n');
+
+        return {
+          text: headerText + firstReview.text,
+          attachments: firstReview.attachments,
+        };
       }
 
       for (const toolCall of preparedToolCalls) {
@@ -1365,7 +1544,15 @@ export async function processMessage(
 
         console.log('[AI Agent] Executing tool: ' + toolName, redactToolArgsForLog(toolName, toolArgs));
 
-        const result = await executeTool(toolName, context, toolArgs, tenantToolSchemas);
+        const result = await executeTool(toolName as ToolName, context, toolArgs, tenantToolSchemas);
+
+        console.log('[AI Agent] executeTool result:', {
+          success: result.success,
+          hasData: !!result.data,
+          orderId: (result.data as any)?.orderId,
+          error: result.error,
+          needsConfirmation: result.needsConfirmation,
+        });
 
         if (result.success) {
           console.log(`[AI Agent] ✅ Tool ${toolName} executed successfully`);
@@ -1410,7 +1597,16 @@ export async function processMessage(
         });
 
         if (result.success) {
-          let formatted = formatToolResult(toolName, result, platform);
+          // Wrap the formatter so a downstream rendering bug (malformed data,
+          // missing field, etc.) cannot mask a successful mutation — the order
+          // was already committed by executeTool above.
+          let formatted: string;
+          try {
+            formatted = formatToolResult(toolName, result, platform);
+          } catch (formatError) {
+            console.error(`[AI Agent] formatToolResult threw for ${toolName} after success:`, formatError);
+            formatted = result.message || '✅ Operación completada.';
+          }
 
           if (toolName === 'validate_order_location' && hasOrderCreationIntent(userMessage)) {
             console.warn('[AI Agent] ⚠️ GUARDRAIL: validate_order_location called but user wanted to create an order');
@@ -1437,8 +1633,20 @@ export async function processMessage(
 
       if (toolCallsLog.some((call) => isMutatingTool(call.name))) {
         const directResponse = toolResults.join('\n\n') || 'Operacion procesada.';
-        await addAssistantMessage(platform, platformId, directResponse);
-        return { text: directResponse, attachments: allAttachments.length > 0 ? allAttachments : undefined };
+        const attachments = allAttachments.length > 0 ? allAttachments : undefined;
+        // Persist the success message; if Redis is flaky we still surface the
+        // success to the user. addAssistantMessage already swallows internal
+        // errors but we double-guard to be safe.
+        try {
+          await addAssistantMessage(platform, platformId, directResponse);
+        } catch (e) {
+          console.error('[AI Agent] addAssistantMessage failed after mutation tool success:', e);
+        }
+        // Track success so the outer try/catch can surface it instead of a
+        // generic error if something later in this turn throws.
+        mutationSuccessText = directResponse;
+        mutationSuccessAttachments = attachments;
+        return { text: directResponse, attachments };
       }
 
       const inventoryLookupOnly = toolCallsLog.length > 0
@@ -1475,6 +1683,7 @@ export async function processMessage(
         messages: followUpMessages,
         max_tokens: MAX_TOKENS,
         temperature: TEMPERATURE,
+        reasoning_effort: REASONING_EFFORT,
       });
 
       const finalMessage = followUpResponse.choices[0]?.message?.content;
@@ -1499,6 +1708,10 @@ export async function processMessage(
 
   } catch (error) {
     console.error('[AI Agent] Error processing message:', error);
+    if (mutationSuccessText) {
+      console.warn('[AI Agent] Surfacing mutation success despite later error in turn.');
+      return { text: mutationSuccessText, attachments: mutationSuccessAttachments };
+    }
     return { text: 'Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo.' };
   }
 }
@@ -1597,6 +1810,27 @@ function formatToolResult(toolName: ToolName, result: ToolResult, platform: stri
 function formatToolError(toolName: ToolName, result: ToolResult): string {
   const error = result.error || 'No pude completar la operacion.';
 
+  // Friendly handling for Zod-style validation errors on ANY tool. The raw
+  // executeTool message looks like:
+  //   "Parametros invalidos:\n- updates.total: Expected number, received string\n- ..."
+  // We strip the developer jargon and present the field issues in plain Spanish.
+  if (/Par[aá]metros inv[aá]lidos/i.test(error)) {
+    const issueLines = error
+      .split(/\r?\n/)
+      .slice(1)
+      .map((line) => line.replace(/^[-•*]\s*/, '').trim())
+      .filter(Boolean);
+
+    if (issueLines.length > 0) {
+      return [
+        'Faltan o son inválidos algunos datos:',
+        ...issueLines.map((line) => `- ${line}`),
+        '',
+        'Envíame los datos correctos y vuelvo a procesar.',
+      ].join('\n');
+    }
+  }
+
   if (toolName === 'create_order') {
     if (/producto es requerido/i.test(error)) {
       return [
@@ -1617,29 +1851,63 @@ function formatToolError(toolName: ToolName, result: ToolResult): string {
     }
   }
 
-  return `Error: ${error}`;
+  // Generic friendly fallback: strip the technical prefixes the executor adds.
+  const cleaned = error.replace(/^❌\s*/i, '').replace(/^Error:\s*/i, '').trim();
+  return cleaned || 'No pude completar la operación. Por favor inténtalo de nuevo.';
 }
 
 /**
- * Check if message is a confirmation
+ * Strict tokens accepted as confirmation. Single-letter or ambiguous words
+ * ("y", "ok", "continuar", "proceder") are intentionally excluded — they
+ * appear too often inside normal conversation and have caused false-positive
+ * order submissions.
+ */
+const CONFIRMATION_TOKENS = new Set([
+  'si', 'sip', 'sii', 'yes', 'yep', 'yeah',
+  'confirmar', 'confirmo', 'confirmado', 'confirmada',
+  'aceptar', 'acepto', 'aceptado', 'aceptada',
+  'dale', 'listo', 'correcto',
+]);
+
+const DENIAL_TOKENS = new Set([
+  'no', 'nop', 'nope', 'nel',
+  'cancelar', 'cancela', 'cancelo', 'cancelado', 'cancelada',
+  'anular', 'anulo', 'anulado', 'anulada',
+  'rechazar', 'rechazo', 'rechazado',
+]);
+
+/**
+ * Normalize a short reply for confirmation matching: lowercase, strip
+ * accents, trim surrounding punctuation/symbols/whitespace. Returns the
+ * cleaned token. Multi-word messages will not match the strict sets, which
+ * is intentional.
+ */
+function normalizeYesNoMessage(message: string): string {
+  return message
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/^[\s\p{P}\p{S}]+|[\s\p{P}\p{S}]+$/gu, '');
+}
+
+/**
+ * Check if message is a confirmation. Strict: only short single-token
+ * affirmations after normalization (max 16 chars).
  */
 function isConfirmation(message: string): boolean {
-  const confirmations = [
-    'sí', 'si', 'sí!', 'si!', 'yes', 'y', 'confirmar', 'confirmado',
-    'aceptar', 'aceptado', 'proceder', 'continuar', 'ok', 'de acuerdo'
-  ];
-  return confirmations.includes(message.toLowerCase().trim());
+  const normalized = normalizeYesNoMessage(message);
+  if (normalized.length === 0 || normalized.length > 16) return false;
+  return CONFIRMATION_TOKENS.has(normalized);
 }
 
 /**
- * Check if message is a denial
+ * Check if message is a denial. Strict: only short single-token negations
+ * after normalization (max 16 chars).
  */
 function isDenial(message: string): boolean {
-  const denials = [
-    'no', 'no!', 'cancelar', 'cancelado', 'anular', 'anulado',
-    'detener', 'detener', 'parar', 'alto', 'negar', 'negado'
-  ];
-  return denials.includes(message.toLowerCase().trim());
+  const normalized = normalizeYesNoMessage(message);
+  if (normalized.length === 0 || normalized.length > 16) return false;
+  return DENIAL_TOKENS.has(normalized);
 }
 
 async function executeCreateOrderRepair(
@@ -1685,7 +1953,16 @@ async function executePendingAction(pending: any, context: ToolContext, platform
     });
 
     if (result.success) {
-      const formatted = formatToolResult(toolName as ToolName, result, platform);
+      // Protect against any rendering bug after a successful commit. The tool
+      // already mutated state (e.g. an order was created); we must NEVER
+      // surface a generic "error" message in that case.
+      let formatted: string;
+      try {
+        formatted = formatToolResult(toolName as ToolName, result, platform);
+      } catch (formatError) {
+        console.error(`[AI Agent] formatToolResult threw for ${toolName} in executePendingAction:`, formatError);
+        formatted = result.message || '✅ Operación completada con éxito.';
+      }
       return '✅ Acción confirmada:\n\n' + formatted;
     }
 

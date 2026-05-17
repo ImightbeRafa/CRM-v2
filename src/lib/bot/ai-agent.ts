@@ -427,8 +427,60 @@ function looksLikeOrderFieldReply(message: string): boolean {
     || /\b(?:\+?506[\s-]?)?\d{4}[\s-]?\d{4}\b/.test(message)
     || /\b(ra|ea)\b/.test(normalized)
     || normalized.includes('contra entrega')
+    // Location labels with OR without colons — WhatsApp users often skip the colon.
+    || /^\s*provincia[\s:]/im.test(message)
+    || /^\s*cant[óo]n[\s:]/im.test(message)
+    || /^\s*distrito[\s:]/im.test(message)
+    || /^\s*direccion[\s:]/im.test(normalized)
     // Bare numeric reply (e.g. answering a totals-mismatch question with "47900").
     || /^[¢₡$]?\s*\d[\d.,]*\s*$/.test(trimmed);
+}
+
+/**
+ * Phrases users send when they want to reject the bot's pending review because
+ * the bot mixed in old data. `isDenial` only catches short single-word "no"
+ * replies; this catches longer rejections like:
+ *   "no esos datos son de la orden pasada"
+ *   "esos datos están equivocados"
+ *   "no, son de la orden anterior"
+ *   "esa no es la orden"
+ */
+const EXPLICIT_REJECTION_PATTERNS: RegExp[] = [
+  /\bno\b[^.\n]*\b(?:esos?|estos?|esa)\b[^.\n]*\bdatos?\b/i,
+  /\bdatos?\b[^.\n]*\b(?:incorrect[ao]s?|equivocad[ao]s?|err[oó]ne[ao]s?|mal[eo]?s?)\b/i,
+  /\b(?:son|es)\s+de\s+(?:la|otra|una|esa|esta|el|otro)\s+(?:orden|pedido)\s+(?:pasad[ao]|anterior|previ[ao]|antigu[ao])\b/i,
+  /\b(?:de|son\s+de)\s+(?:la\s+)?orden\s+(?:pasada|anterior|previa|antigua)\b/i,
+  /\beso(?:s)?\s+no\s+(?:es|son)\s+(?:la|los?|las?)\b/i,
+  /\b(?:descart[ae]|cancel[ae]|olvid[ae])\s+(?:esa|esta|esos?|estos?)\s+(?:orden|revisi|datos?)/i,
+];
+
+function isExplicitRejection(message: string): boolean {
+  const normalized = normalizeSpanishText(message);
+  // Quick gate: must contain a negation word or "incorrect" / "wrong" word to
+  // avoid false positives on neutral messages.
+  if (!/\bno\b/.test(normalized) && !/\b(?:incorrect|equivocad|errone|otra|pasad|anterior|previa|descart|cancel|olvid)/.test(normalized)) {
+    return false;
+  }
+  return EXPLICIT_REJECTION_PATTERNS.some((re) => re.test(message));
+}
+
+/**
+ * Sanitize a successful-order message before persisting it to conversation
+ * history. The user still sees the full detailed confirmation in the chat,
+ * but the LLM should only see a minimal trace on later turns so it cannot
+ * borrow customer name / products / total from a previously-created order.
+ *
+ * If the message contains an order id pattern (e.g. "Orden #BOT-123 creada
+ * exitosamente"), we keep the order id and a generic success line, and drop
+ * everything else.
+ */
+function sanitizeOrderSuccessForHistory(text: string): string {
+  const orderIdMatch = text.match(/Orden\s+(#?[\w-]+)\s+creada\s+exitosamente/i);
+  if (orderIdMatch) {
+    const orderId = orderIdMatch[1].startsWith('#') ? orderIdMatch[1] : `#${orderIdMatch[1]}`;
+    return `✅ Orden ${orderId} creada exitosamente. (Detalles del cliente y productos enviados al usuario; no se conservan en el historial para evitar que se reutilicen en órdenes futuras.)`;
+  }
+  return text;
 }
 
 function shouldStoreCreateOrderRepair(result: ToolResult): boolean {
@@ -589,6 +641,14 @@ async function requestCreateOrderFinalConfirmation(
     ? ((args as any)._totalsMismatch as number[])
     : null;
 
+  // IMPORTANT: We intentionally DO NOT add the review / missing-fields /
+  // totals-mismatch messages to conversation history. The user still sees them
+  // in the chat (they're the function's return value), but the LLM should not
+  // remember them. The pending order data lives in Redis (setPendingConfirmation),
+  // not in chat history. Persisting these messages in history caused the bot to
+  // leak Customer/Product/Total data from a stale review into a follow-up order
+  // when the LLM was later consulted with that history visible.
+
   if (totalsMismatch && totalsMismatch.length > 1) {
     await setPendingConfirmation(platform, platformId, {
       type: 'order_repair',
@@ -606,7 +666,6 @@ async function requestCreateOrderFinalConfirmation(
       '¿Cuál es el total correcto? Envíame el número y preparo la revisión final.',
     ].join('\n');
 
-    await addAssistantMessage(platform, platformId, text);
     return { text };
   }
 
@@ -634,7 +693,6 @@ async function requestCreateOrderFinalConfirmation(
       'Enviame esos datos y preparo la revision final antes de crearla.',
     ].join('\n');
 
-    await addAssistantMessage(platform, platformId, text);
     return { text };
   }
 
@@ -648,7 +706,6 @@ async function requestCreateOrderFinalConfirmation(
   });
 
   const text = buildCreateOrderFinalReview(args, customFieldsConfig);
-  await addAssistantMessage(platform, platformId, text);
   return { text };
 }
 
@@ -703,6 +760,52 @@ function splitDistrictAndAddress(rawDistrictPart: string, matchedDistrict: strin
   return { district: matchedDistrict };
 }
 
+/**
+ * Extract Provincia/Cantón/Distrito from lines that omit the colon, like:
+ *   Provincia San José
+ *   Cantón Desamparados
+ *   Distrito San Antonio
+ * `getLabelValue` requires `:`, so without this fallback the structured
+ * fast-path silently drops the location and the bot incorrectly reports the
+ * fields as missing. We require the label to be the FIRST word of the line
+ * and we skip lines that already have a colon (those are handled upstream).
+ */
+function extractColonlessLocationFromMessage(message: string): {
+  province?: string;
+  canton?: string;
+  district?: string;
+} {
+  const result: { province?: string; canton?: string; district?: string } = {};
+  const lines = message
+    .split(/\r?\n/)
+    .map((line) => stripChatMarkdown(line))
+    .filter(Boolean);
+
+  for (const line of lines) {
+    if (line.includes(':')) continue;
+
+    const provMatch = line.match(/^\s*provincia\s+(.+)$/i);
+    if (provMatch && !result.province) {
+      result.province = decodeEscapedUnicodeText(stripChatMarkdown(provMatch[1]));
+      continue;
+    }
+
+    const cantMatch = line.match(/^\s*cant[óo]n\s+(.+)$/i);
+    if (cantMatch && !result.canton) {
+      result.canton = decodeEscapedUnicodeText(stripChatMarkdown(cantMatch[1]));
+      continue;
+    }
+
+    const distMatch = line.match(/^\s*distrito\s+(.+)$/i);
+    if (distMatch && !result.district) {
+      result.district = decodeEscapedUnicodeText(stripChatMarkdown(distMatch[1]));
+      continue;
+    }
+  }
+
+  return result;
+}
+
 function extractLocationFromMessage(message: string): {
   province?: string;
   canton?: string;
@@ -719,6 +822,14 @@ function extractLocationFromMessage(message: string): {
   if (labeledCanton) result.canton = decodeEscapedUnicodeText(labeledCanton);
   if (labeledDistrict) result.district = decodeEscapedUnicodeText(labeledDistrict);
   if (labeledAddress) result.address = decodeEscapedUnicodeText(labeledAddress);
+
+  // Fallback: capture colonless location labels (very common in WhatsApp messages).
+  if (!result.province || !result.canton || !result.district) {
+    const colonless = extractColonlessLocationFromMessage(message);
+    if (!result.province && colonless.province) result.province = colonless.province;
+    if (!result.canton && colonless.canton) result.canton = colonless.canton;
+    if (!result.district && colonless.district) result.district = colonless.district;
+  }
 
   const lines = message
     .split(/\r?\n/)
@@ -1260,9 +1371,12 @@ export async function processMessage(
     const pending = await peekPendingConfirmation(platform, platformId);
     if (pending) {
       if (pending.type === 'order_repair') {
-        if (isDenial(userMessage)) {
+        if (isDenial(userMessage) || isExplicitRejection(userMessage)) {
+          console.info('[AI Agent] User rejected pending order_repair — clearing.');
           await clearPendingConfirmation(platform, platformId);
-          return { text: 'Entendido, deje la orden sin procesar.' };
+          const text = 'Entendido, descarté esa orden. Cuando quieras crear una nueva, envíame los datos completos.';
+          await addAssistantMessage(platform, platformId, text);
+          return { text };
         }
 
         if (isConfirmation(userMessage)) {
@@ -1271,10 +1385,22 @@ export async function processMessage(
           return { text: responseText };
         }
 
-        if (isActionRequest(userMessage)) {
-          console.info(`[AI Agent] Clearing pending order repair because user started a new action: "${userMessage.substring(0, 60)}"`);
+        // If the user is clearly starting a NEW order (not repairing the
+        // pending one), discard the pending and route the new order through
+        // the normal flow downstream. We detect this by both the action
+        // keywords AND the structured order template signal.
+        const incomingStructured = buildStructuredOrderArgs(userMessage);
+        if (isActionRequest(userMessage) || incomingStructured) {
+          console.info(`[AI Agent] Clearing pending order_repair — user started a new order: "${userMessage.substring(0, 60)}"`);
           await clearPendingConfirmation(platform, platformId);
-        } else if (looksLikeOrderFieldReply(userMessage)) {
+          // Fall through to normal processing; structured fast-path or LLM will
+          // pick up the fresh order data below.
+        } else {
+          // Otherwise treat ANY remaining message as a repair attempt. This is
+          // important: prior versions gated this on `looksLikeOrderFieldReply`,
+          // which missed valid corrections like "Provincia San José / Cantón
+          // Desamparados / Distrito San Antonio" (no colons) and let them fall
+          // through to the LLM, where it would borrow data from history.
           await clearPendingConfirmation(platform, platformId);
           await addUserMessage(platform, platformId, userMessage);
 
@@ -1285,9 +1411,12 @@ export async function processMessage(
       }
 
       if (pending.type === 'order_final_confirm') {
-        if (isDenial(userMessage)) {
+        if (isDenial(userMessage) || isExplicitRejection(userMessage)) {
+          console.info('[AI Agent] User rejected pending order_final_confirm.');
           await clearPendingConfirmation(platform, platformId);
-          const text = 'Entendido, orden cancelada antes de crearla.';
+          const text = isExplicitRejection(userMessage)
+            ? 'Entendido, descarté esa revisión. Envíame de nuevo los datos correctos de la orden y preparo la revisión final.'
+            : 'Entendido, orden cancelada antes de crearla.';
           await addAssistantMessage(platform, platformId, text);
           return { text };
         }
@@ -1305,7 +1434,9 @@ export async function processMessage(
             },
           };
           const result = await executePendingAction(confirmedPending, context, platform, platformId);
-          await addAssistantMessage(platform, platformId, result);
+          // Sanitize the history copy of the success message to prevent the
+          // LLM from borrowing customer/products/total data on later turns.
+          await addAssistantMessage(platform, platformId, sanitizeOrderSuccessForHistory(result));
           return { text: result };
         }
 
@@ -1333,7 +1464,7 @@ export async function processMessage(
       if (confirmed) {
         await clearPendingConfirmation(platform, platformId);
         const result = await executePendingAction(pending, context, platform, platformId);
-        await addAssistantMessage(platform, platformId, result);
+        await addAssistantMessage(platform, platformId, sanitizeOrderSuccessForHistory(result));
         return { text: result };
       } else if (denied) {
         await clearPendingConfirmation(platform, platformId);
@@ -1634,11 +1765,13 @@ export async function processMessage(
       if (toolCallsLog.some((call) => isMutatingTool(call.name))) {
         const directResponse = toolResults.join('\n\n') || 'Operacion procesada.';
         const attachments = allAttachments.length > 0 ? allAttachments : undefined;
-        // Persist the success message; if Redis is flaky we still surface the
-        // success to the user. addAssistantMessage already swallows internal
-        // errors but we double-guard to be safe.
+        // Persist a SANITIZED version of the success message to history so the
+        // LLM cannot borrow customer/product/total data from a previously
+        // created order on later turns. The user still sees the full detailed
+        // message in the chat reply.
+        const historyText = sanitizeOrderSuccessForHistory(directResponse);
         try {
-          await addAssistantMessage(platform, platformId, directResponse);
+          await addAssistantMessage(platform, platformId, historyText);
         } catch (e) {
           console.error('[AI Agent] addAssistantMessage failed after mutation tool success:', e);
         }

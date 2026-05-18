@@ -396,7 +396,17 @@ function inferCreateOrderArgsFromMessage(args: any, userMessage: string): any {
     repairedFields.push('contraEntrega');
   }
 
-  const location = extractLocationFromMessage(userMessage);
+  if (!inferred.email) {
+    const email = extractEmailFromMessage(userMessage);
+    if (email) {
+      inferred.email = email;
+      repairedFields.push('email');
+    }
+  }
+
+  const location = extractLocationFromMessage(userMessage, {
+    customerName: typeof inferred.customerName === 'string' ? inferred.customerName : undefined,
+  });
   for (const field of ['province', 'canton', 'district', 'address'] as const) {
     if (!inferred[field] && location[field]) {
       inferred[field] = location[field];
@@ -547,6 +557,66 @@ function getCreateOrderReviewMissingFields(args: any): string[] {
   return missing;
 }
 
+/**
+ * Render the order data we've already captured as human-readable lines.
+ * Used by the order_repair message so the user can confirm we didn't lose
+ * the rest of their order while they fill in what's missing.
+ *
+ * Only emits a line when the field has a real value. Custom fields are
+ * appended last so tenant-specific data shows up in the summary too.
+ */
+function getCreateOrderReviewCapturedFields(
+  args: any,
+  customFieldsConfig?: CustomFieldsData,
+): string[] {
+  const lines: string[] = [];
+
+  if (args.customerName) lines.push(`Cliente: ${formatReviewValue(args.customerName)}`);
+  if (args.phone) lines.push(`Telefono: ${formatReviewValue(args.phone)}`);
+  if (args.email) lines.push(`Email: ${formatReviewValue(args.email)}`);
+
+  const productLines = getCreateOrderReviewProductLines(args);
+  if (productLines.length > 0) {
+    if (productLines.length === 1) {
+      lines.push(`Producto(s): ${productLines[0]}`);
+    } else {
+      lines.push('Producto(s):');
+      for (const line of productLines) lines.push(`  - ${line}`);
+    }
+  }
+
+  if (args.total !== undefined && args.total !== null && args.total !== '' && Number.isFinite(Number(args.total))) {
+    lines.push(`Total: ${formatCrcAmount(args.total)}`);
+  }
+  if (args.orderType) lines.push(`Tipo de orden: ${formatReviewValue(args.orderType)}`);
+  if (args.paymentMethod) lines.push(`Metodo de pago: ${formatReviewValue(args.paymentMethod)}`);
+
+  const courier = args.courier || args.metodoEnvio || args.shippingMethod || args.mensajeria;
+  if (courier) lines.push(`Metodo de envio: ${formatReviewValue(courier)}`);
+
+  if (args.province) lines.push(`Provincia: ${formatReviewValue(args.province)}`);
+  if (args.canton) lines.push(`Canton: ${formatReviewValue(args.canton)}`);
+  if (args.district) lines.push(`Distrito: ${formatReviewValue(args.district)}`);
+  if (args.address) lines.push(`Direccion: ${formatReviewValue(args.address)}`);
+  if (args.comments) lines.push(`Comentarios: ${formatReviewValue(args.comments)}`);
+  if (args.contraEntrega === true) lines.push('Contra entrega: Si');
+
+  // Tenant-configured custom fields, if any made it through the parser.
+  if (customFieldsConfig) {
+    try {
+      const extracted = extractCustomFields(args, customFieldsConfig);
+      const extra = formatCustomFieldsForTelegram(extracted, customFieldsConfig)
+        .map((line) => line.replace(/\*/g, '').trim())
+        .filter(Boolean);
+      for (const line of extra) lines.push(line);
+    } catch (error) {
+      console.warn('[AI Agent] Failed to format captured custom fields:', error);
+    }
+  }
+
+  return lines;
+}
+
 function getCreateOrderReviewProductLines(args: any): string[] {
   const products = orderProductsFromArgs(args);
   if (products.length === 0 && typeof args.product === 'string' && args.product.trim()) {
@@ -686,14 +756,31 @@ async function requestCreateOrderFinalConfirmation(
       expiresAt: Date.now() + 120_000,
     });
 
-    const text = [
-      'No creare la orden todavia. Faltan campos requeridos:',
-      ...missing.map((field) => `- ${field}`),
-      '',
-      'Enviame esos datos y preparo la revision final antes de crearla.',
-    ].join('\n');
+    const captured = getCreateOrderReviewCapturedFields(args, customFieldsConfig);
 
-    return { text };
+    const textLines: string[] = [];
+
+    if (captured.length > 0) {
+      textLines.push(
+        'Casi listo para crear la orden. Esto es lo que ya tengo de tu mensaje:',
+        '',
+        ...captured.map((line) => `- ${line}`),
+        '',
+        'Me faltan estos datos:',
+        ...missing.map((field) => `- ${field}`),
+        '',
+        'Enviame solo lo que falta (no necesitas reescribir toda la orden) y preparo la revision final.',
+      );
+    } else {
+      textLines.push(
+        'No creare la orden todavia. Faltan campos requeridos:',
+        ...missing.map((field) => `- ${field}`),
+        '',
+        'Enviame esos datos y preparo la revision final antes de crearla.',
+      );
+    }
+
+    return { text: textLines.join('\n') };
   }
 
   await setPendingConfirmation(platform, platformId, {
@@ -895,12 +982,113 @@ function extractColonlessCustomerName(message: string): string | undefined {
   return undefined;
 }
 
-function extractLocationFromMessage(message: string): {
+// Conservative email regex used for free-form extraction in the structured
+// fast-path. We don't aim to be RFC-5322 perfect — we just want to grab the
+// obvious `user@domain.tld` strings users paste into WhatsApp messages.
+const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+
+/**
+ * Extract an email address from the message. Prefers a labeled value
+ * (`Email: ...`, `Correo: ...`); otherwise falls back to the first match of
+ * `EMAIL_RE` anywhere in the text.
+ */
+export function extractEmailFromMessage(message: string): string | undefined {
+  const labeled = getLabelValue(message, ['email', 'correo', 'correo electronico', 'e-mail']);
+  if (labeled) {
+    const trimmed = labeled.trim();
+    if (EMAIL_RE.test(trimmed)) return trimmed;
+  }
+  const match = message.match(EMAIL_RE);
+  return match ? match[0] : undefined;
+}
+
+// Spanish address signals — words/phrases that strongly suggest a line is a
+// free-form delivery address rather than a name, label, or product line.
+const ADDRESS_HINT_RE = /\b(casa|apto|apartamento|residencial|condominio|urbanizaci[oó]n|barrio|frente\s+a|costado\s+(?:de|del)|contiguo|\d+\s*m(?:ts?|etros?)?\b|km\b|kil[oó]metro|entrada|porton(?:es)?|esquinera|edificio|local\b|n[úu]mero|del\s+(?:super|parque|banco|mall|colegio|cole|hospital|cementerio|iglesia|salon|gimnasio|cruce|cementerio)|hacia\s+el|sobre\s+la|carretera|avenida|calle|costado|metros\s+(?:al|hacia)|al\s+(?:sur|norte|este|oeste)|abajo|arriba)\b/i;
+
+/**
+ * True if this line could plausibly be a delivery address (multi-comma
+ * free-form, or contains common Costa Rica address signals). Used by the
+ * address-rescue pass in `extractLocationFromMessage` after the other passes
+ * have already filled province/canton/district.
+ */
+function looksLikeAddressCandidateLine(
+  line: string,
+  options?: { customerName?: string },
+): boolean {
+  if (!line) return false;
+  if (line.includes(':') || line.includes('=')) return false;
+  if (looksLikeNonAddressOrderLine(line)) return false;
+  if (EMAIL_RE.test(line)) return false;
+  if (
+    options?.customerName
+    && normalizeSpanishText(line) === normalizeSpanishText(options.customerName)
+  ) {
+    return false;
+  }
+  if (ADDRESS_HINT_RE.test(line)) return true;
+  if (line.includes(',')) return true;
+  return false;
+}
+
+/**
+ * Try to fit a (province, canton, district) triplet from three free-form
+ * strings into the canonical Costa Rica location data. Returns the corrected
+ * fields plus an optional address rescued from a "district + extra words"
+ * pattern (e.g. "Santa Ana centro en tienda monge" → district "Santa Ana",
+ * address "centro en tienda monge").
+ */
+function fitLocationTriplet(
+  rawProvince: string,
+  rawCanton: string,
+  rawDistrict: string,
+): {
+  province: string;
+  canton: string;
+  district: string;
+  rescuedAddress?: string;
+} | null {
+  const province = decodeEscapedUnicodeText(rawProvince).trim();
+  const canton = decodeEscapedUnicodeText(rawCanton).trim();
+  const district = decodeEscapedUnicodeText(rawDistrict).trim();
+
+  const v = validateLocation(province, canton, district);
+  // We accept the triplet as long as province + canton match the canonical
+  // hierarchy. District may fuzzy-match (handled below) or fall through to
+  // the raw value, since address validation isn't the parser's job.
+  if (!v.province.valid || !v.canton.valid) return null;
+
+  const resolvedProvince = v.correctedProvince || v.province.match || province;
+  const resolvedCanton = v.correctedCanton || v.canton.match || canton;
+
+  const matchedDistrict = v.correctedDistrict || v.district.match;
+  if (matchedDistrict) {
+    const split = splitDistrictAndAddress(district, matchedDistrict);
+    return {
+      province: resolvedProvince,
+      canton: resolvedCanton,
+      district: split.district,
+      rescuedAddress: split.address,
+    };
+  }
+
+  return {
+    province: resolvedProvince,
+    canton: resolvedCanton,
+    district,
+  };
+}
+
+export function extractLocationFromMessage(
+  message: string,
+  options?: { customerName?: string },
+): {
   province?: string;
   canton?: string;
   district?: string;
   address?: string;
 } {
+  // ── Pass 1: Labeled fields (`Provincia: Heredia`) ──────────────────
   const labeledProvince = getLabelValue(message, ['provincia']);
   const labeledCanton = getLabelValue(message, ['canton']);
   const labeledDistrict = getLabelValue(message, ['distrito']);
@@ -912,7 +1100,7 @@ function extractLocationFromMessage(message: string): {
   if (labeledDistrict) result.district = decodeEscapedUnicodeText(labeledDistrict);
   if (labeledAddress) result.address = decodeEscapedUnicodeText(labeledAddress);
 
-  // Fallback: capture colonless location labels (very common in WhatsApp messages).
+  // ── Pass 2: Colonless keyword + value (`Provincia Heredia`) ────────
   if (!result.province || !result.canton || !result.district || !result.address) {
     const colonless = extractColonlessLocationFromMessage(message);
     if (!result.province && colonless.province) result.province = colonless.province;
@@ -926,33 +1114,108 @@ function extractLocationFromMessage(message: string): {
     .map((line) => stripChatMarkdown(line))
     .filter(Boolean);
 
+  // Track which raw lines were consumed by a location pass so the
+  // address-rescue pass at the end doesn't re-use them.
+  const consumedLines = new Set<string>();
+
+  // ── Pass 3a: Slash/pipe/middot/dash triplet on a single line ───────
+  // Real examples (all should produce the same triplet):
+  //   `Heredia / San Pablo / San Pablo`
+  //   `Heredia | San Pablo | San Pablo`
+  //   `Heredia - San Pablo - San Pablo`
+  // We require spaces around the dash so we don't misparse hyphenated
+  // numbers/addresses (e.g. `Calle 5-7`).
+  if (!result.province || !result.canton || !result.district) {
+    const SEP_RE = /\s*[\/|·]\s*|\s+[-—–]\s+/;
+    for (const line of lines) {
+      if (line.includes(':')) continue;
+      if (looksLikeNonAddressOrderLine(line)) continue;
+      if (!SEP_RE.test(line)) continue;
+      const parts = line.split(SEP_RE).map((s) => s.trim()).filter(Boolean);
+      if (parts.length !== 3) continue;
+      const fit = fitLocationTriplet(parts[0], parts[1], parts[2]);
+      if (!fit) continue;
+      result.province ||= fit.province;
+      result.canton ||= fit.canton;
+      result.district ||= fit.district;
+      if (!result.address && fit.rescuedAddress) result.address = fit.rescuedAddress;
+      consumedLines.add(line);
+      break;
+    }
+  }
+
+  // ── Pass 3b: Three consecutive plausible-location lines ────────────
+  // Real example (each on its own line, no separator):
+  //   San José
+  //   Santa Ana
+  //   Santa Ana centro en tienda monge
+  if (!result.province || !result.canton || !result.district) {
+    const candidates: string[] = [];
+    for (const line of lines) {
+      if (line.includes(':') || line.includes('=')) continue;
+      if (looksLikeNonAddressOrderLine(line)) continue;
+      if (EMAIL_RE.test(line)) continue;
+      if (
+        options?.customerName
+        && normalizeSpanishText(line) === normalizeSpanishText(options.customerName)
+      ) {
+        continue;
+      }
+      // Slash/pipe/dash triplet lines were already handled in pass 3a.
+      const sepRe = /\s*[\/|·]\s*|\s+[-—–]\s+/;
+      if (sepRe.test(line) && line.split(sepRe).filter(Boolean).length === 3) continue;
+      candidates.push(line);
+    }
+
+    for (let i = 0; i + 2 < candidates.length; i += 1) {
+      const fit = fitLocationTriplet(candidates[i], candidates[i + 1], candidates[i + 2]);
+      if (!fit) continue;
+      result.province ||= fit.province;
+      result.canton ||= fit.canton;
+      result.district ||= fit.district;
+      if (!result.address && fit.rescuedAddress) result.address = fit.rescuedAddress;
+      consumedLines.add(candidates[i]);
+      consumedLines.add(candidates[i + 1]);
+      consumedLines.add(candidates[i + 2]);
+      break;
+    }
+  }
+
+  // ── Pass 4: Comma triplet on a single line (legacy) ────────────────
+  // Real example: `Heredia, San Pablo, San Pablo`
   for (const line of lines) {
+    if (consumedLines.has(line)) continue;
     if (looksLikeNonAddressOrderLine(line)) continue;
     if (!line.includes(',')) continue;
+    if (result.province && result.canton && result.district && result.address) break;
 
     const parts = line.split(',').map((part) => stripChatMarkdown(part)).filter(Boolean);
     if (parts.length < 3) continue;
 
-    const provinceCandidate = decodeEscapedUnicodeText(parts[0]);
-    const cantonCandidate = decodeEscapedUnicodeText(parts[1]);
-    const districtCandidate = decodeEscapedUnicodeText(parts.slice(2).join(', '));
-    const validation = validateLocation(provinceCandidate, cantonCandidate, districtCandidate);
-    if (!validation.province.valid || !validation.canton.valid) continue;
+    const districtCandidate = parts.slice(2).join(', ');
+    const fit = fitLocationTriplet(parts[0], parts[1], districtCandidate);
+    if (!fit) continue;
 
-    result.province ||= validation.correctedProvince || validation.province.match || provinceCandidate;
-    result.canton ||= validation.correctedCanton || validation.canton.match || cantonCandidate;
-
-    const matchedDistrict = validation.correctedDistrict || validation.district.match;
-    if (matchedDistrict) {
-      const split = splitDistrictAndAddress(districtCandidate, matchedDistrict);
-      result.district ||= split.district;
-      if (!result.address && split.address) result.address = split.address;
-    } else {
-      result.district ||= districtCandidate;
-    }
-
+    result.province ||= fit.province;
+    result.canton ||= fit.canton;
+    result.district ||= fit.district;
+    if (!result.address && fit.rescuedAddress) result.address = fit.rescuedAddress;
     if (!result.address) result.address = line;
+    consumedLines.add(line);
     break;
+  }
+
+  // ── Pass 5: Address rescue ─────────────────────────────────────────
+  // We've parsed at least one location level, but the user wrote the
+  // address on its own line without a `Dirección:` prefix. Find the first
+  // unclaimed line that looks like an address.
+  if (!result.address && (result.province || result.canton || result.district)) {
+    for (const line of lines) {
+      if (consumedLines.has(line)) continue;
+      if (!looksLikeAddressCandidateLine(line, { customerName: options?.customerName })) continue;
+      result.address = line;
+      break;
+    }
   }
 
   return result;
@@ -1060,7 +1323,7 @@ function extractCustomFieldsFromMessage(
   return result;
 }
 
-function buildStructuredOrderArgs(
+export function buildStructuredOrderArgs(
   userMessage: string,
   customFieldsConfig?: CustomFieldsData,
 ): any | null {
@@ -1081,12 +1344,14 @@ function buildStructuredOrderArgs(
   const customerName = inferCustomerNameFromMessage(userMessage);
   const product = extractProductTextFromMessage(userMessage);
   const phone = extractPhoneFromMessage(userMessage);
+  const email = extractEmailFromMessage(userMessage);
   const total = extractTotalFromMessage(userMessage);
   const quantity = extractQuantityFromMessage(userMessage);
 
   if (customerName) args.customerName = customerName;
   if (product) args.product = product;
   if (phone) args.phone = phone;
+  if (email) args.email = email;
   if (total !== undefined) args.total = total;
   if (quantity !== undefined) args.quantity = quantity;
 
@@ -1102,7 +1367,10 @@ function buildStructuredOrderArgs(
   const comments = getLabelValue(userMessage, ['comentario', 'comentarios', 'observacion', 'nota']);
   if (comments) args.comments = comments;
 
-  const location = extractLocationFromMessage(userMessage);
+  // Pass the inferred customer name so the location passes can skip it when
+  // looking for province/canton/district triplets (otherwise a name like
+  // "Heredia López" could be misread as a province).
+  const location = extractLocationFromMessage(userMessage, { customerName });
   if (location.address) args.address = location.address;
   if (location.province) args.province = location.province;
   if (location.canton) args.canton = location.canton;

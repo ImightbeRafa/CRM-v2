@@ -12,69 +12,113 @@ type CorreosShippingCostResult = {
 const CENTRAL_PROVINCES = new Set(['san jose', 'alajuela', 'cartago', 'heredia']);
 const OUTSIDE_GAM_PROVINCES = new Set(['guanacaste', 'puntarenas', 'limon']);
 
-// Plan GAM 2013-2030 scope, applied at canton level for operations pricing.
-const GAM_CANTONS_BY_PROVINCE: Record<string, Set<string>> = {
-  'san jose': new Set([
-    'san jose',
-    'escazu',
-    'desamparados',
-    'aserri',
-    'mora',
-    'goicoechea',
-    'santa ana',
-    'alajuelita',
-    'vazquez de coronado',
-    'tibas',
-    'moravia',
-    'montes de oca',
-    'curridabat',
-  ]),
-  alajuela: new Set(['alajuela', 'atenas', 'poas']),
-  cartago: new Set(['cartago', 'paraiso', 'la union', 'alvarado', 'oreamuno', 'el guarco']),
-  heredia: new Set([
-    'heredia',
-    'barva',
-    'santo domingo',
-    'santa barbara',
-    'san rafael',
-    'san isidro',
-    'belen',
-    'flores',
-    'san pablo',
-  ]),
-};
-
-const GAM_CANTONS = new Set(Object.values(GAM_CANTONS_BY_PROVINCE).flatMap((cantons) => [...cantons]));
-
 const CANTON_ALIASES_BY_PROVINCE: Record<string, Record<string, string>> = {
   'san jose': {
     coronado: 'vazquez de coronado',
     'vasquez de coronado': 'vazquez de coronado',
+    'leon cortes': 'leon cortes castro',
+  },
+  alajuela: {
+    'alfaro ruiz': 'zarcero',
+    'valverde vega': 'sarchi',
   },
 };
 
-const DISTRICT_ZONE_OVERRIDES_BY_PROVINCE: Record<
-  string,
-  Record<string, Record<string, CorreosShippingZone>>
-> = {
+const OUTSIDE_GAM_CANTONS_BY_PROVINCE: Record<string, Set<string>> = {
+  'san jose': new Set(['perez zeledon']),
+  alajuela: new Set([
+    'san mateo',
+    'zarcero',
+    'atenas',
+    'orotina',
+    'san carlos',
+    'upala',
+    'los chiles',
+    'guatuso',
+    'rio cuarto',
+  ]),
+  heredia: new Set(['sarapiqui']),
+};
+
+const OUTSIDE_GAM_DISTRICTS_SOURCE: Record<string, Record<string, string[]>> = {
   'san jose': {
-    puriscal: {
-      santiago: 'gam',
-    },
-    acosta: {
-      'san ignacio': 'gam',
-    },
-    'vazquez de coronado': {
-      'san rafael': 'gam',
-      cascajal: 'outside_gam',
-      'dulce nombre': 'outside_gam',
-      'dulce nombre de jesus': 'outside_gam',
-    },
+    desamparados: ['frailes', 'san cristobal', 'rosario'],
+    puriscal: [
+      'mercedes sur',
+      'barbacoas',
+      'grifo alto',
+      'san rafael',
+      'candelaria',
+      'candelarita',
+      'desamparaditos',
+      'san antonio',
+      'chires',
+    ],
+    tarrazu: ['san lorenzo', 'san carlos'],
+    aserri: ['tarbaca', 'vuelta de jorco', 'vuelta del jorco', 'san gabriel', 'legua', 'monterrey'],
+    mora: ['guayabo', 'tabarcia', 'piedras negras', 'picagres', 'jagres', 'jaris', 'quitirrisi'],
+    'vazquez de coronado': ['dulce nombre', 'dulce nombre de jesus', 'cascajal', 'cascalj'],
+    acosta: ['guatil', 'guaitil', 'palmichal', 'cangrejal', 'sabanillas'],
+    turrubares: ['san pedro', 'san juan de mata', 'san luis', 'carara'],
+    dota: ['jardin', 'copey'],
+    'leon cortes castro': ['san andres', 'llano bonito', 'san isidro', 'santa cruz', 'san antonio'],
+  },
+  alajuela: {
+    alajuela: ['sarapiqui'],
+    'san ramon': [
+      'santiago',
+      'san juan',
+      'piedades norte',
+      'piedades sur',
+      'san rafael',
+      'san isidro',
+      'angeles',
+      'alfaro',
+      'volio',
+      'concepcion',
+      'zapotal',
+      'penas blancas',
+    ],
+    grecia: ['san isidro', 'san jose', 'san roque', 'tacares', 'puente de piedra', 'bolivar'],
+    palmares: ['zaragoza', 'buenos aires', 'santiago', 'candelaria', 'esquipulas', 'granja', 'la granja'],
+    poas: ['san juan', 'san rafael', 'carrillos', 'sabana redonda'],
+    sarchi: ['sarchi sur', 'toro amarillo', 'san pedro', 'rodriguez'],
+    naranjo: ['san miguel', 'san jose', 'cirri sur', 'san jeronimo', 'san juan', 'rosario', 'el rosario', 'palmitos'],
+  },
+  cartago: {
+    paraiso: ['orosi'],
+    jimenez: ['tucurrique', 'pejibaye'],
+    turrialba: [
+      'la suiza',
+      'peralta',
+      'santa cruz',
+      'santa teresita',
+      'pavones',
+      'tuis',
+      'tayutic',
+      'santa rosa',
+      'tres equis',
+      'la isabel',
+      'chirripo',
+    ],
+    'el guarco': ['patio de agua'],
+  },
+  heredia: {
+    heredia: ['vara blanca', 'varablanca'],
   },
 };
+
+const OUTSIDE_GAM_DISTRICTS_BY_PROVINCE = Object.fromEntries(
+  Object.entries(OUTSIDE_GAM_DISTRICTS_SOURCE).map(([province, cantons]) => [
+    province,
+    Object.fromEntries(
+      Object.entries(cantons).map(([canton, districts]) => [canton, new Set(districts)])
+    ),
+  ])
+) as Record<string, Record<string, Set<string>>>;
 
 const CANTONS_REQUIRING_DISTRICT = new Set(
-  Object.entries(DISTRICT_ZONE_OVERRIDES_BY_PROVINCE).flatMap(([province, cantons]) =>
+  Object.entries(OUTSIDE_GAM_DISTRICTS_BY_PROVINCE).flatMap(([province, cantons]) =>
     Object.keys(cantons).map((canton) => `${province}:${canton}`)
   )
 );
@@ -98,7 +142,9 @@ function getDistrictZoneOverride(input: {
   canton: string;
   district: string;
 }): CorreosShippingZone | null {
-  return DISTRICT_ZONE_OVERRIDES_BY_PROVINCE[input.province]?.[input.canton]?.[input.district] ?? null;
+  return OUTSIDE_GAM_DISTRICTS_BY_PROVINCE[input.province]?.[input.canton]?.has(input.district)
+    ? 'outside_gam'
+    : null;
 }
 
 export function getCorreosAutomatedShippingCost(input: {
@@ -133,11 +179,11 @@ export function getCorreosAutomatedShippingCost(input: {
     const districtOverride = district
       ? getDistrictZoneOverride({ province, canton, district })
       : null;
-    if (districtOverride) {
+    if (districtOverride === 'outside_gam') {
       return {
-        cost: districtOverride === 'gam' ? CORREOS_GAM_SHIPPING_COST : CORREOS_OUTSIDE_GAM_SHIPPING_COST,
+        cost: CORREOS_OUTSIDE_GAM_SHIPPING_COST,
         zone: districtOverride,
-        reason: districtOverride === 'gam' ? 'Distrito dentro de GAM' : 'Distrito fuera de GAM',
+        reason: 'Distrito fuera de GAM',
       };
     }
 
@@ -150,27 +196,25 @@ export function getCorreosAutomatedShippingCost(input: {
     }
   }
 
-  if (province && CENTRAL_PROVINCES.has(province)) {
-    const provinceGamCantons = GAM_CANTONS_BY_PROVINCE[province];
-    const isGam = provinceGamCantons?.has(canton) ?? false;
+  if (province && OUTSIDE_GAM_CANTONS_BY_PROVINCE[province]?.has(canton)) {
     return {
-      cost: isGam ? CORREOS_GAM_SHIPPING_COST : CORREOS_OUTSIDE_GAM_SHIPPING_COST,
-      zone: isGam ? 'gam' : 'outside_gam',
-      reason: isGam ? 'Canton dentro de GAM' : 'Canton fuera de GAM',
+      cost: CORREOS_OUTSIDE_GAM_SHIPPING_COST,
+      zone: 'outside_gam',
+      reason: 'Canton fuera de GAM',
     };
   }
 
-  if (!province && GAM_CANTONS.has(canton)) {
+  if (province && CENTRAL_PROVINCES.has(province)) {
     return {
       cost: CORREOS_GAM_SHIPPING_COST,
       zone: 'gam',
-      reason: 'Canton dentro de GAM',
+      reason: 'Distrito dentro de GAM',
     };
   }
 
   return {
-    cost: CORREOS_OUTSIDE_GAM_SHIPPING_COST,
-    zone: 'outside_gam',
-    reason: province ? 'Provincia fuera de GAM' : 'Canton fuera de GAM',
+    cost: null,
+    zone: null,
+    reason: 'Falta provincia para calcular GAM',
   };
 }

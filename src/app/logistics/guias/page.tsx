@@ -393,6 +393,9 @@ export default function GuiasPage() {
     const correosCount = orders.filter(o => o.lmCarrier === 'correos').length;
     const ceCount = orders.filter(o => o.isContraEntrega && o.lmCarrier === 'mensajeria').length;
     const selectableHistoryCount = history.filter(g => g.hasPdf).length;
+    const allHistoryPdfsSelected = selectableHistoryCount > 0 && history
+        .filter(g => g.hasPdf)
+        .every(g => selectedHistoryIds.has(g.id));
 
     return (
         <div>
@@ -617,17 +620,24 @@ export default function GuiasPage() {
                                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                                     <button
                                         onClick={selectAllHistoryWithPdf}
-                                        disabled={selectableHistoryCount === 0 || historyLoading}
+                                        disabled={selectableHistoryCount === 0 || historyLoading || allHistoryPdfsSelected}
+                                        aria-label="Seleccionar todas las guias con PDF"
                                         style={{
                                             padding: '6px 10px',
                                             ...glass,
-                                            color: selectableHistoryCount > 0 ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.2)',
-                                            cursor: selectableHistoryCount > 0 ? 'pointer' : 'default',
+                                            color: selectableHistoryCount > 0 && !allHistoryPdfsSelected ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.25)',
+                                            cursor: selectableHistoryCount > 0 && !allHistoryPdfsSelected ? 'pointer' : 'default',
                                             fontSize: 11.5,
-                                            opacity: selectableHistoryCount > 0 ? 1 : 0.5
+                                            fontWeight: 700,
+                                            opacity: selectableHistoryCount > 0 ? 1 : 0.5,
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 6,
+                                            whiteSpace: 'nowrap'
                                         }}
                                     >
-                                        Seleccionar PDF
+                                        <CheckSquare size={12} />
+                                        {allHistoryPdfsSelected ? 'Todos seleccionados' : `Seleccionar todos (${selectableHistoryCount})`}
                                     </button>
                                     <button
                                         onClick={clearHistorySelection}

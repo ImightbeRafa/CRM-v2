@@ -332,7 +332,11 @@ function extractExplicitTotalFromMessage(message: string): number | undefined {
   return parseAmount(match[1]);
 }
 
-function inferCreateOrderArgsFromMessage(args: any, userMessage: string): any {
+function inferCreateOrderArgsFromMessage(
+  args: any,
+  userMessage: string,
+  customFieldsConfig?: CustomFieldsData,
+): any {
   const inferred = { ...args };
   const repairedFields: string[] = [];
 
@@ -416,6 +420,35 @@ function inferCreateOrderArgsFromMessage(args: any, userMessage: string): any {
       if (decoded !== inferred[field]) {
         inferred[field] = decoded;
         repairedFields.push(field);
+      }
+    }
+  }
+
+  // Back-fill tenant-configured custom fields from the user message. The LLM
+  // sometimes drops them (or never lifts them out of the free-form message
+  // into structured `customFields`), which made the bot complain that every
+  // required field was missing even though the user clearly typed them as
+  // `Label: Value` lines under "Campos adicionales:". The structured
+  // fast-path already populates these via buildStructuredOrderArgs; this
+  // back-fill is the safety net for the LLM and repair paths.
+  if (customFieldsConfig) {
+    const extractedCustomFields = extractCustomFieldsFromMessage(userMessage, customFieldsConfig);
+    if (Object.keys(extractedCustomFields).length > 0) {
+      const existing =
+        inferred.customFields && typeof inferred.customFields === 'object' && !Array.isArray(inferred.customFields)
+          ? { ...inferred.customFields }
+          : {};
+      let mergedAny = false;
+      for (const [key, value] of Object.entries(extractedCustomFields)) {
+        const current = existing[key];
+        if (current === undefined || current === null || current === '') {
+          existing[key] = value;
+          mergedAny = true;
+        }
+      }
+      if (mergedAny) {
+        inferred.customFields = existing;
+        repairedFields.push('customFields');
       }
     }
   }
@@ -1300,6 +1333,42 @@ function getCustomFieldValueFromMessage(message: string, label: string, key: str
   return fallback ? fallback.replace(/[\s,;:.]+$/, '').trim() : undefined;
 }
 
+/**
+ * Insert a newline before any tenant custom-field label that appears mid-line
+ * after another label-value pair. Real example from user logs:
+ *
+ *   "Detalles del personalizado: sables de KROMA Comentarios importantes: Taza Magica 3D"
+ *
+ * Without preprocessing, `getCustomFieldValueFromMessage` would assign the
+ * whole tail (including "Comentarios importantes: ...") to "Detalles del
+ * personalizado", and the second field would be reported as missing. After
+ * preprocessing the line becomes two lines, one per field.
+ */
+function splitCustomFieldMultiLabelLines(
+  message: string,
+  customFieldsConfig: CustomFieldsData,
+): string {
+  const labels = [
+    ...customFieldsConfig.productFields.map((f) => f.label).filter(Boolean),
+    ...customFieldsConfig.businessInfoFields.map((f) => f.label).filter(Boolean),
+  ];
+  if (labels.length === 0) return message;
+
+  // Process longest labels first so multi-word labels match before substrings.
+  const sortedLabels = Array.from(new Set(labels)).sort((a, b) => b.length - a.length);
+
+  let result = message;
+  for (const label of sortedLabels) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Match the label (case-insensitive) only when:
+    //  - it is preceded by a non-newline character (i.e. NOT already at line start), and
+    //  - it is followed by an optional space then a colon (it must be acting as a label).
+    const re = new RegExp(`(?<=[^\\r\\n])\\s+(${escaped})(\\s*:)`, 'gi');
+    result = result.replace(re, '\n$1$2');
+  }
+  return result;
+}
+
 function extractCustomFieldsFromMessage(
   message: string,
   customFieldsConfig: CustomFieldsData | undefined,
@@ -1312,9 +1381,15 @@ function extractCustomFieldsFromMessage(
     ...customFieldsConfig.businessInfoFields.map((f) => ({ key: f.name, label: f.label })),
   ];
 
+  // Pre-split lines that pack multiple "Label: value" pairs onto a single
+  // line. WhatsApp users frequently lose newlines between fields because the
+  // mobile keyboard or paste flow strips them; the parser should not punish
+  // them for it.
+  const preprocessed = splitCustomFieldMultiLabelLines(message, customFieldsConfig);
+
   for (const field of allFields) {
     if (!field.key) continue;
-    const value = getCustomFieldValueFromMessage(message, field.label, field.key);
+    const value = getCustomFieldValueFromMessage(preprocessed, field.label, field.key);
     if (value !== undefined && value !== '') {
       result[field.key] = value;
     }
@@ -1801,6 +1876,19 @@ export async function processMessage(
   let mutationSuccessAttachments: ToolAttachment[] | undefined;
 
   try {
+    // Load tenant custom-fields config once per turn so every downstream code
+    // path (structured fast-path, pending repair flow, pending final-confirm
+    // flow, and the LLM tool-call back-fill) can use the same shape. Without
+    // this, the LLM path would silently drop custom-field values the user
+    // already typed in their message and the validator would report every
+    // required custom field as missing.
+    let customFieldsConfig: CustomFieldsData | undefined;
+    try {
+      customFieldsConfig = await getTenantCustomFields(context.tenantId);
+    } catch (e) {
+      console.warn('[AI Agent] Failed to load tenant custom fields config:', e);
+    }
+
     // Check for pending confirmations first (non-destructive peek)
     const pending = await peekPendingConfirmation(platform, platformId);
     if (pending) {
@@ -1838,7 +1926,7 @@ export async function processMessage(
           await clearPendingConfirmation(platform, platformId);
           await addUserMessage(platform, platformId, userMessage);
 
-          const repairedArgs = inferCreateOrderArgsFromMessage(pending.data?.toolArgs || {}, userMessage);
+          const repairedArgs = inferCreateOrderArgsFromMessage(pending.data?.toolArgs || {}, userMessage, customFieldsConfig);
           const repairResponse = await executeCreateOrderRepair(repairedArgs, context, platform, platformId);
           return { text: repairResponse };
         }
@@ -1886,7 +1974,7 @@ export async function processMessage(
           await clearPendingConfirmation(platform, platformId);
           // Do NOT return; fall through to normal processing below.
         } else {
-          const updatedArgs = inferCreateOrderArgsFromMessage(pending.data?.toolArgs || {}, userMessage);
+          const updatedArgs = inferCreateOrderArgsFromMessage(pending.data?.toolArgs || {}, userMessage, customFieldsConfig);
           await clearPendingConfirmation(platform, platformId);
           return requestCreateOrderFinalConfirmation(updatedArgs, context, platform, platformId);
         }
@@ -1930,17 +2018,12 @@ export async function processMessage(
     // This way, if the pending review expires before the user confirms, the
     // LLM cannot re-create the order from leftover history on the next turn.
     //
-    // We need the tenant's custom-field config here so the structured fast-path
-    // can populate args.customFields from the user's message labels (e.g.
-    // "Usuario: Marlenn", "Negocio: WAS"). Without this, the validator would
-    // report every required custom field as missing.
-    let structuredCustomFieldsConfig: CustomFieldsData | undefined;
-    try {
-      structuredCustomFieldsConfig = await getTenantCustomFields(context.tenantId);
-    } catch (e) {
-      console.warn('[AI Agent] Failed to load custom fields config for structured fast-path:', e);
-    }
-    const structuredOrderArgs = buildStructuredOrderArgs(userMessage, structuredCustomFieldsConfig);
+    // We use the tenant's custom-field config (loaded once at the top of this
+    // turn) so the structured fast-path can populate args.customFields from
+    // the user's message labels (e.g. "Usuario: Marlenn", "Negocio: WAS").
+    // Without this, the validator would report every required custom field
+    // as missing.
+    const structuredOrderArgs = buildStructuredOrderArgs(userMessage, customFieldsConfig);
     if (structuredOrderArgs) {
       return executeStructuredCreateOrder(structuredOrderArgs, context, platform, platformId);
     }
@@ -2056,7 +2139,7 @@ export async function processMessage(
           id: toolCall.id,
           name: toolName,
           args: toolName === 'create_order'
-            ? inferCreateOrderArgsFromMessage(guardedArgs, userMessage)
+            ? inferCreateOrderArgsFromMessage(guardedArgs, userMessage, customFieldsConfig)
             : guardedArgs,
           original: toolCall,
         };

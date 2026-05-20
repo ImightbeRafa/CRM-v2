@@ -1684,50 +1684,70 @@ async function extractOrderArgsWithAI(
 
   const systemPrompt = [
     'Sos un extractor de datos de órdenes para Betsy CRM (comercio costarricense).',
-    'Tu única tarea es leer el mensaje del usuario (informal, en español, con typos, abreviaciones, falta de tildes y espacios) y devolver UN ÚNICO objeto JSON con los campos extraídos.',
+    'Tu trabajo es leer un mensaje informal en español (con typos, abreviaciones, espacios sobrantes, emojis, líneas en blanco, datos en cualquier orden) y devolver UN ÚNICO objeto JSON con los campos extraídos.',
     '',
-    'REGLAS:',
-    '1. Devolvé SOLO el JSON. Nada de prosa, nada de markdown, nada de ```fences```.',
-    '2. Si un dato NO está claramente en el mensaje, OMITILO. Nunca inventes.',
-    '3. Si un valor parece placeholder de plantilla (e.g., "...", "ej:", "(opcional)", "<...>", "[...]"), OMITILO.',
-    '4. Las propiedades del JSON son TODAS opcionales. Devolvé solo lo que viste.',
+    'REGLAS GLOBALES:',
+    '1. Devolvé SOLO el JSON. Nada de prosa, ni explicaciones, ni markdown, ni ```fences```.',
+    '2. Si un dato NO está claramente en el mensaje, OMITILO de la salida. Nunca inventes valores.',
+    '3. Ignorá espacios sobrantes (incluso 20+ espacios entre palabras), emojis (☎️📱📍📦), líneas en blanco, símbolos decorativos.',
+    '4. NUNCA pongas el mismo texto en dos campos distintos. Cada fragmento del mensaje pertenece a UN solo campo.',
+    '5. Si un valor parece placeholder de plantilla ("e.g., ...", "ej: ...", "(opcional)", "<...>", "[...]"), OMITILO.',
+    '6. Las propiedades del JSON son TODAS opcionales. Devolvé solo lo que viste con seguridad.',
     '',
-    'PROVINCIA / CANTÓN / DISTRITO (Costa Rica):',
-    '- Devolvé la grafía canónica con tildes y espacios. Ejemplos:',
-    '  - "Sanjose" / "Sanjosé" / "S.J." / "SJ" / "san jose" → "San José"',
-    '  - "Sanjosecito" → "San Josecito"',
-    '  - "Limon" → "Limón"',
-    '  - "alajuelita" → "Alajuelita"',
-    '  - "Heredi" → "Heredia"',
-    '- Cuando una línea trae 3 valores separados por comas, slash, pipe o guiones (ej: "Sanjose, Alajuelita, Sanjosecito"), eso es provincia, cantón y distrito.',
-    '- Las líneas siguientes con detalles (ej: "de la iglesia católica 350 sur, casa amarilla portón verde") son la dirección (campo "address"), no parte del distrito.',
-    '- NUNCA dejes vacíos provincia/cantón/distrito si el mensaje los menciona — aunque vengan con typos. Usá tu conocimiento de Costa Rica para canonicalizar.',
+    'CÓMO MAPEAR LOS CAMPOS — leé esto con cuidado:',
     '',
-    'PRODUCTOS:',
-    '- Array `products` de objetos {"name": string, "quantity": number}.',
-    '- "dopamine patch x2" → {"name":"dopamine patch","quantity":2}.',
-    '- "2x dopamine patch", "dopamine patch (2)", "2 unidades de dopamine patch" → quantity 2.',
-    '- IMPORTANTE: name NO debe incluir el "xN". El nombre del producto es solo el nombre.',
+    '• customerName: nombre y apellidos de la persona. NO incluyas "Cliente:", "Nombre:", el teléfono, el email, ni la cédula.',
     '',
-    'TOTAL:',
-    '- Número entero en CRC, sin formato. "₡20.900" → 20900. "20,900" → 20900. "CRC 11 500" → 11500.',
+    '• phone: 8 dígitos costarricenses. Quitá prefijos "+506", "Celular:", "tel:", "☎️", "📱". Si ves la cédula ("Céd 1-2345-6789", 9 dígitos), eso NO es teléfono.',
     '',
-    'TIPO DE ORDEN:',
-    '- "EA" si el mensaje menciona envío, mensajería, correos, EA.',
-    '- "RA" si menciona retiro, "retira", "lo paso a buscar", RA.',
+    '• email: una dirección email válida (algo@algo.algo). Recortá puntos finales, espacios, emojis, o texto que venga después del .com/.cr/etc. NUNCA mezcles el teléfono dentro del email.',
     '',
-    'TELÉFONO:',
-    '- Sólo dígitos costarricenses (8 dígitos). Quitá "+506", "Celular", "tel:".',
+    '• province, canton, district: provincia/cantón/distrito de Costa Rica.',
+    '   - Cuando una línea trae 3 valores separados por comas, slash, pipe o guiones (ej: "San José, Mora, Colón"), eso ES provincia, cantón, distrito (en ese orden).',
+    '   - Devolvé la grafía canónica con tildes: "Sanjose"→"San José", "Sanjosecito"→"San Josecito", "Limon"→"Limón", "alajuelita"→"Alajuelita", "Heredi"→"Heredia", "Mora"→"Mora", "Colón"→"Colón".',
+    '   - El distrito es SIEMPRE un nombre de lugar de Costa Rica. Nunca puede ser un producto, un total, una cantidad, un comentario o una dirección detallada. Si lo que tenés "ahí" es un producto o un número, entonces el distrito NO está en esa línea.',
+    '',
+    '• address: la dirección detallada / referencias / puntos de referencia (ej: "Brasil de Mora, carretera a ciudad colón, calle cajetas, 4ta casa, mano izquierda, portón negro"). VIENE TÍPICAMENTE en una línea SEPARADA después del triplete provincia/cantón/distrito. NUNCA pongas el total, el producto, ni el método de pago en address.',
+    '',
+    '• products: array de {"name", "quantity"}. "1 sleeping patches" → [{"name":"sleeping patches","quantity":1}]. "dopamine patch x2" → [{"name":"dopamine patch","quantity":2}]. El name NO debe incluir el "xN" ni la cantidad inicial.',
+    '',
+    '• total: número entero en CRC, sin formato. "₡20.900" → 20900, "20,900" → 20900, "12,900CRC" → 12900, "Pago 12,900" → total=12900 (NO es la dirección).',
+    '',
+    '• orderType: "EA" si menciona envío/correos/mensajería/guía, "RA" si menciona retiro/"lo paso a buscar". Si dice "Datos para guía correos" → EA.',
+    '',
+    '• paymentMethod: SINPE, efectivo, tarjeta, transferencia, etc. "Sinpe confirmado" → "SINPE".',
+    '',
+    '• comments: notas u observaciones generales que el usuario quiera dejar (ej: "Sinpe confirmado", "favor entregar antes de las 5pm").',
     '',
     customFieldsBlock
-      ? 'CAMPOS PERSONALIZADOS configurados por este comercio (poné los valores dentro de `customFields` con la KEY exacta como nombre de propiedad):'
+      ? 'CAMPOS PERSONALIZADOS configurados por este comercio (poné los valores dentro de `customFields` usando la KEY exacta como nombre de propiedad):'
       : '',
     customFieldsBlock,
     '',
-    'EJEMPLO de salida válida para el mensaje "Deseo crear orden EA Maria 88112233 Sanjose, Alajuelita, Sanjosecito de la iglesia 100 sur dopamine patch x2 ₡20900 EA SINPE":',
+    'EJEMPLOS:',
+    '',
+    'Mensaje 1:',
+    '"Deseo crear orden EA Maria 88112233 Sanjose, Alajuelita, Sanjosecito de la iglesia 100 sur dopamine patch x2 ₡20900 EA SINPE"',
+    'Salida correcta:',
     '{"customerName":"Maria","phone":"88112233","province":"San José","canton":"Alajuelita","district":"San Josecito","address":"de la iglesia 100 sur","products":[{"name":"dopamine patch","quantity":2}],"total":20900,"orderType":"EA","paymentMethod":"SINPE"}',
     '',
-    'Forma del JSON de salida (todas las claves son opcionales):',
+    'Mensaje 2 (con espacios extras, emojis, cédula, varios bloques):',
+    '"Carolina Zúñiga Zamora      correo: karo84zz@gmail.com.    ☎️84492744 Céd303970214',
+    'San José, Mora, Colón',
+    'Brasil de Mora, carretera a ciudad colón, calle cajetas, 4ta casa, mano izquierda, portón negro.',
+    '1 sleeping patches',
+    'Pago 12,900CRC',
+    'Sinpe confirmado"',
+    'Salida correcta:',
+    '{"customerName":"Carolina Zúñiga Zamora","email":"karo84zz@gmail.com","phone":"84492744","province":"San José","canton":"Mora","district":"Colón","address":"Brasil de Mora, carretera a ciudad colón, calle cajetas, 4ta casa, mano izquierda, portón negro","products":[{"name":"sleeping patches","quantity":1}],"total":12900,"orderType":"EA","paymentMethod":"SINPE","comments":"Sinpe confirmado"}',
+    '',
+    'NUNCA HAGAS ESTO (es lo que rompe la orden):',
+    '- ❌ district = "1 sleeping patches" (un producto NO es un distrito)',
+    '- ❌ address = "Pago 12,900CRC" (un total NO es la dirección)',
+    '- ❌ email = "karo84zz@gmail.com.    ☎️84492744" (recortá DESPUÉS del .com)',
+    '- ❌ phone = "303970214" (esa es la cédula, no el teléfono)',
+    '',
+    'Forma del JSON de salida:',
     '{"customerName":string,"phone":string,"email":string,"products":[{"name":string,"quantity":number}],"total":number,"orderType":"EA"|"RA","paymentMethod":string,"courier":string,"address":string,"province":string,"canton":string,"district":string,"comments":string,"customFields":{[key:string]:string|number|boolean}}',
   ]
     .filter((line) => line !== '')
@@ -1750,7 +1770,12 @@ async function extractOrderArgsWithAI(
       ],
       temperature: 0,
       max_tokens: 2000,
-      reasoning_effort: 'low',
+      // 'medium' is required for the model to actually respect the
+      // field-by-field mapping rules. With 'low' it skimmed the message
+      // and shoved fragments into the wrong fields (e.g. district =
+      // "1 sleeping patches"). 'medium' adds ~1-2s of latency for a
+      // dramatic accuracy gain.
+      reasoning_effort: 'medium',
     });
     raw = response.choices[0]?.message?.content ?? undefined;
   } catch (e) {
@@ -1817,7 +1842,16 @@ function sanitizeAIExtractedArgs(
 
   setIfReal('customerName', aiArgs.customerName ?? aiArgs.customer_name);
   setIfReal('phone', aiArgs.phone);
-  setIfReal('email', aiArgs.email);
+  // Defensive email cleanup: even if the model leaks trailing whitespace,
+  // emojis, or a phone number after the address, recover only the valid
+  // email substring. Real failure case the AI produced:
+  //   "karo84zz@gmail.com.    ☎️84492744"
+  // The user explicitly entered "correo: karo84zz@gmail.com" but a sloppy
+  // extraction kept the trailing decoration. We always re-validate.
+  if (typeof aiArgs.email === 'string') {
+    const emailMatch = aiArgs.email.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+    if (emailMatch) setIfReal('email', emailMatch[0]);
+  }
   setIfReal('paymentMethod', aiArgs.paymentMethod ?? aiArgs.payment_method);
   setIfReal('courier', aiArgs.courier ?? aiArgs.shippingMethod ?? aiArgs.shipping_method ?? aiArgs.metodoEnvio);
   setIfReal('address', aiArgs.address);
@@ -2345,10 +2379,41 @@ export async function processMessage(
           // which missed valid corrections like "Provincia San José / Cantón
           // Desamparados / Distrito San Antonio" (no colons) and let them fall
           // through to the LLM, where it would borrow data from history.
+          //
+          // We use the AI extractor on the correction message so phrases like
+          // "no, el distrito es Brasil de Mora, el producto es 1 sleeping
+          // patches" get understood as field updates. The regex back-fill is
+          // a true fallback for when the AI fails (network blip, parse
+          // error) — not a layer on top of it.
           await clearPendingConfirmation(platform, platformId);
           await addUserMessage(platform, platformId, userMessage);
 
-          const repairedArgs = inferCreateOrderArgsFromMessage(pending.data?.toolArgs || {}, userMessage, customFieldsConfig);
+          const existingArgs = (pending.data?.toolArgs as Record<string, any>) || {};
+          let repairedArgs: Record<string, any> = existingArgs;
+
+          console.info('[AI Agent] order_repair correction → AI extraction path');
+          const aiCorrection = await extractOrderArgsWithAI(userMessage, customFieldsConfig);
+          if (aiCorrection && Object.keys(aiCorrection).length > 0) {
+            const sanitized = sanitizeAIExtractedArgs(aiCorrection, customFieldsConfig);
+            // Merge: correction values WIN over the existing args. customFields
+            // gets a deep merge so partial updates don't drop unrelated keys.
+            const mergedCustomFields = {
+              ...(existingArgs.customFields && typeof existingArgs.customFields === 'object' ? existingArgs.customFields : {}),
+              ...(sanitized.customFields && typeof sanitized.customFields === 'object' ? sanitized.customFields : {}),
+            };
+            repairedArgs = { ...existingArgs, ...sanitized };
+            if (Object.keys(mergedCustomFields).length > 0) {
+              repairedArgs.customFields = mergedCustomFields;
+            }
+            applyFuzzyLocationCorrections(repairedArgs);
+            console.info('[AI Agent] order_repair: AI applied corrections', {
+              correctionKeys: Object.keys(sanitized),
+            });
+          } else {
+            console.warn('[AI Agent] order_repair: AI extraction returned nothing, falling back to regex');
+            repairedArgs = inferCreateOrderArgsFromMessage(existingArgs, userMessage, customFieldsConfig);
+          }
+
           const repairResponse = await executeCreateOrderRepair(repairedArgs, context, platform, platformId);
           return { text: repairResponse };
         }

@@ -50,8 +50,13 @@ import { getCurrentStatsDateKey, STATS_TIME_ZONE } from '@/lib/statistics-dates'
 import { validateLocation, formatValidationMessage } from '@/lib/locationValidator';
 
 const XAI_TIMEOUT_MS = Number(process.env.XAI_TIMEOUT_MS || 15_000);
-const XAI_EXTRACTION_TIMEOUT_MS = Number(process.env.XAI_EXTRACTION_TIMEOUT_MS || Math.min(XAI_TIMEOUT_MS, 12_000));
+const XAI_EXTRACTION_TIMEOUT_MS = Number(process.env.XAI_EXTRACTION_TIMEOUT_MS || 25_000);
 const XAI_MAX_RETRIES = Number(process.env.XAI_MAX_RETRIES || 0);
+const XAI_EXTRACTION_REASONING_EFFORT: 'low' | 'medium' | 'high' = (() => {
+  const raw = (process.env.XAI_EXTRACTION_REASONING_EFFORT || 'low').toLowerCase();
+  if (raw === 'medium' || raw === 'high') return raw;
+  return 'low';
+})();
 
 // xAI client (OpenAI-compatible API)
 const xai = new OpenAI({
@@ -77,9 +82,9 @@ const TEMPERATURE = (() => {
   return Number.isFinite(parsed) ? parsed : 0.1;
 })();
 const REASONING_EFFORT: 'low' | 'medium' | 'high' = (() => {
-  const raw = (process.env.XAI_REASONING_EFFORT || 'medium').toLowerCase();
-  if (raw === 'low' || raw === 'high') return raw;
-  return 'medium';
+  const raw = (process.env.XAI_REASONING_EFFORT || 'low').toLowerCase();
+  if (raw === 'medium' || raw === 'high') return raw;
+  return 'low';
 })();
 
 console.log('[AI Agent] xAI model config:', {
@@ -87,6 +92,7 @@ console.log('[AI Agent] xAI model config:', {
   maxTokens: MAX_TOKENS,
   temperature: TEMPERATURE,
   reasoningEffort: REASONING_EFFORT,
+  extractionReasoningEffort: XAI_EXTRACTION_REASONING_EFFORT,
   timeoutMs: XAI_TIMEOUT_MS,
   extractionTimeoutMs: XAI_EXTRACTION_TIMEOUT_MS,
   maxRetries: XAI_MAX_RETRIES,
@@ -725,10 +731,8 @@ function describeCustomFieldsForAIExtraction(customFieldsConfig: CustomFieldsDat
   if (all.length === 0) return '';
 
   const lines = all.map((f) => {
-    const opts = f.options && f.options.length > 0 ? ` (opciones vÃ¡lidas: ${f.options.join(' | ')})` : '';
     const req = f.required ? ' [requerido]' : '';
-    const type = f.type ? ` <${f.type}>` : '';
-    return `- ${f.key}: "${f.label}"${type}${opts}${req}`;
+    return `- ${f.key}: "${f.label}"${req}`;
   });
   return lines.join('\n');
 }
@@ -788,58 +792,29 @@ async function extractOrderArgsWithGrok(
 ): Promise<Record<string, any> | null> {
   const customFieldsBlock = describeCustomFieldsForAIExtraction(customFieldsConfig);
   const systemPrompt = [
-    'Sos el extractor principal de ordenes para Betsy CRM, un comercio costarricense.',
-    'Grok 4.3 es el cerebro: interpreta mensajes informales de WhatsApp con typos, espacios raros, emojis, datos fuera de orden y correcciones naturales.',
-    'Devolve los campos usando exactamente el schema estructurado. No inventes datos.',
-    '',
-    'REGLAS GLOBALES:',
-    '1. Si un dato no esta claramente en el mensaje, dejalo null o vacio. Nunca inventes.',
-    '2. Nunca pongas el mismo fragmento del mensaje en dos campos distintos.',
-    '3. Ignora emojis, decoracion, saltos de linea raros y espacios sobrantes.',
-    '4. Si un valor parece placeholder de plantilla ("e.g.", "ej:", "(opcional)", "<...>", "[...]"), dejalo null.',
-    '5. La cedula NO es telefono. El telefono de Costa Rica son 8 digitos, normalmente despues de +506, tel, celular o iconos de telefono.',
-    '6. Si el mensaje es solo un dato suelto sin orden pendiente (email, telefono, total), marca intent="not_order".',
-    '',
-    'CAMPOS:',
-    '- customerName: nombre y apellidos de la persona. No incluyas telefono, email, cedula ni labels.',
-    '- phone: telefono costarricense de 8 digitos. Nunca uses cedula de 9+ digitos.',
-    '- email: email valido, sin texto ni telefono pegado despues.',
-    '- province/canton/district: provincia, canton y distrito de Costa Rica. Si una linea trae 3 valores separados por coma, slash, pipe o guion, son provincia/canton/district en ese orden.',
-    '- district siempre es lugar de Costa Rica. Nunca puede ser producto, cantidad, total, comentario o direccion detallada.',
-    '- address: direccion detallada/referencias. No metas total, producto ni metodo de pago en address.',
-    '- products: lista de productos. Quita cantidades del nombre: "1 sleeping patches" => name "sleeping patches", quantity 1; "dopamine patch x2" => name "dopamine patch", quantity 2.',
-    '- quantity: usalo para correcciones de cantidad sin nombre de producto, por ejemplo "son 3".',
-    '- total: total entero en CRC. "20.900", "20,900", "Pago 12,900CRC" => 20900 o 12900.',
-    '- orderType: EA si menciona envio, correos, mensajeria, guia o domicilio. RA si menciona retiro/local/lo pasan a buscar.',
-    '- paymentMethod: SINPE, efectivo, tarjeta, transferencia. No lo confundas con courier.',
-    '- courier: metodo de envio/mensajeria/correos. No lo confundas con paymentMethod.',
-    '- comments: observaciones como "SINPE confirmado", "entregar antes de las 5".',
-    '',
-    'CORRECCIONES:',
-    '- Si el usuario corrige una revision pendiente, marca intent="order_correction".',
-    '- correctionAction="replace_product" cuando diga "el producto es", "cambie el producto", "ese no, es".',
-    '- correctionAction="append_product" cuando diga "agrega", "anade", "tambien lleva", "sumale otro producto".',
-    '- correctionAction="update_quantity" cuando solo corrige cantidad: "son 3", "en realidad son 2".',
-    '- correctionAction="replace_location" para provincia/canton/distrito/direccion.',
-    '- correctionAction="mixed" cuando corrige varios campos.',
-    '- Para una correccion, devuelve SOLO los campos corregidos, no repitas campos que no menciono.',
-    '',
-    customFieldsBlock ? 'CAMPOS PERSONALIZADOS configurados por este comercio. Devuelvelos como array customFields con key exacta:' : '',
+    'Extract order data for Betsy CRM from messy WhatsApp Spanish. Return only the structured schema fields.',
+    'Do not invent. If unclear, use null or empty arrays. Never duplicate the same text into multiple fields.',
+    'Order fields: customerName, phone, email, products, quantity, total, orderType, paymentMethod, courier, province, canton, district, address, comments, customFields.',
+    'Costa Rica rules: phone is 8 digits, optionally with +506. Never use a cedula/ID as phone. EA means delivery/Correos/guia/domicilio. RA means pickup/retiro/local.',
+    'Location: province/canton/district are Costa Rica places. If labels exist, trust labels. If a user writes "Canton:Mora Colon" and also "Distrito:Brasil de Mora", use canton="Mora", district="Brasil de Mora". A product or total is never district/address.',
+    'Address is the detailed street/reference only. Product lines like "1 sleeping patches" go to products, not location. Payment/total lines like "Pago 12,900CRC" go to total/payment, not address.',
+    'Products: strip quantity from name. "1 sleeping patches" => products[0].name="sleeping patches", quantity=1. "dopamine patch x2" => name="dopamine patch", quantity=2.',
+    'Total: return CRC number. "12,900CRC", "12.900", "Pago 12900" => 12900.',
+    'Email: return only the email substring, e.g. "karo84zz@gmail.com", no trailing phone or punctuation.',
+    'Corrections: if correcting a pending review, intent="order_correction" and set correctionAction. Use replace_product, append_product, update_quantity, replace_location, replace_customer, replace_total, replace_payment, replace_shipping, replace_comment, replace_custom_fields, or mixed.',
+    'If the message is only one loose field with no order context, intent="not_order".',
+    customFieldsBlock ? 'Tenant custom fields. If present in the message, return customFields with these exact keys:' : '',
     customFieldsBlock,
-    '',
-    'ERRORES REALES QUE DEBES EVITAR:',
-    '- district = "1 sleeping patches" esta mal: un producto no es distrito.',
-    '- address = "Pago 12,900CRC" esta mal: un total no es direccion.',
-    '- email = "karo84zz@gmail.com. 84492744" esta mal: recorta despues del dominio.',
-    '- phone = "303970214" esta mal: eso parece cedula, no telefono.',
   ].filter(Boolean).join('\n');
 
   const startedAt = Date.now();
   console.info('[AI Agent] extractOrderArgsWithGrok: calling Grok structured parser', {
     model: MODEL,
     messageLength: userMessage.length,
+    promptLength: systemPrompt.length,
     hasCustomFieldsSchema: !!customFieldsBlock,
     timeoutMs: XAI_EXTRACTION_TIMEOUT_MS,
+    reasoningEffort: XAI_EXTRACTION_REASONING_EFFORT,
     maxRetries: 0,
   });
 
@@ -851,8 +826,8 @@ async function extractOrderArgsWithGrok(
         { role: 'user', content: userMessage },
       ],
       temperature: 0,
-      max_tokens: 2000,
-      reasoning_effort: REASONING_EFFORT,
+      max_tokens: 900,
+      reasoning_effort: XAI_EXTRACTION_REASONING_EFFORT,
       response_format: zodResponseFormat(OrderExtractionSchema, 'betsy_order_extraction'),
     }, {
       timeout: XAI_EXTRACTION_TIMEOUT_MS,

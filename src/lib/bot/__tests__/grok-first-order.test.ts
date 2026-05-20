@@ -14,6 +14,24 @@ const customFieldsConfig = {
   ],
 } as any;
 
+const rafaOrderMessage = [
+  'Ingresa este pedido',
+  'Datos para guia correos',
+  '',
+  'Carolina Zuniga Zamora',
+  'correo: karo84zz@gmail.com.',
+  '84492744',
+  '',
+  'Provincia:San Jose,',
+  'Canton:Mora Colon,',
+  'Distrito:Brasil de Mora,',
+  'Direccio:carretera a ciudad colon, calle cajetas, 4ta casa, mano izquierda, porton negro.',
+  'Producto',
+  '1 sleeping patches',
+  'Pago 12,900CRC',
+  'Sinpe confirmado',
+].join('\n');
+
 function compactProducts(products: any[]) {
   return products.map((product) => ({
     name: product.name,
@@ -75,6 +93,36 @@ function testOrderDetectionWithoutCreateKeyword() {
   assert.equal(bot.looksLikeOrderPayload(message), true);
   assert.equal(bot.looksLikeFieldOnlyOrderFragment('karo84zz@gmail.com'), true);
   assert.equal(bot.looksLikeOrderPayload('crear guia para la orden 123'), false);
+  assert.equal(bot.looksLikeOrderPayload(rafaOrderMessage), true);
+  assert.equal(bot.looksLikeFieldOnlyOrderFragment(rafaOrderMessage), false);
+}
+
+function testRafaOrderSanitizationShape() {
+  const args = bot.sanitizeAIExtractedArgs({
+    intent: 'new_order',
+    customerName: 'Carolina Zuniga Zamora',
+    email: 'karo84zz@gmail.com.                                               84492744',
+    phone: '84492744',
+    province: 'San Jose',
+    canton: 'Mora',
+    district: 'Brasil de Mora',
+    address: 'carretera a ciudad colon, calle cajetas, 4ta casa, mano izquierda, porton negro',
+    products: [{ name: 'sleeping patches', quantity: 1 }],
+    total: 'Pago 12,900CRC',
+    orderType: 'EA',
+    paymentMethod: 'SINPE',
+    comments: 'Sinpe confirmado',
+  }, customFieldsConfig);
+
+  assert.equal(args.customerName, 'Carolina Zuniga Zamora');
+  assert.equal(args.email, 'karo84zz@gmail.com');
+  assert.equal(args.phone, '84492744');
+  assert.equal(args.province, 'San Jose');
+  assert.equal(args.canton, 'Mora');
+  assert.equal(args.district, 'Brasil de Mora');
+  assert.equal(args.total, 12900);
+  assert.equal(args.orderType, 'EA');
+  assert.deepEqual(args.products, [{ name: 'sleeping patches', quantity: 1 }]);
 }
 
 function testCorrectionsMergeThroughGrokSemantics() {
@@ -155,6 +203,7 @@ function testFreshOrderWhilePendingDetection() {
 testSanitizeMessyOrder();
 testPhoneAndMoneyNormalization();
 testOrderDetectionWithoutCreateKeyword();
+testRafaOrderSanitizationShape();
 testCorrectionsMergeThroughGrokSemantics();
 testFreshOrderWhilePendingDetection();
 

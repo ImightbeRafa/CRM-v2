@@ -40,6 +40,24 @@ function normalizeText(value: string | undefined | null): string {
 
 // ── Fuzzy matching (mirrors geoMapper.ts findBestMatch) ──────────────────────
 
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const prev = new Array<number>(b.length + 1);
+  const curr = new Array<number>(b.length + 1);
+  for (let j = 0; j <= b.length; j += 1) prev[j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= b.length; j += 1) prev[j] = curr[j];
+  }
+  return prev[b.length];
+}
+
 function findBestMatch<T extends { name: string }>(
   items: T[],
   needle: string,
@@ -49,6 +67,21 @@ function findBestMatch<T extends { name: string }>(
 
   const exact = items.find(i => normalizeText(i.name) === n);
   if (exact) return exact;
+
+  // Compact (no-space) comparison: handles "Sanjose" → "San José" and
+  // "Sanjosecito" → "San Josecito", which are common WhatsApp typos. Both
+  // sides have spaces stripped before comparing.
+  const nCompact = n.replace(/\s+/g, '');
+  if (nCompact) {
+    const compactExact = items.find(i => normalizeText(i.name).replace(/\s+/g, '') === nCompact);
+    if (compactExact) return compactExact;
+
+    const compactStartsWith = items.find(i => normalizeText(i.name).replace(/\s+/g, '').startsWith(nCompact));
+    if (compactStartsWith) return compactStartsWith;
+
+    const compactNeedleStartsWith = items.find(i => nCompact.startsWith(normalizeText(i.name).replace(/\s+/g, '')));
+    if (compactNeedleStartsWith) return compactNeedleStartsWith;
+  }
 
   const startsWith = items.find(i => normalizeText(i.name).startsWith(n));
   if (startsWith) return startsWith;
@@ -69,6 +102,23 @@ function findBestMatch<T extends { name: string }>(
       return needleWords.every(w => norm.includes(w));
     });
     if (multiWord) return multiWord;
+  }
+
+  // Levenshtein fallback for short typos (e.g., "Cartgo" → "Cartago",
+  // "Heredi" → "Heredia"). Distance threshold scales with word length so
+  // short names like "Limón" don't match unrelated 5-letter names.
+  if (nCompact.length >= 4) {
+    const threshold = nCompact.length <= 6 ? 1 : 2;
+    let best: { item: T; distance: number } | null = null;
+    for (const item of items) {
+      const itemCompact = normalizeText(item.name).replace(/\s+/g, '');
+      if (!itemCompact) continue;
+      const d = levenshtein(nCompact, itemCompact);
+      if (d <= threshold && (!best || d < best.distance)) {
+        best = { item, distance: d };
+      }
+    }
+    if (best) return best.item;
   }
 
   return null;

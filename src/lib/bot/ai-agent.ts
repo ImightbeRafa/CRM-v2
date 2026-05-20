@@ -570,6 +570,53 @@ function formatReviewValue(value: unknown): string {
   return String(value);
 }
 
+/**
+ * Map raw "missing field" error strings (from getCreateOrderReviewMissingFields
+ * and validateCustomFields) into natural Spanish phrases the bot can stitch
+ * into a single conversational question. Replaces the old templated bullet
+ * list which read like a form rather than a chat.
+ */
+function buildConversationalMissingFieldsAsk(missing: string[]): string {
+  if (!missing || missing.length === 0) return '¿Me podés enviar los datos que faltan?';
+
+  const articleMap: Record<string, string> = {
+    'Nombre del cliente': 'el nombre del cliente',
+    'Telefono': 'el teléfono',
+    'Teléfono': 'el teléfono',
+    'Producto(s)': 'el producto',
+    'Total': 'el total',
+    'Tipo de orden (EA o RA)': 'el tipo de orden (EA para envío o RA para retiro)',
+    'Tipo de orden': 'el tipo de orden (EA o RA)',
+    'Direccion': 'la dirección',
+    'Dirección': 'la dirección',
+    'Provincia': 'la provincia',
+    'Canton': 'el cantón',
+    'Cantón': 'el cantón',
+    'Distrito': 'el distrito',
+  };
+
+  const friendly: string[] = missing.map((entry) => {
+    const customMatch = entry.match(/^El campo "([^"]+)"\s+es\s+requerido/i);
+    if (customMatch) return `el campo "${customMatch[1]}"`;
+    if (articleMap[entry]) return articleMap[entry];
+    // Strip a trailing parenthetical hint like "(EA o RA)" to reuse map.
+    const stripped = entry.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    if (articleMap[stripped]) return articleMap[stripped];
+    return entry.toLowerCase();
+  });
+
+  const join = (parts: string[]): string => {
+    if (parts.length === 1) return parts[0];
+    if (parts.length === 2) return `${parts[0]} y ${parts[1]}`;
+    return `${parts.slice(0, -1).join(', ')} y ${parts[parts.length - 1]}`;
+  };
+
+  if (friendly.length === 1) {
+    return `Solo me falta ${friendly[0]}. ¿Me lo podés indicar?`;
+  }
+  return `Me falta ${join(friendly)}. ¿Me los podés enviar?`;
+}
+
 function getCreateOrderReviewMissingFields(args: any): string[] {
   const missing: string[] = [];
 
@@ -737,6 +784,13 @@ async function requestCreateOrderFinalConfirmation(
 ): Promise<MessageResponse> {
   const customFieldsConfig = await getTenantCustomFields(context.tenantId);
 
+  // Canonicalize province/canton/district to the spellings stored in the DB
+  // BEFORE we render the review or report missing fields. Without this, a
+  // user who typed "Sanjose, Alajuelita, Sanjosecito" would see exactly
+  // those raw strings echoed back, even though the validator can correct
+  // them to "San José, Alajuelita, San Josecito".
+  applyFuzzyLocationCorrections(args);
+
   // If the model emitted multiple create_order calls with diverging totals,
   // mergeCreateOrderCalls flagged it instead of silently summing. Refuse to
   // commit and ask the user which total is correct.
@@ -790,27 +844,20 @@ async function requestCreateOrderFinalConfirmation(
     });
 
     const captured = getCreateOrderReviewCapturedFields(args, customFieldsConfig);
+    const conversationalAsk = buildConversationalMissingFieldsAsk(missing);
 
     const textLines: string[] = [];
 
     if (captured.length > 0) {
       textLines.push(
-        'Casi listo para crear la orden. Esto es lo que ya tengo de tu mensaje:',
+        'Casi todo listo. Ya tengo:',
         '',
         ...captured.map((line) => `- ${line}`),
         '',
-        'Me faltan estos datos:',
-        ...missing.map((field) => `- ${field}`),
-        '',
-        'Enviame solo lo que falta (no necesitas reescribir toda la orden) y preparo la revision final.',
+        conversationalAsk,
       );
     } else {
-      textLines.push(
-        'No creare la orden todavia. Faltan campos requeridos:',
-        ...missing.map((field) => `- ${field}`),
-        '',
-        'Enviame esos datos y preparo la revision final antes de crearla.',
-      );
+      textLines.push(conversationalAsk);
     }
 
     return { text: textLines.join('\n') };
@@ -1390,9 +1437,11 @@ function extractCustomFieldsFromMessage(
   for (const field of allFields) {
     if (!field.key) continue;
     const value = getCustomFieldValueFromMessage(preprocessed, field.label, field.key);
-    if (value !== undefined && value !== '') {
-      result[field.key] = value;
-    }
+    if (value === undefined || value === '') continue;
+    // Reject template placeholders like 'e.g., "whatsheet"' that some users
+    // paste back from the bot's own template instead of replacing them.
+    if (isTemplatePlaceholderValue(value)) continue;
+    result[field.key] = value;
   }
 
   return result;
@@ -1472,6 +1521,286 @@ export function buildStructuredOrderArgs(
   }
 
   return Object.keys(args).length > 0 ? args : null;
+}
+
+/**
+ * Returns true when a value looks like a template placeholder rather than a
+ * real user-provided value. Real failure case: the user copy-pasted the bot's
+ * own order template with example placeholders intact, so fields like
+ * `Usuario: e.g., "whatsheet"` ended up parsed as legitimate data.
+ *
+ * Detected shapes (case-insensitive):
+ *   - `e.g., something`
+ *   - `eg something`
+ *   - `ej.: something` / `ejemplo: something`
+ *   - `(opcional)` / `(optional)`
+ *   - `<placeholder>` / `[placeholder]`
+ *   - `tu nombre`, `tu correo`, `+506 ...` (the literal placeholder used in
+ *     the system-prompt order template).
+ */
+function isTemplatePlaceholderValue(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  if (/^["']?\s*e\.?\s*g\.?\b/i.test(trimmed)) return true;
+  if (/^["']?\s*ej\.?\s*[:.]/i.test(trimmed)) return true;
+  if (/^["']?\s*ejemplo\s*[:.]/i.test(trimmed)) return true;
+  if (/^\(opcional\)$/i.test(trimmed)) return true;
+  if (/^\(optional\)$/i.test(trimmed)) return true;
+  if (/^<[^>]*>$/.test(trimmed)) return true;
+  if (/^\[[^\]]*\]$/.test(trimmed)) return true;
+  // Common literal placeholders from order templates we ourselves shipped.
+  if (/^(tu|su)\s+(nombre|correo|email|telefono|tel[eé]fono|direcci[oó]n)\b/i.test(trimmed)) return true;
+  return false;
+}
+
+/**
+ * Build a compact, prompt-friendly description of the tenant's custom-field
+ * schema so the AI extractor knows which keys to populate inside
+ * `customFields` and how to interpret each label.
+ */
+function describeCustomFieldsForAIExtraction(customFieldsConfig: CustomFieldsData | undefined): string {
+  if (!customFieldsConfig) return '';
+  const all: Array<{ key: string; label: string; type?: string; required?: boolean; options?: string[] }> = [
+    ...customFieldsConfig.productFields.map((f: any) => ({
+      key: f.key,
+      label: f.label,
+      type: f.type,
+      required: f.required,
+      options: Array.isArray(f.options) ? f.options : undefined,
+    })),
+    ...customFieldsConfig.businessInfoFields.map((f: any) => ({
+      key: f.name,
+      label: f.label,
+      type: f.type,
+      required: f.required,
+      options: Array.isArray(f.options) ? f.options : undefined,
+    })),
+  ].filter((f) => f.key && f.label);
+
+  if (all.length === 0) return '';
+
+  const lines = all.map((f) => {
+    const opts = f.options && f.options.length > 0 ? ` (opciones válidas: ${f.options.join(' | ')})` : '';
+    const req = f.required ? ' [requerido]' : '';
+    const type = f.type ? ` <${f.type}>` : '';
+    return `- ${f.key}: "${f.label}"${type}${opts}${req}`;
+  });
+  return lines.join('\n');
+}
+
+/**
+ * AI-first extraction of order data from a free-form Spanish (or English)
+ * message. Uses Grok with a tight system prompt and JSON response_format so
+ * the model returns a structured object we can merge straight into the
+ * create_order args. Designed to handle informal text:
+ *
+ *   "Sanjose, Alajuelita, Sanjosecito" → province "San José", canton
+ *   "Alajuelita", district "San Josecito"
+ *
+ *   "dopamine patch x2" → products: [{ name: "dopamine patch", quantity: 2 }]
+ *
+ *   "₡20.900" → total: 20900
+ *
+ * Returns `null` on any failure; the caller falls back to the regex parser.
+ */
+async function extractOrderArgsWithAI(
+  userMessage: string,
+  customFieldsConfig?: CustomFieldsData,
+): Promise<Record<string, any> | null> {
+  const customFieldsBlock = describeCustomFieldsForAIExtraction(customFieldsConfig);
+
+  const systemPrompt = [
+    'Sos un extractor experto de datos de órdenes para Betsy CRM (un comercio costarricense).',
+    'Vas a leer un mensaje informal en español (con typos, abreviaciones, falta de tildes y espacios) y vas a devolver un JSON con los campos de la orden que estén CLARAMENTE indicados.',
+    '',
+    'Reglas estrictas:',
+    '- Devolvé SOLO un objeto JSON válido. Sin texto adicional, sin markdown, sin comentarios.',
+    '- Si un dato NO está claramente indicado, OMITILO de la salida. Nunca inventes valores.',
+    '- Si un valor parece un placeholder de plantilla (ej: \'e.g., "ejemplo"\', "ej: ...", "(opcional)", "<...>", "[...]"), OMITILO.',
+    '- No copies texto explicativo del usuario que no sea parte del valor (ej: "el comentario es: SINPE confirmado" → comments: "SINPE confirmado").',
+    '',
+    'Provincia, cantón y distrito de Costa Rica:',
+    '- Usá la grafía canónica con tildes y espacios. Ejemplos:',
+    '  - "Sanjose", "Sanjosé", "S.J.", "SJ" → "San José"',
+    '  - "Sanjosecito" → "San Josecito"',
+    '  - "Limon" → "Limón"',
+    '  - "alajuelita" → "Alajuelita"',
+    '- Si una línea trae provincia, cantón y distrito separados por comas, slash, guiones o pipes, interpretala como tal.',
+    '- Después del triplete, las líneas adicionales con detalles (ej: "de la iglesia 100 mts norte, casa azul...") son la dirección (campo "address"), no parte del distrito.',
+    '',
+    'Productos:',
+    '- Devolvé un array `products` de objetos {"name": string, "quantity": number}.',
+    '- "x2", "x 2", "2 unidades", "(2)" indican cantidad. Cantidad por defecto = 1.',
+    '- Una línea como "dopamine patch x2" → {"name":"dopamine patch","quantity":2}.',
+    '',
+    'Total:',
+    '- Número entero o decimal en colones (CRC), SIN formato. Ej:',
+    '  - "₡20.900" → 20900',
+    '  - "20,900" → 20900',
+    '  - "CRC 11 500" → 11500',
+    '  - "20900 colones" → 20900',
+    '',
+    'Tipo de orden:',
+    '- "EA" si el mensaje menciona envío, mensajería, correos, "envío a domicilio", "EA".',
+    '- "RA" si menciona retiro, "retira", "lo paso a buscar", "RA".',
+    '',
+    'Teléfono:',
+    '- Sólo dígitos del número costarricense (8 dígitos). Quitá prefijos "+506", "Celular", "tel:".',
+    '',
+    customFieldsBlock
+      ? 'Campos personalizados configurados por el comercio (poné los valores extraídos dentro del objeto `customFields`, usando la KEY exacta como nombre del atributo):'
+      : '',
+    customFieldsBlock,
+    '',
+    'Esquema de salida (todas las propiedades son opcionales — devolvé sólo las que detectaste con seguridad):',
+    '{',
+    '  "customerName": string,',
+    '  "phone": string,',
+    '  "email": string,',
+    '  "products": [{ "name": string, "quantity": number }],',
+    '  "total": number,',
+    '  "orderType": "EA" | "RA",',
+    '  "paymentMethod": string,',
+    '  "courier": string,',
+    '  "address": string,',
+    '  "province": string,',
+    '  "canton": string,',
+    '  "district": string,',
+    '  "comments": string,',
+    '  "customFields": { [key: string]: string | number | boolean }',
+    '}',
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
+
+  try {
+    const response = await xai.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      temperature: 0.1,
+      max_tokens: 1500,
+      response_format: { type: 'json_object' },
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return null;
+
+    const parsed = JSON.parse(content);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+    return parsed as Record<string, any>;
+  } catch (e) {
+    console.warn('[AI Agent] extractOrderArgsWithAI failed:', e);
+    return null;
+  }
+}
+
+/**
+ * Convert the AI extractor's JSON output into the internal create_order args
+ * shape used by the rest of the pipeline. Drops template-placeholder values,
+ * normalizes the total to a number, and ensures `products` is the canonical
+ * `[{ name, quantity }]` array shape.
+ */
+function sanitizeAIExtractedArgs(
+  aiArgs: Record<string, any>,
+  customFieldsConfig?: CustomFieldsData,
+): Record<string, any> {
+  const out: Record<string, any> = {};
+
+  const setIfReal = (key: string, value: unknown) => {
+    if (value === undefined || value === null) return;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      if (isTemplatePlaceholderValue(trimmed)) return;
+      out[key] = trimmed;
+      return;
+    }
+    out[key] = value;
+  };
+
+  setIfReal('customerName', aiArgs.customerName ?? aiArgs.customer_name);
+  setIfReal('phone', aiArgs.phone);
+  setIfReal('email', aiArgs.email);
+  setIfReal('paymentMethod', aiArgs.paymentMethod ?? aiArgs.payment_method);
+  setIfReal('courier', aiArgs.courier ?? aiArgs.shippingMethod ?? aiArgs.shipping_method ?? aiArgs.metodoEnvio);
+  setIfReal('address', aiArgs.address);
+  setIfReal('province', aiArgs.province);
+  setIfReal('canton', aiArgs.canton);
+  setIfReal('district', aiArgs.district);
+  setIfReal('comments', aiArgs.comments);
+
+  if (typeof aiArgs.orderType === 'string') {
+    const ot = aiArgs.orderType.trim().toUpperCase();
+    if (ot === 'EA' || ot === 'RA') out.orderType = ot;
+  }
+
+  if (aiArgs.total !== undefined && aiArgs.total !== null) {
+    const n = typeof aiArgs.total === 'number' ? aiArgs.total : Number(String(aiArgs.total).replace(/[^\d.-]/g, ''));
+    if (Number.isFinite(n) && n >= 0) out.total = n;
+  }
+
+  if (Array.isArray(aiArgs.products)) {
+    const products = aiArgs.products
+      .filter((p: any) => p && typeof p === 'object' && typeof p.name === 'string' && p.name.trim() && !isTemplatePlaceholderValue(p.name))
+      .map((p: any) => ({
+        name: String(p.name).trim(),
+        quantity: Math.max(1, Math.floor(Number(p.quantity) || 1)),
+        ...(p.sku ? { sku: String(p.sku).trim() } : {}),
+      }));
+    if (products.length > 0) out.products = products;
+  }
+
+  if (aiArgs.customFields && typeof aiArgs.customFields === 'object' && !Array.isArray(aiArgs.customFields)) {
+    const allowedKeys = new Set<string>();
+    if (customFieldsConfig) {
+      for (const f of customFieldsConfig.productFields) allowedKeys.add(f.key);
+      for (const f of customFieldsConfig.businessInfoFields) allowedKeys.add(f.name);
+    }
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(aiArgs.customFields)) {
+      // Skip keys the tenant doesn't actually have configured.
+      if (allowedKeys.size > 0 && !allowedKeys.has(key)) continue;
+      if (value === undefined || value === null) continue;
+      if (typeof value === 'string') {
+        const t = value.trim();
+        if (!t || isTemplatePlaceholderValue(t)) continue;
+        cleaned[key] = t;
+      } else {
+        cleaned[key] = value;
+      }
+    }
+    if (Object.keys(cleaned).length > 0) out.customFields = cleaned;
+  }
+
+  return out;
+}
+
+/**
+ * Apply the location validator's fuzzy matcher to args and back-fill the
+ * canonical spelling. So if the user typed "Sanjose, Alajuelita, Sanjosecito",
+ * the args end up with "San José", "Alajuelita", "San Josecito" before the
+ * review is shown to the user.
+ */
+function applyFuzzyLocationCorrections(args: Record<string, any>): void {
+  if (args.orderType !== 'EA') return;
+  if (!args.province && !args.canton && !args.district) return;
+  try {
+    const validation = validateLocation(args.province, args.canton, args.district);
+    if (validation.correctedProvince) args.province = validation.correctedProvince;
+    if (validation.correctedCanton) args.canton = validation.correctedCanton;
+    if (validation.correctedDistrict) args.district = validation.correctedDistrict;
+    // Even if the validator couldn't match (e.g., user wrote a wrong canton
+    // for the chosen province), if the *match* field is set, use it.
+    if (!args.province && validation.province.match) args.province = validation.province.match;
+    if (!args.canton && validation.canton.match) args.canton = validation.canton.match;
+    if (!args.district && validation.district.match) args.district = validation.district.match;
+  } catch (e) {
+    console.warn('[AI Agent] applyFuzzyLocationCorrections failed:', e);
+  }
 }
 
 async function executeStructuredCreateOrder(
@@ -2012,19 +2341,78 @@ export async function processMessage(
       return { text };
     }
 
-    // Detect a structured order BEFORE writing to history: when the message
-    // is a structured order template, we route it straight into the final
-    // review and do NOT persist the raw order data in conversation history.
-    // This way, if the pending review expires before the user confirms, the
-    // LLM cannot re-create the order from leftover history on the next turn.
+    // ── AI-first order extraction ───────────────────────────────────────
+    // For any message that looks like an order-creation request (anywhere
+    // in the message), we ask Grok to read it as a human would and return
+    // the structured fields. This handles informal Spanish that the regex
+    // parser cannot ("Sanjose, Alajuelita, Sanjosecito", "dopamine patch
+    // x2", "₡20.900", abbreviated province names, missing accents, etc.).
     //
-    // We use the tenant's custom-field config (loaded once at the top of this
-    // turn) so the structured fast-path can populate args.customFields from
-    // the user's message labels (e.g. "Usuario: Marlenn", "Negocio: WAS").
-    // Without this, the validator would report every required custom field
-    // as missing.
+    // After the AI extraction we run two safety nets:
+    //   1. The regex extractor back-fills any field the AI missed
+    //      (`inferCreateOrderArgsFromMessage`). This is cheap and prevents
+    //      regressions for messages that the regex already handled.
+    //   2. The location validator's fuzzy matcher canonicalizes
+    //      province/canton/district to the spellings stored in the DB.
+    //
+    // We do NOT write the message to history before this — the same logic
+    // as the structured fast-path so an expired pending review cannot
+    // cause the LLM to re-create the order from leftover history.
+    if (hasOrderCreationIntent(userMessage)) {
+      let aiExtracted: Record<string, any> | null = null;
+      try {
+        aiExtracted = await extractOrderArgsWithAI(userMessage, customFieldsConfig);
+      } catch (e) {
+        // extractOrderArgsWithAI handles its own errors and returns null,
+        // but be defensive in case the helper itself throws.
+        console.warn('[AI Agent] AI order extractor threw:', e);
+      }
+
+      if (aiExtracted && Object.keys(aiExtracted).length > 0) {
+        const sanitized = sanitizeAIExtractedArgs(aiExtracted, customFieldsConfig);
+        // Only proceed via the AI path if the model actually surfaced at
+        // least one substantive field. Otherwise fall through to the
+        // legacy parser so we don't wedge a silent empty review.
+        const hasSubstance = !!(
+          sanitized.customerName
+          || sanitized.phone
+          || sanitized.products
+          || sanitized.total !== undefined
+          || sanitized.address
+          || sanitized.province
+          || sanitized.orderType
+        );
+        if (hasSubstance) {
+          // Regex back-fill catches anything the AI dropped (e.g. an email
+          // it ignored or a comments line it summarized away).
+          const merged = inferCreateOrderArgsFromMessage(sanitized, userMessage, customFieldsConfig);
+          // Canonicalize CR location names (e.g. "Sanjose" → "San José").
+          applyFuzzyLocationCorrections(merged);
+
+          console.info('[AI Agent] AI-first extraction succeeded', {
+            hasCustomer: !!merged.customerName,
+            hasProducts: !!(merged.products || merged.product),
+            hasTotal: merged.total !== undefined,
+            orderType: merged.orderType,
+            hasLocation: !!(merged.province && merged.canton && merged.district),
+            customFieldKeys: merged.customFields ? Object.keys(merged.customFields) : [],
+          });
+
+          return requestCreateOrderFinalConfirmation(merged, context, platform, platformId);
+        }
+      }
+    }
+
+    // ── Legacy regex fast-path (fallback) ───────────────────────────────
+    // Kept as a fallback for very obvious template pastes when the AI
+    // extractor returns nothing useful (network blip, JSON parse error,
+    // etc.). We use the tenant's custom-field config so args.customFields
+    // gets populated from labelled lines like "Usuario: Marlenn".
     const structuredOrderArgs = buildStructuredOrderArgs(userMessage, customFieldsConfig);
     if (structuredOrderArgs) {
+      // Apply the same fuzzy-location correction here so legacy callers
+      // benefit from the better matcher too.
+      applyFuzzyLocationCorrections(structuredOrderArgs);
       return executeStructuredCreateOrder(structuredOrderArgs, context, platform, platformId);
     }
 

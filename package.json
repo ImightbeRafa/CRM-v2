@@ -32,7 +32,8 @@
     "backup:now": "node scripts/backup-now.js",
     "backup:simple": "node scripts/simple-backup.js",
     "backup:quick": "node scripts/quick-backup.js",
-    "test:correos-ws": "npx tsx scripts/test-correos-ws.ts"
+    "test:correos-ws": "npx tsx scripts/test-correos-ws.ts",
+    "test:bot-grok": "npx tsx src/lib/bot/__tests__/grok-first-order.test.ts"
   },
   "dependencies": {
     "@auth/core": "0.41.1",

@@ -2413,7 +2413,10 @@ async function executePendingAction(pending: any, context: ToolContext, platform
         console.error(`[AI Agent] formatToolResult threw for ${toolName} in executePendingAction:`, formatError);
         formatted = result.message || 'âœ… OperaciÃ³n completada con Ã©xito.';
       }
-      return 'âœ… AcciÃ³n confirmada:\n\n' + formatted;
+      if (toolName === 'create_order') {
+        return formatted;
+      }
+      return 'Accion confirmada:\n\n' + formatted;
     }
 
     if (result.needsConfirmation && result.message) {

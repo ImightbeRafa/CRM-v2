@@ -7,7 +7,6 @@
   "regions": [
     "sfo1"
   ],
-  "env": {},
   "functions": {
     "src/app/api/**/*.ts": {
       "maxDuration": 30

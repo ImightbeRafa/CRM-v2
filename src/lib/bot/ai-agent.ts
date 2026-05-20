@@ -704,8 +704,17 @@ function getCreateOrderReviewProductLines(args: any): string[] {
   }
 
   return products.map((product) => {
-    const name = [product.name, product.sku ? `(SKU: ${product.sku})` : ''].filter(Boolean).join(' ');
-    return `${name || 'Producto'} x${product.quantity}`;
+    // Strip a trailing "xN" / "(N)" from the name if it's already there.
+    // Real failure case the regex path used to produce: the parsed product
+    // text was "dopamine patch x2" AND args.quantity was 2 too, so the
+    // review printed "dopamine patch x2 x2". Be tolerant on both sides:
+    // accept whichever quantity is highest, and never repeat the suffix.
+    const cleanName = (product.name || '')
+      .replace(/\s*[x×]\s*\d+\s*$/i, '')
+      .replace(/\s*\(\s*\d+\s*\)\s*$/, '')
+      .trim();
+    const nameWithSku = [cleanName, product.sku ? `(SKU: ${product.sku})` : ''].filter(Boolean).join(' ');
+    return `${nameWithSku || 'Producto'} x${product.quantity}`;
   });
 }
 
@@ -1590,19 +1599,82 @@ function describeCustomFieldsForAIExtraction(customFieldsConfig: CustomFieldsDat
 }
 
 /**
+ * Best-effort JSON extraction from a possibly-decorated LLM response. Models
+ * sometimes wrap their JSON in ```json ... ``` fences or prepend a sentence
+ * like "Aquí está el JSON:" even when told not to. We strip those and try to
+ * recover the first top-level {...} block.
+ */
+function extractJsonFromLLMResponse(raw: string): Record<string, any> | null {
+  if (!raw) return null;
+
+  // 1. Try direct parse (the happy path).
+  const trimmed = raw.trim();
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+  } catch { /* fall through */ }
+
+  // 2. Strip ```json ... ``` or ``` ... ``` fences and retry.
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    try {
+      const parsed = JSON.parse(fenced[1].trim());
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch { /* fall through */ }
+  }
+
+  // 3. Find the first balanced {...} block by scanning braces.
+  const start = trimmed.indexOf('{');
+  if (start >= 0) {
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = start; i < trimmed.length; i += 1) {
+      const ch = trimmed[i];
+      if (escape) { escape = false; continue; }
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{') depth += 1;
+      else if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          const candidate = trimmed.slice(start, i + 1);
+          try {
+            const parsed = JSON.parse(candidate);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+          } catch { /* keep scanning */ }
+          break;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * AI-first extraction of order data from a free-form Spanish (or English)
- * message. Uses Grok with a tight system prompt and JSON response_format so
- * the model returns a structured object we can merge straight into the
- * create_order args. Designed to handle informal text:
+ * message. The whole point of this function is to let Grok 4.3 do what it's
+ * actually good at — reading natural language — instead of leaning on
+ * brittle regex chains. We deliberately:
  *
- *   "Sanjose, Alajuelita, Sanjosecito" → province "San José", canton
- *   "Alajuelita", district "San Josecito"
+ *   - DO NOT request `response_format: json_object`. Not every Grok model
+ *     advertises support for it via the OpenAI-compatible endpoint, and
+ *     when it's unsupported the call errors out and we silently fall back
+ *     to the regex (the exact failure mode that made the bot look "dumb").
+ *     Instead we instruct the model to return JSON and parse robustly.
  *
- *   "dopamine patch x2" → products: [{ name: "dopamine patch", quantity: 2 }]
+ *   - Use `reasoning_effort: 'low'`. We're not solving a math problem,
+ *     we're labelling fields. Low effort is faster and keeps latency
+ *     under the configured XAI_TIMEOUT_MS.
  *
- *   "₡20.900" → total: 20900
+ *   - Log everything (call start, raw response preview, parsed keys,
+ *     error reason). When something breaks in production we need to see
+ *     it in the logs immediately.
  *
- * Returns `null` on any failure; the caller falls back to the regex parser.
+ * Returns `null` on any failure; the caller falls back to the regex
+ * parser, but emits a console.warn so the failure is visible.
  */
 async function extractOrderArgsWithAI(
   userMessage: string,
@@ -1611,69 +1683,64 @@ async function extractOrderArgsWithAI(
   const customFieldsBlock = describeCustomFieldsForAIExtraction(customFieldsConfig);
 
   const systemPrompt = [
-    'Sos un extractor experto de datos de órdenes para Betsy CRM (un comercio costarricense).',
-    'Vas a leer un mensaje informal en español (con typos, abreviaciones, falta de tildes y espacios) y vas a devolver un JSON con los campos de la orden que estén CLARAMENTE indicados.',
+    'Sos un extractor de datos de órdenes para Betsy CRM (comercio costarricense).',
+    'Tu única tarea es leer el mensaje del usuario (informal, en español, con typos, abreviaciones, falta de tildes y espacios) y devolver UN ÚNICO objeto JSON con los campos extraídos.',
     '',
-    'Reglas estrictas:',
-    '- Devolvé SOLO un objeto JSON válido. Sin texto adicional, sin markdown, sin comentarios.',
-    '- Si un dato NO está claramente indicado, OMITILO de la salida. Nunca inventes valores.',
-    '- Si un valor parece un placeholder de plantilla (ej: \'e.g., "ejemplo"\', "ej: ...", "(opcional)", "<...>", "[...]"), OMITILO.',
-    '- No copies texto explicativo del usuario que no sea parte del valor (ej: "el comentario es: SINPE confirmado" → comments: "SINPE confirmado").',
+    'REGLAS:',
+    '1. Devolvé SOLO el JSON. Nada de prosa, nada de markdown, nada de ```fences```.',
+    '2. Si un dato NO está claramente en el mensaje, OMITILO. Nunca inventes.',
+    '3. Si un valor parece placeholder de plantilla (e.g., "...", "ej:", "(opcional)", "<...>", "[...]"), OMITILO.',
+    '4. Las propiedades del JSON son TODAS opcionales. Devolvé solo lo que viste.',
     '',
-    'Provincia, cantón y distrito de Costa Rica:',
-    '- Usá la grafía canónica con tildes y espacios. Ejemplos:',
-    '  - "Sanjose", "Sanjosé", "S.J.", "SJ" → "San José"',
+    'PROVINCIA / CANTÓN / DISTRITO (Costa Rica):',
+    '- Devolvé la grafía canónica con tildes y espacios. Ejemplos:',
+    '  - "Sanjose" / "Sanjosé" / "S.J." / "SJ" / "san jose" → "San José"',
     '  - "Sanjosecito" → "San Josecito"',
     '  - "Limon" → "Limón"',
     '  - "alajuelita" → "Alajuelita"',
-    '- Si una línea trae provincia, cantón y distrito separados por comas, slash, guiones o pipes, interpretala como tal.',
-    '- Después del triplete, las líneas adicionales con detalles (ej: "de la iglesia 100 mts norte, casa azul...") son la dirección (campo "address"), no parte del distrito.',
+    '  - "Heredi" → "Heredia"',
+    '- Cuando una línea trae 3 valores separados por comas, slash, pipe o guiones (ej: "Sanjose, Alajuelita, Sanjosecito"), eso es provincia, cantón y distrito.',
+    '- Las líneas siguientes con detalles (ej: "de la iglesia católica 350 sur, casa amarilla portón verde") son la dirección (campo "address"), no parte del distrito.',
+    '- NUNCA dejes vacíos provincia/cantón/distrito si el mensaje los menciona — aunque vengan con typos. Usá tu conocimiento de Costa Rica para canonicalizar.',
     '',
-    'Productos:',
-    '- Devolvé un array `products` de objetos {"name": string, "quantity": number}.',
-    '- "x2", "x 2", "2 unidades", "(2)" indican cantidad. Cantidad por defecto = 1.',
-    '- Una línea como "dopamine patch x2" → {"name":"dopamine patch","quantity":2}.',
+    'PRODUCTOS:',
+    '- Array `products` de objetos {"name": string, "quantity": number}.',
+    '- "dopamine patch x2" → {"name":"dopamine patch","quantity":2}.',
+    '- "2x dopamine patch", "dopamine patch (2)", "2 unidades de dopamine patch" → quantity 2.',
+    '- IMPORTANTE: name NO debe incluir el "xN". El nombre del producto es solo el nombre.',
     '',
-    'Total:',
-    '- Número entero o decimal en colones (CRC), SIN formato. Ej:',
-    '  - "₡20.900" → 20900',
-    '  - "20,900" → 20900',
-    '  - "CRC 11 500" → 11500',
-    '  - "20900 colones" → 20900',
+    'TOTAL:',
+    '- Número entero en CRC, sin formato. "₡20.900" → 20900. "20,900" → 20900. "CRC 11 500" → 11500.',
     '',
-    'Tipo de orden:',
-    '- "EA" si el mensaje menciona envío, mensajería, correos, "envío a domicilio", "EA".',
-    '- "RA" si menciona retiro, "retira", "lo paso a buscar", "RA".',
+    'TIPO DE ORDEN:',
+    '- "EA" si el mensaje menciona envío, mensajería, correos, EA.',
+    '- "RA" si menciona retiro, "retira", "lo paso a buscar", RA.',
     '',
-    'Teléfono:',
-    '- Sólo dígitos del número costarricense (8 dígitos). Quitá prefijos "+506", "Celular", "tel:".',
+    'TELÉFONO:',
+    '- Sólo dígitos costarricenses (8 dígitos). Quitá "+506", "Celular", "tel:".',
     '',
     customFieldsBlock
-      ? 'Campos personalizados configurados por el comercio (poné los valores extraídos dentro del objeto `customFields`, usando la KEY exacta como nombre del atributo):'
+      ? 'CAMPOS PERSONALIZADOS configurados por este comercio (poné los valores dentro de `customFields` con la KEY exacta como nombre de propiedad):'
       : '',
     customFieldsBlock,
     '',
-    'Esquema de salida (todas las propiedades son opcionales — devolvé sólo las que detectaste con seguridad):',
-    '{',
-    '  "customerName": string,',
-    '  "phone": string,',
-    '  "email": string,',
-    '  "products": [{ "name": string, "quantity": number }],',
-    '  "total": number,',
-    '  "orderType": "EA" | "RA",',
-    '  "paymentMethod": string,',
-    '  "courier": string,',
-    '  "address": string,',
-    '  "province": string,',
-    '  "canton": string,',
-    '  "district": string,',
-    '  "comments": string,',
-    '  "customFields": { [key: string]: string | number | boolean }',
-    '}',
+    'EJEMPLO de salida válida para el mensaje "Deseo crear orden EA Maria 88112233 Sanjose, Alajuelita, Sanjosecito de la iglesia 100 sur dopamine patch x2 ₡20900 EA SINPE":',
+    '{"customerName":"Maria","phone":"88112233","province":"San José","canton":"Alajuelita","district":"San Josecito","address":"de la iglesia 100 sur","products":[{"name":"dopamine patch","quantity":2}],"total":20900,"orderType":"EA","paymentMethod":"SINPE"}',
+    '',
+    'Forma del JSON de salida (todas las claves son opcionales):',
+    '{"customerName":string,"phone":string,"email":string,"products":[{"name":string,"quantity":number}],"total":number,"orderType":"EA"|"RA","paymentMethod":string,"courier":string,"address":string,"province":string,"canton":string,"district":string,"comments":string,"customFields":{[key:string]:string|number|boolean}}',
   ]
     .filter((line) => line !== '')
     .join('\n');
 
+  const startedAt = Date.now();
+  console.info('[AI Agent] extractOrderArgsWithAI: calling Grok', {
+    model: MODEL,
+    messageLength: userMessage.length,
+    hasCustomFieldsSchema: !!customFieldsBlock,
+  });
+
+  let raw: string | undefined;
   try {
     const response = await xai.chat.completions.create({
       model: MODEL,
@@ -1681,21 +1748,47 @@ async function extractOrderArgsWithAI(
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
       ],
-      temperature: 0.1,
-      max_tokens: 1500,
-      response_format: { type: 'json_object' },
+      temperature: 0,
+      max_tokens: 2000,
+      reasoning_effort: 'low',
     });
-
-    const content = response.choices[0]?.message?.content;
-    if (!content) return null;
-
-    const parsed = JSON.parse(content);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
-    return parsed as Record<string, any>;
+    raw = response.choices[0]?.message?.content ?? undefined;
   } catch (e) {
-    console.warn('[AI Agent] extractOrderArgsWithAI failed:', e);
+    console.error('[AI Agent] extractOrderArgsWithAI: Grok call FAILED', {
+      error: e instanceof Error ? e.message : String(e),
+      elapsedMs: Date.now() - startedAt,
+    });
     return null;
   }
+
+  if (!raw) {
+    console.warn('[AI Agent] extractOrderArgsWithAI: empty response from Grok', {
+      elapsedMs: Date.now() - startedAt,
+    });
+    return null;
+  }
+
+  const parsed = extractJsonFromLLMResponse(raw);
+  if (!parsed) {
+    console.warn('[AI Agent] extractOrderArgsWithAI: failed to parse JSON', {
+      elapsedMs: Date.now() - startedAt,
+      rawPreview: raw.slice(0, 500),
+    });
+    return null;
+  }
+
+  console.info('[AI Agent] extractOrderArgsWithAI: success', {
+    elapsedMs: Date.now() - startedAt,
+    keys: Object.keys(parsed),
+    province: parsed.province,
+    canton: parsed.canton,
+    district: parsed.district,
+    productCount: Array.isArray(parsed.products) ? parsed.products.length : 0,
+    customFieldKeys: parsed.customFields && typeof parsed.customFields === 'object'
+      ? Object.keys(parsed.customFields)
+      : [],
+  });
+  return parsed;
 }
 
 /**
@@ -2342,76 +2435,67 @@ export async function processMessage(
     }
 
     // ── AI-first order extraction ───────────────────────────────────────
-    // For any message that looks like an order-creation request (anywhere
-    // in the message), we ask Grok to read it as a human would and return
-    // the structured fields. This handles informal Spanish that the regex
-    // parser cannot ("Sanjose, Alajuelita, Sanjosecito", "dopamine patch
-    // x2", "₡20.900", abbreviated province names, missing accents, etc.).
+    // Grok 4.3 is the brain. When the message looks like an order-creation
+    // request, we let the model read it the way a human would and produce
+    // the structured fields. The regex parser is NOT layered on top of the
+    // AI output — that was actively limiting the model and producing bugs
+    // like "dopamine patch x2 x2" (regex doubling the quantity).
     //
-    // After the AI extraction we run two safety nets:
-    //   1. The regex extractor back-fills any field the AI missed
-    //      (`inferCreateOrderArgsFromMessage`). This is cheap and prevents
-    //      regressions for messages that the regex already handled.
-    //   2. The location validator's fuzzy matcher canonicalizes
-    //      province/canton/district to the spellings stored in the DB.
+    // The only post-processing we do on the AI result is:
+    //   - `sanitizeAIExtractedArgs`: drops placeholder values, coerces types.
+    //   - `applyFuzzyLocationCorrections`: canonicalizes CR province/canton/
+    //     district names against the DB (uses the validator's fuzzy matcher,
+    //     which also handles "Sanjose" → "San José" etc.).
     //
-    // We do NOT write the message to history before this — the same logic
-    // as the structured fast-path so an expired pending review cannot
+    // We deliberately do NOT write the message to history before this —
+    // same logic as the legacy fast-path so an expired pending review can't
     // cause the LLM to re-create the order from leftover history.
     if (hasOrderCreationIntent(userMessage)) {
-      let aiExtracted: Record<string, any> | null = null;
-      try {
-        aiExtracted = await extractOrderArgsWithAI(userMessage, customFieldsConfig);
-      } catch (e) {
-        // extractOrderArgsWithAI handles its own errors and returns null,
-        // but be defensive in case the helper itself throws.
-        console.warn('[AI Agent] AI order extractor threw:', e);
-      }
+      console.info('[AI Agent] Order-creation intent detected → AI extraction path');
+      const aiExtracted = await extractOrderArgsWithAI(userMessage, customFieldsConfig);
 
       if (aiExtracted && Object.keys(aiExtracted).length > 0) {
-        const sanitized = sanitizeAIExtractedArgs(aiExtracted, customFieldsConfig);
+        const args = sanitizeAIExtractedArgs(aiExtracted, customFieldsConfig);
         // Only proceed via the AI path if the model actually surfaced at
         // least one substantive field. Otherwise fall through to the
         // legacy parser so we don't wedge a silent empty review.
         const hasSubstance = !!(
-          sanitized.customerName
-          || sanitized.phone
-          || sanitized.products
-          || sanitized.total !== undefined
-          || sanitized.address
-          || sanitized.province
-          || sanitized.orderType
+          args.customerName
+          || args.phone
+          || args.products
+          || args.total !== undefined
+          || args.address
+          || args.province
+          || args.orderType
         );
+
         if (hasSubstance) {
-          // Regex back-fill catches anything the AI dropped (e.g. an email
-          // it ignored or a comments line it summarized away).
-          const merged = inferCreateOrderArgsFromMessage(sanitized, userMessage, customFieldsConfig);
-          // Canonicalize CR location names (e.g. "Sanjose" → "San José").
-          applyFuzzyLocationCorrections(merged);
-
-          console.info('[AI Agent] AI-first extraction succeeded', {
-            hasCustomer: !!merged.customerName,
-            hasProducts: !!(merged.products || merged.product),
-            hasTotal: merged.total !== undefined,
-            orderType: merged.orderType,
-            hasLocation: !!(merged.province && merged.canton && merged.district),
-            customFieldKeys: merged.customFields ? Object.keys(merged.customFields) : [],
+          applyFuzzyLocationCorrections(args);
+          console.info('[AI Agent] AI-first extraction succeeded → routing to final review', {
+            hasCustomer: !!args.customerName,
+            hasProducts: !!args.products,
+            hasTotal: args.total !== undefined,
+            orderType: args.orderType,
+            hasLocation: !!(args.province && args.canton && args.district),
+            customFieldKeys: args.customFields ? Object.keys(args.customFields) : [],
           });
-
-          return requestCreateOrderFinalConfirmation(merged, context, platform, platformId);
+          return requestCreateOrderFinalConfirmation(args, context, platform, platformId);
         }
+
+        console.warn('[AI Agent] AI extraction returned no substantive fields, falling back to regex fast-path');
+      } else {
+        console.warn('[AI Agent] AI extraction returned null/empty, falling back to regex fast-path');
       }
     }
 
-    // ── Legacy regex fast-path (fallback) ───────────────────────────────
-    // Kept as a fallback for very obvious template pastes when the AI
-    // extractor returns nothing useful (network blip, JSON parse error,
-    // etc.). We use the tenant's custom-field config so args.customFields
-    // gets populated from labelled lines like "Usuario: Marlenn".
+    // ── Legacy regex fast-path (true last-resort fallback) ──────────────
+    // Only reached when the AI extractor returned nothing usable (Grok call
+    // failed, returned empty/unparseable, or returned no substantive
+    // fields). The regex has known limits — it's here so users aren't
+    // blocked when the model API is unavailable.
     const structuredOrderArgs = buildStructuredOrderArgs(userMessage, customFieldsConfig);
     if (structuredOrderArgs) {
-      // Apply the same fuzzy-location correction here so legacy callers
-      // benefit from the better matcher too.
+      console.info('[AI Agent] Regex fast-path matched (AI fallback)');
       applyFuzzyLocationCorrections(structuredOrderArgs);
       return executeStructuredCreateOrder(structuredOrderArgs, context, platform, platformId);
     }

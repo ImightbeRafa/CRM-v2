@@ -32,6 +32,19 @@ const rafaOrderMessage = [
   'Sinpe confirmado',
 ].join('\n');
 
+const anaOrderMessage = [
+  'Ingresa este pedido',
+  '',
+  'sleeping patches x1',
+  'sinpe confirmado 12.900',
+  'correos de costa rica',
+  '👤 Nombre completo: Ana Yancy Solis Picado',
+  '📞 Teléfono: 88818786',
+  '📍 Provincia / Cantón / Distrito: San José, Mercedes, Montes de Oca',
+  '📧 Correo electrónico: aysolis13@gmail.com',
+  '🏠 Dirección exacta:barrio Profesores calle C edificio gris con azul, rotulo de AFUP',
+].join('\n');
+
 function compactProducts(products: any[]) {
   return products.map((product) => ({
     name: product.name,
@@ -200,11 +213,94 @@ function testFreshOrderWhilePendingDetection() {
   }), false);
 }
 
+function testLocationCaptureNormalization() {
+  const swapped: any = {
+    orderType: 'EA',
+    province: 'San José',
+    canton: 'Mercedes',
+    district: 'Montes de Oca',
+  };
+  bot.applyOrderCaptureLocationNormalization(swapped);
+  assert.equal(swapped.province, 'San José');
+  assert.equal(swapped.canton, 'Montes De Oca');
+  assert.equal(swapped.district, 'Mercedes');
+  assert.equal(swapped._locationCaptureAction, 'swapped');
+  assert.equal(swapped._locationReviewWarning, undefined);
+
+  const canonical: any = {
+    orderType: 'EA',
+    province: 'San Jose',
+    canton: 'Montes de Oca',
+    district: 'Mercedes',
+  };
+  bot.applyOrderCaptureLocationNormalization(canonical);
+  assert.equal(canonical.province, 'San José');
+  assert.equal(canonical.canton, 'Montes De Oca');
+  assert.equal(canonical.district, 'Mercedes');
+  assert.equal(canonical._locationReviewWarning, undefined);
+
+  const rawInvalid: any = {
+    orderType: 'EA',
+    province: 'San José',
+    canton: 'No Existe',
+    district: 'Tampoco',
+  };
+  bot.applyOrderCaptureLocationNormalization(rawInvalid);
+  assert.equal(rawInvalid.province, 'San José');
+  assert.equal(rawInvalid.canton, 'No Existe');
+  assert.equal(rawInvalid.district, 'Tampoco');
+  assert.match(rawInvalid._locationReviewWarning, /Ubicacion guardada/);
+}
+
+function testLocalCorrectionParserHandlesLocationWithoutGrok() {
+  const existing = {
+    orderType: 'EA',
+    customerName: 'Ana Yancy Solis Picado',
+    products: [{ name: 'sleeping patches', quantity: 1 }],
+    total: 12900,
+    province: 'San José',
+    canton: 'Mercedes',
+    district: 'Montes de Oca',
+  };
+
+  const correction = bot.parseLocalOrderCorrectionArgs('San José, Mercedes, Montes de Oca', existing, customFieldsConfig);
+  assert.ok(correction);
+  assert.equal(correction._intent, 'order_correction');
+  assert.equal(correction._correctionAction, 'replace_location');
+  const merged = bot.mergeOrderCorrectionArgs(existing, correction);
+  bot.applyOrderCaptureLocationNormalization(merged);
+  assert.equal(merged.province, 'San José');
+  assert.equal(merged.canton, 'Montes De Oca');
+  assert.equal(merged.district, 'Mercedes');
+}
+
+function testLocalFullOrderFallbackParsesAnaOrder() {
+  const args = bot.parseLocalStructuredOrderArgs(anaOrderMessage, customFieldsConfig);
+  assert.ok(args);
+  bot.applyOrderCaptureLocationNormalization(args);
+
+  assert.equal(args.customerName, 'Ana Yancy Solis Picado');
+  assert.equal(args.phone, '88818786');
+  assert.equal(args.email, 'aysolis13@gmail.com');
+  assert.equal(args.total, 12900);
+  assert.equal(args.paymentMethod, 'SINPE');
+  assert.equal(args.courier, 'correos de costa rica');
+  assert.equal(args.orderType, 'EA');
+  assert.deepEqual(args.products, [{ name: 'sleeping patches', quantity: 1 }]);
+  assert.equal(args.province, 'San José');
+  assert.equal(args.canton, 'Montes De Oca');
+  assert.equal(args.district, 'Mercedes');
+  assert.match(args.address, /barrio Profesores/);
+}
+
 testSanitizeMessyOrder();
 testPhoneAndMoneyNormalization();
 testOrderDetectionWithoutCreateKeyword();
 testRafaOrderSanitizationShape();
 testCorrectionsMergeThroughGrokSemantics();
 testFreshOrderWhilePendingDetection();
+testLocationCaptureNormalization();
+testLocalCorrectionParserHandlesLocationWithoutGrok();
+testLocalFullOrderFallbackParsesAnaOrder();
 
 console.log('Grok-first bot helper tests passed.');

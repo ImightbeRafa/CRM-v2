@@ -9,6 +9,105 @@ export interface LocationFieldResult {
   suggestions?: string[];
 }
 
+function hasLocationText(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+function locationSnapshot(target: {
+  province?: string | null;
+  canton?: string | null;
+  district?: string | null;
+}): string {
+  return [target.province, target.canton, target.district]
+    .map((value) => String(value || '').trim())
+    .join(' / ');
+}
+
+function applyValidatedLocation(
+  target: { province?: string | null; canton?: string | null; district?: string | null },
+  result: LocationValidationResult,
+): void {
+  if (result.province.match) target.province = result.province.match;
+  if (result.canton.match) target.canton = result.canton.match;
+  if (result.district.match) target.district = result.district.match;
+}
+
+function applyPartialLocationMatches(
+  target: { province?: string | null; canton?: string | null; district?: string | null },
+  result: LocationValidationResult,
+): void {
+  if (hasLocationText(target.province) && result.province.match) target.province = result.province.match;
+  if (hasLocationText(target.canton) && result.canton.match) target.canton = result.canton.match;
+  if (hasLocationText(target.district) && result.district.match) target.district = result.district.match;
+}
+
+/**
+ * Best-effort normalization for order capture. This is intentionally more
+ * tolerant than guia generation: it canonicalizes clear matches, fixes the
+ * common canton/district swap, and otherwise preserves the user's text so the
+ * order can still be created and reviewed later during guia generation.
+ */
+export function normalizeLocationForOrderCapture(target: {
+  orderType?: string | null;
+  province?: string | null;
+  canton?: string | null;
+  district?: string | null;
+}): CaptureLocationNormalizationResult {
+  if (target.orderType && target.orderType !== 'EA') {
+    return { action: 'none', validForGuia: true, corrections: [] };
+  }
+
+  if (!hasLocationText(target.province) && !hasLocationText(target.canton) && !hasLocationText(target.district)) {
+    return { action: 'none', validForGuia: false, corrections: [] };
+  }
+
+  const before = locationSnapshot(target);
+  const hasFullTriplet = hasLocationText(target.province) && hasLocationText(target.canton) && hasLocationText(target.district);
+
+  if (hasFullTriplet) {
+    const direct = validateLocation(target.province, target.canton, target.district);
+    if (direct.valid) {
+      applyValidatedLocation(target, direct);
+      const after = locationSnapshot(target);
+      return {
+        action: before === after ? 'none' : 'canonicalized',
+        validForGuia: true,
+        corrections: before === after ? [] : [`Ubicacion: "${before}" -> "${after}"`],
+      };
+    }
+
+    const swapped = validateLocation(target.province, target.district, target.canton);
+    if (swapped.valid) {
+      applyValidatedLocation(target, swapped);
+      const after = locationSnapshot(target);
+      return {
+        action: 'swapped',
+        validForGuia: true,
+        corrections: [`Ubicacion: "${before}" -> "${after}"`],
+      };
+    }
+  }
+
+  const partial = validateLocation(target.province, target.canton, target.district);
+  applyPartialLocationMatches(target, partial);
+  const after = locationSnapshot(target);
+
+  if (partial.valid) {
+    return {
+      action: before === after ? 'none' : 'canonicalized',
+      validForGuia: true,
+      corrections: before === after ? [] : [`Ubicacion: "${before}" -> "${after}"`],
+    };
+  }
+
+  return {
+    action: before === after ? 'stored_raw' : 'canonicalized',
+    validForGuia: false,
+    warning: 'Ubicacion guardada como texto recibido. Revisala al generar la guia de Correos.',
+    corrections: before === after ? [] : [`Ubicacion parcial: "${before}" -> "${after}"`],
+  };
+}
+
 export interface LocationValidationResult {
   valid: boolean;
   province: LocationFieldResult;
@@ -17,6 +116,15 @@ export interface LocationValidationResult {
   correctedProvince?: string;
   correctedCanton?: string;
   correctedDistrict?: string;
+}
+
+export type CaptureLocationAction = 'none' | 'canonicalized' | 'swapped' | 'stored_raw';
+
+export interface CaptureLocationNormalizationResult {
+  action: CaptureLocationAction;
+  validForGuia: boolean;
+  warning?: string;
+  corrections: string[];
 }
 
 // ── Text normalisation (shared with UI components) ───────────────────────────

@@ -27,6 +27,7 @@ import {
   getCustomFieldsSchema,
   CustomFieldsData 
 } from '@/lib/customFields';
+import { normalizeLocationForOrderCapture } from '@/lib/locationValidator';
 
 // Tool execution context
 export interface ToolContext {
@@ -855,32 +856,21 @@ export async function createOrder(
           };
         }
 
-        // STEP 1.5: Validate location hierarchy for EA orders
+        // STEP 1.5: Best-effort location normalization for EA orders.
+        // Guia generation remains the strict Correos checkpoint.
         const locationCorrections: string[] = [];
-        if (params.orderType === 'EA' && params.province && params.canton && params.district) {
-          const { validateLocation, formatValidationMessage } = await import('@/lib/locationValidator');
-          const locResult = validateLocation(params.province, params.canton, params.district);
-
-          if (!locResult.valid) {
-            const msg = formatValidationMessage(locResult);
-            console.log('[AI Tool] createOrder - Location validation failed:', msg);
-            return {
-              success: false,
-              error: `❌ Ubicación inválida:\n${msg}`,
-            };
-          }
-
-          if (locResult.correctedProvince) {
-            locationCorrections.push(`Provincia: "${params.province}" → "${locResult.correctedProvince}"`);
-            params.province = locResult.correctedProvince;
-          }
-          if (locResult.correctedCanton) {
-            locationCorrections.push(`Cantón: "${params.canton}" → "${locResult.correctedCanton}"`);
-            params.canton = locResult.correctedCanton;
-          }
-          if (locResult.correctedDistrict) {
-            locationCorrections.push(`Distrito: "${params.district}" → "${locResult.correctedDistrict}"`);
-            params.district = locResult.correctedDistrict;
+        const locationWarnings: string[] = [];
+        if (params.orderType === 'EA' && (params.province || params.canton || params.district)) {
+          const locationResult = normalizeLocationForOrderCapture(params);
+          locationCorrections.push(...locationResult.corrections);
+          if (locationResult.warning) locationWarnings.push(locationResult.warning);
+          if (locationResult.action !== 'none') {
+            console.log('[AI Tool] createOrder - Location capture normalization:', {
+              action: locationResult.action,
+              validForGuia: locationResult.validForGuia,
+              corrections: locationResult.corrections,
+              warning: locationResult.warning,
+            });
           }
         }
         
@@ -1223,6 +1213,9 @@ export async function createOrder(
 
           if (locationCorrections.length > 0) {
             successMessage += `\n📍 Correcciones de ubicación aplicadas:\n${locationCorrections.map(c => `  - ${c}`).join('\n')}`;
+          }
+          if (locationWarnings.length > 0) {
+            successMessage += `\n📍 Nota de ubicación:\n${locationWarnings.map(c => `  - ${c}`).join('\n')}`;
           }
           if (customFieldsLines.length > 0) {
             successMessage += `\n\nCampos personalizados:\n${customFieldsLines.join('\n')}`;

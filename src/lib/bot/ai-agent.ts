@@ -47,10 +47,10 @@ import {
   type CustomFieldsData,
 } from '@/lib/customFields';
 import { getCurrentStatsDateKey, STATS_TIME_ZONE } from '@/lib/statistics-dates';
-import { validateLocation, formatValidationMessage } from '@/lib/locationValidator';
+import { normalizeLocationForOrderCapture } from '@/lib/locationValidator';
 
 const XAI_TIMEOUT_MS = Number(process.env.XAI_TIMEOUT_MS || 15_000);
-const XAI_EXTRACTION_TIMEOUT_MS = Number(process.env.XAI_EXTRACTION_TIMEOUT_MS || 25_000);
+const XAI_EXTRACTION_TIMEOUT_MS = Number(process.env.XAI_EXTRACTION_TIMEOUT_MS || 10_000);
 const XAI_MAX_RETRIES = Number(process.env.XAI_MAX_RETRIES || 0);
 const XAI_EXTRACTION_REASONING_EFFORT: 'low' | 'medium' | 'high' = (() => {
   const raw = (process.env.XAI_EXTRACTION_REASONING_EFFORT || 'low').toLowerCase();
@@ -331,6 +331,8 @@ const CREATE_ORDER_REVIEW_FIELDS = new Set([
   'skipInventoryCheck',
   '_forceWithoutInventory',
   '_finalReviewConfirmed',
+  '_locationReviewWarning',
+  '_locationCaptureAction',
 ]);
 
 function formatCrcAmount(value: unknown): string {
@@ -364,6 +366,8 @@ function buildConversationalMissingFieldsAsk(missing: string[]): string {
     'Tipo de orden': 'el tipo de orden (EA o RA)',
     'Direccion': 'la direcciÃ³n',
     'DirecciÃ³n': 'la direcciÃ³n',
+    'Direccion o ubicacion': 'la direcciÃ³n o ubicaciÃ³n de entrega',
+    'DirecciÃ³n o ubicaciÃ³n': 'la direcciÃ³n o ubicaciÃ³n de entrega',
     'Provincia': 'la provincia',
     'Canton': 'el cantÃ³n',
     'CantÃ³n': 'el cantÃ³n',
@@ -403,10 +407,9 @@ function getCreateOrderReviewMissingFields(args: any): string[] {
   if (!args.orderType) missing.push('Tipo de orden (EA o RA)');
 
   if (args.orderType === 'EA') {
-    if (!args.address || !String(args.address).trim()) missing.push('Direccion');
-    if (!args.province || !String(args.province).trim()) missing.push('Provincia');
-    if (!args.canton || !String(args.canton).trim()) missing.push('Canton');
-    if (!args.district || !String(args.district).trim()) missing.push('Distrito');
+    const hasDeliveryDetail = [args.address, args.province, args.canton, args.district]
+      .some((value) => typeof value === 'string' && value.trim() !== '');
+    if (!hasDeliveryDetail) missing.push('Direccion o ubicacion');
   }
 
   return missing;
@@ -521,6 +524,9 @@ function buildCreateOrderFinalReview(args: any, customFieldsConfig?: CustomField
       `Distrito: ${formatReviewValue(args.district)}`,
       `Direccion: ${formatReviewValue(args.address)}`,
     );
+    if (args._locationReviewWarning) {
+      lines.push(`Nota ubicacion: ${formatReviewValue(args._locationReviewWarning)}`);
+    }
   }
 
   if (args.comments) lines.push(`Comentarios: ${formatReviewValue(args.comments)}`);
@@ -575,30 +581,7 @@ async function requestCreateOrderFinalConfirmation(
   // user who typed "Sanjose, Alajuelita, Sanjosecito" would see exactly
   // those raw strings echoed back, even though the validator can correct
   // them to "San JosÃ©, Alajuelita, San Josecito".
-  applyFuzzyLocationCorrections(args);
-
-  if (args.orderType === 'EA' && args.province && args.canton && args.district) {
-    const locationValidation = validateLocation(args.province, args.canton, args.district);
-    if (!locationValidation.valid) {
-      await setPendingConfirmation(platform, platformId, {
-        type: 'order_repair',
-        data: {
-          toolName: 'create_order',
-          toolArgs: args,
-        },
-        expiresAt: Date.now() + 120_000,
-      });
-
-      return {
-        text: [
-          'La ubicacion necesita correccion antes de crear la orden:',
-          formatValidationMessage(locationValidation),
-          '',
-          'Enviame la provincia, canton y distrito correctos, o la correccion exacta.',
-        ].join('\n'),
-      };
-    }
-  }
+  applyOrderCaptureLocationNormalization(args);
 
   // If the model emitted multiple create_order calls with diverging totals,
   // mergeCreateOrderCalls flagged it instead of silently summing. Refuse to
@@ -1006,7 +989,6 @@ function sanitizeAIExtractedArgs(
   return out;
 }
 
-const GROK_ORDER_READ_FAILURE_TEXT = 'No pude leer bien la orden. Reenviámela en un solo mensaje o indicame el dato exacto que querés corregir.';
 const ORDER_DETAILS_REQUIRED_TEXT = 'Claro. Enviame los datos de la orden en un solo mensaje: cliente, producto, total, tipo de orden y direccion si es EA.';
 const FIELD_ONLY_WITHOUT_PENDING_TEXT = 'Recibi ese dato, pero no tengo una orden pendiente para aplicarlo. Reenviame la orden completa en un solo mensaje y preparo la revision final.';
 
@@ -1057,6 +1039,404 @@ function looksLikeFieldOnlyOrderFragment(message: string): boolean {
   if (/^(?:total|pago)\s*[:=]?\s*(?:crc|â‚¡|Â¢)?\s*\d[\d.,]*$/i.test(trimmed)) return true;
   if (/^(?:producto|productos?|cantidad|provincia|canton|distrito|direccion|correo|email|telefono)\s*[:=]\s*\S+/i.test(trimmed)) return true;
   return false;
+}
+
+function cleanLocalOrderLine(line: string): string {
+  return line
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeLocalLabel(value: string): string {
+  return normalizeSpanishText(value)
+    .replace(/[^a-z0-9/\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function splitLocalLabelValue(line: string): { label: string; value: string } | null {
+  const idx = line.search(/[:=]/);
+  if (idx < 0) return null;
+  const label = cleanLocalOrderLine(line.slice(0, idx));
+  const value = line.slice(idx + 1).trim();
+  if (!label) return null;
+  return { label, value };
+}
+
+function splitLocationTriplet(value: string): { province: string; canton: string; district: string } | null {
+  const parts = value
+    .split(/\s*(?:,|\/|\|)\s*/g)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length < 3) return null;
+  return {
+    province: parts[0],
+    canton: parts[1],
+    district: parts.slice(2).join(', '),
+  };
+}
+
+function parseOrderAmountFromText(value: string): number | undefined {
+  const match = value.match(/(?:crc|colones?|[₡¢])?\s*(\d{1,3}(?:[.,]\d{3})+|\d{4,6})(?:\s*(?:crc|colones?))?/i);
+  return match ? parseCrcAmount(match[0]) : undefined;
+}
+
+function parseLocalProducts(value: string): Array<{ name: string; quantity: number; sku?: string }> {
+  return value
+    .split(/\r?\n|;/g)
+    .map((part) => part.replace(/^[-*•]\s*/, '').trim())
+    .filter(Boolean)
+    .map((part) => {
+      let name = part;
+      let quantity = 1;
+      const trailing = name.match(/^(.*?)(?:\s*[xX×*]\s*(\d+)|\s+\(\s*(\d+)\s*\))\s*$/);
+      const leading = name.match(/^(\d+)\s+(.+)$/);
+      if (trailing) {
+        name = trailing[1].trim();
+        quantity = Math.max(1, Number(trailing[2] || trailing[3]) || 1);
+      } else if (leading) {
+        quantity = Math.max(1, Number(leading[1]) || 1);
+        name = leading[2].trim();
+      }
+      return name && !isTemplatePlaceholderValue(name) ? { name, quantity } : null;
+    })
+    .filter((product): product is { name: string; quantity: number } => !!product);
+}
+
+function looksLikeLocalProductLine(line: string): boolean {
+  const normalized = normalizeSpanishText(line);
+  if (!line || line.length > 90) return false;
+  if (EMAIL_RE.test(line)) return false;
+  if (normalizeCostaRicaPhone(line) && line.replace(/\D/g, '').length === 8) return false;
+  if (/\b(total|pago|sinpe|transferencia|efectivo|crc|colones?)\b/i.test(normalized)) return false;
+  if (/\b(correos|mensajeria|envio|retiro|direccion|provincia|canton|distrito)\b/i.test(normalized)) return false;
+  return /(?:^|\s)(?:x|×|\*)\s*\d+\s*$/i.test(line) || /^\d+\s+\S+/.test(line);
+}
+
+function assignLocalCustomField(
+  label: string,
+  value: string,
+  raw: Record<string, any>,
+  customFieldsConfig?: CustomFieldsData,
+): boolean {
+  if (!customFieldsConfig || !value) return false;
+  const normalizedLabel = normalizeLocalLabel(label);
+  const customFields: Array<{ key: string; value: string }> = Array.isArray(raw.customFields) ? raw.customFields : [];
+  const allFields = [
+    ...customFieldsConfig.productFields.map((field: any) => ({ key: field.key, label: field.label })),
+    ...customFieldsConfig.businessInfoFields.map((field: any) => ({ key: field.name, label: field.label })),
+  ];
+
+  for (const field of allFields) {
+    const candidates = [field.key, field.label].filter(Boolean).map((candidate) => normalizeLocalLabel(String(candidate)));
+    if (candidates.some((candidate) => candidate && (normalizedLabel === candidate || normalizedLabel.includes(candidate)))) {
+      customFields.push({ key: field.key, value });
+      raw.customFields = customFields;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function assignLocalLabeledField(
+  label: string,
+  value: string,
+  raw: Record<string, any>,
+  customFieldsConfig?: CustomFieldsData,
+): boolean {
+  const normalized = normalizeLocalLabel(label);
+  if (!value && !/producto/.test(normalized)) return false;
+
+  if (assignLocalCustomField(label, value, raw, customFieldsConfig)) return true;
+
+  if (normalized.includes('provincia') && normalized.includes('canton') && normalized.includes('distrito')) {
+    const triplet = splitLocationTriplet(value);
+    if (triplet) {
+      Object.assign(raw, triplet);
+      return true;
+    }
+  }
+
+  if (/\bnombre\b|\bcliente\b/.test(normalized)) {
+    raw.customerName = value;
+    return true;
+  }
+  if (/\btelefono\b|\btel\b|\bcelular\b|\bwhatsapp\b/.test(normalized)) {
+    raw.phone = value;
+    return true;
+  }
+  if (/\bcorreo\b|\bemail\b|\be mail\b/.test(normalized)) {
+    raw.email = value;
+    return true;
+  }
+  if (/\bdireccion\b|\bdireccion exacta\b|\bdir\b/.test(normalized)) {
+    raw.address = value;
+    return true;
+  }
+  if (/\bprovincia\b/.test(normalized)) {
+    raw.province = value;
+    return true;
+  }
+  if (/\bcanton\b/.test(normalized)) {
+    raw.canton = value;
+    return true;
+  }
+  if (/\bdistrito\b/.test(normalized)) {
+    raw.district = value;
+    return true;
+  }
+  if (/\bproducto\b|\bproductos\b/.test(normalized)) {
+    const products = parseLocalProducts(value);
+    if (products.length > 0) raw.products = products;
+    return true;
+  }
+  if (/\btotal\b|\bmonto\b|\bprecio\b/.test(normalized)) {
+    const total = parseOrderAmountFromText(value);
+    if (total !== undefined) raw.total = total;
+    return total !== undefined;
+  }
+  if (/\bpago\b|\bmetodo de pago\b|\bforma de pago\b/.test(normalized)) {
+    const total = parseOrderAmountFromText(value);
+    if (total !== undefined) raw.total = total;
+    if (/sinpe/i.test(value)) raw.paymentMethod = 'SINPE';
+    else raw.paymentMethod = value;
+    return true;
+  }
+  if (/\bcourier\b|\bmensajeria\b|\bmetodo de envio\b|\benvio\b/.test(normalized)) {
+    raw.courier = value;
+    raw.orderType = 'EA';
+    return true;
+  }
+  if (/\bcomentario\b|\bnota\b|\bobservacion\b/.test(normalized)) {
+    raw.comments = value;
+    return true;
+  }
+
+  return false;
+}
+
+function collectLocalOrderFields(
+  message: string,
+  customFieldsConfig?: CustomFieldsData,
+  options: { allowProductLineInference: boolean } = { allowProductLineInference: true },
+): Record<string, any> {
+  const raw: Record<string, any> = {};
+  const lines = message
+    .split(/\r?\n/g)
+    .map(cleanLocalOrderLine)
+    .filter(Boolean);
+  let nextLineIsProduct = false;
+
+  for (const line of lines) {
+    const normalized = normalizeSpanishText(line);
+    const labeled = splitLocalLabelValue(line);
+
+    if (labeled) {
+      const assigned = assignLocalLabeledField(labeled.label, labeled.value, raw, customFieldsConfig);
+      if (/\bproducto\b/.test(normalizeLocalLabel(labeled.label)) && !labeled.value) {
+        nextLineIsProduct = true;
+      }
+      if (assigned) continue;
+    }
+
+    if (/^productos?$/.test(normalized)) {
+      nextLineIsProduct = true;
+      continue;
+    }
+
+    if (nextLineIsProduct) {
+      const products = parseLocalProducts(line);
+      if (products.length > 0) {
+        raw.products = products;
+        nextLineIsProduct = false;
+        continue;
+      }
+    }
+
+    const emailMatch = line.match(EMAIL_RE);
+    if (emailMatch) {
+      raw.email = emailMatch[0];
+      continue;
+    }
+
+    const phone = normalizeCostaRicaPhone(line);
+    if (phone && line.replace(/\D/g, '').length <= 11) {
+      raw.phone = phone;
+      continue;
+    }
+
+    const triplet = splitLocationTriplet(line);
+    if (triplet && /\S+\s*,\s*\S+\s*,\s*\S+/.test(line)) {
+      Object.assign(raw, triplet);
+      continue;
+    }
+
+    if (/\bsinpe\b/i.test(normalized)) {
+      raw.paymentMethod = 'SINPE';
+      raw.comments = raw.comments || line;
+      const total = parseOrderAmountFromText(line);
+      if (total !== undefined) raw.total = total;
+      continue;
+    }
+
+    if (/\b(transferencia|efectivo|tarjeta)\b/i.test(normalized)) {
+      raw.paymentMethod = line;
+      const total = parseOrderAmountFromText(line);
+      if (total !== undefined) raw.total = total;
+      continue;
+    }
+
+    if (/\b(correos|mensajeria|envio a domicilio|domicilio)\b/i.test(normalized)) {
+      raw.courier = line;
+      raw.orderType = 'EA';
+      continue;
+    }
+
+    if (/\b(retiro|retira|pickup)\b/i.test(normalized)) {
+      raw.orderType = 'RA';
+      continue;
+    }
+
+    if (/\b(total|pago|crc|colones?)\b/i.test(normalized)) {
+      const total = parseOrderAmountFromText(line);
+      if (total !== undefined) {
+        raw.total = total;
+        continue;
+      }
+    }
+
+    if (options.allowProductLineInference && looksLikeLocalProductLine(line)) {
+      const products = parseLocalProducts(line);
+      if (products.length > 0) {
+        raw.products = products;
+        continue;
+      }
+    }
+  }
+
+  if (!raw.orderType && (raw.courier || raw.address || raw.province || raw.canton || raw.district)) {
+    raw.orderType = 'EA';
+  }
+
+  return raw;
+}
+
+function inferLocalCorrectionAction(args: Record<string, any>): string {
+  const keys = Object.keys(stripOrderExtractionMetadata(args))
+    .filter((key) => !['quantity', 'intent', 'correctionAction', 'confidence'].includes(key));
+  const hasOnly = (allowed: string[]) => keys.length > 0 && keys.every((key) => allowed.includes(key));
+  if (hasOnly(['province', 'canton', 'district', 'orderType'])) return 'replace_location';
+  if (hasOnly(['products'])) return 'replace_product';
+  if (hasOnly(['total'])) return 'replace_total';
+  if (hasOnly(['paymentMethod'])) return 'replace_payment';
+  if (hasOnly(['courier', 'orderType'])) return 'replace_shipping';
+  if (hasOnly(['comments'])) return 'replace_comment';
+  if (hasOnly(['customerName', 'phone', 'email'])) return 'replace_customer';
+  if (hasOnly(['customFields'])) return 'replace_custom_fields';
+  return 'mixed';
+}
+
+function parseSingleMissingFieldCorrection(
+  message: string,
+  existingArgs: Record<string, any>,
+): Record<string, any> | null {
+  const missing = getCreateOrderReviewMissingFields(existingArgs);
+  if (missing.length !== 1) return null;
+
+  const value = message.trim();
+  if (!value) return null;
+
+  const field = normalizeSpanishText(missing[0]);
+  if (field.includes('producto')) {
+    const products = parseLocalProducts(value);
+    return products.length > 0 ? { products } : null;
+  }
+  if (field.includes('total')) {
+    const total = parseOrderAmountFromText(value);
+    return total !== undefined ? { total } : null;
+  }
+  if (field.includes('nombre')) return { customerName: value };
+  if (field.includes('telefono')) return { phone: value };
+  if (field.includes('direccion') || field.includes('ubicacion')) {
+    const triplet = splitLocationTriplet(value);
+    return triplet || { address: value };
+  }
+  if (field.includes('tipo')) {
+    const normalized = normalizeSpanishText(value);
+    if (/\b(ea|envio|domicilio|correos|mensajeria)\b/.test(normalized)) return { orderType: 'EA' };
+    if (/\b(ra|retiro|local|pickup)\b/.test(normalized)) return { orderType: 'RA' };
+  }
+
+  return null;
+}
+
+function parseLocalStructuredOrderArgs(
+  message: string,
+  customFieldsConfig?: CustomFieldsData,
+): Record<string, any> | null {
+  const raw = collectLocalOrderFields(message, customFieldsConfig);
+  raw.intent = 'new_order';
+  const sanitized = sanitizeAIExtractedArgs(raw, customFieldsConfig);
+
+  const identityFields = Number(Boolean(sanitized.customerName))
+    + Number(Boolean(sanitized.phone))
+    + Number(Boolean(sanitized.email));
+  const orderFields = Number(Array.isArray(sanitized.products) && sanitized.products.length > 0)
+    + Number(sanitized.total !== undefined)
+    + Number(Boolean(sanitized.orderType))
+    + Number(Boolean(sanitized.address || sanitized.province || sanitized.canton || sanitized.district || sanitized.courier));
+
+  if (!hasSubstantiveOrderFields(sanitized) || identityFields + orderFields < 3) return null;
+  return sanitized;
+}
+
+function parseLocalOrderCorrectionArgs(
+  message: string,
+  existingArgs: Record<string, any>,
+  customFieldsConfig?: CustomFieldsData,
+): Record<string, any> | null {
+  const freshOrder = looksLikeOrderPayload(message)
+    ? parseLocalStructuredOrderArgs(message, customFieldsConfig)
+    : null;
+  if (freshOrder && shouldReplacePendingWithFreshOrder(message, freshOrder)) {
+    return freshOrder;
+  }
+
+  const raw = collectLocalOrderFields(message, customFieldsConfig);
+  const singleMissing = hasSubstantiveOrderFields(raw) ? null : parseSingleMissingFieldCorrection(message, existingArgs);
+  const candidate = singleMissing || raw;
+  if (!hasSubstantiveOrderFields(candidate)) return null;
+
+  candidate.intent = 'order_correction';
+  candidate.correctionAction = inferLocalCorrectionAction(candidate);
+  const sanitized = sanitizeAIExtractedArgs(candidate, customFieldsConfig);
+  return hasSubstantiveOrderFields(sanitized) ? sanitized : null;
+}
+
+function buildOrderCorrectionRetryText(
+  existingArgs: Record<string, any>,
+  customFieldsConfig?: CustomFieldsData,
+): string {
+  const captured = getCreateOrderReviewCapturedFields(existingArgs, customFieldsConfig);
+  const lines = [
+    'No pude aplicar esa correccion a la orden pendiente.',
+  ];
+
+  if (captured.length > 0) {
+    lines.push('', 'Orden pendiente:', ...captured.map((line) => `- ${line}`));
+  }
+
+  lines.push(
+    '',
+    'Enviame la correccion en formato claro, por ejemplo:',
+    'provincia/canton/distrito: San Jose, Montes de Oca, Mercedes',
+    'producto: sleeping patches x1',
+    'total: 12900',
+  );
+
+  return lines.join('\n');
 }
 
 function shouldReplacePendingWithFreshOrder(message: string, args: Record<string, any>): boolean {
@@ -1124,6 +1504,8 @@ function stripOrderExtractionMetadata(args: Record<string, any>): Record<string,
   const cleaned = { ...args };
   delete cleaned._correctionAction;
   delete cleaned._intent;
+  delete cleaned._locationReviewWarning;
+  delete cleaned._locationCaptureAction;
   return cleaned;
 }
 
@@ -1160,31 +1542,31 @@ export const __grokFirstOrderTestInternals = {
   hasSubstantiveOrderFields,
   looksLikeOrderPayload,
   looksLikeFieldOnlyOrderFragment,
+  parseLocalStructuredOrderArgs,
+  parseLocalOrderCorrectionArgs,
+  applyOrderCaptureLocationNormalization,
   shouldReplacePendingWithFreshOrder,
   mergeOrderCorrectionArgs,
 };
 
-/**
- * Apply the location validator's fuzzy matcher to args and back-fill the
- * canonical spelling. So if the user typed "Sanjose, Alajuelita, Sanjosecito",
- * the args end up with "San JosÃ©", "Alajuelita", "San Josecito" before the
- * review is shown to the user.
- */
-function applyFuzzyLocationCorrections(args: Record<string, any>): void {
-  if (args.orderType !== 'EA') return;
-  if (!args.province && !args.canton && !args.district) return;
+function applyOrderCaptureLocationNormalization(args: Record<string, any>): void {
   try {
-    const validation = validateLocation(args.province, args.canton, args.district);
-    if (validation.correctedProvince) args.province = validation.correctedProvince;
-    if (validation.correctedCanton) args.canton = validation.correctedCanton;
-    if (validation.correctedDistrict) args.district = validation.correctedDistrict;
-    // Even if the validator couldn't match (e.g., user wrote a wrong canton
-    // for the chosen province), if the *match* field is set, use it.
-    if (!args.province && validation.province.match) args.province = validation.province.match;
-    if (!args.canton && validation.canton.match) args.canton = validation.canton.match;
-    if (!args.district && validation.district.match) args.district = validation.district.match;
+    const result = normalizeLocationForOrderCapture(args);
+    delete args._locationReviewWarning;
+    delete args._locationCaptureAction;
+
+    if (result.warning) args._locationReviewWarning = result.warning;
+    if (result.action !== 'none') args._locationCaptureAction = result.action;
+
+    if (result.action !== 'none') {
+      console.info('[AI Agent] location capture normalization', {
+        action: result.action,
+        validForGuia: result.validForGuia,
+        corrections: result.corrections,
+      });
+    }
   } catch (e) {
-    console.warn('[AI Agent] applyFuzzyLocationCorrections failed:', e);
+    console.warn('[AI Agent] applyOrderCaptureLocationNormalization failed:', e);
   }
 }
 
@@ -1628,31 +2010,46 @@ export async function processMessage(
           const existingArgs = (pending.data?.toolArgs as Record<string, any>) || {};
           let repairedArgs: Record<string, any> = existingArgs;
 
-          console.info('[AI Agent] order_repair correction â†’ AI extraction path');
-          const aiCorrection = await extractOrderArgsWithGrok(userMessage, customFieldsConfig);
-          if (aiCorrection && Object.keys(aiCorrection).length > 0) {
-            const sanitized = sanitizeAIExtractedArgs(aiCorrection, customFieldsConfig);
-            if (!hasSubstantiveOrderFields(sanitized)) {
-              console.warn('[AI Agent] order_repair: Grok returned no substantive correction fields');
-              await setPendingConfirmation(platform, platformId, pending as any);
-              return { text: GROK_ORDER_READ_FAILURE_TEXT };
-            }
-            if (shouldReplacePendingWithFreshOrder(userMessage, sanitized)) {
-              console.info('[AI Agent] order_repair: Grok detected a fresh order; replacing pending repair');
-              const freshArgs = stripOrderExtractionMetadata(sanitized);
-              applyFuzzyLocationCorrections(freshArgs);
+          const localCorrection = parseLocalOrderCorrectionArgs(userMessage, existingArgs, customFieldsConfig);
+          if (localCorrection) {
+            console.info('[AI Agent] order_repair correction source=local_correction', {
+              correctionKeys: Object.keys(localCorrection),
+              correctionAction: localCorrection._correctionAction,
+            });
+            if (shouldReplacePendingWithFreshOrder(userMessage, localCorrection)) {
+              const freshArgs = stripOrderExtractionMetadata(localCorrection);
+              applyOrderCaptureLocationNormalization(freshArgs);
               return requestCreateOrderFinalConfirmation(freshArgs, context, platform, platformId);
             }
-            repairedArgs = mergeOrderCorrectionArgs(existingArgs, sanitized);
-            applyFuzzyLocationCorrections(repairedArgs);
-            console.info('[AI Agent] order_repair: AI applied corrections', {
-              correctionKeys: Object.keys(sanitized),
-              correctionAction: sanitized._correctionAction,
-            });
+            repairedArgs = mergeOrderCorrectionArgs(existingArgs, localCorrection);
+            applyOrderCaptureLocationNormalization(repairedArgs);
           } else {
-            console.warn('[AI Agent] order_repair: Grok extraction failed; refusing regex fallback');
-            await setPendingConfirmation(platform, platformId, pending as any);
-            return { text: GROK_ORDER_READ_FAILURE_TEXT };
+            console.info('[AI Agent] order_repair correction source=grok');
+            const aiCorrection = await extractOrderArgsWithGrok(userMessage, customFieldsConfig);
+            if (aiCorrection && Object.keys(aiCorrection).length > 0) {
+              const sanitized = sanitizeAIExtractedArgs(aiCorrection, customFieldsConfig);
+              if (!hasSubstantiveOrderFields(sanitized)) {
+                console.warn('[AI Agent] order_repair: Grok returned no substantive correction fields');
+                await setPendingConfirmation(platform, platformId, pending as any);
+                return { text: buildOrderCorrectionRetryText(existingArgs, customFieldsConfig) };
+              }
+              if (shouldReplacePendingWithFreshOrder(userMessage, sanitized)) {
+                console.info('[AI Agent] order_repair: Grok detected a fresh order; replacing pending repair');
+                const freshArgs = stripOrderExtractionMetadata(sanitized);
+                applyOrderCaptureLocationNormalization(freshArgs);
+                return requestCreateOrderFinalConfirmation(freshArgs, context, platform, platformId);
+              }
+              repairedArgs = mergeOrderCorrectionArgs(existingArgs, sanitized);
+              applyOrderCaptureLocationNormalization(repairedArgs);
+              console.info('[AI Agent] order_repair: AI applied corrections', {
+                correctionKeys: Object.keys(sanitized),
+                correctionAction: sanitized._correctionAction,
+              });
+            } else {
+              console.warn('[AI Agent] order_repair: Grok extraction failed/null after local correction miss');
+              await setPendingConfirmation(platform, platformId, pending as any);
+              return { text: buildOrderCorrectionRetryText(existingArgs, customFieldsConfig) };
+            }
           }
 
           const repairResponse = await executeCreateOrderRepair(repairedArgs, context, platform, platformId);
@@ -1704,30 +2101,46 @@ export async function processMessage(
           await clearPendingConfirmation(platform, platformId);
 
           const existingArgs = (pending.data?.toolArgs as Record<string, any>) || {};
-          console.info('[AI Agent] order_final_confirm correction -> Grok extraction path');
+          const localCorrection = parseLocalOrderCorrectionArgs(userMessage, existingArgs, customFieldsConfig);
+          if (localCorrection) {
+            console.info('[AI Agent] order_final_confirm correction source=local_correction', {
+              correctionKeys: Object.keys(localCorrection),
+              correctionAction: localCorrection._correctionAction,
+            });
+            if (shouldReplacePendingWithFreshOrder(userMessage, localCorrection)) {
+              const freshArgs = stripOrderExtractionMetadata(localCorrection);
+              applyOrderCaptureLocationNormalization(freshArgs);
+              return requestCreateOrderFinalConfirmation(freshArgs, context, platform, platformId);
+            }
+            const updatedArgs = mergeOrderCorrectionArgs(existingArgs, localCorrection);
+            applyOrderCaptureLocationNormalization(updatedArgs);
+            return requestCreateOrderFinalConfirmation(updatedArgs, context, platform, platformId);
+          }
+
+          console.info('[AI Agent] order_final_confirm correction source=grok');
           const aiCorrection = await extractOrderArgsWithGrok(userMessage, customFieldsConfig);
           if (!aiCorrection || Object.keys(aiCorrection).length === 0) {
-            console.warn('[AI Agent] order_final_confirm: Grok extraction failed; refusing regex fallback');
+            console.warn('[AI Agent] order_final_confirm: Grok extraction failed/null after local correction miss');
             await setPendingConfirmation(platform, platformId, pending as any);
-            return { text: GROK_ORDER_READ_FAILURE_TEXT };
+            return { text: buildOrderCorrectionRetryText(existingArgs, customFieldsConfig) };
           }
 
           const sanitized = sanitizeAIExtractedArgs(aiCorrection, customFieldsConfig);
           if (!hasSubstantiveOrderFields(sanitized)) {
             console.warn('[AI Agent] order_final_confirm: Grok returned no substantive correction fields');
             await setPendingConfirmation(platform, platformId, pending as any);
-            return { text: GROK_ORDER_READ_FAILURE_TEXT };
+            return { text: buildOrderCorrectionRetryText(existingArgs, customFieldsConfig) };
           }
 
           if (shouldReplacePendingWithFreshOrder(userMessage, sanitized)) {
             console.info('[AI Agent] order_final_confirm: Grok detected a fresh order; replacing pending review');
             const freshArgs = stripOrderExtractionMetadata(sanitized);
-            applyFuzzyLocationCorrections(freshArgs);
+            applyOrderCaptureLocationNormalization(freshArgs);
             return requestCreateOrderFinalConfirmation(freshArgs, context, platform, platformId);
           }
 
           const updatedArgs = mergeOrderCorrectionArgs(existingArgs, sanitized);
-          applyFuzzyLocationCorrections(updatedArgs);
+          applyOrderCaptureLocationNormalization(updatedArgs);
           console.info('[AI Agent] order_final_confirm: Grok applied correction', {
             correctionKeys: Object.keys(sanitized),
             correctionAction: sanitized._correctionAction,
@@ -1777,7 +2190,7 @@ export async function processMessage(
     //
     // The only post-processing we do on the AI result is:
     //   - `sanitizeAIExtractedArgs`: drops placeholder values, coerces types.
-    //   - `applyFuzzyLocationCorrections`: canonicalizes CR province/canton/
+    //   - `applyOrderCaptureLocationNormalization`: canonicalizes CR province/canton/
     //     district names against the DB (uses the validator's fuzzy matcher,
     //     which also handles "Sanjose" â†’ "San JosÃ©" etc.).
     //
@@ -1797,8 +2210,8 @@ export async function processMessage(
       if (aiExtracted && Object.keys(aiExtracted).length > 0) {
         const args = sanitizeAIExtractedArgs(aiExtracted, customFieldsConfig);
         if (hasSubstantiveOrderFields(args)) {
-          applyFuzzyLocationCorrections(args);
-          console.info('[AI Agent] AI-first extraction succeeded â†’ routing to final review', {
+          applyOrderCaptureLocationNormalization(args);
+          console.info('[AI Agent] Order extraction source=grok -> routing to final review', {
             hasCustomer: !!args.customerName,
             hasProducts: !!args.products,
             hasTotal: args.total !== undefined,
@@ -1809,14 +2222,28 @@ export async function processMessage(
           return requestCreateOrderFinalConfirmation(args, context, platform, platformId);
         }
 
-        console.warn('[AI Agent] Grok extraction returned no substantive fields; asking for complete order');
-        await addAssistantMessage(platform, platformId, ORDER_DETAILS_REQUIRED_TEXT);
-        return { text: ORDER_DETAILS_REQUIRED_TEXT };
+        console.warn('[AI Agent] Grok extraction returned no substantive fields; trying local_order_fallback');
       } else {
-        console.warn('[AI Agent] Grok extraction failed/null; refusing regex fallback');
-        await addAssistantMessage(platform, platformId, GROK_ORDER_READ_FAILURE_TEXT);
-        return { text: GROK_ORDER_READ_FAILURE_TEXT };
+        console.warn('[AI Agent] Grok extraction failed/null; trying local_order_fallback');
       }
+
+      const localFallbackArgs = parseLocalStructuredOrderArgs(userMessage, customFieldsConfig);
+      if (localFallbackArgs) {
+        applyOrderCaptureLocationNormalization(localFallbackArgs);
+        console.info('[AI Agent] Order extraction source=local_order_fallback -> routing to final review', {
+          hasCustomer: !!localFallbackArgs.customerName,
+          hasProducts: !!localFallbackArgs.products,
+          hasTotal: localFallbackArgs.total !== undefined,
+          orderType: localFallbackArgs.orderType,
+          hasLocation: !!(localFallbackArgs.province && localFallbackArgs.canton && localFallbackArgs.district),
+          customFieldKeys: localFallbackArgs.customFields ? Object.keys(localFallbackArgs.customFields) : [],
+        });
+        return requestCreateOrderFinalConfirmation(localFallbackArgs, context, platform, platformId);
+      }
+
+      console.warn('[AI Agent] local_order_fallback could not extract enough order fields');
+      await addAssistantMessage(platform, platformId, ORDER_DETAILS_REQUIRED_TEXT);
+      return { text: ORDER_DETAILS_REQUIRED_TEXT };
     }
 
     // Non-order messages go to the LLM, which needs them in history.

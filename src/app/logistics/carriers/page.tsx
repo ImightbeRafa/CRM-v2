@@ -451,12 +451,12 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
                 )}
                 {/* Action buttons */}
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {prev && <button onClick={() => onMoveStatus(order.id, prev, carrier)} style={{ padding: '3px 7px', borderRadius: 5, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 10, cursor: 'pointer' }}>← {prev.replace('En ', '')}</button>}
-                    {next && <button onClick={() => onMoveStatus(order.id, next, carrier)} style={{ padding: '3px 7px', borderRadius: 5, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.5)', fontSize: 10, cursor: 'pointer' }}>{next.replace('En ', '')} →</button>}
-                    <button onClick={() => onMoveCarrier(order.id, other)} style={{ padding: '3px 7px', borderRadius: 5, border: '1px solid rgba(139,135,255,0.3)', background: 'rgba(139,135,255,0.08)', color: '#8b87ff', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+                    {prev && <button onClick={e => { e.stopPropagation(); onMoveStatus(order.id, prev, carrier); }} style={{ padding: '3px 7px', borderRadius: 5, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 10, cursor: 'pointer' }}>← {prev.replace('En ', '')}</button>}
+                    {next && <button onClick={e => { e.stopPropagation(); onMoveStatus(order.id, next, carrier); }} style={{ padding: '3px 7px', borderRadius: 5, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.5)', fontSize: 10, cursor: 'pointer' }}>{next.replace('En ', '')} →</button>}
+                    <button onClick={e => { e.stopPropagation(); onMoveCarrier(order.id, other); }} style={{ padding: '3px 7px', borderRadius: 5, border: '1px solid rgba(139,135,255,0.3)', background: 'rgba(139,135,255,0.08)', color: '#8b87ff', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
                         <ArrowRight size={9} /> {otherLabel}
                     </button>
-                    <button onClick={handleSync} disabled={syncing} style={{ padding: '3px 7px', borderRadius: 5, border: `1px solid ${synced ? 'rgba(52,211,153,0.4)' : 'rgba(52,211,153,0.18)'}`, background: synced ? 'rgba(52,211,153,0.1)' : 'transparent', color: synced ? '#34d399' : 'rgba(255,255,255,0.35)', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }} title={`→ Betsy: ${LM_TO_CRM[order.lmStatus || 'Pendiente']}`}>
+                    <button onClick={e => { e.stopPropagation(); handleSync(); }} disabled={syncing} style={{ padding: '3px 7px', borderRadius: 5, border: `1px solid ${synced ? 'rgba(52,211,153,0.4)' : 'rgba(52,211,153,0.18)'}`, background: synced ? 'rgba(52,211,153,0.1)' : 'transparent', color: synced ? '#34d399' : 'rgba(255,255,255,0.35)', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }} title={`→ Betsy: ${LM_TO_CRM[order.lmStatus || 'Pendiente']}`}>
                         <RefreshCcw size={9} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} /> {synced ? '✓ Betsy' : '→ Betsy'}
                     </button>
                     {canArchive && (
@@ -471,7 +471,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
 }
 
 // ─── Kanban Board (single carrier) ───────────────────────────────────────────
-function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCOD, onToggleCollected, onArchive, onArchiveStatus, accentColor, getTenantName, getTenantColor, bulkMode, selectedIds, onToggleSelect, terminatingStatus }: {
+function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCOD, onToggleCollected, onArchive, onArchiveStatus, accentColor, getTenantName, getTenantColor, bulkMode, selectedIds, onToggleSelect, onSetSelected, terminatingStatus }: {
     title: string; icon: React.ReactNode; carrier: string; orders: Order[]; accentColor: string;
     onMove: (id: string, s: string, c: string) => void; onMoveCarrier: (id: string, c: string) => void;
     onToggleCOD: (id: string, v: boolean) => void; onToggleCollected: (id: string, v: boolean) => void;
@@ -479,6 +479,7 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
     onArchiveStatus: (ids: string[], carrier: string, status: string) => void;
     getTenantName: (id: string) => string; getTenantColor: (id: string) => string;
     bulkMode: boolean; selectedIds: Set<string>; onToggleSelect: (id: string) => void;
+    onSetSelected: (ids: string[], selected: boolean) => void;
     terminatingStatus: string | null;
 }) {
     const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -572,12 +573,31 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
                     const isEntregado = status === 'Entregado';
                     const isTerminating = terminatingStatus === `${carrier}:${status}`;
                     const filtered = query.trim().length > 0 && col.length !== total;
+                    const visibleIds = col.map(o => o.id);
+                    const selectedInColumn = visibleIds.reduce((count, id) => count + (selectedIds.has(id) ? 1 : 0), 0);
+                    const allVisibleSelected = visibleIds.length > 0 && selectedInColumn === visibleIds.length;
                     return (
                         <div key={status} style={{ minWidth: 270, flex: '0 0 270px', display: 'flex', flexDirection: 'column' }}>
                             {/* Column header */}
                             <div title="Arrastra para mover el tablero" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, padding: '7px 10px', borderRadius: 7, background: sc.glow, border: `1px solid ${sc.color}45`, flexShrink: 0, cursor: isPanning ? 'grabbing' : 'grab', boxShadow: `inset 0 0 0 1px ${sc.color}10` }}>
                                 <span style={{ color: sc.color, fontWeight: 600, fontSize: 11 }}>{status}</span>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                                    {bulkMode && (
+                                        <button
+                                            type="button"
+                                            onClick={e => {
+                                                e.stopPropagation();
+                                                onSetSelected(visibleIds, !allVisibleSelected);
+                                            }}
+                                            disabled={visibleIds.length === 0}
+                                            title={visibleIds.length === 0 ? 'No hay ordenes visibles' : allVisibleSelected ? `Quitar seleccion de ${visibleIds.length} orden(es)` : `Seleccionar ${visibleIds.length} orden(es) visibles`}
+                                            aria-pressed={allVisibleSelected}
+                                            style={{ height: 22, padding: '0 7px', borderRadius: 6, border: `1px solid ${selectedInColumn > 0 ? `${sc.color}75` : 'rgba(255,255,255,0.08)'}`, background: selectedInColumn > 0 ? `${sc.color}18` : 'rgba(255,255,255,0.03)', color: visibleIds.length > 0 ? sc.color : 'rgba(255,255,255,0.18)', fontSize: 9.5, fontWeight: 800, cursor: visibleIds.length > 0 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 4 }}
+                                        >
+                                            {allVisibleSelected ? <CheckSquare size={10} /> : <Square size={10} />}
+                                            {selectedInColumn > 0 ? `${selectedInColumn}/${visibleIds.length}` : 'Todos'}
+                                        </button>
+                                    )}
                                     {isEntregado && (
                                         <button
                                             type="button"
@@ -806,6 +826,16 @@ export default function CarriersPage() {
     const onCOD = useCallback((id: string, v: boolean) => { setOrders(p => p.map(o => o.id === id ? { ...o, isContraEntrega: v } : o)); patchOrder(id, { isContraEntrega: v }); }, []);
     const onColl = useCallback((id: string, v: boolean) => { setOrders(p => p.map(o => o.id === id ? { ...o, contraEntregaCollected: v } : o)); patchOrder(id, { contraEntregaCollected: v }); if (v) logEvent(id, 'ce_confirmed', {}); }, []);
     const onToggleSelect = useCallback((id: string) => { setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; }); }, []);
+    const onSetSelected = useCallback((ids: string[], selected: boolean) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            ids.forEach(id => {
+                if (selected) next.add(id);
+                else next.delete(id);
+            });
+            return next;
+        });
+    }, []);
     const onArchiveOrder = useCallback(async (id: string) => {
         const order = orders.find(o => o.id === id);
         setOrders(p => p.filter(o => o.id !== id));
@@ -1199,12 +1229,12 @@ export default function CarriersPage() {
                         onMove={onMove} onMoveCarrier={onMoveC} onToggleCOD={onCOD} onToggleCollected={onColl}
                         onArchive={onArchiveOrder} onArchiveStatus={onArchiveStatus}
                         accentColor="#8b87ff" getTenantName={getTenantName} getTenantColor={getTenantColor}
-                        bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} terminatingStatus={terminatingStatus} />
+                        bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onSetSelected={onSetSelected} terminatingStatus={terminatingStatus} />
                     <Board title="Correos de Costa Rica" icon={<Mail size={17} />} carrier="correos" orders={correos}
                         onMove={onMove} onMoveCarrier={onMoveC} onToggleCOD={onCOD} onToggleCollected={onColl}
                         onArchive={onArchiveOrder} onArchiveStatus={onArchiveStatus}
                         accentColor="#60a5fa" getTenantName={getTenantName} getTenantColor={getTenantColor}
-                        bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} terminatingStatus={terminatingStatus} />
+                        bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onSetSelected={onSetSelected} terminatingStatus={terminatingStatus} />
                 </div>
 
                 {/* RIGHT: Sin Asignar inbox */}

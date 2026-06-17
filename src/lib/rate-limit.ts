@@ -156,3 +156,9 @@ export const exportRateLimit = createRateLimit({
   maxRequests: 10,
   identifier: 'export',
 });
+
+export const workClockRateLimit = createRateLimit({
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 20,
+  identifier: 'work-clock',
+});

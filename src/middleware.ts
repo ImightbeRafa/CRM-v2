@@ -29,6 +29,8 @@ const PUBLIC_ROUTES = [
   '/public',
   '/api/ping',
   '/api/contact',
+  '/work-clock',
+  '/api/work-clock',
   '/api/tilopay/webhook',
   '/api/tilopay/webhook-repeat',
   '/api/tilopay/callback',

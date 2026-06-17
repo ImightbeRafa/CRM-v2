@@ -1465,6 +1465,29 @@ function GdBalanceTab() {
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
+function WorkforceAccountingNotice() {
+    return (
+        <div style={{ ...glassHi, padding: 24, maxWidth: 760 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(139,135,255,0.14)', color: '#8b87ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Calendar size={18} />
+                </div>
+                <div>
+                    <p style={{ color: '#F2F2F2', fontSize: 18, fontWeight: 900, margin: 0 }}>Personal y planilla se movio a Workforce</p>
+                    <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, margin: '4px 0 0' }}>La planilla ahora usa reloj de entrada/salida y pago por minutos reales trabajados.</p>
+                </div>
+            </div>
+            <p style={{ color: 'rgba(255,255,255,0.48)', fontSize: 13, lineHeight: 1.7, margin: '0 0 16px' }}>
+                Usa la nueva seccion para crear empleados, generar codigos, editar horarios de semana actual/proxima, corregir entradas abiertas y exportar pagos.
+                Los reportes de envios existentes se mantienen igual hasta definir una regla de distribucion de payroll por tenant.
+            </p>
+            <a href="/logistics/workforce" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(139,135,255,0.35)', background: 'rgba(139,135,255,0.1)', color: '#8b87ff', textDecoration: 'none', fontWeight: 900, fontSize: 13 }}>
+                Abrir Workforce
+            </a>
+        </div>
+    );
+}
+
 export default function AccountingPage() {
     const [tab, setTab] = useState<Tab>('resumen');
     const [rates, setRates] = useState<Rates>({ mensajeria_rate: 2600, correos_rate: 2500, handling_rate: 600, salary_daily_rate: 10000 });
@@ -1479,7 +1502,7 @@ export default function AccountingPage() {
         { id: 'resumen', label: 'Resumen', icon: <TrendingUp size={13} /> },
         { id: 'correos-cr', label: 'Correos de Costa Rica', icon: <Mail size={13} /> },
         { id: 'contra-entregas', label: 'Contra Entregas', icon: <DollarSign size={13} /> },
-        { id: 'dias-trabajados', label: 'Días Trabajados', icon: <Calendar size={13} /> },
+        { id: 'dias-trabajados', label: 'Personal', icon: <Calendar size={13} /> },
         { id: 'gd-balance', label: 'Saldo Green Delivery', icon: <Wallet size={13} /> },
     ];
 
@@ -1504,7 +1527,7 @@ export default function AccountingPage() {
             {tab === 'resumen' && <ResumenTab rates={rates} />}
             {tab === 'correos-cr' && <CorreosCRTab />}
             {tab === 'contra-entregas' && <ContraEntregasTab />}
-            {tab === 'dias-trabajados' && <DiasTrabajadosScheduleTab dailyRate={rates.salary_daily_rate} />}
+            {tab === 'dias-trabajados' && <WorkforceAccountingNotice />}
             {tab === 'gd-balance' && <GdBalanceTab />}
 
             <style>{`.lm-table-row:hover{background:rgba(255,255,255,0.03)!important} .lm-btn-accent:hover{background:rgba(139,135,255,0.12)!important;box-shadow:0 0 16px rgba(139,135,255,0.2)}`}</style>

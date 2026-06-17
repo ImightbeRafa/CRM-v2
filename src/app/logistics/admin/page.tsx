@@ -95,7 +95,7 @@ interface ChangelogEntry {
 // Constants
 // ────────────────────────────────────────────
 
-type Tab = 'overview' | 'revenue' | 'usage' | 'costs' | 'profitability' | 'feedback' | 'changelog';
+type Tab = 'overview' | 'revenue' | 'usage' | 'costs' | 'profitability' | 'workforce' | 'feedback' | 'changelog';
 
 const TABS: { key: Tab; label: string; icon: typeof Building2 }[] = [
   { key: 'overview', label: 'Resumen', icon: Building2 },
@@ -103,6 +103,7 @@ const TABS: { key: Tab; label: string; icon: typeof Building2 }[] = [
   { key: 'usage', label: 'Uso', icon: Bot },
   { key: 'costs', label: 'Costos', icon: DollarSign },
   { key: 'profitability', label: 'Rentabilidad', icon: TrendingUp },
+  { key: 'workforce', label: 'Workforce', icon: Users },
   { key: 'feedback', label: 'Feedback', icon: MessageSquare },
   { key: 'changelog', label: 'Changelog', icon: Megaphone },
 ];
@@ -771,6 +772,28 @@ function Loading() {
 // Main Page
 // ────────────────────────────────────────────
 
+function WorkforceTab() {
+  return (
+    <div style={{ ...glass, padding: '24px 26px', maxWidth: 720 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+        <div style={{ width: 42, height: 42, borderRadius: 10, background: 'rgba(139,135,255,0.14)', color: '#a78bfa', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Users size={20} />
+        </div>
+        <div>
+          <p style={{ color: '#F2F2F2', fontSize: 18, fontWeight: 800, margin: 0 }}>Workforce management</p>
+          <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, margin: '4px 0 0' }}>Empleados, horarios, reloj, cobertura y payroll.</p>
+        </div>
+      </div>
+      <p style={{ color: 'rgba(255,255,255,0.52)', fontSize: 13, lineHeight: 1.7, margin: '0 0 18px' }}>
+        La administracion de personal vive en su propia seccion protegida para mantener separados los controles de plataforma y el payroll operativo.
+      </p>
+      <a href="/logistics/workforce" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 8, border: '1px solid rgba(139,135,255,0.4)', background: 'rgba(139,135,255,0.1)', color: '#a78bfa', textDecoration: 'none', fontWeight: 700, fontSize: 13 }}>
+        Abrir Workforce
+      </a>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('overview');
   const [loading, setLoading] = useState(false);
@@ -849,6 +872,7 @@ export default function AdminPage() {
       usage: fetchUsage,
       costs: () => fetchCosts(),
       profitability: fetchProfitability,
+      workforce: async () => {},
       feedback: fetchFeedback,
       changelog: fetchChangelog,
     };
@@ -901,6 +925,7 @@ export default function AdminPage() {
       usage: fetchUsage,
       costs: () => fetchCosts(),
       profitability: fetchProfitability,
+      workforce: async () => {},
       feedback: fetchFeedback,
       changelog: fetchChangelog,
     };
@@ -947,6 +972,7 @@ export default function AdminPage() {
       {tab === 'usage' && <UsageTab data={usage} />}
       {tab === 'costs' && <CostsTab data={costs} period={costPeriod} onPeriodChange={handleCostPeriodChange} onAdd={handleAddCost} onDelete={handleDeleteCost} refreshing={loading} />}
       {tab === 'profitability' && <ProfitabilityTab data={profitability} />}
+      {tab === 'workforce' && <WorkforceTab />}
       {tab === 'feedback' && <FeedbackTab tickets={tickets} onUpdateTicket={handleUpdateTicket} />}
       {tab === 'changelog' && <ChangelogTab entries={changelog} onAdd={handleAddChangelog} />}
     </div>

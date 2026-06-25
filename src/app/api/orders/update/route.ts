@@ -5,6 +5,7 @@ import { createSuccessResponse, createErrorResponse, handleApiError, validateReq
 import { logCreate, logUpdate } from '@/lib/auditLogger'
 import { getToken } from 'next-auth/jwt'
 import { withTenantContext } from '@/lib/tenantContext'
+import { ORDER_COMMENT_FIELD_ALIASES, hasOrderCommentInput, resolveOrderComment } from '@/lib/order-comments'
 
 export const runtime = 'nodejs'
 
@@ -144,7 +145,18 @@ export async function POST(request: NextRequest) {
     if (cleanData.color !== undefined) updateData.color = cleanData.color
     if (cleanData.packaging !== undefined) updateData.packaging = cleanData.packaging
     if (cleanData.customization !== undefined) updateData.customization = cleanData.customization
-    if (cleanData.comments !== undefined) updateData.comments = cleanData.comments
+    const incomingCustomFields: Record<string, any> = {}
+    if (cleanData.customFields && typeof cleanData.customFields === 'object' && !Array.isArray(cleanData.customFields)) {
+      for (const [key, value] of Object.entries(cleanData.customFields as Record<string, any>)) {
+        incomingCustomFields[key] = value
+      }
+    }
+
+    if (cleanData.comments !== undefined) {
+      updateData.comments = cleanData.comments
+    } else if (hasOrderCommentInput(cleanData, incomingCustomFields)) {
+      updateData.comments = resolveOrderComment(cleanData, incomingCustomFields) || ''
+    }
     if (cleanData.total !== undefined) updateData.total = Number(cleanData.total)
     if (cleanData.iva !== undefined) updateData.iva = cleanData.iva != null ? Number(cleanData.iva) : null
     if (cleanData.shippingCost !== undefined) updateData.shippingCost = cleanData.shippingCost != null ? Number(cleanData.shippingCost) : null
@@ -163,7 +175,8 @@ export async function POST(request: NextRequest) {
 
     // Merge unknown keys into customFields
     const knownKeys = new Set([
-      'orderId','orderType','status','delivery','timestamp','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails','customFields','contraEntrega','cePaymentConfirmed'
+      'orderId','orderType','status','delivery','timestamp','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails','customFields','contraEntrega','cePaymentConfirmed',
+      ...ORDER_COMMENT_FIELD_ALIASES
     ])
     const additions: Record<string, any> = {}
     for (const [k,v] of Object.entries(cleanData)) {
@@ -175,8 +188,8 @@ export async function POST(request: NextRequest) {
       : {}
     const mergedCustomFields = { ...currentCustom, ...additions }
 
-    if (cleanData.customFields && typeof cleanData.customFields === 'object' && !Array.isArray(cleanData.customFields)) {
-      for (const [k, v] of Object.entries(cleanData.customFields as Record<string, any>)) {
+    if (Object.keys(incomingCustomFields).length > 0) {
+      for (const [k, v] of Object.entries(incomingCustomFields)) {
         mergedCustomFields[k] = v
       }
     }

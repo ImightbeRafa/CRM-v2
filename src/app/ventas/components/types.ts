@@ -9,6 +9,7 @@ export interface CustomerInfo {
   address: string;
   business: string;
   funnel: string;
+  comments: string;
   fechaEsperada: string;
   fechaRetiro: string;
   diaVenta: string;

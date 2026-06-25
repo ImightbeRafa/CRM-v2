@@ -647,9 +647,9 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
       <div className="mt-4 space-y-2">
         <label className="block font-medium">Comentarios del vendedor</label>
         <textarea
-          name="comentarios"
+          name="comments"
           className="w-full p-2 border rounded"
-          value={(customerInfo as any).comentarios || ''}
+          value={customerInfo.comments ?? (customerInfo as any).comentarios ?? ''}
           onChange={handleInputChange}
           placeholder="Anota detalles importantes del pedido (colores, personalización, observaciones, etc.)"
           rows={3}

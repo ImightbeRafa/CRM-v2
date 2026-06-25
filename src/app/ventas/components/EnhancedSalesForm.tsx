@@ -36,6 +36,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       address: '',
       business: '',
       funnel: '',
+      comments: '',
       fechaEsperada: '',
       fechaRetiro: '',
       diaVenta: '',
@@ -179,9 +180,14 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       try {
         const parsed = JSON.parse(savedData);
         if (parsed.customerInfo || parsed.products?.length > 0) {
+          const savedCustomerInfo = {
+            ...parsed.customerInfo,
+            comments: parsed.customerInfo?.comments ?? parsed.customerInfo?.comentarios ?? ''
+          };
+
           setOrderInfo(prev => ({
             ...prev,
-            customerInfo: { ...prev.customerInfo, ...parsed.customerInfo },
+            customerInfo: { ...prev.customerInfo, ...savedCustomerInfo },
             products: parsed.products || []
           }));
         }
@@ -306,6 +312,9 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     try {
       // --- Detect comment from business info fields ---
       const commentKeywords = ['comentario', 'comentarios', 'comment', 'comments', 'observacion', 'observaciones', 'nota', 'notas']
+      const directComment = String(
+        orderInfo.customerInfo.comments ?? (orderInfo.customerInfo as any).comentarios ?? ''
+      ).trim()
       let customComment = ''
       for (const f of businessInfoFields) {
         const nameL = (f?.name || '').toLowerCase()
@@ -318,6 +327,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
           }
         }
       }
+      const orderComment = directComment || customComment
 
       // --- Gather BusinessInfo custom fields from customerInfo ---
       const customFieldsToSend: Record<string, any> = {}
@@ -381,7 +391,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         color: orderInfo.products.map(p => p.color).join(', '),
         packaging: orderInfo.products.map(p => p.packaging).join(', '),
         customization: orderInfo.products.length > 0 ? orderInfo.products[0].personalizado || '' : '',
-        comments: customComment || '',
+        comments: orderComment,
         // Store detailed product information including custom field values
         productDetails: JSON.stringify(orderInfo.products.map((p: any) => {
           const details: any = {
@@ -515,6 +525,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         address: '',
         business: '',
         funnel: '',
+        comments: '',
         fechaEsperada: '',
         fechaRetiro: '',
         diaVenta: isClient ? new Date().toISOString().split('T')[0] : '',

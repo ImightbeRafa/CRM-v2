@@ -6,6 +6,7 @@ import { withTenantContext } from '@/lib/tenantContext'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { logCreate } from '@/lib/auditLogger'
 import { checkOrderLimit } from '@/lib/plan-enforcement'
+import { ORDER_COMMENT_FIELD_ALIASES, resolveOrderComment } from '@/lib/order-comments'
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic'
@@ -265,7 +266,8 @@ export async function POST(request: NextRequest) {
 
     // Separate known order fields from dynamic custom fields
     const knownKeys = new Set([
-      'orderId','orderType','status','delivery','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails','timestamp','customFields','contraEntrega','cePaymentConfirmed'
+      'orderId','orderType','status','delivery','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails','timestamp','customFields','contraEntrega','cePaymentConfirmed',
+      ...ORDER_COMMENT_FIELD_ALIASES
     ])
     const customFields: Record<string, any> = {}
     for (const [k,v] of Object.entries(body)) {
@@ -286,23 +288,8 @@ export async function POST(request: NextRequest) {
        console.log('[Order.create] Creating order:', body.orderId)
      }
 
-     // Map comments from direct order comments first, then dynamic custom fields.
-     const commentKeywords = ['comentario','comentarios','comment','comments','observacion','observaciones','nota','notas','note','notes','descripcion','description']
-     let commentValue: string | undefined = body.comments !== undefined && body.comments !== null
-       ? String(body.comments).trim()
-       : undefined
-     
-     if (!commentValue) {
-       for (const k of Object.keys(customFields)) {
-         if (commentKeywords.some(w => k.toLowerCase().includes(w))) {
-           const v = (customFields as any)[k]
-           if (v !== undefined && v !== null && String(v).trim() !== '') { 
-             commentValue = String(v).trim()
-             break 
-           }
-         }
-       }
-     }
+     // Map seller/order comments into the canonical Order.comments column.
+     const commentValue = resolveOrderComment(body, customFields)
 
     // Check plan limits (soft enforcement with clear messaging)
     const limitCheck = await checkOrderLimit(tenantId)

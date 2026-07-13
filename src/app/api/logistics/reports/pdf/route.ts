@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { calculateTilopayFees, isTilopayOrder } from '@/lib/tilopay-fees';
+import { getLogisticsRates } from '@/lib/logistics-rates';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,15 +102,16 @@ export async function GET(req: NextRequest) {
         const ws = week.week_start.slice(0, 10);
         const we = week.week_end.slice(0, 10);
 
-        const rateRows = await prisma.$queryRaw<{ key: string; value: string }[]>`
-            SELECT key, value FROM lm_carrier_configs
-            WHERE key IN ('mensajeria_rate','correos_rate','handling_rate','salary_daily_rate','gd_recoleccion_cost')
-        `;
-        const cfg: Record<string, number> = {};
-        for (const r of rateRows) cfg[r.key] = Number(r.value) || 0;
-        const handlingRate = cfg['handling_rate'] ?? 600;
-        const salaryRate = cfg['salary_daily_rate'] ?? 10000;
-        const gdRecoleccionCost = cfg['gd_recoleccion_cost'] ?? 2700;
+        const cfg = await getLogisticsRates([
+            'mensajeria_rate',
+            'correos_rate',
+            'handling_rate',
+            'salary_daily_rate',
+            'gd_recoleccion_cost',
+        ]);
+        const mensajeriaRate = cfg.mensajeria_rate;
+        const handlingRate = cfg.handling_rate;
+        const salaryRate = cfg.salary_daily_rate;
 
         const tenantRows = await prisma.$queryRawUnsafe<{ id: string; name: string }[]>(`
             SELECT id, name FROM "Tenant" WHERE id = ANY($1::text[])
@@ -154,7 +156,7 @@ export async function GET(req: NextRequest) {
             correosOrders: any[]; mensajeriaOrders: any[];
             correosShipping: number; correosHandling: number;
             correosTax: number;
-            mensajeriaRecoleccion: number; mensajeriaHandling: number;
+            mensajeriaRecoleccion: number; mensajeriaRate: number; mensajeriaHandling: number;
             tilopayOrders: number; tilopayCommission: number; tilopayTransactionCost: number;
             tilopayServiceTax: number; tilopayFees: number;
             subtotal: number;
@@ -177,7 +179,7 @@ export async function GET(req: NextRequest) {
             const cShip = cOrders.reduce((s: number, o: any) => s + (o.correos_shipping_cost != null ? Number(o.correos_shipping_cost) : 0), 0);
             const cTax = cOrders.reduce((s: number, o: any) => s + getCorreosTax(o.correos_shipping_cost), 0);
             const cHandl = cOrders.length * handlingRate;
-            const mRecol = mOrders.length > 0 ? gdRecoleccionCost : 0;
+            const mRecol = mOrders.length * mensajeriaRate;
             const mHandl = mOrders.length * handlingRate;
             const tilopayFeeRows = tOrders.map((o: any) => calculateTilopayFees(o.total, isTilopayOrder(o)));
             const tTilopayOrders = tilopayFeeRows.filter((fee) => fee.isTilopay).length;
@@ -198,7 +200,7 @@ export async function GET(req: NextRequest) {
                 tenantId, tenantName: tenantNameMap[tenantId] || tenantId,
                 correosOrders: cOrders, mensajeriaOrders: mOrders,
                 correosShipping: cShip, correosTax: cTax, correosHandling: cHandl,
-                mensajeriaRecoleccion: mRecol, mensajeriaHandling: mHandl,
+                mensajeriaRecoleccion: mRecol, mensajeriaRate, mensajeriaHandling: mHandl,
                 tilopayOrders: tTilopayOrders, tilopayCommission: tTilopayCommission,
                 tilopayTransactionCost: tTilopayTransactionCost, tilopayServiceTax: tTilopayServiceTax,
                 tilopayFees: tTilopayTotal,
@@ -269,7 +271,7 @@ function buildReportHTML(data: {
                 <td>${o.carrier === 'correos' ? 'Correos' : 'GD'}</td>
                 <td>${escapeHtml(o.province)}</td>
                 <td style="text-align:right">${fmt(Number(o.total))}</td>
-                <td style="text-align:right">${o.carrier === 'correos' && o.correos_shipping_cost != null ? fmt(Number(o.correos_shipping_cost)) : '—'}</td>
+                <td style="text-align:right">${o.carrier === 'correos' && o.correos_shipping_cost != null ? fmt(Number(o.correos_shipping_cost)) : o.carrier === 'mensajeria' ? fmt(t.mensajeriaRate) : '—'}</td>
                 <td style="text-align:right">${o.carrier === 'correos' && o.correos_shipping_cost != null ? fmt(getCorreosTax(o.correos_shipping_cost)) : '—'}</td>
                 <td style="text-align:right">${fmt(data.handlingRate)}</td>
                 <td style="text-align:right">${tilopayFee.isTilopay ? fmt(tilopayFee.total) : '—'}</td>
@@ -284,7 +286,7 @@ function buildReportHTML(data: {
                 <div class="summary-row">
                     <span>Paquetes: <strong>${t.correosOrders.length + t.mensajeriaOrders.length}</strong></span>
                     <span>Correos: <strong>${t.correosOrders.length}</strong> (envío: ${fmt(t.correosShipping)}, impuestos: ${fmt(t.correosTax)}, manejo: ${fmt(t.correosHandling)})</span>
-                    <span>GD: <strong>${t.mensajeriaOrders.length}</strong> (recol: ${fmt(t.mensajeriaRecoleccion)}, manejo: ${fmt(t.mensajeriaHandling)})</span>
+                    <span>GD: <strong>${t.mensajeriaOrders.length}</strong> (envio: ${fmt(t.mensajeriaRecoleccion)}, manejo: ${fmt(t.mensajeriaHandling)})</span>
                     <span>Tilopay: <strong>${t.tilopayOrders}</strong> (comision: ${fmt(t.tilopayCommission)}, transaccion: ${fmt(t.tilopayTransactionCost)}, IVA: ${fmt(t.tilopayServiceTax)})</span>
                     <span>Subtotal: <strong>${fmt(t.subtotal)}</strong></span>
                 </div>

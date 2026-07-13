@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { calculateTilopayFees, isTilopayOrder, TILOPAY_FEE_RATES } from '@/lib/tilopay-fees';
+import { getLogisticsRates } from '@/lib/logistics-rates';
 
 const CR_TZ = 'America/Costa_Rica';
 const CORREOS_TAX_RATE = 0.13;
@@ -110,16 +111,17 @@ export async function GET(req: NextRequest) {
         }
 
         // 1. Fetch rates config
-        const rateRows = await prisma.$queryRaw<{ key: string; value: string }[]>`
-            SELECT key, value FROM lm_carrier_configs
-            WHERE key IN ('mensajeria_rate','correos_rate','handling_rate','salary_daily_rate','gd_recoleccion_cost')
-        `;
-        const cfg: Record<string, number> = {};
-        for (const r of rateRows) cfg[r.key] = Number(r.value) || 0;
+        const cfg = await getLogisticsRates([
+            'mensajeria_rate',
+            'correos_rate',
+            'handling_rate',
+            'salary_daily_rate',
+            'gd_recoleccion_cost',
+        ]);
 
-        const handlingRate = cfg['handling_rate'] ?? 600;
-        const salaryRate = cfg['salary_daily_rate'] ?? 10000;
-        const gdRecoleccionCost = cfg['gd_recoleccion_cost'] ?? 2700;
+        const mensajeriaRate = cfg.mensajeria_rate;
+        const handlingRate = cfg.handling_rate;
+        const salaryRate = cfg.salary_daily_rate;
 
         // 2. Build date filters and billing scope
         const dateCol = 'COALESCE(lm.completed_at, o.timestamp)';
@@ -189,12 +191,13 @@ export async function GET(req: NextRequest) {
         const ceCollected = ceOrders.filter(o => o.contraentrega_collected);
 
         // 5. Per-day breakdown for mensajeria using CR timezone
-        const dayMap: Record<string, { date: string; packages: number; total: number; ce: number }> = {};
+        const dayMap: Record<string, { date: string; packages: number; total: number; ce: number; shippingCost: number }> = {};
         for (const o of mensajeriaOrders) {
             const d = toCRDate(o.report_date ?? o.timestamp);
-            if (!dayMap[d]) dayMap[d] = { date: d, packages: 0, total: 0, ce: 0 };
+            if (!dayMap[d]) dayMap[d] = { date: d, packages: 0, total: 0, ce: 0, shippingCost: 0 };
             dayMap[d].packages++;
             dayMap[d].total += Number(o.total);
+            dayMap[d].shippingCost += mensajeriaRate;
             if (o.is_contra_entrega) dayMap[d].ce += Number(o.total);
         }
         const dailyBreakdown = Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date));
@@ -222,7 +225,7 @@ export async function GET(req: NextRequest) {
         const correosPendingCost = correoOrders.filter(o => o.correos_shipping_cost == null).length;
         const correosHandling = correoOrders.length * handlingRate;
 
-        const mensajeriaRecoleccion = mensajeriaOrders.length > 0 ? gdRecoleccionCost : 0;
+        const mensajeriaShipping = mensajeriaOrders.length * mensajeriaRate;
         const mensajeriaHandling = mensajeriaOrders.length * handlingRate;
         const mensajeriaCeAmount = ceOrders.reduce((s, o) => s + Number(o.total), 0);
         const orderTilopayFees = new Map<string, ReturnType<typeof calculateTilopayFees>>(
@@ -235,7 +238,7 @@ export async function GET(req: NextRequest) {
         const tilopayServiceTax = tilopayFeeRows.reduce((s, fee) => s + fee.serviceTax, 0);
         const tilopayFees = tilopayFeeRows.reduce((s, fee) => s + fee.total, 0);
 
-        const totalShipping = correosShipping + mensajeriaRecoleccion;
+        const totalShipping = correosShipping + mensajeriaShipping;
         const totalHandling = correosHandling + mensajeriaHandling;
         const subtotalLogistics = totalShipping + totalHandling + correosTax + tilopayFees;
 
@@ -265,6 +268,7 @@ export async function GET(req: NextRequest) {
                 contraentregaCollected: o.contraentrega_collected ?? false,
                 correosShippingCost: o.correos_shipping_cost != null ? Number(o.correos_shipping_cost) : null,
                 correosTax: getCorreosTax(o.correos_shipping_cost),
+                mensajeriaShippingCost: o.carrier === 'mensajeria' ? mensajeriaRate : null,
                 handlingCost: handlingRate,
                 isTilopay: tilopayFee.isTilopay,
                 tilopayCommission: tilopayFee.commission,
@@ -296,7 +300,9 @@ export async function GET(req: NextRequest) {
             },
             mensajeria: {
                 packages: mensajeriaOrders.length,
-                recoleccionCost: mensajeriaRecoleccion,
+                shippingRate: mensajeriaRate,
+                shippingCost: mensajeriaShipping,
+                recoleccionCost: mensajeriaShipping,
                 handlingRate,
                 handlingCost: mensajeriaHandling,
                 dailyBreakdown,
@@ -327,7 +333,8 @@ export async function GET(req: NextRequest) {
                 correosShipping,
                 correosTax,
                 correosHandling,
-                mensajeriaRecoleccion,
+                mensajeriaRecoleccion: mensajeriaShipping,
+                mensajeriaShipping,
                 mensajeriaHandling,
                 tilopayFees,
                 totalShipping,

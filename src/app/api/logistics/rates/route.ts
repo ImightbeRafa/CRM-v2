@@ -1,40 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
+import { getLogisticsRates, LOGISTICS_RATE_DEFAULTS, LOGISTICS_RATE_KEYS } from '@/lib/logistics-rates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-
-// Default rates used for seeding
-const DEFAULTS: Record<string, number> = {
-    mensajeria_rate: 2600,
-    correos_rate: 2500,
-    handling_rate: 600,
-};
-
-// GET /api/logistics/rates — returns the three flat rates
+// GET /api/logistics/rates
 export async function GET(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
     if (guard) return guard;
 
     try {
-        const rows = await prisma.$queryRaw<{ key: string; value: string }[]>`
-            SELECT key, value FROM lm_carrier_configs
-            WHERE key IN ('mensajeria_rate', 'correos_rate', 'handling_rate')
-        `;
-
-        const rates: Record<string, number> = { ...DEFAULTS };
-        for (const row of rows) { rates[row.key] = Number(row.value); }
+        const rates = await getLogisticsRates();
         return NextResponse.json({ rates }, {
             headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' },
         });
     } catch {
-        return NextResponse.json({ rates: DEFAULTS });
+        return NextResponse.json({ rates: LOGISTICS_RATE_DEFAULTS });
     }
 }
 
-// PATCH /api/logistics/rates — upsert a rate
+// PATCH /api/logistics/rates
 export async function PATCH(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
     if (guard) return guard;
@@ -42,12 +29,12 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json();
     const { key, value } = body;
 
-    const allowed = ['mensajeria_rate', 'correos_rate', 'handling_rate'];
-    if (!key || !allowed.includes(key)) {
+    if (!key || !LOGISTICS_RATE_KEYS.includes(key)) {
         return NextResponse.json({ error: 'Invalid key' }, { status: 400 });
     }
+
     const num = Number(value);
-    if (isNaN(num) || num < 0) {
+    if (!Number.isFinite(num) || num < 0) {
         return NextResponse.json({ error: 'value must be a positive number' }, { status: 400 });
     }
 

@@ -14,6 +14,7 @@ import {
     FileText,
     Shield,
     Users,
+    Truck,
 } from 'lucide-react';
 
 export const metadata: Metadata = {
@@ -30,6 +31,7 @@ export default async function LogisticsLayout({ children }: { children: React.Re
     const navItems = [
         { href: '/logistics', label: 'Dashboard', icon: LayoutDashboard },
         { href: '/logistics/carriers', label: 'Tablero de Envíos', icon: Layers },
+        { href: '/logistics/mensajeria-privada', label: 'Mensajería Privada', icon: Truck },
         { href: '/logistics/retiros', label: 'Retiros', icon: PackageCheck },
         { href: '/logistics/config', label: 'Costos y Tarifas', icon: Settings },
         { href: '/logistics/accounting', label: 'Contabilidad', icon: BookOpen },

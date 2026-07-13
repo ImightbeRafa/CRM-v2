@@ -1490,7 +1490,7 @@ function WorkforceAccountingNotice() {
 
 export default function AccountingPage() {
     const [tab, setTab] = useState<Tab>('resumen');
-    const [rates, setRates] = useState<Rates>({ mensajeria_rate: 2600, correos_rate: 2500, handling_rate: 600, salary_daily_rate: 10000 });
+    const [rates, setRates] = useState<Rates>({ mensajeria_rate: 2800, correos_rate: 2500, handling_rate: 600, salary_daily_rate: 10000 });
 
     useEffect(() => {
         fetch('/api/logistics/rates').then(r => r.json()).then(d => {

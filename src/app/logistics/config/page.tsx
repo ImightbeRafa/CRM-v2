@@ -85,7 +85,7 @@ function TenantRow({ tenant, onSave }: { tenant: TenantConfig; onSave: (id: stri
 
 export default function ConfigPage() {
     const { tenants } = useTenantConfig();
-    const [rates, setRates] = useState<Rates>({ mensajeria_rate: 2800, correos_rate: 2500, handling_rate: 600, salary_daily_rate: 10000, gd_recoleccion_cost: 2800 });
+    const [rates, setRates] = useState<Rates>({ mensajeria_rate: 2500, correos_rate: 2500, handling_rate: 600, salary_daily_rate: 10000, gd_recoleccion_cost: 2500 });
     const [ratesLoaded, setRatesLoaded] = useState(false);
     const [tab, setTab] = useState<'rates' | 'tenants' | 'correos' | 'feedback' | 'changelog'>('rates');
     const [correosLoaded, setCorreosLoaded] = useState(false);

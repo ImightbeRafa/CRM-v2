@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Package, TrendingUp, Truck, Mail, FileDown, CheckCircle, Calendar, DollarSign, PlusCircle, Trash2, AlertCircle, Wallet, Save, RefreshCw } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
+import PaymentMethodWizard, { type PaymentConfirmPayload } from '@/app/logistics/components/PaymentMethodWizard';
 
 interface Rates { mensajeria_rate: number; correos_rate: number; handling_rate: number; salary_daily_rate: number; }
 
@@ -433,6 +434,7 @@ function ContraEntregasTab() {
     const [loading, setLoading] = useState(true);
     const [confirming, setConfirming] = useState<string | null>(null);
     const [filter, setFilter] = useState<'all' | 'pending' | 'collected'>('all');
+    const [ceWizardOrder, setCeWizardOrder] = useState<any | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -448,16 +450,29 @@ function ContraEntregasTab() {
 
     useEffect(() => { load(); }, [load]);
 
-    async function confirmPayment(order: any) {
-        setConfirming(order.orderId);
+    async function submitCePayment(payload: PaymentConfirmPayload) {
+        if (!ceWizardOrder) return;
+        setConfirming(ceWizardOrder.orderId);
         try {
-            await fetch('/api/logistics/contra-entrega', {
+            const res = await fetch('/api/logistics/contra-entrega', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ orderId: order.orderId, tenantId: order.tenantId, amount: order.total }),
+                body: JSON.stringify({
+                    orderId: ceWizardOrder.orderId,
+                    amount: ceWizardOrder.total,
+                    paymentMethod: payload.method,
+                    confirmedByEmployeeId: payload.employeeId,
+                }),
             });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'No se pudo confirmar el pago');
+            setCeWizardOrder(null);
             await load();
-        } finally { setConfirming(null); }
+        } catch (e: any) {
+            alert(e.message || 'No se pudo confirmar el pago');
+        } finally {
+            setConfirming(null);
+        }
     }
 
     return (
@@ -500,6 +515,7 @@ function ContraEntregasTab() {
                                 <tr><td colSpan={7} style={{ textAlign: 'center', padding: 48, color: 'rgba(255,255,255,0.2)' }}>No hay contra entregas</td></tr>
                             ) : orders.map((o, idx) => {
                                 const tc = getTenantColor(o.tenantId);
+                                const method = o.paymentMethod === 'sinpe' ? 'Sinpe' : o.paymentMethod === 'efectivo' ? 'Efectivo' : null;
                                 return (
                                     <tr key={o.orderId} style={{ borderBottom: idx < orders.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', background: o.collected ? 'transparent' : 'rgba(251,191,36,0.03)' }} className="lm-table-row">
                                         <td style={{ padding: '10px 14px' }}><span style={{ padding: '2px 8px', borderRadius: 20, background: `${tc}20`, color: tc, fontSize: 10.5, fontWeight: 700 }}>{getTenantName(o.tenantId)}</span></td>
@@ -511,12 +527,12 @@ function ContraEntregasTab() {
                                         <td style={{ padding: '10px 14px', color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>{new Date(o.timestamp).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}</td>
                                         <td style={{ padding: '10px 14px' }}>
                                             {o.collected
-                                                ? <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#34d399', fontSize: 11, fontWeight: 700 }}><CheckCircle size={12} /> Cobrado</span>
+                                                ? <span title={o.confirmedBy || undefined} style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#34d399', fontSize: 11, fontWeight: 700 }}><CheckCircle size={12} /> Cobrado{method ? ` · ${method}` : ''}</span>
                                                 : <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#fbbf24', fontSize: 11 }}><AlertCircle size={12} /> Pendiente</span>}
                                         </td>
                                         <td style={{ padding: '10px 14px' }}>
                                             {!o.collected && (
-                                                <button onClick={() => confirmPayment(o)} disabled={confirming === o.orderId}
+                                                <button onClick={() => setCeWizardOrder(o)} disabled={confirming === o.orderId}
                                                     style={{ padding: '5px 13px', borderRadius: 7, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.08)', color: '#34d399', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                                                     {confirming === o.orderId ? '...' : '✓ Confirmar Pago'}
                                                 </button>
@@ -529,6 +545,19 @@ function ContraEntregasTab() {
                     </table>
                 </div>
             )}
+
+            <PaymentMethodWizard
+                open={!!ceWizardOrder}
+                title="Confirmar cobro contra entrega"
+                subtitle={ceWizardOrder ? `#${ceWizardOrder.orderRef} · ${ceWizardOrder.customerName}` : undefined}
+                amountLabel="Monto del pedido"
+                amount={ceWizardOrder?.total || 0}
+                employeeLabel="Quién confirma el cobro"
+                confirmLabel="Confirmar cobro"
+                busy={!!confirming}
+                onConfirm={submitCePayment}
+                onCancel={() => { if (!confirming) setCeWizardOrder(null); }}
+            />
         </div>
     );
 }
@@ -1490,7 +1519,7 @@ function WorkforceAccountingNotice() {
 
 export default function AccountingPage() {
     const [tab, setTab] = useState<Tab>('resumen');
-    const [rates, setRates] = useState<Rates>({ mensajeria_rate: 2800, correos_rate: 2500, handling_rate: 600, salary_daily_rate: 10000 });
+    const [rates, setRates] = useState<Rates>({ mensajeria_rate: 2500, correos_rate: 2500, handling_rate: 600, salary_daily_rate: 10000 });
 
     useEffect(() => {
         fetch('/api/logistics/rates').then(r => r.json()).then(d => {

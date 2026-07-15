@@ -253,6 +253,30 @@ function createTenantPrismaUncached(tenantId: string) {
             try {
               const mutatingOps = new Set(['create', 'createMany', 'update', 'updateMany', 'delete', 'deleteMany', 'upsert']);
               if (mutatingOps.has(operation)) {
+                // Models covered by explicit logBulkDelete / API audit helpers —
+                // skip middleware stubs to avoid duplicate empty/partial rows.
+                const modelLower = (modelName || '').toLowerCase();
+                const explicitAuditModels = new Set([
+                  'order',
+                  'productfield',
+                  'productoption',
+                  'productoptionset',
+                  'shippingmethod',
+                  'seller',
+                ]);
+                if (explicitAuditModels.has(modelLower)) {
+                  // Still allow create/update middleware content for config models that
+                  // may lack explicit create logs — but skip delete/deleteMany which
+                  // bulkOperations already logs with snapshots.
+                  if (
+                    operation === 'delete' ||
+                    operation === 'deleteMany' ||
+                    modelLower === 'order'
+                  ) {
+                    return result;
+                  }
+                }
+
                 let entityId = 'unknown';
                 if (result && typeof result === 'object' && 'id' in result) {
                   entityId = String((result as { id: unknown }).id);
@@ -274,6 +298,12 @@ function createTenantPrismaUncached(tenantId: string) {
                   upsert: 'UPDATE',
                 } as const;
 
+                const resultSnapshot =
+                  result && typeof result === 'object' && !Array.isArray(result)
+                    ? result
+                    : null;
+                const dataSnapshot = modifiedArgs?.data || null;
+
                 // Do not await automatic audit writes here. Interactive transactions
                 // keep a DB connection open; awaiting a second audit query can deadlock
                 // small pools and expire the transaction before the next business query.
@@ -286,10 +316,13 @@ function createTenantPrismaUncached(tenantId: string) {
                   tenantId: contextTenantId,
                   userRole: (context?.role as any) || 'SYSTEM',
                   userName: context?.userName || 'System',
+                  // Persist content so Auditoría can show what changed/created
+                  newValues: resultSnapshot || dataSnapshot || undefined,
                   details: {
                     operation,
                     model: modelName,
-                    ...(modifiedArgs?.data && { data: modifiedArgs.data })
+                    ...(dataSnapshot && { data: dataSnapshot }),
+                    ...(resultSnapshot && { result: resultSnapshot }),
                   }
                 });
               }

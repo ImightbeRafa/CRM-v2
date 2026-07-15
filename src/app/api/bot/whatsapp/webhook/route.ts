@@ -34,8 +34,6 @@ import { validateBotAccessCode } from '@/lib/bot/access-code';
 import { processMessage } from '@/lib/bot/ai-agent';
 import { clearConversationHistory, clearPendingConfirmation, getConversationState, setConversationState, clearConversationState } from '@/lib/bot/conversation-memory';
 
-console.log('🚀 WhatsApp Webhook module loaded');
-
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';

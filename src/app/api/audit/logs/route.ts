@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAdmin } from '@/lib/apiAuth'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
+import { entityTypeFilterAliases } from '@/lib/auditPayload'
 
 export async function GET(request: NextRequest) {
   try {
@@ -50,7 +51,9 @@ export async function GET(request: NextRequest) {
     }
     
     if (action) where.action = action
-    if (entityType) where.entityType = entityType
+    if (entityType) {
+      where.entityType = { in: entityTypeFilterAliases(entityType) }
+    }
     if (userRole) where.userRole = userRole
     
     if (dateFrom || dateTo) {

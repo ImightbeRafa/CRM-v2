@@ -6,6 +6,13 @@ import {
   Filter, Activity, ToggleLeft, RefreshCw, ChevronDown, ChevronRight,
   X, FileText, Package, Settings, Users, Truck, Tag, Layers
 } from 'lucide-react'
+import {
+  buildFieldDiffLines,
+  entriesForDisplay,
+  hasMeaningfulOldValues,
+  isNoisyAutoReason,
+  normalizeEntityType,
+} from '@/lib/auditPayload'
 
 interface SimpleAuditDashboardProps {
   isMaster: boolean
@@ -35,26 +42,50 @@ const ACTION_VERBS: Record<string, string> = {
 
 const ENTITY_LABELS: Record<string, string> = {
   order: 'Orden',
+  orders: 'Orden',
+  sale: 'Orden',
   user: 'Usuario',
+  users: 'Usuario',
   field: 'Campo',
+  fields: 'Campo',
   option: 'Opción',
+  options: 'Opción',
+  optionSet: 'Conjunto de opciones',
+  optionSets: 'Conjunto de opciones',
   shipping: 'Envío',
   status: 'Estado',
   seller: 'Vendedor',
+  sellers: 'Vendedor',
   config: 'Configuración',
   inventory: 'Inventario',
+  inventoryitem: 'Inventario',
+  client: 'Cliente',
+  frequent_customer: 'Cliente frecuente',
+  inventory_product: 'Producto',
 }
 
 const ENTITY_ARTICLE: Record<string, string> = {
   order: 'la orden',
+  orders: 'la orden',
+  sale: 'la orden',
   user: 'el usuario',
+  users: 'el usuario',
   field: 'el campo',
+  fields: 'el campo',
   option: 'la opción',
+  options: 'la opción',
+  optionSet: 'el conjunto de opciones',
+  optionSets: 'el conjunto de opciones',
   shipping: 'el envío',
   status: 'el estado',
   seller: 'el vendedor',
+  sellers: 'el vendedor',
   config: 'la configuración',
   inventory: 'el inventario',
+  inventoryitem: 'el inventario',
+  client: 'el cliente',
+  frequent_customer: 'el cliente frecuente',
+  inventory_product: 'el producto',
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -71,8 +102,12 @@ const ENTITY_ICONS: Record<string, React.ReactNode> = {
   user: <Users className="w-3.5 h-3.5" />,
   field: <Settings className="w-3.5 h-3.5" />,
   option: <Tag className="w-3.5 h-3.5" />,
+  optionSet: <Layers className="w-3.5 h-3.5" />,
   shipping: <Truck className="w-3.5 h-3.5" />,
   status: <Layers className="w-3.5 h-3.5" />,
+  seller: <Users className="w-3.5 h-3.5" />,
+  client: <Users className="w-3.5 h-3.5" />,
+  inventory: <Package className="w-3.5 h-3.5" />,
 }
 
 function getActionIcon(action: string) {
@@ -160,7 +195,8 @@ function formatExactTimestamp(timestamp: string): string {
 
 function buildSummary(log: any): string {
   const verb = ACTION_VERBS[log.action] || log.action.toLowerCase()
-  const entity = ENTITY_ARTICLE[log.entityType] || log.entityType
+  const normalized = normalizeEntityType(String(log.entityType || ''))
+  const entity = ENTITY_ARTICLE[normalized] || ENTITY_ARTICLE[log.entityType] || log.entityType
   const name = log.entityName ? ` "${log.entityName}"` : ''
   return `${verb} ${entity}${name}`
 }
@@ -195,16 +231,137 @@ function getUserInitial(name: string): string {
   return (name || '?').charAt(0).toUpperCase()
 }
 
+function summarizeDetailForCsv(log: any): string {
+  const changeList = Array.isArray(log.oldValues?.changes) ? log.oldValues.changes : []
+  if (changeList.length) return changeList.join(' | ')
+
+  const isDelete = log.action === 'DELETE' || log.action === 'BULK_DELETE'
+  const isCreate = log.action === 'CREATE'
+
+  if (isDelete) {
+    const deleted = entriesForDisplay(log.oldValues)
+    if (deleted.length) return deleted.map((e) => `${e.label}: ${e.value}`).join(' | ')
+  }
+
+  if (isCreate) {
+    const created = entriesForDisplay(log.newValues)
+    if (created.length) return created.map((e) => `${e.label}: ${e.value}`).join(' | ')
+  }
+
+  const diffs =
+    !isCreate && !isDelete && hasMeaningfulOldValues(log.oldValues)
+      ? buildFieldDiffLines(log.oldValues, log.newValues)
+      : []
+  if (diffs.length) return diffs.join(' | ')
+
+  const payload = entriesForDisplay(log.newValues)
+  if (payload.length) return payload.map((e) => `${e.label}: ${e.value}`).join(' | ')
+
+  return log.reason && !isNoisyAutoReason(log.reason) ? log.reason : ''
+}
+
+function logHasRenderableDetails(log: any): boolean {
+  const changeList = Array.isArray(log.oldValues?.changes) ? log.oldValues.changes : []
+  if (changeList.length > 0) return true
+  if (log.reason && !isNoisyAutoReason(log.reason)) return true
+
+  const isDelete = log.action === 'DELETE' || log.action === 'BULK_DELETE'
+  const isCreate = log.action === 'CREATE'
+
+  if (isDelete && entriesForDisplay(log.oldValues).length > 0) return true
+  if (isCreate && entriesForDisplay(log.newValues).length > 0) return true
+
+  if (
+    !isCreate &&
+    !isDelete &&
+    hasMeaningfulOldValues(log.oldValues) &&
+    buildFieldDiffLines(log.oldValues, log.newValues).length > 0
+  ) {
+    return true
+  }
+
+  if (
+    (log.action === 'BULK_UPDATE' || log.action === 'BULK_TOGGLE' || log.action === 'UPDATE') &&
+    entriesForDisplay(log.newValues).length > 0
+  ) {
+    return true
+  }
+
+  if (log.reason) return true
+  return false
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function LogDetailPanel({ log }: { log: any }) {
-  const hasChanges = log.oldValues?.changes && log.oldValues.changes.length > 0
-  const hasCreated = log.action === 'CREATE' && log.newValues
-  const hasDeleted = (log.action === 'DELETE' || log.action === 'BULK_DELETE') && log.oldValues
+function KeyValueGrid({
+  entries,
+  tone = 'neutral',
+}: {
+  entries: { key: string; label: string; value: string }[]
+  tone?: 'neutral' | 'create' | 'delete'
+}) {
+  if (entries.length === 0) return null
+  const toneClass =
+    tone === 'create'
+      ? 'bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/20'
+      : tone === 'delete'
+        ? 'bg-red-500/5 dark:bg-red-500/10 border-red-500/20'
+        : 'bg-muted/50 border-border'
 
-  if (!log.reason && !hasChanges && !hasCreated && !hasDeleted) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+      {entries.map((entry) => (
+        <div key={entry.key} className={`text-xs rounded-md px-3 py-1.5 border ${toneClass}`}>
+          <span className="font-medium text-foreground">{entry.label}:</span>{' '}
+          <span className="text-muted-foreground break-words">{entry.value}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function LogDetailPanel({ log }: { log: any }) {
+  const changeList: string[] = Array.isArray(log.oldValues?.changes) ? log.oldValues.changes : []
+  const isDelete = log.action === 'DELETE' || log.action === 'BULK_DELETE'
+  const isCreate = log.action === 'CREATE'
+  const isBulkMutation = log.action === 'BULK_UPDATE' || log.action === 'BULK_TOGGLE'
+
+  // Never invent N/A→ diffs for CREATE/DELETE or when there is no real before-state
+  const fieldDiffs =
+    !isCreate &&
+    !isDelete &&
+    changeList.length === 0 &&
+    hasMeaningfulOldValues(log.oldValues)
+      ? buildFieldDiffLines(log.oldValues, log.newValues)
+      : []
+  const allChanges = changeList.length > 0 ? changeList : fieldDiffs
+
+  const deletedEntries = isDelete ? entriesForDisplay(log.oldValues) : []
+  const createdEntries = isCreate ? entriesForDisplay(log.newValues) : []
+  const updatePayloadEntries =
+    !isDelete && !isCreate && allChanges.length === 0
+      ? entriesForDisplay(log.newValues)
+      : []
+
+  const showReason =
+    !!log.reason &&
+    !(
+      isNoisyAutoReason(log.reason) &&
+      (allChanges.length > 0 ||
+        deletedEntries.length > 0 ||
+        createdEntries.length > 0 ||
+        updatePayloadEntries.length > 0)
+    )
+
+  if (
+    !showReason &&
+    allChanges.length === 0 &&
+    deletedEntries.length === 0 &&
+    createdEntries.length === 0 &&
+    updatePayloadEntries.length === 0
+  ) {
     return (
       <p className="text-xs text-muted-foreground italic pl-11 pt-1">
         Sin detalles adicionales.
@@ -214,18 +371,18 @@ function LogDetailPanel({ log }: { log: any }) {
 
   return (
     <div className="pl-11 pt-2 space-y-2 animate-in slide-in-from-top-1 duration-150">
-      {log.reason && (
+      {showReason && (
         <div className="flex items-start gap-2 text-sm bg-muted/50 rounded-lg px-3 py-2">
           <FileText className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
           <span className="text-muted-foreground">{log.reason}</span>
         </div>
       )}
 
-      {hasChanges && (
+      {allChanges.length > 0 && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Cambios</span>
           <div className="grid gap-1">
-            {log.oldValues.changes.map((change: string, idx: number) => (
+            {allChanges.map((change: string, idx: number) => (
               <div key={idx} className="text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-1.5 border border-border">
                 {change}
               </div>
@@ -234,31 +391,26 @@ function LogDetailPanel({ log }: { log: any }) {
         </div>
       )}
 
-      {hasCreated && (
+      {createdEntries.length > 0 && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Datos creados</span>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-            {Object.entries(log.newValues).map(([key, value]) => (
-              <div key={key} className="text-xs bg-emerald-500/5 dark:bg-emerald-500/10 rounded-md px-3 py-1.5 border border-emerald-500/20">
-                <span className="font-medium text-foreground">{key}:</span>{' '}
-                <span className="text-muted-foreground">{String(value)}</span>
-              </div>
-            ))}
-          </div>
+          <KeyValueGrid entries={createdEntries} tone="create" />
         </div>
       )}
 
-      {hasDeleted && (
+      {deletedEntries.length > 0 && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Datos eliminados</span>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-            {Object.entries(log.oldValues).filter(([k]) => k !== 'changes').map(([key, value]) => (
-              <div key={key} className="text-xs bg-red-500/5 dark:bg-red-500/10 rounded-md px-3 py-1.5 border border-red-500/20">
-                <span className="font-medium text-foreground">{key}:</span>{' '}
-                <span className="text-muted-foreground">{String(value)}</span>
-              </div>
-            ))}
-          </div>
+          <KeyValueGrid entries={deletedEntries} tone="delete" />
+        </div>
+      )}
+
+      {updatePayloadEntries.length > 0 && (
+        <div className="space-y-1">
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            {isBulkMutation ? 'Datos actualizados' : 'Valores'}
+          </span>
+          <KeyValueGrid entries={updatePayloadEntries} tone="neutral" />
         </div>
       )}
     </div>
@@ -267,10 +419,18 @@ function LogDetailPanel({ log }: { log: any }) {
 
 function LogEntry({ log, isExpanded, onToggle }: { log: any; isExpanded: boolean; onToggle: () => void }) {
   const accent = getActionAccent(log.action)
-  const hasDetails = log.reason ||
-    (log.oldValues?.changes && log.oldValues.changes.length > 0) ||
-    (log.action === 'CREATE' && log.newValues) ||
-    ((log.action === 'DELETE' || log.action === 'BULK_DELETE') && log.oldValues)
+  const hasDetails = logHasRenderableDetails(log)
+  const normalizedType = normalizeEntityType(String(log.entityType || ''))
+  const entityLabel =
+    ENTITY_LABELS[normalizedType] ||
+    ENTITY_LABELS[normalizedType.toLowerCase()] ||
+    ENTITY_LABELS[log.entityType] ||
+    log.entityType
+  const entityIcon =
+    ENTITY_ICONS[normalizedType] ||
+    ENTITY_ICONS[normalizedType.toLowerCase()] ||
+    ENTITY_ICONS[log.entityType] ||
+    <FileText className="w-3 h-3" />
 
   return (
     <div className={`border-l-[3px] ${accent.border} bg-card hover:bg-muted/30 transition-colors duration-150 rounded-r-lg`}>
@@ -296,8 +456,8 @@ function LogEntry({ log, isExpanded, onToggle }: { log: any; isExpanded: boolean
                 {ACTION_LABELS[log.action] || log.action}
               </span>
               <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                {ENTITY_ICONS[log.entityType] || <FileText className="w-3 h-3" />}
-                {ENTITY_LABELS[log.entityType] || log.entityType}
+                {entityIcon}
+                {entityLabel}
               </span>
               <span className="text-[11px] text-muted-foreground">
                 {ROLE_LABELS[log.userRole] || log.userRole}
@@ -441,15 +601,18 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
 
       if (rows.length === 0) return
 
-      const headers = ['Fecha', 'Usuario', 'Rol', 'Acción', 'Entidad', 'Nombre', 'Razón']
+      const headers = ['Fecha', 'Usuario', 'Rol', 'Acción', 'Entidad', 'Nombre', 'Razón', 'Detalle']
       const csvRows = rows.map(r => [
         new Date(r.timestamp).toISOString(),
         r.userName,
         ROLE_LABELS[r.userRole] || r.userRole,
         ACTION_LABELS[r.action] || r.action,
-        ENTITY_LABELS[r.entityType] || r.entityType,
+        ENTITY_LABELS[normalizeEntityType(r.entityType)] ||
+          ENTITY_LABELS[String(r.entityType || '').toLowerCase()] ||
+          r.entityType,
         r.entityName || '',
         r.reason || '',
+        summarizeDetailForCsv(r),
       ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
 
       const csv = [headers.join(','), ...csvRows].join('\n')
@@ -583,11 +746,15 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
               >
                 <option value="">Todas</option>
                 <option value="order">Orden</option>
+                <option value="client">Cliente</option>
                 <option value="user">Usuario</option>
                 <option value="field">Campo</option>
                 <option value="option">Opción</option>
+                <option value="optionSet">Conjunto de opciones</option>
                 <option value="shipping">Envío</option>
                 <option value="status">Estado</option>
+                <option value="seller">Vendedor</option>
+                <option value="inventory">Inventario</option>
               </select>
             </div>
             <div>

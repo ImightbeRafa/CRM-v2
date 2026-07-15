@@ -63,7 +63,7 @@ export async function POST(request: Request) {
           userId
         })
         await logUpdate(request as any, 'order', updatedOrder.id, `Order #${body.orderId}`, 
-          { status: existingOrder.status }, 
+          { status: existingOrder.status, changes: [`Estado: "${existingOrder.status}" → "${body.status}"`] }, 
           { status: body.status })
       } catch (auditError) {
         console.error('[orders/status] Audit logging failed (non-fatal):', auditError)

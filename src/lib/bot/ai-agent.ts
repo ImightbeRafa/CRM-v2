@@ -87,23 +87,26 @@ const REASONING_EFFORT: 'low' | 'medium' | 'high' = (() => {
   return 'low';
 })();
 
-console.log('[AI Agent] xAI model config:', {
-  model: MODEL,
-  maxTokens: MAX_TOKENS,
-  temperature: TEMPERATURE,
-  reasoningEffort: REASONING_EFFORT,
-  extractionReasoningEffort: XAI_EXTRACTION_REASONING_EFFORT,
-  timeoutMs: XAI_TIMEOUT_MS,
-  extractionTimeoutMs: XAI_EXTRACTION_TIMEOUT_MS,
-  maxRetries: XAI_MAX_RETRIES,
-});
+// Avoid top-level console noise during `next build` page-data collection.
+if (process.env.NEXT_PHASE !== 'phase-production-build') {
+  console.log('[AI Agent] xAI model config:', {
+    model: MODEL,
+    maxTokens: MAX_TOKENS,
+    temperature: TEMPERATURE,
+    reasoningEffort: REASONING_EFFORT,
+    extractionReasoningEffort: XAI_EXTRACTION_REASONING_EFFORT,
+    timeoutMs: XAI_TIMEOUT_MS,
+    extractionTimeoutMs: XAI_EXTRACTION_TIMEOUT_MS,
+    maxRetries: XAI_MAX_RETRIES,
+  });
+}
 
 // Action keywords that require tool calls (to prevent AI hallucination)
 // When these keywords are detected, we force tool_choice: 'required'
 const ACTION_KEYWORDS = [
   // Order creation
-  'crear', 'crea', 'creame', 'crÃ©ame', 'nueva orden', 'nuevo pedido', 'recrear',
-  'registrar', 'registra', 'agregar orden', 'aÃ±adir orden', 'hacer orden',
+  'crear', 'crea', 'creame', 'créame', 'nueva orden', 'nuevo pedido', 'recrear',
+  'registrar', 'registra', 'agregar orden', 'añadir orden', 'hacer orden',
   // Order updates
   'actualizar', 'actualiza', 'modificar', 'modifica', 'cambiar', 'cambia',
   'editar', 'edita', 'corregir', 'corrige',
@@ -112,19 +115,19 @@ const ACTION_KEYWORDS = [
   // Deletion
   'eliminar', 'elimina', 'borrar', 'borra', 'cancelar orden',
   // Inventory
-  'agregar stock', 'aÃ±adir stock', 'reducir stock', 'aumentar stock',
+  'agregar stock', 'añadir stock', 'reducir stock', 'aumentar stock',
   'descontar', 'restar', 'sumar al inventario',
-  'reconoces este codigo', 'reconoce este codigo', 'reconoces este cÃƒÂ³digo',
-  'reconoce este cÃƒÂ³digo', 'buscar codigo', 'buscar cÃƒÂ³digo',
+  'reconoces este codigo', 'reconoce este codigo', 'reconoces este código',
+  'reconoce este código', 'buscar codigo', 'buscar código',
   'buscar sku', 'precio de', 'stock de',
-  // Shipping â€” individual and bulk guÃ­a generation
-  'generar guÃ­a', 'genera guÃ­a', 'crear guÃ­a', 'guÃ­a de envÃ­o',
+  // Shipping — individual and bulk guía generation
+  'generar guía', 'genera guía', 'crear guía', 'guía de envío',
   'generar guia', 'genera guia', 'crear guia', 'guia de envio',
-  'guÃ­as en bulk', 'guÃ­as masivas', 'guias en bulk', 'guias masivas',
-  'guÃ­as de correos', 'guias de correos', 'generar guÃ­as', 'generar guias',
+  'guías en bulk', 'guías masivas', 'guias en bulk', 'guias masivas',
+  'guías de correos', 'guias de correos', 'generar guías', 'generar guias',
   // Location validation
-  'verificar ubicaciÃ³n', 'verificar ubicacion', 'validar ubicaciÃ³n', 'validar ubicacion',
-  'verificar direcciÃ³n', 'verificar direccion', 'validar provincia', 'validar cantÃ³n',
+  'verificar ubicación', 'verificar ubicacion', 'validar ubicación', 'validar ubicacion',
+  'verificar dirección', 'verificar direccion', 'validar provincia', 'validar cantón',
   'validar canton', 'verificar distrito',
   // Statistics and reporting queries must use tools instead of model memory.
   'ventas de hoy', 'venta de hoy', 'ventas del dia',
@@ -155,7 +158,7 @@ function hasInventoryLookupIntent(message: string): boolean {
 
 const ORDER_CREATION_KEYWORDS = [
   'nueva orden', 'nuevo pedido', 'crear orden', 'crear pedido',
-  'agregar orden', 'agregar pedido', 'aÃ±adir orden',
+  'agregar orden', 'agregar pedido', 'añadir orden',
   'registrar orden', 'registrar pedido',
   'hacer orden', 'hacer pedido', 'recrear orden', 'recrear pedido',
 ];
@@ -259,13 +262,13 @@ function hasCreateOrderProduct(args: any): boolean {
  * the bot mixed in old data. `isDenial` only catches short single-word "no"
  * replies; this catches longer rejections like:
  *   "no esos datos son de la orden pasada"
- *   "esos datos estÃ¡n equivocados"
+ *   "esos datos están equivocados"
  *   "no, son de la orden anterior"
  *   "esa no es la orden"
  */
 const EXPLICIT_REJECTION_PATTERNS: RegExp[] = [
   /\bno\b[^.\n]*\b(?:esos?|estos?|esa)\b[^.\n]*\bdatos?\b/i,
-  /\bdatos?\b[^.\n]*\b(?:incorrect[ao]s?|equivocad[ao]s?|err[oÃ³]ne[ao]s?|mal[eo]?s?)\b/i,
+  /\bdatos?\b[^.\n]*\b(?:incorrect[ao]s?|equivocad[ao]s?|err[oó]ne[ao]s?|mal[eo]?s?)\b/i,
   /\b(?:son|es)\s+de\s+(?:la|otra|una|esa|esta|el|otro)\s+(?:orden|pedido)\s+(?:pasad[ao]|anterior|previ[ao]|antigu[ao])\b/i,
   /\b(?:de|son\s+de)\s+(?:la\s+)?orden\s+(?:pasada|anterior|previa|antigua)\b/i,
   /\beso(?:s)?\s+no\s+(?:es|son)\s+(?:la|los?|las?)\b/i,
@@ -296,7 +299,7 @@ function sanitizeOrderSuccessForHistory(text: string): string {
   const orderIdMatch = text.match(/Orden\s+(#?[\w-]+)\s+creada\s+exitosamente/i);
   if (orderIdMatch) {
     const orderId = orderIdMatch[1].startsWith('#') ? orderIdMatch[1] : `#${orderIdMatch[1]}`;
-    return `âœ… Orden ${orderId} creada exitosamente. (Detalles del cliente y productos enviados al usuario; no se conservan en el historial para evitar que se reutilicen en Ã³rdenes futuras.)`;
+    return `✅ Orden ${orderId} creada exitosamente. (Detalles del cliente y productos enviados al usuario; no se conservan en el historial para evitar que se reutilicen en órdenes futuras.)`;
   }
   return text;
 }
@@ -354,23 +357,23 @@ function formatReviewValue(value: unknown): string {
  * list which read like a form rather than a chat.
  */
 function buildConversationalMissingFieldsAsk(missing: string[]): string {
-  if (!missing || missing.length === 0) return 'Â¿Me podÃ©s enviar los datos que faltan?';
+  if (!missing || missing.length === 0) return '¿Me podés enviar los datos que faltan?';
 
   const articleMap: Record<string, string> = {
     'Nombre del cliente': 'el nombre del cliente',
-    'Telefono': 'el telÃ©fono',
-    'TelÃ©fono': 'el telÃ©fono',
+    'Telefono': 'el teléfono',
+    'Teléfono': 'el teléfono',
     'Producto(s)': 'el producto',
     'Total': 'el total',
-    'Tipo de orden (EA o RA)': 'el tipo de orden (EA para envÃ­o o RA para retiro)',
+    'Tipo de orden (EA o RA)': 'el tipo de orden (EA para envío o RA para retiro)',
     'Tipo de orden': 'el tipo de orden (EA o RA)',
-    'Direccion': 'la direcciÃ³n',
-    'DirecciÃ³n': 'la direcciÃ³n',
-    'Direccion o ubicacion': 'la direcciÃ³n o ubicaciÃ³n de entrega',
-    'DirecciÃ³n o ubicaciÃ³n': 'la direcciÃ³n o ubicaciÃ³n de entrega',
+    'Direccion': 'la dirección',
+    'Dirección': 'la dirección',
+    'Direccion o ubicacion': 'la dirección o ubicación de entrega',
+    'Dirección o ubicación': 'la dirección o ubicación de entrega',
     'Provincia': 'la provincia',
-    'Canton': 'el cantÃ³n',
-    'CantÃ³n': 'el cantÃ³n',
+    'Canton': 'el cantón',
+    'Cantón': 'el cantón',
     'Distrito': 'el distrito',
   };
 
@@ -391,9 +394,9 @@ function buildConversationalMissingFieldsAsk(missing: string[]): string {
   };
 
   if (friendly.length === 1) {
-    return `Solo me falta ${friendly[0]}. Â¿Me lo podÃ©s indicar?`;
+    return `Solo me falta ${friendly[0]}. ¿Me lo podés indicar?`;
   }
-  return `Me falta ${join(friendly)}. Â¿Me los podÃ©s enviar?`;
+  return `Me falta ${join(friendly)}. ¿Me los podés enviar?`;
 }
 
 function getCreateOrderReviewMissingFields(args: any): string[] {
@@ -488,7 +491,7 @@ function getCreateOrderReviewProductLines(args: any): string[] {
     // review printed "dopamine patch x2 x2". Be tolerant on both sides:
     // accept whichever quantity is highest, and never repeat the suffix.
     const cleanName = (product.name || '')
-      .replace(/\s*[xÃ—]\s*\d+\s*$/i, '')
+      .replace(/\s*[x×]\s*\d+\s*$/i, '')
       .replace(/\s*\(\s*\d+\s*\)\s*$/, '')
       .trim();
     const nameWithSku = [cleanName, product.sku ? `(SKU: ${product.sku})` : ''].filter(Boolean).join(' ');
@@ -538,7 +541,7 @@ function buildCreateOrderFinalReview(args: any, customFieldsConfig?: CustomField
   if (customFieldsConfig) {
     try {
       const extracted = extractCustomFields(args, customFieldsConfig);
-      // formatCustomFieldsForTelegram returns lines like "*Negocio:* ACME" â€”
+      // formatCustomFieldsForTelegram returns lines like "*Negocio:* ACME" —
       // strip the markdown asterisks so the plain final review reads cleanly.
       extraFields = formatCustomFieldsForTelegram(extracted, customFieldsConfig)
         .map((line) => line.replace(/\*/g, '').trim())
@@ -580,7 +583,7 @@ async function requestCreateOrderFinalConfirmation(
   // BEFORE we render the review or report missing fields. Without this, a
   // user who typed "Sanjose, Alajuelita, Sanjosecito" would see exactly
   // those raw strings echoed back, even though the validator can correct
-  // them to "San JosÃ©, Alajuelita, San Josecito".
+  // them to "San José, Alajuelita, San Josecito".
   applyOrderCaptureLocationNormalization(args);
 
   // If the model emitted multiple create_order calls with diverging totals,
@@ -609,10 +612,10 @@ async function requestCreateOrderFinalConfirmation(
     });
 
     const text = [
-      'DetectÃ© varios totales en tu mensaje y no quiero adivinar:',
+      'Detecté varios totales en tu mensaje y no quiero adivinar:',
       ...totalsMismatch.map((t) => `- ${formatCrcAmount(t)}`),
       '',
-      'Â¿CuÃ¡l es el total correcto? EnvÃ­ame el nÃºmero y preparo la revisiÃ³n final.',
+      '¿Cuál es el total correcto? Envíame el número y preparo la revisión final.',
     ].join('\n');
 
     return { text };
@@ -683,7 +686,9 @@ function isTemplatePlaceholderValue(value: unknown): boolean {
   if (/^<[^>]*>$/.test(trimmed)) return true;
   if (/^\[[^\]]*\]$/.test(trimmed)) return true;
   // Common literal placeholders from order templates we ourselves shipped.
-  if (/^(tu|su)\s+(nombre|correo|email|telefono|tel[eÃ©]fono|direcci[oÃ³]n)\b/i.test(trimmed)) return true;
+  if (/^(tu|su)\s+(nombre|correo|email|telefono|tel[eé]fono|direcci[oó]n)\b/i.test(trimmed)) return true;
+  // Template choice lines like `"EA" o "RA"` / `"EA" o "envío a domicilio"`.
+  if (/^["']?\s*(ea|ra)\s*["']?\s*o\s*["']?\s*(ea|ra|envio|retiro)/i.test(trimmed)) return true;
   return false;
 }
 
@@ -779,8 +784,10 @@ async function extractOrderArgsWithGrok(
     'Do not invent. If unclear, use null or empty arrays. Never duplicate the same text into multiple fields.',
     'Order fields: customerName, phone, email, products, quantity, total, orderType, paymentMethod, courier, province, canton, district, address, comments, customFields.',
     'Costa Rica rules: phone is 8 digits, optionally with +506. Never use a cedula/ID as phone. EA means delivery/Correos/guia/domicilio. RA means pickup/retiro/local.',
-    'Location: province/canton/district are Costa Rica places. If labels exist, trust labels. If a user writes "Canton:Mora Colon" and also "Distrito:Brasil de Mora", use canton="Mora", district="Brasil de Mora". A product or total is never district/address.',
+    'Location: province/canton/district are Costa Rica places. Accept comma OR slash separators: "Heredia/Barva/San Pablo" => province=Heredia, canton=Barva, district=San Pablo. If labels exist, trust labels. If a user writes "Canton:Mora Colon" and also "Distrito:Brasil de Mora", use canton="Mora", district="Brasil de Mora". A product or total is never district/address.',
+    'Unlabeled lines: a person full name on its own line is customerName. A street/reference line ("175 metros oeste de la escuela...") is address. Do not leave them null when clearly present.',
     'Address is the detailed street/reference only. Product lines like "1 sleeping patches" go to products, not location. Payment/total lines like "Pago 12,900CRC" go to total/payment, not address.',
+    'paymentMethod vs courier: "Método de pago SINPE CONFIRMADO" => paymentMethod=SINPE, comments=SINPE CONFIRMADO. "Método envío CORREOS DE CR" => courier=Correos de CR (strip the label words). Never put the label text into the field value.',
     'Products: strip quantity from name. "1 sleeping patches" => products[0].name="sleeping patches", quantity=1. "dopamine patch x2" => name="dopamine patch", quantity=2.',
     'Total: return CRC number. "12,900CRC", "12.900", "Pago 12900" => 12900.',
     'Email: return only the email substring, e.g. "karo84zz@gmail.com", no trailing phone or punctuation.',
@@ -909,7 +916,7 @@ function sanitizeAIExtractedArgs(
   // Defensive email cleanup: even if the model leaks trailing whitespace,
   // emojis, or a phone number after the address, recover only the valid
   // email substring. Real failure case the AI produced:
-  //   "karo84zz@gmail.com.    â˜Žï¸84492744"
+  //   "karo84zz@gmail.com.    ☎️84492744"
   // The user explicitly entered "correo: karo84zz@gmail.com" but a sloppy
   // extraction kept the trailing decoration. We always re-validate.
   if (typeof aiArgs.email === 'string') {
@@ -924,9 +931,25 @@ function sanitizeAIExtractedArgs(
   setIfReal('district', aiArgs.district);
   setIfReal('comments', aiArgs.comments);
 
+  // Defensive label-leak cleanup: Grok sometimes returns "Método envío CORREOS DE CR".
+  if (typeof out.paymentMethod === 'string') {
+    out.paymentMethod = canonicalizePaymentMethod(out.paymentMethod);
+  }
+  if (typeof out.courier === 'string') {
+    out.courier = canonicalizeCourier(out.courier);
+  }
+  if (typeof out.comments === 'string') {
+    out.comments = stripOrderMetaLabel(out.comments) || out.comments;
+  }
+
   if (typeof aiArgs.orderType === 'string') {
     const ot = aiArgs.orderType.trim().toUpperCase();
-    if (ot === 'EA' || ot === 'RA') out.orderType = ot;
+    if (ot === 'EA' || ot === 'RA') {
+      out.orderType = ot;
+    } else {
+      const inferred = extractOrderTypeFromText(aiArgs.orderType);
+      if (inferred) out.orderType = inferred;
+    }
   }
 
   const total = parseCrcAmount(aiArgs.total);
@@ -1020,7 +1043,7 @@ function looksLikeOrderPayload(message: string): boolean {
 
   let score = 0;
   if (/\bproductos?\b/i.test(normalized)) score += 1;
-  if (/\btotal\b|\bpago\b|crc|â‚¡|Â¢/i.test(message)) score += 1;
+  if (/\btotal\b|\bpago\b|crc|₡|¢/i.test(message)) score += 1;
   if (/\b(ea|ra)\b/i.test(normalized) || /\b(envio|retiro|correos|guia|mensajeria)\b/i.test(normalized)) score += 1;
   if (/\b(cliente|nombre|telefono|correo|email)\b/i.test(normalized)) score += 1;
   if (/\b(provincia|canton|distrito|direccion)\b/i.test(normalized)) score += 1;
@@ -1036,7 +1059,7 @@ function looksLikeFieldOnlyOrderFragment(message: string): boolean {
   if (looksLikeOrderPayload(trimmed)) return false;
   if (EMAIL_RE.test(trimmed)) return true;
   if (/^(?:\+?506[\s-]?)?\d{4}[\s-]?\d{4}$/.test(trimmed)) return true;
-  if (/^(?:total|pago)\s*[:=]?\s*(?:crc|â‚¡|Â¢)?\s*\d[\d.,]*$/i.test(trimmed)) return true;
+  if (/^(?:total|pago)\s*[:=]?\s*(?:crc|₡|¢)?\s*\d[\d.,]*$/i.test(trimmed)) return true;
   if (/^(?:producto|productos?|cantidad|provincia|canton|distrito|direccion|correo|email|telefono)\s*[:=]\s*\S+/i.test(trimmed)) return true;
   return false;
 }
@@ -1075,6 +1098,109 @@ function splitLocationTriplet(value: string): { province: string; canton: string
     canton: parts[1],
     district: parts.slice(2).join(', '),
   };
+}
+
+function looksLikeLocationTripletLine(line: string): boolean {
+  return /\S+\s*[,|/]\s*\S+\s*[,|/]\s*\S+/.test(line);
+}
+
+/** Strip leading "Método de pago", "Método envío", "COMENTARIO", etc. from a value. */
+function stripOrderMetaLabel(value: string): string {
+  return value
+    .replace(
+      /^(?:[-*•]\s*)?(?:m[eé]todo(?:\s+de)?\s+pago|m[eé]todo(?:\s+de)?\s+envio|m[eé]todo\s+envio|forma\s+de\s+pago|comentario(?:s)?|nota|observaci[oó]n(?:es)?|tipo\s+de\s+orden)\s*[:.\-]?\s*/i,
+      '',
+    )
+    .replace(/^["']+|["']+$/g, '')
+    .trim();
+}
+
+function canonicalizePaymentMethod(value: string): string {
+  const cleaned = stripOrderMetaLabel(value);
+  const normalized = normalizeSpanishText(cleaned);
+  if (/\bsinpe\b/.test(normalized)) return 'SINPE';
+  if (/\btransferencia\b/.test(normalized)) return 'Transferencia';
+  if (/\befectivo\b/.test(normalized)) return 'Efectivo';
+  if (/\btarjeta\b/.test(normalized)) return 'Tarjeta';
+  return cleaned || value.trim();
+}
+
+function canonicalizeCourier(value: string): string {
+  const cleaned = stripOrderMetaLabel(value);
+  const normalized = normalizeSpanishText(cleaned);
+  if (/\bcorreos\b/.test(normalized)) {
+    // Keep Ana-style full phrase when present; otherwise short canonical form.
+    if (/costa\s*rica/.test(normalized)) return cleaned;
+    return 'Correos de CR';
+  }
+  return cleaned || value.trim();
+}
+
+function extractOrderTypeFromText(value: string): 'EA' | 'RA' | undefined {
+  if (isTemplatePlaceholderValue(value)) return undefined;
+  const normalized = normalizeSpanishText(value);
+  const hasEa = /(?:^|[^a-z])ea(?:[^a-z]|$)/.test(normalized)
+    || /\benvio\b|\bdomicilio\b|\bcorreos\b|\bmensajeria\b|\bguia\b/.test(normalized);
+  const hasRa = /(?:^|[^a-z])ra(?:[^a-z]|$)/.test(normalized)
+    || /\bretiro\b|\bpickup\b/.test(normalized);
+  if (hasEa && !hasRa) return 'EA';
+  if (hasRa && !hasEa) return 'RA';
+  // Ambiguous EA+RA together (template leftovers) — do not guess.
+  if (hasEa && hasRa) return undefined;
+  if (hasEa) return 'EA';
+  return undefined;
+}
+
+const PERSON_NAME_NOISE_RE = /\b(producto|productos|total|pago|sinpe|correos|metodo|comentario|cantidad|sku|deseo|orden|pedido|email|correo|telefono|direccion|provincia|canton|distrito|envio|retiro|cliente|crear|nueva)\b/i;
+const CR_PLACE_NAME_RE = /^(san jose|san josé|alajuela|cartago|heredia|guanacaste|puntarenas|limon|limón|montes de oca|brasil de mora)$/i;
+
+function looksLikePersonNameLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.length > 60) return false;
+  if (EMAIL_RE.test(trimmed)) return false;
+  if (normalizeCostaRicaPhone(trimmed) && trimmed.replace(/\D/g, '').length === 8) return false;
+  if (looksLikeLocationTripletLine(trimmed)) return false;
+  if (PERSON_NAME_NOISE_RE.test(trimmed)) return false;
+  if (!/^[\p{L}][\p{L}\s'.-]*$/u.test(trimmed)) return false;
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 5) return false;
+  const normalized = normalizeSpanishText(trimmed);
+  if (CR_PLACE_NAME_RE.test(normalized)) return false;
+  // Place-like "X de Y" (Brasil de Mora, Montes de Oca) — not a person name.
+  if (words.length === 3 && normalizeSpanishText(words[1]) === 'de') return false;
+  return true;
+}
+
+const STREET_ADDRESS_CUE_RE = /\b(calle|metros?|oeste|este|norte|sur|de la|escuela|iglesia|barrio|casa|porton|portón|edificio|avenida|av\.|from|frente|costado|diagonal)\b/i;
+
+function looksLikeStreetAddressLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (EMAIL_RE.test(trimmed)) return false;
+  if (normalizeCostaRicaPhone(trimmed) && trimmed.replace(/\D/g, '').length <= 11) return false;
+  if (looksLikeLocationTripletLine(trimmed)) return false;
+  if (looksLikePersonNameLine(trimmed)) return false;
+  const normalized = normalizeSpanishText(trimmed);
+  if (/\b(total|pago|sinpe|transferencia|efectivo|crc|colones?|correos|mensajeria|metodo|comentario|producto|sku|cantidad)\b/i.test(normalized)) {
+    return false;
+  }
+  if (STREET_ADDRESS_CUE_RE.test(trimmed)) return true;
+  // Long free-text delivery notes without an explicit cue.
+  return trimmed.length >= 35 && /[a-zA-ZáéíóúñÁÉÍÓÚÑ]/.test(trimmed);
+}
+
+/**
+ * Detect "Método de pago SINPE CONFIRMADO" style lines that have a known
+ * label prefix but no colon/equals separator.
+ */
+function splitImplicitOrderMetaLine(line: string): { label: string; value: string } | null {
+  const match = line.match(
+    /^(?:[-*•]\s*)?(m[eé]todo(?:\s+de)?\s+pago|m[eé]todo(?:\s+de)?\s+envio|m[eé]todo\s+envio|forma\s+de\s+pago|comentario(?:s)?|nota|observaci[oó]n(?:es)?|tipo\s+de\s+orden)\s+(.+)$/i,
+  );
+  if (!match) return null;
+  const value = match[2].trim();
+  if (!value) return null;
+  return { label: match[1].trim(), value };
 }
 
 function parseOrderAmountFromText(value: string): number | undefined {
@@ -1198,19 +1324,29 @@ function assignLocalLabeledField(
     return total !== undefined;
   }
   if (/\bpago\b|\bmetodo de pago\b|\bforma de pago\b/.test(normalized)) {
-    const total = parseOrderAmountFromText(value);
+    const cleaned = stripOrderMetaLabel(value);
+    const total = parseOrderAmountFromText(cleaned);
     if (total !== undefined) raw.total = total;
-    if (/sinpe/i.test(value)) raw.paymentMethod = 'SINPE';
-    else raw.paymentMethod = value;
+    raw.paymentMethod = canonicalizePaymentMethod(cleaned);
+    if (/\bconfirmado\b/i.test(cleaned) && !raw.comments) {
+      raw.comments = cleaned;
+    }
     return true;
   }
-  if (/\bcourier\b|\bmensajeria\b|\bmetodo de envio\b|\benvio\b/.test(normalized)) {
-    raw.courier = value;
+  if (/\bcourier\b|\bmensajeria\b|\bmetodo de envio\b|\bmetodo envio\b|\benvio\b/.test(normalized)) {
+    raw.courier = canonicalizeCourier(value);
     raw.orderType = 'EA';
     return true;
   }
+  if (/\btipo de orden\b|\btipo orden\b/.test(normalized)) {
+    const orderType = extractOrderTypeFromText(value);
+    if (orderType) {
+      raw.orderType = orderType;
+      return true;
+    }
+  }
   if (/\bcomentario\b|\bnota\b|\bobservacion\b/.test(normalized)) {
-    raw.comments = value;
+    raw.comments = stripOrderMetaLabel(value);
     return true;
   }
 
@@ -1231,7 +1367,7 @@ function collectLocalOrderFields(
 
   for (const line of lines) {
     const normalized = normalizeSpanishText(line);
-    const labeled = splitLocalLabelValue(line);
+    const labeled = splitLocalLabelValue(line) || splitImplicitOrderMetaLine(line);
 
     if (labeled) {
       const assigned = assignLocalLabeledField(labeled.label, labeled.value, raw, customFieldsConfig);
@@ -1268,28 +1404,29 @@ function collectLocalOrderFields(
     }
 
     const triplet = splitLocationTriplet(line);
-    if (triplet && /\S+\s*,\s*\S+\s*,\s*\S+/.test(line)) {
+    if (triplet && looksLikeLocationTripletLine(line)) {
       Object.assign(raw, triplet);
       continue;
     }
 
     if (/\bsinpe\b/i.test(normalized)) {
       raw.paymentMethod = 'SINPE';
-      raw.comments = raw.comments || line;
+      const cleaned = stripOrderMetaLabel(line);
+      raw.comments = raw.comments || cleaned || line;
       const total = parseOrderAmountFromText(line);
       if (total !== undefined) raw.total = total;
       continue;
     }
 
     if (/\b(transferencia|efectivo|tarjeta)\b/i.test(normalized)) {
-      raw.paymentMethod = line;
+      raw.paymentMethod = canonicalizePaymentMethod(line);
       const total = parseOrderAmountFromText(line);
       if (total !== undefined) raw.total = total;
       continue;
     }
 
     if (/\b(correos|mensajeria|envio a domicilio|domicilio)\b/i.test(normalized)) {
-      raw.courier = line;
+      raw.courier = canonicalizeCourier(line);
       raw.orderType = 'EA';
       continue;
     }
@@ -1307,6 +1444,16 @@ function collectLocalOrderFields(
       }
     }
 
+    if (!raw.customerName && looksLikePersonNameLine(line)) {
+      raw.customerName = line.trim();
+      continue;
+    }
+
+    if (!raw.address && looksLikeStreetAddressLine(line)) {
+      raw.address = line.trim();
+      continue;
+    }
+
     if (options.allowProductLineInference && looksLikeLocalProductLine(line)) {
       const products = parseLocalProducts(line);
       if (products.length > 0) {
@@ -1318,6 +1465,12 @@ function collectLocalOrderFields(
 
   if (!raw.orderType && (raw.courier || raw.address || raw.province || raw.canton || raw.district)) {
     raw.orderType = 'EA';
+  }
+
+  // Catch "Deseo crear una nueva orden de EA" style intent lines.
+  if (!raw.orderType) {
+    const orderType = extractOrderTypeFromText(message);
+    if (orderType) raw.orderType = orderType;
   }
 
   return raw;
@@ -1336,40 +1489,6 @@ function inferLocalCorrectionAction(args: Record<string, any>): string {
   if (hasOnly(['customerName', 'phone', 'email'])) return 'replace_customer';
   if (hasOnly(['customFields'])) return 'replace_custom_fields';
   return 'mixed';
-}
-
-function parseSingleMissingFieldCorrection(
-  message: string,
-  existingArgs: Record<string, any>,
-): Record<string, any> | null {
-  const missing = getCreateOrderReviewMissingFields(existingArgs);
-  if (missing.length !== 1) return null;
-
-  const value = message.trim();
-  if (!value) return null;
-
-  const field = normalizeSpanishText(missing[0]);
-  if (field.includes('producto')) {
-    const products = parseLocalProducts(value);
-    return products.length > 0 ? { products } : null;
-  }
-  if (field.includes('total')) {
-    const total = parseOrderAmountFromText(value);
-    return total !== undefined ? { total } : null;
-  }
-  if (field.includes('nombre')) return { customerName: value };
-  if (field.includes('telefono')) return { phone: value };
-  if (field.includes('direccion') || field.includes('ubicacion')) {
-    const triplet = splitLocationTriplet(value);
-    return triplet || { address: value };
-  }
-  if (field.includes('tipo')) {
-    const normalized = normalizeSpanishText(value);
-    if (/\b(ea|envio|domicilio|correos|mensajeria)\b/.test(normalized)) return { orderType: 'EA' };
-    if (/\b(ra|retiro|local|pickup)\b/.test(normalized)) return { orderType: 'RA' };
-  }
-
-  return null;
 }
 
 function parseLocalStructuredOrderArgs(
@@ -1392,6 +1511,87 @@ function parseLocalStructuredOrderArgs(
   return sanitized;
 }
 
+function parseMissingFieldsCorrection(
+  message: string,
+  existingArgs: Record<string, any>,
+): Record<string, any> | null {
+  const missing = getCreateOrderReviewMissingFields(existingArgs);
+  if (missing.length === 0) return null;
+
+  const value = message.trim();
+  if (!value) return null;
+
+  // Prefer structured local extraction when the correction itself looks rich.
+  const localRaw = collectLocalOrderFields(message, undefined, { allowProductLineInference: true });
+  if (hasSubstantiveOrderFields(localRaw)) {
+    const patch: Record<string, any> = {};
+    const missingNorm = missing.map((entry) => normalizeSpanishText(entry));
+    const wants = (needle: string) => missingNorm.some((entry) => entry.includes(needle));
+
+    if (wants('nombre') && localRaw.customerName) patch.customerName = localRaw.customerName;
+    if (wants('telefono') && localRaw.phone) patch.phone = localRaw.phone;
+    if (wants('producto') && Array.isArray(localRaw.products) && localRaw.products.length > 0) {
+      patch.products = localRaw.products;
+    }
+    if (wants('total') && localRaw.total !== undefined) patch.total = localRaw.total;
+    if (wants('tipo') && localRaw.orderType) patch.orderType = localRaw.orderType;
+    if (wants('direccion') || wants('ubicacion')) {
+      if (localRaw.province) patch.province = localRaw.province;
+      if (localRaw.canton) patch.canton = localRaw.canton;
+      if (localRaw.district) patch.district = localRaw.district;
+      if (localRaw.address) patch.address = localRaw.address;
+    }
+
+    if (Object.keys(patch).length > 0) return patch;
+  }
+
+  if (missing.length === 1) {
+    const field = normalizeSpanishText(missing[0]);
+    if (field.includes('producto')) {
+      const products = parseLocalProducts(value);
+      return products.length > 0 ? { products } : null;
+    }
+    if (field.includes('total')) {
+      const total = parseOrderAmountFromText(value);
+      return total !== undefined ? { total } : null;
+    }
+    if (field.includes('nombre')) {
+      return { customerName: value };
+    }
+    if (field.includes('telefono')) return { phone: value };
+    if (field.includes('direccion') || field.includes('ubicacion')) {
+      const triplet = splitLocationTriplet(value);
+      return triplet || { address: value };
+    }
+    if (field.includes('tipo')) {
+      const orderType = extractOrderTypeFromText(value);
+      return orderType ? { orderType } : null;
+    }
+    return null;
+  }
+
+  // Multi-missing: map a single unlabeled heuristic line to one missing field.
+  if (looksLikePersonNameLine(value) && missing.some((entry) => /nombre/i.test(entry))) {
+    return { customerName: value };
+  }
+  if (looksLikeLocationTripletLine(value) && missing.some((entry) => /direccion|ubicacion/i.test(entry))) {
+    return splitLocationTriplet(value);
+  }
+  if (looksLikeStreetAddressLine(value) && missing.some((entry) => /direccion|ubicacion/i.test(entry))) {
+    return { address: value };
+  }
+  const phone = normalizeCostaRicaPhone(value);
+  if (phone && missing.some((entry) => /telefono/i.test(entry))) {
+    return { phone };
+  }
+  const emailMatch = value.match(EMAIL_RE);
+  if (emailMatch) {
+    return { email: emailMatch[0] };
+  }
+
+  return null;
+}
+
 function parseLocalOrderCorrectionArgs(
   message: string,
   existingArgs: Record<string, any>,
@@ -1405,7 +1605,7 @@ function parseLocalOrderCorrectionArgs(
   }
 
   const raw = collectLocalOrderFields(message, customFieldsConfig);
-  const singleMissing = hasSubstantiveOrderFields(raw) ? null : parseSingleMissingFieldCorrection(message, existingArgs);
+  const singleMissing = hasSubstantiveOrderFields(raw) ? null : parseMissingFieldsCorrection(message, existingArgs);
   const candidate = singleMissing || raw;
   if (!hasSubstantiveOrderFields(candidate)) return null;
 
@@ -1421,7 +1621,7 @@ function buildOrderCorrectionRetryText(
 ): string {
   const captured = getCreateOrderReviewCapturedFields(existingArgs, customFieldsConfig);
   const lines = [
-    'No pude aplicar esa correccion a la orden pendiente.',
+    'No pude aplicar esa corrección.',
   ];
 
   if (captured.length > 0) {
@@ -1430,10 +1630,7 @@ function buildOrderCorrectionRetryText(
 
   lines.push(
     '',
-    'Enviame la correccion en formato claro, por ejemplo:',
-    'provincia/canton/distrito: San Jose, Montes de Oca, Mercedes',
-    'producto: sleeping patches x1',
-    'total: 12900',
+    'Decime el dato así: nombre, dirección, o provincia/cantón/distrito.',
   );
 
   return lines.join('\n');
@@ -1547,7 +1744,85 @@ export const __grokFirstOrderTestInternals = {
   applyOrderCaptureLocationNormalization,
   shouldReplacePendingWithFreshOrder,
   mergeOrderCorrectionArgs,
+  gapFillEmptyOrderFieldsFromMessage,
+  collectLocalOrderFields,
 };
+
+/**
+ * Fill only EMPTY fields from local heuristics. Never overwrites values the
+ * AI (or a prior merge) already set — respects the "no regex layered on AI
+ * output" rule while fixing partial Grok misses (Abigail case).
+ */
+function gapFillEmptyOrderFieldsFromMessage(
+  args: Record<string, any>,
+  message: string,
+  customFieldsConfig?: CustomFieldsData,
+): Record<string, any> {
+  const local = sanitizeAIExtractedArgs(
+    { ...collectLocalOrderFields(message, customFieldsConfig), intent: 'new_order' },
+    customFieldsConfig,
+  );
+  if (!hasSubstantiveOrderFields(local)) return args;
+
+  const out = { ...args };
+  const fillKeys = [
+    'customerName',
+    'phone',
+    'email',
+    'address',
+    'province',
+    'canton',
+    'district',
+    'products',
+    'total',
+    'orderType',
+    'paymentMethod',
+    'courier',
+    'comments',
+  ] as const;
+
+  const filledKeys: string[] = [];
+  for (const key of fillKeys) {
+    const current = out[key];
+    const isEmpty = current === undefined
+      || current === null
+      || current === ''
+      || (Array.isArray(current) && current.length === 0);
+    const candidate = local[key];
+    const hasCandidate = candidate !== undefined
+      && candidate !== null
+      && candidate !== ''
+      && !(Array.isArray(candidate) && candidate.length === 0);
+    if (isEmpty && hasCandidate) {
+      out[key] = candidate;
+      filledKeys.push(key);
+    }
+  }
+
+  if (local.customFields && typeof local.customFields === 'object') {
+    const existing = (out.customFields && typeof out.customFields === 'object') ? out.customFields : {};
+    const merged: Record<string, any> = { ...existing };
+    let customFilled = false;
+    for (const [key, value] of Object.entries(local.customFields)) {
+      if (merged[key] === undefined || merged[key] === null || merged[key] === '') {
+        merged[key] = value;
+        customFilled = true;
+      }
+    }
+    if (customFilled) {
+      out.customFields = merged;
+      filledKeys.push('customFields');
+    }
+  }
+
+  if (filledKeys.length > 0) {
+    console.info('[AI Agent] gap-filled empty order fields from local heuristics', {
+      filledKeys,
+    });
+  }
+
+  return out;
+}
 
 function applyOrderCaptureLocationNormalization(args: Record<string, any>): void {
   try {
@@ -1626,7 +1901,7 @@ function mergeCreateOrderCalls(calls: PreparedToolCall[]): PreparedToolCall[] {
       base.total = uniqueTotals[0] ?? 0;
       delete base._totalsMismatch;
     } else {
-      // Don't silently sum diverging totals â€” flag for user clarification.
+      // Don't silently sum diverging totals — flag for user clarification.
       base.total = uniqueTotals[0];
       base._totalsMismatch = uniqueTotals;
       console.warn('[AI Agent] Merged create_order had divergent totals; asking user to clarify', uniqueTotals);
@@ -1668,7 +1943,7 @@ function applyRelativeDateGuards(toolName: ToolName, toolArgs: any, userMessage:
 }
 
 // System prompt in Spanish
-const SYSTEM_PROMPT = `Eres Betsy, una asistente virtual profesional para Betsy CRM, una plataforma de gestiÃ³n de pedidos para negocios en Costa Rica.
+const SYSTEM_PROMPT = `Eres Betsy, una asistente virtual profesional para Betsy CRM, una plataforma de gestión de pedidos para negocios en Costa Rica.
 
 NEGOCIO ACTUAL: {{TENANT_NAME}}
 FECHA ACTUAL: {{CURRENT_DATE}}
@@ -1677,106 +1952,106 @@ ZONA HORARIA: Costa Rica (America/Costa_Rica)
 
 AISLAMIENTO DE DATOS:
 - Todos los datos que consultes y devuelvas pertenecen EXCLUSIVAMENTE al negocio "{{TENANT_NAME}}".
-- NUNCA hagas referencia a datos, Ã³rdenes, clientes o productos de conversaciones anteriores que no correspondan al negocio actual.
-- Si no encuentras informaciÃ³n, consulta las herramientas disponibles. NUNCA inventes datos basÃ¡ndote en el historial de conversaciÃ³n.
+- NUNCA hagas referencia a datos, órdenes, clientes o productos de conversaciones anteriores que no correspondan al negocio actual.
+- Si no encuentras información, consulta las herramientas disponibles. NUNCA inventes datos basándote en el historial de conversación.
 
 Tu rol es ayudar a los usuarios a gestionar su negocio de manera eficiente y profesional. Puedes:
 
-1. **Crear Ã³rdenes**: Registrar ventas con informaciÃ³n completa del cliente, productos, precios y direcciÃ³n de entrega.
-2. **Consultar Ã³rdenes**: Buscar y filtrar Ã³rdenes por estado, fecha, cliente, o cualquier criterio.
-3. **Actualizar Ã³rdenes**: Modificar informaciÃ³n o cambiar estados de Ã³rdenes existentes.
+1. **Crear órdenes**: Registrar ventas con información completa del cliente, productos, precios y dirección de entrega.
+2. **Consultar órdenes**: Buscar y filtrar órdenes por estado, fecha, cliente, o cualquier criterio.
+3. **Actualizar órdenes**: Modificar información o cambiar estados de órdenes existentes.
 4. **Gestionar inventario**: Consultar stock, agregar o reducir cantidades de productos.
-5. **Ver estadÃ­sticas y reportes**: Mostrar resÃºmenes de ventas, ingresos, productos mÃ¡s vendidos, etc.
-6. **Buscar clientes**: Encontrar informaciÃ³n de clientes y su historial de compras.
-7. **Generar guÃ­as de envÃ­o**: Crear guÃ­as de Correos de Costa Rica (automÃ¡ticas con tracking) o guÃ­as manuales (etiqueta PDF simple), individuales o en bulk.
+5. **Ver estadísticas y reportes**: Mostrar resúmenes de ventas, ingresos, productos más vendidos, etc.
+6. **Buscar clientes**: Encontrar información de clientes y su historial de compras.
+7. **Generar guías de envío**: Crear guías de Correos de Costa Rica (automáticas con tracking) o guías manuales (etiqueta PDF simple), individuales o en bulk.
 
-CONCEPTOS IMPORTANTES DE ENVÃO:
-- **EA (EnvÃ­o a Domicilio)**: El pedido se ENVÃA a la direcciÃ³n del cliente. Requiere direcciÃ³n, provincia, cantÃ³n, distrito, y generar guÃ­a de envÃ­o.
-- **RA (Retiro en Local)**: El cliente RECOGE el pedido en tu ubicaciÃ³n. NO requiere direcciÃ³n, provincia, cantÃ³n, distrito, ni envÃ­o.
-- NUNCA confundas EA con RA. Siempre pregunta si no estÃ¡s seguro del mÃ©todo de entrega.
-- **CRÃTICO**: Siempre pasa el campo orderType al crear una orden. Si el usuario dice "RA", "retiro", o "retiro en local", usa orderType="RA". Si dice "EA", "envÃ­o", o "envÃ­o a domicilio", usa orderType="EA". Si no lo especifica, PREGUNTA antes de crear la orden.
-- Cuando orderType es "RA", NO incluyas ni pidas direcciÃ³n, provincia, cantÃ³n, distrito, ni mÃ©todo de envÃ­o.
+CONCEPTOS IMPORTANTES DE ENVÍO:
+- **EA (Envío a Domicilio)**: El pedido se ENVÍA a la dirección del cliente. Requiere dirección, provincia, cantón, distrito, y generar guía de envío.
+- **RA (Retiro en Local)**: El cliente RECOGE el pedido en tu ubicación. NO requiere dirección, provincia, cantón, distrito, ni envío.
+- NUNCA confundas EA con RA. Siempre pregunta si no estás seguro del método de entrega.
+- **CRÍTICO**: Siempre pasa el campo orderType al crear una orden. Si el usuario dice "RA", "retiro", o "retiro en local", usa orderType="RA". Si dice "EA", "envío", o "envío a domicilio", usa orderType="EA". Si no lo especifica, PREGUNTA antes de crear la orden.
+- Cuando orderType es "RA", NO incluyas ni pidas dirección, provincia, cantón, distrito, ni método de envío.
 
-VALIDACIÃ“N DE UBICACIÃ“N (Costa Rica):
-- Para Ã³rdenes EA, SIEMPRE recopila provincia, cantÃ³n Y distrito. Los tres son necesarios para generar guÃ­as de Correos de Costa Rica.
-- Costa Rica tiene 7 provincias, cada una con cantones, y cada cantÃ³n con distritos. La jerarquÃ­a es: Provincia â†’ CantÃ³n â†’ Distrito.
-- **CRÃTICO**: La herramienta **create_order** YA valida y corrige la ubicaciÃ³n automÃ¡ticamente. NO llames a validate_order_location por separado cuando vayas a crear una orden. Llama directamente a create_order y el sistema se encarga de validar y corregir errores menores (tildes, mayÃºsculas, etc.).
-- Usa **validate_order_location** ÃšNICAMENTE cuando:
-  1. El usuario pide explÃ­citamente verificar una ubicaciÃ³n SIN crear orden (ej: "verificar direcciÃ³n", "Â¿es vÃ¡lido este cantÃ³n?").
-  2. El usuario solo proporciona datos parciales de ubicaciÃ³n (solo provincia, o provincia y cantÃ³n) y necesitas mostrarle las opciones disponibles para el siguiente nivel.
-- Si create_order devuelve un error de ubicaciÃ³n invÃ¡lida, presenta las opciones al usuario como lista numerada para que elija.
-- Si el usuario solo da la provincia, pregunta por el cantÃ³n. Si da provincia y cantÃ³n, pregunta por el distrito mostrando las opciones disponibles.
+VALIDACIÓN DE UBICACIÓN (Costa Rica):
+- Para órdenes EA, SIEMPRE recopila provincia, cantón Y distrito. Los tres son necesarios para generar guías de Correos de Costa Rica.
+- Costa Rica tiene 7 provincias, cada una con cantones, y cada cantón con distritos. La jerarquía es: Provincia → Cantón → Distrito.
+- **CRÍTICO**: La herramienta **create_order** YA valida y corrige la ubicación automáticamente. NO llames a validate_order_location por separado cuando vayas a crear una orden. Llama directamente a create_order y el sistema se encarga de validar y corregir errores menores (tildes, mayúsculas, etc.).
+- Usa **validate_order_location** ÚNICAMENTE cuando:
+  1. El usuario pide explícitamente verificar una ubicación SIN crear orden (ej: "verificar dirección", "¿es válido este cantón?").
+  2. El usuario solo proporciona datos parciales de ubicación (solo provincia, o provincia y cantón) y necesitas mostrarle las opciones disponibles para el siguiente nivel.
+- Si create_order devuelve un error de ubicación inválida, presenta las opciones al usuario como lista numerada para que elija.
+- Si el usuario solo da la provincia, pregunta por el cantón. Si da provincia y cantón, pregunta por el distrito mostrando las opciones disponibles.
 
-CREACIÃ“N DE Ã“RDENES â€” FLUJO EFICIENTE:
-- **REGLA ABSOLUTA**: Cuando el usuario quiere crear una orden y proporciona datos (nombre, producto, precio, direcciÃ³n, etc.) EN SU MENSAJE ACTUAL, llama a **create_order** DIRECTAMENTE. NUNCA llames a validate_order_location primero. NUNCA. La herramienta create_order ya valida la ubicaciÃ³n internamente.
-- **PROHIBIDO**: Responder con mensajes de validaciÃ³n como "UbicaciÃ³n vÃ¡lida", "UbicaciÃ³n vÃ¡lida (con correcciones)", o cualquier reporte tÃ©cnico de validaciÃ³n. El usuario quiere que CREES la orden, no que le reportes si la direcciÃ³n es vÃ¡lida.
-- Si la orden se crea exitosamente y hubo correcciones de ubicaciÃ³n, menciÃ³nalas brevemente dentro del mensaje de confirmaciÃ³n (ej: "Se creÃ³ la orden. Nota: se corrigiÃ³ el cantÃ³n a 'AserrÃ­'").
-- El objetivo es que el usuario envÃ­e UN mensaje con los datos y reciba UNA respuesta con la confirmaciÃ³n de la orden creada. Minimiza los pasos intermedios.
+CREACIÓN DE ÓRDENES — FLUJO EFICIENTE:
+- **REGLA ABSOLUTA**: Cuando el usuario quiere crear una orden y proporciona datos (nombre, producto, precio, dirección, etc.) EN SU MENSAJE ACTUAL, llama a **create_order** DIRECTAMENTE. NUNCA llames a validate_order_location primero. NUNCA. La herramienta create_order ya valida la ubicación internamente.
+- **PROHIBIDO**: Responder con mensajes de validación como "Ubicación válida", "Ubicación válida (con correcciones)", o cualquier reporte técnico de validación. El usuario quiere que CREES la orden, no que le reportes si la dirección es válida.
+- Si la orden se crea exitosamente y hubo correcciones de ubicación, menciónalas brevemente dentro del mensaje de confirmación (ej: "Se creó la orden. Nota: se corrigió el cantón a 'Aserrí'").
+- El objetivo es que el usuario envíe UN mensaje con los datos y reciba UNA respuesta con la confirmación de la orden creada. Minimiza los pasos intermedios.
 - Si el mensaje del usuario dice "nueva orden", "agregar orden", "crear orden", "deseo agregar" o similar Y contiene datos del cliente/producto EN ESE MISMO MENSAJE, SIEMPRE llama a create_order. Sin excepciones.
 - Si una sola orden contiene varios productos, varias lineas o varios SKU, llama a create_order UNA SOLA VEZ usando products: [{ name, sku, quantity }]. NUNCA crees una orden separada por cada SKU del mismo cliente/pedido.
-- **CRÃTICO â€” DATOS FRESCOS**: Si el usuario pide crear una "nueva orden" o "agregar orden" pero NO proporciona datos del cliente/producto en su mensaje actual, SIEMPRE pregunta: "Â¡Claro! Por favor proporciona los datos de la nueva orden (nombre del cliente, producto, cantidad, precio, direcciÃ³n si aplica)." NUNCA reutilices datos de Ã³rdenes anteriores del historial.
-- **PROHIBIDO REUTILIZAR DATOS**: Cada orden es independiente. NUNCA copies nombre, telÃ©fono, producto, direcciÃ³n ni ningÃºn dato de una orden que ya fue creada exitosamente (marcada con "Orden #... creada exitosamente"). Esos datos son de una orden COMPLETADA y no deben reciclarse para nuevas Ã³rdenes.
+- **CRÍTICO — DATOS FRESCOS**: Si el usuario pide crear una "nueva orden" o "agregar orden" pero NO proporciona datos del cliente/producto en su mensaje actual, SIEMPRE pregunta: "¡Claro! Por favor proporciona los datos de la nueva orden (nombre del cliente, producto, cantidad, precio, dirección si aplica)." NUNCA reutilices datos de órdenes anteriores del historial.
+- **PROHIBIDO REUTILIZAR DATOS**: Cada orden es independiente. NUNCA copies nombre, teléfono, producto, dirección ni ningún dato de una orden que ya fue creada exitosamente (marcada con "Orden #... creada exitosamente"). Esos datos son de una orden COMPLETADA y no deben reciclarse para nuevas órdenes.
 
-CAMBIO DE ESTADO DE Ã“RDENES:
-- **REGLA ABSOLUTA**: NUNCA cambies el estado de una orden a menos que el usuario lo pida EXPLÃCITA y CLARAMENTE (ej: "cambia el estado a Completado", "marca como enviado", "pasar a En Proceso").
-- NUNCA cambies el estado como efecto secundario de otra acciÃ³n. Crear una orden, consultar Ã³rdenes, actualizar campos, o cualquier otra operaciÃ³n NO debe disparar un cambio de estado.
-- Antes de ejecutar un cambio de estado, confirma con el usuario: "Voy a cambiar el estado de la orden #X de '[estado actual]' a '[nuevo estado]'. Â¿Confirmas?"
-- Estados vÃ¡lidos: Pendiente, En Proceso, Completado, Enviado, Entregado, Cancelado.
+CAMBIO DE ESTADO DE ÓRDENES:
+- **REGLA ABSOLUTA**: NUNCA cambies el estado de una orden a menos que el usuario lo pida EXPLÍCITA y CLARAMENTE (ej: "cambia el estado a Completado", "marca como enviado", "pasar a En Proceso").
+- NUNCA cambies el estado como efecto secundario de otra acción. Crear una orden, consultar órdenes, actualizar campos, o cualquier otra operación NO debe disparar un cambio de estado.
+- Antes de ejecutar un cambio de estado, confirma con el usuario: "Voy a cambiar el estado de la orden #X de '[estado actual]' a '[nuevo estado]'. ¿Confirmas?"
+- Estados válidos: Pendiente, En Proceso, Completado, Enviado, Entregado, Cancelado.
 
 REGLAS DE COMPORTAMIENTO:
-- SÃ© profesional, amable y eficiente. Tu nombre es Betsy.
+- Sé profesional, amable y eficiente. Tu nombre es Betsy.
 - Usa un tono cordial pero no excesivamente casual. Evita jerga o bromas.
-- SÃ© concisa en tus respuestas pero completa en la informaciÃ³n.
-- Usa emojis con moderaciÃ³n (solo para categorizar informaciÃ³n).
-- Si falta informaciÃ³n, pregunta de forma clara y directa.
-- Para acciones irreversibles o de estado (eliminar, cambiar estado), siempre pide confirmaciÃ³n explÃ­cita.
+- Sé concisa en tus respuestas pero completa en la información.
+- Usa emojis con moderación (solo para categorizar información).
+- Si falta información, pregunta de forma clara y directa.
+- Para acciones irreversibles o de estado (eliminar, cambiar estado), siempre pide confirmación explícita.
 
 MANEJO DE ERRORES Y REINTENTOS:
-- **CRÃTICO**: Cuando una herramienta falla, SIEMPRE explica el error al usuario y pregunta por la informaciÃ³n faltante o incorrecta. NUNCA respondas solo con "Procesando..." o mensajes vagos.
-- **NUNCA reintentes automÃ¡ticamente** una creaciÃ³n de orden que fallÃ³ anteriormente. Si una orden fallÃ³ en un mensaje previo, NO la vuelvas a crear a menos que el usuario lo pida explÃ­citamente.
-- Si el usuario envÃ­a un mensaje casual (como "hola") despuÃ©s de un error, responde normalmente sin reintentar acciones fallidas.
-- Cuando falte informaciÃ³n para crear una orden, lista claramente quÃ© campos necesitas y espera la respuesta del usuario.
+- **CRÍTICO**: Cuando una herramienta falla, SIEMPRE explica el error al usuario y pregunta por la información faltante o incorrecta. NUNCA respondas solo con "Procesando..." o mensajes vagos.
+- **NUNCA reintentes automáticamente** una creación de orden que falló anteriormente. Si una orden falló en un mensaje previo, NO la vuelvas a crear a menos que el usuario lo pida explícitamente.
+- Si el usuario envía un mensaje casual (como "hola") después de un error, responde normalmente sin reintentar acciones fallidas.
+- Cuando falte información para crear una orden, lista claramente qué campos necesitas y espera la respuesta del usuario.
 
 DIFERENCIA ENTRE CAMPOS:
-- **paymentMethod** = MÃ©todo de PAGO del cliente (SINPE MÃ³vil, transferencia, efectivo, etc.)
-- **courier / metodoEnvio** = Empresa de MENSAJERÃA o envÃ­o (Correos de CR, etc.) - solo aplica para EA
-- NUNCA confundas mÃ©todo de pago con mÃ©todo de envÃ­o. Son campos completamente diferentes.
+- **paymentMethod** = Método de PAGO del cliente (SINPE Móvil, transferencia, efectivo, etc.)
+- **courier / metodoEnvio** = Empresa de MENSAJERÍA o envío (Correos de CR, etc.) - solo aplica para EA
+- NUNCA confundas método de pago con método de envío. Son campos completamente diferentes.
 
 FECHAS Y TIEMPOS:
-- **CRÃTICO**: Cuando el usuario diga "hoy", usa la FECHA ACTUAL proporcionada arriba.
-- "Esta semana" = Ãºltimos 7 dÃ­as desde hoy
-- "Este mes" = desde el dÃ­a 1 del mes actual hasta hoy
-- NUNCA uses fechas del 2023 o anteriores. Siempre usa el aÃ±o actual.
+- **CRÍTICO**: Cuando el usuario diga "hoy", usa la FECHA ACTUAL proporcionada arriba.
+- "Esta semana" = últimos 7 días desde hoy
+- "Este mes" = desde el día 1 del mes actual hasta hoy
+- NUNCA uses fechas del 2023 o anteriores. Siempre usa el año actual.
 
 FORMATO DE RESPUESTAS:
-- **Ã“rdenes**: Muestra ID, cliente, productos, total, estado y mÃ©todo de entrega (EA/RA)
+- **Órdenes**: Muestra ID, cliente, productos, total, estado y método de entrega (EA/RA)
 - **Inventario**: Muestra producto, SKU, stock actual, precio, y alertas de stock bajo
-- **Reportes**: Usa tablas o listas claras con totales y resÃºmenes
-- **EstadÃ­sticas**: Incluye comparaciones y porcentajes cuando sea relevante
+- **Reportes**: Usa tablas o listas claras con totales y resúmenes
+- **Estadísticas**: Incluye comparaciones y porcentajes cuando sea relevante
 - Usa negritas (**texto**) para datos importantes
-- Usa viÃ±etas para listas
+- Usa viñetas para listas
 - Separa secciones claramente
 
-GUÃAS DE ENVÃO:
-- Hay dos modos de generaciÃ³n de guÃ­as, AMBOS generan un PDF adjunto:
-  - **auto** (por defecto): Genera guÃ­a real de Correos de Costa Rica con nÃºmero de tracking y PDF oficial. Requiere credenciales configuradas en ConfiguraciÃ³n > EnvÃ­os.
-  - **manual**: Genera una etiqueta de envÃ­o PDF simple con los datos de la orden (sin Correos WS, sin tracking). NO requiere credenciales. Ãštil cuando no se usa Correos de Costa Rica o las credenciales no estÃ¡n configuradas.
-- Usa modo "manual" si el usuario lo pide explÃ­citamente o si las credenciales de Correos no estÃ¡n configuradas y el usuario necesita una guÃ­a rÃ¡pida.
-- Para generar guÃ­as de varias Ã³rdenes a la vez, usa la herramienta generate_guias_bulk con los IDs de las Ã³rdenes.
-- El PDF se envÃ­a directamente al usuario en el chat.
-- Confirma el nÃºmero de guÃ­a generado y que el PDF estÃ¡ adjunto.
+GUÍAS DE ENVÍO:
+- Hay dos modos de generación de guías, AMBOS generan un PDF adjunto:
+  - **auto** (por defecto): Genera guía real de Correos de Costa Rica con número de tracking y PDF oficial. Requiere credenciales configuradas en Configuración > Envíos.
+  - **manual**: Genera una etiqueta de envío PDF simple con los datos de la orden (sin Correos WS, sin tracking). NO requiere credenciales. Útil cuando no se usa Correos de Costa Rica o las credenciales no están configuradas.
+- Usa modo "manual" si el usuario lo pide explícitamente o si las credenciales de Correos no están configuradas y el usuario necesita una guía rápida.
+- Para generar guías de varias órdenes a la vez, usa la herramienta generate_guias_bulk con los IDs de las órdenes.
+- El PDF se envía directamente al usuario en el chat.
+- Confirma el número de guía generado y que el PDF está adjunto.
 
-INTEGRACIÃ“N CON INVENTARIO AL CREAR Ã“RDENES:
-- Al crear una orden, el sistema automÃ¡ticamente busca el producto en el inventario del negocio.
-- Si el producto se encuentra y hay stock suficiente, se descuenta automÃ¡ticamente del inventario. No necesitas hacer nada adicional.
-- Si NO se encuentra en inventario, el sistema preguntarÃ¡ al usuario si desea registrar la venta de todas maneras. Transmite esa pregunta al usuario y espera su respuesta.
-- Si el producto tiene stock insuficiente o en 0, el sistema preguntarÃ¡ al usuario si desea continuar. Transmite la pregunta al usuario.
-- Si hay mÃºltiples productos similares en inventario, el sistema mostrarÃ¡ las opciones. Presenta la lista al usuario y pÃ­dele que elija el correcto. Cuando el usuario elija, vuelve a llamar create_order con el nombre EXACTO del producto elegido por el usuario.
+INTEGRACIÓN CON INVENTARIO AL CREAR ÓRDENES:
+- Al crear una orden, el sistema automáticamente busca el producto en el inventario del negocio.
+- Si el producto se encuentra y hay stock suficiente, se descuenta automáticamente del inventario. No necesitas hacer nada adicional.
+- Si NO se encuentra en inventario, el sistema preguntará al usuario si desea registrar la venta de todas maneras. Transmite esa pregunta al usuario y espera su respuesta.
+- Si el producto tiene stock insuficiente o en 0, el sistema preguntará al usuario si desea continuar. Transmite la pregunta al usuario.
+- Si hay múltiples productos similares en inventario, el sistema mostrará las opciones. Presenta la lista al usuario y pídele que elija el correcto. Cuando el usuario elija, vuelve a llamar create_order con el nombre EXACTO del producto elegido por el usuario.
 - NUNCA inventes o asumas un nombre de producto. Usa el nombre exacto que el usuario proporciona.
-- Cuando el usuario confirme que desea proceder sin inventario (respondiendo "sÃ­" o similar), el sistema crea la orden automÃ¡ticamente. No necesitas hacer nada â€” el sistema maneja la confirmaciÃ³n internamente.
-- **PROHIBIDO**: NUNCA llames a create_order con skipInventoryCheck: true por tu cuenta. El sistema maneja las confirmaciones de inventario automÃ¡ticamente. Si ves en el historial que una confirmaciÃ³n de inventario quedÃ³ pendiente, NO la reintentes â€” pÃ­dele al usuario que lo intente de nuevo.
+- Cuando el usuario confirme que desea proceder sin inventario (respondiendo "sí" o similar), el sistema crea la orden automáticamente. No necesitas hacer nada — el sistema maneja la confirmación internamente.
+- **PROHIBIDO**: NUNCA llames a create_order con skipInventoryCheck: true por tu cuenta. El sistema maneja las confirmaciones de inventario automáticamente. Si ves en el historial que una confirmación de inventario quedó pendiente, NO la reintentes — pídele al usuario que lo intente de nuevo.
 
-GESTIÃ“N DE STOCK:
+GESTIÓN DE STOCK:
 - Cuando el usuario diga "agregar X al stock de [producto]", actualiza el inventario
 - Cuando diga "reducir stock de [producto] en Y", resta del inventario
 - Confirma los cambios realizados con el stock anterior y nuevo
@@ -1784,11 +2059,11 @@ GESTIÃ“N DE STOCK:
 CONTRA ENTREGA (Pago al recibir):
 - Cuando el usuario mencione "contra entrega", "pago contra entrega", "COD", "paga al recibir", "pagar al recibir", "pago al recibir", "cobrar al entregar", o frases similares, establece contraEntrega: true al crear la orden.
 - Si dicen "este pedido es contra entrega" o "la orden es contra entrega", confirma que lo marcas como contra entrega.
-- Las Ã³rdenes contra entrega significan que el cliente paga al momento de recibir el producto, NO estÃ¡ prepagada.
-- Las Ã³rdenes contra entrega NO se contabilizan en las estadÃ­sticas de ventas hasta que el pago sea confirmado.
-- Al confirmar la creaciÃ³n de una orden contra entrega, indica claramente al usuario que la orden fue marcada como contra entrega.
+- Las órdenes contra entrega significan que el cliente paga al momento de recibir el producto, NO está prepagada.
+- Las órdenes contra entrega NO se contabilizan en las estadísticas de ventas hasta que el pago sea confirmado.
+- Al confirmar la creación de una orden contra entrega, indica claramente al usuario que la orden fue marcada como contra entrega.
 
-Recuerda: Eres una asistente profesional de ventas. MantÃ©n el enfoque en la eficiencia y precisiÃ³n.
+Recuerda: Eres una asistente profesional de ventas. Mantén el enfoque en la eficiencia y precisión.
 
 {{CUSTOM_FIELDS_SECTION}}`;
 
@@ -1813,14 +2088,14 @@ async function getCustomFieldsSection(tenantId: string): Promise<string> {
         // Include options for select fields so AI knows valid values
         if ((field.type === 'select' || field.type === 'multiselect') && field.options && field.options.length > 0) {
           const optionValues = field.options.map((o: any) => o.value || o.label).join(', ');
-          line += ' â€” opciones vÃ¡lidas: [' + optionValues + ']';
+          line += ' — opciones válidas: [' + optionValues + ']';
         }
         section += line + '\n';
       });
     }
 
     if (customFieldsConfig.businessInfoFields.length > 0) {
-      section += '\n**Campos de InformaciÃ³n del Negocio:**\n';
+      section += '\n**Campos de Información del Negocio:**\n';
       customFieldsConfig.businessInfoFields.forEach(field => {
         const required = field.required ? ' (REQUERIDO)' : ' (opcional)';
         let line = '- ' + field.label + ' (key: ' + field.name + ')' + required + ': tipo ' + field.type;
@@ -1830,7 +2105,7 @@ async function getCustomFieldsSection(tenantId: string): Promise<string> {
             const opts = typeof field.options === 'string' ? JSON.parse(field.options) : field.options;
             if (Array.isArray(opts) && opts.length > 0) {
               const optionValues = opts.map((o: any) => typeof o === 'string' ? o : (o.value || o.label)).join(', ');
-              line += ' â€” opciones vÃ¡lidas: [' + optionValues + ']';
+              line += ' — opciones válidas: [' + optionValues + ']';
             }
           } catch { }
         }
@@ -1950,7 +2225,7 @@ export async function processMessage(
 ): Promise<MessageResponse> {
   // Tracks whether a mutating tool already committed during this turn. If so,
   // and a later step throws, the global catch surfaces the success message
-  // instead of a misleading "ocurriÃ³ un error" that would contradict reality
+  // instead of a misleading "ocurrió un error" that would contradict reality
   // (the order is already in the DB).
   let mutationSuccessText: string | null = null;
   let mutationSuccessAttachments: ToolAttachment[] | undefined;
@@ -1974,9 +2249,9 @@ export async function processMessage(
     if (pending) {
       if (pending.type === 'order_repair') {
         if (isDenial(userMessage) || isExplicitRejection(userMessage)) {
-          console.info('[AI Agent] User rejected pending order_repair â€” clearing.');
+          console.info('[AI Agent] User rejected pending order_repair — clearing.');
           await clearPendingConfirmation(platform, platformId);
-          const text = 'Entendido, descartÃ© esa orden. Cuando quieras crear una nueva, envÃ­ame los datos completos.';
+          const text = 'Entendido, descarté esa orden. Cuando quieras crear una nueva, envíame los datos completos.';
           await addAssistantMessage(platform, platformId, text);
           return { text };
         }
@@ -1990,14 +2265,14 @@ export async function processMessage(
         // Only an explicit new-order intent clears the repair. Correction
         // wording like "cambie el distrito" stays here and Grok interprets it.
         if (hasOrderCreationIntent(userMessage)) {
-          console.info(`[AI Agent] Clearing pending order_repair â€” user started a new order: "${userMessage.substring(0, 60)}"`);
+          console.info(`[AI Agent] Clearing pending order_repair — user started a new order: "${userMessage.substring(0, 60)}"`);
           await clearPendingConfirmation(platform, platformId);
           // Fall through to normal processing; Grok extraction or the LLM will
           // pick up the fresh order data below.
         } else {
           // Otherwise treat ANY remaining message as a repair attempt. This is
           // important: prior versions gated this on a field-reply detector,
-          // which missed valid corrections like "Provincia San JosÃ© / CantÃ³n
+          // which missed valid corrections like "Provincia San José / Cantón
           // Desamparados / Distrito San Antonio" (no colons) and let them fall
           // through to the LLM, where it would borrow data from history.
           //
@@ -2027,7 +2302,7 @@ export async function processMessage(
             console.info('[AI Agent] order_repair correction source=grok');
             const aiCorrection = await extractOrderArgsWithGrok(userMessage, customFieldsConfig);
             if (aiCorrection && Object.keys(aiCorrection).length > 0) {
-              const sanitized = sanitizeAIExtractedArgs(aiCorrection, customFieldsConfig);
+              let sanitized = sanitizeAIExtractedArgs(aiCorrection, customFieldsConfig);
               if (!hasSubstantiveOrderFields(sanitized)) {
                 console.warn('[AI Agent] order_repair: Grok returned no substantive correction fields');
                 await setPendingConfirmation(platform, platformId, pending as any);
@@ -2035,11 +2310,17 @@ export async function processMessage(
               }
               if (shouldReplacePendingWithFreshOrder(userMessage, sanitized)) {
                 console.info('[AI Agent] order_repair: Grok detected a fresh order; replacing pending repair');
-                const freshArgs = stripOrderExtractionMetadata(sanitized);
+                // Full fresh order paste — gap-fill empties on the new payload only.
+                const freshArgs = stripOrderExtractionMetadata(
+                  gapFillEmptyOrderFieldsFromMessage(sanitized, userMessage, customFieldsConfig),
+                );
                 applyOrderCaptureLocationNormalization(freshArgs);
                 return requestCreateOrderFinalConfirmation(freshArgs, context, platform, platformId);
               }
+              // Gap-fill AFTER merge so heuristics cannot invent fields that
+              // overwrite already-good pending values via the sparse correction.
               repairedArgs = mergeOrderCorrectionArgs(existingArgs, sanitized);
+              repairedArgs = gapFillEmptyOrderFieldsFromMessage(repairedArgs, userMessage, customFieldsConfig);
               applyOrderCaptureLocationNormalization(repairedArgs);
               console.info('[AI Agent] order_repair: AI applied corrections', {
                 correctionKeys: Object.keys(sanitized),
@@ -2062,7 +2343,7 @@ export async function processMessage(
           console.info('[AI Agent] User rejected pending order_final_confirm.');
           await clearPendingConfirmation(platform, platformId);
           const text = isExplicitRejection(userMessage)
-            ? 'Entendido, descartÃ© esa revisiÃ³n. EnvÃ­ame de nuevo los datos correctos de la orden y preparo la revisiÃ³n final.'
+            ? 'Entendido, descarté esa revisión. Envíame de nuevo los datos correctos de la orden y preparo la revisión final.'
             : 'Entendido, orden cancelada antes de crearla.';
           await addAssistantMessage(platform, platformId, text);
           return { text };
@@ -2094,7 +2375,7 @@ export async function processMessage(
         const looksLikeNewOrder = hasOrderCreationIntent(userMessage);
 
         if (looksLikeNewOrder) {
-          console.info('[AI Agent] ðŸ§¹ Discarding pending order_final_confirm â€” user started a new order');
+          console.info('[AI Agent] 🧹 Discarding pending order_final_confirm — user started a new order');
           await clearPendingConfirmation(platform, platformId);
           // Do NOT return; fall through to normal processing below.
         } else {
@@ -2134,12 +2415,17 @@ export async function processMessage(
 
           if (shouldReplacePendingWithFreshOrder(userMessage, sanitized)) {
             console.info('[AI Agent] order_final_confirm: Grok detected a fresh order; replacing pending review');
-            const freshArgs = stripOrderExtractionMetadata(sanitized);
+            const freshArgs = stripOrderExtractionMetadata(
+              gapFillEmptyOrderFieldsFromMessage(sanitized, userMessage, customFieldsConfig),
+            );
             applyOrderCaptureLocationNormalization(freshArgs);
             return requestCreateOrderFinalConfirmation(freshArgs, context, platform, platformId);
           }
 
-          const updatedArgs = mergeOrderCorrectionArgs(existingArgs, sanitized);
+          let updatedArgs = mergeOrderCorrectionArgs(existingArgs, sanitized);
+          // Gap-fill only empties on the merged pending order — never invent
+          // fields onto a sparse correction that would clobber good pending data.
+          updatedArgs = gapFillEmptyOrderFieldsFromMessage(updatedArgs, userMessage, customFieldsConfig);
           applyOrderCaptureLocationNormalization(updatedArgs);
           console.info('[AI Agent] order_final_confirm: Grok applied correction', {
             correctionKeys: Object.keys(sanitized),
@@ -2159,11 +2445,11 @@ export async function processMessage(
         return { text: result };
       } else if (denied) {
         await clearPendingConfirmation(platform, platformId);
-        return { text: 'âœ… Entendido, acciÃ³n cancelada.' };
+        return { text: '✅ Entendido, acción cancelada.' };
       }
-      // Not a confirmation/denial â€” check if this is a new action request
+      // Not a confirmation/denial — check if this is a new action request
       if (isActionRequest(userMessage)) {
-        console.info(`[AI Agent] ðŸ§¹ Clearing stale pending confirmation â€” user started a new action: "${userMessage.substring(0, 60)}"`);
+        console.info(`[AI Agent] 🧹 Clearing stale pending confirmation — user started a new action: "${userMessage.substring(0, 60)}"`);
         await clearPendingConfirmation(platform, platformId);
       }
       // Fall through to normal AI processing
@@ -2173,28 +2459,30 @@ export async function processMessage(
       // fall through to the LLM here: history still contains the assistant's
       // review message, and the model might helpfully re-invoke create_order
       // using that stale data. Give the user a clear, friendly stop instead.
-      console.warn(`[AI Agent] âš ï¸ Yes/No message "${userMessage}" received with no pending confirmation. Likely an expired review. Stopping safely.`);
+      console.warn(`[AI Agent] ⚠️ Yes/No message "${userMessage}" received with no pending confirmation. Likely an expired review. Stopping safely.`);
       const text = isConfirmation(userMessage)
-        ? 'No tengo nada pendiente que confirmar en este momento. La revisiÃ³n anterior caducÃ³. Si querÃ©s crear la orden, envÃ­ame los datos completos de nuevo y preparo la revisiÃ³n final.'
-        : 'No hay ninguna acciÃ³n pendiente que cancelar. Si necesitÃ¡s algo mÃ¡s, decime quÃ© hacemos.';
+        ? 'No tengo nada pendiente que confirmar en este momento. La revisión anterior caducó. Si querés crear la orden, envíame los datos completos de nuevo y preparo la revisión final.'
+        : 'No hay ninguna acción pendiente que cancelar. Si necesitás algo más, decime qué hacemos.';
       await addAssistantMessage(platform, platformId, text);
       return { text };
     }
 
-    // â”€â”€ AI-first order extraction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── AI-first order extraction ───────────────────────────────────────
     // Grok 4.3 is the brain. When the message looks like an order-creation
     // request, we let the model read it the way a human would and produce
     // the structured fields. The regex parser is NOT layered on top of the
-    // AI output â€” that was actively limiting the model and producing bugs
+    // AI output — that was actively limiting the model and producing bugs
     // like "dopamine patch x2 x2" (regex doubling the quantity).
     //
     // The only post-processing we do on the AI result is:
     //   - `sanitizeAIExtractedArgs`: drops placeholder values, coerces types.
+    //   - `gapFillEmptyOrderFieldsFromMessage`: fills ONLY empty fields from
+    //     local heuristics (never overwrites successful AI values).
     //   - `applyOrderCaptureLocationNormalization`: canonicalizes CR province/canton/
     //     district names against the DB (uses the validator's fuzzy matcher,
-    //     which also handles "Sanjose" â†’ "San JosÃ©" etc.).
+    //     which also handles "Sanjose" → "San José" etc.).
     //
-    // We deliberately do NOT write the message to history before this â€”
+    // We deliberately do NOT write the message to history before this —
     // same history-safety reason: an expired pending review can't
     // cause the LLM to re-create the order from leftover history.
     if (looksLikeFieldOnlyOrderFragment(userMessage)) {
@@ -2204,11 +2492,14 @@ export async function processMessage(
     }
 
     if (looksLikeOrderPayload(userMessage)) {
-      console.info('[AI Agent] Order-creation intent detected â†’ AI extraction path');
+      console.info('[AI Agent] Order-creation intent detected → AI extraction path');
       const aiExtracted = await extractOrderArgsWithGrok(userMessage, customFieldsConfig);
 
       if (aiExtracted && Object.keys(aiExtracted).length > 0) {
-        const args = sanitizeAIExtractedArgs(aiExtracted, customFieldsConfig);
+        let args = sanitizeAIExtractedArgs(aiExtracted, customFieldsConfig);
+        // Gap-fill ONLY empty fields from local heuristics. Never overwrites
+        // AI values — fixes partial Grok misses (unlabeled name, slash location).
+        args = gapFillEmptyOrderFieldsFromMessage(args, userMessage, customFieldsConfig);
         if (hasSubstantiveOrderFields(args)) {
           applyOrderCaptureLocationNormalization(args);
           console.info('[AI Agent] Order extraction source=grok -> routing to final review', {
@@ -2292,7 +2583,7 @@ export async function processMessage(
     const requiresToolCall = isActionRequest(userMessage);
 
     if (requiresToolCall) {
-      console.log('[AI Agent] ðŸ”§ Action request detected, forcing tool_choice: required');
+      console.log('[AI Agent] 🔧 Action request detected, forcing tool_choice: required');
     }
 
     // Call xAI with dynamic tool_choice
@@ -2314,23 +2605,23 @@ export async function processMessage(
 
     // SECURITY CHECK: Detect when AI should have called a tool but didn't
     if (requiresToolCall && (!message.tool_calls || message.tool_calls.length === 0)) {
-      console.warn('[AI Agent] âš ï¸ ACTION REQUEST BUT NO TOOL CALLS!');
+      console.warn('[AI Agent] ⚠️ ACTION REQUEST BUT NO TOOL CALLS!');
       console.warn('[AI Agent] User message:', userMessage);
       console.warn('[AI Agent] AI response (text only):', message.content?.slice(0, 300));
 
-      const safeResponse = `Para ejecutar esta acciÃ³n, necesito mÃ¡s informaciÃ³n. Por favor proporciona en un solo mensaje:
+      const safeResponse = `Para ejecutar esta acción, necesito más información. Por favor proporciona en un solo mensaje:
 
-ðŸ“¦ **Para crear orden:**
-â€¢ Nombre del cliente
-â€¢ Producto y cantidad
-â€¢ Precio total
-â€¢ DirecciÃ³n de entrega (si es envÃ­o)
+📦 **Para crear orden:**
+• Nombre del cliente
+• Producto y cantidad
+• Precio total
+• Dirección de entrega (si es envío)
 
-ðŸ“Š **Para otras acciones:**
-â€¢ ID de la orden o producto
-â€¢ Detalles especÃ­ficos de lo que deseas hacer
+📊 **Para otras acciones:**
+• ID de la orden o producto
+• Detalles específicos de lo que deseas hacer
 
-Â¿Puedes proporcionar estos datos?`;
+¿Puedes proporcionar estos datos?`;
 
       await addAssistantMessage(platform, platformId, safeResponse);
       return { text: safeResponse };
@@ -2366,7 +2657,7 @@ export async function processMessage(
       );
 
       if (createOrderCalls.length >= 1) {
-        // Evict the user message we just added â€” order data should not linger
+        // Evict the user message we just added — order data should not linger
         // in conversation history while we wait for the user to confirm the
         // review. If the pending review later expires, the LLM won't be able
         // to re-create the order from leftover history.
@@ -2377,7 +2668,7 @@ export async function processMessage(
           return requestCreateOrderFinalConfirmation(createOrderCalls[0].args, context, platform, platformId);
         }
 
-        // Multiple distinct orders detected â€” mergeCreateOrderCalls already
+        // Multiple distinct orders detected — mergeCreateOrderCalls already
         // collapsed same-identity duplicates, so anything left here is a
         // different customer/order. Present all of them and start the review
         // of the first; ask the user to send the others afterwards.
@@ -2387,7 +2678,7 @@ export async function processMessage(
           const a = call.args as any;
           const parts: string[] = [`${idx + 1}. ${a.customerName || 'Cliente sin nombre'}`];
           if (a.phone) parts.push(`(${a.phone})`);
-          if (a.total !== undefined && a.total !== null) parts.push(`â€” ${formatCrcAmount(a.total)}`);
+          if (a.total !== undefined && a.total !== null) parts.push(`— ${formatCrcAmount(a.total)}`);
           return parts.join(' ');
         });
 
@@ -2396,14 +2687,14 @@ export async function processMessage(
         );
 
         const headerText = [
-          `DetectÃ© ${createOrderCalls.length} pedidos diferentes en tu mensaje. Vamos uno a la vez para no equivocarnos.`,
+          `Detecté ${createOrderCalls.length} pedidos diferentes en tu mensaje. Vamos uno a la vez para no equivocarnos.`,
           '',
           'Pedidos detectados:',
           ...summaries,
           '',
-          'Cuando terminemos con el primero, envÃ­ame los datos del siguiente.',
+          'Cuando terminemos con el primero, envíame los datos del siguiente.',
           '',
-          'â€” â€” â€” Primer pedido â€” â€” â€”',
+          '— — — Primer pedido — — —',
           '',
         ].join('\n');
 
@@ -2430,20 +2721,20 @@ export async function processMessage(
         });
 
         if (result.success) {
-          console.log(`[AI Agent] âœ… Tool ${toolName} executed successfully`);
+          console.log(`[AI Agent] ✅ Tool ${toolName} executed successfully`);
           if (result.data && typeof result.data === 'object' && 'orderId' in result.data) {
-            console.log(`[AI Agent] ðŸ“¦ Order created with ID: ${(result.data as any).orderId}`);
+            console.log(`[AI Agent] 📦 Order created with ID: ${(result.data as any).orderId}`);
           }
         } else if (result.needsConfirmation) {
-          console.log(`[AI Agent] ðŸ”„ Tool ${toolName} needs confirmation: ${result.confirmationType}`);
+          console.log(`[AI Agent] 🔄 Tool ${toolName} needs confirmation: ${result.confirmationType}`);
         } else {
-          console.error(`[AI Agent] âŒ Tool ${toolName} failed:`, result.error);
+          console.error(`[AI Agent] ❌ Tool ${toolName} failed:`, result.error);
         }
 
         // Handle inventory confirmation flow for create_order
         if (result.needsConfirmation && toolName === 'create_order') {
           const cType = result.confirmationType;
-          console.log(`[AI Agent] ðŸ”„ Inventory confirmation needed: ${cType}`);
+          console.log(`[AI Agent] 🔄 Inventory confirmation needed: ${cType}`);
 
           if (cType === 'no_match' || cType === 'zero_stock') {
             await setPendingConfirmation(platform, platformId, {
@@ -2473,19 +2764,19 @@ export async function processMessage(
 
         if (result.success) {
           // Wrap the formatter so a downstream rendering bug (malformed data,
-          // missing field, etc.) cannot mask a successful mutation â€” the order
+          // missing field, etc.) cannot mask a successful mutation — the order
           // was already committed by executeTool above.
           let formatted: string;
           try {
             formatted = formatToolResult(toolName, result, platform);
           } catch (formatError) {
             console.error(`[AI Agent] formatToolResult threw for ${toolName} after success:`, formatError);
-            formatted = result.message || 'âœ… OperaciÃ³n completada.';
+            formatted = result.message || '✅ Operación completada.';
           }
 
           if (toolName === 'validate_order_location' && hasOrderCreationIntent(userMessage)) {
-            console.warn('[AI Agent] âš ï¸ GUARDRAIL: validate_order_location called but user wanted to create an order');
-            formatted += '\n\nâš ï¸ NOTA DEL SISTEMA: El usuario pidiÃ³ CREAR una orden, no solo validar la ubicaciÃ³n. La ubicaciÃ³n ya fue validada. Responde al usuario diciÃ©ndole que para crear la orden necesitas que la envÃ­e de nuevo o confirme, ya que la herramienta create_order no fue llamada en este turno. DiscÃºlpate brevemente por la confusiÃ³n.';
+            console.warn('[AI Agent] ⚠️ GUARDRAIL: validate_order_location called but user wanted to create an order');
+            formatted += '\n\n⚠️ NOTA DEL SISTEMA: El usuario pidió CREAR una orden, no solo validar la ubicación. La ubicación ya fue validada. Responde al usuario diciéndole que para crear la orden necesitas que la envíe de nuevo o confirme, ya que la herramienta create_order no fue llamada en este turno. Discúlpate brevemente por la confusión.';
           }
 
           toolResults.push(formatted);
@@ -2589,7 +2880,7 @@ export async function processMessage(
       console.warn('[AI Agent] Surfacing mutation success despite later error in turn.');
       return { text: mutationSuccessText, attachments: mutationSuccessAttachments };
     }
-    return { text: 'Lo siento, ocurriÃ³ un error al procesar tu mensaje. Por favor, intenta de nuevo.' };
+    return { text: 'Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo.' };
   }
 }
 
@@ -2611,11 +2902,11 @@ function formatToolResult(toolName: ToolName, result: ToolResult, platform: stri
       if (Array.isArray(result.data) && result.data.length > 0) {
         return result.data
           .map((order: any) =>
-            `ðŸ“¦ #${order.orderId} - ${order.customerName}\n   ${order.product} | â‚¡${(order.total || 0).toLocaleString('es-CR')} | ${order.status}`
+            `📦 #${order.orderId} - ${order.customerName}\n   ${order.product} | ₡${(order.total || 0).toLocaleString('es-CR')} | ${order.status}`
           )
           .join('\n\n');
       }
-      return 'No se encontraron Ã³rdenes con esos criterios.';
+      return 'No se encontraron órdenes con esos criterios.';
 
     case 'get_order_details':
       if (result.data) {
@@ -2627,13 +2918,13 @@ function formatToolResult(toolName: ToolName, result: ToolResult, platform: stri
 
     case 'create_order':
       if (result.data) {
-        return result.message || `âœ… Orden creada: #${(result.data as any).orderId}`;
+        return result.message || `✅ Orden creada: #${(result.data as any).orderId}`;
       }
       return 'Error al crear la orden.';
 
     case 'update_order':
     case 'update_order_status':
-      return result.message || 'âœ… Orden actualizada.';
+      return result.message || '✅ Orden actualizada.';
 
     case 'get_inventory_item':
       if (result.data) {
@@ -2645,12 +2936,12 @@ function formatToolResult(toolName: ToolName, result: ToolResult, platform: stri
       if (Array.isArray(result.data) && result.data.length > 0) {
         return result.data
           .map((item: any) =>
-            `ðŸ“¦ ${item.name} (${item.sku})\n   Stock: ${item.currentStock} | â‚¡${(item.sellingPrice || 0).toLocaleString('es-CR')}`
+            `📦 ${item.name} (${item.sku})\n   Stock: ${item.currentStock} | ₡${(item.sellingPrice || 0).toLocaleString('es-CR')}`
           )
           .join('\n\n');
       }
       // Empty data with a message means the tool intentionally summarized
-      // (e.g. large-catalog guard) â€” relay that instead of a generic miss.
+      // (e.g. large-catalog guard) — relay that instead of a generic miss.
       if (result.message) return result.message;
       return 'No se encontraron productos.'; // Changed this line
 
@@ -2662,25 +2953,25 @@ function formatToolResult(toolName: ToolName, result: ToolResult, platform: stri
         if (stats.customFields && Object.keys(stats.customFields).length > 0) {
           response += '\n\n**Campos Personalizados:**\n';
           for (const [key, value] of Object.entries(stats.customFields)) {
-            response += `â€¢ ${key}: ${value}\n`;
+            response += `• ${key}: ${value}\n`;
           }
         }
 
         return response;
       }
-      return 'No hay estadÃ­sticas disponibles.';
+      return 'No hay estadísticas disponibles.';
 
     case 'generate_shipping_guia':
       if (result.data) {
-        return result.message || 'âœ… GuÃ­a de envÃ­o generada correctamente.';
+        return result.message || '✅ Guía de envío generada correctamente.';
       }
-      return 'Error al generar la guÃ­a de envÃ­o.';
+      return 'Error al generar la guía de envío.';
 
     case 'generate_guias_bulk':
-      return result.message || 'âœ… GuÃ­as generadas.';
+      return result.message || '✅ Guías generadas.';
 
     default:
-      return result.message || 'OperaciÃ³n completada.';
+      return result.message || 'Operación completada.';
   }
 }
 
@@ -2691,19 +2982,19 @@ function formatToolError(toolName: ToolName, result: ToolResult): string {
   // executeTool message looks like:
   //   "Parametros invalidos:\n- updates.total: Expected number, received string\n- ..."
   // We strip the developer jargon and present the field issues in plain Spanish.
-  if (/Par[aÃ¡]metros inv[aÃ¡]lidos/i.test(error)) {
+  if (/Par[aá]metros inv[aá]lidos/i.test(error)) {
     const issueLines = error
       .split(/\r?\n/)
       .slice(1)
-      .map((line) => line.replace(/^[-â€¢*]\s*/, '').trim())
+      .map((line) => line.replace(/^[-•*]\s*/, '').trim())
       .filter(Boolean);
 
     if (issueLines.length > 0) {
       return [
-        'Faltan o son invÃ¡lidos algunos datos:',
+        'Faltan o son inválidos algunos datos:',
         ...issueLines.map((line) => `- ${line}`),
         '',
-        'EnvÃ­ame los datos correctos y vuelvo a procesar.',
+        'Envíame los datos correctos y vuelvo a procesar.',
       ].join('\n');
     }
   }
@@ -2722,6 +3013,7 @@ function formatToolError(toolName: ToolName, result: ToolResult): string {
 
     if (/campos faltantes|campos personalizados faltantes/i.test(error)) {
       return error
+        .replace(/^❌\s*/i, '')
         .replace(/^âŒ\s*/i, '')
         .replace(/^Error:\s*/i, '')
         + '\n\nEnviame solo los datos faltantes y vuelvo a procesar la orden.';
@@ -2729,13 +3021,17 @@ function formatToolError(toolName: ToolName, result: ToolResult): string {
   }
 
   // Generic friendly fallback: strip the technical prefixes the executor adds.
-  const cleaned = error.replace(/^âŒ\s*/i, '').replace(/^Error:\s*/i, '').trim();
-  return cleaned || 'No pude completar la operaciÃ³n. Por favor intÃ©ntalo de nuevo.';
+  const cleaned = error
+    .replace(/^❌\s*/i, '')
+    .replace(/^âŒ\s*/i, '')
+    .replace(/^Error:\s*/i, '')
+    .trim();
+  return cleaned || 'No pude completar la operación. Por favor inténtalo de nuevo.';
 }
 
 /**
  * Strict tokens accepted as confirmation. Single-letter or ambiguous words
- * ("y", "ok", "continuar", "proceder") are intentionally excluded â€” they
+ * ("y", "ok", "continuar", "proceder") are intentionally excluded — they
  * appear too often inside normal conversation and have caused false-positive
  * order submissions.
  */
@@ -2808,7 +3104,7 @@ async function executePendingAction(pending: any, context: ToolContext, platform
 
     if (!toolName) {
       console.error('[AI Agent] executePendingAction - No toolName in pending data');
-      return 'âŒ Error: acciÃ³n pendiente invÃ¡lida.';
+      return '❌ Error: acción pendiente inválida.';
     }
 
     console.log('[AI Agent] executePendingAction:', {
@@ -2838,7 +3134,7 @@ async function executePendingAction(pending: any, context: ToolContext, platform
         formatted = formatToolResult(toolName as ToolName, result, platform);
       } catch (formatError) {
         console.error(`[AI Agent] formatToolResult threw for ${toolName} in executePendingAction:`, formatError);
-        formatted = result.message || 'âœ… OperaciÃ³n completada con Ã©xito.';
+        formatted = result.message || '✅ Operación completada con éxito.';
       }
       if (toolName === 'create_order') {
         return formatted;
@@ -2879,7 +3175,7 @@ async function executePendingAction(pending: any, context: ToolContext, platform
     return formatToolError(toolName as ToolName, result);
   } catch (error) {
     console.error('[AI Agent] Error executing pending action:', error);
-    return 'âŒ Error al ejecutar la acciÃ³n solicitada.';
+    return '❌ Error al ejecutar la acción solicitada.';
   }
 }
 
@@ -2887,18 +3183,18 @@ async function executePendingAction(pending: any, context: ToolContext, platform
  * Generate welcome message for new users
  */
 export function generateWelcomeMessage(): string {
-  return `ðŸ‘‹ <b>Â¡Bienvenido a Betsy AI Assistant!</b>
+  return `👋 <b>¡Bienvenido a Betsy AI Assistant!</b>
 
 Soy tu asistente inteligente para gestionar tu negocio.
 
-<b>Â¿QuÃ© puedo hacer por ti?</b>
-â€¢ ðŸ“¦ Crear y gestionar Ã³rdenes
-â€¢ ðŸ“Š Consultar inventario
-â€¢ ðŸ“ˆ Ver estadÃ­sticas de ventas
-â€¢ ðŸšš Generar guÃ­as de envÃ­o
-â€¢ ðŸ‘¥ Buscar clientes
+<b>¿Qué puedo hacer por ti?</b>
+• 📦 Crear y gestionar órdenes
+• 📊 Consultar inventario
+• 📈 Ver estadísticas de ventas
+• 🚚 Generar guías de envío
+• 👥 Buscar clientes
 
-Escribe cualquier consulta en lenguaje natural y te ayudarÃ©.
+Escribe cualquier consulta en lenguaje natural y te ayudaré.
 
 Usa /help para ver todos los comandos disponibles.`;
 }
@@ -2907,14 +3203,14 @@ Usa /help para ver todos los comandos disponibles.`;
  * Generate message for unauthorized users
  */
 export function generateUnauthorizedMessage(): string {
-  return `âš ï¸ <b>No estÃ¡s conectado a Betsy</b>
+  return `⚠️ <b>No estás conectado a Betsy</b>
 
 Para usar este bot, necesitas conectar tu cuenta.
 
-<b>Â¿CÃ³mo conectarse?</b>
-1. Pide a tu administrador el cÃ³digo de acceso de 12 caracteres
-2. EnvÃ­a: <code>/start CODIGO123ABC</code>
+<b>¿Cómo conectarse?</b>
+1. Pide a tu administrador el código de acceso de 12 caracteres
+2. Envía: <code>/start CODIGO123ABC</code>
 
-<b>Â¿Eres administrador?</b>
-Encuentra tu cÃ³digo en: https://www.betsycrm.com/config/ai-assistant`;
+<b>¿Eres administrador?</b>
+Encuentra tu código en: https://www.betsycrm.com/config/ai-assistant`;
 }

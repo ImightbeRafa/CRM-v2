@@ -1,11 +1,11 @@
 import { prisma } from '@/lib/db';
 
 export const LOGISTICS_RATE_DEFAULTS = {
-    mensajeria_rate: 2800,
+    mensajeria_rate: 2500,
     correos_rate: 2500,
     handling_rate: 600,
     salary_daily_rate: 10000,
-    gd_recoleccion_cost: 2800,
+    gd_recoleccion_cost: 2500,
 } as const;
 
 export type LogisticsRateKey = keyof typeof LOGISTICS_RATE_DEFAULTS;

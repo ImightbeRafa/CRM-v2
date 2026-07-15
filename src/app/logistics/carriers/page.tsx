@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Package, PackageCheck, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2, FileText, Download } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
+import PaymentMethodWizard, { type PaymentConfirmPayload } from '@/app/logistics/components/PaymentMethodWizard';
 import {
     costaRicaLocations,
     provinceNames,
@@ -16,6 +17,7 @@ interface Order {
     quantity: number | null; province: string | null; canton: string | null; district: string | null;
     address: string | null; total: number; comments: string | null; delivery: string | null;
     lmCarrier: string | null; lmStatus: string | null; isContraEntrega: boolean; contraEntregaCollected: boolean;
+    cePaymentMethod?: string | null; ceConfirmedBy?: string | null;
     archivedAt: string | null; correosShippingCost: number | null;
     guiaId: string | null; guiaNumber: string | null; trackingNumber: string | null;
     guiaStatus: string | null; guiaError: string | null; hasGuiaPdf: boolean;
@@ -336,9 +338,9 @@ function LocationRow({ order, onChange }: { order: VerifiedOrder; onChange: (upd
     );
 }
 
-function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCollected, onArchive, carrier, getTenantName, getTenantColor, bulkMode, selected, onToggleSelect }: {
+function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onConfirmCobro, onArchive, carrier, getTenantName, getTenantColor, bulkMode, selected, onToggleSelect }: {
     order: Order; onMoveStatus: (id: string, s: string, c: string) => void; onMoveCarrier: (id: string, c: string) => void;
-    onToggleCOD: (id: string, v: boolean) => void; onToggleCollected: (id: string, v: boolean) => void;
+    onToggleCOD: (id: string, v: boolean) => void; onConfirmCobro: (order: Order) => void;
     onArchive: (id: string) => void;
     carrier: string; getTenantName: (id: string) => string; getTenantColor: (id: string) => string;
     bulkMode: boolean; selected: boolean; onToggleSelect: (id: string) => void;
@@ -361,6 +363,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
     const detailRowStyle = { display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr)', gap: 8, marginBottom: 5, alignItems: 'start' } as const;
     const detailLabelStyle = { color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' } as const;
     const detailValueStyle = { color: 'rgba(255,255,255,0.72)', minWidth: 0, overflowWrap: 'anywhere', lineHeight: 1.45 } as const;
+    const methodLabel = order.cePaymentMethod === 'sinpe' ? 'Sinpe' : order.cePaymentMethod === 'efectivo' ? 'Efectivo' : null;
 
     async function handleSync() { setSyncing(true); await syncCrm(order.id, order.lmStatus || 'Pendiente'); setSyncing(false); setSynced(true); setTimeout(() => setSynced(false), 2500); }
     function handleCopyPhone(e: React.MouseEvent) { e.stopPropagation(); if (order.phone) { navigator.clipboard.writeText(order.phone); setCopied(true); setTimeout(() => setCopied(false), 1500); } }
@@ -370,18 +373,27 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
             onClick={bulkMode ? () => onToggleSelect(order.id) : undefined}
             aria-expanded={expanded}
             style={{
-                background: selected ? 'rgba(139,135,255,0.1)' : (order.isContraEntrega && carrier === 'mensajeria') ? 'rgba(251,191,36,0.06)' : 'rgba(255,255,255,0.04)',
+                background: selected ? 'rgba(139,135,255,0.1)' : order.isContraEntrega ? 'rgba(251,191,36,0.06)' : 'rgba(255,255,255,0.04)',
                 backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-                border: selected ? '1px solid rgba(139,135,255,0.4)' : `1px solid ${(order.isContraEntrega && carrier === 'mensajeria') ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.08)'}`,
+                border: selected ? '1px solid rgba(139,135,255,0.4)' : `1px solid ${order.isContraEntrega ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.08)'}`,
                 borderRadius: 10, marginBottom: 6, overflow: 'hidden', transition: 'border-color 0.15s', cursor: bulkMode ? 'pointer' : 'default',
             }} className="lm-order-card">
-            {order.isContraEntrega && carrier === 'mensajeria' && (
+            {order.isContraEntrega && (
                 <div style={{ background: 'rgba(251,191,36,0.1)', padding: '4px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(251,191,36,0.15)' }}>
                     <span style={{ color: '#fbbf24', fontSize: 10, fontWeight: 700 }}>💵 CONTRA ENTREGA</span>
-                    <button type="button" onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onToggleCollected(order.id, !order.contraEntregaCollected); }}
-                        style={{ padding: '2px 9px', borderRadius: 20, border: `1px solid ${order.contraEntregaCollected ? 'rgba(52,211,153,0.4)' : 'rgba(251,191,36,0.35)'}`, background: order.contraEntregaCollected ? 'rgba(52,211,153,0.12)' : 'transparent', color: order.contraEntregaCollected ? '#34d399' : '#fbbf24', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>
-                        {order.contraEntregaCollected ? '✓ Cobrado' : '○ Pendiente cobro'}
-                    </button>
+                    {order.contraEntregaCollected ? (
+                        <span
+                            title={order.ceConfirmedBy ? `Confirmado por ${order.ceConfirmedBy}` : undefined}
+                            style={{ padding: '2px 9px', borderRadius: 20, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.12)', color: '#34d399', fontSize: 10, fontWeight: 700 }}
+                        >
+                            ✓ Cobrado{methodLabel ? ` · ${methodLabel}` : ''}
+                        </span>
+                    ) : (
+                        <button type="button" onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onConfirmCobro(order); }}
+                            style={{ padding: '2px 9px', borderRadius: 20, border: '1px solid rgba(251,191,36,0.35)', background: 'transparent', color: '#fbbf24', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>
+                            ○ Pendiente cobro
+                        </button>
+                    )}
                 </div>
             )}
             <div style={{ padding: '10px 12px' }}>
@@ -471,10 +483,10 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onToggleCo
 }
 
 // ─── Kanban Board (single carrier) ───────────────────────────────────────────
-function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCOD, onToggleCollected, onArchive, onArchiveStatus, accentColor, getTenantName, getTenantColor, bulkMode, selectedIds, onToggleSelect, onSetSelected, terminatingStatus }: {
+function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCOD, onConfirmCobro, onArchive, onArchiveStatus, accentColor, getTenantName, getTenantColor, bulkMode, selectedIds, onToggleSelect, onSetSelected, terminatingStatus }: {
     title: string; icon: React.ReactNode; carrier: string; orders: Order[]; accentColor: string;
     onMove: (id: string, s: string, c: string) => void; onMoveCarrier: (id: string, c: string) => void;
-    onToggleCOD: (id: string, v: boolean) => void; onToggleCollected: (id: string, v: boolean) => void;
+    onToggleCOD: (id: string, v: boolean) => void; onConfirmCobro: (order: Order) => void;
     onArchive: (id: string) => void;
     onArchiveStatus: (ids: string[], carrier: string, status: string) => void;
     getTenantName: (id: string) => string; getTenantColor: (id: string) => string;
@@ -636,7 +648,7 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
                             <div style={{ overflowY: 'auto', maxHeight: 520, paddingRight: 2 }}>
                                 {col.map(o => (
                                     <OrderCard key={o.id} order={o} onMoveStatus={onMove} onMoveCarrier={onMoveCarrier}
-                                        onToggleCOD={onToggleCOD} onToggleCollected={onToggleCollected} onArchive={onArchive} carrier={carrier}
+                                        onToggleCOD={onToggleCOD} onConfirmCobro={onConfirmCobro} onArchive={onArchive} carrier={carrier}
                                         getTenantName={getTenantName} getTenantColor={getTenantColor}
                                         bulkMode={bulkMode} selected={selectedIds.has(o.id)} onToggleSelect={onToggleSelect} />
                                 ))}
@@ -824,7 +836,42 @@ export default function CarriersPage() {
         logEvent(id, 'carrier_assigned', { carrier: c });
     }, [openCorreosVerification]);
     const onCOD = useCallback((id: string, v: boolean) => { setOrders(p => p.map(o => o.id === id ? { ...o, isContraEntrega: v } : o)); patchOrder(id, { isContraEntrega: v }); }, []);
-    const onColl = useCallback((id: string, v: boolean) => { setOrders(p => p.map(o => o.id === id ? { ...o, contraEntregaCollected: v } : o)); patchOrder(id, { contraEntregaCollected: v }); if (v) logEvent(id, 'ce_confirmed', {}); }, []);
+    const [ceWizardOrder, setCeWizardOrder] = useState<Order | null>(null);
+    const [ceBusy, setCeBusy] = useState(false);
+    const onConfirmCobro = useCallback((order: Order) => {
+        if (order.contraEntregaCollected) return;
+        setCeWizardOrder(order);
+    }, []);
+    const submitCePayment = useCallback(async (payload: PaymentConfirmPayload) => {
+        if (!ceWizardOrder) return;
+        setCeBusy(true);
+        try {
+            const res = await fetch('/api/logistics/contra-entrega', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderId: ceWizardOrder.id,
+                    amount: ceWizardOrder.total || 0,
+                    paymentMethod: payload.method,
+                    confirmedByEmployeeId: payload.employeeId,
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'No se pudo confirmar el cobro');
+            setOrders(p => p.map(o => o.id === ceWizardOrder.id ? {
+                ...o,
+                contraEntregaCollected: true,
+                isContraEntrega: true,
+                cePaymentMethod: data.paymentMethod || payload.method,
+                ceConfirmedBy: data.confirmedBy || payload.employeeName,
+            } : o));
+            setCeWizardOrder(null);
+        } catch (e: any) {
+            alert(e.message || 'No se pudo confirmar el cobro');
+        } finally {
+            setCeBusy(false);
+        }
+    }, [ceWizardOrder]);
     const onToggleSelect = useCallback((id: string) => { setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; }); }, []);
     const onSetSelected = useCallback((ids: string[], selected: boolean) => {
         setSelectedIds(prev => {
@@ -1226,12 +1273,12 @@ export default function CarriersPage() {
                 {/* LEFT: Kanban boards (Mensajería + Correos stacked) */}
                 <div style={{ flex: 1, overflowY: 'auto', minWidth: 0, paddingRight: 4 }}>
                     <Board title="Mensajería Privada" icon={<Truck size={17} />} carrier="mensajeria" orders={mensajeria}
-                        onMove={onMove} onMoveCarrier={onMoveC} onToggleCOD={onCOD} onToggleCollected={onColl}
+                        onMove={onMove} onMoveCarrier={onMoveC} onToggleCOD={onCOD} onConfirmCobro={onConfirmCobro}
                         onArchive={onArchiveOrder} onArchiveStatus={onArchiveStatus}
                         accentColor="#8b87ff" getTenantName={getTenantName} getTenantColor={getTenantColor}
                         bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onSetSelected={onSetSelected} terminatingStatus={terminatingStatus} />
                     <Board title="Correos de Costa Rica" icon={<Mail size={17} />} carrier="correos" orders={correos}
-                        onMove={onMove} onMoveCarrier={onMoveC} onToggleCOD={onCOD} onToggleCollected={onColl}
+                        onMove={onMove} onMoveCarrier={onMoveC} onToggleCOD={onCOD} onConfirmCobro={onConfirmCobro}
                         onArchive={onArchiveOrder} onArchiveStatus={onArchiveStatus}
                         accentColor="#60a5fa" getTenantName={getTenantName} getTenantColor={getTenantColor}
                         bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onSetSelected={onSetSelected} terminatingStatus={terminatingStatus} />
@@ -1426,6 +1473,19 @@ export default function CarriersPage() {
                     </div>
                 </div>
             )}
+
+            <PaymentMethodWizard
+                open={!!ceWizardOrder}
+                title="Confirmar cobro contra entrega"
+                subtitle={ceWizardOrder ? `#${ceWizardOrder.orderId} · ${ceWizardOrder.customerName}` : undefined}
+                amountLabel="Monto del pedido"
+                amount={ceWizardOrder?.total || 0}
+                employeeLabel="Quién confirma el cobro"
+                confirmLabel="Confirmar cobro"
+                busy={ceBusy}
+                onConfirm={submitCePayment}
+                onCancel={() => { if (!ceBusy) setCeWizardOrder(null); }}
+            />
 
             <style>{`.lm-order-card:hover{border-color:rgba(255,255,255,0.18)!important}.lm-board-scroll{scrollbar-width:thin;scrollbar-color:rgba(139,135,255,0.55) rgba(255,255,255,0.08)}.lm-board-scroll::-webkit-scrollbar{height:10px}.lm-board-scroll::-webkit-scrollbar-track{background:rgba(255,255,255,0.08);border-radius:999px}.lm-board-scroll::-webkit-scrollbar-thumb{background:linear-gradient(90deg,rgba(139,135,255,0.7),rgba(96,165,250,0.7));border-radius:999px;border:2px solid rgba(0,0,0,0.3)}.lm-board-scroll::-webkit-scrollbar-thumb:hover{background:linear-gradient(90deg,rgba(139,135,255,0.95),rgba(96,165,250,0.95))}@keyframes spin{to{transform:rotate(360deg)}} ::-webkit-scrollbar{width:4px;height:4px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}`}</style>
         </div>

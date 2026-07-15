@@ -95,6 +95,7 @@ export async function GET(req: NextRequest) {
                     email: true,
                     product: true,
                     quantity: true,
+                    productDetails: true,
                     size: true,
                     color: true,
                     total: true,
@@ -162,6 +163,40 @@ export async function GET(req: NextRequest) {
                 // correos_shipping_cost column may not exist yet; ignore
             }
 
+            // Latest CE payment method / confirmer (best-effort)
+            try {
+                await prisma.$executeRawUnsafe(`
+                    ALTER TABLE lm_ce_payments
+                    ADD COLUMN IF NOT EXISTS payment_method TEXT
+                `);
+                const ceRows = await prisma.$queryRaw<{ crm_order_id: string; payment_method: string | null; confirmed_by: string | null }[]>`
+                    SELECT DISTINCT ON (crm_order_id)
+                        crm_order_id, payment_method, confirmed_by
+                    FROM lm_ce_payments
+                    WHERE crm_order_id = ANY(${orderIds}::text[])
+                    ORDER BY crm_order_id, collected_at DESC NULLS LAST
+                `;
+                for (const row of ceRows) {
+                    if (lmData[row.crm_order_id]) {
+                        (lmData[row.crm_order_id] as any).cePaymentMethod = row.payment_method ?? null;
+                        (lmData[row.crm_order_id] as any).ceConfirmedBy = row.confirmed_by ?? null;
+                    } else {
+                        lmData[row.crm_order_id] = {
+                            lmCarrier: null,
+                            lmStatus: null,
+                            isContraEntrega: false,
+                            contraEntregaCollected: false,
+                            archivedAt: null,
+                            correosShippingCost: null,
+                            cePaymentMethod: row.payment_method ?? null,
+                            ceConfirmedBy: row.confirmed_by ?? null,
+                        } as any;
+                    }
+                }
+            } catch {
+                // CE payment enrichment is optional
+            }
+
             try {
                 const guiaRows = await prisma.shippingGuia.findMany({
                     where: {
@@ -207,6 +242,8 @@ export async function GET(req: NextRequest) {
             lmCarrier: lmData[o.id]?.lmCarrier ?? null,
             isContraEntrega: (o as any).contraEntrega || lmData[o.id]?.isContraEntrega || false,
             contraEntregaCollected: (o as any).cePaymentConfirmed || lmData[o.id]?.contraEntregaCollected || false,
+            cePaymentMethod: (lmData[o.id] as any)?.cePaymentMethod ?? null,
+            ceConfirmedBy: (lmData[o.id] as any)?.ceConfirmedBy ?? null,
             lmStatus: lmData[o.id]?.lmStatus ?? null,
             archivedAt: lmData[o.id]?.archivedAt ?? null,
             correosShippingCost: lmData[o.id]?.correosShippingCost ?? null,

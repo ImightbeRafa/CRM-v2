@@ -2,7 +2,11 @@ import { prisma } from '@/lib/db'
 import { prismaRaw } from '@/lib/prisma-tenant'
 import { getToken } from 'next-auth/jwt'
 import { NextRequest } from 'next/server'
-import { getTenantContext } from './tenantContext'
+import {
+  normalizeEntityType,
+  pickSnapshot,
+  sanitizeAuditPayload,
+} from './auditPayload'
 
 import { AuditAction as PrismaAuditAction } from '@prisma/client';
 
@@ -13,6 +17,53 @@ type ExtendedAuditAction = PrismaAuditAction | 'SECURITY_WARNING' | 'TENANT_ERRO
 function isPrismaAuditAction(action: string): action is PrismaAuditAction {
   const validActions: string[] = Object.values(PrismaAuditAction);
   return validActions.includes(action);
+}
+
+function resolveDescription(data: AuditLogData & { reason?: string | null }): string | null {
+  return data.description || data.reason || null
+}
+
+function prepareJsonPayload(value: unknown): unknown | null {
+  if (value === undefined || value === null) return null
+  return sanitizeAuditPayload(JSON.parse(JSON.stringify(value)))
+}
+
+function mergeDetailsIntoNewValues(
+  newValues: unknown | null | undefined,
+  details: unknown | null | undefined,
+  action: string
+): unknown | null {
+  const hasDetails = details !== undefined && details !== null
+  let base: Record<string, unknown> | null = null
+
+  if (newValues && typeof newValues === 'object' && !Array.isArray(newValues)) {
+    base = { ...(newValues as Record<string, unknown>) }
+  } else if (hasDetails && typeof details === 'object' && details !== null && !Array.isArray(details)) {
+    const d = details as Record<string, unknown>
+    // Promote mutation `data` (or result snapshot) to primary content when writers only send details
+    if (d.data && typeof d.data === 'object') {
+      base = { ...(sanitizeAuditPayload(d.data) as Record<string, unknown>) }
+    } else if (d.result && typeof d.result === 'object') {
+      base = { ...(sanitizeAuditPayload(d.result) as Record<string, unknown>) }
+    } else {
+      base = {}
+    }
+  } else if (newValues !== undefined && newValues !== null) {
+    return sanitizeAuditPayload(newValues)
+  } else {
+    return null
+  }
+
+  if (hasDetails && base) {
+    base._meta = {
+      ...(typeof details === 'object' && details !== null && !Array.isArray(details)
+        ? (details as Record<string, unknown>)
+        : { details }),
+      originalAction: action,
+    }
+  }
+
+  return base ? sanitizeAuditPayload(base) : null
 }
 
 // === Circuit breaker to prevent cascading failures during connection exhaustion ===
@@ -73,6 +124,8 @@ export interface AuditLogData {
   entityId: string;
   entityName?: string | null;
   description?: string | null;
+  /** Alias accepted by callers; persisted as AuditLog.reason */
+  reason?: string | null;
   oldValues?: unknown;
   newValues?: unknown;
   details?: unknown;
@@ -97,26 +150,23 @@ export async function logAuditEvent(data: AuditLogData): Promise<void> {
       ? data.action
       : 'CREATE';
 
+    const entityType = normalizeEntityType(data.entityType)
+    const oldValues = prepareJsonPayload(data.oldValues)
+    const newValues = mergeDetailsIntoNewValues(
+      data.newValues ? JSON.parse(JSON.stringify(data.newValues)) : null,
+      data.details,
+      String(data.action)
+    )
+
     // Prepare the log data - userId is now optional
     const logData: any = {
       action,
-      entityType: data.entityType,
+      entityType,
       entityId: data.entityId,
       entityName: data.entityName || null,
-      reason: data.description || null,
-      oldValues: data.oldValues ? JSON.parse(JSON.stringify(data.oldValues)) : null,
-      newValues: (() => {
-        const base = data.newValues ? JSON.parse(JSON.stringify(data.newValues)) : null;
-        if (data.details) {
-          const wrapped = typeof base === 'object' && base !== null ? base : {};
-          (wrapped as any)._meta = {
-            ...(typeof data.details === 'object' ? data.details : { details: data.details }),
-            originalAction: data.action,
-          };
-          return wrapped;
-        }
-        return base;
-      })(),
+      reason: resolveDescription(data),
+      oldValues,
+      newValues,
       userName: data.userName || 'System',
       userRole: data.userRole,
       ipAddress: data.ipAddress || null,
@@ -225,6 +275,7 @@ export async function logApiAction(
     entityName,
     oldValues,
     newValues,
+    description: reason || undefined,
     reason,
     userId: context.userId,
     userName: context.userName,
@@ -248,23 +299,41 @@ export async function logDelete(request: NextRequest, entityType: string, entity
   await logApiAction(request, 'DELETE', entityType, entityId, entityName, oldValues, undefined, reason)
 }
 
-export async function logBulkDelete(request: NextRequest, entityType: string, entityIds: string[], entityNames: string[], reason?: string) {
+export async function logBulkDelete(
+  request: NextRequest,
+  entityType: string,
+  entityIds: string[],
+  entityNames: string[],
+  reason?: string,
+  snapshotsById?: Record<string, Record<string, unknown> | null | undefined>
+) {
   const context = await getAuditContext(request)
   if (!context) return
 
+  const normalizedType = normalizeEntityType(entityType)
+
   // Log each item individually for detailed tracking
   for (let i = 0; i < entityIds.length; i++) {
+    const entityId = entityIds[i]
+    const rawSnapshot = snapshotsById?.[entityId]
+    const oldValues = rawSnapshot
+      ? pickSnapshot(normalizedType, rawSnapshot as Record<string, unknown>)
+      : null
+
     await logAuditEvent({
       action: 'BULK_DELETE',
-      entityType,
-      entityId: entityIds[i],
+      entityType: normalizedType,
+      entityId,
       entityName: entityNames[i],
+      description: reason || undefined,
+      reason,
+      oldValues: oldValues || undefined,
       userId: context.userId,
       userName: context.userName || 'Unknown',
       userRole: context.userRole,
       ipAddress: context.ipAddress,
       userAgent: context.userAgent,
-      tenantId: context.tenantId || 'unknown'  // Add tenant isolation
+      tenantId: context.tenantId || 'unknown'
     })
   }
 }
@@ -273,19 +342,22 @@ export async function logBulkUpdate(request: NextRequest, entityType: string, en
   const context = await getAuditContext(request)
   if (!context) return
 
+  const normalizedType = normalizeEntityType(entityType)
+  const safeUpdates = sanitizeAuditPayload(updates)
+
   for (let i = 0; i < entityIds.length; i++) {
     await logAuditEvent({
       action: 'BULK_UPDATE',
-      entityType,
+      entityType: normalizedType,
       entityId: entityIds[i],
       entityName: entityNames[i],
-      newValues: updates,
+      newValues: safeUpdates,
       userId: context.userId,
       userName: context.userName || 'Unknown',
       userRole: context.userRole,
       ipAddress: context.ipAddress,
       userAgent: context.userAgent,
-      tenantId: context.tenantId || 'unknown'  // Add tenant isolation
+      tenantId: context.tenantId || 'unknown'
     })
   }
 }
@@ -317,10 +389,10 @@ export async function logAudit(data: AuditLogData): Promise<void> {
     // Build base log data WITHOUT userId field (use user relation instead)
     const logData: any = {
       action: actionFinal,
-      entityType: data.entityType,
+      entityType: normalizeEntityType(data.entityType),
       entityId: data.entityId,
       entityName: data.entityName || null,
-      reason: data.description || null,
+      reason: resolveDescription(data),
       ipAddress: data.ipAddress?.substring(0, 100) || null,
       userAgent: data.userAgent?.substring(0, 255) || null,
       userRole: safeUserRole,
@@ -331,19 +403,18 @@ export async function logAudit(data: AuditLogData): Promise<void> {
       }
     };
 
-    // Handle JSON fields with proper typing
+    // Handle JSON fields with proper typing (always persist details even without newValues)
     if (data.oldValues) {
-      logData.oldValues = data.oldValues;
+      logData.oldValues = prepareJsonPayload(data.oldValues);
     }
 
-    if (data.newValues) {
-      let newVals: any = typeof data.newValues === 'object' ? { ...data.newValues } : data.newValues;
-      if (data.details && typeof newVals === 'object') {
-        (newVals as any)._meta = {
-          ...(typeof data.details === 'object' ? data.details : { details: data.details }),
-        };
-      }
-      logData.newValues = newVals;
+    const mergedNew = mergeDetailsIntoNewValues(
+      data.newValues ? JSON.parse(JSON.stringify(data.newValues)) : null,
+      data.details,
+      String(data.action)
+    );
+    if (mergedNew !== null) {
+      logData.newValues = mergedNew;
     }
 
     // Only add user relation if userId is provided and user exists
@@ -373,19 +444,22 @@ export async function logBulkToggle(request: NextRequest, entityType: string, en
   const context = await getAuditContext(request)
   if (!context) return
 
+  const normalizedType = normalizeEntityType(entityType)
+
   for (let i = 0; i < entityIds.length; i++) {
     await logAuditEvent({
       action: 'BULK_TOGGLE',
-      entityType,
+      entityType: normalizedType,
       entityId: entityIds[i],
       entityName: entityNames[i],
       newValues: { active },
+      description: active ? 'Activado' : 'Desactivado',
       userId: context.userId,
       userName: context.userName || 'Unknown',
       userRole: context.userRole,
       ipAddress: context.ipAddress,
       userAgent: context.userAgent,
-      tenantId: context.tenantId || 'unknown'  // Add tenant isolation
+      tenantId: context.tenantId || 'unknown'
     })
   }
 }

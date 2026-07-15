@@ -21,6 +21,7 @@ import {
     Truck,
 } from 'lucide-react';
 import { FALLBACK_TENANT_CONFIG, useTenantConfig } from '@/hooks/useTenantConfig';
+import PaymentMethodWizard, { type PaymentConfirmPayload } from '@/app/logistics/components/PaymentMethodWizard';
 
 const CR_TZ = 'America/Costa_Rica';
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14 } as const;
@@ -56,7 +57,12 @@ interface PrivateDeliveryOrder {
     archivedAt: string | null;
     notes: string;
     actor: string | null;
+    settlementMethod: string | null;
     confirmationUpdatedAt: string | null;
+    isContraEntrega: boolean;
+    contraEntregaCollected: boolean;
+    cePaymentMethod: string | null;
+    ceConfirmedBy: string | null;
     privateStatus: 'Pendiente' | 'Confirmado' | 'Archivado';
 }
 
@@ -65,6 +71,11 @@ interface ApiSummary {
     delivered: number;
     paid: number;
     totalCost: number;
+    periodSent?: number;
+    periodConfirmed?: number;
+    periodPending?: number;
+    periodOwed?: number;
+    periodSettledCost?: number;
 }
 
 function fmt(amount: number) {
@@ -115,6 +126,12 @@ function statusColor(status: string | null) {
     return '#60a5fa';
 }
 
+function methodLabel(method: string | null | undefined) {
+    if (method === 'sinpe') return 'Sinpe';
+    if (method === 'efectivo') return 'Efectivo';
+    return null;
+}
+
 export default function PrivateDeliveryPage() {
     const { tenants, getTenantName, getTenantColor } = useTenantConfig();
     const todayKey = toDateKeyCR();
@@ -123,14 +140,18 @@ export default function PrivateDeliveryPage() {
     const [search, setSearch] = useState('');
     const [selectedTenants, setSelectedTenants] = useState<string[]>(FALLBACK_TENANT_CONFIG.map((tenant) => tenant.id));
     const [orders, setOrders] = useState<PrivateDeliveryOrder[]>([]);
-    const [summary, setSummary] = useState<ApiSummary>({ orders: 0, delivered: 0, paid: 0, totalCost: 0 });
-    const [defaultCost, setDefaultCost] = useState(2800);
-    const [costDrafts, setCostDrafts] = useState<Record<string, string>>({});
+    const [summary, setSummary] = useState<ApiSummary>({
+        orders: 0, delivered: 0, paid: 0, totalCost: 0,
+        periodSent: 0, periodConfirmed: 0, periodPending: 0, periodOwed: 0, periodSettledCost: 0,
+    });
+    const [defaultCost, setDefaultCost] = useState(2500);
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(false);
     const [busy, setBusy] = useState<string | null>(null);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const [gdWizardIds, setGdWizardIds] = useState<string[] | null>(null);
+    const [ceWizardOrder, setCeWizardOrder] = useState<PrivateDeliveryOrder | null>(null);
 
     const { dateFrom, dateTo } = useMemo(() => monthRange(month), [month]);
     const activeTenantIds = useMemo(
@@ -159,16 +180,12 @@ export default function PrivateDeliveryPage() {
             if (!res.ok) throw new Error(data.error || 'Error cargando mensajeria privada');
 
             setOrders(data.orders || []);
-            setSummary(data.summary || { orders: 0, delivered: 0, paid: 0, totalCost: 0 });
-            setDefaultCost(Number(data.defaultCost) || 2800);
-            setSelectedIds(new Set());
-            setCostDrafts((prev) => {
-                const next: Record<string, string> = {};
-                for (const order of data.orders || []) {
-                    next[order.id] = prev[order.id] ?? String(order.costAmount ?? data.defaultCost ?? 2800);
-                }
-                return next;
+            setSummary(data.summary || {
+                orders: 0, delivered: 0, paid: 0, totalCost: 0,
+                periodSent: 0, periodConfirmed: 0, periodPending: 0, periodOwed: 0, periodSettledCost: 0,
             });
+            setDefaultCost(Number(data.defaultCost) || 2500);
+            setSelectedIds(new Set());
             setExpanded((prev) => {
                 const next = { ...prev };
                 for (const order of data.orders || []) {
@@ -202,10 +219,8 @@ export default function PrivateDeliveryPage() {
     }, [orders]);
 
     const selectedOrders = useMemo(() => orders.filter((order) => selectedIds.has(order.id)), [orders, selectedIds]);
-    const selectedCost = useMemo(() => selectedOrders.reduce((sum, order) => {
-        const draft = Number(costDrafts[order.id]);
-        return sum + (Number.isFinite(draft) ? draft : order.costAmount);
-    }, 0), [costDrafts, selectedOrders]);
+    const selectedCost = selectedOrders.length * defaultCost;
+    const gdWizardAmount = (gdWizardIds?.length || 0) * defaultCost;
 
     function toggleTenant(tenantId: string) {
         setSelectedTenants((prev) => prev.includes(tenantId)
@@ -240,32 +255,66 @@ export default function PrivateDeliveryPage() {
         });
     }
 
-    async function confirmOrders(orderIds: string[]) {
+    function openGdWizard(orderIds: string[]) {
         const uniqueIds = [...new Set(orderIds)];
         if (uniqueIds.length === 0) return;
-        setBusy(`confirm-${uniqueIds.join(',')}`);
-        try {
-            const costByOrder: Record<string, number> = {};
-            for (const orderId of uniqueIds) {
-                const order = orders.find((item) => item.id === orderId);
-                const draft = Number(costDrafts[orderId]);
-                costByOrder[orderId] = Number.isFinite(draft) && draft >= 0
-                    ? draft
-                    : (order?.costAmount ?? defaultCost);
-            }
+        setGdWizardIds(uniqueIds);
+    }
 
+    async function confirmGdSettlement(payload: PaymentConfirmPayload) {
+        if (!gdWizardIds?.length) return;
+        setBusy(`confirm-${gdWizardIds.join(',')}`);
+        try {
             const res = await fetch('/api/logistics/private-delivery', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ orderIds: uniqueIds, costByOrder }),
+                body: JSON.stringify({
+                    orderIds: gdWizardIds,
+                    settlementMethod: payload.method,
+                    confirmedByEmployeeId: payload.employeeId,
+                }),
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'No se pudo confirmar');
+            if (!res.ok) throw new Error(data.error || 'No se pudo liquidar');
 
-            showToast(`${data.confirmed} orden(es) confirmadas y archivadas`, 'success');
+            showToast(`${data.confirmed} orden(es) liquidadas a ${fmt(data.costAmount || defaultCost)} c/u · ${payload.employeeName}`, 'success');
+            setGdWizardIds(null);
             await load();
         } catch (error: any) {
-            showToast(error.message || 'No se pudo confirmar', 'error');
+            showToast(error.message || 'No se pudo liquidar', 'error');
+        } finally {
+            setBusy(null);
+        }
+    }
+
+    async function confirmCePayment(payload: PaymentConfirmPayload) {
+        if (!ceWizardOrder) return;
+        setBusy(`ce-${ceWizardOrder.id}`);
+        try {
+            const res = await fetch('/api/logistics/contra-entrega', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderId: ceWizardOrder.id,
+                    amount: ceWizardOrder.total || 0,
+                    paymentMethod: payload.method,
+                    confirmedByEmployeeId: payload.employeeId,
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'No se pudo confirmar el cobro');
+
+            setOrders((prev) => prev.map((order) => order.id === ceWizardOrder.id ? {
+                ...order,
+                isContraEntrega: true,
+                contraEntregaCollected: true,
+                cePaymentMethod: data.paymentMethod || payload.method,
+                ceConfirmedBy: data.confirmedBy || payload.employeeName,
+            } : order));
+            setCeWizardOrder(null);
+            showToast(`Cobro confirmado por ${payload.employeeName}`, 'success');
+        } catch (error: any) {
+            showToast(error.message || 'No se pudo confirmar el cobro', 'error');
         } finally {
             setBusy(null);
         }
@@ -292,7 +341,7 @@ export default function PrivateDeliveryPage() {
 
     function exportCSV() {
         const rows = [
-            ['Cuenta', 'Orden', 'Cliente', 'Fecha reporte', 'Estado logistica', 'Estado privado', 'Costo GD', 'Total venta', 'Producto', 'Provincia', 'Canton', 'Telefono'],
+            ['Cuenta', 'Orden', 'Cliente', 'Fecha reporte', 'Estado logistica', 'Estado privado', 'Costo GD', 'Metodo liquidacion', 'Actor', 'CE', 'Metodo CE', 'Confirmado CE por', 'Total venta', 'Producto', 'Provincia', 'Canton', 'Telefono'],
             ...orders.map((order) => [
                 getTenantName(order.tenantId),
                 order.orderId,
@@ -301,6 +350,11 @@ export default function PrivateDeliveryPage() {
                 order.lmStatus || '',
                 order.privateStatus,
                 String(order.costAmount),
+                order.settlementMethod || '',
+                order.actor || '',
+                order.isContraEntrega ? (order.contraEntregaCollected ? 'Cobrado' : 'Pendiente') : '',
+                order.cePaymentMethod || '',
+                order.ceConfirmedBy || '',
                 String(order.total),
                 order.product || '',
                 order.province || '',
@@ -335,7 +389,7 @@ export default function PrivateDeliveryPage() {
                     Mensajería Privada
                 </h1>
                 <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 13, margin: 0 }}>
-                    Confirmación de Green Delivery para control de cobros. No cambia el Tablero de Envios.
+                    Cuántas órdenes se enviaron por GD, cuántas ya se liquidaron y cuánto hay que pagar ({fmt(defaultCost)} por paquete). No cambia el Tablero de Envios.
                 </p>
             </div>
 
@@ -400,12 +454,13 @@ export default function PrivateDeliveryPage() {
                 })}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 12, marginBottom: 18 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, marginBottom: 18 }}>
                 {[
-                    { label: tab === 'pending' ? 'Pendientes' : 'Archivadas', value: `${summary.orders}`, color: '#8b87ff', icon: <Package size={15} /> },
-                    { label: 'Entregadas LM', value: `${summary.delivered}`, color: '#34d399', icon: <CheckCircle2 size={15} /> },
-                    { label: 'Costo GD', value: fmt(summary.totalCost), color: '#60a5fa', icon: <Truck size={15} /> },
-                    { label: 'Tarifa actual', value: fmt(defaultCost), color: '#fbbf24', icon: <DollarSign size={15} /> },
+                    { label: 'Enviados', value: `${summary.periodSent ?? summary.orders}`, color: '#8b87ff', icon: <Package size={15} /> },
+                    { label: 'Confirmados', value: `${summary.periodConfirmed ?? summary.paid}`, color: '#34d399', icon: <CheckCircle2 size={15} /> },
+                    { label: 'Pendientes', value: `${summary.periodPending ?? (tab === 'pending' ? summary.orders : 0)}`, color: '#fbbf24', icon: <Clock size={15} /> },
+                    { label: 'A pagar GD', value: fmt(summary.periodOwed ?? (tab === 'pending' ? summary.totalCost : 0)), color: '#60a5fa', icon: <Truck size={15} /> },
+                    { label: 'Tarifa GD', value: fmt(defaultCost), color: '#fbbf24', icon: <DollarSign size={15} /> },
                 ].map((item) => (
                     <div key={item.label} style={{ ...glassHi, padding: '16px 18px', borderColor: `${item.color}22` }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 9 }}>
@@ -425,12 +480,12 @@ export default function PrivateDeliveryPage() {
                         {allVisibleSelected ? 'Deseleccionar' : 'Seleccionar visibles'}
                     </button>
                     <div style={{ color: 'rgba(255,255,255,0.42)', fontSize: 12 }}>
-                        {selectedIds.size} seleccionada(s) - {fmt(selectedCost)}
+                        {selectedIds.size} seleccionada(s) · {selectedIds.size} × {fmt(defaultCost)} = {fmt(selectedCost)}
                     </div>
-                    <button onClick={() => confirmOrders([...selectedIds])} disabled={selectedIds.size === 0 || !!busy}
+                    <button onClick={() => openGdWizard([...selectedIds])} disabled={selectedIds.size === 0 || !!busy}
                         style={{ padding: '8px 15px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.35)', background: selectedIds.size ? 'rgba(52,211,153,0.12)' : 'transparent', color: selectedIds.size ? '#34d399' : 'rgba(255,255,255,0.2)', cursor: selectedIds.size && !busy ? 'pointer' : 'default', fontSize: 12, fontWeight: 900, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <Archive size={13} />
-                        Confirmar y archivar
+                        Liquidar y archivar
                     </button>
                 </div>
             )}
@@ -483,10 +538,10 @@ export default function PrivateDeliveryPage() {
                                         )}
 
                                         <div style={{ overflowX: 'auto' }}>
-                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 980 }}>
+                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 1040 }}>
                                                 <thead>
                                                     <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                                                        {['', 'Orden', 'Cliente', 'Fecha', 'Estado LM', 'Producto', 'Ubicación', 'Costo GD', 'Venta', 'Acción'].map((header) => (
+                                                        {['', 'Orden', 'Cliente', 'Fecha', 'Estado LM', 'Producto', 'Ubicación', 'Costo GD', 'Venta', 'Cobro CE', 'Acción'].map((header) => (
                                                             <th key={header} style={{ padding: '8px 9px', textAlign: 'left', color: 'rgba(255,255,255,0.3)', fontWeight: 800, fontSize: 9.5, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{header}</th>
                                                         ))}
                                                     </tr>
@@ -495,6 +550,8 @@ export default function PrivateDeliveryPage() {
                                                     {group.orders.map((order, index) => {
                                                         const selected = selectedIds.has(order.id);
                                                         const color = statusColor(order.lmStatus);
+                                                        const ceMethod = methodLabel(order.cePaymentMethod);
+                                                        const settleMethod = methodLabel(order.settlementMethod);
                                                         return (
                                                             <tr key={order.id} className="lm-table-row" style={{ borderBottom: index < group.orders.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', background: selected ? 'rgba(139,135,255,0.08)' : 'transparent' }}>
                                                                 <td style={{ padding: '8px 9px' }}>
@@ -524,21 +581,34 @@ export default function PrivateDeliveryPage() {
                                                                     {[order.canton, order.province].filter(Boolean).join(', ') || '—'}
                                                                 </td>
                                                                 <td style={{ padding: '8px 9px' }}>
-                                                                    {tab === 'pending' ? (
-                                                                        <input type="number" min={0} value={costDrafts[order.id] ?? String(order.costAmount)}
-                                                                            onChange={(event) => setCostDrafts((prev) => ({ ...prev, [order.id]: event.target.value }))}
-                                                                            style={{ width: 92, padding: '5px 7px', borderRadius: 6, border: '1px solid rgba(96,165,250,0.25)', background: 'rgba(0,0,0,0.28)', color: '#60a5fa', fontSize: 12, fontWeight: 900, outline: 'none' }} />
-                                                                    ) : (
-                                                                        <span style={{ color: '#60a5fa', fontWeight: 900 }}>{fmt(order.costAmount)}</span>
+                                                                    <span style={{ color: '#60a5fa', fontWeight: 900 }}>{fmt(order.costAmount)}</span>
+                                                                    {tab === 'archived' && settleMethod && (
+                                                                        <span style={{ display: 'block', color: 'rgba(255,255,255,0.35)', fontSize: 10, marginTop: 2 }}>{settleMethod}{order.actor ? ` · ${order.actor}` : ''}</span>
                                                                     )}
                                                                 </td>
                                                                 <td style={{ padding: '8px 9px', color: '#34d399', fontWeight: 900 }}>{fmt(order.total)}</td>
                                                                 <td style={{ padding: '8px 9px' }}>
+                                                                    {!order.isContraEntrega ? (
+                                                                        <span style={{ color: 'rgba(255,255,255,0.22)', fontSize: 11 }}>—</span>
+                                                                    ) : order.contraEntregaCollected ? (
+                                                                        <span title={order.ceConfirmedBy || undefined} style={{ color: '#34d399', fontSize: 11, fontWeight: 800 }}>
+                                                                            ✓ {ceMethod || 'Cobrado'}
+                                                                        </span>
+                                                                    ) : tab === 'pending' ? (
+                                                                        <button onClick={() => setCeWizardOrder(order)} disabled={!!busy}
+                                                                            style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(251,191,36,0.35)', background: 'rgba(251,191,36,0.08)', color: '#fbbf24', cursor: busy ? 'default' : 'pointer', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                                                                            Confirmar cobro
+                                                                        </button>
+                                                                    ) : (
+                                                                        <span style={{ color: '#fbbf24', fontSize: 11, fontWeight: 700 }}>Pendiente</span>
+                                                                    )}
+                                                                </td>
+                                                                <td style={{ padding: '8px 9px' }}>
                                                                     {tab === 'pending' ? (
-                                                                        <button onClick={() => confirmOrders([order.id])} disabled={!!busy}
+                                                                        <button onClick={() => openGdWizard([order.id])} disabled={!!busy}
                                                                             style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid rgba(52,211,153,0.35)', background: 'rgba(52,211,153,0.1)', color: '#34d399', cursor: busy ? 'default' : 'pointer', fontSize: 11, fontWeight: 900, display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
                                                                             <Archive size={12} />
-                                                                            Confirmar
+                                                                            Liquidar
                                                                         </button>
                                                                     ) : (
                                                                         <button onClick={() => restoreOrder(order.id)} disabled={!!busy}
@@ -561,6 +631,32 @@ export default function PrivateDeliveryPage() {
                     })}
                 </div>
             )}
+
+            <PaymentMethodWizard
+                open={!!gdWizardIds?.length}
+                title="Liquidar fee Green Delivery"
+                subtitle={gdWizardIds ? `${gdWizardIds.length} × ${fmt(defaultCost)} = ${fmt(gdWizardAmount)}` : undefined}
+                amountLabel="Total adeudado a mensajería privada"
+                amount={gdWizardAmount}
+                employeeLabel="Quién confirma el pago a GD"
+                confirmLabel="Liquidar y archivar"
+                busy={!!busy && !!gdWizardIds}
+                onConfirm={confirmGdSettlement}
+                onCancel={() => { if (!busy) setGdWizardIds(null); }}
+            />
+
+            <PaymentMethodWizard
+                open={!!ceWizardOrder}
+                title="Confirmar cobro contra entrega"
+                subtitle={ceWizardOrder ? `#${ceWizardOrder.orderId} · ${ceWizardOrder.customerName}` : undefined}
+                amountLabel="Monto del pedido"
+                amount={ceWizardOrder?.total || 0}
+                employeeLabel="Quién confirma el cobro"
+                confirmLabel="Confirmar cobro"
+                busy={!!busy && !!ceWizardOrder}
+                onConfirm={confirmCePayment}
+                onCancel={() => { if (!busy) setCeWizardOrder(null); }}
+            />
 
             <style>{`
                 .lm-table-row:hover{background:rgba(255,255,255,0.035)!important}

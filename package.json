@@ -101,6 +101,7 @@
     "eslint-config-next": "15.5.16",
     "prisma": "6.19.3",
     "tailwindcss": "^3.3.6",
+    "tsx": "4.23.1",
     "typescript": "^5.3.3"
   },
   "overrides": {

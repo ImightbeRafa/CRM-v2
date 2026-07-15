@@ -274,6 +274,23 @@ function testLocalCorrectionParserHandlesLocationWithoutGrok() {
   assert.equal(merged.district, 'Mercedes');
 }
 
+const abigailOrderMessage = [
+  'Deseo crear una nueva orden de EA',
+  'Abigail Moraga Campos',
+  '62048682',
+  'Heredia/Barva/ San Pablo',
+  'abimoca2004@gmail.com',
+  '175 metros oeste de la escuela San Pablo de Barva, Calle la armonía',
+  '',
+  '- Producto(s):*BAR Bucal AntiRonquidos (SKU: 6942042)',
+  'Cantidad  1',
+  'TOTAL en colones* ₡ 12900',
+  '- Tipo de orden: "EA" o "envío a domicilio"',
+  '- Método de pago  SINPE CONFIRMADO',
+  '- Método envío CORREOS DE CR',
+  'COMENTARIO  SINPE CONFIRMADO',
+].join('\n');
+
 function testLocalFullOrderFallbackParsesAnaOrder() {
   const args = bot.parseLocalStructuredOrderArgs(anaOrderMessage, customFieldsConfig);
   assert.ok(args);
@@ -293,6 +310,181 @@ function testLocalFullOrderFallbackParsesAnaOrder() {
   assert.match(args.address, /barrio Profesores/);
 }
 
+function testAbigailUnlabeledSlashOrderLocalFallback() {
+  const args = bot.parseLocalStructuredOrderArgs(abigailOrderMessage, customFieldsConfig);
+  assert.ok(args, 'Abigail order should parse via local fallback');
+  bot.applyOrderCaptureLocationNormalization(args);
+
+  assert.equal(args.customerName, 'Abigail Moraga Campos');
+  assert.equal(args.phone, '62048682');
+  assert.equal(args.email, 'abimoca2004@gmail.com');
+  assert.equal(args.orderType, 'EA');
+  assert.equal(args.paymentMethod, 'SINPE');
+  assert.equal(args.total, 12900);
+  assert.match(String(args.courier || ''), /correos/i);
+  assert.doesNotMatch(String(args.courier || ''), /metodo/i);
+  assert.match(String(args.comments || ''), /sinpe confirmado/i);
+  assert.doesNotMatch(String(args.comments || ''), /metodo de pago/i);
+  assert.match(String(args.address || ''), /escuela San Pablo/i);
+  assert.equal(normalizeSpanish(args.province), 'heredia');
+  assert.equal(normalizeSpanish(args.canton), 'barva');
+  assert.equal(normalizeSpanish(args.district), 'san pablo');
+  assert.ok(Array.isArray(args.products) && args.products.length > 0);
+  assert.match(String(args.products[0].name), /BAR Bucal AntiRonquidos/i);
+}
+
+function normalizeSpanish(value: unknown): string {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function testGapFillEmptyFieldsDoesNotOverwriteAi() {
+  const partialAi = bot.sanitizeAIExtractedArgs({
+    intent: 'new_order',
+    phone: '62048682',
+    email: 'abimoca2004@gmail.com',
+    products: [{ name: 'BAR Bucal AntiRonquidos', quantity: 1, sku: '6942042' }],
+    total: 12900,
+    orderType: 'EA',
+    paymentMethod: 'SINPE',
+    courier: 'Método envío CORREOS DE CR',
+    comments: 'Método de pago SINPE CONFIRMADO',
+  }, customFieldsConfig);
+
+  assert.equal(partialAi.paymentMethod, 'SINPE');
+  assert.equal(partialAi.courier, 'Correos de CR');
+  assert.equal(partialAi.comments, 'SINPE CONFIRMADO');
+  assert.equal(partialAi.customerName, undefined);
+
+  const filled = bot.gapFillEmptyOrderFieldsFromMessage(partialAi, abigailOrderMessage, customFieldsConfig);
+  assert.equal(filled.customerName, 'Abigail Moraga Campos');
+  assert.match(String(filled.address || ''), /Calle la armonía/i);
+  assert.equal(normalizeSpanish(filled.province), 'heredia');
+  assert.equal(normalizeSpanish(filled.canton), 'barva');
+  assert.equal(normalizeSpanish(filled.district), 'san pablo');
+  // Must not overwrite AI-owned fields
+  assert.equal(filled.phone, '62048682');
+  assert.equal(filled.email, 'abimoca2004@gmail.com');
+  assert.equal(filled.total, 12900);
+  assert.equal(filled.paymentMethod, 'SINPE');
+}
+
+function testMultiMissingNameAndAddressCorrection() {
+  const existing = {
+    orderType: 'EA',
+    phone: '62048682',
+    email: 'abimoca2004@gmail.com',
+    products: [{ name: 'BAR Bucal AntiRonquidos', quantity: 1 }],
+    total: 12900,
+    paymentMethod: 'SINPE',
+  };
+
+  const correction = bot.parseLocalOrderCorrectionArgs(
+    ['Abigail Moraga Campos', '175 metros oeste de la escuela San Pablo de Barva, Calle la armonía'].join('\n'),
+    existing,
+    customFieldsConfig,
+  );
+  assert.ok(correction);
+  const merged = bot.mergeOrderCorrectionArgs(existing, correction);
+  assert.equal(merged.customerName, 'Abigail Moraga Campos');
+  assert.match(String(merged.address || ''), /escuela San Pablo/i);
+}
+
+function testMultiMissingPartialNameOnlyCorrection() {
+  const existing = {
+    orderType: 'EA',
+    phone: '62048682',
+    products: [{ name: 'BAR Bucal AntiRonquidos', quantity: 1 }],
+    total: 12900,
+  };
+
+  const correction = bot.parseLocalOrderCorrectionArgs('Abigail Moraga Campos', existing, customFieldsConfig);
+  assert.ok(correction);
+  const merged = bot.mergeOrderCorrectionArgs(existing, correction);
+  assert.equal(merged.customerName, 'Abigail Moraga Campos');
+}
+
+function testGapFillAfterMergeDoesNotClobberPendingAddress() {
+  const existing = {
+    orderType: 'EA',
+    customerName: 'Abigail Moraga Campos',
+    phone: '62048682',
+    email: 'abimoca2004@gmail.com',
+    address: '175 metros oeste de la escuela San Pablo de Barva, Calle la armonía',
+    province: 'Heredia',
+    canton: 'Barva',
+    district: 'San Josecito',
+    products: [{ name: 'BAR Bucal AntiRonquidos', quantity: 1 }],
+    total: 12900,
+  };
+
+  // Simulate sparse Grok correction (district only) + chatty user text with street cues.
+  const sparse = bot.sanitizeAIExtractedArgs({
+    intent: 'order_correction',
+    correctionAction: 'replace_location',
+    district: 'San Pablo',
+  }, customFieldsConfig);
+
+  const merged = bot.mergeOrderCorrectionArgs(existing, sparse);
+  const afterGap = bot.gapFillEmptyOrderFieldsFromMessage(
+    merged,
+    'el distrito correcto es San Pablo cerca de la escuela San Pablo de Barva',
+    customFieldsConfig,
+  );
+
+  assert.equal(afterGap.customerName, 'Abigail Moraga Campos');
+  assert.equal(afterGap.address, existing.address);
+  assert.equal(afterGap.district, 'San Pablo');
+  assert.equal(afterGap.phone, '62048682');
+}
+
+function testGapFillNeverOverwritesExistingCustomerName() {
+  const partialAi = {
+    customerName: 'Nombre Correcto Ya Presente',
+    phone: '62048682',
+    orderType: 'EA',
+    total: 12900,
+    products: [{ name: 'BAR Bucal AntiRonquidos', quantity: 1 }],
+  };
+  const filled = bot.gapFillEmptyOrderFieldsFromMessage(partialAi, abigailOrderMessage, customFieldsConfig);
+  assert.equal(filled.customerName, 'Nombre Correcto Ya Presente');
+}
+
+function testPlaceLikeLinesAreNotPersonNames() {
+  const raw = bot.collectLocalOrderFields([
+    'Brasil de Mora',
+    '84492744',
+    'sleeping patches x1',
+    'Pago 12900',
+  ].join('\n'), customFieldsConfig);
+  assert.equal(raw.customerName, undefined);
+  assert.equal(raw.phone, '84492744');
+}
+
+function testProductQuantityX2DoesNotDoubleInSanitize() {
+  const args = bot.sanitizeAIExtractedArgs({
+    intent: 'new_order',
+    customerName: 'Christian Gonzalez Alvarez',
+    products: [{ name: 'dopamine patch', quantity: 2 }],
+    total: 20900,
+    orderType: 'EA',
+  }, customFieldsConfig);
+  assert.deepEqual(args.products, [{ name: 'dopamine patch', quantity: 2 }]);
+
+  const local = bot.parseLocalStructuredOrderArgs([
+    'Christian Gonzalez Alvarez',
+    '83608994',
+    'San Jose, Alajuelita, Sanjosecito',
+    'dopamine patch x2',
+    'TOTAL 20900',
+  ].join('\n'), customFieldsConfig);
+  assert.ok(local);
+  assert.deepEqual(compactProducts(local.products), [{ name: 'dopamine patch', quantity: 2 }]);
+}
+
 testSanitizeMessyOrder();
 testPhoneAndMoneyNormalization();
 testOrderDetectionWithoutCreateKeyword();
@@ -302,5 +494,13 @@ testFreshOrderWhilePendingDetection();
 testLocationCaptureNormalization();
 testLocalCorrectionParserHandlesLocationWithoutGrok();
 testLocalFullOrderFallbackParsesAnaOrder();
+testAbigailUnlabeledSlashOrderLocalFallback();
+testGapFillEmptyFieldsDoesNotOverwriteAi();
+testMultiMissingNameAndAddressCorrection();
+testMultiMissingPartialNameOnlyCorrection();
+testGapFillAfterMergeDoesNotClobberPendingAddress();
+testGapFillNeverOverwritesExistingCustomerName();
+testPlaceLikeLinesAreNotPersonNames();
+testProductQuantityX2DoesNotDoubleInSanitize();
 
 console.log('Grok-first bot helper tests passed.');

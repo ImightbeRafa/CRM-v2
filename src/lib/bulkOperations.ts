@@ -79,16 +79,20 @@ async function performBulkDeleteWithTenant(
     errors: []
   }
 
-  // Get entity names for audit logging with manual tenant filtering
+  // Get entity snapshots for audit logging with manual tenant filtering
   const entityMap = new Map<string, string>(); // id -> name
+  const snapshotMap = new Map<string, Record<string, unknown>>(); // id -> full snapshot
   
   try {
-    console.log(`🔍 Getting entity names for ${ids.length} ${type} items with tenant filter...`);
+    console.log(`🔍 Getting entity snapshots for ${ids.length} ${type} items with tenant filter...`);
     switch (type) {
       case 'users':
-        const users = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, username: true } })
+        const users = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, username: true, email: true } })
         console.log(`   Found ${users.length} users`);
-        users.forEach((u: any) => entityMap.set(u.id, u.username || 'Unknown'));
+        users.forEach((u: any) => {
+          entityMap.set(u.id, u.username || 'Unknown');
+          snapshotMap.set(u.id, u);
+        });
         break
       case 'orders':
         console.log(`   Querying orders with IDs: ${ids.join(', ')} and tenantId: ${tenantId}`);
@@ -96,13 +100,13 @@ async function performBulkDeleteWithTenant(
           where: { 
             id: { in: ids },
             tenantId: tenantId
-          }, 
-          select: { id: true, orderId: true, tenantId: true } 
+          },
         })
         console.log(`   Found ${orders.length} orders`);
         orders.forEach((o: any) => {
           console.log(`     - ${o.id} (${o.orderId}) - tenant: ${o.tenantId}`);
           entityMap.set(o.id, o.orderId);
+          snapshotMap.set(o.id, o);
         });
         break
       case 'fields':
@@ -111,10 +115,12 @@ async function performBulkDeleteWithTenant(
             id: { in: ids },
             tenantId: tenantId
           }, 
-          select: { id: true, label: true } 
         })
         console.log(`   Found ${fields.length} fields`);
-        fields.forEach((f: any) => entityMap.set(f.id, f.label));
+        fields.forEach((f: any) => {
+          entityMap.set(f.id, f.label);
+          snapshotMap.set(f.id, f);
+        });
         break
       case 'optionSets':
         const optionSets = await db.productOptionSet.findMany({ 
@@ -122,10 +128,12 @@ async function performBulkDeleteWithTenant(
             id: { in: ids },
             tenantId: tenantId
           }, 
-          select: { id: true, name: true } 
         })
         console.log(`   Found ${optionSets.length} option sets`);
-        optionSets.forEach((os: any) => entityMap.set(os.id, os.name));
+        optionSets.forEach((os: any) => {
+          entityMap.set(os.id, os.name);
+          snapshotMap.set(os.id, os);
+        });
         break
       case 'options':
         const options = await db.productOption.findMany({ 
@@ -133,10 +141,12 @@ async function performBulkDeleteWithTenant(
             id: { in: ids },
             tenantId: tenantId
           }, 
-          select: { id: true, label: true } 
         })
         console.log(`   Found ${options.length} options`);
-        options.forEach((o: any) => entityMap.set(o.id, o.label));
+        options.forEach((o: any) => {
+          entityMap.set(o.id, o.label);
+          snapshotMap.set(o.id, o);
+        });
         break
       case 'shipping':
         const shipping = await db.shippingMethod.findMany({ 
@@ -144,10 +154,12 @@ async function performBulkDeleteWithTenant(
             id: { in: ids },
             tenantId: tenantId
           }, 
-          select: { id: true, name: true } 
         })
         console.log(`   Found ${shipping.length} shipping methods`);
-        shipping.forEach((s: any) => entityMap.set(s.id, s.name));
+        shipping.forEach((s: any) => {
+          entityMap.set(s.id, s.name);
+          snapshotMap.set(s.id, s);
+        });
         break
       case 'sellers':
         const sellers = await db.seller.findMany({ 
@@ -155,10 +167,12 @@ async function performBulkDeleteWithTenant(
             id: { in: ids },
             tenantId: tenantId
           }, 
-          select: { id: true, name: true } 
         })
         console.log(`   Found ${sellers.length} sellers`);
-        sellers.forEach((s: any) => entityMap.set(s.id, s.name));
+        sellers.forEach((s: any) => {
+          entityMap.set(s.id, s.name);
+          snapshotMap.set(s.id, s);
+        });
         break
     }
     console.log(`✅ Entity map populated with ${entityMap.size} items`);
@@ -242,7 +256,12 @@ async function performBulkDeleteWithTenant(
   if (httpRequest && successfulIds.length > 0) {
     try {
       console.log(`✅ Logging ${successfulIds.length} successful deletions for audit trail`);
-      await logBulkDelete(httpRequest, type, successfulIds, successfulNames, reason);
+      const snapshotsById: Record<string, Record<string, unknown>> = {}
+      for (const id of successfulIds) {
+        const snap = snapshotMap.get(id)
+        if (snap) snapshotsById[id] = snap
+      }
+      await logBulkDelete(httpRequest, type, successfulIds, successfulNames, reason, snapshotsById);
       console.log(`✅ Audit trail created for ${successfulIds.length} ${type} deletions`);
     } catch (auditError) {
       console.error('❌ Failed to log bulk delete audit:', auditError);
@@ -266,50 +285,70 @@ async function performBulkDelete(
     errors: []
   }
 
-  // Get entity names for audit logging
+  // Get entity snapshots for audit logging
   const entityMap = new Map<string, string>(); // id -> name
+  const snapshotMap = new Map<string, Record<string, unknown>>();
   
   try {
-    console.log(`🔍 Getting entity names for ${ids.length} ${type} items...`);
+    console.log(`🔍 Getting entity snapshots for ${ids.length} ${type} items...`);
     switch (type) {
       case 'users':
-        const users = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, username: true } })
+        const users = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, username: true, email: true } })
         console.log(`   Found ${users.length} users`);
-        users.forEach((u: any) => entityMap.set(u.id, u.username || 'Unknown'));
+        users.forEach((u: any) => {
+          entityMap.set(u.id, u.username || 'Unknown');
+          snapshotMap.set(u.id, u);
+        });
         break
       case 'orders':
         console.log(`   Querying orders with IDs: ${ids.join(', ')}`);
-        const orders = await db.order.findMany({ where: { id: { in: ids } }, select: { id: true, orderId: true, tenantId: true } })
+        const orders = await db.order.findMany({ where: { id: { in: ids } } })
         console.log(`   Found ${orders.length} orders`);
         orders.forEach((o: any) => {
           console.log(`     - ${o.id} (${o.orderId}) - tenant: ${o.tenantId}`);
           entityMap.set(o.id, o.orderId);
+          snapshotMap.set(o.id, o);
         });
         break
       case 'fields':
-        const fields = await db.productField.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
+        const fields = await db.productField.findMany({ where: { id: { in: ids } } })
         console.log(`   Found ${fields.length} fields`);
-        fields.forEach((f: any) => entityMap.set(f.id, f.label));
+        fields.forEach((f: any) => {
+          entityMap.set(f.id, f.label);
+          snapshotMap.set(f.id, f);
+        });
         break
       case 'optionSets':
-        const optionSets = await db.productOptionSet.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+        const optionSets = await db.productOptionSet.findMany({ where: { id: { in: ids } } })
         console.log(`   Found ${optionSets.length} option sets`);
-        optionSets.forEach((os: any) => entityMap.set(os.id, os.name));
+        optionSets.forEach((os: any) => {
+          entityMap.set(os.id, os.name);
+          snapshotMap.set(os.id, os);
+        });
         break
       case 'options':
-        const options = await db.productOption.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })
+        const options = await db.productOption.findMany({ where: { id: { in: ids } } })
         console.log(`   Found ${options.length} options`);
-        options.forEach((o: any) => entityMap.set(o.id, o.label));
+        options.forEach((o: any) => {
+          entityMap.set(o.id, o.label);
+          snapshotMap.set(o.id, o);
+        });
         break
       case 'shipping':
-        const shipping = await db.shippingMethod.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+        const shipping = await db.shippingMethod.findMany({ where: { id: { in: ids } } })
         console.log(`   Found ${shipping.length} shipping methods`);
-        shipping.forEach((s: any) => entityMap.set(s.id, s.name));
+        shipping.forEach((s: any) => {
+          entityMap.set(s.id, s.name);
+          snapshotMap.set(s.id, s);
+        });
         break
       case 'sellers':
-        const sellers = await db.seller.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+        const sellers = await db.seller.findMany({ where: { id: { in: ids } } })
         console.log(`   Found ${sellers.length} sellers`);
-        sellers.forEach((s: any) => entityMap.set(s.id, s.name));
+        sellers.forEach((s: any) => {
+          entityMap.set(s.id, s.name);
+          snapshotMap.set(s.id, s);
+        });
         break
     }
     console.log(`✅ Entity map populated with ${entityMap.size} items`);
@@ -393,7 +432,12 @@ async function performBulkDelete(
   if (httpRequest && successfulIds.length > 0) {
     try {
       console.log(`✅ Logging ${successfulIds.length} successful deletions for audit trail`);
-      await logBulkDelete(httpRequest, type, successfulIds, successfulNames, reason);
+      const snapshotsById: Record<string, Record<string, unknown>> = {}
+      for (const id of successfulIds) {
+        const snap = snapshotMap.get(id)
+        if (snap) snapshotsById[id] = snap
+      }
+      await logBulkDelete(httpRequest, type, successfulIds, successfulNames, reason, snapshotsById);
       console.log(`✅ Audit trail created for ${successfulIds.length} ${type} deletions`);
     } catch (auditError) {
       console.error('❌ Failed to log bulk delete audit:', auditError);

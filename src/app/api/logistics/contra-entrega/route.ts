@@ -4,6 +4,38 @@ import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 
+const PAYMENT_METHODS = new Set(['sinpe', 'efectivo']);
+
+async function ensureCePaymentMethodColumn() {
+    await prisma.$executeRawUnsafe(`
+        ALTER TABLE lm_ce_payments
+        ADD COLUMN IF NOT EXISTS payment_method TEXT
+    `);
+    await prisma.$executeRawUnsafe(`
+        ALTER TABLE lm_ce_payments
+        ADD COLUMN IF NOT EXISTS confirmed_by_employee_id TEXT
+    `);
+}
+
+function normalizePaymentMethod(value: unknown): 'sinpe' | 'efectivo' | null {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    return PAYMENT_METHODS.has(normalized) ? (normalized as 'sinpe' | 'efectivo') : null;
+}
+
+async function resolveActiveEmployee(employeeId: unknown) {
+    if (typeof employeeId !== 'string' || !employeeId.trim()) return null;
+    const rows = await prisma.$queryRaw<{ id: string; display_name: string }[]>`
+        SELECT id, display_name
+        FROM lm_employees
+        WHERE id = ${employeeId.trim()} AND active = TRUE
+        LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return null;
+    return { id: row.id, displayName: row.display_name };
+}
+
 // GET /api/logistics/contra-entrega?tenantId=&dateFrom=&dateTo=&collected=
 export async function GET(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
@@ -16,6 +48,8 @@ export async function GET(req: NextRequest) {
     const collectedFilter = url.searchParams.get('collected'); // 'true' | 'false' | null
 
     try {
+        await ensureCePaymentMethodColumn();
+
         // Build date clause
         let dateSql = '';
         const params: any[] = [];
@@ -57,7 +91,7 @@ export async function GET(req: NextRequest) {
         let payments: any[] = [];
         if (orderIds.length > 0) {
             payments = await prisma.$queryRaw<any[]>`
-                SELECT crm_order_id, amount, collected_at, notes, confirmed_by
+                SELECT crm_order_id, amount, collected_at, notes, confirmed_by, payment_method
                 FROM lm_ce_payments
                 WHERE crm_order_id = ANY(${orderIds}::text[])
                 ORDER BY collected_at DESC
@@ -67,13 +101,23 @@ export async function GET(req: NextRequest) {
         const paymentMap: Record<string, any[]> = {};
         for (const p of payments) {
             if (!paymentMap[p.crm_order_id]) paymentMap[p.crm_order_id] = [];
-            paymentMap[p.crm_order_id].push(p);
+            paymentMap[p.crm_order_id].push({
+                ...p,
+                paymentMethod: p.payment_method ?? null,
+                confirmedBy: p.confirmed_by ?? null,
+            });
         }
 
-        const enriched = rows.map((r) => ({
-            ...r,
-            payments: paymentMap[r.orderId] || [],
-        }));
+        const enriched = rows.map((r) => {
+            const orderPayments = paymentMap[r.orderId] || [];
+            const latest = orderPayments[0] || null;
+            return {
+                ...r,
+                payments: orderPayments,
+                paymentMethod: latest?.paymentMethod ?? null,
+                confirmedBy: latest?.confirmedBy ?? null,
+            };
+        });
 
         const totalAmount = enriched.reduce((s, r) => s + Number(r.total ?? 0), 0);
         const pending = enriched.filter((r) => !r.collected).length;
@@ -97,23 +141,61 @@ export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
     const actor = session?.user?.email ?? 'unknown';
 
-    const body = await req.json();
-    const { orderId, amount, notes } = body;
+    let body: any;
+    try {
+        body = await req.json();
+    } catch {
+        return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
 
-    if (!orderId) return NextResponse.json({ error: 'orderId required' }, { status: 400 });
+    const { orderId, amount, notes } = body;
+    const paymentMethod = normalizePaymentMethod(body.paymentMethod ?? body.payment_method);
+    const employeeId = body.confirmedByEmployeeId ?? body.employeeId;
+
+    if (!orderId || typeof orderId !== 'string') {
+        return NextResponse.json({ error: 'orderId required' }, { status: 400 });
+    }
+    if (!paymentMethod) {
+        return NextResponse.json({ error: 'paymentMethod must be sinpe or efectivo' }, { status: 400 });
+    }
 
     try {
+        await ensureCePaymentMethodColumn();
+
+        const employee = await resolveActiveEmployee(employeeId);
+        if (!employee) {
+            return NextResponse.json({ error: 'confirmedByEmployeeId must be an active employee from Personal' }, { status: 400 });
+        }
+
         // Derive tenantId from persisted data, not from the request body.
         const [orderRow, crmOrder] = await Promise.all([
             prisma.$queryRaw<any[]>`
-                SELECT crm_tenant_id FROM lm_orders WHERE crm_order_id = ${orderId} LIMIT 1
+                SELECT crm_tenant_id, contraentrega_collected FROM lm_orders WHERE crm_order_id = ${orderId} LIMIT 1
             `,
-            prisma.order.findUnique({ where: { id: orderId }, select: { tenantId: true } }),
+            prisma.order.findUnique({
+                where: { id: orderId },
+                select: { tenantId: true, total: true, cePaymentConfirmed: true, contraEntrega: true },
+            }),
         ]);
         const derivedTenantId = orderRow?.[0]?.crm_tenant_id ?? crmOrder?.tenantId;
         if (!derivedTenantId) {
             return NextResponse.json({ error: 'Order not found' }, { status: 404 });
         }
+
+        const alreadyCollected = Boolean(orderRow?.[0]?.contraentrega_collected || crmOrder?.cePaymentConfirmed);
+        if (alreadyCollected) {
+            return NextResponse.json({
+                success: true,
+                alreadyCollected: true,
+                paymentMethod,
+                confirmedBy: employee.displayName,
+                confirmedByEmployeeId: employee.id,
+            });
+        }
+
+        const resolvedAmount = Number.isFinite(Number(amount)) && Number(amount) >= 0
+            ? Number(amount)
+            : Number(crmOrder?.total ?? 0);
 
         await prisma.$executeRaw`
             INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status, is_contra_entrega)
@@ -130,14 +212,26 @@ export async function POST(req: NextRequest) {
         `;
 
         await prisma.$executeRaw`
-            INSERT INTO lm_ce_payments (crm_order_id, crm_tenant_id, amount, notes, confirmed_by)
-            VALUES (${orderId}, ${derivedTenantId}, ${amount ?? 0}, ${notes ?? null}, ${actor})
+            INSERT INTO lm_ce_payments (crm_order_id, crm_tenant_id, amount, notes, confirmed_by, payment_method, confirmed_by_employee_id)
+            VALUES (${orderId}, ${derivedTenantId}, ${resolvedAmount}, ${notes ?? null}, ${employee.displayName}, ${paymentMethod}, ${employee.id})
         `;
 
         // Log event
         await prisma.$executeRaw`
             INSERT INTO lm_order_events (crm_order_id, event_type, payload, actor)
-            VALUES (${orderId}, 'ce_confirmed', ${JSON.stringify({ amount, notes })}::jsonb, ${actor})
+            VALUES (
+                ${orderId},
+                'ce_confirmed',
+                ${JSON.stringify({
+                    amount: resolvedAmount,
+                    notes,
+                    paymentMethod,
+                    confirmedByEmployeeId: employee.id,
+                    confirmedBy: employee.displayName,
+                    sessionActor: actor,
+                })}::jsonb,
+                ${employee.displayName}
+            )
         `;
 
         // Sync to core Order model
@@ -150,7 +244,13 @@ export async function POST(req: NextRequest) {
             console.error('[contra-entrega POST] Order model sync failed (non-fatal):', syncErr);
         }
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({
+            success: true,
+            paymentMethod,
+            confirmedBy: employee.displayName,
+            confirmedByEmployeeId: employee.id,
+            amount: resolvedAmount,
+        });
     } catch (error) {
         console.error('[contra-entrega POST]', error);
         return NextResponse.json({ error: 'Failed to confirm CE payment' }, { status: 500 });

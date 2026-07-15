@@ -66,7 +66,10 @@ export async function POST(request: Request) {
 
       try {
         await logUpdate(request as any, 'order', updatedOrder.id, `Order #${body.orderId}`,
-          { cePaymentConfirmed: false },
+          {
+            cePaymentConfirmed: false,
+            changes: ['Pago CE confirmado: "No" → "Sí"'],
+          },
           { cePaymentConfirmed: true })
       } catch (auditError) {
         console.error('[confirm-payment] Audit logging failed (non-fatal):', auditError)

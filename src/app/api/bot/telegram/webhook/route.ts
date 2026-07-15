@@ -22,8 +22,6 @@ import { processMessage, generateWelcomeMessage, generateUnauthorizedMessage } f
 import { clearConversationHistory, clearPendingConfirmation } from '@/lib/bot/conversation-memory';
 import { escapeHtml } from '@/lib/validation';
 
-console.log('🚀 WEBHOOK MODULE LOADED SUCCESSFULLY 🚀');
-
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';

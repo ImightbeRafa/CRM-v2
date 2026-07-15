@@ -324,7 +324,7 @@ export default function ReportsPage() {
         const correosShipping = selectedCorreos.reduce((s, o) => s + (o.correosShippingCost ?? 0), 0);
         const correosTax = selectedCorreos.reduce((s, o) => s + (o.correosTax ?? getCorreosTax(o.correosShippingCost)), 0);
         const correosHandling = selectedCorreos.length * hRate;
-        const fallbackMensajeriaRate = entry.data.mensajeria.shippingRate ?? 2800;
+        const fallbackMensajeriaRate = entry.data.mensajeria.shippingRate ?? 2500;
         const mensajeriaRecoleccion = selectedMensajeria.reduce(
             (sum, order) => sum + (order.mensajeriaShippingCost ?? fallbackMensajeriaRate),
             0,
@@ -503,7 +503,7 @@ export default function ReportsPage() {
                 rows.push([
                     o.orderId, o.customerName, o.reportTimestampCR ?? o.timestampCR, o.product ?? '',
                     o.carrier, o.province ?? '', `${o.total}`,
-                    o.carrier === 'correos' ? `${o.correosShippingCost ?? ''}` : `${o.mensajeriaShippingCost ?? entry.data.mensajeria.shippingRate ?? 2800}`,
+                    o.carrier === 'correos' ? `${o.correosShippingCost ?? ''}` : `${o.mensajeriaShippingCost ?? entry.data.mensajeria.shippingRate ?? 2500}`,
                     o.carrier === 'correos' && o.correosShippingCost != null ? `${o.correosTax ?? getCorreosTax(o.correosShippingCost)}` : '',
                     `${o.handlingCost}`,
                     o.isTilopay ? `${o.tilopayCommission ?? 0}` : '',
@@ -780,7 +780,7 @@ export default function ReportsPage() {
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, marginBottom: 16 }}>
                                                     {[
                                                         { label: 'Paquetes', value: `${t.packages}`, sub: `${t.correosPackages} correos · ${t.mensajeriaPackages} mensajería`, color: tenantColor },
-                                                        { label: 'Envíos', value: fmt(t.totalShipping), sub: `Correos: ${fmt(t.correosShipping)} + GD: ${t.mensajeriaPackages} x ${fmt(r.mensajeria.shippingRate ?? 2800)}`, color: '#60a5fa' },
+                                                        { label: 'Envíos', value: fmt(t.totalShipping), sub: `Correos: ${fmt(t.correosShipping)} + GD: ${t.mensajeriaPackages} x ${fmt(r.mensajeria.shippingRate ?? 2500)}`, color: '#60a5fa' },
                                                         { label: 'Impuestos', value: fmt(t.correosTax), sub: '13% Correos Regular', color: '#fb7185' },
                                                         { label: `Manejo (${fmt(r.correos.handlingRate)} × ${t.packages})`, value: fmt(t.totalHandling), sub: `Correos: ${fmt(t.correosHandling)} + GD: ${fmt(t.mensajeriaHandling)}`, color: '#fbbf24' },
                                                         { label: 'Tilopay', value: fmt(t.tilopayFees), sub: `${t.tilopayOrders} orden(es) web`, color: '#22d3ee' },
@@ -874,7 +874,7 @@ export default function ReportsPage() {
                                                                                 <td style={{ padding: '6px 8px', color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>{o.province ?? '—'}</td>
                                                                                 <td style={{ padding: '6px 8px', color: '#F2F2F2', fontWeight: 600 }}>{fmt(o.total)}</td>
                                                                                 <td style={{ padding: '6px 8px', color: o.carrier === 'mensajeria' || o.correosShippingCost != null ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)' }}>
-                                                                                    {o.carrier === 'correos' ? (o.correosShippingCost != null ? fmt(o.correosShippingCost) : '⚠ sin costo') : fmt(o.mensajeriaShippingCost ?? r.mensajeria.shippingRate ?? 2800)}
+                                                                                    {o.carrier === 'correos' ? (o.correosShippingCost != null ? fmt(o.correosShippingCost) : '⚠ sin costo') : fmt(o.mensajeriaShippingCost ?? r.mensajeria.shippingRate ?? 2500)}
                                                                                 </td>
                                                                                 <td style={{ padding: '6px 8px', color: o.carrier === 'correos' ? '#fb7185' : 'rgba(255,255,255,0.2)' }}>
                                                                                     {o.carrier === 'correos' && o.correosShippingCost != null ? fmt(o.correosTax ?? getCorreosTax(o.correosShippingCost)) : '—'}
@@ -1163,7 +1163,7 @@ export default function ReportsPage() {
                                                                 </span>
                                                             </td>
                                                             <td style={{ padding: '5px 8px', color: '#F2F2F2', fontWeight: 600 }}>{fmt(o.total)}</td>
-                                                            <td style={{ padding: '5px 8px', color: 'rgba(255,255,255,0.5)' }}>{o.carrier === 'correos' ? (o.correosShippingCost != null ? fmt(o.correosShippingCost) : '—') : fmt(o.mensajeriaShippingCost ?? entry.data.mensajeria.shippingRate ?? 2800)}</td>
+                                                            <td style={{ padding: '5px 8px', color: 'rgba(255,255,255,0.5)' }}>{o.carrier === 'correos' ? (o.correosShippingCost != null ? fmt(o.correosShippingCost) : '—') : fmt(o.mensajeriaShippingCost ?? entry.data.mensajeria.shippingRate ?? 2500)}</td>
                                                             <td style={{ padding: '5px 8px', color: o.carrier === 'correos' ? '#fb7185' : 'rgba(255,255,255,0.2)' }}>{o.carrier === 'correos' && o.correosShippingCost != null ? fmt(o.correosTax ?? getCorreosTax(o.correosShippingCost)) : '—'}</td>
                                                             <td style={{ padding: '5px 8px', color: 'rgba(255,255,255,0.5)' }}>{fmt(o.handlingCost)}</td>
                                                             <td style={{ padding: '5px 8px', color: o.isTilopay ? '#22d3ee' : 'rgba(255,255,255,0.2)' }}>{o.isTilopay ? fmt(o.tilopayFee ?? 0) : '—'}</td>

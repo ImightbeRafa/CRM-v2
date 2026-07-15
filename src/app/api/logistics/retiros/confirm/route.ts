@@ -37,10 +37,11 @@ function getSundayCR(monday: string): string {
 async function resolveActiveEmployee(employeeId: unknown) {
   if (typeof employeeId !== 'string' || !employeeId.trim()) return null;
   try {
+    const id = employeeId.trim();
     const rows = await prisma.$queryRaw<{ id: string; display_name: string }[]>`
       SELECT id, display_name
       FROM lm_employees
-      WHERE id = ${employeeId.trim()} AND active = TRUE
+      WHERE id = ${id}::uuid AND active = TRUE
       LIMIT 1
     `;
     return rows[0] ? { id: rows[0].id, displayName: rows[0].display_name } : null;

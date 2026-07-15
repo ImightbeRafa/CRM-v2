@@ -25,15 +25,21 @@ function normalizePaymentMethod(value: unknown): 'sinpe' | 'efectivo' | null {
 
 async function resolveActiveEmployee(employeeId: unknown) {
     if (typeof employeeId !== 'string' || !employeeId.trim()) return null;
-    const rows = await prisma.$queryRaw<{ id: string; display_name: string }[]>`
-        SELECT id, display_name
-        FROM lm_employees
-        WHERE id = ${employeeId.trim()} AND active = TRUE
-        LIMIT 1
-    `;
-    const row = rows[0];
-    if (!row) return null;
-    return { id: row.id, displayName: row.display_name };
+    const id = employeeId.trim();
+    // lm_employees.id is uuid — Prisma binds JS strings as text unless cast.
+    try {
+        const rows = await prisma.$queryRaw<{ id: string; display_name: string }[]>`
+            SELECT id, display_name
+            FROM lm_employees
+            WHERE id = ${id}::uuid AND active = TRUE
+            LIMIT 1
+        `;
+        const row = rows[0];
+        if (!row) return null;
+        return { id: row.id, displayName: row.display_name };
+    } catch {
+        return null;
+    }
 }
 
 // GET /api/logistics/contra-entrega?tenantId=&dateFrom=&dateTo=&collected=

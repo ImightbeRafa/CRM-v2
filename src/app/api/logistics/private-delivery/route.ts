@@ -114,10 +114,11 @@ function normalizeSettlementMethod(value: unknown): 'sinpe' | 'efectivo' | null 
 async function resolveActiveEmployee(employeeId: unknown) {
     if (typeof employeeId !== 'string' || !employeeId.trim()) return null;
     try {
+        const id = employeeId.trim();
         const rows = await prisma.$queryRaw<{ id: string; display_name: string }[]>`
             SELECT id, display_name
             FROM lm_employees
-            WHERE id = ${employeeId.trim()} AND active = TRUE
+            WHERE id = ${id}::uuid AND active = TRUE
             LIMIT 1
         `;
         const row = rows[0];

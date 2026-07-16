@@ -4,6 +4,12 @@ import {
   normalizeProductName,
   type RetiroOrderLine,
 } from '@/lib/retiro-stock-utils';
+import {
+  RETIRO_PICKUP_LOCATIONS,
+  normalizePickupLocation,
+  pickupLocationLabel,
+  type RetiroPickupLocation,
+} from '@/lib/retiro-locations';
 
 export type { RetiroOrderLine };
 export {
@@ -13,6 +19,12 @@ export {
   normalizeProductName,
   resolveSkuFromMap,
 } from '@/lib/retiro-stock-utils';
+export {
+  RETIRO_PICKUP_LOCATIONS,
+  normalizePickupLocation,
+  pickupLocationLabel,
+  type RetiroPickupLocation,
+} from '@/lib/retiro-locations';
 
 export const DEFAULT_RETIRO_AGENT = 'laura';
 export const CR_TZ = 'America/Costa_Rica';
@@ -111,6 +123,15 @@ export async function ensureRetiroStockTables() {
       await prisma.$executeRawUnsafe(`
         CREATE INDEX IF NOT EXISTS lm_retiro_handoffs_scheduled_idx
         ON lm_retiro_handoffs (scheduled_at)
+      `);
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE lm_retiro_handoffs
+        ADD COLUMN IF NOT EXISTS pickup_location TEXT
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS lm_retiro_handoffs_confirmed_idx
+        ON lm_retiro_handoffs (confirmed_at DESC)
+        WHERE confirmed_at IS NOT NULL
       `);
       await seedLauraStockIfNeeded(DEFAULT_RETIRO_AGENT);
     })().catch((err) => {
@@ -352,6 +373,7 @@ export async function applyRetiroDecrement(params: {
   actor: string;
   employeeId: string;
   employeeName: string;
+  pickupLocation: RetiroPickupLocation;
 }) {
   const agentKey = params.agentKey || DEFAULT_RETIRO_AGENT;
   const unmapped = params.lines.filter((l) => !l.sku);
@@ -377,6 +399,21 @@ export async function applyRetiroDecrement(params: {
       params.orderId,
     );
     if (handoff[0]?.stock_applied) {
+      // Idempotent: refresh handoff metadata without double-decrementing stock.
+      await tx.$executeRawUnsafe(
+        `UPDATE lm_retiro_handoffs
+         SET handed_by_employee_id = $2,
+             handed_by_name = $3,
+             pickup_location = $4,
+             actor = $5,
+             updated_at = NOW()
+         WHERE crm_order_id = $1`,
+        params.orderId,
+        params.employeeId,
+        params.employeeName,
+        params.pickupLocation,
+        params.actor,
+      );
       return { alreadyApplied: true as const, decrements: [] as Array<{ sku: string; displayName: string; qty: number; remaining: number }> };
     }
 
@@ -409,19 +446,21 @@ export async function applyRetiroDecrement(params: {
         params.orderId,
         params.actor,
         params.employeeId,
-        `Retirado por Laura · ${params.employeeName}`,
+        `Retirado · ${RETIRO_PICKUP_LOCATIONS[params.pickupLocation]} · ${params.employeeName}`,
       );
       decrements.push({ sku, displayName: rows[0].display_name, qty: info.qty, remaining });
     }
 
     await tx.$executeRawUnsafe(
       `INSERT INTO lm_retiro_handoffs (
-         crm_order_id, agent_key, handed_by_employee_id, handed_by_name, confirmed_at, stock_applied, actor, updated_at
-       ) VALUES ($1, $2, $3, $4, NOW(), TRUE, $5, NOW())
+         crm_order_id, agent_key, handed_by_employee_id, handed_by_name,
+         pickup_location, confirmed_at, stock_applied, actor, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, NOW(), TRUE, $6, NOW())
        ON CONFLICT (crm_order_id) DO UPDATE SET
          agent_key = EXCLUDED.agent_key,
          handed_by_employee_id = EXCLUDED.handed_by_employee_id,
          handed_by_name = EXCLUDED.handed_by_name,
+         pickup_location = EXCLUDED.pickup_location,
          confirmed_at = NOW(),
          stock_applied = TRUE,
          actor = EXCLUDED.actor,
@@ -430,6 +469,7 @@ export async function applyRetiroDecrement(params: {
       agentKey,
       params.employeeId,
       params.employeeName,
+      params.pickupLocation,
       params.actor,
     );
 
@@ -467,6 +507,8 @@ export async function getHandoffsForOrders(orderIds: string[]) {
       handedByName: string | null;
       confirmedAt: string | null;
       stockApplied: boolean;
+      pickupLocation: string | null;
+      pickupLocationLabel: string | null;
     }>;
   }
 
@@ -477,8 +519,9 @@ export async function getHandoffsForOrders(orderIds: string[]) {
     handed_by_name: string | null;
     confirmed_at: Date | null;
     stock_applied: boolean;
+    pickup_location: string | null;
   }[]>(
-    `SELECT crm_order_id, scheduled_at, handed_by_name, confirmed_at, stock_applied
+    `SELECT crm_order_id, scheduled_at, handed_by_name, confirmed_at, stock_applied, pickup_location
      FROM lm_retiro_handoffs
      WHERE crm_order_id = ANY($1::text[])`,
     orderIds,
@@ -489,6 +532,8 @@ export async function getHandoffsForOrders(orderIds: string[]) {
     handedByName: string | null;
     confirmedAt: string | null;
     stockApplied: boolean;
+    pickupLocation: string | null;
+    pickupLocationLabel: string | null;
   }> = {};
   for (const row of rows) {
     map[row.crm_order_id] = {
@@ -496,7 +541,117 @@ export async function getHandoffsForOrders(orderIds: string[]) {
       handedByName: row.handed_by_name,
       confirmedAt: row.confirmed_at ? new Date(row.confirmed_at).toISOString() : null,
       stockApplied: Boolean(row.stock_applied),
+      pickupLocation: row.pickup_location,
+      pickupLocationLabel: pickupLocationLabel(row.pickup_location),
     };
   }
   return map;
+}
+
+export type ConfirmedRetiroHistoryItem = {
+  orderId: string;
+  orderRef: string;
+  customerName: string;
+  phone: string | null;
+  tenantId: string;
+  total: number;
+  product: string | null;
+  quantity: number | null;
+  isContraEntrega: boolean;
+  paymentMethod: 'sinpe' | 'efectivo' | null;
+  paymentLabel: 'SINPE' | 'Efectivo' | null;
+  paymentConfirmedBy: string | null;
+  handedByName: string | null;
+  handedByEmployeeId: string | null;
+  pickupLocation: RetiroPickupLocation | null;
+  pickupLocationLabel: string | null;
+  confirmedAt: string;
+  scheduledAt: string | null;
+  actor: string | null;
+};
+
+export async function listConfirmedRetiros(limit = 100): Promise<ConfirmedRetiroHistoryItem[]> {
+  const capped = Math.min(Math.max(1, Math.floor(limit)), 200);
+  await ensureRetiroStockTables();
+
+  const rows = await prisma.$queryRawUnsafe<{
+    order_id: string;
+    order_ref: string;
+    customer_name: string;
+    phone: string | null;
+    tenant_id: string;
+    total: number | string | null;
+    product: string | null;
+    quantity: number | null;
+    is_contra_entrega: boolean;
+    payment_method: string | null;
+    payment_confirmed_by: string | null;
+    handed_by_name: string | null;
+    handed_by_employee_id: string | null;
+    pickup_location: string | null;
+    confirmed_at: Date;
+    scheduled_at: Date | null;
+    actor: string | null;
+  }[]>(
+    `SELECT
+        o.id AS order_id,
+        o."orderId" AS order_ref,
+        o."customerName" AS customer_name,
+        o.phone,
+        o."tenantId" AS tenant_id,
+        o.total,
+        o.product,
+        o.quantity,
+        (COALESCE(o."contraEntrega", FALSE) OR COALESCE(lm.is_contra_entrega, FALSE)) AS is_contra_entrega,
+        ce.payment_method,
+        ce.confirmed_by AS payment_confirmed_by,
+        h.handed_by_name,
+        h.handed_by_employee_id,
+        h.pickup_location,
+        h.confirmed_at,
+        h.scheduled_at,
+        h.actor
+     FROM lm_retiro_handoffs h
+     INNER JOIN "Order" o ON o.id = h.crm_order_id
+     LEFT JOIN lm_orders lm ON lm.crm_order_id = h.crm_order_id
+     LEFT JOIN LATERAL (
+       SELECT payment_method, confirmed_by
+       FROM lm_ce_payments
+       WHERE crm_order_id = h.crm_order_id
+       ORDER BY collected_at DESC NULLS LAST
+       LIMIT 1
+     ) ce ON TRUE
+     WHERE h.confirmed_at IS NOT NULL
+       AND o."orderType" = 'RA'
+     ORDER BY h.confirmed_at DESC
+     LIMIT $1`,
+    capped,
+  );
+
+  return rows.map((row) => {
+    const method = typeof row.payment_method === 'string' ? row.payment_method.toLowerCase() : null;
+    const paymentMethod = method === 'sinpe' || method === 'efectivo' ? method : null;
+    const location = normalizePickupLocation(row.pickup_location);
+    return {
+      orderId: row.order_id,
+      orderRef: row.order_ref,
+      customerName: row.customer_name,
+      phone: row.phone,
+      tenantId: row.tenant_id,
+      total: Number(row.total || 0),
+      product: row.product,
+      quantity: row.quantity,
+      isContraEntrega: Boolean(row.is_contra_entrega),
+      paymentMethod,
+      paymentLabel: paymentMethod === 'sinpe' ? 'SINPE' : paymentMethod === 'efectivo' ? 'Efectivo' : null,
+      paymentConfirmedBy: row.payment_confirmed_by,
+      handedByName: row.handed_by_name,
+      handedByEmployeeId: row.handed_by_employee_id,
+      pickupLocation: location,
+      pickupLocationLabel: location ? RETIRO_PICKUP_LOCATIONS[location] : pickupLocationLabel(row.pickup_location),
+      confirmedAt: new Date(row.confirmed_at).toISOString(),
+      scheduledAt: row.scheduled_at ? new Date(row.scheduled_at).toISOString() : null,
+      actor: row.actor,
+    };
+  });
 }

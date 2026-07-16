@@ -1,7 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { PackageCheck, X } from 'lucide-react';
+import { MapPin, PackageCheck, X } from 'lucide-react';
+import {
+  RETIRO_PICKUP_LOCATIONS,
+  type RetiroPickupLocation,
+} from '@/lib/retiro-locations';
 
 type EmployeeOption = {
   id: string;
@@ -16,19 +20,29 @@ export type RetiroLinePreview = {
   displayName: string | null;
 };
 
+export type RetiroConfirmPayload = {
+  employeeId: string;
+  employeeName: string;
+  pickupLocation: RetiroPickupLocation;
+};
+
 interface RetiroConfirmWizardProps {
   open: boolean;
   title?: string;
   subtitle?: string;
   lines: RetiroLinePreview[];
   busy?: boolean;
-  onConfirm: (payload: { employeeId: string; employeeName: string }) => void;
+  onConfirm: (payload: RetiroConfirmPayload) => void;
   onCancel: () => void;
 }
 
+const LOCATION_OPTIONS = (Object.entries(RETIRO_PICKUP_LOCATIONS) as [RetiroPickupLocation, string][]).map(
+  ([id, label]) => ({ id, label }),
+);
+
 export default function RetiroConfirmWizard({
   open,
-  title = 'Confirmar retiro (Laura)',
+  title = 'Confirmar retiro',
   subtitle,
   lines,
   busy = false,
@@ -36,6 +50,7 @@ export default function RetiroConfirmWizard({
   onCancel,
 }: RetiroConfirmWizardProps) {
   const [employeeId, setEmployeeId] = useState('');
+  const [pickupLocation, setPickupLocation] = useState<RetiroPickupLocation | ''>('');
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [employeesLoading, setEmployeesLoading] = useState(false);
   const [employeesError, setEmployeesError] = useState<string | null>(null);
@@ -43,6 +58,7 @@ export default function RetiroConfirmWizard({
   useEffect(() => {
     if (!open) return;
     setEmployeeId('');
+    setPickupLocation('');
     setEmployeesError(null);
 
     let cancelled = false;
@@ -77,7 +93,11 @@ export default function RetiroConfirmWizard({
 
   const selectedEmployee = employees.find((e) => e.id === employeeId) || null;
   const unmapped = lines.filter((l) => !l.sku);
-  const canConfirm = !!selectedEmployee && unmapped.length === 0 && !busy && !employeesLoading;
+  const canConfirm = !!selectedEmployee
+    && !!pickupLocation
+    && unmapped.length === 0
+    && !busy
+    && !employeesLoading;
 
   return (
     <div
@@ -93,11 +113,12 @@ export default function RetiroConfirmWizard({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: '100%', maxWidth: 440,
+          width: '100%', maxWidth: 460,
           background: 'rgba(22,24,32,0.98)',
           border: '1px solid rgba(255,255,255,0.12)',
           borderRadius: 16, padding: 22,
           boxShadow: '0 24px 80px rgba(0,0,0,0.45)',
+          maxHeight: '90vh', overflowY: 'auto',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
@@ -118,9 +139,40 @@ export default function RetiroConfirmWizard({
           </button>
         </div>
 
+        <div style={{ marginBottom: 16 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8,
+            color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+          }}>
+            <MapPin size={12} /> Lugar de retiro
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {LOCATION_OPTIONS.map((loc) => {
+              const selected = pickupLocation === loc.id;
+              return (
+                <button
+                  key={loc.id}
+                  type="button"
+                  onClick={() => setPickupLocation(loc.id)}
+                  disabled={busy}
+                  style={{
+                    padding: '12px 10px', borderRadius: 10, textAlign: 'left',
+                    border: `1px solid ${selected ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                    background: selected ? 'rgba(34,197,94,0.14)' : 'rgba(255,255,255,0.03)',
+                    color: selected ? '#22c55e' : 'rgba(255,255,255,0.7)',
+                    cursor: busy ? 'default' : 'pointer', fontWeight: selected ? 800 : 600, fontSize: 13,
+                  }}
+                >
+                  {loc.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div style={{ marginBottom: 14 }}>
           <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>
-            Impacto en inventario Laura
+            Impacto en inventario
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {lines.map((line, idx) => (
@@ -156,7 +208,7 @@ export default function RetiroConfirmWizard({
           </div>
           {unmapped.length > 0 && (
             <p style={{ margin: '10px 0 0', color: '#f87171', fontSize: 12 }}>
-              No se puede confirmar hasta mapear todos los productos al inventario de Laura.
+              No se puede confirmar hasta mapear todos los productos al inventario.
             </p>
           )}
         </div>
@@ -201,8 +253,12 @@ export default function RetiroConfirmWizard({
           </button>
           <button
             onClick={() => {
-              if (!selectedEmployee || !canConfirm) return;
-              onConfirm({ employeeId: selectedEmployee.id, employeeName: selectedEmployee.displayName });
+              if (!selectedEmployee || !pickupLocation || !canConfirm) return;
+              onConfirm({
+                employeeId: selectedEmployee.id,
+                employeeName: selectedEmployee.displayName,
+                pickupLocation,
+              });
             }}
             disabled={!canConfirm}
             style={{

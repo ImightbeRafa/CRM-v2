@@ -39,6 +39,8 @@ interface LauraStockPanelProps {
   onRefresh: () => void;
 }
 
+const QUICK_DELTAS = [5, 10, 20];
+
 export default function LauraStockPanel({
   stock,
   unitsOnHand,
@@ -53,10 +55,22 @@ export default function LauraStockPanel({
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const sortedStock = useMemo(() => {
+    return [...stock].sort((a, b) => {
+      if (a.lowStock !== b.lowStock) return a.lowStock ? -1 : 1;
+      return a.displayName.localeCompare(b.displayName, 'es');
+    });
+  }, [stock]);
+
   const selected = useMemo(
     () => stock.find((s) => s.sku === restockSku) || null,
     [stock, restockSku],
   );
+
+  const previewDelta = Number(qty);
+  const previewNext = selected && Number.isInteger(previewDelta)
+    ? selected.qty + previewDelta
+    : null;
 
   async function submitRestock() {
     if (!selected) return;
@@ -76,16 +90,22 @@ export default function LauraStockPanel({
     }
   }
 
+  function openRestock(sku: string) {
+    setRestockSku(sku);
+    setQty('10');
+    setNotes('');
+  }
+
   return (
     <div style={{ ...glass, padding: 16, marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <Package size={16} style={{ color: '#fbbf24' }} />
             <h2 style={{ margin: 0, color: '#F2F2F2', fontSize: 15, fontWeight: 800 }}>Inventario Casa de Laura</h2>
           </div>
-          <p style={{ margin: 0, color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
-            Stock local para retiros RA · {unitsOnHand} unidades ·{' '}
+          <p style={{ margin: 0, color: 'rgba(255,255,255,0.4)', fontSize: 12, lineHeight: 1.45 }}>
+            Un inventario compartido para Laura Escazu y Marlenn Desamparados · {unitsOnHand} unidades ·{' '}
             <span style={{ color: lowStockCount > 0 ? '#fbbf24' : 'rgba(34,197,94,0.85)' }}>
               {lowStockCount > 0 ? `${lowStockCount} bajos` : 'niveles OK'}
             </span>
@@ -109,55 +129,92 @@ export default function LauraStockPanel({
           color: '#fbbf24', fontSize: 12, fontWeight: 600,
         }}>
           <AlertTriangle size={13} />
-          Hay productos bajos — enviá reposición a Laura pronto.
+          Hay productos bajos — reponé stock pronto.
         </div>
       )}
 
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-        gap: 8,
-      }}>
-        {stock.map((item) => (
-          <div
-            key={item.sku}
-            style={{
-              padding: '10px 12px',
-              borderRadius: 10,
-              border: `1px solid ${item.lowStock ? 'rgba(239,68,68,0.35)' : 'rgba(255,255,255,0.08)'}`,
-              background: item.lowStock ? 'rgba(239,68,68,0.08)' : 'rgba(255,255,255,0.03)',
-            }}
-          >
-            <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: 600, marginBottom: 4 }}>
-              {item.displayName}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-              <span style={{
-                color: item.lowStock ? '#ef4444' : '#F2F2F2',
-                fontSize: 22,
-                fontWeight: 900,
-                lineHeight: 1,
-              }}>
-                {item.qty}
-              </span>
-              <button
-                onClick={() => { setRestockSku(item.sku); setQty('10'); setNotes(''); }}
+      <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
+          <thead>
+            <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+              {['Producto', 'Stock', 'Mín', 'Estado', 'Reponer'].map((h) => (
+                <th
+                  key={h}
+                  style={{
+                    textAlign: h === 'Stock' || h === 'Mín' || h === 'Reponer' ? 'right' : 'left',
+                    padding: '10px 12px',
+                    color: 'rgba(255,255,255,0.35)',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.4,
+                    borderBottom: '1px solid rgba(255,255,255,0.06)',
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sortedStock.map((item) => (
+              <tr
+                key={item.sku}
                 style={{
-                  padding: '4px 8px', borderRadius: 6,
-                  border: '1px solid rgba(34,197,94,0.3)',
-                  background: 'rgba(34,197,94,0.1)',
-                  color: '#22c55e', fontSize: 11, fontWeight: 700,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3,
+                  background: item.lowStock ? 'rgba(239,68,68,0.05)' : 'transparent',
                 }}
               >
-                <Plus size={11} /> Stock
-              </button>
-            </div>
-            <div style={{ marginTop: 6, color: 'rgba(255,255,255,0.28)', fontSize: 10 }}>
-              mín. {item.minQty}
-            </div>
-          </div>
-        ))}
+                <td style={{ padding: '11px 12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ color: '#F2F2F2', fontSize: 13, fontWeight: 700 }}>{item.displayName}</div>
+                  <div style={{ color: 'rgba(255,255,255,0.28)', fontSize: 10, marginTop: 2 }}>{item.sku}</div>
+                </td>
+                <td style={{
+                  padding: '11px 12px', borderBottom: '1px solid rgba(255,255,255,0.05)',
+                  textAlign: 'right', fontSize: 20, fontWeight: 900,
+                  color: item.lowStock ? '#ef4444' : '#F2F2F2',
+                }}>
+                  {item.qty}
+                </td>
+                <td style={{
+                  padding: '11px 12px', borderBottom: '1px solid rgba(255,255,255,0.05)',
+                  textAlign: 'right', color: 'rgba(255,255,255,0.4)', fontSize: 12,
+                }}>
+                  {item.minQty}
+                </td>
+                <td style={{ padding: '11px 12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <span style={{
+                    display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 800,
+                    background: item.lowStock ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.12)',
+                    color: item.lowStock ? '#f87171' : '#22c55e',
+                  }}>
+                    {item.lowStock ? 'Bajo' : 'OK'}
+                  </span>
+                </td>
+                <td style={{ padding: '11px 12px', borderBottom: '1px solid rgba(255,255,255,0.05)', textAlign: 'right' }}>
+                  <button
+                    onClick={() => openRestock(item.sku)}
+                    style={{
+                      padding: '6px 10px', borderRadius: 7,
+                      border: '1px solid rgba(34,197,94,0.35)',
+                      background: 'rgba(34,197,94,0.1)',
+                      color: '#22c55e', fontSize: 11, fontWeight: 800,
+                      cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4,
+                    }}
+                  >
+                    <Plus size={12} /> Reponer
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {sortedStock.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ padding: 28, textAlign: 'center', color: 'rgba(255,255,255,0.25)', fontSize: 13 }}>
+                  Sin productos en inventario
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
 
       {movements.length > 0 && (
@@ -165,18 +222,21 @@ export default function LauraStockPanel({
           <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>
             Movimientos recientes
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 120, overflowY: 'auto' }}>
-            {movements.slice(0, 8).map((m) => (
-              <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 160, overflowY: 'auto' }}>
+            {movements.slice(0, 12).map((m) => (
+              <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11.5, color: 'rgba(255,255,255,0.42)' }}>
                 <span>
-                  <span style={{ color: m.delta > 0 ? '#22c55e' : '#f87171', fontWeight: 700 }}>
+                  <span style={{ color: m.delta > 0 ? '#22c55e' : '#f87171', fontWeight: 800 }}>
                     {m.delta > 0 ? `+${m.delta}` : m.delta}
                   </span>
                   {' '}{m.displayName || m.sku}
+                  <span style={{ opacity: 0.65 }}> · {m.reason}</span>
                   {m.notes ? ` · ${m.notes}` : ''}
                 </span>
                 <span style={{ whiteSpace: 'nowrap', opacity: 0.7 }}>
-                  {new Date(m.createdAt).toLocaleDateString('es-CR', { day: 'numeric', month: 'short' })}
+                  {new Date(m.createdAt).toLocaleString('es-CR', {
+                    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                  })}
                 </span>
               </div>
             ))}
@@ -198,18 +258,41 @@ export default function LauraStockPanel({
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: '100%', maxWidth: 380,
+              width: '100%', maxWidth: 400,
               background: 'rgba(22,24,32,0.98)',
               border: '1px solid rgba(255,255,255,0.12)',
               borderRadius: 16, padding: 22,
             }}
           >
             <h3 style={{ margin: '0 0 6px', color: '#F2F2F2', fontSize: 16, fontWeight: 800 }}>
-              Ajustar stock — {selected.displayName}
+              Reponer — {selected.displayName}
             </h3>
-            <p style={{ margin: '0 0 14px', color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
-              Actual: {selected.qty}. Usá número positivo para envío / reposición, negativo para corrección.
+            <p style={{ margin: '0 0 12px', color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
+              Actual: <strong style={{ color: '#F2F2F2' }}>{selected.qty}</strong>
+              {previewNext != null && Number.isFinite(previewNext) && (
+                <> → <strong style={{ color: previewNext < selected.minQty ? '#f87171' : '#22c55e' }}>{previewNext}</strong></>
+              )}
             </p>
+
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+              {QUICK_DELTAS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setQty(String(n))}
+                  style={{
+                    padding: '6px 12px', borderRadius: 8,
+                    border: `1px solid ${qty === String(n) ? 'rgba(34,197,94,0.45)' : 'rgba(255,255,255,0.1)'}`,
+                    background: qty === String(n) ? 'rgba(34,197,94,0.12)' : 'transparent',
+                    color: qty === String(n) ? '#22c55e' : 'rgba(255,255,255,0.55)',
+                    fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  }}
+                >
+                  +{n}
+                </button>
+              ))}
+            </div>
+
             <label style={{ display: 'block', color: 'rgba(255,255,255,0.45)', fontSize: 11, marginBottom: 6 }}>Cantidad</label>
             <input
               type="number"
@@ -225,7 +308,7 @@ export default function LauraStockPanel({
             <input
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ej. Envío 13 de julio"
+              placeholder="Ej. Envío 15 de julio"
               style={{
                 width: '100%', boxSizing: 'border-box', marginBottom: 16,
                 padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)',

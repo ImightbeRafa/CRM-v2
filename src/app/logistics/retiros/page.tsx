@@ -3,12 +3,15 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   PackageCheck, Search, RefreshCw, Phone, Calendar, Clock, User, Copy, Check,
-  DollarSign, AlertTriangle, CalendarClock,
+  DollarSign, AlertTriangle, CalendarClock, MapPin,
 } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import PaymentMethodWizard, { type PaymentConfirmPayload } from '@/app/logistics/components/PaymentMethodWizard';
 import LauraStockPanel, { type LauraStockItem } from '@/app/logistics/components/LauraStockPanel';
-import RetiroConfirmWizard, { type RetiroLinePreview } from '@/app/logistics/components/RetiroConfirmWizard';
+import RetiroConfirmWizard, {
+  type RetiroConfirmPayload,
+  type RetiroLinePreview,
+} from '@/app/logistics/components/RetiroConfirmWizard';
 import { buildAliasMapFromRows, mapOrderLinesLocal } from '@/lib/retiro-stock-utils';
 
 const glass = {
@@ -19,13 +22,35 @@ const glass = {
   borderRadius: 12,
 } as const;
 
-type StatusFilter = 'all' | 'Pendiente' | 'Entregado';
+type ListTab = 'pending' | 'confirmed';
 
 type HandoffInfo = {
   scheduledAt: string | null;
   handedByName: string | null;
   confirmedAt: string | null;
   stockApplied: boolean;
+  pickupLocation?: string | null;
+  pickupLocationLabel?: string | null;
+};
+
+type ConfirmedRetiro = {
+  orderId: string;
+  orderRef: string;
+  customerName: string;
+  phone: string | null;
+  tenantId: string;
+  total: number;
+  product: string | null;
+  quantity: number | null;
+  isContraEntrega: boolean;
+  paymentMethod: 'sinpe' | 'efectivo' | null;
+  paymentLabel: 'SINPE' | 'Efectivo' | null;
+  paymentConfirmedBy: string | null;
+  handedByName: string | null;
+  pickupLocation: string | null;
+  pickupLocationLabel: string | null;
+  confirmedAt: string;
+  scheduledAt: string | null;
 };
 
 type Kpis = {
@@ -64,10 +89,12 @@ async function patchLogisticsOrder(orderId: string, patch: object) {
 export default function RetirosPage() {
   const { getTenantName, getTenantColor } = useTenantConfig();
   const [orders, setOrders] = useState<any[]>([]);
+  const [confirmed, setConfirmed] = useState<ConfirmedRetiro[]>([]);
   const [handoffs, setHandoffs] = useState<Record<string, HandoffInfo>>({});
   const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [listTab, setListTab] = useState<ListTab>('pending');
   const [tenantFilter, setTenantFilter] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -136,7 +163,11 @@ export default function RetirosPage() {
       const p = new URLSearchParams({ limit: '500' });
       if (search) p.set('search', search);
       const data = await (await fetch(`/api/logistics/orders?${p}`)).json();
-      const raOrders = (data.orders || []).filter((o: any) => o.orderType === 'RA' && !o.archivedAt);
+      const raOrders = (data.orders || []).filter((o: any) => {
+        if (o.orderType !== 'RA' || o.archivedAt) return false;
+        const status = effectiveStatus(o);
+        return status !== 'Entregado' && status !== 'Devuelto';
+      });
       setOrders(raOrders);
 
       if (raOrders.length > 0) {
@@ -154,22 +185,57 @@ export default function RetirosPage() {
     }
   }, [search]);
 
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch('/api/logistics/retiros/history?limit=100');
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setConfirmed(data.items || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadStock(); }, [loadStock]);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
 
-  const afterStatus = statusFilter === 'all' ? orders : orders.filter((o) => {
-    const status = effectiveStatus(o);
-    if (statusFilter === 'Pendiente') return status !== 'Entregado' && status !== 'Devuelto';
-    return status === statusFilter;
-  });
-  const visible = tenantFilter ? afterStatus.filter((o) => o.tenantId === tenantFilter) : afterStatus;
-  const activeTenantIds = Array.from(new Set(orders.map((o) => o.tenantId)));
+  const pendingOrders = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return orders.filter((o) => {
+      if (tenantFilter && o.tenantId !== tenantFilter) return false;
+      if (!q) return true;
+      return (
+        String(o.customerName || '').toLowerCase().includes(q)
+        || String(o.orderId || '').toLowerCase().includes(q)
+        || String(o.phone || '').includes(q)
+      );
+    });
+  }, [orders, search, tenantFilter]);
 
-  const pendingCount = orders.filter((o) => {
-    const status = effectiveStatus(o);
-    return status !== 'Entregado' && status !== 'Devuelto';
-  }).length;
-  const completedCount = orders.filter((o) => effectiveStatus(o) === 'Entregado').length;
+  const confirmedVisible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return confirmed.filter((o) => {
+      if (tenantFilter && o.tenantId !== tenantFilter) return false;
+      if (!q) return true;
+      return (
+        o.customerName.toLowerCase().includes(q)
+        || o.orderRef.toLowerCase().includes(q)
+        || String(o.phone || '').includes(q)
+        || String(o.pickupLocationLabel || '').toLowerCase().includes(q)
+        || String(o.handedByName || '').toLowerCase().includes(q)
+      );
+    });
+  }, [confirmed, search, tenantFilter]);
+
+  const activeTenantIds = Array.from(new Set([
+    ...orders.map((o) => o.tenantId),
+    ...confirmed.map((o) => o.tenantId),
+  ]));
+  const pendingCount = orders.length;
+  const completedCount = confirmed.length;
 
   function copyPhone(phone: string, id: string) {
     navigator.clipboard.writeText(phone).then(() => {
@@ -297,6 +363,8 @@ export default function RetirosPage() {
           handedByName: prev[order.id]?.handedByName || null,
           confirmedAt: prev[order.id]?.confirmedAt || null,
           stockApplied: prev[order.id]?.stockApplied || false,
+          pickupLocation: prev[order.id]?.pickupLocation || null,
+          pickupLocationLabel: prev[order.id]?.pickupLocationLabel || null,
         },
       }));
       setOrders((prev) => prev.map((o) => (o.id === order.id ? {
@@ -312,7 +380,7 @@ export default function RetirosPage() {
     }
   }
 
-  async function submitRetiroConfirm(payload: { employeeId: string; employeeName: string }) {
+  async function submitRetiroConfirm(payload: RetiroConfirmPayload) {
     if (!confirmOrder) return;
     const order = confirmOrder;
     setConfirmBusy(true);
@@ -324,13 +392,14 @@ export default function RetirosPage() {
         body: JSON.stringify({
           orderId: order.id,
           employeeId: payload.employeeId,
+          pickupLocation: payload.pickupLocation,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'No se pudo confirmar el retiro');
       setOrders((prev) => prev.filter((o) => o.id !== order.id));
       setConfirmOrder(null);
-      await loadStock();
+      await Promise.all([loadStock(), loadHistory()]);
     } catch (e: any) {
       alert(e.message || 'No se pudo confirmar el retiro.');
     } finally {
@@ -367,7 +436,7 @@ export default function RetirosPage() {
           <PackageCheck size={20} style={{ color: '#22c55e' }} /> Retiros en Local
         </h1>
         <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, margin: 0 }}>
-          Órdenes RA · inventario Casa de Laura · citas y quién entrega
+          Órdenes RA · Laura Escazu / Marlenn Desamparados · pago, quién y dónde
         </p>
       </div>
 
@@ -418,24 +487,23 @@ export default function RetirosPage() {
 
         <div style={{ display: 'flex', gap: 4 }}>
           {([
-            ['all', 'Todos', `${orders.length}`, 'rgba(255,255,255,0.4)'],
-            ['Pendiente', 'Pendientes', `${pendingCount}`, '#fbbf24'],
-            ['Entregado', 'Entregados', `${completedCount}`, '#22c55e'],
-          ] as [StatusFilter, string, string, string][]).map(([id, label, count, color]) => (
+            ['pending', 'Pendientes', `${pendingCount}`, '#fbbf24'],
+            ['confirmed', 'Confirmados', `${completedCount}`, '#22c55e'],
+          ] as [ListTab, string, string, string][]).map(([id, label, count, color]) => (
             <button
               key={id}
-              onClick={() => setStatusFilter(id)}
+              onClick={() => setListTab(id)}
               style={{
                 padding: '7px 14px', borderRadius: 8,
-                border: `1px solid ${statusFilter === id ? `${color}60` : 'rgba(255,255,255,0.08)'}`,
-                background: statusFilter === id ? `${color}14` : 'transparent',
-                color: statusFilter === id ? color : 'rgba(255,255,255,0.35)',
-                fontSize: 12.5, fontWeight: statusFilter === id ? 700 : 400,
+                border: `1px solid ${listTab === id ? `${color}60` : 'rgba(255,255,255,0.08)'}`,
+                background: listTab === id ? `${color}14` : 'transparent',
+                color: listTab === id ? color : 'rgba(255,255,255,0.35)',
+                fontSize: 12.5, fontWeight: listTab === id ? 700 : 400,
                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
               }}
             >
               {label}
-              <span style={{ padding: '1px 6px', borderRadius: 20, background: statusFilter === id ? `${color}25` : 'rgba(255,255,255,0.06)', fontSize: 10.5 }}>{count}</span>
+              <span style={{ padding: '1px 6px', borderRadius: 20, background: listTab === id ? `${color}25` : 'rgba(255,255,255,0.06)', fontSize: 10.5 }}>{count}</span>
             </button>
           ))}
         </div>
@@ -452,24 +520,103 @@ export default function RetirosPage() {
         </select>
 
         <button
-          onClick={() => { load(); loadStock(); }}
+          onClick={() => { load(); loadStock(); loadHistory(); }}
           style={{ padding: '7px 10px', ...glass, color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}
         >
           <RefreshCw size={13} />
         </button>
       </div>
 
-      {loading ? (
+      {listTab === 'confirmed' ? (
+        historyLoading ? (
+          <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)' }}>
+            <PackageCheck size={28} style={{ display: 'block', margin: '0 auto 10px', opacity: 0.3 }} />Cargando confirmados...
+          </div>
+        ) : confirmedVisible.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)', ...glass }}>
+            No hay retiros confirmados
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {confirmedVisible.map((item) => (
+              <div
+                key={item.orderId}
+                style={{
+                  ...glass, padding: '12px 16px',
+                  border: '1px solid rgba(34,197,94,0.2)',
+                  background: 'rgba(34,197,94,0.04)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: getTenantColor(item.tenantId), flexShrink: 0, marginTop: 5 }} />
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13 }}>{item.customerName}</span>
+                      <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10 }}>#{item.orderRef}</span>
+                      <span style={{
+                        padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700,
+                        background: 'rgba(34,197,94,0.15)', color: '#22c55e',
+                      }}>
+                        Entregado
+                      </span>
+                    </div>
+                    <div style={{ marginTop: 4, color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>
+                      {getTenantName(item.tenantId)}
+                      {item.product ? ` · ${item.product}${item.quantity && item.quantity > 1 ? ` ×${item.quantity}` : ''}` : ''}
+                    </div>
+                  </div>
+                  <span style={{ color: '#34d399', fontWeight: 900, fontSize: 13 }}>
+                    ₡{(item.total || 0).toLocaleString('es-CR')}
+                  </span>
+                </div>
+
+                <div style={{
+                  display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                  gap: 8, marginTop: 12,
+                }}>
+                  <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', marginBottom: 3 }}>Dónde</div>
+                    <div style={{ color: '#F2F2F2', fontSize: 12.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <MapPin size={12} style={{ color: '#60a5fa' }} />
+                      {item.pickupLocationLabel || '—'}
+                    </div>
+                  </div>
+                  <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', marginBottom: 3 }}>Quién</div>
+                    <div style={{ color: '#F2F2F2', fontSize: 12.5, fontWeight: 700 }}>
+                      {item.handedByName || '—'}
+                    </div>
+                  </div>
+                  <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', marginBottom: 3 }}>Cuándo</div>
+                    <div style={{ color: '#F2F2F2', fontSize: 12.5, fontWeight: 700 }}>
+                      {formatDate(item.confirmedAt)}
+                    </div>
+                  </div>
+                  <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', marginBottom: 3 }}>Pago</div>
+                    <div style={{ color: '#F2F2F2', fontSize: 12.5, fontWeight: 700 }}>
+                      {item.paymentLabel
+                        ? `${item.paymentLabel}${item.paymentConfirmedBy ? ` · ${item.paymentConfirmedBy}` : ''}`
+                        : item.isContraEntrega ? 'CE sin detalle' : 'Prepago / —'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : loading ? (
         <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)' }}>
           <PackageCheck size={28} style={{ display: 'block', margin: '0 auto 10px', opacity: 0.3 }} />Cargando...
         </div>
-      ) : visible.length === 0 ? (
+      ) : pendingOrders.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.2)', ...glass }}>
-          {tenantFilter || statusFilter !== 'all' ? 'No hay retiros con esos filtros' : 'No hay retiros activos'}
+          {tenantFilter || search ? 'No hay retiros pendientes con esos filtros' : 'No hay retiros pendientes'}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {visible.map((o) => {
+          {pendingOrders.map((o) => {
             const age = daysSince(o.timestamp);
             const isExpanded = expandedId === o.id;
             const status = effectiveStatus(o);
@@ -679,7 +826,7 @@ export default function RetirosPage() {
                             setConfirmOrder(o);
                           }}
                           disabled={busy || (isCOD && !isCollected)}
-                          title={isCOD && !isCollected ? 'Confirmá el pago contra entrega primero' : 'Confirmar retiro por Laura y descontar stock'}
+                          title={isCOD && !isCollected ? 'Confirmá el pago contra entrega primero' : 'Confirmar retiro y descontar stock'}
                           style={{
                             marginLeft: 'auto', padding: '7px 12px', borderRadius: 7,
                             border: `1px solid ${isCOD && !isCollected ? 'rgba(255,255,255,0.1)' : 'rgba(34,197,94,0.45)'}`,
@@ -690,7 +837,7 @@ export default function RetirosPage() {
                             display: 'flex', alignItems: 'center', gap: 5,
                           }}
                         >
-                          <PackageCheck size={12} /> {busy ? 'Procesando...' : 'Confirmar retiro (Laura)'}
+                          <PackageCheck size={12} /> {busy ? 'Procesando...' : 'Confirmar retiro'}
                         </button>
                       )}
                     </div>
@@ -717,6 +864,7 @@ export default function RetirosPage() {
 
       <RetiroConfirmWizard
         open={!!confirmOrder}
+        title="Confirmar retiro"
         subtitle={confirmOrder ? `#${confirmOrder.orderId} · ${confirmOrder.customerName}` : undefined}
         lines={confirmOrder ? linesForOrder(confirmOrder) : []}
         busy={confirmBusy}

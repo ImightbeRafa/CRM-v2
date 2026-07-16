@@ -6,6 +6,8 @@ import {
   applyRetiroDecrement,
   DEFAULT_RETIRO_AGENT,
   mapOrderLines,
+  normalizePickupLocation,
+  RETIRO_PICKUP_LOCATIONS,
 } from '@/lib/retiro-stock';
 
 const CR_TZ = 'America/Costa_Rica';
@@ -111,7 +113,7 @@ async function terminateRetiroOrder(orderId: string, actor: string) {
 }
 
 // POST /api/logistics/retiros/confirm
-// Body: { orderId, employeeId, agent? }
+// Body: { orderId, employeeId, pickupLocation, agent? }
 export async function POST(req: NextRequest) {
   const guard = await guardLogisticsApi(req);
   if (guard) return guard;
@@ -121,9 +123,15 @@ export async function POST(req: NextRequest) {
     const orderId = typeof body.orderId === 'string' ? body.orderId.trim() : '';
     const agent = typeof body.agent === 'string' && body.agent.trim() ? body.agent.trim() : DEFAULT_RETIRO_AGENT;
     const actor = req.headers.get('x-user-email') ?? 'system';
+    const pickupLocation = normalizePickupLocation(body.pickupLocation);
 
     if (!orderId) {
       return NextResponse.json({ error: 'orderId requerido' }, { status: 400 });
+    }
+    if (!pickupLocation) {
+      return NextResponse.json({
+        error: 'Seleccioná el lugar de retiro (Laura Escazu o Marlenn Desamparados)',
+      }, { status: 400 });
     }
 
     const employee = await resolveActiveEmployee(body.employeeId);
@@ -199,6 +207,7 @@ export async function POST(req: NextRequest) {
       actor,
       employeeId: employee.id,
       employeeName: employee.displayName,
+      pickupLocation,
     });
 
     // Mark Entregado
@@ -218,6 +227,21 @@ export async function POST(req: NextRequest) {
       console.error('[retiros/confirm] CRM status sync failed:', syncErr);
     }
 
+    // Enrich audit event with location / who
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO lm_order_events (crm_order_id, event_type, payload, actor)
+       VALUES ($1, 'retiro_handoff', $2::jsonb, $3)`,
+      orderId,
+      JSON.stringify({
+        pickupLocation,
+        pickupLocationLabel: RETIRO_PICKUP_LOCATIONS[pickupLocation],
+        handedByEmployeeId: employee.id,
+        handedBy: employee.displayName,
+        alreadyApplied: stockResult.alreadyApplied,
+      }),
+      actor,
+    );
+
     await terminateRetiroOrder(orderId, actor);
 
     return NextResponse.json({
@@ -225,6 +249,9 @@ export async function POST(req: NextRequest) {
       alreadyApplied: stockResult.alreadyApplied,
       decrements: stockResult.decrements,
       handedBy: employee.displayName,
+      pickupLocation,
+      pickupLocationLabel: RETIRO_PICKUP_LOCATIONS[pickupLocation],
+      confirmedAt: new Date().toISOString(),
     });
   } catch (error: any) {
     if (error instanceof SyntaxError) {

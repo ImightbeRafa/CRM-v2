@@ -87,7 +87,9 @@ export async function GET(req: NextRequest) {
         const handoff = handoffMap.get(id);
         const isArchived = Boolean(lm?.archived_at);
         const status = lm?.status || 'Pendiente';
-        const isDelivered = status === 'Entregado' || handoff?.stock_applied;
+        const isDelivered = status === 'Entregado'
+          || Boolean(handoff?.confirmed_at)
+          || Boolean(handoff?.stock_applied);
 
         if (!isArchived && !isDelivered && status !== 'Devuelto') {
           pending += 1;

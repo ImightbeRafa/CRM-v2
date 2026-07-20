@@ -105,7 +105,7 @@ export default function LauraStockPanel({
             <h2 style={{ margin: 0, color: '#F2F2F2', fontSize: 15, fontWeight: 800 }}>Inventario Casa de Laura</h2>
           </div>
           <p style={{ margin: 0, color: 'rgba(255,255,255,0.4)', fontSize: 12, lineHeight: 1.45 }}>
-            Un inventario compartido para Laura Escazu y Marlenn Desamparados · {unitsOnHand} unidades ·{' '}
+            Inventario solo para retiros en Laura Escazu · {unitsOnHand} unidades ·{' '}
             <span style={{ color: lowStockCount > 0 ? '#fbbf24' : 'rgba(34,197,94,0.85)' }}>
               {lowStockCount > 0 ? `${lowStockCount} bajos` : 'niveles OK'}
             </span>

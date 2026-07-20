@@ -8,6 +8,7 @@ import {
   RETIRO_PICKUP_LOCATIONS,
   normalizePickupLocation,
   pickupLocationLabel,
+  usesRetiroInventory,
   type RetiroPickupLocation,
 } from '@/lib/retiro-locations';
 
@@ -23,6 +24,7 @@ export {
   RETIRO_PICKUP_LOCATIONS,
   normalizePickupLocation,
   pickupLocationLabel,
+  usesRetiroInventory,
   type RetiroPickupLocation,
 } from '@/lib/retiro-locations';
 
@@ -376,30 +378,38 @@ export async function applyRetiroDecrement(params: {
   pickupLocation: RetiroPickupLocation;
 }) {
   const agentKey = params.agentKey || DEFAULT_RETIRO_AGENT;
-  const unmapped = params.lines.filter((l) => !l.sku);
-  if (unmapped.length > 0) {
-    throw new Error(`Productos sin mapear al inventario de Laura: ${unmapped.map((l) => l.rawName).join(', ')}`);
+  const tracksInventory = usesRetiroInventory(params.pickupLocation);
+
+  if (tracksInventory) {
+    const unmapped = params.lines.filter((l) => !l.sku);
+    if (unmapped.length > 0) {
+      throw new Error(`Productos sin mapear al inventario de Laura: ${unmapped.map((l) => l.rawName).join(', ')}`);
+    }
   }
 
   const bySku = new Map<string, { qty: number; displayName: string }>();
-  for (const line of params.lines) {
-    if (!line.sku) continue;
-    const prev = bySku.get(line.sku);
-    bySku.set(line.sku, {
-      qty: (prev?.qty || 0) + line.qty,
-      displayName: line.displayName || line.sku,
-    });
+  if (tracksInventory) {
+    for (const line of params.lines) {
+      if (!line.sku) continue;
+      const prev = bySku.get(line.sku);
+      bySku.set(line.sku, {
+        qty: (prev?.qty || 0) + line.qty,
+        displayName: line.displayName || line.sku,
+      });
+    }
   }
 
   await ensureRetiroStockTables();
 
+  type DecrementRow = { sku: string; displayName: string; qty: number; remaining: number };
+
   return prisma.$transaction(async (tx) => {
-    const handoff = await tx.$queryRawUnsafe<{ stock_applied: boolean }[]>(
-      `SELECT stock_applied FROM lm_retiro_handoffs WHERE crm_order_id = $1`,
+    const handoff = await tx.$queryRawUnsafe<{ stock_applied: boolean; confirmed_at: Date | null }[]>(
+      `SELECT stock_applied, confirmed_at FROM lm_retiro_handoffs WHERE crm_order_id = $1`,
       params.orderId,
     );
-    if (handoff[0]?.stock_applied) {
-      // Idempotent: refresh handoff metadata without double-decrementing stock.
+
+    const refreshHandoffMeta = async () => {
       await tx.$executeRawUnsafe(
         `UPDATE lm_retiro_handoffs
          SET handed_by_employee_id = $2,
@@ -414,10 +424,50 @@ export async function applyRetiroDecrement(params: {
         params.pickupLocation,
         params.actor,
       );
-      return { alreadyApplied: true as const, decrements: [] as Array<{ sku: string; displayName: string; qty: number; remaining: number }> };
+    };
+
+    // Already confirmed or stock already applied: never re-apply / never flip flags.
+    if (handoff[0]?.confirmed_at || handoff[0]?.stock_applied) {
+      await refreshHandoffMeta();
+      return {
+        alreadyApplied: true as const,
+        decrements: [] as DecrementRow[],
+        stockApplied: Boolean(handoff[0].stock_applied),
+      };
     }
 
-    const decrements: Array<{ sku: string; displayName: string; qty: number; remaining: number }> = [];
+    // Marlenn (and any non-Laura location): handoff only — no stock mapping/decrements.
+    if (!tracksInventory) {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO lm_retiro_handoffs (
+           crm_order_id, agent_key, handed_by_employee_id, handed_by_name,
+           pickup_location, confirmed_at, stock_applied, actor, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, NOW(), FALSE, $6, NOW())
+         ON CONFLICT (crm_order_id) DO UPDATE SET
+           agent_key = EXCLUDED.agent_key,
+           handed_by_employee_id = EXCLUDED.handed_by_employee_id,
+           handed_by_name = EXCLUDED.handed_by_name,
+           pickup_location = EXCLUDED.pickup_location,
+           confirmed_at = COALESCE(lm_retiro_handoffs.confirmed_at, NOW()),
+           stock_applied = lm_retiro_handoffs.stock_applied,
+           actor = EXCLUDED.actor,
+           updated_at = NOW()`,
+        params.orderId,
+        agentKey,
+        params.employeeId,
+        params.employeeName,
+        params.pickupLocation,
+        params.actor,
+      );
+
+      return {
+        alreadyApplied: false as const,
+        decrements: [] as DecrementRow[],
+        stockApplied: false as const,
+      };
+    }
+
+    const decrements: DecrementRow[] = [];
 
     for (const [sku, info] of bySku.entries()) {
       const rows = await tx.$queryRawUnsafe<{ qty: number; display_name: string }[]>(
@@ -473,7 +523,11 @@ export async function applyRetiroDecrement(params: {
       params.actor,
     );
 
-    return { alreadyApplied: false as const, decrements };
+    return {
+      alreadyApplied: false as const,
+      decrements,
+      stockApplied: true as const,
+    };
   });
 }
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { MapPin, PackageCheck, X } from 'lucide-react';
 import {
   RETIRO_PICKUP_LOCATIONS,
+  usesRetiroInventory,
   type RetiroPickupLocation,
 } from '@/lib/retiro-locations';
 
@@ -92,10 +93,11 @@ export default function RetiroConfirmWizard({
   if (!open) return null;
 
   const selectedEmployee = employees.find((e) => e.id === employeeId) || null;
+  const tracksInventory = !!pickupLocation && usesRetiroInventory(pickupLocation);
   const unmapped = lines.filter((l) => !l.sku);
   const canConfirm = !!selectedEmployee
     && !!pickupLocation
-    && unmapped.length === 0
+    && (!tracksInventory || unmapped.length === 0)
     && !busy
     && !employeesLoading;
 
@@ -174,42 +176,59 @@ export default function RetiroConfirmWizard({
           <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>
             Impacto en inventario
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {lines.map((line, idx) => (
-              <div
-                key={`${line.rawName}-${idx}`}
-                style={{
-                  display: 'flex', justifyContent: 'space-between', gap: 8,
-                  padding: '8px 10px', borderRadius: 8,
-                  background: line.sku ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.08)',
-                  border: `1px solid ${line.sku ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.25)'}`,
-                }}
-              >
-                <div>
-                  <div style={{ color: '#F2F2F2', fontSize: 12.5, fontWeight: 700 }}>
-                    {line.displayName || line.rawName}
-                  </div>
-                  {!line.sku && (
-                    <div style={{ color: '#f87171', fontSize: 11, marginTop: 2 }}>
-                      No mapeado · “{line.rawName}”
-                    </div>
-                  )}
-                  {line.sku && line.displayName !== line.rawName && (
-                    <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 2 }}>
-                      {line.rawName}
-                    </div>
-                  )}
-                </div>
-                <div style={{ color: line.sku ? '#22c55e' : '#f87171', fontWeight: 900, fontSize: 13 }}>
-                  −{line.qty}
-                </div>
-              </div>
-            ))}
-          </div>
-          {unmapped.length > 0 && (
-            <p style={{ margin: '10px 0 0', color: '#f87171', fontSize: 12 }}>
-              No se puede confirmar hasta mapear todos los productos al inventario.
+          {!pickupLocation ? (
+            <p style={{ margin: 0, color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>
+              Seleccioná el lugar de retiro para ver si aplica inventario Laura.
             </p>
+          ) : !tracksInventory ? (
+            <div style={{
+              padding: '10px 12px', borderRadius: 8,
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: 'rgba(255,255,255,0.55)', fontSize: 12.5, lineHeight: 1.45,
+            }}>
+              Marlenn Desamparados — sin impacto en inventario. No se requiere mapear productos.
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {lines.map((line, idx) => (
+                  <div
+                    key={`${line.rawName}-${idx}`}
+                    style={{
+                      display: 'flex', justifyContent: 'space-between', gap: 8,
+                      padding: '8px 10px', borderRadius: 8,
+                      background: line.sku ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.08)',
+                      border: `1px solid ${line.sku ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.25)'}`,
+                    }}
+                  >
+                    <div>
+                      <div style={{ color: '#F2F2F2', fontSize: 12.5, fontWeight: 700 }}>
+                        {line.displayName || line.rawName}
+                      </div>
+                      {!line.sku && (
+                        <div style={{ color: '#f87171', fontSize: 11, marginTop: 2 }}>
+                          No mapeado · “{line.rawName}”
+                        </div>
+                      )}
+                      {line.sku && line.displayName !== line.rawName && (
+                        <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 2 }}>
+                          {line.rawName}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ color: line.sku ? '#22c55e' : '#f87171', fontWeight: 900, fontSize: 13 }}>
+                      −{line.qty}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {unmapped.length > 0 && (
+                <p style={{ margin: '10px 0 0', color: '#f87171', fontSize: 12 }}>
+                  No se puede confirmar hasta mapear todos los productos al inventario de Laura.
+                </p>
+              )}
+            </>
           )}
         </div>
 

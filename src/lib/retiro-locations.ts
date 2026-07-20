@@ -17,3 +17,8 @@ export function pickupLocationLabel(value: string | null | undefined): string | 
   const key = value.trim().toLowerCase();
   return RETIRO_PICKUP_LOCATIONS[key as RetiroPickupLocation] ?? null;
 }
+
+/** Only Laura Escazu retiros deduct from shared Laura inventory. Marlenn is handoff-only. */
+export function usesRetiroInventory(location: RetiroPickupLocation | null | undefined): boolean {
+  return location === 'laura_escazu';
+}

@@ -653,8 +653,11 @@ export default function RetirosPage() {
                       <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13 }}>{o.customerName}</span>
                       <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10 }}>#{o.orderId}</span>
                       {unmappedCount > 0 && (
-                        <span style={{ padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.15)', color: '#f87171', fontSize: 10, fontWeight: 700 }}>
-                          sin mapear
+                        <span
+                          title="Solo bloquea confirmación si el retiro es en Laura Escazu"
+                          style={{ padding: '1px 7px', borderRadius: 20, background: 'rgba(251,191,36,0.12)', color: '#fbbf24', fontSize: 10, fontWeight: 700 }}
+                        >
+                          sin mapear · Laura
                         </span>
                       )}
                     </div>
@@ -758,7 +761,7 @@ export default function RetirosPage() {
 
                     <div style={{ marginTop: 12 }}>
                       <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>
-                        Productos vs Laura
+                        Productos vs inventario Laura
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {lines.map((line, idx) => (
@@ -768,6 +771,11 @@ export default function RetirosPage() {
                           </div>
                         ))}
                       </div>
+                      {unmappedCount > 0 && (
+                        <div style={{ marginTop: 6, color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>
+                          El mapeo solo es obligatorio si el retiro es en Laura Escazu. Marlenn no descuenta inventario.
+                        </div>
+                      )}
                     </div>
 
                     {(isCOD || o.cePaymentMethod) && (
@@ -826,7 +834,7 @@ export default function RetirosPage() {
                             setConfirmOrder(o);
                           }}
                           disabled={busy || (isCOD && !isCollected)}
-                          title={isCOD && !isCollected ? 'Confirmá el pago contra entrega primero' : 'Confirmar retiro y descontar stock'}
+                          title={isCOD && !isCollected ? 'Confirmá el pago contra entrega primero' : 'Confirmar retiro (inventario solo si es Laura)'}
                           style={{
                             marginLeft: 'auto', padding: '7px 12px', borderRadius: 7,
                             border: `1px solid ${isCOD && !isCollected ? 'rgba(255,255,255,0.1)' : 'rgba(34,197,94,0.45)'}`,

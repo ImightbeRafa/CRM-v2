@@ -8,6 +8,7 @@ import {
   mapOrderLines,
   normalizePickupLocation,
   RETIRO_PICKUP_LOCATIONS,
+  usesRetiroInventory,
 } from '@/lib/retiro-stock';
 
 const CR_TZ = 'America/Costa_Rica';
@@ -199,7 +200,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const lines = await mapOrderLines(order, agent);
+    // Mapping / stock only matter for Laura Escazu. Marlenn is handoff-only.
+    const lines = usesRetiroInventory(pickupLocation)
+      ? await mapOrderLines(order, agent)
+      : [];
     const stockResult = await applyRetiroDecrement({
       agentKey: agent,
       orderId,
@@ -238,6 +242,7 @@ export async function POST(req: NextRequest) {
         handedByEmployeeId: employee.id,
         handedBy: employee.displayName,
         alreadyApplied: stockResult.alreadyApplied,
+        stockApplied: stockResult.stockApplied,
       }),
       actor,
     );
@@ -247,6 +252,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       alreadyApplied: stockResult.alreadyApplied,
+      stockApplied: stockResult.stockApplied,
       decrements: stockResult.decrements,
       handedBy: employee.displayName,
       pickupLocation,

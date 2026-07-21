@@ -56,6 +56,14 @@ export interface ToolResult<T = unknown> {
   needsConfirmation?: boolean;
   confirmationType?: 'no_match' | 'zero_stock' | 'multiple_matches';
   pendingOrderData?: Record<string, unknown>;
+  /** 0-based index into products[] when confirmationType is multiple_matches */
+  productIndex?: number;
+  matchOptions?: Array<{
+    name: string;
+    sku: string;
+    currentStock: number;
+    sellingPrice: number;
+  }>;
 }
 
 function redactOrderParamsForLog(params: Record<string, unknown>) {
@@ -590,17 +598,55 @@ function normalizeText(text: string): string {
     .trim();
 }
 
+function looksLikeCommaSeparatedProductList(value: string): boolean {
+  const segments = value.split(',').map((s) => s.trim()).filter(Boolean);
+  if (segments.length < 2) return false;
+  const productish = segments.filter((segment) =>
+    /(?:^|\s)(?:x|×|\*)\s*\d+\s*$/i.test(segment)
+    || /^\d+\s+\S+/.test(segment)
+    || /\bsku\b/i.test(segment)
+    || /\bpatch\b/i.test(segment)
+  );
+  return productish.length >= Math.ceil(segments.length * 0.6);
+}
+
 function parseOrderProducts(product: string, fallbackQuantity: number): ParsedOrderProduct[] {
-  const rawParts = String(product || '')
-    .split(/\r?\n|[;,]/)
+  const raw = String(product || '').trim();
+  if (!raw) return [];
+
+  const primary = raw
+    .split(/\r?\n|;/g)
     .map((part) => part.trim())
     .filter(Boolean);
 
-  const parts = rawParts.length > 0 ? rawParts : [String(product || '').trim()].filter(Boolean);
+  const rawParts: string[] = [];
+  for (const chunk of primary) {
+    if (/,/.test(chunk) && looksLikeCommaSeparatedProductList(chunk)) {
+      for (const segment of chunk.split(',')) {
+        const cleaned = segment.trim();
+        if (cleaned) rawParts.push(cleaned);
+      }
+    } else {
+      rawParts.push(chunk);
+    }
+  }
 
-  const parsed = parts.map((raw) => {
-    let name = raw.replace(/^[-*•]\s*/, '').trim();
+  const parts = rawParts.length > 0 ? rawParts : [raw].filter(Boolean);
+
+  const parsed = parts.map((rawPart) => {
+    let name = rawPart.replace(/^[-*•]\s*/, '').trim();
     let quantity = 1;
+    let sku: string | undefined;
+
+    const skuParen = name.match(/\(\s*sku\s*[:#]?\s*([^)]+)\)/i);
+    const skuInline = name.match(/\bsku\s*[:#]?\s*([A-Za-z0-9._-]+)/i);
+    if (skuParen) {
+      sku = skuParen[1].trim();
+      name = name.replace(skuParen[0], ' ').replace(/\s+/g, ' ').trim();
+    } else if (skuInline) {
+      sku = skuInline[1].trim();
+      name = name.replace(skuInline[0], ' ').replace(/\s+/g, ' ').trim();
+    }
 
     const trailingQuantity = name.match(/\b(?:x|\*)\s*(\d+)\s*$/i)
       || name.match(/\b(\d+)\s*(?:unidades?|uds?|u)\s*$/i);
@@ -617,8 +663,9 @@ function parseOrderProducts(product: string, fallbackQuantity: number): ParsedOr
     }
 
     return {
-      raw,
-      name: name || raw,
+      raw: rawPart,
+      name: name || rawPart,
+      ...(sku ? { sku } : {}),
       quantity,
     };
   });
@@ -657,7 +704,19 @@ function parseExplicitOrderProducts(products: unknown): ParsedOrderProduct[] {
 function getRequestedOrderProducts(params: any): ParsedOrderProduct[] {
   const explicitProducts = parseExplicitOrderProducts(params.products);
   if (explicitProducts.length > 0) {
-    return explicitProducts;
+    // Safety net: expand any single mashed "A x1, B x2" name that slipped through.
+    const expanded: ParsedOrderProduct[] = [];
+    for (const product of explicitProducts) {
+      if (product.name && (/,/.test(product.name) || /\n|;/.test(product.name))) {
+        const parts = parseOrderProducts(product.name, product.quantity);
+        if (parts.length > 1) {
+          expanded.push(...parts);
+          continue;
+        }
+      }
+      expanded.push(product);
+    }
+    return expanded;
   }
 
   return parseOrderProducts(params.product, params.quantity || 1);
@@ -904,7 +963,20 @@ export async function createOrder(
             error: 'Producto es requerido para crear la orden.',
           };
         }
-        const quantity = requestedProducts.reduce((sum, product) => sum + product.quantity, 0);
+
+        // Canonicalize products[] so pending confirmation / retries keep every
+        // line item (never a single mashed "A x1, B x2" string).
+        params.products = requestedProducts.map((product) => ({
+          name: product.name,
+          quantity: product.quantity,
+          ...(product.sku ? { sku: product.sku } : {}),
+        }));
+        params.product = requestedProducts
+          .map((product) => [product.name, product.sku].filter(Boolean).join(' '))
+          .join('\n');
+        params.quantity = requestedProducts.reduce((sum, product) => sum + product.quantity, 0);
+
+        const quantity = params.quantity;
         const matchedProducts: MatchedOrderProduct[] = requestedProducts.map((requested) => ({
           requested,
           match: null,
@@ -957,8 +1029,15 @@ export async function createOrder(
                 success: false,
                 needsConfirmation: true,
                 confirmationType: 'multiple_matches',
-                message: `Encontre varios productos similares a "${entry.requested.name}" en la linea ${i + 1}. Estas son las ${shown.length} mejores coincidencias:\n\n${optionsList}${tail}\n\nCual es el producto correcto?`,
+                message: `Encontre varios productos similares a "${entry.requested.name}" en la linea ${i + 1}. Estas son las ${shown.length} mejores coincidencias:\n\n${optionsList}${tail}\n\nCual es el producto correcto? Responde con el numero (1-${shown.length}), el SKU, o el nombre exacto.`,
                 pendingOrderData: { ...params },
+                productIndex: i,
+                matchOptions: shown.map((m) => ({
+                  name: m.name,
+                  sku: m.sku,
+                  currentStock: m.currentStock,
+                  sellingPrice: m.sellingPrice,
+                })),
               };
             }
 

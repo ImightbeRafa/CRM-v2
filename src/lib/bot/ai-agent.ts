@@ -788,7 +788,11 @@ async function extractOrderArgsWithGrok(
     'Unlabeled lines: a person full name on its own line is customerName. A street/reference line ("175 metros oeste de la escuela...") is address. Do not leave them null when clearly present.',
     'Address is the detailed street/reference only. Product lines like "1 sleeping patches" go to products, not location. Payment/total lines like "Pago 12,900CRC" go to total/payment, not address.',
     'paymentMethod vs courier: "Método de pago SINPE CONFIRMADO" => paymentMethod=SINPE, comments=SINPE CONFIRMADO. "Método envío CORREOS DE CR" => courier=Correos de CR (strip the label words). Never put the label text into the field value.',
-    'Products: strip quantity from name. "1 sleeping patches" => products[0].name="sleeping patches", quantity=1. "dopamine patch x2" => name="dopamine patch", quantity=2.',
+    'Products: ALWAYS return products as an array with ONE entry per SKU/line. Never mash multiple items into products[0].name.',
+    'Products examples: "1 sleeping patches" => [{name:"sleeping patches", quantity:1}]. "dopamine patch x2" => [{name:"dopamine patch", quantity:2}].',
+    'Multi-product: "DOPAMINE PATCH X1, ENERGY PATCH X1, GLP PATCH X2, STRESS PATCH X1" => four products array entries with quantities 1,1,2,1. Same for multi-line PRODUCTO blocks.',
+    'SKU: if the text has "(SKU: 6942042)" put sku="6942042" and strip it from name. Never leave SKU only inside the name string.',
+    'quantity field = sum of all product line quantities. Do not invent a single product when several are listed.',
     'Total: return CRC number. "12,900CRC", "12.900", "Pago 12900" => 12900.',
     'Email: return only the email substring, e.g. "karo84zz@gmail.com", no trailing phone or punctuation.',
     'Corrections: if correcting a pending review, intent="order_correction" and set correctionAction. Use replace_product, append_product, update_quantity, replace_location, replace_customer, replace_total, replace_payment, replace_shipping, replace_comment, replace_custom_fields, or mixed.',
@@ -961,14 +965,28 @@ function sanitizeAIExtractedArgs(
   }
 
   if (Array.isArray(aiArgs.products)) {
-    const products = aiArgs.products
-      .filter((p: any) => p && typeof p === 'object' && typeof p.name === 'string' && p.name.trim() && !isTemplatePlaceholderValue(p.name))
+    const seed = aiArgs.products
+      .filter((p: any) => p && typeof p === 'object')
       .map((p: any) => ({
-        name: String(p.name).trim(),
+        name: typeof p.name === 'string' ? p.name.trim() : undefined,
         quantity: Math.max(1, Math.floor(Number(p.quantity) || 1)),
-        ...(p.sku ? { sku: String(p.sku).trim() } : {}),
-      }));
-    if (products.length > 0) out.products = products;
+        ...(typeof p.sku === 'string' && p.sku.trim() ? { sku: String(p.sku).trim() } : {}),
+      }))
+      .filter((p: any) => (p.name && !isTemplatePlaceholderValue(p.name)) || p.sku);
+
+    const products = expandMashedProductEntries(seed)
+      .filter((p) => p.name && !isTemplatePlaceholderValue(p.name));
+    if (products.length > 0) {
+      out.products = products;
+      out.quantity = products.reduce((sum, product) => sum + product.quantity, 0);
+    }
+  } else if (typeof aiArgs.product === 'string' && aiArgs.product.trim()) {
+    // Legacy single-string product field — expand multi-line / comma lists.
+    const products = parseLocalProducts(aiArgs.product);
+    if (products.length > 0) {
+      out.products = products;
+      out.quantity = products.reduce((sum, product) => sum + product.quantity, 0);
+    }
   }
 
   const customFieldEntries = Array.isArray(aiArgs.customFields)
@@ -1208,26 +1226,188 @@ function parseOrderAmountFromText(value: string): number | undefined {
   return match ? parseCrcAmount(match[0]) : undefined;
 }
 
-function parseLocalProducts(value: string): Array<{ name: string; quantity: number; sku?: string }> {
-  return value
+type ParsedLocalProduct = { name: string; quantity: number; sku?: string };
+
+/**
+ * Split a product blob into line items. Handles:
+ * - newlines / semicolons
+ * - comma-separated multi-SKU lists ("DOPAMINE PATCH X1, ENERGY PATCH X1")
+ * - "(SKU: 123)" / "SKU: 123" extraction into `.sku`
+ */
+function splitProductBlobParts(value: string): string[] {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+
+  // Prefer newline / semicolon splits first.
+  const primary = raw
     .split(/\r?\n|;/g)
     .map((part) => part.replace(/^[-*•]\s*/, '').trim())
-    .filter(Boolean)
-    .map((part) => {
-      let name = part;
-      let quantity = 1;
-      const trailing = name.match(/^(.*?)(?:\s*[xX×*]\s*(\d+)|\s+\(\s*(\d+)\s*\))\s*$/);
-      const leading = name.match(/^(\d+)\s+(.+)$/);
-      if (trailing) {
-        name = trailing[1].trim();
-        quantity = Math.max(1, Number(trailing[2] || trailing[3]) || 1);
-      } else if (leading) {
-        quantity = Math.max(1, Number(leading[1]) || 1);
-        name = leading[2].trim();
+    .filter(Boolean);
+
+  const parts: string[] = [];
+  for (const chunk of primary) {
+    // Comma-separated multi-product lines (WhatsApp paste style).
+    // Only split on commas when segments look like distinct product tokens
+    // (qty suffix/prefix or multiple named items), not "Patch, noche".
+    if (/,/.test(chunk) && looksLikeCommaSeparatedProductList(chunk)) {
+      for (const segment of chunk.split(',')) {
+        const cleaned = segment.replace(/^[-*•]\s*/, '').trim();
+        if (cleaned) parts.push(cleaned);
       }
-      return name && !isTemplatePlaceholderValue(name) ? { name, quantity } : null;
-    })
-    .filter((product): product is { name: string; quantity: number } => !!product);
+    } else {
+      parts.push(chunk);
+    }
+  }
+  return parts;
+}
+
+function looksLikeCommaSeparatedProductList(value: string): boolean {
+  const segments = value.split(',').map((s) => s.trim()).filter(Boolean);
+  if (segments.length < 2) return false;
+  const productish = segments.filter((segment) =>
+    /(?:^|\s)(?:x|×|\*)\s*\d+\s*$/i.test(segment)
+    || /^\d+\s+\S+/.test(segment)
+    || /\bsku\b/i.test(segment)
+    || /\bpatch\b/i.test(segment)
+    || /\b(producto|product)\b/i.test(segment)
+  );
+  // Require a majority of segments to look like product tokens (qty/SKU/name cues).
+  // Do NOT treat "any 3+ commas" as productish — that over-splits addresses.
+  return productish.length >= Math.ceil(segments.length * 0.6);
+}
+
+function parseSingleLocalProduct(part: string): ParsedLocalProduct | null {
+  let name = part.replace(/^[-*•]\s*/, '').trim();
+  if (!name) return null;
+
+  let sku: string | undefined;
+  const skuParen = name.match(/\(\s*sku\s*[:#]?\s*([^)]+)\)/i);
+  const skuInline = name.match(/\bsku\s*[:#]?\s*([A-Za-z0-9._-]+)/i);
+  if (skuParen) {
+    sku = skuParen[1].trim();
+    name = name.replace(skuParen[0], ' ').replace(/\s+/g, ' ').trim();
+  } else if (skuInline) {
+    sku = skuInline[1].trim();
+    name = name.replace(skuInline[0], ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  let quantity = 1;
+  const trailing = name.match(/^(.*?)(?:\s*[xX×*]\s*(\d+)|\s+\(\s*(\d+)\s*\))\s*$/);
+  const leading = name.match(/^(\d+)\s+(.+)$/);
+  if (trailing && trailing[1].trim()) {
+    name = trailing[1].trim();
+    quantity = Math.max(1, Number(trailing[2] || trailing[3]) || 1);
+  } else if (leading) {
+    quantity = Math.max(1, Number(leading[1]) || 1);
+    name = leading[2].trim();
+  }
+
+  if (!name || isTemplatePlaceholderValue(name)) return null;
+  return sku ? { name, quantity, sku } : { name, quantity };
+}
+
+function parseLocalProducts(value: string): ParsedLocalProduct[] {
+  return splitProductBlobParts(value)
+    .map(parseSingleLocalProduct)
+    .filter((product): product is ParsedLocalProduct => !!product);
+}
+
+function productIdentityKey(product: { name?: string; sku?: string }): string {
+  const sku = normalizeToolText(product.sku);
+  if (sku) return `sku:${sku}`;
+  return `name:${normalizeToolText(product.name)}`;
+}
+
+function appendLocalProducts(
+  existing: ParsedLocalProduct[] | undefined,
+  incoming: ParsedLocalProduct[],
+): ParsedLocalProduct[] {
+  const merged = [...(existing || [])];
+  for (const product of incoming) {
+    const key = productIdentityKey(product);
+    const index = merged.findIndex((item) => productIdentityKey(item) === key);
+    if (index >= 0) {
+      // Same SKU/name repeated in the paste → sum quantities.
+      merged[index] = {
+        ...merged[index],
+        quantity: merged[index].quantity + product.quantity,
+        ...(product.sku && !merged[index].sku ? { sku: product.sku } : {}),
+      };
+    } else {
+      merged.push(product);
+    }
+  }
+  return merged;
+}
+
+function expandMashedProductEntries(
+  products: Array<{ name?: string; sku?: string; quantity?: number }>,
+): ParsedLocalProduct[] {
+  const expanded: ParsedLocalProduct[] = [];
+  for (const product of products) {
+    const name = typeof product?.name === 'string' ? product.name.trim() : '';
+    const sku = typeof product?.sku === 'string' ? product.sku.trim() : '';
+    const quantity = Math.max(1, Math.floor(Number(product?.quantity) || 1));
+
+    if (!name && !sku) continue;
+
+    // If the name itself is a multi-product blob, expand it.
+    if (name && (/,/.test(name) || /\n|;/.test(name))) {
+      const parts = parseLocalProducts(name);
+      if (parts.length > 1) {
+        for (const part of parts) expanded.push(part);
+        continue;
+      }
+    }
+
+    expanded.push({
+      name: name || sku,
+      quantity,
+      ...(sku ? { sku } : {}),
+    });
+  }
+  return expanded;
+}
+
+function shouldPreferLocalProducts(
+  current: ParsedLocalProduct[] | undefined,
+  local: ParsedLocalProduct[] | undefined,
+): boolean {
+  if (!local || local.length === 0) return false;
+  if (!current || current.length === 0) return true;
+  if (local.length <= current.length) return false;
+
+  // Prefer local when every currently captured product still appears in the
+  // richer local list (AI/local under-capture of multi-line PRODUCTO blocks).
+  return current.every((currentProduct) => {
+    const currentKey = productIdentityKey(currentProduct);
+    const currentName = normalizeToolText(currentProduct.name);
+    return local.some((product) => {
+      if (productIdentityKey(product) === currentKey) return true;
+      const localName = normalizeToolText(product.name);
+      return !!currentName && !!localName && (
+        localName === currentName
+        || localName.includes(currentName)
+        || currentName.includes(localName)
+      );
+    });
+  });
+}
+
+function isProductBlockBoundaryLine(line: string): boolean {
+  const normalized = normalizeSpanishText(line);
+  if (!normalized) return true;
+  if (EMAIL_RE.test(line)) return true;
+  if (normalizeCostaRicaPhone(line) && line.replace(/\D/g, '').length <= 11 && line.replace(/\D/g, '').length >= 8) {
+    // Bare phone lines end a product block.
+    if (/^(?:\+?506[\s-]?)?\d{4}[\s-]?\d{4}$/.test(line.trim())) return true;
+  }
+  if (/\b(total|pago|sinpe|transferencia|efectivo|crc|colones?|cantidad)\b/i.test(normalized)) return true;
+  if (/\b(correos|mensajeria|metodo de (?:pago|envio)|tipo de orden|comentario|direccion|provincia|canton|distrito|cliente|nombre|telefono|correo|email)\b/i.test(normalized)) {
+    // Labeled meta lines end the block; bare product names do not.
+    if (splitLocalLabelValue(line) || splitImplicitOrderMetaLine(line)) return true;
+  }
+  return false;
 }
 
 function looksLikeLocalProductLine(line: string): boolean {
@@ -1315,7 +1495,11 @@ function assignLocalLabeledField(
   }
   if (/\bproducto\b|\bproductos\b/.test(normalized)) {
     const products = parseLocalProducts(value);
-    if (products.length > 0) raw.products = products;
+    if (products.length > 0) {
+      raw.products = appendLocalProducts(raw.products, products);
+      return true;
+    }
+    // Empty "Producto:" / "Producto(s):" label — caller will enter product-block mode.
     return true;
   }
   if (/\btotal\b|\bmonto\b|\bprecio\b/.test(normalized)) {
@@ -1363,31 +1547,46 @@ function collectLocalOrderFields(
     .split(/\r?\n/g)
     .map(cleanLocalOrderLine)
     .filter(Boolean);
-  let nextLineIsProduct = false;
+  let inProductBlock = false;
 
   for (const line of lines) {
     const normalized = normalizeSpanishText(line);
     const labeled = splitLocalLabelValue(line) || splitImplicitOrderMetaLine(line);
 
     if (labeled) {
+      const labelNorm = normalizeLocalLabel(labeled.label);
+      const isProductLabel = /\bproducto\b/.test(labelNorm);
+
+      // A non-product labeled field ends an open product block.
+      if (inProductBlock && !isProductLabel && isProductBlockBoundaryLine(line)) {
+        inProductBlock = false;
+      }
+
       const assigned = assignLocalLabeledField(labeled.label, labeled.value, raw, customFieldsConfig);
-      if (/\bproducto\b/.test(normalizeLocalLabel(labeled.label)) && !labeled.value) {
-        nextLineIsProduct = true;
+      if (isProductLabel) {
+        // Keep consuming following product lines until a meta boundary.
+        inProductBlock = true;
       }
       if (assigned) continue;
     }
 
     if (/^productos?$/.test(normalized)) {
-      nextLineIsProduct = true;
+      inProductBlock = true;
       continue;
     }
 
-    if (nextLineIsProduct) {
-      const products = parseLocalProducts(line);
-      if (products.length > 0) {
-        raw.products = products;
-        nextLineIsProduct = false;
-        continue;
+    if (inProductBlock) {
+      if (isProductBlockBoundaryLine(line)) {
+        inProductBlock = false;
+        // Fall through so this boundary line is still processed as meta.
+      } else {
+        const products = parseLocalProducts(line);
+        if (products.length > 0) {
+          raw.products = appendLocalProducts(raw.products, products);
+          continue;
+        }
+        // Non-parseable line inside a product block ends the block.
+        inProductBlock = false;
       }
     }
 
@@ -1457,7 +1656,7 @@ function collectLocalOrderFields(
     if (options.allowProductLineInference && looksLikeLocalProductLine(line)) {
       const products = parseLocalProducts(line);
       if (products.length > 0) {
-        raw.products = products;
+        raw.products = appendLocalProducts(raw.products, products);
         continue;
       }
     }
@@ -1746,6 +1945,11 @@ export const __grokFirstOrderTestInternals = {
   mergeOrderCorrectionArgs,
   gapFillEmptyOrderFieldsFromMessage,
   collectLocalOrderFields,
+  parseLocalProducts,
+  expandMashedProductEntries,
+  appendLocalProducts,
+  resolveInventoryMatchPick,
+  applyInventoryMatchPickToOrderArgs,
 };
 
 /**
@@ -1793,9 +1997,20 @@ function gapFillEmptyOrderFieldsFromMessage(
       && candidate !== null
       && candidate !== ''
       && !(Array.isArray(candidate) && candidate.length === 0);
+
+    if (key === 'products' && shouldPreferLocalProducts(current as any, candidate as any)) {
+      out.products = candidate;
+      out.quantity = (candidate as ParsedLocalProduct[]).reduce((sum, product) => sum + product.quantity, 0);
+      filledKeys.push('products');
+      continue;
+    }
+
     if (isEmpty && hasCandidate) {
       out[key] = candidate;
       filledKeys.push(key);
+      if (key === 'products' && Array.isArray(candidate)) {
+        out.quantity = (candidate as ParsedLocalProduct[]).reduce((sum, product) => sum + product.quantity, 0);
+      }
     }
   }
 
@@ -1989,6 +2204,7 @@ CREACIÓN DE ÓRDENES — FLUJO EFICIENTE:
 - El objetivo es que el usuario envíe UN mensaje con los datos y reciba UNA respuesta con la confirmación de la orden creada. Minimiza los pasos intermedios.
 - Si el mensaje del usuario dice "nueva orden", "agregar orden", "crear orden", "deseo agregar" o similar Y contiene datos del cliente/producto EN ESE MISMO MENSAJE, SIEMPRE llama a create_order. Sin excepciones.
 - Si una sola orden contiene varios productos, varias lineas o varios SKU, llama a create_order UNA SOLA VEZ usando products: [{ name, sku, quantity }]. NUNCA crees una orden separada por cada SKU del mismo cliente/pedido.
+- NUNCA metas varios productos en un solo string (ej: "A x1, B x1"). Siempre products[] con una entrada por item.
 - **CRÍTICO — DATOS FRESCOS**: Si el usuario pide crear una "nueva orden" o "agregar orden" pero NO proporciona datos del cliente/producto en su mensaje actual, SIEMPRE pregunta: "¡Claro! Por favor proporciona los datos de la nueva orden (nombre del cliente, producto, cantidad, precio, dirección si aplica)." NUNCA reutilices datos de órdenes anteriores del historial.
 - **PROHIBIDO REUTILIZAR DATOS**: Cada orden es independiente. NUNCA copies nombre, teléfono, producto, dirección ni ningún dato de una orden que ya fue creada exitosamente (marcada con "Orden #... creada exitosamente"). Esos datos son de una orden COMPLETADA y no deben reciclarse para nuevas órdenes.
 
@@ -2435,6 +2651,63 @@ export async function processMessage(
         }
       }
 
+      if (pending.type === 'inventory_match_pick') {
+        if (isDenial(userMessage) || isExplicitRejection(userMessage)) {
+          console.info('[AI Agent] User cancelled inventory_match_pick');
+          await clearPendingConfirmation(platform, platformId);
+          const text = 'Entendido, cancelé la selección de producto. La orden no se creó. Cuando quieras, envíame los datos de nuevo.';
+          await addAssistantMessage(platform, platformId, text);
+          return { text };
+        }
+
+        const matchOptions = Array.isArray(pending.data?.matchOptions) ? pending.data.matchOptions : [];
+        const productIndex = typeof pending.data?.productIndex === 'number' ? pending.data.productIndex : 0;
+        const chosen = resolveInventoryMatchPick(userMessage, matchOptions);
+
+        if (!chosen) {
+          // Keep pending alive and re-prompt.
+          await setPendingConfirmation(platform, platformId, pending as any);
+          const optionsList = matchOptions.map((m: any, idx: number) =>
+            `${idx + 1}. ${m.name} (SKU: ${m.sku})`
+          ).join('\n');
+          const text = [
+            'No pude identificar cuál opción elegiste.',
+            '',
+            optionsList || 'No hay opciones disponibles.',
+            '',
+            'Respondé con el número, el SKU, o el nombre exacto. O escribí Cancelar.',
+          ].join('\n');
+          await addAssistantMessage(platform, platformId, text);
+          return { text };
+        }
+
+        await clearPendingConfirmation(platform, platformId);
+        const existingArgs = { ...(pending.data?.toolArgs || {}) };
+        const patchedArgs = applyInventoryMatchPickToOrderArgs(existingArgs, productIndex, chosen);
+        console.info('[AI Agent] inventory_match_pick resolved', {
+          productIndex,
+          chosenName: chosen.name,
+          chosenSku: chosen.sku,
+          productCount: orderProductsFromArgs(patchedArgs).length,
+        });
+
+        // Re-enter create_order with the disambiguated line; siblings preserved.
+        const confirmedPending = {
+          type: 'inventory_confirm',
+          data: {
+            toolName: 'create_order',
+            toolArgs: {
+              ...patchedArgs,
+              _finalReviewConfirmed: true,
+            },
+          },
+          expiresAt: Date.now() + 120_000,
+        };
+        const result = await executePendingAction(confirmedPending, context, platform, platformId);
+        await addAssistantMessage(platform, platformId, sanitizeOrderSuccessForHistory(result));
+        return { text: `Seleccionaste *${chosen.name}* (SKU: ${chosen.sku}).\n\n${result}` };
+      }
+
       const confirmed = isConfirmation(userMessage);
       const denied = isDenial(userMessage);
 
@@ -2745,10 +3018,21 @@ export async function processMessage(
               },
               expiresAt: Date.now() + 120_000,
             });
+          } else if (cType === 'multiple_matches') {
+            await setPendingConfirmation(platform, platformId, {
+              type: 'inventory_match_pick',
+              data: {
+                toolName: 'create_order',
+                toolArgs: {
+                  ...(result.pendingOrderData || {}),
+                  _finalReviewConfirmed: true,
+                },
+                productIndex: typeof result.productIndex === 'number' ? result.productIndex : 0,
+                matchOptions: result.matchOptions || [],
+              },
+              expiresAt: Date.now() + 120_000,
+            });
           }
-          // For 'multiple_matches' we do NOT store a pending confirmation;
-          // the AI will present options and the user picks one, triggering
-          // a new create_order call with a more specific product name.
         }
 
         // Collect attachments (PDFs etc.) from tool results
@@ -3083,6 +3367,76 @@ function isDenial(message: string): boolean {
   return DENIAL_TOKENS.has(normalized);
 }
 
+function resolveInventoryMatchPick(
+  message: string,
+  matchOptions: Array<{ name: string; sku: string; currentStock?: number; sellingPrice?: number }>,
+): { name: string; sku: string } | null {
+  if (!Array.isArray(matchOptions) || matchOptions.length === 0) return null;
+  const trimmed = message.trim();
+  if (!trimmed) return null;
+
+  // Numeric pick: "1", "2.", "#3"
+  const numeric = trimmed.match(/^[#.]?\s*(\d{1,2})\s*[.)]?$/);
+  if (numeric) {
+    const index = Number(numeric[1]) - 1;
+    if (index >= 0 && index < matchOptions.length) {
+      return { name: matchOptions[index].name, sku: matchOptions[index].sku };
+    }
+    // Bare number outside the option range is not a SKU fragment match.
+    return null;
+  }
+
+  const normalized = normalizeToolText(trimmed);
+  for (const option of matchOptions) {
+    const sku = normalizeToolText(option.sku);
+    const name = normalizeToolText(option.name);
+    if (sku && (normalized === sku || normalized.includes(sku))) {
+      return { name: option.name, sku: option.sku };
+    }
+    if (name && (normalized === name || name.includes(normalized) || normalized.includes(name))) {
+      // Avoid tiny fragment matches like "pa" against "patch".
+      if (normalized.length >= 3 || normalized === name) {
+        return { name: option.name, sku: option.sku };
+      }
+    }
+  }
+
+  return null;
+}
+
+function applyInventoryMatchPickToOrderArgs(
+  args: Record<string, any>,
+  productIndex: number,
+  chosen: { name: string; sku: string },
+): Record<string, any> {
+  const products = orderProductsFromArgs(args);
+  if (products.length === 0) {
+    return {
+      ...args,
+      products: [{ name: chosen.name, sku: chosen.sku, quantity: Math.max(1, Number(args.quantity) || 1) }],
+      product: chosen.name,
+      quantity: Math.max(1, Number(args.quantity) || 1),
+    };
+  }
+
+  const index = Math.max(0, Math.min(productIndex, products.length - 1));
+  const next = products.map((product, i) => {
+    if (i !== index) return product;
+    return {
+      name: chosen.name,
+      sku: chosen.sku,
+      quantity: Math.max(1, Number(product.quantity) || 1),
+    };
+  });
+
+  return {
+    ...args,
+    products: next,
+    product: next.map((p) => [p.name, p.sku].filter(Boolean).join(' ')).join('\n'),
+    quantity: next.reduce((sum, product) => sum + product.quantity, 0),
+  };
+}
+
 async function executeCreateOrderRepair(
   toolArgs: any,
   context: ToolContext,
@@ -3154,6 +3508,20 @@ async function executePendingAction(pending: any, context: ToolContext, platform
               _forceWithoutInventory: true,
               _finalReviewConfirmed: true,
             },
+          },
+          expiresAt: Date.now() + 120_000,
+        });
+      } else if (toolName === 'create_order' && cType === 'multiple_matches') {
+        await setPendingConfirmation(platform, platformId, {
+          type: 'inventory_match_pick',
+          data: {
+            toolName: 'create_order',
+            toolArgs: {
+              ...(result.pendingOrderData || {}),
+              _finalReviewConfirmed: true,
+            },
+            productIndex: typeof result.productIndex === 'number' ? result.productIndex : 0,
+            matchOptions: result.matchOptions || [],
           },
           expiresAt: Date.now() + 120_000,
         });

@@ -485,6 +485,224 @@ function testProductQuantityX2DoesNotDoubleInSanitize() {
   assert.deepEqual(compactProducts(local.products), [{ name: 'dopamine patch', quantity: 2 }]);
 }
 
+const luisMultiProductMessage = [
+  'Deseo crear una nueva orden de EA',
+  'Luis Zarate Montero',
+  '87517195',
+  'luisza14@gmail.com',
+  'Heredia/Barva/San Pablo',
+  '50 mtrs norte de la escuela Lucila Gurdian M, Buena Vista, casa porton negro',
+  'PRODUCTO:',
+  'DOPAMINE PATCH X1',
+  'ENERGY PATCH X1',
+  'GLP PATCH X2',
+  'STRESS PATCH X1',
+  'cantidad: 5',
+  'TOTAL: ₡49.500',
+  'Metodo de pago: SINPE MOVIL',
+  'Metodo envio: CORREOS DE COSTA RICA',
+  'COMENTARIOS: SINPE CONFIRMADO, TAMBIEN PIDIO DE SLEEP X6',
+].join('\n');
+
+function testLuisMultiLineProductBlockAppendsAllLines() {
+  const args = bot.parseLocalStructuredOrderArgs(luisMultiProductMessage, customFieldsConfig);
+  assert.ok(args, 'Luis multi-product order should parse');
+  assert.equal(args.customerName, 'Luis Zarate Montero');
+  assert.equal(args.phone, '87517195');
+  assert.deepEqual(compactProducts(args.products), [
+    { name: 'DOPAMINE PATCH', quantity: 1 },
+    { name: 'ENERGY PATCH', quantity: 1 },
+    { name: 'GLP PATCH', quantity: 2 },
+    { name: 'STRESS PATCH', quantity: 1 },
+  ]);
+  assert.equal(args.quantity, 5);
+  assert.equal(args.total, 49500);
+}
+
+function testCommaSeparatedMultiProductExpandsInSanitize() {
+  const args = bot.sanitizeAIExtractedArgs({
+    intent: 'new_order',
+    customerName: 'Luis Zarate Montero',
+    products: [{
+      name: 'DOPAMINE PATCH X1, ENERGY PATCH X1, GLP PATCH X2 , STRESS PATCH X1',
+      quantity: 1,
+    }],
+    total: 49500,
+    orderType: 'EA',
+  }, customFieldsConfig);
+
+  assert.deepEqual(compactProducts(args.products), [
+    { name: 'DOPAMINE PATCH', quantity: 1 },
+    { name: 'ENERGY PATCH', quantity: 1 },
+    { name: 'GLP PATCH', quantity: 2 },
+    { name: 'STRESS PATCH', quantity: 1 },
+  ]);
+  assert.equal(args.quantity, 5);
+}
+
+function testCommaSeparatedCorrectionParsesAllProducts() {
+  const args = bot.parseLocalStructuredOrderArgs([
+    'Productos son 5',
+    'PRODUCTO: DOPAMINE PATCH X1, ENERGY PATCH X1, GLP PATCH X2 , STRESS PATCH X1',
+    'cantidad: 5',
+    'Luis Zarate Montero',
+    '87517195',
+    'TOTAL 49500',
+    'EA',
+  ].join('\n'), customFieldsConfig);
+
+  assert.ok(args);
+  assert.deepEqual(compactProducts(args.products), [
+    { name: 'DOPAMINE PATCH', quantity: 1 },
+    { name: 'ENERGY PATCH', quantity: 1 },
+    { name: 'GLP PATCH', quantity: 2 },
+    { name: 'STRESS PATCH', quantity: 1 },
+  ]);
+  assert.equal(args.quantity, 5);
+}
+
+function testGapFillReplacesUnderCapturedSingleProductWithLocalMulti() {
+  const underCaptured = bot.sanitizeAIExtractedArgs({
+    intent: 'new_order',
+    customerName: 'Luis Zarate Montero',
+    phone: '87517195',
+    products: [{ name: 'STRESS PATCH', quantity: 1 }],
+    total: 49500,
+    orderType: 'EA',
+  }, customFieldsConfig);
+
+  assert.equal(underCaptured.products.length, 1);
+
+  const filled = bot.gapFillEmptyOrderFieldsFromMessage(
+    underCaptured,
+    luisMultiProductMessage,
+    customFieldsConfig,
+  );
+
+  assert.deepEqual(compactProducts(filled.products), [
+    { name: 'DOPAMINE PATCH', quantity: 1 },
+    { name: 'ENERGY PATCH', quantity: 1 },
+    { name: 'GLP PATCH', quantity: 2 },
+    { name: 'STRESS PATCH', quantity: 1 },
+  ]);
+  assert.equal(filled.quantity, 5);
+}
+
+function testParseLocalProductsExtractsSku() {
+  const products = bot.parseLocalProducts(
+    'BAR Bucal AntiRonquidos (SKU: 6942042) x1\nDopamine Patch (SKU: 111) x2',
+  );
+  assert.deepEqual(compactProducts(products), [
+    { name: 'BAR Bucal AntiRonquidos', quantity: 1, sku: '6942042' },
+    { name: 'Dopamine Patch', quantity: 2, sku: '111' },
+  ]);
+}
+
+function testExpandMashedProductEntries() {
+  const expanded = bot.expandMashedProductEntries([
+    { name: 'DOPAMINE PATCH X1, ENERGY PATCH X1', quantity: 1 },
+  ]);
+  assert.deepEqual(compactProducts(expanded), [
+    { name: 'DOPAMINE PATCH', quantity: 1 },
+    { name: 'ENERGY PATCH', quantity: 1 },
+  ]);
+}
+
+function testInventoryMatchPickPreservesSiblingProducts() {
+  const options = [
+    { name: 'Stress Patch', sku: 'STR-RT34' },
+    { name: 'GLP Patch', sku: 'PAR-1KMD' },
+    { name: 'Energy Patch', sku: 'ENR5293241' },
+  ];
+  assert.deepEqual(bot.resolveInventoryMatchPick('1', options), {
+    name: 'Stress Patch',
+    sku: 'STR-RT34',
+  });
+  assert.deepEqual(bot.resolveInventoryMatchPick('STR-RT34', options), {
+    name: 'Stress Patch',
+    sku: 'STR-RT34',
+  });
+  assert.equal(bot.resolveInventoryMatchPick('9', options), null);
+
+  const patched = bot.applyInventoryMatchPickToOrderArgs({
+    customerName: 'Luis Zarate Montero',
+    products: [
+      { name: 'DOPAMINE PATCH', quantity: 1 },
+      { name: 'ENERGY PATCH', quantity: 1 },
+      { name: 'GLP PATCH', quantity: 2 },
+      { name: 'STRESS PATCH', quantity: 1 },
+    ],
+    quantity: 5,
+    total: 49500,
+  }, 3, { name: 'Stress Patch', sku: 'STR-RT34' });
+
+  assert.deepEqual(compactProducts(patched.products), [
+    { name: 'DOPAMINE PATCH', quantity: 1 },
+    { name: 'ENERGY PATCH', quantity: 1 },
+    { name: 'GLP PATCH', quantity: 2 },
+    { name: 'Stress Patch', quantity: 1, sku: 'STR-RT34' },
+  ]);
+  assert.equal(patched.quantity, 5);
+}
+
+function testGapFillUpgradesPartialMultiProductUnderCapture() {
+  const partial = bot.sanitizeAIExtractedArgs({
+    intent: 'new_order',
+    customerName: 'Luis Zarate Montero',
+    phone: '87517195',
+    products: [
+      { name: 'DOPAMINE PATCH', quantity: 1 },
+      { name: 'STRESS PATCH', quantity: 1 },
+    ],
+    total: 49500,
+    orderType: 'EA',
+  }, customFieldsConfig);
+
+  const filled = bot.gapFillEmptyOrderFieldsFromMessage(
+    partial,
+    luisMultiProductMessage,
+    customFieldsConfig,
+  );
+
+  assert.deepEqual(compactProducts(filled.products), [
+    { name: 'DOPAMINE PATCH', quantity: 1 },
+    { name: 'ENERGY PATCH', quantity: 1 },
+    { name: 'GLP PATCH', quantity: 2 },
+    { name: 'STRESS PATCH', quantity: 1 },
+  ]);
+  assert.equal(filled.quantity, 5);
+}
+
+function testMashedPendingPickFlowKeepsFourLines() {
+  // Simulate create_order canonicalizing a mashed blob, then a pick on line 0.
+  const mashedArgs = bot.sanitizeAIExtractedArgs({
+    intent: 'new_order',
+    customerName: 'Luis Zarate Montero',
+    products: [{
+      name: 'DOPAMINE PATCH X1, ENERGY PATCH X1, GLP PATCH X2 , STRESS PATCH X1',
+      quantity: 1,
+    }],
+    total: 49500,
+    orderType: 'EA',
+  }, customFieldsConfig);
+
+  assert.equal(mashedArgs.products.length, 4);
+
+  const afterPick = bot.applyInventoryMatchPickToOrderArgs(
+    mashedArgs,
+    0,
+    { name: 'Dopamine Patch', sku: 'DOP-1' },
+  );
+
+  assert.equal(afterPick.products.length, 4);
+  assert.equal(afterPick.products[0].name, 'Dopamine Patch');
+  assert.equal(afterPick.products[0].sku, 'DOP-1');
+  assert.equal(afterPick.products[1].name, 'ENERGY PATCH');
+  assert.equal(afterPick.products[2].name, 'GLP PATCH');
+  assert.equal(afterPick.products[3].name, 'STRESS PATCH');
+  assert.equal(afterPick.quantity, 5);
+}
+
 testSanitizeMessyOrder();
 testPhoneAndMoneyNormalization();
 testOrderDetectionWithoutCreateKeyword();
@@ -502,5 +720,14 @@ testGapFillAfterMergeDoesNotClobberPendingAddress();
 testGapFillNeverOverwritesExistingCustomerName();
 testPlaceLikeLinesAreNotPersonNames();
 testProductQuantityX2DoesNotDoubleInSanitize();
+testLuisMultiLineProductBlockAppendsAllLines();
+testCommaSeparatedMultiProductExpandsInSanitize();
+testCommaSeparatedCorrectionParsesAllProducts();
+testGapFillReplacesUnderCapturedSingleProductWithLocalMulti();
+testParseLocalProductsExtractsSku();
+testExpandMashedProductEntries();
+testInventoryMatchPickPreservesSiblingProducts();
+testGapFillUpgradesPartialMultiProductUnderCapture();
+testMashedPendingPickFlowKeepsFourLines();
 
 console.log('Grok-first bot helper tests passed.');

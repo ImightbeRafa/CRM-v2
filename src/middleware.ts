@@ -37,6 +37,7 @@ const PUBLIC_ROUTES = [
   '/api/stripe/webhook',
   '/api/chat/webhook',                          // Meta webhooks (Instagram/WhatsApp/Facebook)
   '/api/integration',                           // Allow external website integrations (includes /test and /orders/create)
+  '/api/finance',                               // External finance read API (authenticated via FINANCE_API_KEY in handler)
   '/api/bot/telegram/webhook',                  // Telegram bot webhook (must be public)
   '/api/bot/telegram/health',                   // Telegram health check (diagnostic)
   '/api/bot/whatsapp/webhook',                  // WhatsApp bot webhook (must be public for Meta verification)

@@ -5,72 +5,99 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app
 import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
 import { Alert, AlertDescription } from '@/app/components/ui/alert';
-import { 
-  Database, 
-  Download, 
-  Upload, 
-  Trash2, 
-  Clock, 
-  Shield, 
+import {
+  Database,
+  Clock,
+  Shield,
   AlertTriangle,
   CheckCircle,
   XCircle,
-  RefreshCw
+  RefreshCw,
 } from 'lucide-react';
 
+interface ManifestSummary {
+  kind: 'full' | 'hot';
+  runId: string;
+  startedAt: string;
+  finishedAt: string;
+  hoursAgo: number;
+  discoveredTables: number;
+  totalLogicalRows: number;
+  totalCompressedBytes: number;
+  requiredLmMissing: string[];
+  materialized: number;
+  reused: number;
+  carriedForward: number;
+  ok: boolean;
+}
+
 interface BackupStatus {
-  status: string;
+  formatVersion: number;
   isHealthy: boolean;
-  totalBackups: number;
-  totalSize: {
-    bytes: number;
-    mb: string;
-    gb: string;
-  };
-  lastBackup: {
-    name: string;
-    createdAt: string;
-    size: number;
-    url: string;
-    hoursAgo: number;
-  } | null;
-  retention: {
-    policy: string;
-    oldBackups: number;
-    shouldCleanup: boolean;
-  };
-  frequency: {
-    averageInterval: number | null;
-    consistency: string;
-    missingDays: Array<{
-      from: string;
-      to: string;
-      gapHours: number;
-    }>;
-  };
-  recommendations: Array<{
-    type: string;
-    message: string;
-    action: string;
-  }>;
+  status: 'healthy' | 'degraded' | 'missing';
+  retentionDays: number;
+  full: ManifestSummary | null;
+  hot: ManifestSummary | null;
+  recentManifests: ManifestSummary[];
+  recommendations: Array<{ type: string; message: string; action: string }>;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function SummaryCard({ title, summary }: { title: string; summary: ManifestSummary | null }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">{title}</CardTitle>
+        <CardDescription>
+          {summary
+            ? `${Math.round(summary.hoursAgo)}h ago · ${summary.runId}`
+            : 'No manifest yet'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        {summary ? (
+          <>
+            <div className="flex justify-between"><span>Tables</span><span>{summary.discoveredTables}</span></div>
+            <div className="flex justify-between"><span>Rows</span><span>{summary.totalLogicalRows.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span>Stored</span><span>{formatBytes(summary.totalCompressedBytes)}</span></div>
+            <div className="flex justify-between"><span>Materialized / reused / carried</span>
+              <span>{summary.materialized}/{summary.reused}/{summary.carriedForward}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span>lm_* coverage</span>
+              {summary.requiredLmMissing.length === 0 ? (
+                <Badge variant="default" className="bg-emerald-600">complete</Badge>
+              ) : (
+                <Badge variant="destructive">missing {summary.requiredLmMissing.length}</Badge>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="text-muted-foreground">Waiting for first successful run.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function BackupDashboard() {
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const fetchBackupStatus = async () => {
     try {
       setLoading(true);
       setError(null);
-      
       const response = await fetch('/api/backups/status');
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      
       const data = await response.json();
       setBackupStatus(data);
     } catch (err) {
@@ -80,289 +107,133 @@ export default function BackupDashboard() {
     }
   };
 
-  const triggerBackup = async () => {
-    try {
-      setActionLoading('backup');
-      
-      const response = await fetch('/api/cron/backup', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Backup failed: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      console.log('Backup triggered:', result);
-      
-      // Refresh status after backup
-      await fetchBackupStatus();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to trigger backup');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const cleanupOldBackups = async () => {
-    try {
-      setActionLoading('cleanup');
-      
-      // This would call a cleanup API endpoint
-      // For now, we'll just refresh the status
-      await fetchBackupStatus();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to cleanup old backups');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
   useEffect(() => {
-    fetchBackupStatus();
+    void fetchBackupStatus();
   }, []);
 
-  if (loading) {
+  if (loading && !backupStatus) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <RefreshCw className="h-8 w-8 animate-spin text-indigo-600" />
-        <span className="ml-2 text-gray-600">Loading backup status...</span>
+      <div className="flex items-center gap-2 p-6 text-muted-foreground">
+        <RefreshCw className="h-4 w-4 animate-spin" /> Loading backup status…
       </div>
     );
   }
-
-  if (error) {
-    return (
-      <Alert className="mb-6">
-        <XCircle className="h-4 w-4" />
-        <AlertDescription>
-          Error loading backup status: {error}
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
-  if (!backupStatus) {
-    return (
-      <Alert className="mb-6">
-        <AlertTriangle className="h-4 w-4" />
-        <AlertDescription>
-          No backup status data available.
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'healthy':
-        return <CheckCircle className="h-5 w-5 text-green-500" />;
-      case 'missing':
-        return <XCircle className="h-5 w-5 text-red-500" />;
-      default:
-        return <AlertTriangle className="h-5 w-5 text-yellow-500" />;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'healthy':
-        return 'bg-green-100 text-green-800';
-      case 'missing':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-yellow-100 text-yellow-800';
-    }
-  };
 
   return (
-    <div className="space-y-6">
-      {/* Status Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Status</CardTitle>
-            {getStatusIcon(backupStatus.status)}
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              <Badge className={getStatusColor(backupStatus.status)}>
-                {backupStatus.status.toUpperCase()}
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {backupStatus.isHealthy ? 'All systems operational' : 'Issues detected'}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Backups</CardTitle>
-            <Database className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{backupStatus.totalBackups}</div>
-            <p className="text-xs text-muted-foreground">
-              {backupStatus.totalSize.gb} GB total
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Last Backup</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {backupStatus.lastBackup ? `${Math.round(backupStatus.lastBackup.hoursAgo)}h` : 'Never'}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {backupStatus.lastBackup 
-                ? new Date(backupStatus.lastBackup.createdAt).toLocaleDateString()
-                : 'No backups found'
-              }
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Retention</CardTitle>
-            <Shield className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{backupStatus.retention.policy}</div>
-            <p className="text-xs text-muted-foreground">
-              {backupStatus.retention.oldBackups} old backups
-            </p>
-          </CardContent>
-        </Card>
+    <div className="space-y-6 p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold flex items-center gap-2">
+            <Database className="h-6 w-6" /> Database backups
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Private Vercel Blob snapshots (full 02:00 UTC, hot 14:00 UTC). Logistics <code>lm_*</code> included.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => void fetchBackupStatus()} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
       </div>
 
-      {/* Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Backup Actions</CardTitle>
-          <CardDescription>
-            Manage your database backups and retention policies.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-4">
-            <Button 
-              onClick={triggerBackup}
-              disabled={actionLoading === 'backup'}
-              className="flex items-center gap-2"
-            >
-              {actionLoading === 'backup' ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                <Database className="h-4 w-4" />
-              )}
-              {actionLoading === 'backup' ? 'Creating Backup...' : 'Create Backup Now'}
-            </Button>
-
-            <Button 
-              onClick={fetchBackupStatus}
-              variant="outline"
-              className="flex items-center gap-2"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Refresh Status
-            </Button>
-
-            {backupStatus.retention.shouldCleanup && (
-              <Button 
-                onClick={cleanupOldBackups}
-                disabled={actionLoading === 'cleanup'}
-                variant="destructive"
-                className="flex items-center gap-2"
-              >
-                {actionLoading === 'cleanup' ? (
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Trash2 className="h-4 w-4" />
-                )}
-                {actionLoading === 'cleanup' ? 'Cleaning...' : 'Cleanup Old Backups'}
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Recommendations */}
-      {backupStatus.recommendations.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5" />
-              Recommendations
-            </CardTitle>
-            <CardDescription>
-              Important actions to improve your backup system.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {backupStatus.recommendations.map((rec, index) => (
-                <Alert key={index} className={
-                  rec.type === 'critical' ? 'border-red-200 bg-red-50' :
-                  rec.type === 'warning' ? 'border-yellow-200 bg-yellow-50' :
-                  'border-blue-200 bg-blue-50'
-                }>
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription>
-                    <div className="font-medium">{rec.message}</div>
-                    <div className="text-sm text-muted-foreground mt-1">
-                      {rec.action}
-                    </div>
-                  </AlertDescription>
-                </Alert>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      {error && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
-      {/* Backup Details */}
-      {backupStatus.lastBackup && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Latest Backup Details</CardTitle>
-            <CardDescription>
-              Information about your most recent backup.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Filename</label>
-                <p className="text-sm">{backupStatus.lastBackup.name}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Size</label>
-                <p className="text-sm">{(backupStatus.lastBackup.size / 1024 / 1024).toFixed(2)} MB</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Created</label>
-                <p className="text-sm">
-                  {new Date(backupStatus.lastBackup.createdAt).toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Age</label>
-                <p className="text-sm">
-                  {Math.round(backupStatus.lastBackup.hoursAgo)} hours ago
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {backupStatus && (
+        <>
+          <div className="flex flex-wrap items-center gap-3">
+            {backupStatus.isHealthy ? (
+              <Badge className="bg-emerald-600"><CheckCircle className="h-3 w-3 mr-1" /> healthy</Badge>
+            ) : (
+              <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" /> {backupStatus.status}</Badge>
+            )}
+            <span className="text-sm text-muted-foreground flex items-center gap-1">
+              <Shield className="h-3.5 w-3.5" /> format v{backupStatus.formatVersion} · private blob
+            </span>
+            <span className="text-sm text-muted-foreground flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" /> retention {backupStatus.retentionDays} days
+            </span>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <SummaryCard title="Latest full backup" summary={backupStatus.full} />
+            <SummaryCard title="Latest hot backup" summary={backupStatus.hot} />
+          </div>
+
+          {backupStatus.recommendations.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Recommendations</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {backupStatus.recommendations.map((rec, i) => (
+                  <Alert key={i} variant={rec.type === 'critical' ? 'destructive' : 'default'}>
+                    <AlertDescription>
+                      <div className="font-medium">{rec.message}</div>
+                      <div className="text-sm text-muted-foreground mt-1">{rec.action}</div>
+                    </AlertDescription>
+                  </Alert>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Operator notes</CardTitle>
+              <CardDescription>
+                Manual backups and restores are CLI/API only (never from this browser).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-sm space-y-2 text-muted-foreground">
+              <p>Full cron: <code>GET /api/cron/backup</code> with <code>Authorization: Bearer $CRON_SECRET</code></p>
+              <p>Hot cron: <code>GET /api/cron/backup/hot</code> with the same secret</p>
+              <p>Manual: <code>POST /api/cron/backup</code> with <code>x-api-key: $BACKUP_API_KEY</code></p>
+              <p>Restore: <code>npx tsx scripts/restore-from-backup.ts list|verify|restore &lt;runId&gt; --apply</code></p>
+              <p>Coverage check: <code>npm run backup:coverage</code></p>
+            </CardContent>
+          </Card>
+
+          {backupStatus.recentManifests.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Recent manifests</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-muted-foreground border-b">
+                        <th className="py-2 pr-3">Kind</th>
+                        <th className="py-2 pr-3">Run</th>
+                        <th className="py-2 pr-3">Tables</th>
+                        <th className="py-2 pr-3">Rows</th>
+                        <th className="py-2 pr-3">Age</th>
+                        <th className="py-2">lm_*</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {backupStatus.recentManifests.map((m) => (
+                        <tr key={`${m.kind}-${m.runId}`} className="border-b last:border-0">
+                          <td className="py-2 pr-3">{m.kind}</td>
+                          <td className="py-2 pr-3 font-mono text-xs">{m.runId}</td>
+                          <td className="py-2 pr-3">{m.discoveredTables}</td>
+                          <td className="py-2 pr-3">{m.totalLogicalRows.toLocaleString()}</td>
+                          <td className="py-2 pr-3">{Math.round(m.hoursAgo)}h</td>
+                          <td className="py-2">{m.requiredLmMissing.length === 0 ? 'ok' : 'missing'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
     </div>
   );

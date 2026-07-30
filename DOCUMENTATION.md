@@ -83,9 +83,12 @@ npm install
 cp env-template-local.txt .env
 # Edit .env with your database URL, secrets, etc.
 
-# Generate Prisma client and push schema
+# Generate Prisma client (schema is already applied on shared Supabase)
 npx prisma generate
-npx prisma db push
+
+# Do NOT run prisma db push / migrate against shared Supabase — it can DROP
+# logistics lm_* tables that are not in schema.prisma. Local throwaway DBs only:
+#   npm run db:push   # guarded; refuses Supabase and any DB with lm_* tables
 
 # Start development server
 npm run dev
@@ -131,9 +134,12 @@ npm run dev          # Development server
 npm run build        # Production build
 npm run start        # Production server
 npm run lint         # Linting
-npm run db:generate  # Generate Prisma client
-npm run db:push      # Push schema to database
-npm run db:studio    # Prisma Studio
+npm run db:generate           # Generate Prisma client
+npm run db:push               # Guarded prisma db push (local only)
+npm run backup:coverage       # Verify lm_* allowlist vs code refs
+npm run test:backups          # Backup unit + coverage tests
+npm run test:backup-roundtrip # Local Postgres backup→restore proof
+npm run db:studio             # Prisma Studio
 ```
 
 ---
@@ -446,18 +452,35 @@ WHATSAPP_VERIFY_TOKEN=your_verify_token
 - Node Version: 18.18.0+
 
 **Cron Jobs:**
-- Backup: Daily at 2 AM (`/api/cron/backup`)
+- Full backup: Daily 02:00 UTC (`/api/cron/backup`) — all `public` tables + DDL
+- Hot backup: Daily 14:00 UTC (`/api/cron/backup/hot`) — high-churn CRM + all `lm_*`
 - Subscription Expiry: Daily at 2 AM (`/api/cron/process-subscription-expiry`)
 
 **Function Configuration:**
-- API routes: 30s max duration
+- API routes: 30s max duration (backup routes: 300s)
 - Region: `sfo1`
 
 ### Database
 
 - PostgreSQL via Supabase
 - Connection pooling via `DATABASE_URL`
-- Direct connection via `DIRECT_URL` (migrations)
+- Direct connection via `DIRECT_URL` (backups prefer `BACKUP_DATABASE_URL` or `DIRECT_URL`)
+
+### Backups (primary DR — private Vercel Blob)
+
+We do **not** rely on paid Supabase PITR. App-owned backups are the recovery path.
+
+- Format v1 under `betsy/backups/v1/` (private Blob objects + manifests)
+- Discovers every `public` table (including all logistics `lm_*`)
+- Stores gzip JSONL data + live DDL (`schema/pre.sql.gz`, `schema/post.sql.gz`)
+- Fingerprint reuse skips re-upload when watermarked tables are unchanged
+- Retention default: 14 days (`BACKUP_RETENTION_DAYS`)
+- Auth: `CRON_SECRET` (GET cron), `BACKUP_API_KEY` required (POST manual)
+- Restore CLI (loopback only by default):
+  `npx tsx scripts/restore-from-backup.ts list|verify|restore <runId> --apply`
+  Requires `RESTORE_DATABASE_URL` (never defaults to `DATABASE_URL`)
+- Coverage: `npm run backup:coverage` / `npm run test:backup-roundtrip`
+- Env: `BLOB_READ_WRITE_TOKEN`, `CRON_SECRET`, `BACKUP_API_KEY`, `BACKUP_RETENTION_DAYS`
 
 ---
 

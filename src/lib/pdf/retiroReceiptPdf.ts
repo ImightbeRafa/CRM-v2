@@ -124,11 +124,12 @@ function hoursSinceCreated(createdAt?: string | Date | null): string | null {
   return `${hours}h`;
 }
 
-/** WinAnsi-safe + strip controls that crash pdf-lib (newlines, tabs, etc.). */
+/** WinAnsi-safe + strip controls that crash pdf-lib (C0/C1, tabs, newlines, etc.). */
 export function toPdfText(value: string): string {
   return String(value || '')
     .replace(/₡/g, '')
-    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    // C0 + DEL + C1 controls are not reliably encodable in WinAnsi
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
     .replace(/[^\u0000-\u00FF]/g, '')
     .replace(/\s+/g, ' ')
     .trim();

@@ -53,10 +53,12 @@ assert.equal(formatAgreedDisplay('2024-07-29'), '29/07/2024');
 assert.equal(toPdfText('Paola\nGamboa\tHernández'), 'Paola Gamboa Hernández');
 assert.equal(toPdfText('Total ₡19.800'), 'Total 19.800');
 assert.ok(!toPdfText('line1\nline2').includes('\n'));
+assert.equal(toPdfText(`Paola\u0085Gamboa`), 'Paola Gamboa');
+assert.ok(!toPdfText('a\u009F b').includes('\u009F'));
 
 const pdfWithNewline = await generateRetiroReceiptPdf({
   orderRef: 'BOT-1785197334716',
-  customerName: 'Paola\nGamboa Hernández',
+  customerName: 'Paola\nGamboa\u0085Hernández',
   phone: '8832\t8787',
   product: 'StressPatchWithoutSpacesThatIsVeryLongAndCouldOverflowTheReceiptWidth',
   quantity: 2,

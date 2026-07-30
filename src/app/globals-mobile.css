@@ -61,9 +61,9 @@
     padding-right: 1rem !important;
   }
 
-  /* Bottom nav safe zone: prevent content from hiding behind nav */
+  /* Bottom nav safe zone: nav (56px) + breathing room + iOS home indicator */
   .app-shell-content {
-    padding-bottom: 72px;
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
   }
 }
 

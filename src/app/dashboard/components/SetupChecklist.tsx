@@ -137,38 +137,40 @@ export function SetupChecklist() {
       >
         <Card className="border-2 border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50/80 via-white to-indigo-50/80 dark:from-blue-950/40 dark:via-card dark:to-indigo-950/40 shadow-lg overflow-hidden">
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl shadow-md">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <div className="p-2 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl shadow-md flex-shrink-0">
                   <Sparkles className="h-5 w-5 text-white" />
                 </div>
-                <div>
-                  <CardTitle className="text-lg font-bold text-foreground">
+                <div className="min-w-0">
+                  <CardTitle className="text-base sm:text-lg font-bold text-foreground leading-snug">
                     {showCelebration ? '¡Configuración Completa!' : 'Configura tu Sistema'}
                   </CardTitle>
-                  <p className="text-sm text-muted-foreground mt-0.5">
+                  <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
                     {showCelebration
                       ? 'Tu CRM está listo para recibir pedidos'
-                      : `Completa estos pasos para empezar a recibir pedidos — ${data.completedCount}/${data.totalCount} listos`}
+                      : `Completa estos pasos — ${data.completedCount}/${data.totalCount} listos`}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5 flex-shrink-0">
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                  className="h-11 w-11 p-0 text-muted-foreground hover:text-foreground"
                   onClick={() => setIsCollapsed(!isCollapsed)}
                   title={isCollapsed ? 'Expandir' : 'Colapsar'}
+                  aria-label={isCollapsed ? 'Expandir' : 'Colapsar'}
                 >
                   {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                  className="h-11 w-11 p-0 text-muted-foreground hover:text-foreground"
                   onClick={handleDismiss}
                   title="Ocultar"
+                  aria-label="Ocultar checklist"
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -258,14 +260,14 @@ export function SetupChecklist() {
                       </div>
 
                       {/* Footer action */}
-                      <div className="mt-4 flex items-center justify-between">
+                      <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <p className="text-xs text-muted-foreground">
-                          Haz clic en cada sección para configurarla
+                          Toca cada sección para configurarla
                         </p>
                         <Button
                           variant="outline"
                           size="sm"
-                          className="gap-1.5"
+                          className="gap-1.5 w-full sm:w-auto min-h-[44px]"
                           onClick={() => router.push('/setup-wizard')}
                         >
                           <Sparkles className="h-3.5 w-3.5" />

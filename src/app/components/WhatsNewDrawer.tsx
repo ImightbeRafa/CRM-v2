@@ -72,13 +72,14 @@ export function WhatsNewDrawer() {
     <>
       {/* Bell icon trigger */}
       <button
+        type="button"
         onClick={handleOpen}
-        className="relative p-2 rounded-lg hover:bg-muted transition-colors"
+        className="relative inline-flex items-center justify-center h-11 w-11 rounded-lg hover:bg-muted transition-colors"
         aria-label="Novedades"
       >
         <Bell className="h-5 w-5 text-muted-foreground" />
         {hasNew && (
-          <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-blue-600 rounded-full ring-2 ring-background animate-pulse" />
+          <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-blue-600 rounded-full ring-2 ring-background animate-pulse" />
         )}
       </button>
 
@@ -86,14 +87,14 @@ export function WhatsNewDrawer() {
       {isOpen && (
         <>
           <div className="fixed inset-0 bg-black/20 z-50" onClick={() => setIsOpen(false)} />
-          <div className="fixed top-0 right-0 h-full w-[380px] max-w-[90vw] bg-card border-l border-border shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
+          <div className="fixed top-0 right-0 h-full w-full sm:w-[380px] max-w-[100vw] sm:max-w-[90vw] bg-card border-l border-border shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
               <div className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                 <h2 className="text-lg font-bold text-foreground">Novedades</h2>
               </div>
-              <button onClick={() => setIsOpen(false)} className="p-1.5 hover:bg-muted rounded-lg transition-colors">
+              <button type="button" onClick={() => setIsOpen(false)} className="inline-flex items-center justify-center h-11 w-11 hover:bg-muted rounded-lg transition-colors" aria-label="Cerrar">
                 <X className="h-4 w-4 text-muted-foreground" />
               </button>
             </div>

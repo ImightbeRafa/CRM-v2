@@ -2,6 +2,15 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-07-30 — orphan purge (human OK: delete all except explicitly used)
+
+- Deleted orphan routes: `/landing`, `/deployment`.
+- Deleted orphan libs/templates: `correosAutomation.ts`, `auth.ts`, `instagram-oauth.ts`, `dom-protection.ts`, `integration-snippet.ts`, `bot/index.ts`.
+- Deleted 8 legacy setup-wizard steps; produccion orphan pair; UI leftovers listed in Phase 0.
+- Removed `@types/bcryptjs`; kept `sharp` and `/home`.
+- Cleaned `/landing` refs in middleware, SubscriptionBanner, FeedbackWidget, DOCUMENTATION.
+- Prove: lint pass, test:backups 8/8, test:bot-grok pass, build pass, knip unused files 0.
+
 ## 2026-07-30 — kickoff (branch `cursor/codebase-slim-agent-os-1e77`)
 
 - Upgraded `.cursor/skills/executor-advisor-loop/SKILL.md` to Sol-orchestrated multi-agent loop (`gpt-5.6-sol-high`); parent dispatches parallel read-only scouts; serial deletes; safety gates.

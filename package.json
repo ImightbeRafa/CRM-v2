@@ -75,7 +75,6 @@
   "devDependencies": {
     "@next/bundle-analyzer": "15.5.16",
     "@types/axios": "0.9.36",
-    "@types/bcryptjs": "2.4.6",
     "@types/json2csv": "5.0.7",
     "@types/node": "^20.17.9",
     "@types/react": "^18.2.43",

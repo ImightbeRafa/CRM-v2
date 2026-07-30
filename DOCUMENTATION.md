@@ -213,7 +213,7 @@ npm run db:studio             # Prisma Studio
 
 ### Middleware Protection
 
-- Public routes: `/auth/*`, `/landing`, `/home`, `/api/auth/*`, webhooks
+- Public routes: `/auth/*`, `/home`, `/api/auth/*`, webhooks
 - Admin routes: `/admin/*` (MASTER only)
 - Trial/subscription enforcement: Redirects to billing if expired
 

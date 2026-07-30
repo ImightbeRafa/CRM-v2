@@ -83,4 +83,41 @@ const pdfPendingUnknown = await generateRetiroReceiptPdf({
 });
 assert.ok(pdfPendingUnknown.length > 500);
 
+{
+  const { PDFDocument } = await import('pdf-lib');
+  const loaded = await PDFDocument.load(pdfWithNewline);
+  assert.equal(loaded.getPageCount(), 1);
+  const page = loaded.getPage(0);
+  const { width, height } = page.getSize();
+  assert.equal(width, 300);
+  assert.ok(height >= 280 && height <= 560, `unexpected height ${height}`);
+}
+
+{
+  // Dense content should still fit one page without throwing
+  const dense = await generateRetiroReceiptPdf({
+    orderRef: 'BOT-1785270571234',
+    customerName: 'Noelia Alfaro Chaves',
+    phone: '84598361',
+    productDetails: JSON.stringify([
+      { type: 'Stress Patch', cantidad: 1 },
+      { type: 'Focus Patch', cantidad: 1 },
+      { type: 'GLP Patch', cantidad: 1 },
+      { type: 'Sleeping Patch Extra Long Name Variant', cantidad: 2 },
+    ]),
+    total: 29900,
+    seller: 'Laura',
+    comments: 'RETIRA EN TREJOS SINPE CONFIRMADO jueves 30 de julio, 3 pm.',
+    status: 'Pendiente',
+    agreedDate: '2024-07-30T21:00:00.000Z',
+    createdAt: new Date(Date.now() - 44 * 3600000).toISOString(),
+    isContraEntrega: false,
+    pickupLocationLabel: 'Laura Escazu',
+  });
+  assert.ok(dense.length > 500);
+  const { writeFileSync, mkdirSync } = await import('node:fs');
+  mkdirSync('/opt/cursor/artifacts', { recursive: true });
+  writeFileSync('/opt/cursor/artifacts/retiro-receipt-redesign.pdf', dense);
+}
+
 console.log('retiroReceiptPdf tests passed');

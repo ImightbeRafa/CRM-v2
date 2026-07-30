@@ -25,20 +25,23 @@ export interface RetiroReceiptData {
   handedByName?: string | null;
 }
 
+// ── Design tokens (warehouse dispatch ticket) ─────────────────
 const PAGE_WIDTH = 300;
-const PAGE_HEIGHT = 520;
-const MARGIN_X = 22;
+const MARGIN_X = 18;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_X * 2;
 const CR_TZ = 'America/Costa_Rica';
-/** Reserved bottom band so body content never overlaps the payment highlight. */
-const FOOTER_RESERVED = 70;
+const HEADER_H = 92;
+const FOOTER_H = 64;
+const MIN_PAGE_HEIGHT = HEADER_H + FOOTER_H + 140;
+const MAX_PAGE_HEIGHT = 560;
 
-const PURPLE = rgb(0.42, 0.18, 0.72);
-const GREEN = rgb(0.05, 0.55, 0.28);
-const ORANGE = rgb(0.9, 0.45, 0.1);
-const GRAY = rgb(0.35, 0.35, 0.35);
-const BLACK = rgb(0.08, 0.08, 0.08);
-const LIGHT_BORDER = rgb(0.78, 0.78, 0.78);
+const INK = rgb(0.114, 0.098, 0.125); // #1D1920
+const ACCENT = rgb(0.357, 0.165, 0.431); // #5B2A6E
+const ACCENT_TINT = rgb(0.953, 0.929, 0.961); // #F3EDF5
+const MUTED = rgb(0.435, 0.408, 0.451); // #6F6873
+const RULE = rgb(0.867, 0.843, 0.875); // #DDD7DF
+const WHITE = rgb(1, 1, 1);
+const PANEL = rgb(0.965, 0.957, 0.973);
 
 /**
  * Last 5 digits of the order ref for warehouse highlighting.
@@ -112,10 +115,6 @@ export function formatAgreedDisplay(raw: string | null | undefined): string {
   return s;
 }
 
-function formatAgreed(data: RetiroReceiptData): string {
-  return formatAgreedDisplay(data.scheduledAt || data.agreedDate || data.pickupDate);
-}
-
 function hoursSinceCreated(createdAt?: string | Date | null): string | null {
   if (!createdAt) return null;
   const d = new Date(createdAt);
@@ -152,7 +151,6 @@ function truncateText(
   return t ? `${t}...` : '';
 }
 
-/** Split an oversized token so wrapText never overflows the content width. */
 function splitOversizedToken(
   token: string,
   font: PDFFont,
@@ -203,14 +201,24 @@ function wrapText(
   if (current && lines.length < maxLines) lines.push(current);
 
   if (lines.length === maxLines) {
-    const consumed = lines.join(' ');
-    if (words.join(' ').length > consumed.length) {
-      lines[maxLines - 1] = truncateText(lines[maxLines - 1], font, size, maxWidth);
-    } else {
-      lines[maxLines - 1] = truncateText(lines[maxLines - 1], font, size, maxWidth);
-    }
+    lines[maxLines - 1] = truncateText(lines[maxLines - 1], font, size, maxWidth);
   }
   return lines;
+}
+
+function fitFontSize(
+  text: string,
+  font: PDFFont,
+  preferred: number,
+  min: number,
+  maxWidth: number,
+): number {
+  const safe = toPdfText(text);
+  let size = preferred;
+  while (size > min && font.widthOfTextAtSize(safe, size) > maxWidth) {
+    size -= 1;
+  }
+  return size;
 }
 
 function drawCentered(
@@ -219,7 +227,7 @@ function drawCentered(
   y: number,
   size: number,
   font: PDFFont,
-  color = BLACK,
+  color: ReturnType<typeof rgb>,
 ) {
   const safe = toPdfText(text);
   const width = font.widthOfTextAtSize(safe, size);
@@ -232,28 +240,28 @@ function drawCentered(
   });
 }
 
-function drawField(
+function sectionLabel(
   page: PDFPage,
-  text: string,
+  label: string,
   y: number,
-  size: number,
   font: PDFFont,
-  color: ReturnType<typeof rgb>,
-  maxWidth = CONTENT_WIDTH,
 ): number {
-  const line = truncateText(text, font, size, maxWidth);
-  if (!line) return y;
-  page.drawText(line, { x: MARGIN_X, y, size, font, color });
-  return y - (size + 5);
+  page.drawText(toPdfText(label).toUpperCase(), {
+    x: MARGIN_X,
+    y,
+    size: 7.5,
+    font,
+    color: MUTED,
+  });
+  return y - 12;
 }
 
 /**
- * Compact retiro / pickup slip PDF.
- * Highlights last 5 order digits (top) and payment status (bottom) like warehouse marker notes.
+ * Compact retiro / pickup slip PDF — warehouse dispatch ticket.
+ * Highlights last 5 order digits (header) and payment status (footer band).
  */
 export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise<Buffer> {
   const doc = await PDFDocument.create();
-  const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
   const fontRegular = await doc.embedFont(StandardFonts.Helvetica);
 
@@ -261,203 +269,265 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
   const paymentLabel = paymentHighlightLabel(data);
   const status = toPdfText(data.status || 'Pendiente') || 'Pendiente';
   const ageLabel = hoursSinceCreated(data.createdAt);
-  const lines = extractOrderLines(data);
-  const itemsText = lines.map((l) => `${l.rawName} x${l.qty}`).join(', ');
-  const totalQty = lines.reduce((sum, l) => sum + (l.qty || 0), 0) || Number(data.quantity) || 0;
-  const agreed = formatAgreed(data);
+  const orderLines = extractOrderLines(data).slice(0, 8);
+  const agreed = formatAgreedDisplay(data.scheduledAt || data.agreedDate || data.pickupDate);
+  const customer = toPdfText(data.customerName || 'Cliente') || 'Cliente';
+  const phone = data.phone ? toPdfText(String(data.phone)) : '';
 
-  let y = PAGE_HEIGHT - 36;
-  const minY = FOOTER_RESERVED;
+  const metaRows: Array<[string, string]> = [];
+  if (data.seller) metaRows.push(['Vendedor', toPdfText(String(data.seller))]);
+  if (agreed) metaRows.push(['Acordado', toPdfText(agreed)]);
+  if (data.pickupLocationLabel) metaRows.push(['Lugar', toPdfText(String(data.pickupLocationLabel))]);
+  if (data.handedByName) metaRows.push(['Entrego', toPdfText(String(data.handedByName))]);
 
-  // Outer receipt border
+  const commentLines = data.comments
+    ? wrapText(String(data.comments), fontRegular, 9, CONTENT_WIDTH - 16, 4)
+    : [];
+
+  // Measure body height so the page hugs content (no dead void above footer).
+  let bodyH = 0;
+  bodyH += 18; // top padding under header
+  bodyH += 16; // customer
+  if (phone) bodyH += 14;
+  bodyH += 18; // gap + ARTICULOS label
+  bodyH += Math.max(1, orderLines.length) * 14 + 8;
+  if (metaRows.length) bodyH += 14 + metaRows.length * 13 + 8;
+  bodyH += 28; // total block
+  if (commentLines.length) bodyH += 14 + 10 + commentLines.length * 12 + 14;
+  bodyH += 10; // bottom padding before footer
+
+  const pageHeight = Math.min(
+    MAX_PAGE_HEIGHT,
+    Math.max(MIN_PAGE_HEIGHT, HEADER_H + bodyH + FOOTER_H),
+  );
+
+  const page = doc.addPage([PAGE_WIDTH, pageHeight]);
+
+  // ── Header band ─────────────────────────────────────────────
   page.drawRectangle({
-    x: 10,
-    y: 10,
-    width: PAGE_WIDTH - 20,
-    height: PAGE_HEIGHT - 20,
-    borderColor: LIGHT_BORDER,
-    borderWidth: 1.2,
+    x: 0,
+    y: pageHeight - HEADER_H,
+    width: PAGE_WIDTH,
+    height: HEADER_H,
+    color: ACCENT_TINT,
+  });
+  // Accent bar on top edge
+  page.drawRectangle({
+    x: 0,
+    y: pageHeight - 4,
+    width: PAGE_WIDTH,
+    height: 4,
+    color: ACCENT,
   });
 
-  // ── Big last-5 digits (warehouse highlight) ─────────────────
-  drawCentered(page, `# ${shortId}`, y, 36, fontBold, PURPLE);
-  y -= 28;
-
-  // Status badge first so we can truncate the order ref to remaining width.
-  const badgeText = status.length > 12 ? truncateText(status, fontBold, 8, 70) : status;
-  const badgePadX = 6;
-  const badgeW = fontBold.widthOfTextAtSize(badgeText, 8) + badgePadX * 2;
-  const badgeH = 14;
-  const badgeX = PAGE_WIDTH - MARGIN_X - badgeW;
-  page.drawRectangle({
-    x: badgeX,
-    y: y - 3,
-    width: badgeW,
-    height: badgeH,
-    borderColor: ORANGE,
-    borderWidth: 1,
-    color: rgb(1, 0.96, 0.9),
-  });
-  page.drawText(badgeText, {
-    x: badgeX + badgePadX,
-    y: y + 1,
+  page.drawText('RETIRO', {
+    x: MARGIN_X,
+    y: pageHeight - 22,
     size: 8,
     font: fontBold,
-    color: ORANGE,
+    color: ACCENT,
   });
 
-  const orderMaxW = Math.max(40, badgeX - MARGIN_X - 8);
-  const orderLine = truncateText(`#${data.orderRef}`, fontBold, 10, orderMaxW);
-  if (orderLine) {
-    page.drawText(orderLine, {
-      x: MARGIN_X,
-      y,
-      size: 10,
-      font: fontBold,
-      color: BLACK,
-    });
-  }
-  y -= 16;
-
-  if (ageLabel) {
-    page.drawText(ageLabel, {
-      x: MARGIN_X,
-      y,
-      size: 9,
-      font: fontRegular,
-      color: GRAY,
-    });
-  }
-  y -= 14;
-
-  page.drawLine({
-    start: { x: MARGIN_X, y },
-    end: { x: MARGIN_X + CONTENT_WIDTH, y },
-    thickness: 0.8,
-    color: LIGHT_BORDER,
+  const shortLabel = `# ${shortId}`;
+  const shortSize = fitFontSize(shortLabel, fontBold, 44, 28, CONTENT_WIDTH);
+  const shortW = fontBold.widthOfTextAtSize(shortLabel, shortSize);
+  page.drawText(shortLabel, {
+    x: (PAGE_WIDTH - shortW) / 2,
+    y: pageHeight - 62,
+    size: shortSize,
+    font: fontBold,
+    color: ACCENT,
   });
-  y -= 18;
+
+  const orderRef = truncateText(`#${data.orderRef}`, fontBold, 8.5, CONTENT_WIDTH * 0.55);
+  const statusMeta = truncateText(
+    ageLabel ? `${status.toUpperCase()} · ${ageLabel}` : status.toUpperCase(),
+    fontRegular,
+    8,
+    CONTENT_WIDTH * 0.42,
+  );
+  page.drawText(orderRef, {
+    x: MARGIN_X,
+    y: pageHeight - HEADER_H + 12,
+    size: 8.5,
+    font: fontBold,
+    color: INK,
+  });
+  const statusW = fontRegular.widthOfTextAtSize(statusMeta, 8);
+  page.drawText(statusMeta, {
+    x: PAGE_WIDTH - MARGIN_X - statusW,
+    y: pageHeight - HEADER_H + 12,
+    size: 8,
+    font: fontRegular,
+    color: MUTED,
+  });
+
+  // ── Body ────────────────────────────────────────────────────
+  let y = pageHeight - HEADER_H - 20;
 
   // Customer
-  y = drawField(page, data.customerName || 'Cliente', y, 13, fontBold, BLACK);
-  if (data.phone) {
-    y = drawField(page, String(data.phone), y, 11, fontRegular, GRAY);
-  }
+  page.drawText(truncateText(customer, fontBold, 14, CONTENT_WIDTH), {
+    x: MARGIN_X,
+    y,
+    size: 14,
+    font: fontBold,
+    color: INK,
+  });
+  y -= 16;
 
-  // Items
-  if (y > minY + 40) {
-    const itemLines = wrapText(
-      itemsText || toPdfText(data.product || 'Producto'),
-      fontRegular,
-      10,
-      CONTENT_WIDTH,
-      3,
-    );
-    for (const line of itemLines) {
-      if (y < minY + 40) break;
-      page.drawText(line, {
-        x: MARGIN_X,
-        y,
-        size: 10,
-        font: fontRegular,
-        color: BLACK,
-      });
-      y -= 13;
-    }
-  }
-
-  if (y > minY + 20) {
-    page.drawText(`Cant: ${totalQty}`, {
+  if (phone) {
+    page.drawText(truncateText(phone, fontRegular, 10, CONTENT_WIDTH), {
       x: MARGIN_X,
       y,
       size: 10,
-      font: fontBold,
-      color: BLACK,
+      font: fontRegular,
+      color: MUTED,
     });
     y -= 14;
   }
 
-  if (data.seller && y > minY + 20) {
-    y = drawField(page, `Vendedor: ${data.seller}`, y, 10, fontRegular, GRAY);
-  }
-  if (agreed && y > minY + 20) {
-    y = drawField(page, `Acordado: ${agreed}`, y, 10, fontRegular, GRAY);
-  }
-  if (data.pickupLocationLabel && y > minY + 20) {
-    y = drawField(page, `Lugar: ${data.pickupLocationLabel}`, y, 10, fontRegular, GRAY);
-  }
-  if (data.handedByName && y > minY + 20) {
-    y = drawField(page, `Entrego: ${data.handedByName}`, y, 10, fontRegular, GRAY);
-  }
+  y -= 6;
+  y = sectionLabel(page, 'Articulos', y, fontBold);
 
-  if (y > minY + 30) {
-    y -= 4;
-    page.drawLine({
-      start: { x: MARGIN_X, y },
-      end: { x: MARGIN_X + CONTENT_WIDTH, y },
-      thickness: 0.8,
-      color: LIGHT_BORDER,
-    });
-    y -= 18;
-
-    page.drawText('Total:', {
+  if (orderLines.length === 0) {
+    page.drawText('Producto', {
       x: MARGIN_X,
       y,
-      size: 12,
-      font: fontBold,
-      color: BLACK,
+      size: 10,
+      font: fontRegular,
+      color: INK,
     });
-    const totalText = formatMoneyCrc(data.total);
-    const totalW = fontBold.widthOfTextAtSize(totalText, 13);
-    page.drawText(totalText, {
-      x: MARGIN_X + CONTENT_WIDTH - totalW,
-      y,
-      size: 13,
-      font: fontBold,
-      color: GREEN,
-    });
-    y -= 20;
-  }
-
-  // Comments (stop above footer band)
-  if (data.comments && y > minY + 24) {
-    page.drawText('Comentarios:', {
-      x: MARGIN_X,
-      y,
-      size: 9,
-      font: fontBold,
-      color: GRAY,
-    });
-    y -= 12;
-    const maxCommentLines = Math.max(1, Math.min(5, Math.floor((y - minY) / 11)));
-    const commentLines = wrapText(String(data.comments), fontRegular, 9, CONTENT_WIDTH, maxCommentLines);
-    for (const line of commentLines) {
-      if (y < minY) break;
-      page.drawText(line, {
+    y -= 14;
+  } else {
+    for (const line of orderLines) {
+      const qty = `x${line.qty}`;
+      const qtyW = fontBold.widthOfTextAtSize(qty, 10);
+      const nameMax = CONTENT_WIDTH - qtyW - 10;
+      const name = truncateText(line.rawName, fontRegular, 10, nameMax);
+      page.drawText(name, {
         x: MARGIN_X,
         y,
-        size: 9,
+        size: 10,
         font: fontRegular,
-        color: BLACK,
+        color: INK,
       });
-      y -= 11;
+      page.drawText(qty, {
+        x: MARGIN_X + CONTENT_WIDTH - qtyW,
+        y,
+        size: 10,
+        font: fontBold,
+        color: INK,
+      });
+      y -= 14;
     }
   }
 
-  // ── Big payment status (warehouse highlight) ────────────────
-  const paySize = paymentLabel.length > 12 ? 22 : 26;
-  const payY = 42;
-  const payW = fontBold.widthOfTextAtSize(toPdfText(paymentLabel), paySize);
-  page.drawRectangle({
-    x: Math.max(16, (PAGE_WIDTH - payW) / 2 - 8),
-    y: payY - 6,
-    width: Math.min(PAGE_WIDTH - 32, payW + 16),
-    height: paySize + 10,
-    color: rgb(0.94, 0.9, 0.98),
-    borderColor: PURPLE,
-    borderWidth: 1,
+  y -= 4;
+  page.drawLine({
+    start: { x: MARGIN_X, y },
+    end: { x: MARGIN_X + CONTENT_WIDTH, y },
+    thickness: 0.6,
+    color: RULE,
   });
-  drawCentered(page, paymentLabel, payY, paySize, fontBold, PURPLE);
+  y -= 14;
+
+  // Operational metadata
+  if (metaRows.length) {
+    y = sectionLabel(page, 'Detalle', y, fontBold);
+    for (const [label, value] of metaRows) {
+      const labelText = `${label}:`;
+      page.drawText(labelText, {
+        x: MARGIN_X,
+        y,
+        size: 9,
+        font: fontBold,
+        color: MUTED,
+      });
+      const labelW = fontBold.widthOfTextAtSize(labelText, 9);
+      page.drawText(truncateText(value, fontRegular, 9, CONTENT_WIDTH - labelW - 8), {
+        x: MARGIN_X + labelW + 6,
+        y,
+        size: 9,
+        font: fontRegular,
+        color: INK,
+      });
+      y -= 13;
+    }
+    y -= 4;
+  }
+
+  // Total row
+  page.drawRectangle({
+    x: MARGIN_X - 4,
+    y: y - 8,
+    width: CONTENT_WIDTH + 8,
+    height: 26,
+    color: PANEL,
+  });
+  page.drawText('Total', {
+    x: MARGIN_X,
+    y: y,
+    size: 11,
+    font: fontBold,
+    color: INK,
+  });
+  const totalText = formatMoneyCrc(data.total);
+  const totalW = fontBold.widthOfTextAtSize(totalText, 13);
+  page.drawText(totalText, {
+    x: MARGIN_X + CONTENT_WIDTH - totalW,
+    y,
+    size: 13,
+    font: fontBold,
+    color: ACCENT,
+  });
+  y -= 34;
+
+  // Comments panel
+  if (commentLines.length) {
+    y = sectionLabel(page, 'Comentarios', y, fontBold);
+    const panelH = commentLines.length * 12 + 12;
+    page.drawRectangle({
+      x: MARGIN_X - 4,
+      y: y - panelH + 10,
+      width: CONTENT_WIDTH + 8,
+      height: panelH,
+      color: ACCENT_TINT,
+    });
+    let cy = y;
+    for (const line of commentLines) {
+      page.drawText(line, {
+        x: MARGIN_X + 4,
+        y: cy,
+        size: 9,
+        font: fontRegular,
+        color: INK,
+      });
+      cy -= 12;
+    }
+    y = cy - 6;
+  }
+
+  // ── Payment footer band ─────────────────────────────────────
+  page.drawRectangle({
+    x: 0,
+    y: 0,
+    width: PAGE_WIDTH,
+    height: FOOTER_H,
+    color: ACCENT,
+  });
+
+  page.drawText('ESTADO DE PAGO', {
+    x: MARGIN_X,
+    y: FOOTER_H - 16,
+    size: 7.5,
+    font: fontBold,
+    color: rgb(0.85, 0.78, 0.92),
+  });
+
+  const paySize = fitFontSize(paymentLabel, fontBold, 26, 16, CONTENT_WIDTH);
+  // Optical vertical center in the lower portion of the band
+  const payY = 16;
+  drawCentered(page, paymentLabel, payY, paySize, fontBold, WHITE);
 
   const pdfBytes = await doc.save();
   return Buffer.from(pdfBytes);

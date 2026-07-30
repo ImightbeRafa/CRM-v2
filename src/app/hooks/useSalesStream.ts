@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useToast } from "@/app/hooks/use-toast"
 import { Sale } from '../produccion/types/sales'
@@ -78,29 +78,47 @@ function parseOrder(data: any): Sale | null {
 }
 
 async function fetchSalesData(filters: SalesStreamOptions['filters'] = {}): Promise<Sale[]> {
-  const params = new URLSearchParams({ limit: '500', page: '1' });
+  const allSales: Sale[] = [];
+  let page = 1;
+  const limit = 500;
+  let hasMore = true;
 
-  if (filters.status && filters.status !== 'all') params.set('status', filters.status);
-  if (filters.orderType && filters.orderType !== 'all') params.set('orderType', filters.orderType);
-  if (filters.search) params.set('search', filters.search);
-  if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
-  if (filters.dateTo) params.set('dateTo', filters.dateTo);
+  while (hasMore) {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      page: String(page),
+    });
 
-  const response = await fetch(`/api/orders?${params.toString()}`, {
-    credentials: 'include',
-  });
+    if (filters.status && filters.status !== 'all') params.set('status', filters.status);
+    if (filters.orderType && filters.orderType !== 'all') params.set('orderType', filters.orderType);
+    if (filters.search) params.set('search', filters.search);
+    if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
+    if (filters.dateTo) params.set('dateTo', filters.dateTo);
 
-  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const response = await fetch(`/api/orders?${params.toString()}`, {
+      credentials: 'include',
+    });
 
-  const result = await response.json();
-  if (result.status === 'error') throw new Error(result.error || 'Unknown error');
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-  const parsedSales = result.data.map(parseOrder).filter((s: Sale | null): s is Sale => s !== null);
-  const uniqueSales = Array.from(
-    new Map<string, Sale>(parsedSales.map((sale: Sale) => [sale.orderId, sale])).values()
+    const result = await response.json();
+    if (result.status === 'error') throw new Error(result.error || 'Unknown error');
+
+    const pageSales = (result.data || [])
+      .map(parseOrder)
+      .filter((s: Sale | null): s is Sale => s !== null);
+    allSales.push(...pageSales);
+
+    hasMore = Boolean(result.pagination?.hasMore);
+    page += 1;
+
+    // Safety cap: avoid runaway loops if pagination metadata is wrong
+    if (page > 50) break;
+  }
+
+  return Array.from(
+    new Map<string, Sale>(allSales.map((sale) => [sale.orderId, sale])).values()
   );
-
-  return uniqueSales;
 }
 
 export function useSalesStream({
@@ -127,10 +145,14 @@ export function useSalesStream({
   });
 
   const error = queryError?.message ?? null;
+  const lastErrorRef = useRef<string | null>(null);
 
-  if (queryError && onError) {
+  useEffect(() => {
+    if (!queryError || !onError) return;
+    if (lastErrorRef.current === queryError.message) return;
+    lastErrorRef.current = queryError.message;
     onError(queryError.message);
-  }
+  }, [queryError, onError]);
 
   const stats = useMemo(() => ({
     total: sales.length,

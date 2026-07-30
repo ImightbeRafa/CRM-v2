@@ -269,6 +269,13 @@ export async function performBackup(options: PerformBackupOptions): Promise<Back
       },
     };
 
+    if (typeof store.getAccessMode === 'function' && store.getAccessMode() === 'public') {
+      warnings.push(
+        'Blob store is public-only; backup objects are publicly readable. Create a private Vercel Blob store and set BLOB_READ_WRITE_TOKEN to that store.',
+      );
+      manifest.health.warnings = warnings;
+    }
+
     const manifestPath = `${MANIFEST_PREFIX}/${runId}-${kind}.json`;
     await store.putBytes(
       manifestPath,

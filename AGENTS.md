@@ -19,8 +19,14 @@ cover non-obvious setup/run gotchas.
   **shared Supabase** instance. Real environment variables take precedence over `.env`,
   so the app/Prisma use Supabase regardless of what `.env` says. The schema is already
   applied there.
-- **Do NOT run `prisma db push` / `prisma migrate` / `db:push`** — they run against the
-  shared Supabase and are destructive (`db:push` uses `--accept-data-loss`).
+- **Do NOT run `prisma db push` / `prisma migrate` against this DB.** The `lm_*`
+  logistics/workforce tables (24 of them: `lm_orders`, `lm_order_events`,
+  `lm_ce_payments`, `lm_billing_weeks`, `lm_employees`, `lm_time_entries`, `lm_work_days`,
+  etc.) are created by raw SQL in `supabase/migrations/` and are **NOT part of the Prisma
+  schema**. `prisma db push` makes the DB match `schema.prisma` exactly, so it will try to
+  **DROP every `lm_*` table** — this already caused a full logistics data loss once.
+  `db:push` no longer passes `--accept-data-loss`, so it now refuses destructive drops
+  instead of silently performing them; do not re-add that flag.
 - No local PostgreSQL is required; do not point the app at a local DB (it would be
   overridden by the injected secret anyway).
 

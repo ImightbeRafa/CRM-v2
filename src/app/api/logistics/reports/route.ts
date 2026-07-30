@@ -176,6 +176,7 @@ export async function GET(req: NextRequest) {
             ) sg ON TRUE
             WHERE o."tenantId" = $1
               AND lm.status = 'Entregado'
+              AND lm.completed_at IS NOT NULL
               ${billedFilter}
               ${dateSql}
             ORDER BY o.id, o.timestamp ASC

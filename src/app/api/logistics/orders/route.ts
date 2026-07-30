@@ -5,6 +5,10 @@ import {
     mapLogisticsStatusToCrmStatus,
     shouldAutoSyncLogisticsStatus,
 } from '@/lib/logistics-crm-sync';
+import {
+    inferLogisticsCarrier,
+    mapCrmStatusToLogisticsStatus,
+} from '@/lib/logistics-carrier';
 
 const MANAGED_TENANT_IDS = [
     'cmh32z0ol0000k004hvx9tg3p',
@@ -66,7 +70,10 @@ export async function GET(req: NextRequest) {
                 const lmFilterRows = await prisma.$queryRaw<{ crm_order_id: string }[]>`
                     SELECT crm_order_id FROM lm_orders WHERE carrier = ${lmCarrierFilter}
                 `;
-                where.id = { in: lmFilterRows.map((r) => r.crm_order_id) };
+                // Only prefilter when we have matches; empty set would hide inferred-carrier orders
+                if (lmFilterRows.length > 0) {
+                    where.id = { in: lmFilterRows.map((r) => r.crm_order_id) };
+                }
             } catch {
                 // lm_orders table may not exist; fall back to post-query filtering
             }
@@ -75,7 +82,12 @@ export async function GET(req: NextRequest) {
                 const archivedRows = await prisma.$queryRaw<{ crm_order_id: string }[]>`
                     SELECT crm_order_id FROM lm_orders WHERE archived_at IS NOT NULL
                 `;
-                where.id = { in: archivedRows.map((r) => r.crm_order_id) };
+                if (archivedRows.length > 0) {
+                    where.id = { in: archivedRows.map((r) => r.crm_order_id) };
+                } else {
+                    // No archived logistics rows — return empty via impossible id
+                    where.id = { in: [] };
+                }
             } catch {
                 // fall back to post-query filtering
             }
@@ -163,12 +175,8 @@ export async function GET(req: NextRequest) {
                 // correos_shipping_cost column may not exist yet; ignore
             }
 
-            // Latest CE payment method / confirmer (best-effort)
+            // Latest CE payment method / confirmer (best-effort; no request-path DDL)
             try {
-                await prisma.$executeRawUnsafe(`
-                    ALTER TABLE lm_ce_payments
-                    ADD COLUMN IF NOT EXISTS payment_method TEXT
-                `);
                 const ceRows = await prisma.$queryRaw<{ crm_order_id: string; payment_method: string | null; confirmed_by: string | null }[]>`
                     SELECT DISTINCT ON (crm_order_id)
                         crm_order_id, payment_method, confirmed_by
@@ -237,25 +245,38 @@ export async function GET(req: NextRequest) {
             }
         }
 
-        const enriched = orders.map((o) => ({
-            ...o,
-            lmCarrier: lmData[o.id]?.lmCarrier ?? null,
-            isContraEntrega: (o as any).contraEntrega || lmData[o.id]?.isContraEntrega || false,
-            contraEntregaCollected: (o as any).cePaymentConfirmed || lmData[o.id]?.contraEntregaCollected || false,
-            cePaymentMethod: (lmData[o.id] as any)?.cePaymentMethod ?? null,
-            ceConfirmedBy: (lmData[o.id] as any)?.ceConfirmedBy ?? null,
-            lmStatus: lmData[o.id]?.lmStatus ?? null,
-            archivedAt: lmData[o.id]?.archivedAt ?? null,
-            correosShippingCost: lmData[o.id]?.correosShippingCost ?? null,
-            guiaId: guiaData[`${o.tenantId}:${o.orderId}`]?.guiaId ?? null,
-            guiaNumber: guiaData[`${o.tenantId}:${o.orderId}`]?.guiaNumber ?? null,
-            trackingNumber: guiaData[`${o.tenantId}:${o.orderId}`]?.trackingNumber ?? null,
-            guiaStatus: guiaData[`${o.tenantId}:${o.orderId}`]?.guiaStatus ?? null,
-            guiaError: guiaData[`${o.tenantId}:${o.orderId}`]?.guiaError ?? null,
-            hasGuiaPdf: guiaData[`${o.tenantId}:${o.orderId}`]?.hasGuiaPdf ?? false,
-        }));
+        const enriched = orders.map((o) => {
+            const guia = guiaData[`${o.tenantId}:${o.orderId}`];
+            const lm = lmData[o.id];
+            const persistedCarrier = lm?.lmCarrier ?? null;
+            const inferredCarrier = inferLogisticsCarrier({
+                orderType: (o as any).orderType,
+                courier: (o as any).courier,
+                hasCorreosGuia: Boolean(guia?.guiaNumber || guia?.trackingNumber || guia?.hasGuiaPdf),
+            });
+            const lmCarrier = persistedCarrier ?? inferredCarrier;
+            const lmStatus = lm?.lmStatus ?? mapCrmStatusToLogisticsStatus((o as any).status, (o as any).delivery);
 
-        // Filter by carrier
+            return {
+                ...o,
+                lmCarrier,
+                isContraEntrega: (o as any).contraEntrega || lm?.isContraEntrega || false,
+                contraEntregaCollected: (o as any).cePaymentConfirmed || lm?.contraEntregaCollected || false,
+                cePaymentMethod: (lm as any)?.cePaymentMethod ?? null,
+                ceConfirmedBy: (lm as any)?.ceConfirmedBy ?? null,
+                lmStatus,
+                archivedAt: lm?.archivedAt ?? null,
+                correosShippingCost: lm?.correosShippingCost ?? null,
+                guiaId: guia?.guiaId ?? null,
+                guiaNumber: guia?.guiaNumber ?? null,
+                trackingNumber: guia?.trackingNumber ?? null,
+                guiaStatus: guia?.guiaStatus ?? null,
+                guiaError: guia?.guiaError ?? null,
+                hasGuiaPdf: guia?.hasGuiaPdf ?? false,
+            };
+        });
+
+        // Filter by carrier (uses persisted or inferred lmCarrier)
         let filtered = lmCarrierFilter
             ? enriched.filter((o) => o.lmCarrier === lmCarrierFilter)
             : enriched;

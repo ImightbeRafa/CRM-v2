@@ -78,7 +78,10 @@ function parseOrder(data: any): Sale | null {
 }
 
 async function fetchSalesData(filters: SalesStreamOptions['filters'] = {}): Promise<Sale[]> {
-  const params = new URLSearchParams({ limit: '500', page: '1' });
+  // Load the full order set (API caps `all` at 5000) so Producción/Ventas boards
+  // show every order instead of only the first page. Previously hardcoded to 500,
+  // which made large tenants look incomplete.
+  const params = new URLSearchParams({ limit: 'all', page: '1' });
 
   if (filters.status && filters.status !== 'all') params.set('status', filters.status);
   if (filters.orderType && filters.orderType !== 'all') params.set('orderType', filters.orderType);

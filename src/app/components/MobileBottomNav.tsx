@@ -22,8 +22,8 @@ import { ThemeToggle } from './ThemeToggle';
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Inicio', icon: Home },
   { path: '/ventas', label: 'Ventas', icon: ShoppingCart },
-  { path: '/produccion', label: 'Producción', icon: Factory },
-  { path: '/estadisticas', label: 'Estadísticas', icon: BarChart },
+  { path: '/produccion', label: 'Produc.', icon: Factory },
+  { path: '/estadisticas', label: 'Estad.', icon: BarChart },
 ] as const;
 
 const MORE_ITEMS = [
@@ -181,7 +181,14 @@ export function MobileBottomNav() {
                 key={item.path}
                 href={item.path}
                 prefetch={false}
-                className="relative flex flex-col items-center justify-center flex-1 min-w-0 gap-0.5 transition-colors"
+                aria-label={
+                  item.path === '/produccion'
+                    ? 'Producción'
+                    : item.path === '/estadisticas'
+                      ? 'Estadísticas'
+                      : item.label
+                }
+                className="relative flex flex-col items-center justify-center flex-1 min-w-0 gap-0.5 transition-colors px-0.5"
               >
                 {active && (
                   <motion.div

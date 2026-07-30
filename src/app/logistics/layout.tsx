@@ -3,19 +3,11 @@ import { requireLogisticsAdmin } from '@/lib/logistics-auth';
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import {
-    LayoutDashboard,
-    Layers,
-    Settings,
-    BookOpen,
     LogOut,
     Package,
-    PackageCheck,
-    BarChart2,
-    FileText,
-    Shield,
-    Users,
-    Truck,
 } from 'lucide-react';
+import { LOGISTICS_NAV_ITEMS } from './nav-items';
+import { LogisticsMobileNav } from './components/LogisticsMobileNav';
 
 export const metadata: Metadata = {
     title: 'HolaMA · Logistics Manager',
@@ -27,19 +19,6 @@ export const metadata: Metadata = {
 export default async function LogisticsLayout({ children }: { children: React.ReactNode }) {
     const session = await requireLogisticsAdmin();
     if (!session) redirect('/dashboard');
-
-    const navItems = [
-        { href: '/logistics', label: 'Dashboard', icon: LayoutDashboard },
-        { href: '/logistics/carriers', label: 'Tablero de Envíos', icon: Layers },
-        { href: '/logistics/mensajeria-privada', label: 'Mensajería Privada', icon: Truck },
-        { href: '/logistics/retiros', label: 'Retiros', icon: PackageCheck },
-        { href: '/logistics/config', label: 'Costos y Tarifas', icon: Settings },
-        { href: '/logistics/accounting', label: 'Contabilidad', icon: BookOpen },
-        { href: '/logistics/workforce', label: 'Personal', icon: Users },
-        { href: '/logistics/reports', label: 'Reportes', icon: BarChart2 },
-        { href: '/logistics/guias', label: 'Guías', icon: FileText },
-        { href: '/logistics/admin', label: 'Admin', icon: Shield },
-    ];
 
     return (
         <div className="lm-root" style={{
@@ -54,21 +33,18 @@ export default async function LogisticsLayout({ children }: { children: React.Re
             <div className="lm-orbs" style={{
                 position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0,
             }}>
-                {/* Blue top-right orb */}
                 <div style={{
                     position: 'absolute', top: '-15%', right: '-10%',
                     width: 600, height: 600, borderRadius: '50%',
                     background: 'radial-gradient(circle, rgba(59,130,246,0.18) 0%, transparent 70%)',
                     filter: 'blur(60px)',
                 }} />
-                {/* Purple bottom-left orb */}
                 <div style={{
                     position: 'absolute', bottom: '-15%', left: '-5%',
                     width: 700, height: 700, borderRadius: '50%',
                     background: 'radial-gradient(circle, rgba(108,63,255,0.16) 0%, transparent 70%)',
                     filter: 'blur(80px)',
                 }} />
-                {/* Accent middle orb */}
                 <div style={{
                     position: 'absolute', top: '45%', left: '35%',
                     width: 400, height: 400, borderRadius: '50%',
@@ -77,37 +53,7 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                 }} />
             </div>
 
-            {/* ── Mobile top nav ──────────────────────────── */}
-            <div className="lm-mobile-nav">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                    <div style={{
-                        width: 28, height: 28, borderRadius: 8,
-                        background: 'linear-gradient(135deg, #6c3fff, #3b82f6)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        flexShrink: 0,
-                    }}>
-                        <Package size={15} color="white" />
-                    </div>
-                    <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13, margin: 0 }}>HolaMA</p>
-                    <Link href="/dashboard" style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.4)', textDecoration: 'none', fontSize: 11 }}>
-                        <LogOut size={14} />
-                    </Link>
-                </div>
-                <nav style={{ display: 'flex', overflowX: 'auto', gap: 4, padding: '8px 12px', WebkitOverflowScrolling: 'touch' }}>
-                    {navItems.map(({ href, label, icon: Icon }) => (
-                        <Link key={href} href={href} className="lm-nav-link" style={{
-                            display: 'flex', alignItems: 'center', gap: 6,
-                            padding: '6px 10px', borderRadius: 8,
-                            color: 'rgba(255,255,255,0.5)', textDecoration: 'none',
-                            fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap',
-                            border: '1px solid transparent', flexShrink: 0,
-                        }}>
-                            <Icon size={13} />
-                            {label}
-                        </Link>
-                    ))}
-                </nav>
-            </div>
+            <LogisticsMobileNav userEmail={session.user?.email} />
 
             {/* ── Sidebar (hidden on mobile) ─────────────────── */}
             <aside className="lm-sidebar" style={{
@@ -124,7 +70,6 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                 flexDirection: 'column',
                 padding: '24px 0',
             }}>
-                {/* Logo */}
                 <div style={{ padding: '0 20px 22px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{
@@ -142,9 +87,8 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                     </div>
                 </div>
 
-                {/* Nav */}
                 <nav style={{ flex: 1, padding: '14px 12px' }}>
-                    {navItems.map(({ href, label, icon: Icon }) => (
+                    {LOGISTICS_NAV_ITEMS.map(({ href, label, icon: Icon }) => (
                         <Link key={href} href={href} className="lm-nav-link" style={{
                             display: 'flex', alignItems: 'center', gap: 10,
                             padding: '9px 12px', borderRadius: 9,
@@ -158,7 +102,6 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                     ))}
                 </nav>
 
-                {/* Footer */}
                 <div style={{ padding: '14px 12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                     <Link href="/dashboard" style={{
                         display: 'flex', alignItems: 'center', gap: 9,
@@ -217,14 +160,285 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
                 @keyframes spin { to { transform: rotate(360deg); } }
                 @keyframes pulse-orb { 0%,100%{opacity:1} 50%{opacity:0.7} }
+
                 .lm-mobile-nav { display: none; }
                 .lm-stat-grid { grid-template-columns: repeat(6, 1fr); }
-                @media (max-width: 768px) {
-                    .lm-sidebar { display: none !important; }
-                    .lm-mobile-nav { display: block; position: sticky; top: 0; z-index: 20; background: rgba(13,13,13,0.95); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid rgba(255,255,255,0.08); }
-                    .lm-main { padding: 16px !important; }
-                    .lm-stat-grid { grid-template-columns: repeat(3, 1fr) !important; }
+
+                .lm-mobile-nav-bar {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 10px 12px;
+                    border-bottom: 1px solid rgba(255,255,255,0.08);
                 }
+                .lm-mobile-menu-btn {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 10px;
+                    border: 1px solid rgba(255,255,255,0.1);
+                    background: rgba(255,255,255,0.05);
+                    color: #F2F2F2;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    flex-shrink: 0;
+                }
+                .lm-mobile-brand {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    min-width: 0;
+                    flex: 1;
+                }
+                .lm-mobile-brand-icon {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 8px;
+                    background: linear-gradient(135deg, #6c3fff, #3b82f6);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex-shrink: 0;
+                }
+                .lm-mobile-brand-text { min-width: 0; }
+                .lm-mobile-brand-title {
+                    color: #F2F2F2;
+                    font-weight: 700;
+                    font-size: 13px;
+                    margin: 0;
+                    line-height: 1.2;
+                }
+                .lm-mobile-brand-section {
+                    color: rgba(255,255,255,0.45);
+                    font-size: 11px;
+                    margin: 1px 0 0;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .lm-mobile-exit {
+                    color: rgba(255,255,255,0.45);
+                    text-decoration: none;
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 10px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex-shrink: 0;
+                }
+                .lm-mobile-drawer-backdrop {
+                    position: fixed;
+                    inset: 0;
+                    z-index: 40;
+                    border: none;
+                    padding: 0;
+                    margin: 0;
+                    background: rgba(0,0,0,0.55);
+                    cursor: pointer;
+                }
+                .lm-mobile-drawer {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    bottom: 0;
+                    width: min(86vw, 320px);
+                    z-index: 50;
+                    background: #121218;
+                    border-right: 1px solid rgba(255,255,255,0.1);
+                    display: flex;
+                    flex-direction: column;
+                    padding: 14px 12px calc(16px + env(safe-area-inset-bottom, 0px));
+                    box-shadow: 18px 0 40px rgba(0,0,0,0.35);
+                    overflow: hidden;
+                }
+                .lm-mobile-drawer-header {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 10px;
+                    padding: 4px 4px 14px;
+                    border-bottom: 1px solid rgba(255,255,255,0.08);
+                }
+                .lm-mobile-drawer-title {
+                    color: #F2F2F2;
+                    font-size: 15px;
+                    font-weight: 700;
+                    margin: 0;
+                }
+                .lm-mobile-drawer-email {
+                    color: rgba(255,255,255,0.35);
+                    font-size: 11px;
+                    margin: 4px 0 0;
+                    word-break: break-all;
+                }
+                .lm-mobile-drawer-links {
+                    flex: 1;
+                    overflow-y: auto;
+                    padding: 12px 0;
+                    min-height: 0;
+                    -webkit-overflow-scrolling: touch;
+                }
+                .lm-mobile-drawer-link {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 11px 12px;
+                    border-radius: 10px;
+                    color: rgba(255,255,255,0.55);
+                    text-decoration: none;
+                    font-size: 13.5px;
+                    font-weight: 500;
+                    margin-bottom: 4px;
+                    border: 1px solid transparent;
+                }
+                .lm-mobile-drawer-link.is-active {
+                    background: rgba(108,63,255,0.16);
+                    color: #F2F2F2;
+                    border-color: rgba(108,63,255,0.35);
+                }
+                .lm-mobile-drawer-footer {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 12px;
+                    border-radius: 10px;
+                    color: rgba(255,255,255,0.4);
+                    text-decoration: none;
+                    font-size: 12.5px;
+                    border-top: 1px solid rgba(255,255,255,0.08);
+                    margin-top: 4px;
+                }
+
+                @media (max-width: 768px) {
+                    .lm-root {
+                        flex-direction: column !important;
+                        height: 100dvh !important;
+                        min-height: 100dvh !important;
+                        width: 100% !important;
+                        max-width: 100vw !important;
+                        min-width: 0 !important;
+                        overflow: hidden !important;
+                    }
+                    .lm-sidebar { display: none !important; }
+                    .lm-mobile-nav {
+                        display: block;
+                        position: sticky;
+                        top: 0;
+                        z-index: 30;
+                        flex-shrink: 0;
+                        width: 100%;
+                        background: rgba(13,13,13,0.96);
+                        backdrop-filter: blur(16px);
+                        -webkit-backdrop-filter: blur(16px);
+                        border-bottom: 1px solid rgba(255,255,255,0.08);
+                    }
+                    .lm-main {
+                        flex: 1 1 auto !important;
+                        width: 100% !important;
+                        max-width: 100% !important;
+                        min-width: 0 !important;
+                        min-height: 0 !important;
+                        padding: 12px 12px calc(16px + env(safe-area-inset-bottom, 0px)) !important;
+                        overflow-x: hidden !important;
+                        overflow-y: auto !important;
+                        -webkit-overflow-scrolling: touch;
+                    }
+                    .lm-stat-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+                    .lm-dash-header {
+                        flex-direction: column !important;
+                        align-items: stretch !important;
+                        gap: 12px !important;
+                    }
+
+                    .lm-carriers-page {
+                        height: auto !important;
+                        min-height: 0 !important;
+                        overflow: visible !important;
+                    }
+                    .lm-carriers-header {
+                        flex-direction: column !important;
+                        align-items: stretch !important;
+                        gap: 10px !important;
+                    }
+                    .lm-carriers-actions {
+                        display: flex !important;
+                        flex-wrap: wrap !important;
+                        gap: 8px !important;
+                    }
+                    .lm-carriers-actions > button {
+                        flex: 1 1 auto;
+                        justify-content: center;
+                    }
+                    .lm-carriers-body {
+                        flex-direction: column !important;
+                        overflow: visible !important;
+                        height: auto !important;
+                        min-height: 0 !important;
+                    }
+                    .lm-carriers-boards {
+                        order: 2;
+                        overflow: visible !important;
+                        padding-right: 0 !important;
+                    }
+                    .lm-carriers-unassigned {
+                        order: 1;
+                        width: 100% !important;
+                        max-height: none !important;
+                        overflow: visible !important;
+                        margin-bottom: 4px;
+                    }
+                    .lm-carriers-unassigned-scroll {
+                        max-height: 280px !important;
+                        overflow-y: auto !important;
+                    }
+                    .lm-board-col {
+                        min-width: min(78vw, 270px) !important;
+                        flex: 0 0 min(78vw, 270px) !important;
+                    }
+                    .lm-board-scroll {
+                        touch-action: pan-x pan-y !important;
+                        -webkit-overflow-scrolling: touch;
+                    }
+                    .lm-archive-panel {
+                        max-height: none !important;
+                    }
+                    .lm-archive-toolbar {
+                        flex-direction: column !important;
+                        align-items: stretch !important;
+                        gap: 10px !important;
+                    }
+                    .lm-archive-toolbar-controls {
+                        flex-wrap: wrap !important;
+                        width: 100%;
+                    }
+                    .lm-archive-search {
+                        width: 100% !important;
+                        flex: 1 1 140px !important;
+                    }
+                    .lm-archive-search input {
+                        width: 100% !important;
+                    }
+                    .lm-archive-row {
+                        flex-wrap: wrap !important;
+                    }
+                    .lm-location-grid {
+                        grid-template-columns: 1fr !important;
+                    }
+                    .lm-verify-modal {
+                        width: calc(100vw - 24px) !important;
+                        max-width: none !important;
+                        padding: 16px !important;
+                        max-height: calc(100dvh - 24px) !important;
+                    }
+                }
+
+                @media (max-width: 420px) {
+                    .lm-stat-grid { grid-template-columns: repeat(2, 1fr) !important; }
+                }
+
                 @media print {
                     .lm-sidebar { display: none !important; }
                     .lm-mobile-nav { display: none !important; }

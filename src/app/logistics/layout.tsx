@@ -231,11 +231,11 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                 .lm-mobile-drawer-backdrop {
                     position: fixed;
                     inset: 0;
-                    z-index: 40;
+                    z-index: 200;
                     border: none;
                     padding: 0;
                     margin: 0;
-                    background: rgba(0,0,0,0.55);
+                    background: rgba(0,0,0,0.62);
                     cursor: pointer;
                 }
                 .lm-mobile-drawer {
@@ -244,13 +244,13 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                     left: 0;
                     bottom: 0;
                     width: min(86vw, 320px);
-                    z-index: 50;
-                    background: #121218;
-                    border-right: 1px solid rgba(255,255,255,0.1);
+                    z-index: 210;
+                    background: #14141c;
+                    border-right: 1px solid rgba(255,255,255,0.12);
                     display: flex;
                     flex-direction: column;
                     padding: 14px 12px calc(16px + env(safe-area-inset-bottom, 0px));
-                    box-shadow: 18px 0 40px rgba(0,0,0,0.35);
+                    box-shadow: 18px 0 40px rgba(0,0,0,0.45);
                     overflow: hidden;
                 }
                 .lm-mobile-drawer-header {
@@ -284,19 +284,20 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                     display: flex;
                     align-items: center;
                     gap: 10px;
-                    padding: 11px 12px;
+                    padding: 12px 12px;
                     border-radius: 10px;
-                    color: rgba(255,255,255,0.55);
+                    color: rgba(255,255,255,0.78);
                     text-decoration: none;
-                    font-size: 13.5px;
+                    font-size: 14px;
                     font-weight: 500;
                     margin-bottom: 4px;
                     border: 1px solid transparent;
+                    min-height: 44px;
                 }
                 .lm-mobile-drawer-link.is-active {
-                    background: rgba(108,63,255,0.16);
-                    color: #F2F2F2;
-                    border-color: rgba(108,63,255,0.35);
+                    background: rgba(108,63,255,0.22);
+                    color: #ffffff;
+                    border-color: rgba(108,63,255,0.45);
                 }
                 .lm-mobile-drawer-footer {
                     display: flex;
@@ -329,9 +330,7 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                         z-index: 30;
                         flex-shrink: 0;
                         width: 100%;
-                        background: rgba(13,13,13,0.96);
-                        backdrop-filter: blur(16px);
-                        -webkit-backdrop-filter: blur(16px);
+                        background: #0d0d0d;
                         border-bottom: 1px solid rgba(255,255,255,0.08);
                     }
                     .lm-main {

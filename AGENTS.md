@@ -25,8 +25,16 @@ cover non-obvious setup/run gotchas.
   etc.) are created by raw SQL in `supabase/migrations/` and are **NOT part of the Prisma
   schema**. `prisma db push` makes the DB match `schema.prisma` exactly, so it will try to
   **DROP every `lm_*` table** — this already caused a full logistics data loss once.
-  `db:push` no longer passes `--accept-data-loss`, so it now refuses destructive drops
-  instead of silently performing them; do not re-add that flag.
+  `npm run db:push` runs `scripts/safe-db-push.mjs`, which refuses Supabase hosts,
+  pooler port 6543, non-loopback URLs, and any database that already has `lm_%`
+  tables (break-glass: `ALLOW_LM_DROP=1` on disposable DBs only). Never pass
+  `--accept-data-loss`.
+- **Backups:** private Vercel Blob logical dumps (`src/lib/backups/`) cover all
+  `public` tables including `lm_*`. Full cron 02:00 UTC, hot cron 14:00 UTC.
+  Restore via `scripts/restore-from-backup.ts` against `RESTORE_DATABASE_URL`
+  (loopback by default). Run `npm run test:backups` and
+  `npm run test:backup-roundtrip` (local Postgres) to prove usefulness.
+  Do not depend on paid Supabase PITR.
 - No local PostgreSQL is required; do not point the app at a local DB (it would be
   overridden by the injected secret anyway).
 

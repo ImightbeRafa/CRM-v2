@@ -2,6 +2,13 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-07-30 — logistics mobile layout (branch `cursor/logistics-mobile-layout-cb22`)
+
+- Fixed logistics shell on ≤768px: column flex + `100dvh`, main content no longer clipped by horizontal overflow.
+- Replaced crowded horizontal mobile nav with compact header + accessible drawer (`LogisticsMobileNav`).
+- Made Tablero de Envíos stack “Sin Asignar” above Kanban boards; swipeable columns; archive/verify forms wrap on narrow screens.
+- Dashboard stats use 2 columns on mobile; loading shell no longer forces full viewport height inside main.
+
 ## 2026-07-30 — kickoff (branch `cursor/codebase-slim-agent-os-1e77`)
 
 - Upgraded `.cursor/skills/executor-advisor-loop/SKILL.md` to Sol-orchestrated multi-agent loop (`gpt-5.6-sol-high`); parent dispatches parallel read-only scouts; serial deletes; safety gates.

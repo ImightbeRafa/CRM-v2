@@ -431,10 +431,13 @@ export default function RetirosPage() {
         throw new Error(data.error || `No se pudo generar el PDF (${res.status})`);
       }
       const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const matched = /filename="([^"]+)"/i.exec(disposition);
+      const filename = matched?.[1] || `retiro-${orderRef || orderKey}.pdf`;
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `retiro-${orderRef || orderKey}.pdf`;
+      a.download = filename;
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (e: any) {
@@ -630,13 +633,14 @@ export default function RetirosPage() {
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
                   <button
                     onClick={() => downloadReceiptPdf(item.orderId, item.orderRef)}
-                    disabled={pdfBusyId === item.orderId}
+                    disabled={!!pdfBusyId}
                     style={{
                       padding: '7px 12px', borderRadius: 7,
                       border: '1px solid rgba(167,139,250,0.4)',
                       background: 'rgba(167,139,250,0.1)',
-                      color: '#c4b5fd', fontSize: 12, fontWeight: 700,
-                      cursor: pdfBusyId === item.orderId ? 'default' : 'pointer',
+                      color: pdfBusyId && pdfBusyId !== item.orderId ? 'rgba(196,181,253,0.4)' : '#c4b5fd',
+                      fontSize: 12, fontWeight: 700,
+                      cursor: pdfBusyId ? 'default' : 'pointer',
                       display: 'flex', alignItems: 'center', gap: 5,
                     }}
                   >
@@ -836,13 +840,14 @@ export default function RetirosPage() {
                     <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
                       <button
                         onClick={() => downloadReceiptPdf(o.id, o.orderId)}
-                        disabled={busy || pdfBusyId === o.id}
+                        disabled={busy || !!pdfBusyId}
                         style={{
                           padding: '7px 12px', borderRadius: 7,
                           border: '1px solid rgba(167,139,250,0.4)',
                           background: 'rgba(167,139,250,0.1)',
-                          color: '#c4b5fd', fontSize: 12, fontWeight: 700,
-                          cursor: busy || pdfBusyId === o.id ? 'default' : 'pointer',
+                          color: pdfBusyId && pdfBusyId !== o.id ? 'rgba(196,181,253,0.4)' : '#c4b5fd',
+                          fontSize: 12, fontWeight: 700,
+                          cursor: busy || pdfBusyId ? 'default' : 'pointer',
                           display: 'flex', alignItems: 'center', gap: 5,
                         }}
                       >

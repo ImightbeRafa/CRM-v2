@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
-import { getHandoffsForOrders, pickupLocationLabel } from '@/lib/retiro-stock';
+import { pickupLocationLabel } from '@/lib/retiro-stock';
 import {
   generateRetiroReceiptPdf,
   type RetiroReceiptPaymentMethod,
@@ -9,6 +9,18 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/** Same managed-tenant allowlist used by /api/logistics/orders. */
+const MANAGED_TENANT_IDS = [
+  'cmh32z0ol0000k004hvx9tg3p',
+  'cmhsibjue0004js04gie724nx',
+  'cmhutd1th0000jp04oqibtz54',
+  'cmigornmw0000lb04kl75262e',
+  'cmjdabz4d0000il04dyc5qmcc',
+  'cmln5u7k70000ld042qify2og',
+  'cmh44aerw0006vijg0640vfl0',
+  'cmm4pv8fl0000jr045en1nik9',
+];
 
 function sanitizeFilename(value: string): string {
   return String(value || 'retiro')
@@ -18,7 +30,12 @@ function sanitizeFilename(value: string): string {
     .slice(0, 80) || 'retiro';
 }
 
+function notFound() {
+  return NextResponse.json({ error: 'Orden no encontrada' }, { status: 404 });
+}
+
 // GET /api/logistics/retiros/receipt/[orderId]
+// orderId param = internal CRM Order.id (cuid), not the business orderRef.
 export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ orderId: string }> },
@@ -29,13 +46,16 @@ export async function GET(
   try {
     const { orderId: rawId } = await ctx.params;
     const orderId = decodeURIComponent(rawId || '').trim();
-    if (!orderId) {
+    if (!orderId || orderId.length > 128) {
       return NextResponse.json({ error: 'orderId requerido' }, { status: 400 });
     }
 
+    // Internal id only + exact RA + managed tenants (prevents cross-tenant orderId collisions).
     const order = await prisma.order.findFirst({
       where: {
-        OR: [{ id: orderId }, { orderId }],
+        id: orderId,
+        orderType: 'RA',
+        tenantId: { in: MANAGED_TENANT_IDS },
       },
       select: {
         id: true,
@@ -53,27 +73,16 @@ export async function GET(
         agreedDate: true,
         pickupDate: true,
         timestamp: true,
-        orderType: true,
         contraEntrega: true,
         cePaymentConfirmed: true,
       },
     });
 
-    if (!order) {
-      return NextResponse.json({ error: 'Orden no encontrada' }, { status: 404 });
-    }
+    if (!order) return notFound();
 
-    if (order.orderType && order.orderType !== 'RA') {
-      return NextResponse.json({ error: 'La orden no es un retiro (RA)' }, { status: 400 });
-    }
-
-    let lmStatus: string | null = null;
-    let isContraEntrega = Boolean(order.contraEntrega);
-    let paymentCollected = Boolean(order.cePaymentConfirmed);
-    let paymentMethod: RetiroReceiptPaymentMethod = null;
-
-    try {
-      const lmRows = await prisma.$queryRaw<{
+    // Read-only metadata — no ensureRetiroStockTables / DDL on the hot path.
+    const [lmRows, ceRows, handoffRows] = await Promise.all([
+      prisma.$queryRaw<{
         status: string | null;
         is_contra_entrega: boolean | null;
         contraentrega_collected: boolean | null;
@@ -82,35 +91,50 @@ export async function GET(
         FROM lm_orders
         WHERE crm_order_id = ${order.id}
         LIMIT 1
-      `;
-      if (lmRows[0]) {
-        lmStatus = lmRows[0].status;
-        isContraEntrega = isContraEntrega || Boolean(lmRows[0].is_contra_entrega);
-        paymentCollected = paymentCollected || Boolean(lmRows[0].contraentrega_collected);
-      }
-    } catch {
-      // lm_orders may be unavailable
-    }
-
-    try {
-      const ceRows = await prisma.$queryRaw<{ payment_method: string | null }[]>`
+      `.catch(() => [] as {
+        status: string | null;
+        is_contra_entrega: boolean | null;
+        contraentrega_collected: boolean | null;
+      }[]),
+      prisma.$queryRaw<{ payment_method: string | null }[]>`
         SELECT payment_method
         FROM lm_ce_payments
         WHERE crm_order_id = ${order.id}
         ORDER BY collected_at DESC NULLS LAST
         LIMIT 1
-      `;
-      const method = ceRows[0]?.payment_method?.toLowerCase();
-      if (method === 'sinpe' || method === 'efectivo') {
-        paymentMethod = method;
-        paymentCollected = true;
-      }
-    } catch {
-      // ce payments table may be unavailable
+      `.catch(() => [] as { payment_method: string | null }[]),
+      prisma.$queryRaw<{
+        scheduled_at: Date | null;
+        handed_by_name: string | null;
+        pickup_location: string | null;
+      }[]>`
+        SELECT scheduled_at, handed_by_name, pickup_location
+        FROM lm_retiro_handoffs
+        WHERE crm_order_id = ${order.id}
+        LIMIT 1
+      `.catch(() => [] as {
+        scheduled_at: Date | null;
+        handed_by_name: string | null;
+        pickup_location: string | null;
+      }[]),
+    ]);
+
+    const lm = lmRows[0];
+    const isContraEntrega = Boolean(order.contraEntrega) || Boolean(lm?.is_contra_entrega);
+    let paymentCollected = Boolean(order.cePaymentConfirmed) || Boolean(lm?.contraentrega_collected);
+    let paymentMethod: RetiroReceiptPaymentMethod = null;
+
+    const method = ceRows[0]?.payment_method?.toLowerCase();
+    if (method === 'sinpe' || method === 'efectivo') {
+      paymentMethod = method;
+      paymentCollected = true;
     }
 
-    const handoffs = await getHandoffsForOrders([order.id]).catch(() => ({} as Awaited<ReturnType<typeof getHandoffsForOrders>>));
-    const handoff = handoffs[order.id];
+    const handoff = handoffRows[0];
+    const scheduledAt = handoff?.scheduled_at
+      ? new Date(handoff.scheduled_at).toISOString()
+      : null;
+    const pickupLoc = handoff?.pickup_location || null;
 
     const pdf = await generateRetiroReceiptPdf({
       orderRef: order.orderId,
@@ -122,17 +146,16 @@ export async function GET(
       total: Number(order.total) || 0,
       seller: order.seller,
       comments: order.comments,
-      status: lmStatus || order.delivery || order.status || 'Pendiente',
+      status: lm?.status || order.delivery || order.status || 'Pendiente',
       agreedDate: order.agreedDate,
       pickupDate: order.pickupDate,
-      scheduledAt: handoff?.scheduledAt || null,
+      scheduledAt,
       createdAt: order.timestamp,
       isContraEntrega,
       paymentCollected,
       paymentMethod,
-      pickupLocationLabel: handoff?.pickupLocationLabel
-        || (handoff?.pickupLocation ? pickupLocationLabel(handoff.pickupLocation) : null),
-      handedByName: handoff?.handedByName || null,
+      pickupLocationLabel: pickupLocationLabel(pickupLoc),
+      handedByName: handoff?.handed_by_name || null,
     });
 
     const filename = `retiro-${sanitizeFilename(order.orderId)}.pdf`;

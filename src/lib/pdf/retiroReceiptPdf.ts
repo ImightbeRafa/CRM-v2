@@ -29,6 +29,9 @@ const PAGE_WIDTH = 300;
 const PAGE_HEIGHT = 520;
 const MARGIN_X = 22;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_X * 2;
+const CR_TZ = 'America/Costa_Rica';
+/** Reserved bottom band so body content never overlaps the payment highlight. */
+const FOOTER_RESERVED = 70;
 
 const PURPLE = rgb(0.42, 0.18, 0.72);
 const GREEN = rgb(0.05, 0.55, 0.28);
@@ -51,7 +54,7 @@ export function lastFiveOrderDigits(orderRef: string): string {
 
 /**
  * Big footer payment highlight matching logistics pickup slips.
- * Examples: "PEND. SINPE", "SINPE", "EFECTIVO", "PREPAGO"
+ * Only uses structured payment method — never infers from free-text comments.
  */
 export function paymentHighlightLabel(data: {
   isContraEntrega?: boolean;
@@ -59,13 +62,9 @@ export function paymentHighlightLabel(data: {
   paymentMethod?: RetiroReceiptPaymentMethod;
   comments?: string | null;
 }): string {
-  const comments = String(data.comments || '').toLowerCase();
-  const inferredFromComments = (() => {
-    if (/\befectivo\b/.test(comments)) return 'efectivo' as const;
-    if (/\bsinpe\b/.test(comments)) return 'sinpe' as const;
-    return null;
-  })();
-  const method = data.paymentMethod || inferredFromComments;
+  const method = data.paymentMethod === 'sinpe' || data.paymentMethod === 'efectivo'
+    ? data.paymentMethod
+    : null;
 
   if (!data.isContraEntrega) return 'PREPAGO';
 
@@ -76,7 +75,8 @@ export function paymentHighlightLabel(data: {
   }
 
   if (method === 'efectivo') return 'PEND. EFECTIVO';
-  return 'PEND. SINPE';
+  if (method === 'sinpe') return 'PEND. SINPE';
+  return 'PAGO PEND.';
 }
 
 function formatMoneyCrc(amount: number): string {
@@ -85,12 +85,22 @@ function formatMoneyCrc(amount: number): string {
   return `CRC ${n.toLocaleString('es-CR')}`;
 }
 
-function formatAgreed(data: RetiroReceiptData): string {
-  const raw = data.scheduledAt || data.agreedDate || data.pickupDate;
+/** Exported for tests — formats appointment times in Costa Rica. */
+export function formatAgreedDisplay(raw: string | null | undefined): string {
   if (!raw) return '';
-  const d = new Date(raw);
+  const s = String(raw).trim();
+  if (!s) return '';
+
+  // Date-only: avoid UTC midnight shifting into the previous CR day.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split('-');
+    return `${d}/${m}/${y}`;
+  }
+
+  const d = new Date(s);
   if (!Number.isNaN(d.getTime())) {
     return d.toLocaleString('es-CR', {
+      timeZone: CR_TZ,
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -99,7 +109,11 @@ function formatAgreed(data: RetiroReceiptData): string {
       hour12: true,
     });
   }
-  return String(raw);
+  return s;
+}
+
+function formatAgreed(data: RetiroReceiptData): string {
+  return formatAgreedDisplay(data.scheduledAt || data.agreedDate || data.pickupDate);
 }
 
 function hoursSinceCreated(createdAt?: string | Date | null): string | null {
@@ -110,11 +124,13 @@ function hoursSinceCreated(createdAt?: string | Date | null): string | null {
   return `${hours}h`;
 }
 
-function toPdfText(value: string): string {
-  // WinAnsi-safe: keep Latin-1, drop unsupported symbols (₡ etc.)
+/** WinAnsi-safe + strip controls that crash pdf-lib (newlines, tabs, etc.). */
+export function toPdfText(value: string): string {
   return String(value || '')
     .replace(/₡/g, '')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
     .replace(/[^\u0000-\u00FF]/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -126,12 +142,36 @@ function truncateText(
 ): string {
   const safe = toPdfText(text);
   if (!safe) return '';
+  if (maxWidth <= 0) return '';
   if (font.widthOfTextAtSize(safe, size) <= maxWidth) return safe;
   let t = safe;
   while (t.length > 0 && font.widthOfTextAtSize(`${t}...`, size) > maxWidth) {
     t = t.slice(0, -1);
   }
-  return `${t}...`;
+  return t ? `${t}...` : '';
+}
+
+/** Split an oversized token so wrapText never overflows the content width. */
+function splitOversizedToken(
+  token: string,
+  font: PDFFont,
+  size: number,
+  maxWidth: number,
+): string[] {
+  if (font.widthOfTextAtSize(token, size) <= maxWidth) return [token];
+  const parts: string[] = [];
+  let chunk = '';
+  for (const ch of token) {
+    const next = chunk + ch;
+    if (chunk && font.widthOfTextAtSize(next, size) > maxWidth) {
+      parts.push(chunk);
+      chunk = ch;
+    } else {
+      chunk = next;
+    }
+  }
+  if (chunk) parts.push(chunk);
+  return parts;
 }
 
 function wrapText(
@@ -143,7 +183,9 @@ function wrapText(
 ): string[] {
   const safe = toPdfText(text);
   if (!safe) return [];
-  const words = safe.split(/\s+/).filter(Boolean);
+  const words = safe.split(/\s+/).filter(Boolean).flatMap((w) =>
+    splitOversizedToken(w, font, size, maxWidth),
+  );
   const lines: string[] = [];
   let current = '';
 
@@ -159,10 +201,12 @@ function wrapText(
   }
   if (current && lines.length < maxLines) lines.push(current);
 
-  if (words.length && lines.length === maxLines) {
-    const last = lines[maxLines - 1];
-    if (font.widthOfTextAtSize(last, size) > maxWidth || words.join(' ').length > lines.join(' ').length) {
-      lines[maxLines - 1] = truncateText(last, font, size, maxWidth);
+  if (lines.length === maxLines) {
+    const consumed = lines.join(' ');
+    if (words.join(' ').length > consumed.length) {
+      lines[maxLines - 1] = truncateText(lines[maxLines - 1], font, size, maxWidth);
+    } else {
+      lines[maxLines - 1] = truncateText(lines[maxLines - 1], font, size, maxWidth);
     }
   }
   return lines;
@@ -187,6 +231,21 @@ function drawCentered(
   });
 }
 
+function drawField(
+  page: PDFPage,
+  text: string,
+  y: number,
+  size: number,
+  font: PDFFont,
+  color: ReturnType<typeof rgb>,
+  maxWidth = CONTENT_WIDTH,
+): number {
+  const line = truncateText(text, font, size, maxWidth);
+  if (!line) return y;
+  page.drawText(line, { x: MARGIN_X, y, size, font, color });
+  return y - (size + 5);
+}
+
 /**
  * Compact retiro / pickup slip PDF.
  * Highlights last 5 order digits (top) and payment status (bottom) like warehouse marker notes.
@@ -207,6 +266,7 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
   const agreed = formatAgreed(data);
 
   let y = PAGE_HEIGHT - 36;
+  const minY = FOOTER_RESERVED;
 
   // Outer receipt border
   page.drawRectangle({
@@ -222,16 +282,7 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
   drawCentered(page, `# ${shortId}`, y, 36, fontBold, PURPLE);
   y -= 28;
 
-  // Full order ref + status badge
-  const orderLine = `#${toPdfText(data.orderRef)}`;
-  page.drawText(orderLine, {
-    x: MARGIN_X,
-    y,
-    size: 10,
-    font: fontBold,
-    color: BLACK,
-  });
-
+  // Status badge first so we can truncate the order ref to remaining width.
   const badgeText = status.length > 12 ? truncateText(status, fontBold, 8, 70) : status;
   const badgePadX = 6;
   const badgeW = fontBold.widthOfTextAtSize(badgeText, 8) + badgePadX * 2;
@@ -253,6 +304,18 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
     font: fontBold,
     color: ORANGE,
   });
+
+  const orderMaxW = Math.max(40, badgeX - MARGIN_X - 8);
+  const orderLine = truncateText(`#${data.orderRef}`, fontBold, 10, orderMaxW);
+  if (orderLine) {
+    page.drawText(orderLine, {
+      x: MARGIN_X,
+      y,
+      size: 10,
+      font: fontBold,
+      color: BLACK,
+    });
+  }
   y -= 16;
 
   if (ageLabel) {
@@ -275,122 +338,88 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
   y -= 18;
 
   // Customer
-  page.drawText(truncateText(data.customerName || 'Cliente', fontBold, 13, CONTENT_WIDTH), {
-    x: MARGIN_X,
-    y,
-    size: 13,
-    font: fontBold,
-    color: BLACK,
-  });
-  y -= 16;
-
+  y = drawField(page, data.customerName || 'Cliente', y, 13, fontBold, BLACK);
   if (data.phone) {
-    page.drawText(toPdfText(String(data.phone)), {
-      x: MARGIN_X,
-      y,
-      size: 11,
-      font: fontRegular,
-      color: GRAY,
-    });
-    y -= 16;
+    y = drawField(page, String(data.phone), y, 11, fontRegular, GRAY);
   }
 
   // Items
-  const itemLines = wrapText(itemsText || toPdfText(data.product || 'Producto'), fontRegular, 10, CONTENT_WIDTH, 3);
-  for (const line of itemLines) {
-    page.drawText(line, {
+  if (y > minY + 40) {
+    const itemLines = wrapText(
+      itemsText || toPdfText(data.product || 'Producto'),
+      fontRegular,
+      10,
+      CONTENT_WIDTH,
+      3,
+    );
+    for (const line of itemLines) {
+      if (y < minY + 40) break;
+      page.drawText(line, {
+        x: MARGIN_X,
+        y,
+        size: 10,
+        font: fontRegular,
+        color: BLACK,
+      });
+      y -= 13;
+    }
+  }
+
+  if (y > minY + 20) {
+    page.drawText(`Cant: ${totalQty}`, {
       x: MARGIN_X,
       y,
       size: 10,
-      font: fontRegular,
+      font: fontBold,
       color: BLACK,
     });
-    y -= 13;
-  }
-
-  page.drawText(`Cant: ${totalQty}`, {
-    x: MARGIN_X,
-    y,
-    size: 10,
-    font: fontBold,
-    color: BLACK,
-  });
-  y -= 14;
-
-  if (data.seller) {
-    page.drawText(truncateText(`Vendedor: ${data.seller}`, fontRegular, 10, CONTENT_WIDTH), {
-      x: MARGIN_X,
-      y,
-      size: 10,
-      font: fontRegular,
-      color: GRAY,
-    });
     y -= 14;
   }
 
-  if (agreed) {
-    page.drawText(truncateText(`Acordado: ${agreed}`, fontRegular, 10, CONTENT_WIDTH), {
-      x: MARGIN_X,
-      y,
-      size: 10,
-      font: fontRegular,
-      color: GRAY,
-    });
-    y -= 14;
+  if (data.seller && y > minY + 20) {
+    y = drawField(page, `Vendedor: ${data.seller}`, y, 10, fontRegular, GRAY);
+  }
+  if (agreed && y > minY + 20) {
+    y = drawField(page, `Acordado: ${agreed}`, y, 10, fontRegular, GRAY);
+  }
+  if (data.pickupLocationLabel && y > minY + 20) {
+    y = drawField(page, `Lugar: ${data.pickupLocationLabel}`, y, 10, fontRegular, GRAY);
+  }
+  if (data.handedByName && y > minY + 20) {
+    y = drawField(page, `Entrego: ${data.handedByName}`, y, 10, fontRegular, GRAY);
   }
 
-  if (data.pickupLocationLabel) {
-    page.drawText(truncateText(`Lugar: ${data.pickupLocationLabel}`, fontRegular, 10, CONTENT_WIDTH), {
+  if (y > minY + 30) {
+    y -= 4;
+    page.drawLine({
+      start: { x: MARGIN_X, y },
+      end: { x: MARGIN_X + CONTENT_WIDTH, y },
+      thickness: 0.8,
+      color: LIGHT_BORDER,
+    });
+    y -= 18;
+
+    page.drawText('Total:', {
       x: MARGIN_X,
       y,
-      size: 10,
-      font: fontRegular,
-      color: GRAY,
+      size: 12,
+      font: fontBold,
+      color: BLACK,
     });
-    y -= 14;
-  }
-
-  if (data.handedByName) {
-    page.drawText(truncateText(`Entrego: ${data.handedByName}`, fontRegular, 10, CONTENT_WIDTH), {
-      x: MARGIN_X,
+    const totalText = formatMoneyCrc(data.total);
+    const totalW = fontBold.widthOfTextAtSize(totalText, 13);
+    page.drawText(totalText, {
+      x: MARGIN_X + CONTENT_WIDTH - totalW,
       y,
-      size: 10,
-      font: fontRegular,
-      color: GRAY,
+      size: 13,
+      font: fontBold,
+      color: GREEN,
     });
-    y -= 14;
+    y -= 20;
   }
 
-  y -= 4;
-  page.drawLine({
-    start: { x: MARGIN_X, y },
-    end: { x: MARGIN_X + CONTENT_WIDTH, y },
-    thickness: 0.8,
-    color: LIGHT_BORDER,
-  });
-  y -= 18;
-
-  // Total row
-  page.drawText('Total:', {
-    x: MARGIN_X,
-    y,
-    size: 12,
-    font: fontBold,
-    color: BLACK,
-  });
-  const totalText = formatMoneyCrc(data.total);
-  const totalW = fontBold.widthOfTextAtSize(totalText, 13);
-  page.drawText(totalText, {
-    x: MARGIN_X + CONTENT_WIDTH - totalW,
-    y,
-    size: 13,
-    font: fontBold,
-    color: GREEN,
-  });
-  y -= 20;
-
-  // Comments
-  if (data.comments) {
+  // Comments (stop above footer band)
+  if (data.comments && y > minY + 24) {
     page.drawText('Comentarios:', {
       x: MARGIN_X,
       y,
@@ -399,8 +428,10 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
       color: GRAY,
     });
     y -= 12;
-    const commentLines = wrapText(String(data.comments), fontRegular, 9, CONTENT_WIDTH, 5);
+    const maxCommentLines = Math.max(1, Math.min(5, Math.floor((y - minY) / 11)));
+    const commentLines = wrapText(String(data.comments), fontRegular, 9, CONTENT_WIDTH, maxCommentLines);
     for (const line of commentLines) {
+      if (y < minY) break;
       page.drawText(line, {
         x: MARGIN_X,
         y,

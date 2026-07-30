@@ -23,7 +23,7 @@ export function AppShell({ children, showNav = true, className = '' }: AppShellP
         </nav>
       )}
 
-      <div className="pb-[72px] md:pb-0">
+      <div className="app-shell-content md:pb-0">
         {children}
       </div>
 

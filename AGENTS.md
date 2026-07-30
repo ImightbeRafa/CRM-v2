@@ -8,6 +8,15 @@ NextAuth). It is not a monorepo — one dev server serves the whole product
 Standard commands live in `package.json` and `DOCUMENTATION.md`; notes below only
 cover non-obvious setup/run gotchas.
 
+### Agent OS & audits
+- Skill: `.cursor/skills/executor-advisor-loop/SKILL.md` (Sol-orchestrated Executor/Advisor;
+  Sol model `gpt-5.6-sol-high`; parent session dispatches parallel read-only scouts).
+- Command: `.cursor/commands/codebase-audit.md` for Phase 0/1 slim & structure audits.
+- Living ledgers (update after every slice): [`docs/audits/`](docs/audits/README.md)
+  — Phase 0 dead code, Phase 1 WIP, safety gates, agent changelog.
+- Dead-code inventory: `npm run audit:dead` (knip, non-blocking). Do not mass-delete
+  from knip alone; follow `docs/audits/SAFETY_GATES.md`.
+
 ### Services
 
 | Service | Run command | Notes |
@@ -55,8 +64,10 @@ cover non-obvious setup/run gotchas.
 - Core end-to-end smoke test: register (or log in), then create an order in `/ventas`
   (the "Retiro (RA)" / pickup option needs the fewest fields).
 
-### Stale scripts
-- Many `package.json` scripts (`setup`, `verify`, `test:flow`, `create:test-user`, etc.)
-  point at `scripts/*.js` files that do not exist (only `import-orders-from-xlsx.js` and
-  `restore-from-backup.js` are present) — those npm scripts will fail. `DOCUMENTATION.md`
-  also references an `env-template-local.txt` that is not in the repo.
+### Scripts
+- Viable scripts: `dev`, `build`, `start`, `lint`, `db:*`, `backup:*`, `test:backups`,
+  `test:backup-roundtrip`, `test:bot-grok`, `audit:dead`.
+- Stale scripts that pointed at missing `scripts/*.js` files were removed in the
+  Phase 0 kickoff (see `docs/audits/PHASE0_DEAD_CODE.md`).
+- `DOCUMENTATION.md` may still reference missing files (e.g. `env-template-local.txt`);
+  agent-maintained audit truth lives under `docs/audits/`.

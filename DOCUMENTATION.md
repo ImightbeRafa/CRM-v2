@@ -1,8 +1,12 @@
 # BETSY CRM - Complete Documentation
 
 **Version:** 2.0.0  
-**Last Updated:** December 2024  
-**Tech Stack:** Next.js 14, TypeScript, Prisma, PostgreSQL, NextAuth.js, TailwindCSS
+**Last Updated:** July 2026  
+**Tech Stack:** Next.js 15, TypeScript, Prisma, PostgreSQL, NextAuth.js, TailwindCSS
+
+> **Note:** Agent-maintained audit and process truth lives in [`docs/audits/`](docs/audits/README.md)
+> (dead-code inventory, WIP structure, safety gates, agent changelog). Prefer those ledgers
+> over this file for slim/structure work. Stack is Next.js 15 (not 14).
 
 ---
 

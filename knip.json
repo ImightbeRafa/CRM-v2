@@ -1,0 +1,28 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "src/app/**/{page,layout,loading,error,not-found,route,default,template,middleware}.{ts,tsx,js,jsx}",
+    "src/middleware.ts",
+    "instrumentation.ts",
+    "instrumentation-client.ts",
+    "scripts/*.{ts,js,mjs}"
+  ],
+  "project": ["src/**/*.{ts,tsx,js,jsx}", "scripts/**/*.{ts,js,mjs}"],
+  "ignore": [
+    "src/content/docs/**",
+    "prisma/**",
+    "supabase/**",
+    "tests/**",
+    "**/*.mdx"
+  ],
+  "ignoreDependencies": [
+    "@types/axios"
+  ],
+  "next": {
+    "entry": [
+      "next.config.js",
+      "src/app/**/{page,layout,loading,error,not-found,route,default,template}.{ts,tsx,js,jsx}",
+      "src/middleware.ts"
+    ]
+  }
+}

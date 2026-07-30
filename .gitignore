@@ -80,6 +80,8 @@ debug-vercel-api.ps1
 .cursor/*
 !.cursor/skills/
 !.cursor/skills/**
+!.cursor/commands/
+!.cursor/commands/**
 .cursorrules
 
 # Reference/scratch projects (not part of CRM-v2)

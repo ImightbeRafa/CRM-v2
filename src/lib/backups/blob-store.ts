@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { gunzipSync, gzipSync } from 'zlib';
-import { del, get, list, put } from '@vercel/blob';
+import { del, get, list, put, type BlobAccessType } from '@vercel/blob';
 
 export interface StoredObject {
   pathname: string;
@@ -13,6 +13,8 @@ export interface BackupBlobStore {
   getBytes(pathname: string): Promise<Buffer>;
   list(prefix: string): Promise<StoredObject[]>;
   deleteMany(pathnames: string[]): Promise<void>;
+  /** Effective Blob access mode after any public-store fallback. */
+  getAccessMode(): BlobAccessType;
 }
 
 export function sha256Hex(data: Buffer | string): string {
@@ -28,36 +30,91 @@ export function gunzipToString(data: Buffer): string {
   return gunzipSync(data).toString('utf8');
 }
 
+function isPublicStorePrivateError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /private access on a public store/i.test(msg);
+}
+
+async function readStream(stream: ReadableStream<Uint8Array>): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  const reader = stream.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
+ * Vercel Blob store for backups.
+ * Prefers private access; if the linked store is public-only, falls back to public
+ * and records that mode (PII will be URL-accessible — migrate to a private store).
+ */
 export function createVercelBlobStore(token = process.env.BLOB_READ_WRITE_TOKEN): BackupBlobStore {
   if (!token) {
     throw new Error('BLOB_READ_WRITE_TOKEN is required for backup storage');
   }
 
+  const forced = process.env.BACKUP_BLOB_ACCESS;
+  let access: BlobAccessType =
+    forced === 'public' || forced === 'private' ? forced : 'private';
+
   return {
+    getAccessMode() {
+      return access;
+    },
+
     async putBytes(pathname, data, contentType) {
-      const result = await put(pathname, data, {
-        access: 'private',
-        token,
-        contentType,
-        addRandomSuffix: false,
-        allowOverwrite: true,
-      });
-      return { pathname: result.pathname, size: data.length };
+      try {
+        const result = await put(pathname, data, {
+          access,
+          token,
+          contentType,
+          addRandomSuffix: false,
+          allowOverwrite: true,
+        });
+        return { pathname: result.pathname, size: data.length };
+      } catch (err) {
+        if (access === 'private' && isPublicStorePrivateError(err)) {
+          access = 'public';
+          console.warn(
+            '⚠️ BLOB store is public-only; falling back to public backup objects. Create a private Blob store when possible.',
+          );
+          const result = await put(pathname, data, {
+            access: 'public',
+            token,
+            contentType,
+            addRandomSuffix: false,
+            allowOverwrite: true,
+          });
+          return { pathname: result.pathname, size: data.length };
+        }
+        throw err;
+      }
     },
 
     async getBytes(pathname) {
-      const result = await get(pathname, { access: 'private', token });
-      if (!result || result.statusCode !== 200 || !result.stream) {
-        throw new Error(`Blob not found or unreadable: ${pathname}`);
+      const tryAccess = async (mode: BlobAccessType) => {
+        const result = await get(pathname, { access: mode, token });
+        if (!result || result.statusCode !== 200 || !result.stream) {
+          return null;
+        }
+        return readStream(result.stream);
+      };
+
+      const primary = await tryAccess(access);
+      if (primary) return primary;
+
+      // Retry the other mode for manifests written before/after fallback
+      const other: BlobAccessType = access === 'private' ? 'public' : 'private';
+      try {
+        const secondary = await tryAccess(other);
+        if (secondary) return secondary;
+      } catch {
+        // ignore and throw original-style error
       }
-      const chunks: Buffer[] = [];
-      const reader = result.stream.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(Buffer.from(value));
-      }
-      return Buffer.concat(chunks);
+      throw new Error(`Blob not found or unreadable: ${pathname}`);
     },
 
     async list(prefix) {
@@ -79,7 +136,6 @@ export function createVercelBlobStore(token = process.env.BLOB_READ_WRITE_TOKEN)
 
     async deleteMany(pathnames) {
       if (!pathnames.length) return;
-      // SDK accepts pathname or URL arrays
       const chunkSize = 100;
       for (let i = 0; i < pathnames.length; i += chunkSize) {
         await del(pathnames.slice(i, i + chunkSize), { token });
@@ -99,6 +155,9 @@ export function createMemoryBlobStore(): BackupBlobStore & {
   return {
     objects,
     uploadedAt,
+    getAccessMode() {
+      return 'private';
+    },
     setUploadedAt(pathname, date) {
       uploadedAt.set(pathname, date);
     },

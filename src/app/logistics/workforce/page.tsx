@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   CalendarDays,
@@ -15,6 +15,12 @@ import {
   UserPlus,
   Users,
 } from 'lucide-react';
+import {
+  costaRicaDateTimeLocalToIso,
+  costaRicaDateTimeLocalToUtc,
+  formatWorkforceDateTime,
+  toCostaRicaDateTimeLocal,
+} from '@/lib/workforce-datetime';
 
 type Tab = 'employees' | 'schedule' | 'schedule-edit' | 'time' | 'payroll' | 'coverage';
 
@@ -133,20 +139,11 @@ function formatShortDate(key: string) {
 }
 
 function formatDateTime(value: string | null | undefined) {
-  if (!value) return '-';
-  return new Date(value).toLocaleString('es-CR', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatWorkforceDateTime(value);
 }
 
 function toDateTimeInput(value: string | null | undefined) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return toCostaRicaDateTimeLocal(value);
 }
 
 function minutesToHours(minutes: number) {
@@ -231,6 +228,8 @@ export default function WorkforcePage() {
   const [timeWeekStart, setTimeWeekStart] = useState(todayWeekStart);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [timeLoading, setTimeLoading] = useState(false);
+  const [timeSaving, setTimeSaving] = useState(false);
+  const timeEntriesRequestId = useRef(0);
   const [editingEntry, setEditingEntry] = useState<{
     id: string;
     clockInAt: string;
@@ -329,16 +328,19 @@ export default function WorkforcePage() {
   }, [tab, loadSchedule]);
 
   const loadTimeEntries = useCallback(async () => {
+    const requestId = ++timeEntriesRequestId.current;
     setTimeLoading(true);
     try {
       const response = await fetch(`/api/logistics/workforce/time-entries?dateFrom=${timeWeekStart}&dateTo=${timeWeekEnd}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || 'Failed to load time entries');
+      if (requestId !== timeEntriesRequestId.current) return;
       setTimeEntries(data.entries || []);
     } catch (error) {
+      if (requestId !== timeEntriesRequestId.current) return;
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo cargar entradas' });
     } finally {
-      setTimeLoading(false);
+      if (requestId === timeEntriesRequestId.current) setTimeLoading(false);
     }
   }, [timeWeekEnd, timeWeekStart]);
 
@@ -531,26 +533,62 @@ export default function WorkforcePage() {
   }
 
   async function saveTimeCorrection(voided = false) {
-    if (!editingEntry) return;
-    const response = await fetch('/api/logistics/workforce/time-entries', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: editingEntry.id,
-        clockInAt: editingEntry.clockInAt,
-        clockOutAt: editingEntry.clockOutAt,
-        correctionNote: editingEntry.correctionNote,
-        voided,
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      setMessage({ type: 'error', text: data?.error || 'No se pudo corregir entrada' });
+    if (!editingEntry || timeSaving) return;
+
+    const correctionNote = editingEntry.correctionNote.trim();
+    if (!correctionNote) {
+      setMessage({ type: 'error', text: 'La nota de correccion es obligatoria.' });
       return;
     }
-    setEditingEntry(null);
-    setMessage({ type: 'success', text: voided ? 'Entrada anulada.' : 'Entrada corregida.' });
-    await loadTimeEntries();
+
+    let body: Record<string, unknown> = {
+      id: editingEntry.id,
+      correctionNote,
+      voided,
+    };
+
+    if (!voided) {
+      const clockInAt = costaRicaDateTimeLocalToIso(editingEntry.clockInAt);
+      if (!clockInAt) {
+        setMessage({ type: 'error', text: 'Hora de entrada invalida.' });
+        return;
+      }
+
+      const clockOutRaw = editingEntry.clockOutAt.trim();
+      let clockOutAt: string | null = null;
+      if (clockOutRaw) {
+        clockOutAt = costaRicaDateTimeLocalToIso(clockOutRaw);
+        if (!clockOutAt) {
+          setMessage({ type: 'error', text: 'Hora de salida invalida.' });
+          return;
+        }
+        if (new Date(clockOutAt) <= new Date(clockInAt)) {
+          setMessage({ type: 'error', text: 'La salida debe ser despues de la entrada.' });
+          return;
+        }
+      }
+
+      body = { ...body, clockInAt, clockOutAt };
+    }
+
+    setTimeSaving(true);
+    try {
+      const response = await fetch('/api/logistics/workforce/time-entries', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage({ type: 'error', text: data?.error || 'No se pudo corregir entrada' });
+        return;
+      }
+      setEditingEntry(null);
+      setMessage({ type: 'success', text: voided ? 'Entrada anulada.' : 'Entrada corregida.' });
+      await loadTimeEntries();
+    } finally {
+      setTimeSaving(false);
+    }
   }
 
   function exportPayroll() {
@@ -592,7 +630,8 @@ export default function WorkforcePage() {
   }
 
   function getActualNames(workDate: string, slot: string) {
-    const slotStart = new Date(`${workDate}T${slot}:00`);
+    const slotStart = costaRicaDateTimeLocalToUtc(`${workDate}T${slot}`);
+    if (!slotStart) return [];
     const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000);
     return coverageEntries
       .filter((entry) => {
@@ -903,9 +942,9 @@ export default function WorkforcePage() {
                       style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.28)', color: '#F2F2F2', resize: 'vertical' }} />
                   </label>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
-                    <button onClick={() => setEditingEntry(null)} style={{ padding: '8px 11px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}>Cancel</button>
-                    <button onClick={() => saveTimeCorrection(true)} style={{ padding: '8px 11px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)', color: '#f87171', cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center', fontWeight: 900 }}><Trash2 size={13} /> Void</button>
-                    <button onClick={() => saveTimeCorrection(false)} style={{ padding: '8px 11px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center', fontWeight: 900 }}><Save size={13} /> Save</button>
+                    <button onClick={() => setEditingEntry(null)} disabled={timeSaving} style={{ padding: '8px 11px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}>Cancel</button>
+                    <button onClick={() => saveTimeCorrection(true)} disabled={timeSaving} style={{ padding: '8px 11px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)', color: '#f87171', cursor: timeSaving ? 'wait' : 'pointer', display: 'flex', gap: 6, alignItems: 'center', fontWeight: 900 }}><Trash2 size={13} /> Void</button>
+                    <button onClick={() => saveTimeCorrection(false)} disabled={timeSaving} style={{ padding: '8px 11px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: timeSaving ? 'wait' : 'pointer', display: 'flex', gap: 6, alignItems: 'center', fontWeight: 900 }}><Save size={13} /> {timeSaving ? 'Saving...' : 'Save'}</button>
                   </div>
                 </div>
               </div>
@@ -1069,7 +1108,7 @@ function WeekToolbar({ weekStart, onWeekStartChange, onRefresh, loading, action 
           style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(255,255,255,0.58)', cursor: 'pointer', fontWeight: 800 }}>Prev</button>
         <button onClick={() => onWeekStartChange(getWeekStartKey())}
           style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(96,165,250,0.25)', background: 'rgba(96,165,250,0.08)', color: '#60a5fa', cursor: 'pointer', fontWeight: 800 }}>Current</button>
-        <button onClick={() => onWeekStartChange(addDaysKey(getWeekStartKey(), 7))}
+        <button onClick={() => onWeekStartChange(addDaysKey(weekStart, 7))}
           style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(139,135,255,0.25)', background: 'rgba(139,135,255,0.08)', color: '#8b87ff', cursor: 'pointer', fontWeight: 800 }}>Next</button>
         <input type="date" value={weekStart} onChange={(event) => onWeekStartChange(getWeekStartKey(event.target.value))}
           style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.26)', color: '#F2F2F2', outline: 'none' }} />

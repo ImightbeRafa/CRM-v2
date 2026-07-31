@@ -2,6 +2,17 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-07-31 — personnel time-clock timezone corrections (branch `cursor/fix-personnel-time-clock-472f`)
+
+- Root cause: Time Clock admin corrections sent bare `datetime-local` strings; UTC server
+  interpreted them as UTC, shifting Costa Rica wall times by 6 hours on save/reload.
+- Added browser-safe `src/lib/workforce-datetime.ts` (CR display, datetime-local ↔ ISO).
+- API `parseClockTimestamp` now requires explicit timezone; empty clock-out clears/reopens.
+- PATCH void/correct + audit are atomic; punch in/out + audit likewise.
+- Workforce UI: CR-formatted inputs/display, ISO submit, save guard, stale week fetch ignore,
+  Next week advances from selected week; coverage actuals use CR slot bounds.
+- Prove: `npm run test:workforce-datetime`, lint, build.
+
 ## 2026-07-30 — orphan purge (human OK: delete all except explicitly used)
 
 - Deleted orphan routes: `/landing`, `/deployment`.

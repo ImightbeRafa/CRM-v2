@@ -12,13 +12,6 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-async function audit(actorUserId: string | null, eventType: string, entityId: string | null, metadata: Record<string, unknown>) {
-  await prisma.$executeRaw`
-    INSERT INTO lm_workforce_audit_events (actor_user_id, event_type, entity_type, entity_id, metadata)
-    VALUES (${actorUserId}, ${eventType}, 'time_entry', ${entityId}, ${JSON.stringify(metadata)}::jsonb)
-  `;
-}
-
 function mapEntry(row: any) {
   return {
     id: row.id,
@@ -35,6 +28,10 @@ function mapEntry(row: any) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function isExplicitClear(value: unknown) {
+  return value === null || value === '';
 }
 
 export async function GET(req: NextRequest) {
@@ -92,6 +89,7 @@ export async function PATCH(req: NextRequest) {
     const shouldVoid = body?.voided === true;
     const hasClockInPatch = Object.prototype.hasOwnProperty.call(body, 'clockInAt');
     const hasClockOutPatch = Object.prototype.hasOwnProperty.call(body, 'clockOutAt');
+    const actorUserId = getRequestActorId(req.headers);
 
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
     if ((shouldVoid || hasClockInPatch || hasClockOutPatch) && !correctionNote) {
@@ -109,52 +107,91 @@ export async function PATCH(req: NextRequest) {
     if (!existing) return NextResponse.json({ error: 'Time entry not found' }, { status: 404 });
 
     if (shouldVoid) {
-      const rows = await prisma.$queryRaw<any[]>`
-        UPDATE lm_time_entries
-        SET voided_at = now(),
-            correction_note = ${correctionNote},
-            updated_by = ${getRequestActorId(req.headers)}
-        WHERE id = ${id}::uuid
-        RETURNING *
-      `;
-      await audit(getRequestActorId(req.headers), 'time_entry_voided', id, { correctionNote });
-      return NextResponse.json({ entry: mapEntry({ ...rows[0], display_name: existing.display_name, employee_active: true }) });
+      const entry = await prisma.$transaction(async (tx) => {
+        const rows = await tx.$queryRaw<any[]>`
+          UPDATE lm_time_entries
+          SET voided_at = now(),
+              correction_note = ${correctionNote},
+              updated_by = ${actorUserId}
+          WHERE id = ${id}::uuid
+          RETURNING *
+        `;
+        await tx.$executeRaw`
+          INSERT INTO lm_workforce_audit_events (actor_user_id, event_type, entity_type, entity_id, metadata)
+          VALUES (${actorUserId}, ${'time_entry_voided'}, ${'time_entry'}, ${id}, ${JSON.stringify({ correctionNote })}::jsonb)
+        `;
+        return rows[0];
+      });
+
+      return NextResponse.json({
+        entry: mapEntry({ ...entry, display_name: existing.display_name, employee_active: true }),
+      });
     }
 
-    const nextClockIn = hasClockInPatch
-      ? parseClockTimestamp(body.clockInAt)
-      : new Date(existing.clock_in_at);
-    const nextClockOut = hasClockOutPatch
-      ? parseClockTimestamp(body.clockOutAt)
-      : (existing.clock_out_at ? new Date(existing.clock_out_at) : null);
+    let nextClockIn: Date;
+    if (hasClockInPatch) {
+      const parsed = parseClockTimestamp(body.clockInAt);
+      if (!parsed) {
+        return NextResponse.json({
+          error: 'Valid clockInAt required (ISO-8601 with timezone, e.g. 2026-07-31T15:00:00.000Z)',
+        }, { status: 400 });
+      }
+      nextClockIn = parsed;
+    } else {
+      nextClockIn = new Date(existing.clock_in_at);
+    }
 
-    if (!nextClockIn) return NextResponse.json({ error: 'Valid clockInAt required' }, { status: 400 });
-    if (hasClockOutPatch && !nextClockOut) return NextResponse.json({ error: 'Valid clockOutAt required' }, { status: 400 });
+    let nextClockOut: Date | null;
+    if (hasClockOutPatch) {
+      if (isExplicitClear(body.clockOutAt)) {
+        nextClockOut = null;
+      } else {
+        const parsed = parseClockTimestamp(body.clockOutAt);
+        if (!parsed) {
+          return NextResponse.json({
+            error: 'Valid clockOutAt required (ISO-8601 with timezone), or null to reopen',
+          }, { status: 400 });
+        }
+        nextClockOut = parsed;
+      }
+    } else {
+      nextClockOut = existing.clock_out_at ? new Date(existing.clock_out_at) : null;
+    }
+
     if (nextClockOut && nextClockOut <= nextClockIn) {
       return NextResponse.json({ error: 'clockOutAt must be after clockInAt' }, { status: 400 });
     }
 
     const paidMinutes = nextClockOut ? calculatePaidMinutes(nextClockIn, nextClockOut) : null;
-    const rows = await prisma.$queryRaw<any[]>`
-      UPDATE lm_time_entries
-      SET clock_in_at = ${nextClockIn},
-          clock_out_at = ${nextClockOut},
-          paid_minutes = ${paidMinutes},
-          source = 'admin',
-          correction_note = ${correctionNote},
-          updated_by = ${getRequestActorId(req.headers)}
-      WHERE id = ${id}::uuid
-      RETURNING *
-    `;
-
-    await audit(getRequestActorId(req.headers), 'time_entry_corrected', id, {
+    const auditMetadata = {
       correctionNote,
       clockInAt: nextClockIn.toISOString(),
       clockOutAt: nextClockOut?.toISOString() ?? null,
       paidMinutes,
+    };
+
+    const entry = await prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<any[]>`
+        UPDATE lm_time_entries
+        SET clock_in_at = ${nextClockIn},
+            clock_out_at = ${nextClockOut},
+            paid_minutes = ${paidMinutes},
+            source = 'admin',
+            correction_note = ${correctionNote},
+            updated_by = ${actorUserId}
+        WHERE id = ${id}::uuid
+        RETURNING *
+      `;
+      await tx.$executeRaw`
+        INSERT INTO lm_workforce_audit_events (actor_user_id, event_type, entity_type, entity_id, metadata)
+        VALUES (${actorUserId}, ${'time_entry_corrected'}, ${'time_entry'}, ${id}, ${JSON.stringify(auditMetadata)}::jsonb)
+      `;
+      return rows[0];
     });
 
-    return NextResponse.json({ entry: mapEntry({ ...rows[0], display_name: existing.display_name, employee_active: true }) });
+    return NextResponse.json({
+      entry: mapEntry({ ...entry, display_name: existing.display_name, employee_active: true }),
+    });
   } catch (error) {
     console.error('[workforce/time-entries PATCH]', error);
     return NextResponse.json({ error: 'Failed to update time entry' }, { status: 500 });

@@ -9,13 +9,6 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-async function audit(eventType: string, entityId: string | null, metadata: Record<string, unknown>) {
-  await prisma.$executeRaw`
-    INSERT INTO lm_workforce_audit_events (actor_user_id, event_type, entity_type, entity_id, metadata)
-    VALUES (NULL, ${eventType}, 'time_entry', ${entityId}, ${JSON.stringify(metadata)}::jsonb)
-  `;
-}
-
 export async function POST(req: NextRequest) {
   const rateLimitResult = await workClockRateLimit(req);
   if (rateLimitResult instanceof Response) return rateLimitResult;
@@ -52,19 +45,28 @@ export async function POST(req: NextRequest) {
       if (openEntry) {
         return NextResponse.json({ error: 'Employee already clocked in' }, { status: 409 });
       }
-      const rows = await prisma.$queryRaw<any[]>`
-        INSERT INTO lm_time_entries (employee_id, hourly_rate_crc, source)
-        VALUES (${employee.id}::uuid, ${Number(employee.hourly_rate_crc) || 0}, 'worker')
-        RETURNING id, clock_in_at, hourly_rate_crc
-      `;
-      await audit('worker_clocked_in', rows[0].id, { employeeId: employee.id });
+
+      const entry = await prisma.$transaction(async (tx) => {
+        const rows = await tx.$queryRaw<any[]>`
+          INSERT INTO lm_time_entries (employee_id, hourly_rate_crc, source)
+          VALUES (${employee.id}::uuid, ${Number(employee.hourly_rate_crc) || 0}, 'worker')
+          RETURNING id, clock_in_at, hourly_rate_crc
+        `;
+        const created = rows[0];
+        await tx.$executeRaw`
+          INSERT INTO lm_workforce_audit_events (actor_user_id, event_type, entity_type, entity_id, metadata)
+          VALUES (NULL, ${'worker_clocked_in'}, ${'time_entry'}, ${created.id}, ${JSON.stringify({ employeeId: employee.id })}::jsonb)
+        `;
+        return created;
+      });
+
       return NextResponse.json({
         status: 'clocked_in',
         employee: { id: employee.id, displayName: employee.display_name },
         entry: {
-          id: rows[0].id,
-          clockInAt: rows[0].clock_in_at,
-          hourlyRateCrc: Number(rows[0].hourly_rate_crc) || 0,
+          id: entry.id,
+          clockInAt: entry.clock_in_at,
+          hourlyRateCrc: Number(entry.hourly_rate_crc) || 0,
         },
       });
     }
@@ -76,24 +78,32 @@ export async function POST(req: NextRequest) {
     const now = new Date();
     const clockIn = new Date(openEntry.clock_in_at);
     const paidMinutes = calculatePaidMinutes(clockIn, now);
-    const rows = await prisma.$queryRaw<any[]>`
-      UPDATE lm_time_entries
-      SET clock_out_at = ${now},
-          paid_minutes = ${paidMinutes}
-      WHERE id = ${openEntry.id}::uuid
-      RETURNING id, clock_in_at, clock_out_at, hourly_rate_crc, paid_minutes
-    `;
-    await audit('worker_clocked_out', rows[0].id, { employeeId: employee.id, paidMinutes });
+
+    const entry = await prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<any[]>`
+        UPDATE lm_time_entries
+        SET clock_out_at = ${now},
+            paid_minutes = ${paidMinutes}
+        WHERE id = ${openEntry.id}::uuid
+        RETURNING id, clock_in_at, clock_out_at, hourly_rate_crc, paid_minutes
+      `;
+      const updated = rows[0];
+      await tx.$executeRaw`
+        INSERT INTO lm_workforce_audit_events (actor_user_id, event_type, entity_type, entity_id, metadata)
+        VALUES (NULL, ${'worker_clocked_out'}, ${'time_entry'}, ${updated.id}, ${JSON.stringify({ employeeId: employee.id, paidMinutes })}::jsonb)
+      `;
+      return updated;
+    });
 
     return NextResponse.json({
       status: 'clocked_out',
       employee: { id: employee.id, displayName: employee.display_name },
       entry: {
-        id: rows[0].id,
-        clockInAt: rows[0].clock_in_at,
-        clockOutAt: rows[0].clock_out_at,
-        hourlyRateCrc: Number(rows[0].hourly_rate_crc) || 0,
-        paidMinutes: Number(rows[0].paid_minutes) || 0,
+        id: entry.id,
+        clockInAt: entry.clock_in_at,
+        clockOutAt: entry.clock_out_at,
+        hourlyRateCrc: Number(entry.hourly_rate_crc) || 0,
+        paidMinutes: Number(entry.paid_minutes) || 0,
       },
     });
   } catch (error) {

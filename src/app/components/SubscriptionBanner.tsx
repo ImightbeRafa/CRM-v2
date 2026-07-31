@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { X, CreditCard, AlertCircle, Clock } from 'lucide-react';
 
 const PUBLIC_PATHS = [
-  '/home', '/landing', '/auth', '/privacy', '/terms',
+  '/home', '/auth', '/privacy', '/terms',
   '/data-deletion', '/docs', '/help', '/unauthorized',
 ];
 

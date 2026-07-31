@@ -22,7 +22,6 @@ const PUBLIC_ROUTES = [
   '/auth/signin',
   '/auth/error',
   '/api/auth',
-  '/landing',
   '/home',
   '/_next',
   '/favicon.ico',
@@ -322,7 +321,7 @@ async function handleAppRoute(
 
   if (!tenantId) {
     // Allow access to setup routes, auth routes, and public routes
-    if (isSetupRoute || pathname.startsWith('/api/auth/') || pathname.startsWith('/landing')) {
+    if (isSetupRoute || pathname.startsWith('/api/auth/')) {
       return NextResponse.next(fwd);
     }
 

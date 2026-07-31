@@ -49,7 +49,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   closed: { label: 'Cerrado', color: 'bg-gray-100 text-gray-800' },
 };
 
-const EXCLUDED_PATHS = ['/home', '/landing', '/auth', '/terms', '/privacy', '/setup-wizard', '/setup-tenant', '/docs'];
+const EXCLUDED_PATHS = ['/home', '/auth', '/terms', '/privacy', '/setup-wizard', '/setup-tenant', '/docs'];
 
 export function FeedbackWidget() {
   const { data: session, status: authStatus } = useSession();

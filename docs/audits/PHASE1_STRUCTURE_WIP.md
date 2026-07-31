@@ -5,16 +5,12 @@ Organize unfinished work so Phase 2 can finish items deliberately. Seeded at kic
 ## Workstreams
 
 ### W1 — Landing / marketing dedupe
-- **Status:** WIP / QUARANTINE
-- **Paths:** `src/app/home`, `src/app/landing`
-- **Need:** Canonical public landing route; remove or merge duplicate component trees
-- **Blocked on:** Human decision
+- **Status:** DONE (orphan purge)
+- **Resolution:** Kept `/home`; deleted `/landing` tree and stale refs
 
 ### W2 — Deployment dashboard
-- **Status:** WIP / broken
-- **Paths:** `src/app/deployment/page.tsx`, `src/app/deployment/components/DeploymentDashboard.tsx`
-- **Issue:** Fetches `/api/deployment/checklist`, `/api/deployment/backup`, `/api/deployment/rollback` which do not exist
-- **Options:** Implement APIs, or remove UI (quarantine until human OK)
+- **Status:** DONE (removed)
+- **Resolution:** Deleted broken `/deployment` UI (APIs never existed)
 
 ### W3 — Tilopay hardening
 - **Status:** WIP (TODOs in code)
@@ -41,22 +37,20 @@ Organize unfinished work so Phase 2 can finish items deliberately. Seeded at kic
 - **Item:** `db:push:unsafe` script
 - **Action:** Document risk; consider renaming or extra guard later — out of Phase 0 delete scope
 
-### W8 — Knip unused-file triage (after human OK)
-- Legacy setup-wizard steps (superseded) — likely first SAFE_DELETE batch
-- `ProduccionDashboard` / `OrderList` orphan pair
-- Small UI leftovers (`MotionButton`, skeletons, etc.)
-- **Do not** start with `correosAutomation.ts`, `instagram-oauth.ts`, or auth wrappers
+### W8 — Knip unused-file triage
+- **Status:** DONE for verified orphan files (human OK 2026-07-30)
+- Remaining: unused **exports/types** cleanup (non-blocking)
 
 ### W9 — Dependency hygiene
-- Decide on `sharp` / `@types/bcryptjs`
-- Add missing `uuid` (and `xlsx` if script kept) to package.json
+- **Status:** partial — removed `@types/bcryptjs`; kept `sharp`
+- Still TODO: add missing `uuid` (and `xlsx` if script kept) to package.json
 
 ## Phase 2 queue (finish)
 
 1. Invoice email real send or honest error — `src/app/api/invoices/[id]/email/route.ts`
 2. Tilopay: token cache (`api/tilopay/auth`), webhook hash verify (`lib/tilopay.ts`, `webhook`, `webhook-repeat`), failed-payment email TODO
 3. Billing storage real metric or remove fake `0 MB` — `api/billing/usage`
-4. Deployment: implement or delete (after human OK)
+4. ~~Deployment~~ removed in Phase 0 orphan purge
 
 ## Phase 3 (later)
 

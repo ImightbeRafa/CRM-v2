@@ -240,6 +240,26 @@ function drawCentered(
   });
 }
 
+/** Vertical rhythm — keep draw steps and height estimate in sync. */
+const R = {
+  afterHeader: 22,
+  customer: 18,
+  phone: 15,
+  beforeSection: 10,
+  sectionLabel: 14,
+  itemRow: 15,
+  afterItems: 10,
+  ruleGap: 14,
+  metaRow: 15,
+  afterMeta: 12,
+  totalBox: 28,
+  afterTotal: 14,
+  commentPadY: 8,
+  commentLine: 13,
+  afterComments: 12,
+  beforeFooter: 14,
+} as const;
+
 function sectionLabel(
   page: PDFPage,
   label: string,
@@ -253,7 +273,7 @@ function sectionLabel(
     font,
     color: MUTED,
   });
-  return y - 12;
+  return y - R.sectionLabel;
 }
 
 /**
@@ -280,21 +300,28 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
   if (data.pickupLocationLabel) metaRows.push(['Lugar', toPdfText(String(data.pickupLocationLabel))]);
   if (data.handedByName) metaRows.push(['Entrego', toPdfText(String(data.handedByName))]);
 
+  const commentInnerW = CONTENT_WIDTH - 20;
   const commentLines = data.comments
-    ? wrapText(String(data.comments), fontRegular, 9, CONTENT_WIDTH - 16, 4)
+    ? wrapText(String(data.comments), fontRegular, 9, commentInnerW, 4)
     : [];
+  const itemCount = Math.max(1, orderLines.length);
 
-  // Measure body height so the page hugs content (no dead void above footer).
-  let bodyH = 0;
-  bodyH += 18; // top padding under header
-  bodyH += 16; // customer
-  if (phone) bodyH += 14;
-  bodyH += 18; // gap + ARTICULOS label
-  bodyH += Math.max(1, orderLines.length) * 14 + 8;
-  if (metaRows.length) bodyH += 14 + metaRows.length * 13 + 8;
-  bodyH += 28; // total block
-  if (commentLines.length) bodyH += 14 + 10 + commentLines.length * 12 + 14;
-  bodyH += 10; // bottom padding before footer
+  // Exact body height matching draw steps below (prevents overlap / footer clipping).
+  let bodyH = R.afterHeader;
+  bodyH += R.customer;
+  if (phone) bodyH += R.phone;
+  bodyH += R.beforeSection + R.sectionLabel;
+  bodyH += itemCount * R.itemRow;
+  bodyH += R.afterItems + R.ruleGap;
+  if (metaRows.length) {
+    bodyH += R.sectionLabel + metaRows.length * R.metaRow + R.afterMeta;
+  }
+  bodyH += R.totalBox + R.afterTotal;
+  if (commentLines.length) {
+    const commentBoxH = R.commentPadY * 2 + commentLines.length * R.commentLine;
+    bodyH += R.sectionLabel + commentBoxH + R.afterComments;
+  }
+  bodyH += R.beforeFooter;
 
   const pageHeight = Math.min(
     MAX_PAGE_HEIGHT,
@@ -302,6 +329,7 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
   );
 
   const page = doc.addPage([PAGE_WIDTH, pageHeight]);
+  const bodyFloor = FOOTER_H + R.beforeFooter;
 
   // ── Header band ─────────────────────────────────────────────
   page.drawRectangle({
@@ -311,7 +339,6 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
     height: HEADER_H,
     color: ACCENT_TINT,
   });
-  // Accent bar on top edge
   page.drawRectangle({
     x: 0,
     y: pageHeight - 4,
@@ -329,11 +356,11 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
   });
 
   const shortLabel = `# ${shortId}`;
-  const shortSize = fitFontSize(shortLabel, fontBold, 44, 28, CONTENT_WIDTH);
+  const shortSize = fitFontSize(shortLabel, fontBold, 42, 28, CONTENT_WIDTH);
   const shortW = fontBold.widthOfTextAtSize(shortLabel, shortSize);
   page.drawText(shortLabel, {
     x: (PAGE_WIDTH - shortW) / 2,
-    y: pageHeight - 62,
+    y: pageHeight - 60,
     size: shortSize,
     font: fontBold,
     color: ACCENT,
@@ -363,9 +390,8 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
   });
 
   // ── Body ────────────────────────────────────────────────────
-  let y = pageHeight - HEADER_H - 20;
+  let y = pageHeight - HEADER_H - R.afterHeader;
 
-  // Customer
   page.drawText(truncateText(customer, fontBold, 14, CONTENT_WIDTH), {
     x: MARGIN_X,
     y,
@@ -373,7 +399,7 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
     font: fontBold,
     color: INK,
   });
-  y -= 16;
+  y -= R.customer;
 
   if (phone) {
     page.drawText(truncateText(phone, fontRegular, 10, CONTENT_WIDTH), {
@@ -383,10 +409,10 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
       font: fontRegular,
       color: MUTED,
     });
-    y -= 14;
+    y -= R.phone;
   }
 
-  y -= 6;
+  y -= R.beforeSection;
   y = sectionLabel(page, 'Articulos', y, fontBold);
 
   if (orderLines.length === 0) {
@@ -397,13 +423,12 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
       font: fontRegular,
       color: INK,
     });
-    y -= 14;
+    y -= R.itemRow;
   } else {
     for (const line of orderLines) {
       const qty = `x${line.qty}`;
       const qtyW = fontBold.widthOfTextAtSize(qty, 10);
-      const nameMax = CONTENT_WIDTH - qtyW - 10;
-      const name = truncateText(line.rawName, fontRegular, 10, nameMax);
+      const name = truncateText(line.rawName, fontRegular, 10, CONTENT_WIDTH - qtyW - 10);
       page.drawText(name, {
         x: MARGIN_X,
         y,
@@ -418,24 +443,24 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
         font: fontBold,
         color: INK,
       });
-      y -= 14;
+      y -= R.itemRow;
     }
   }
 
-  y -= 4;
+  y -= R.afterItems;
   page.drawLine({
-    start: { x: MARGIN_X, y },
-    end: { x: MARGIN_X + CONTENT_WIDTH, y },
+    start: { x: MARGIN_X, y: y + 6 },
+    end: { x: MARGIN_X + CONTENT_WIDTH, y: y + 6 },
     thickness: 0.6,
     color: RULE,
   });
-  y -= 14;
+  y -= R.ruleGap;
 
-  // Operational metadata
   if (metaRows.length) {
     y = sectionLabel(page, 'Detalle', y, fontBold);
     for (const [label, value] of metaRows) {
       const labelText = `${label}:`;
+      const labelW = fontBold.widthOfTextAtSize(labelText, 9);
       page.drawText(labelText, {
         x: MARGIN_X,
         y,
@@ -443,7 +468,6 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
         font: fontBold,
         color: MUTED,
       });
-      const labelW = fontBold.widthOfTextAtSize(labelText, 9);
       page.drawText(truncateText(value, fontRegular, 9, CONTENT_WIDTH - labelW - 8), {
         x: MARGIN_X + labelW + 6,
         y,
@@ -451,22 +475,24 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
         font: fontRegular,
         color: INK,
       });
-      y -= 13;
+      y -= R.metaRow;
     }
-    y -= 4;
+    y -= R.afterMeta;
   }
 
-  // Total row
+  // Total box sits fully below prior content (never overlaps Detalle rows).
+  const totalBottom = y - R.totalBox;
   page.drawRectangle({
     x: MARGIN_X - 4,
-    y: y - 8,
+    y: totalBottom,
     width: CONTENT_WIDTH + 8,
-    height: 26,
+    height: R.totalBox,
     color: PANEL,
   });
+  const totalTextY = totalBottom + 9;
   page.drawText('Total', {
     x: MARGIN_X,
-    y: y,
+    y: totalTextY,
     size: 11,
     font: fontBold,
     color: INK,
@@ -475,36 +501,40 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
   const totalW = fontBold.widthOfTextAtSize(totalText, 13);
   page.drawText(totalText, {
     x: MARGIN_X + CONTENT_WIDTH - totalW,
-    y,
+    y: totalTextY,
     size: 13,
     font: fontBold,
     color: ACCENT,
   });
-  y -= 34;
+  y = totalBottom - R.afterTotal;
 
-  // Comments panel
-  if (commentLines.length) {
+  if (commentLines.length && y > bodyFloor + 40) {
     y = sectionLabel(page, 'Comentarios', y, fontBold);
-    const panelH = commentLines.length * 12 + 12;
+    const commentBoxH = R.commentPadY * 2 + commentLines.length * R.commentLine;
+    const commentBottom = y - commentBoxH + 4;
+    // Keep comments above the payment footer band.
+    const safeBottom = Math.max(commentBottom, bodyFloor);
+    const drawnH = y + 4 - safeBottom;
     page.drawRectangle({
       x: MARGIN_X - 4,
-      y: y - panelH + 10,
+      y: safeBottom,
       width: CONTENT_WIDTH + 8,
-      height: panelH,
+      height: drawnH,
       color: ACCENT_TINT,
     });
-    let cy = y;
+    let cy = y - 2;
     for (const line of commentLines) {
+      if (cy < safeBottom + 6) break;
       page.drawText(line, {
-        x: MARGIN_X + 4,
+        x: MARGIN_X + 6,
         y: cy,
         size: 9,
         font: fontRegular,
         color: INK,
       });
-      cy -= 12;
+      cy -= R.commentLine;
     }
-    y = cy - 6;
+    y = safeBottom - R.afterComments;
   }
 
   // ── Payment footer band ─────────────────────────────────────
@@ -516,18 +546,18 @@ export async function generateRetiroReceiptPdf(data: RetiroReceiptData): Promise
     color: ACCENT,
   });
 
-  page.drawText('ESTADO DE PAGO', {
-    x: MARGIN_X,
-    y: FOOTER_H - 16,
+  const payCaption = 'ESTADO DE PAGO';
+  const payCaptionW = fontBold.widthOfTextAtSize(payCaption, 7.5);
+  page.drawText(payCaption, {
+    x: (PAGE_WIDTH - payCaptionW) / 2,
+    y: FOOTER_H - 18,
     size: 7.5,
     font: fontBold,
     color: rgb(0.85, 0.78, 0.92),
   });
 
   const paySize = fitFontSize(paymentLabel, fontBold, 26, 16, CONTENT_WIDTH);
-  // Optical vertical center in the lower portion of the band
-  const payY = 16;
-  drawCentered(page, paymentLabel, payY, paySize, fontBold, WHITE);
+  drawCentered(page, paymentLabel, 18, paySize, fontBold, WHITE);
 
   const pdfBytes = await doc.save();
   return Buffer.from(pdfBytes);

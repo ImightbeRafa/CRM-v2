@@ -17,6 +17,7 @@
     "test:backups": "npx tsx --test src/lib/backups/__tests__/*.test.ts",
     "test:backup-roundtrip": "npx tsx scripts/test-backup-roundtrip.ts",
     "test:bot-grok": "npx tsx src/lib/bot/__tests__/grok-first-order.test.ts",
+    "test:workforce-datetime": "npx tsx src/lib/__tests__/workforce-datetime.test.ts",
     "audit:dead": "knip --no-exit-code"
   },
   "dependencies": {

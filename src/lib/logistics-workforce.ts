@@ -1,9 +1,21 @@
 import { createHmac, randomBytes } from 'crypto';
+import {
+  WORKFORCE_DISPLAY_TIME_ZONE,
+  parseExplicitClockTimestamp,
+} from '@/lib/workforce-datetime';
 
-export const WORKFORCE_TIME_ZONE = 'America/Costa_Rica';
+export const WORKFORCE_TIME_ZONE = WORKFORCE_DISPLAY_TIME_ZONE;
 export const WORKFORCE_SLOT_MINUTES = 30;
 export const WORKFORCE_COVERAGE_START = '08:00';
 export const WORKFORCE_COVERAGE_END = '20:00';
+
+export {
+  formatWorkforceDateTime,
+  toCostaRicaDateTimeLocal,
+  costaRicaDateTimeLocalToIso,
+  costaRicaDateTimeLocalToUtc,
+  parseExplicitClockTimestamp,
+} from '@/lib/workforce-datetime';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -102,11 +114,14 @@ export function parseMinutes(value: unknown, fallback = 0, max = 1440) {
   return Math.max(0, Math.min(max, Math.round(parsed)));
 }
 
+/**
+ * Parse admin-supplied clock timestamps.
+ * Requires an explicit timezone (Z or ±offset) so UTC servers never
+ * misread Costa Rica wall-time `datetime-local` strings as UTC.
+ * Empty / null → null (caller decides whether clearing is allowed).
+ */
 export function parseClockTimestamp(value: unknown) {
-  if (typeof value !== 'string' || !value.trim()) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date;
+  return parseExplicitClockTimestamp(value);
 }
 
 export function calculatePaidMinutes(clockIn: Date, clockOut: Date) {

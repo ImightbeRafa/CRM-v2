@@ -72,7 +72,7 @@ export default function LogisticsDashboardPage() {
     return (
         <div>
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
+            <div className="lm-dash-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
                 <div>
                     <h1 style={{ color: '#F2F2F2', fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>Todas las Órdenes</h1>
                     <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, margin: 0 }}>Vista unificada de todas las cuentas gestionadas</p>

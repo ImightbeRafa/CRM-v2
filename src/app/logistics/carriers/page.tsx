@@ -287,7 +287,7 @@ function LocationRow({ order, onChange }: { order: VerifiedOrder; onChange: (upd
                 {order.originalAddress && <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 3 }}><strong style={{ color: 'rgba(255,255,255,0.25)' }}>Dir:</strong> {order.originalAddress}</div>}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div className="lm-location-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                 <div>
                     <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Provincia</label>
                     <select value={province?.nombre || order.province}
@@ -578,7 +578,7 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
                 border: `1px solid ${accentColor}22`, borderRadius: '0 0 12px 12px',
                 cursor: isPanning ? 'grabbing' : 'grab',
                 userSelect: isPanning ? 'none' : 'auto',
-                touchAction: 'pan-y',
+                touchAction: 'pan-x pan-y',
             }}>
                 {cols.map(({ status, orders: col, total, query }) => {
                     const sc = STATUS_CFG[status];
@@ -589,7 +589,7 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
                     const selectedInColumn = visibleIds.reduce((count, id) => count + (selectedIds.has(id) ? 1 : 0), 0);
                     const allVisibleSelected = visibleIds.length > 0 && selectedInColumn === visibleIds.length;
                     return (
-                        <div key={status} style={{ minWidth: 270, flex: '0 0 270px', display: 'flex', flexDirection: 'column' }}>
+                        <div key={status} className="lm-board-col" style={{ minWidth: 270, flex: '0 0 270px', display: 'flex', flexDirection: 'column' }}>
                             {/* Column header */}
                             <div title="Arrastra para mover el tablero" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, padding: '7px 10px', borderRadius: 7, background: sc.glow, border: `1px solid ${sc.color}45`, flexShrink: 0, cursor: isPanning ? 'grabbing' : 'grab', boxShadow: `inset 0 0 0 1px ${sc.color}10` }}>
                                 <span style={{ color: sc.color, fontWeight: 600, fontSize: 11 }}>{status}</span>
@@ -1071,18 +1071,18 @@ export default function CarriersPage() {
     );
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 48px)', overflow: 'hidden' }}>
+        <div className="lm-carriers-page" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 48px)', overflow: 'hidden' }}>
 
             {/* ── Top bar: title + filters ──────────────────────────────── */}
             <div style={{ flexShrink: 0, marginBottom: 14 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
+                <div className="lm-carriers-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
                     <div>
                         <h1 style={{ color: '#F2F2F2', fontSize: 22, fontWeight: 700, margin: '0 0 2px' }}>Tablero de Envíos</h1>
                         <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: 0 }}>
                             {mensajeria.length} Mensajería · {correos.length} Correos · <span style={{ color: unassigned.length > 0 ? '#fbbf24' : 'rgba(255,255,255,0.35)' }}>{unassigned.length} por asignar</span>
                         </p>
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div className="lm-carriers-actions" style={{ display: 'flex', gap: 8 }}>
                         <button onClick={() => { const opening = !showArchive; setShowArchive(opening); if (opening) loadArchiveContent(); }}
                             style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 16px', borderRadius: 9, border: `1px solid ${showArchive ? 'rgba(52,211,153,0.5)' : 'rgba(255,255,255,0.1)'}`, background: showArchive ? 'rgba(52,211,153,0.12)' : 'transparent', color: showArchive ? '#34d399' : 'rgba(255,255,255,0.45)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, transition: 'all 0.15s' }}>
                             <Archive size={13} /> Archivo {(archivedOrders.length > 0 || archivedGuias.length > 0) && <span style={{ background: 'rgba(52,211,153,0.2)', color: '#34d399', padding: '0 6px', borderRadius: 10, fontSize: 10 }}>{archiveTab === 'guias' ? archivedGuias.length : archivedOrders.length}</span>}
@@ -1145,14 +1145,14 @@ export default function CarriersPage() {
 
             {/* ── Archive panel (collapsible) ────────────────────────────── */}
             {showArchive && (
-                <div style={{ flexShrink: 0, marginBottom: 14, ...glass, padding: '14px 16px', maxHeight: 320, display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div className="lm-archive-panel" style={{ flexShrink: 0, marginBottom: 14, ...glass, padding: '14px 16px', maxHeight: 320, display: 'flex', flexDirection: 'column' }}>
+                    <div className="lm-archive-toolbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             {archiveTab === 'guias' ? <FileText size={14} style={{ color: '#60a5fa' }} /> : <Archive size={14} style={{ color: '#34d399' }} />}
                             <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13 }}>{archiveTab === 'guias' ? 'Guias Archivadas de Correos' : 'Ordenes Archivadas'}</span>
                             <span style={{ background: archiveTab === 'guias' ? 'rgba(96,165,250,0.15)' : 'rgba(52,211,153,0.15)', color: archiveTab === 'guias' ? '#60a5fa' : '#34d399', padding: '1px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{archiveTab === 'guias' ? archivedGuias.length : archivedOrders.length}</span>
                         </div>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <div className="lm-archive-toolbar-controls" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                             <div style={{ display: 'flex', gap: 4, padding: 2, borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
                                 <button onClick={() => { setArchiveTab('orders'); if (showArchive) loadArchived(); }}
                                     style={{ padding: '4px 9px', borderRadius: 6, border: 'none', background: archiveTab === 'orders' ? 'rgba(52,211,153,0.14)' : 'transparent', color: archiveTab === 'orders' ? '#34d399' : 'rgba(255,255,255,0.35)', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>
@@ -1163,12 +1163,12 @@ export default function CarriersPage() {
                                     Guias Correos
                                 </button>
                             </div>
-                            <div style={{ position: 'relative' }}>
+                            <div className="lm-archive-search" style={{ position: 'relative' }}>
                                 <Search size={11} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.25)', pointerEvents: 'none' }} />
                                 <input value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)}
                                     onKeyDown={e => e.key === 'Enter' && loadArchiveContent()}
                                     placeholder="Buscar en archivo..."
-                                    style={{ padding: '5px 10px 5px 26px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: '#F2F2F2', fontSize: 11, outline: 'none', width: 180 }} />
+                                    style={{ padding: '5px 10px 5px 26px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: '#F2F2F2', fontSize: 11, outline: 'none', width: 180, boxSizing: 'border-box' }} />
                             </div>
                             <button onClick={loadArchiveContent} disabled={archiveBusy}
                                 style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.08)', color: '#34d399', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>
@@ -1190,7 +1190,7 @@ export default function CarriersPage() {
                                     {archivedGuias.map(g => {
                                         const address = [g.address, g.district, g.canton, g.province].filter(Boolean).join(', ');
                                         return (
-                                            <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'rgba(96,165,250,0.04)', border: '1px solid rgba(96,165,250,0.12)', borderRadius: 8 }}>
+                                            <div key={g.id} className="lm-archive-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'rgba(96,165,250,0.04)', border: '1px solid rgba(96,165,250,0.12)', borderRadius: 8 }}>
                                                 <div style={{ flex: 1, minWidth: 0 }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
                                                         <span style={{ color: '#60a5fa', fontWeight: 800, fontSize: 12 }}>{g.guiaNumber || g.trackingNumber || 'Sin numero'}</span>
@@ -1230,9 +1230,9 @@ export default function CarriersPage() {
                                 {archivedOrders.map(o => {
                                     const tc = getTenantColor(o.tenantId);
                                     return (
-                                        <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8 }}>
+                                        <div key={o.id} className="lm-archive-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8 }}>
                                             <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
                                                     <span style={{ color: '#F2F2F2', fontWeight: 600, fontSize: 12 }}>{o.customerName}</span>
                                                     <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>#{o.orderId}</span>
                                                     <span style={{ padding: '1px 6px', borderRadius: 20, background: `${tc}20`, color: tc, fontSize: 9, fontWeight: 700 }}>{getTenantName(o.tenantId)}</span>
@@ -1268,10 +1268,10 @@ export default function CarriersPage() {
             )}
 
             {/* ── Body: 2-column split ──────────────────────────────────── */}
-            <div style={{ display: 'flex', gap: 14, flex: 1, overflow: 'hidden', minHeight: 0 }}>
+            <div className="lm-carriers-body" style={{ display: 'flex', gap: 14, flex: 1, overflow: 'hidden', minHeight: 0 }}>
 
                 {/* LEFT: Kanban boards (Mensajería + Correos stacked) */}
-                <div style={{ flex: 1, overflowY: 'auto', minWidth: 0, paddingRight: 4 }}>
+                <div className="lm-carriers-boards" style={{ flex: 1, overflowY: 'auto', minWidth: 0, paddingRight: 4 }}>
                     <Board title="Mensajería Privada" icon={<Truck size={17} />} carrier="mensajeria" orders={mensajeria}
                         onMove={onMove} onMoveCarrier={onMoveC} onToggleCOD={onCOD} onConfirmCobro={onConfirmCobro}
                         onArchive={onArchiveOrder} onArchiveStatus={onArchiveStatus}
@@ -1285,7 +1285,7 @@ export default function CarriersPage() {
                 </div>
 
                 {/* RIGHT: Sin Asignar inbox */}
-                <div style={{ width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div className="lm-carriers-unassigned" style={{ width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     {/* Panel header */}
                     <div style={{
                         padding: '10px 14px', background: 'rgba(251,191,36,0.06)',
@@ -1322,7 +1322,7 @@ export default function CarriersPage() {
                     </div>
 
                     {/* Scrollable cards */}
-                    <div style={{
+                    <div className="lm-carriers-unassigned-scroll" style={{
                         flex: 1, overflowY: 'auto', padding: '10px',
                         background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
                         border: '1px solid rgba(251,191,36,0.15)', borderRadius: '0 0 12px 12px',
@@ -1391,10 +1391,10 @@ export default function CarriersPage() {
             {showVerification && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
                     onClick={e => { if (e.target === e.currentTarget && !generating) setShowVerification(false); }}>
-                    <div style={{ width: '90%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', background: '#12121a', borderRadius: 16, border: '1px solid rgba(255,255,255,0.1)', padding: '24px 28px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                            <div>
-                                <h2 style={{ color: '#F2F2F2', fontSize: 18, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div className="lm-verify-modal" style={{ width: '90%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', background: '#12121a', borderRadius: 16, border: '1px solid rgba(255,255,255,0.1)', padding: '24px 28px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, gap: 12 }}>
+                            <div style={{ minWidth: 0 }}>
+                                <h2 style={{ color: '#F2F2F2', fontSize: 18, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                     <Mail size={18} style={{ color: '#60a5fa' }} /> Verificar ubicacion para Correos
                                 </h2>
                                 <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: '4px 0 0' }}>

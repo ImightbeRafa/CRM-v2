@@ -91,33 +91,34 @@ assert.ok(pdfPendingUnknown.length > 500);
   const { width, height } = page.getSize();
   assert.equal(width, 300);
   assert.ok(height >= 280 && height <= 560, `unexpected height ${height}`);
-}
 
-{
-  // Dense content should still fit one page without throwing
+  // Dense content with full Detalle rows (regression: Entrego was clipped by Total)
   const dense = await generateRetiroReceiptPdf({
-    orderRef: 'BOT-1785270571234',
-    customerName: 'Noelia Alfaro Chaves',
-    phone: '84598361',
+    orderRef: 'ORDER-1785443864236',
+    customerName: 'Hernaldo Sanchez Calvo',
+    phone: '72937749',
     productDetails: JSON.stringify([
-      { type: 'Stress Patch', cantidad: 1 },
-      { type: 'Focus Patch', cantidad: 1 },
-      { type: 'GLP Patch', cantidad: 1 },
-      { type: 'Sleeping Patch Extra Long Name Variant', cantidad: 2 },
+      { type: 'Sleeping patches', cantidad: 2 },
     ]),
-    total: 29900,
-    seller: 'Laura',
-    comments: 'RETIRA EN TREJOS SINPE CONFIRMADO jueves 30 de julio, 3 pm.',
-    status: 'Pendiente',
-    agreedDate: '2024-07-30T21:00:00.000Z',
-    createdAt: new Date(Date.now() - 44 * 3600000).toISOString(),
+    total: 19800,
+    seller: 'Bloom',
+    comments: 'RETIRO TREJOS: Hoy a las 7:30p.m SINPE CONFIRMADO',
+    status: 'Entregado',
+    agreedDate: '2026-07-30T21:00:00.000Z',
+    createdAt: new Date(Date.now() - 13 * 3600000).toISOString(),
     isContraEntrega: false,
     pickupLocationLabel: 'Laura Escazu',
+    handedByName: 'Laura',
   });
   assert.ok(dense.length > 500);
+  const loadedDense = await PDFDocument.load(dense);
+  const denseSize = loadedDense.getPage(0).getSize();
+  assert.equal(denseSize.width, 300);
+  assert.ok(denseSize.height >= 280 && denseSize.height <= 560);
+
   const { writeFileSync, mkdirSync } = await import('node:fs');
   mkdirSync('/opt/cursor/artifacts', { recursive: true });
-  writeFileSync('/opt/cursor/artifacts/retiro-receipt-redesign.pdf', dense);
+  writeFileSync('/opt/cursor/artifacts/retiro-receipt-no-clip.pdf', dense);
 }
 
 console.log('retiroReceiptPdf tests passed');

@@ -4,7 +4,8 @@ import { createRateLimit, getClientIP, rateLimit } from '@/lib/rate-limit';
 
 const financeRateLimit = createRateLimit({
   windowMs: 15 * 60 * 1000,
-  maxRequests: 20,
+  // Orders sync paginates; 60 / 15m supports month bootstraps without opening anonymous abuse.
+  maxRequests: 60,
   identifier: 'finance-api',
 });
 

@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { guardFinanceApi } from '@/lib/finance-auth';
+import { FINANCE_ORDER_CLASSIFIER_VERSION } from '@/lib/finance-order-classifier';
+import {
+  FINANCE_ORDERS_DEFAULT_LIMIT,
+  FINANCE_ORDERS_MAX_LIMIT,
+} from '@/lib/finance-orders';
 import { FINANCE_TENANTS } from '@/lib/finance-tenants';
 import { getCurrentWeekStartKey, getWeekEndKey } from '@/lib/logistics-workforce';
 
@@ -26,6 +31,14 @@ export async function GET(req: NextRequest) {
       alternate: 'Authorization: Bearer <FINANCE_API_KEY>',
     },
     brands: FINANCE_TENANTS.map(({ slug, name, id }) => ({ slug, name, tenantId: id })),
+    orderClassification: {
+      classifierVersion: FINANCE_ORDER_CLASSIFIER_VERSION,
+      deepsleepBusinesses: ['deepsleep', 'patchhouse', 'purasonrisa', 'unassigned'],
+      bloomBusinesses: ['bloom'],
+      channels: ['web', 'messages'],
+      note:
+        'DeepSleep tenant contains three businesses. business=unassigned means finance app should assign manually. Seller/WhatsApp session never selects business.',
+    },
     defaultPeriod: {
       dateFrom: weekStart,
       dateTo: getWeekEndKey(weekStart),
@@ -56,6 +69,21 @@ export async function GET(req: NextRequest) {
       },
       {
         method: 'GET',
+        path: '/api/finance/v1/orders',
+        query: [
+          'brand (required: deepsleep|bloom)',
+          'dateFrom',
+          'dateTo',
+          'updatedSince',
+          'cursor',
+          `limit (default ${FINANCE_ORDERS_DEFAULT_LIMIT}, max ${FINANCE_ORDERS_MAX_LIMIT})`,
+          'needsManualAssignment',
+        ],
+        description:
+          'Order rows with tenant/business/channel tags. Period mode (dateFrom/dateTo) or changes mode (updatedSince). Unassigned DeepSleep leftovers flagged for finance-app manual assignment. No customer PII.',
+      },
+      {
+        method: 'GET',
         path: '/api/finance/v1/meta',
         query: [],
         description: 'This document.',
@@ -64,6 +92,8 @@ export async function GET(req: NextRequest) {
     warnings: [
       'Costs cover delivered (Entregado) orders by completion date; facturación covers all saved orders by sale date — do not treat them as a pure same-basis margin.',
       'Payroll is a single shared logistics cost; do not double-count it into both DeepSleep and Bloom.',
+      'Orders classifierVersion changes require re-bootstrap of stored finance periods.',
+      'Hard-deleted CRM orders are not tombstoned — periodically re-pull recent periods.',
     ],
   });
 }

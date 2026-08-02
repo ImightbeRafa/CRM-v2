@@ -47,3 +47,33 @@ curl -i -H "x-api-key: $FINANCE_API_KEY" https://www.betsycrm.com/api/finance/v1
 ```
 
 Expect JSON catalog (200). Without header → 401.
+
+Orders (period bootstrap, DeepSleep):
+
+```bash
+curl -s -H "x-api-key: $FINANCE_API_KEY" \
+  "https://www.betsycrm.com/api/finance/v1/orders?brand=deepsleep&dateFrom=2026-07-01&dateTo=2026-07-31&limit=50"
+```
+
+Manual-assignment inbox:
+
+```bash
+curl -s -H "x-api-key: $FINANCE_API_KEY" \
+  "https://www.betsycrm.com/api/finance/v1/orders?brand=deepsleep&dateFrom=2026-07-01&dateTo=2026-07-31&needsManualAssignment=1"
+```
+
+## 5. Schema note (orders sync)
+
+Orders incremental sync needs `Order.updatedAt`. Apply once against Postgres (idempotent):
+
+```sql
+ALTER TABLE "Order"
+ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+UPDATE "Order" SET "updatedAt" = "timestamp";
+
+CREATE INDEX IF NOT EXISTS "Order_tenantId_updatedAt_id_idx"
+ON "Order" ("tenantId", "updatedAt", "id");
+```
+
+Then `npx prisma generate` (already in `npm run build`).

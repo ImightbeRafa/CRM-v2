@@ -126,6 +126,7 @@ model Order {
   orderType     String   // EA or RA
   status        String   @default("Pendiente")
   timestamp     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
   customerName  String
   
   // User identification for the order creator/owner
@@ -184,6 +185,7 @@ model Order {
   @@index([tenantId, status])
   @@index([tenantId, orderType])
   @@index([tenantId, timestamp])
+  @@index([tenantId, updatedAt, id])
   @@index([tenantId, customerName])
   @@index([tenantId, contraEntrega])
 }

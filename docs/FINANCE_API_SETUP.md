@@ -64,16 +64,20 @@ curl -s -H "x-api-key: $FINANCE_API_KEY" \
 
 ## 5. Schema note (orders sync)
 
-Orders incremental sync needs `Order.updatedAt`. Apply once against Postgres (idempotent):
+Orders incremental sync needs `Order.updatedAt`. Column + index add are idempotent:
 
 ```sql
 ALTER TABLE "Order"
 ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
 
-UPDATE "Order" SET "updatedAt" = "timestamp";
-
 CREATE INDEX IF NOT EXISTS "Order_tenantId_updatedAt_id_idx"
 ON "Order" ("tenantId", "updatedAt", "id");
+```
+
+One-time backfill (already applied in production — do **not** re-run after go-live or you will reset live `updatedAt` values):
+
+```sql
+UPDATE "Order" SET "updatedAt" = "timestamp";
 ```
 
 Then `npx prisma generate` (already in `npm run build`).

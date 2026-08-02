@@ -323,9 +323,9 @@ export async function getFinanceOrdersPage(args: {
     let scanUpdatedAt = cursorUpdatedAt;
     let scanId = cursorId;
     let lastScanned: OrderSelectRow | null = null;
-    let exhausted = false;
+    let hasMore = false;
 
-    while (page.length < args.limit && !exhausted) {
+    while (page.length < args.limit) {
       const pageWhere: Record<string, unknown> = { ...where };
       if (scanUpdatedAt && scanId) {
         pageWhere.AND = [
@@ -346,25 +346,30 @@ export async function getFinanceOrdersPage(args: {
         select: ORDER_SELECT,
       })) as OrderSelectRow[];
 
-      if (batch.length === 0) {
-        exhausted = true;
-        break;
-      }
+      if (batch.length === 0) break;
 
-      for (const row of batch) {
+      let stoppedMidBatch = false;
+      for (let i = 0; i < batch.length; i += 1) {
+        const row = batch[i]!;
         lastScanned = row;
         scanUpdatedAt = row.updatedAt;
         scanId = row.id;
         const mapped = toFinanceOrderRow(tenantSlug, row);
         if (!mapped.needsManualAssignment) continue;
         page.push(mapped);
-        if (page.length >= args.limit) break;
+        if (page.length >= args.limit) {
+          // Remaining rows in this batch (or a full batch) mean more pages may exist.
+          stoppedMidBatch = i < batch.length - 1;
+          hasMore = stoppedMidBatch || batch.length === batchSize;
+          break;
+        }
       }
 
-      if (batch.length < batchSize) exhausted = true;
+      if (page.length >= args.limit) break;
+      if (batch.length < batchSize) break; // consumed short final batch fully
     }
 
-    if (!exhausted && lastScanned) {
+    if (hasMore && lastScanned) {
       nextCursor = encodeCursor({
         updatedAt: lastScanned.updatedAt.toISOString(),
         id: lastScanned.id,

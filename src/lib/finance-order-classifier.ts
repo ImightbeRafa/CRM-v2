@@ -1,7 +1,7 @@
 import { isTilopayOrder } from '@/lib/tilopay-fees';
 
 /** Bump when classification rules change — consumers should re-bootstrap periods. */
-export const FINANCE_ORDER_CLASSIFIER_VERSION = '1.0.0';
+export const FINANCE_ORDER_CLASSIFIER_VERSION = '1.0.1';
 
 export type FinanceTenantSlug = 'deepsleep' | 'bloom';
 export type FinanceBusinessSlug =
@@ -63,13 +63,22 @@ const MESSAGE_SELLER_ALIASES = [
 
 type ProductHit = Exclude<FinanceBusinessSlug, 'unassigned' | 'bloom'>;
 
+/** Primitive-only normalize — never call String() on objects (can throw). */
 function normalize(value: unknown): string {
-  return String(value ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
+  if (value == null) return '';
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+    return '';
+  }
+  try {
+    return String(value)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+  } catch {
+    return '';
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -247,46 +256,70 @@ function classifyChannel(
   return { channel: 'messages', channelRule: 'default-messages' };
 }
 
-/**
- * Classify a finance order for tenant/business/channel.
- * DeepSleep leftovers that cannot be confidently tagged become `unassigned`
- * for manual assignment in the finance app (not in Betsy).
- */
-export function classifyFinanceOrder(input: FinanceOrderClassifyInput): FinanceOrderClassification {
-  const channel = classifyChannel(input);
-
-  if (input.tenantSlug === 'bloom') {
+function failSafeClassification(
+  tenantSlug: FinanceTenantSlug,
+  reason: string,
+): FinanceOrderClassification {
+  if (tenantSlug === 'bloom') {
     return {
       tenant: 'bloom',
       business: 'bloom',
-      ...channel,
-      businessRule: 'tenant-bloom',
-      confidence: 'high',
+      channel: 'messages',
+      businessRule: reason,
+      channelRule: 'fail-safe-default-messages',
+      confidence: 'low',
       needsManualAssignment: false,
       classifierVersion: FINANCE_ORDER_CLASSIFIER_VERSION,
     };
   }
-
-  if (input.tenantSlug === 'deepsleep') {
-    const business = classifyDeepSleepBusiness(input);
-    return {
-      tenant: 'deepsleep',
-      ...business,
-      ...channel,
-      classifierVersion: FINANCE_ORDER_CLASSIFIER_VERSION,
-    };
-  }
-
-  const _exhaustive: never = input.tenantSlug;
-  void _exhaustive;
   return {
     tenant: 'deepsleep',
     business: 'unassigned',
-    channel: channel.channel,
-    channelRule: channel.channelRule,
-    businessRule: 'invalid-tenant',
+    channel: 'messages',
+    businessRule: reason,
+    channelRule: 'fail-safe-default-messages',
     confidence: 'low',
     needsManualAssignment: true,
     classifierVersion: FINANCE_ORDER_CLASSIFIER_VERSION,
   };
+}
+
+/**
+ * Classify a finance order for tenant/business/channel.
+ * DeepSleep leftovers that cannot be confidently tagged become `unassigned`
+ * for manual assignment in the finance app (not in Betsy).
+ * Never throws — malformed input falls back to a safe classification so rows are still served.
+ */
+export function classifyFinanceOrder(input: FinanceOrderClassifyInput): FinanceOrderClassification {
+  try {
+    const channel = classifyChannel(input);
+
+    if (input.tenantSlug === 'bloom') {
+      return {
+        tenant: 'bloom',
+        business: 'bloom',
+        ...channel,
+        businessRule: 'tenant-bloom',
+        confidence: 'high',
+        needsManualAssignment: false,
+        classifierVersion: FINANCE_ORDER_CLASSIFIER_VERSION,
+      };
+    }
+
+    if (input.tenantSlug === 'deepsleep') {
+      const business = classifyDeepSleepBusiness(input);
+      return {
+        tenant: 'deepsleep',
+        ...business,
+        ...channel,
+        classifierVersion: FINANCE_ORDER_CLASSIFIER_VERSION,
+      };
+    }
+
+    const _exhaustive: never = input.tenantSlug;
+    void _exhaustive;
+    return failSafeClassification('deepsleep', 'invalid-tenant');
+  } catch {
+    return failSafeClassification(input.tenantSlug, 'fail-safe-classifier-error');
+  }
 }

@@ -3,7 +3,8 @@ node_modules/
 .pnp
 .pnp.js
 .yarn/install-state.gz
-supabase/migrations/
+supabase/migrations/*
+!supabase/migrations/017_workforce_system.sql
 # Testing
 coverage/
 scripts

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { workClockRateLimit } from '@/lib/rate-limit';
+import { workClockLookupRateLimit } from '@/lib/rate-limit';
 import {
   addDaysKey,
   getCurrentWeekStartKey,
@@ -25,12 +25,28 @@ function publicScheduleRow(row: any) {
 }
 
 export async function POST(req: NextRequest) {
-  const rateLimitResult = await workClockRateLimit(req);
+  const rateLimitResult = await workClockLookupRateLimit(req);
   if (rateLimitResult instanceof Response) return rateLimitResult;
 
+  let body: any;
   try {
-    const body = await req.json();
-    const codeHash = hashEmployeeCode(body?.code);
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+  }
+
+  let codeHash: string;
+  try {
+    codeHash = hashEmployeeCode(body?.code);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('EMPLOYEE_CODE_SECRET')) {
+      console.error('[work-clock/lookup POST] employee code secret is not configured');
+      return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+    }
+    return NextResponse.json({ error: 'Invalid employee code' }, { status: 401 });
+  }
+
+  try {
     const employees = await prisma.$queryRaw<any[]>`
       SELECT id, display_name, active
       FROM lm_employees
@@ -80,10 +96,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error('[work-clock/lookup POST]', error);
-    const message = error instanceof Error && error.message.includes('EMPLOYEE_CODE_SECRET')
-      ? 'Server misconfiguration'
-      : 'Invalid employee code';
-    const status = message === 'Server misconfiguration' ? 500 : 401;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json(
+      { error: 'Worker clock temporarily unavailable' },
+      { status: 503 },
+    );
   }
 }

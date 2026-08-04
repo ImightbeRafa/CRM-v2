@@ -157,8 +157,16 @@ export const exportRateLimit = createRateLimit({
   identifier: 'export',
 });
 
-export const workClockRateLimit = createRateLimit({
+// Lookup and punch traffic must not share a tiny bucket. A normal worker flow
+// performs one lookup and one punch, and many workers may share the same NAT.
+export const workClockLookupRateLimit = createRateLimit({
   windowMs: 15 * 60 * 1000,
-  maxRequests: 20,
-  identifier: 'work-clock',
+  maxRequests: 60,
+  identifier: 'work-clock-lookup',
+});
+
+export const workClockPunchRateLimit = createRateLimit({
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 120,
+  identifier: 'work-clock-punch',
 });

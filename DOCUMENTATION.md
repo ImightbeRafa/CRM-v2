@@ -108,6 +108,9 @@ DIRECT_URL=postgresql://...
 # Authentication
 NEXTAUTH_SECRET=your-secret-here
 NEXTAUTH_URL=http://localhost:3000
+# Workforce codes. On an existing deployment, initially set this to the
+# current NEXTAUTH_SECRET value so stored worker-code hashes remain valid.
+EMPLOYEE_CODE_SECRET=stable-workforce-code-secret
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 

@@ -18,6 +18,7 @@ export {
 } from '@/lib/workforce-datetime';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+let warnedAboutEmployeeCodeFallback = false;
 
 export type WorkforceEmployee = {
   id: string;
@@ -35,8 +36,14 @@ export function normalizeEmployeeCode(code: unknown) {
 }
 
 function getEmployeeCodeSecret() {
-  const secret = process.env.EMPLOYEE_CODE_SECRET || process.env.NEXTAUTH_SECRET;
-  if (secret) return secret;
+  if (process.env.EMPLOYEE_CODE_SECRET) return process.env.EMPLOYEE_CODE_SECRET;
+  if (process.env.NEXTAUTH_SECRET) {
+    if (process.env.NODE_ENV === 'production' && !warnedAboutEmployeeCodeFallback) {
+      warnedAboutEmployeeCodeFallback = true;
+      console.warn('[workforce] EMPLOYEE_CODE_SECRET is not set; worker codes depend on NEXTAUTH_SECRET rotation');
+    }
+    return process.env.NEXTAUTH_SECRET;
+  }
   if (process.env.NODE_ENV !== 'production') return 'dev-employee-code-secret';
   throw new Error('EMPLOYEE_CODE_SECRET is required');
 }

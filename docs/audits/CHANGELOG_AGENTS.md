@@ -2,6 +2,33 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-03 — workforce clock reliability hardening
+
+- Read-only production forensic check: one Lau employee, one valid open entry, no
+  duplicate open entries, and `lm_time_entries_one_open_per_employee` is installed.
+  The final code regeneration was followed by a successful clock-in six seconds later.
+- Root cause confirmed: the older blank-clock-out row was voided (twice), so it was not
+  a live open entry; the UI incorrectly displayed the contradictory `Open` / `Voided`
+  state. Five code rotations in four minutes also invalidated the prior codes in sequence.
+- Centralized time-entry state precedence (`voided` > `completed` > `open`); added an
+  explicit audited Restore operation, blocked edits of voided rows, prevented restoring
+  an open-shaped void when another live open entry exists, and made repeat Void a no-op.
+- Serialized punch/admin mutations by locking the employee row. Clock-out uses guarded
+  predicates plus the expected entry id; retries replay the original state without
+  changing timestamps or duplicating audits.
+- Worker UI binds punch actions to the validated code, clears stale identity state when
+  the input changes, consumes the punch response directly, and uses Costa Rica display
+  time. Lookup now distinguishes invalid credentials from operational 503 failures.
+- Code rotation and audit are atomic and optimistic-versioned; the UI is single-flight.
+  Added a production warning and deployment documentation for a stable
+  `EMPLOYEE_CODE_SECRET` compatibility rollout.
+- Split shared-IP lookup/punch limits (60/120 per 15 minutes) and removed the third
+  post-punch lookup. Unignored the workforce schema migration so the critical partial
+  unique index can be source-controlled.
+- Prove: focused ESLint pass; workforce state, code, and datetime tests pass. Next debug
+  build compiles the workforce changes, then fails on the pre-existing
+  `@vercel/blob` `get` / `BlobAccessType` imports in `src/lib/backups/blob-store.ts`.
+
 ## 2026-07-31 — personnel time-clock timezone corrections (branch `cursor/fix-personnel-time-clock-472f`)
 
 - Root cause: Time Clock admin corrections sent bare `datetime-local` strings; UTC server

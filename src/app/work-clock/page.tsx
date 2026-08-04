@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { CalendarDays, Clock, LogIn, LogOut, RefreshCw, ShieldCheck } from 'lucide-react';
+import { formatWorkforceDateTime } from '@/lib/workforce-datetime';
 
 type ScheduleShift = {
   id: string;
@@ -20,6 +21,7 @@ type LookupData = {
   nextWeekEnd: string;
   schedule: ScheduleShift[];
   openEntry: { id: string; clockInAt: string } | null;
+  verifiedCode: string;
 };
 
 const glass = {
@@ -49,12 +51,7 @@ function formatDate(key: string) {
 }
 
 function formatDateTime(value: string) {
-  return new Date(value).toLocaleString('es-CR', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatWorkforceDateTime(value);
 }
 
 function minutesToHours(minutes: number) {
@@ -93,7 +90,7 @@ export default function WorkClockPage() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || 'Invalid employee code');
-      setData(payload);
+      setData({ ...payload, verifiedCode: nextCode });
     } catch (error) {
       setData(null);
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo validar el codigo' });
@@ -103,7 +100,7 @@ export default function WorkClockPage() {
   }
 
   async function punch() {
-    if (!data || !normalizedCode) return;
+    if (!data || punching) return;
     setPunching(true);
     setMessage(null);
     try {
@@ -111,12 +108,27 @@ export default function WorkClockPage() {
       const response = await fetch('/api/work-clock/punch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: normalizedCode, action }),
+        body: JSON.stringify({
+          code: data.verifiedCode,
+          action,
+          expectedEntryId: data.openEntry?.id ?? null,
+        }),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || 'No se pudo registrar');
-      setMessage({ type: 'success', text: action === 'clock_in' ? 'Entrada registrada.' : 'Salida registrada.' });
-      await lookup(normalizedCode);
+      if (!response.ok) {
+        if (response.status === 409 && Object.prototype.hasOwnProperty.call(payload, 'openEntry')) {
+          setData((current) => current ? { ...current, openEntry: payload.openEntry } : current);
+        }
+        throw new Error(payload?.error || 'No se pudo registrar');
+      }
+      setData((current) => current ? { ...current, openEntry: payload.openEntry ?? null } : current);
+      const replayed = payload?.replayed === true;
+      setMessage({
+        type: 'success',
+        text: action === 'clock_in'
+          ? replayed ? 'La entrada ya estaba registrada.' : 'Entrada registrada.'
+          : replayed ? 'La salida ya estaba registrada.' : 'Salida registrada.',
+      });
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo registrar' });
     } finally {
@@ -149,14 +161,23 @@ export default function WorkClockPage() {
               <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }}>Employee code</span>
               <input
                 value={code}
-                onChange={(event) => setCode(event.target.value.toUpperCase())}
+                onChange={(event) => {
+                  const nextCode = event.target.value.toUpperCase();
+                  setCode(nextCode);
+                  const nextNormalized = nextCode.replace(/[^a-z0-9]/gi, '').toUpperCase();
+                  if (data && nextNormalized !== data.verifiedCode) {
+                    setData(null);
+                    setMessage(null);
+                  }
+                }}
                 onKeyDown={(event) => { if (event.key === 'Enter') lookup(); }}
                 placeholder="Enter code"
                 autoComplete="off"
+                disabled={punching}
                 style={{ padding: '13px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(0,0,0,0.28)', color: '#F2F2F2', fontSize: 20, fontWeight: 900, letterSpacing: 1, outline: 'none' }}
               />
             </label>
-            <button onClick={() => lookup()} disabled={loading || !normalizedCode}
+            <button onClick={() => lookup()} disabled={loading || punching || !normalizedCode}
               style={{ padding: '13px 16px', borderRadius: 10, border: '1px solid rgba(139,135,255,0.35)', background: 'rgba(139,135,255,0.12)', color: '#8b87ff', cursor: 'pointer', fontWeight: 900, display: 'flex', alignItems: 'center', gap: 8 }}>
               {loading ? <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <ShieldCheck size={15} />}
               Check

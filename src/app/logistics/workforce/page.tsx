@@ -57,6 +57,7 @@ type TimeEntry = {
   source: string;
   correctionNote: string | null;
   voidedAt: string | null;
+  status: 'open' | 'completed' | 'voided';
 };
 
 type PayrollEntry = Omit<TimeEntry, 'paidMinutes'> & {
@@ -206,6 +207,7 @@ export default function WorkforcePage() {
   const [newName, setNewName] = useState('');
   const [newRate, setNewRate] = useState('1250');
   const [generatedCode, setGeneratedCode] = useState<{ employeeName: string; code: string } | null>(null);
+  const [employeeActionId, setEmployeeActionId] = useState<string | null>(null);
 
   const todayWeekStart = useMemo(() => getWeekStartKey(), []);
   const [scheduleWeekStart, setScheduleWeekStart] = useState(todayWeekStart);
@@ -235,6 +237,7 @@ export default function WorkforcePage() {
     clockInAt: string;
     clockOutAt: string;
     correctionNote: string;
+    mode: 'edit' | 'restore';
   } | null>(null);
 
   const [payrollWeekStart, setPayrollWeekStart] = useState(todayWeekStart);
@@ -411,25 +414,37 @@ export default function WorkforcePage() {
   }
 
   async function updateEmployee(employee: Employee, patch: Partial<Employee> & { regenerateCode?: boolean }) {
-    const response = await fetch('/api/logistics/workforce/employees', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: employee.id,
-        displayName: patch.displayName,
-        active: patch.active,
-        hourlyRateCrc: patch.hourlyRateCrc,
-        regenerateCode: patch.regenerateCode,
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      setMessage({ type: 'error', text: data?.error || 'No se pudo actualizar empleado' });
-      return;
+    if (employeeActionId) return;
+    setEmployeeActionId(employee.id);
+    try {
+      const response = await fetch('/api/logistics/workforce/employees', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: employee.id,
+          displayName: patch.displayName,
+          active: patch.active,
+          hourlyRateCrc: patch.hourlyRateCrc,
+          regenerateCode: patch.regenerateCode,
+          expectedCodeLastGeneratedAt: patch.regenerateCode
+            ? employee.codeLastGeneratedAt
+            : undefined,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage({ type: 'error', text: data?.error || 'No se pudo actualizar empleado' });
+        if (response.status === 409) await loadEmployees();
+        return;
+      }
+      if (data.code) setGeneratedCode({ employeeName: data.employee.displayName, code: data.code });
+      setMessage({ type: 'success', text: patch.regenerateCode ? 'Codigo generado. Copialo ahora; no se vuelve a mostrar.' : 'Empleado actualizado.' });
+      await loadEmployees();
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo actualizar empleado' });
+    } finally {
+      setEmployeeActionId(null);
     }
-    if (data.code) setGeneratedCode({ employeeName: data.employee.displayName, code: data.code });
-    setMessage({ type: 'success', text: patch.regenerateCode ? 'Codigo generado. Copialo ahora; no se vuelve a mostrar.' : 'Empleado actualizado.' });
-    await loadEmployees();
   }
 
   function updateDraft(employeeId: string, workDate: string, patch: Partial<Shift>) {
@@ -532,7 +547,7 @@ export default function WorkforcePage() {
     }
   }
 
-  async function saveTimeCorrection(voided = false) {
+  async function saveTimeCorrection(voided = false, restored = false) {
     if (!editingEntry || timeSaving) return;
 
     const correctionNote = editingEntry.correctionNote.trim();
@@ -541,13 +556,18 @@ export default function WorkforcePage() {
       return;
     }
 
+    if (voided && !window.confirm('¿Anular esta entrada? Dejará de contar como una jornada abierta o pagada.')) {
+      return;
+    }
+
     let body: Record<string, unknown> = {
       id: editingEntry.id,
       correctionNote,
       voided,
+      restored,
     };
 
-    if (!voided) {
+    if (!voided && !restored) {
       const clockInAt = costaRicaDateTimeLocalToIso(editingEntry.clockInAt);
       if (!clockInAt) {
         setMessage({ type: 'error', text: 'Hora de entrada invalida.' });
@@ -584,8 +604,13 @@ export default function WorkforcePage() {
         return;
       }
       setEditingEntry(null);
-      setMessage({ type: 'success', text: voided ? 'Entrada anulada.' : 'Entrada corregida.' });
+      setMessage({
+        type: 'success',
+        text: voided ? 'Entrada anulada.' : restored ? 'Entrada restaurada.' : 'Entrada corregida.',
+      });
       await loadTimeEntries();
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo corregir entrada' });
     } finally {
       setTimeSaving(false);
     }
@@ -722,7 +747,12 @@ export default function WorkforcePage() {
                 {employeesLoading ? (
                   <tr><td colSpan={5} style={{ padding: 26, color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>Loading employees...</td></tr>
                 ) : employees.map((employee) => (
-                  <EmployeeRow key={employee.id} employee={employee} onUpdate={updateEmployee} />
+                  <EmployeeRow
+                    key={employee.id}
+                    employee={employee}
+                    onUpdate={updateEmployee}
+                    busy={employeeActionId === employee.id}
+                  />
                 ))}
               </tbody>
             </table>
@@ -900,20 +930,22 @@ export default function WorkforcePage() {
                   {timeEntries.length === 0 ? (
                     <tr><td colSpan={6} style={{ padding: 28, color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>No time entries in this week.</td></tr>
                   ) : timeEntries.map((entry) => (
-                    <tr key={entry.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', opacity: entry.voidedAt ? 0.45 : 1 }}>
+                    <tr key={entry.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', opacity: entry.status === 'voided' ? 0.6 : 1 }}>
                       <td style={{ padding: '10px 13px', color: '#F2F2F2', fontWeight: 800 }}>{entry.employeeName}</td>
                       <td style={{ padding: '10px 13px', color: 'rgba(255,255,255,0.62)' }}>{formatDateTime(entry.clockInAt)}</td>
-                      <td style={{ padding: '10px 13px', color: entry.clockOutAt ? 'rgba(255,255,255,0.62)' : '#fbbf24' }}>{entry.clockOutAt ? formatDateTime(entry.clockOutAt) : 'Open'}</td>
+                      <td style={{ padding: '10px 13px', color: entry.status === 'open' ? '#fbbf24' : 'rgba(255,255,255,0.62)' }}>
+                        {entry.status === 'voided' ? '—' : entry.clockOutAt ? formatDateTime(entry.clockOutAt) : 'Open'}
+                      </td>
                       <td style={{ padding: '10px 13px', color: '#34d399', fontWeight: 900 }}>{entry.paidMinutes == null ? '-' : minutesToHours(entry.paidMinutes)}</td>
                       <td style={{ padding: '10px 13px' }}>
-                        <span style={{ padding: '3px 8px', borderRadius: 6, background: entry.voidedAt ? 'rgba(248,113,113,0.12)' : entry.clockOutAt ? 'rgba(52,211,153,0.12)' : 'rgba(251,191,36,0.12)', color: entry.voidedAt ? '#f87171' : entry.clockOutAt ? '#34d399' : '#fbbf24', fontWeight: 800, fontSize: 11 }}>
-                          {entry.voidedAt ? 'Voided' : entry.clockOutAt ? 'Closed' : 'Open'}
+                        <span style={{ padding: '3px 8px', borderRadius: 6, background: entry.status === 'voided' ? 'rgba(248,113,113,0.12)' : entry.status === 'completed' ? 'rgba(52,211,153,0.12)' : 'rgba(251,191,36,0.12)', color: entry.status === 'voided' ? '#f87171' : entry.status === 'completed' ? '#34d399' : '#fbbf24', fontWeight: 800, fontSize: 11 }}>
+                          {entry.status === 'voided' ? 'Voided' : entry.status === 'completed' ? 'Closed' : 'Open'}
                         </span>
                       </td>
                       <td style={{ padding: '10px 13px' }}>
-                        <button onClick={() => setEditingEntry({ id: entry.id, clockInAt: toDateTimeInput(entry.clockInAt), clockOutAt: toDateTimeInput(entry.clockOutAt), correctionNote: '' })}
+                        <button onClick={() => setEditingEntry({ id: entry.id, clockInAt: toDateTimeInput(entry.clockInAt), clockOutAt: toDateTimeInput(entry.clockOutAt), correctionNote: '', mode: entry.status === 'voided' ? 'restore' : 'edit' })}
                           style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(139,135,255,0.25)', background: 'rgba(139,135,255,0.08)', color: '#8b87ff', cursor: 'pointer', fontWeight: 800 }}>
-                          Edit
+                          {entry.status === 'voided' ? 'Restore' : 'Edit'}
                         </button>
                       </td>
                     </tr>
@@ -924,18 +956,24 @@ export default function WorkforcePage() {
 
             {editingEntry && (
               <div style={{ ...glassHi, padding: 16 }}>
-                <p style={{ color: '#F2F2F2', fontWeight: 900, margin: '0 0 12px' }}>Correct time entry</p>
+                <p style={{ color: '#F2F2F2', fontWeight: 900, margin: '0 0 12px' }}>
+                  {editingEntry.mode === 'restore' ? 'Restore voided entry' : 'Correct time entry'}
+                </p>
                 <div style={{ display: 'grid', gap: 10 }}>
-                  <label style={{ display: 'grid', gap: 5 }}>
-                    <span style={{ color: 'rgba(255,255,255,0.42)', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>Clock in</span>
-                    <input type="datetime-local" value={editingEntry.clockInAt} onChange={(event) => setEditingEntry({ ...editingEntry, clockInAt: event.target.value })}
-                      style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.28)', color: '#F2F2F2' }} />
-                  </label>
-                  <label style={{ display: 'grid', gap: 5 }}>
-                    <span style={{ color: 'rgba(255,255,255,0.42)', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>Clock out</span>
-                    <input type="datetime-local" value={editingEntry.clockOutAt} onChange={(event) => setEditingEntry({ ...editingEntry, clockOutAt: event.target.value })}
-                      style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.28)', color: '#F2F2F2' }} />
-                  </label>
+                  {editingEntry.mode === 'edit' && (
+                    <>
+                      <label style={{ display: 'grid', gap: 5 }}>
+                        <span style={{ color: 'rgba(255,255,255,0.42)', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>Clock in</span>
+                        <input type="datetime-local" value={editingEntry.clockInAt} onChange={(event) => setEditingEntry({ ...editingEntry, clockInAt: event.target.value })}
+                          style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.28)', color: '#F2F2F2' }} />
+                      </label>
+                      <label style={{ display: 'grid', gap: 5 }}>
+                        <span style={{ color: 'rgba(255,255,255,0.42)', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>Clock out</span>
+                        <input type="datetime-local" value={editingEntry.clockOutAt} onChange={(event) => setEditingEntry({ ...editingEntry, clockOutAt: event.target.value })}
+                          style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.28)', color: '#F2F2F2' }} />
+                      </label>
+                    </>
+                  )}
                   <label style={{ display: 'grid', gap: 5 }}>
                     <span style={{ color: 'rgba(255,255,255,0.42)', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>Correction note</span>
                     <textarea value={editingEntry.correctionNote} onChange={(event) => setEditingEntry({ ...editingEntry, correctionNote: event.target.value })} rows={3}
@@ -943,8 +981,10 @@ export default function WorkforcePage() {
                   </label>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
                     <button onClick={() => setEditingEntry(null)} disabled={timeSaving} style={{ padding: '8px 11px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}>Cancel</button>
-                    <button onClick={() => saveTimeCorrection(true)} disabled={timeSaving} style={{ padding: '8px 11px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)', color: '#f87171', cursor: timeSaving ? 'wait' : 'pointer', display: 'flex', gap: 6, alignItems: 'center', fontWeight: 900 }}><Trash2 size={13} /> Void</button>
-                    <button onClick={() => saveTimeCorrection(false)} disabled={timeSaving} style={{ padding: '8px 11px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: timeSaving ? 'wait' : 'pointer', display: 'flex', gap: 6, alignItems: 'center', fontWeight: 900 }}><Save size={13} /> {timeSaving ? 'Saving...' : 'Save'}</button>
+                    {editingEntry.mode === 'edit' && (
+                      <button onClick={() => saveTimeCorrection(true)} disabled={timeSaving} style={{ padding: '8px 11px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)', color: '#f87171', cursor: timeSaving ? 'wait' : 'pointer', display: 'flex', gap: 6, alignItems: 'center', fontWeight: 900 }}><Trash2 size={13} /> Void</button>
+                    )}
+                    <button onClick={() => editingEntry.mode === 'restore' ? saveTimeCorrection(false, true) : saveTimeCorrection(false)} disabled={timeSaving} style={{ padding: '8px 11px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: timeSaving ? 'wait' : 'pointer', display: 'flex', gap: 6, alignItems: 'center', fontWeight: 900 }}><Save size={13} /> {timeSaving ? 'Saving...' : editingEntry.mode === 'restore' ? 'Restore' : 'Save'}</button>
                   </div>
                 </div>
               </div>
@@ -1048,7 +1088,11 @@ export default function WorkforcePage() {
   );
 }
 
-function EmployeeRow({ employee, onUpdate }: { employee: Employee; onUpdate: (employee: Employee, patch: Partial<Employee> & { regenerateCode?: boolean }) => Promise<void> }) {
+function EmployeeRow({ employee, onUpdate, busy }: {
+  employee: Employee;
+  onUpdate: (employee: Employee, patch: Partial<Employee> & { regenerateCode?: boolean }) => Promise<void>;
+  busy: boolean;
+}) {
   const [name, setName] = useState(employee.displayName);
   const [rate, setRate] = useState(String(employee.hourlyRateCrc));
 
@@ -1069,7 +1113,7 @@ function EmployeeRow({ employee, onUpdate }: { employee: Employee; onUpdate: (em
           style={{ width: 130, padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.22)', color: '#34d399', fontWeight: 900, outline: 'none' }} />
       </td>
       <td style={{ padding: '10px 14px' }}>
-        <button onClick={() => onUpdate(employee, { active: !employee.active })}
+        <button onClick={() => onUpdate(employee, { active: !employee.active })} disabled={busy}
           style={{ padding: '6px 10px', borderRadius: 8, border: `1px solid ${employee.active ? 'rgba(52,211,153,0.28)' : 'rgba(248,113,113,0.28)'}`, background: employee.active ? 'rgba(52,211,153,0.08)' : 'rgba(248,113,113,0.08)', color: employee.active ? '#34d399' : '#f87171', cursor: 'pointer', fontWeight: 900 }}>
           {employee.active ? 'Active' : 'Inactive'}
         </button>
@@ -1079,13 +1123,13 @@ function EmployeeRow({ employee, onUpdate }: { employee: Employee; onUpdate: (em
       </td>
       <td style={{ padding: '10px 14px' }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={() => onUpdate(employee, { displayName: name, hourlyRateCrc: Number(rate) })}
+          <button onClick={() => onUpdate(employee, { displayName: name, hourlyRateCrc: Number(rate) })} disabled={busy}
             style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(139,135,255,0.25)', background: 'rgba(139,135,255,0.08)', color: '#8b87ff', cursor: 'pointer', fontWeight: 900, display: 'flex', alignItems: 'center', gap: 5 }}>
             <Save size={12} /> Save
           </button>
-          <button onClick={() => onUpdate(employee, { regenerateCode: true })}
+          <button onClick={() => onUpdate(employee, { regenerateCode: true })} disabled={busy}
             style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(251,191,36,0.28)', background: 'rgba(251,191,36,0.08)', color: '#fbbf24', cursor: 'pointer', fontWeight: 900, display: 'flex', alignItems: 'center', gap: 5 }}>
-            <ShieldCheck size={12} /> Code
+            <ShieldCheck size={12} /> {busy ? 'Saving...' : 'Code'}
           </button>
         </div>
       </td>

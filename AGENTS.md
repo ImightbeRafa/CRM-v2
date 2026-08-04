@@ -54,6 +54,10 @@ cover non-obvious setup/run gotchas.
   `new Resend(process.env.RESEND_API_KEY)` at import time and throws on an empty value,
   which 500s the `/api/auth/register` route. Email sending is otherwise non-blocking in dev.
 - `NEXTAUTH_URL=http://localhost:3000`.
+- `EMPLOYEE_CODE_SECRET` — stable HMAC key for worker clock codes. Existing deployments
+  that previously used the fallback must initially set it to the current
+  `NEXTAUTH_SECRET` value; choosing a different value immediately invalidates all issued
+  employee codes. Do not rotate it without an explicit code reissue plan.
 - All other integrations (Tilopay, Telegram/WhatsApp/Meta, OpenAI/xAI, Upstash Redis,
   Vercel Blob, Correos SOAP) are optional; features degrade gracefully when unset
   (Upstash has an in-memory fallback).

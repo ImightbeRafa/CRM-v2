@@ -2,12 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAdmin } from '@/lib/apiAuth'
 import { createErrorResponse, handleApiError } from '@/lib/apiUtils'
+import { neutralizeCsvFormula, PII_NO_STORE_HEADERS } from '@/lib/security'
 
 export async function GET(request: NextRequest) {
   try {
     const { authorized } = await requireAdmin(request)
     if (!authorized) {
       return createErrorResponse('Unauthorized', 401)
+    }
+
+    // Always scope to caller's tenant (defense-in-depth even if requireAdmin is widened later)
+    const tenantId = request.headers.get('x-tenant-id')
+    if (!tenantId) {
+      return createErrorResponse('Tenant context required', 400)
     }
 
     const { searchParams } = new URL(request.url)
@@ -17,29 +24,29 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
 
-    // Build where clause
-    const where: any = {}
-    
+    const where: Record<string, unknown> = { tenantId }
+
     if (action) where.action = action
     if (entityType) where.entityType = entityType
     if (userRole) where.userRole = userRole
-    
+
     if (dateFrom || dateTo) {
-      where.timestamp = {}
-      if (dateFrom) where.timestamp.gte = new Date(dateFrom)
+      const timestamp: Record<string, Date> = {}
+      if (dateFrom) timestamp.gte = new Date(dateFrom)
       if (dateTo) {
         const endDate = new Date(dateTo)
         endDate.setHours(23, 59, 59, 999)
-        where.timestamp.lte = endDate
+        timestamp.lte = endDate
       }
+      where.timestamp = timestamp
     }
 
     const auditLogs = await prisma.auditLog.findMany({
       where,
-      orderBy: { timestamp: 'desc' }
+      orderBy: { timestamp: 'desc' },
+      take: 10000,
     })
 
-    // Convert to CSV
     const csvHeaders = [
       'ID',
       'Acción',
@@ -52,10 +59,10 @@ export async function GET(request: NextRequest) {
       'IP',
       'Razón',
       'Valores Anteriores',
-      'Nuevos Valores'
+      'Nuevos Valores',
     ]
 
-    const csvRows = auditLogs.map(log => [
+    const csvRows = auditLogs.map((log) => [
       log.id,
       log.action,
       log.entityType,
@@ -67,19 +74,22 @@ export async function GET(request: NextRequest) {
       log.ipAddress || '',
       log.reason || '',
       log.oldValues ? JSON.stringify(log.oldValues) : '',
-      log.newValues ? JSON.stringify(log.newValues) : ''
+      log.newValues ? JSON.stringify(log.newValues) : '',
     ])
 
     const csvContent = [
       csvHeaders.join(','),
-      ...csvRows.map(row => row.map(field => `"${field}"`).join(','))
+      ...csvRows.map((row) =>
+        row.map((field) => `"${neutralizeCsvFormula(field).replace(/"/g, '""')}"`).join(','),
+      ),
     ].join('\n')
 
     return new NextResponse(csvContent, {
       headers: {
         'Content-Type': 'text/csv',
-        'Content-Disposition': `attachment; filename="audit-logs-${new Date().toISOString().split('T')[0]}.csv"`
-      }
+        'Content-Disposition': `attachment; filename="audit-logs-${new Date().toISOString().split('T')[0]}.csv"`,
+        ...PII_NO_STORE_HEADERS,
+      },
     })
   } catch (error) {
     return handleApiError(error)

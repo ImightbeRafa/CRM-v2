@@ -4,6 +4,7 @@ import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { Parser } from 'json2csv';
 import { exportRateLimit } from '@/lib/rate-limit';
 import ExcelJS from 'exceljs';
+import { neutralizeCsvFormula, PII_NO_STORE_HEADERS } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -56,20 +57,20 @@ export async function GET(request: NextRequest) {
       take: MAX_EXPORT_ROWS,
     });
     
-    // Transform data for export
+    // Transform data for export (CSV formula neutralization on text fields)
     const exportData = orders.map(order => ({
       id: order.id,
-      orderNumber: order.orderId,
-      status: order.status,
+      orderNumber: neutralizeCsvFormula(order.orderId),
+      status: neutralizeCsvFormula(order.status),
       total: order.total,
-      clientName: order.customerName || 'N/A',
-      clientEmail: order.email || 'N/A',
-      clientPhone: order.phone || 'N/A',
-      sellerName: order.username || 'N/A',
-      sellerEmail: order.email || 'N/A',
+      clientName: neutralizeCsvFormula(order.customerName || 'N/A'),
+      clientEmail: neutralizeCsvFormula(order.email || 'N/A'),
+      clientPhone: neutralizeCsvFormula(order.phone || 'N/A'),
+      sellerName: neutralizeCsvFormula(order.username || 'N/A'),
+      sellerEmail: neutralizeCsvFormula(order.email || 'N/A'),
       itemsCount: 1, // Since schema is flat, treat each order as 1 item
       items: [{
-        productName: order.product || 'N/A',
+        productName: neutralizeCsvFormula(order.product || 'N/A'),
         quantity: order.quantity,
         price: order.productCost || 0,
         subtotal: order.quantity * (order.productCost || 0)
@@ -142,6 +143,7 @@ export async function GET(request: NextRequest) {
         'Content-Type': contentType,
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Content-Length': exportContent.length.toString(),
+        ...PII_NO_STORE_HEADERS,
         ...rateLimitHeaders, // Add rate limit headers
       },
     });

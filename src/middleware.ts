@@ -126,6 +126,18 @@ export default async function middleware(request: Request) {
       return redirectToLogin(url);
     }
 
+    // Reject sessions cleared after user deactivation (JWT refresh sets error)
+    if ((token as { error?: string; active?: boolean }).error === 'inactive_user' ||
+        (token as { active?: boolean }).active === false) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json(
+          { error: 'Unauthorized', message: 'Account deactivated' },
+          { status: 401, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return redirectToLogin(url);
+    }
+
     const tenantId = token.tenantId as string | undefined;
     const userId = token.sub;
     const legacyRole = (token.role as string) || 'VIEWER';

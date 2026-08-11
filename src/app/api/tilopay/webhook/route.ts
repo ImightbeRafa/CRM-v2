@@ -344,14 +344,20 @@ export async function POST(req: NextRequest) {
   const webhookId = `webhook_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   
   try {
-    
-    // Verify webhook authenticity
-    if (!verifyWebhookSharedSecret(req)) {
+    // Read raw body once so HMAC verification can use the exact payload
+    const rawBody = await req.text();
+    if (!verifyWebhookSharedSecret(req, rawBody)) {
       logWebhookEvent('error', 'Unauthorized webhook - Invalid secret', { webhookId });
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await req.json();
+    let body: any;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      logWebhookEvent('error', 'Invalid JSON payload', { webhookId });
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+    }
     console.log('📨 [Tilopay Webhook] Received event:', body.event || body.id_plan ? 'Repeat API' : 'SDK webhook');
 
     // Detect Tilopay Repeat API webhooks (webhook_subscribe, webhook_payment, etc.)

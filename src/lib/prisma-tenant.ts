@@ -38,41 +38,33 @@ function isTenantModel(model: string | undefined): model is string {
 // Models that have tenantId field and require tenant isolation
 // IMPORTANT: Keep this list in sync with your Prisma schema
 const TENANT_MODELS = [
+  // Models that exist in prisma/schema.prisma with required tenantId
   'order',
   'client',
   'seller',
   'orderStatus',
   'productField',
   'productOptionSet',
-  'productOption', // CRITICAL: Added for tenant isolation of shipping method options
+  'productOption',
   'shippingMethod',
   'shippingConfig',
   'shippingGuia',
   'inventoryItem',
-  'inventoryTransaction',
   'auditLog',
   'businessInfo',
-  'product',
-  'productVariant',
-  'category',
-  // Do not include models without tenantId (e.g., User) in isolation list
   'membership',
-  // 'tenant' has special handling below
-  'warehouse',
-  'supplier',
-  'purchaseOrder',
-  'sale',
-  'customer',
-  'taxRate',
-  'discount',
-  'priceList',
-  'barcode',
-  'stockMovement',
-  'stockAdjustment',
-  'inventoryCount',
-  'inventoryTransfer',
   'socialAccount',
   'chatMessage',
+  // Previously missing — caused cross-tenant reads when callers relied on getTenantPrisma()
+  'invoice',
+  'billingTransaction',
+  'usageLog',
+  'webhookLog',
+  'apiKey',
+  'feedbackTicket',
+  'botSession',
+  // Do NOT include nullable-tenant models (changelogEntry, integrationLog) —
+  // auto-injecting tenantId would hide global rows or break unauthenticated logs.
 ] as const;
 
 const TENANT_MODELS_LOWER: readonly string[] = TENANT_MODELS.map((m) => m.toLowerCase());

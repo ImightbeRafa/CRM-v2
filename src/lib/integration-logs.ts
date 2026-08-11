@@ -1,5 +1,49 @@
 import { prisma } from './db';
 
+const PII_KEYS = new Set([
+  'email',
+  'phone',
+  'telefono',
+  'teléfono',
+  'address',
+  'direccion',
+  'dirección',
+  'customername',
+  'name',
+  'nombre',
+  'cedula',
+  'cédula',
+  'idnumber',
+  'password',
+  'token',
+  'apikey',
+  'api_key',
+  'authorization',
+]);
+
+/** Redact PII fields before persisting integration logs. */
+export function redactIntegrationLogData(data: unknown): unknown {
+  if (data === null || data === undefined) return data;
+  if (Array.isArray(data)) return data.map(redactIntegrationLogData);
+  if (typeof data !== 'object') return data;
+
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+    const normalized = key.toLowerCase().replace(/[\s_-]/g, '');
+    if (PII_KEYS.has(normalized) || PII_KEYS.has(key.toLowerCase())) {
+      out[key] = '[REDACTED]';
+    } else if (key === 'body' && value && typeof value === 'object') {
+      // Validation errors previously logged the full request body
+      out[key] = redactIntegrationLogData(value);
+    } else if (value && typeof value === 'object') {
+      out[key] = redactIntegrationLogData(value);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 export async function logIntegrationActivity(
   tenantId: string | null,
   action: string,
@@ -10,7 +54,10 @@ export async function logIntegrationActivity(
       data: {
         tenantId,
         action,
-        data: data === undefined || data === null ? undefined : data,
+        data:
+          data === undefined || data === null
+            ? undefined
+            : (redactIntegrationLogData(data) as any),
       },
     });
   } catch (error) {

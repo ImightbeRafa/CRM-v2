@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
-
-const MANAGED_TENANT_IDS = [
-    'cmh32z0ol0000k004hvx9tg3p',
-    'cmhsibjue0004js04gie724nx',
-    'cmhutd1th0000jp04oqibtz54',
-    'cmigornmw0000lb04kl75262e',
-    'cmjdabz4d0000il04dyc5qmcc',
-    'cmln5u7k70000ld042qify2og',
-    'cmh44aerw0006vijg0640vfl0',
-    'cmm4pv8fl0000jr045en1nik9',
-];
+import {
+    MANAGED_TENANT_IDS,
+    resolveManagedTenantFilter,
+} from '@/lib/logistics-managed-tenants';
 
 // GET /api/logistics/stats
 export async function GET(req: NextRequest) {
@@ -21,9 +14,11 @@ export async function GET(req: NextRequest) {
     try {
         const url = new URL(req.url);
         const tenantId = url.searchParams.get('tenantId');
-        const tenantFilter = tenantId
-            ? { tenantId }
-            : { tenantId: { in: MANAGED_TENANT_IDS } };
+        const resolved = resolveManagedTenantFilter(tenantId);
+        if (!resolved.ok) {
+            return NextResponse.json({ error: 'Tenant not in managed allowlist' }, { status: 403 });
+        }
+        const tenantFilter = { tenantId: resolved.tenantId };
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);

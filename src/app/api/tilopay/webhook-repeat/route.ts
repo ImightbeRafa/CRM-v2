@@ -57,30 +57,14 @@ export async function POST(request: NextRequest) {
     }
     
     
-    // Verify webhook authenticity
-    // TiloPay Repeat uses hash-tilopay header for authentication
-    // We verify if hash-tilopay is present OR if x-tilopay-secret matches
-    const hashTilopay = request.headers.get('hash-tilopay');
-    const hasWebhookSecret = !!process.env.TILOPAY_WEBHOOK_SECRET;
-    
-    if (hasWebhookSecret) {
-      // TiloPay Repeat uses hash-tilopay header, not x-tilopay-secret
-      if (hashTilopay) {
-        // If hash-tilopay is present, accept it (TiloPay's authentication method)
-      } else if (verifyWebhookSharedSecret(request)) {
-        // Fallback to x-tilopay-secret if provided
-      } else {
-        // No valid authentication found - don't log secret values
-        console.error(`❌ [WEBHOOK-REPEAT] Unauthorized webhook - No valid authentication [${webhookId}]`);
-        console.error(`❌ [WEBHOOK-REPEAT] hash-tilopay header present: ${!!hashTilopay}`);
-        console.error(`❌ [WEBHOOK-REPEAT] x-tilopay-secret header present: ${!!request.headers.get('x-tilopay-secret')}`);
-        
-        // For testing: Allow if hash-tilopay exists (TiloPay's method) even if secret doesn't match
-        // TODO: Implement proper hash verification based on TiloPay's documentation
-        if (!hashTilopay) {
-          return NextResponse.json({ error: 'Unauthorized - No authentication provided' }, { status: 401 });
-        }
-      }
+    // Fail-closed: require verified shared secret or HMAC over raw body
+    if (!verifyWebhookSharedSecret(request, rawBody || undefined)) {
+      console.error(`❌ [WEBHOOK-REPEAT] Unauthorized webhook [${webhookId}]`, {
+        hasHashHeader: !!request.headers.get('hash-tilopay'),
+        hasSecretHeader: !!request.headers.get('x-tilopay-secret'),
+        hasRawBody: !!rawBody,
+      });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
     // Parse JSON payload

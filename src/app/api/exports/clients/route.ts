@@ -3,6 +3,7 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { Parser } from 'json2csv';
 import ExcelJS from 'exceljs';
+import { neutralizeCsvFormula, PII_NO_STORE_HEADERS } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -55,15 +56,15 @@ export async function GET(request: NextRequest) {
     const exportData = clients.map(client => {
       const baseData: any = {
         id: client.id,
-        name: client.name,
-        email: client.email,
-        phone: client.phone,
-        province: client.province,
-        canton: client.canton,
-        district: client.district,
-        address: client.address,
-        business: client.business,
-        username: client.username,
+        name: neutralizeCsvFormula(client.name),
+        email: neutralizeCsvFormula(client.email),
+        phone: neutralizeCsvFormula(client.phone),
+        province: neutralizeCsvFormula(client.province),
+        canton: neutralizeCsvFormula(client.canton),
+        district: neutralizeCsvFormula(client.district),
+        address: neutralizeCsvFormula(client.address),
+        business: neutralizeCsvFormula(client.business),
+        username: neutralizeCsvFormula(client.username),
         isActive: client.isActive,
         isFavorite: client.isFavorite,
         totalOrders: client.totalOrders,
@@ -144,6 +145,7 @@ export async function GET(request: NextRequest) {
         'Content-Type': contentType,
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Content-Length': exportContent.length.toString(),
+        ...PII_NO_STORE_HEADERS,
       },
     });
   } catch (error) {

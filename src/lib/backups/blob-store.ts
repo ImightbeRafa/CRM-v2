@@ -48,8 +48,8 @@ async function readStream(stream: ReadableStream<Uint8Array>): Promise<Buffer> {
 
 /**
  * Vercel Blob store for backups.
- * Prefers private access; if the linked store is public-only, falls back to public
- * and records that mode (PII will be URL-accessible — migrate to a private store).
+ * Prefers private access. Silent fallback to public is DISABLED because full DB
+ * dumps contain CRM/logistics PII. Explicit break-glass: BACKUP_BLOB_ACCESS=public.
  */
 export function createVercelBlobStore(token = process.env.BLOB_READ_WRITE_TOKEN): BackupBlobStore {
   if (!token) {
@@ -59,6 +59,12 @@ export function createVercelBlobStore(token = process.env.BLOB_READ_WRITE_TOKEN)
   const forced = process.env.BACKUP_BLOB_ACCESS;
   let access: BlobAccessType =
     forced === 'public' || forced === 'private' ? forced : 'private';
+
+  if (access === 'public') {
+    console.warn(
+      '⚠️ BACKUP_BLOB_ACCESS=public — backup objects will be publicly readable. Prefer a private Blob store.',
+    );
+  }
 
   return {
     getAccessMode() {
@@ -77,18 +83,11 @@ export function createVercelBlobStore(token = process.env.BLOB_READ_WRITE_TOKEN)
         return { pathname: result.pathname, size: data.length };
       } catch (err) {
         if (access === 'private' && isPublicStorePrivateError(err)) {
-          access = 'public';
-          console.warn(
-            '⚠️ BLOB store is public-only; falling back to public backup objects. Create a private Blob store when possible.',
+          throw new Error(
+            'Backup aborted: linked Vercel Blob store is public-only. ' +
+              'Create a private Blob store and update BLOB_READ_WRITE_TOKEN, ' +
+              'or set BACKUP_BLOB_ACCESS=public only as explicit break-glass.',
           );
-          const result = await put(pathname, data, {
-            access: 'public',
-            token,
-            contentType,
-            addRandomSuffix: false,
-            allowOverwrite: true,
-          });
-          return { pathname: result.pathname, size: data.length };
         }
         throw err;
       }

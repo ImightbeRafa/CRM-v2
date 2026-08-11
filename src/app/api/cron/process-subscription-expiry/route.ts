@@ -1,25 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { timingSafeEqualString } from '@/lib/security';
 
 /**
  * Cron Job: Process Expired Subscriptions
- * 
+ *
  * Endpoint: GET/POST /api/cron/process-subscription-expiry
- * 
+ *
  * Purpose: Downgrade expired subscriptions to FREE plan WITHOUT deleting any data
- * 
- * Schedule: Run daily (e.g., via Vercel Cron, GitHub Actions, or external cron)
- * 
- * Actions:
- * 1. Find tenants with expired subscriptions (currentPeriodEnd < now)
- * 2. Downgrade to FREE plan
- * 3. Update status
- * 4. NEVER delete tenant data
- * 5. Log all actions for audit
- * 
- * Security: 
- * - In production, add Bearer token or Cron secret verification
- * - Example: Authorization: Bearer ${process.env.CRON_SECRET}
+ *
+ * Security: Always requires Authorization: Bearer ${CRON_SECRET} (fail-closed).
  */
 export async function GET(request: NextRequest) {
   return await processExpiredSubscriptions(request);
@@ -35,24 +25,18 @@ async function processExpiredSubscriptions(request: NextRequest) {
   try {
     console.log('🔄 [Cron] Starting subscription expiry processing...');
 
-    // Production security: Verify cron secret
-    if (process.env.NODE_ENV === 'production') {
-      const authHeader = request.headers.get('authorization');
-      const cronSecret = process.env.CRON_SECRET;
-      
-      if (!cronSecret) {
-        console.error('❌ [Cron] CRON_SECRET not configured in production!');
-        return NextResponse.json({ 
-          error: 'Server misconfiguration' 
-        }, { status: 500 });
-      }
-      
-      if (authHeader !== `Bearer ${cronSecret}`) {
-        console.error('❌ [Cron] Unauthorized cron job attempt');
-        return NextResponse.json({ 
-          error: 'Unauthorized' 
-        }, { status: 401 });
-      }
+    const authHeader = request.headers.get('authorization') || '';
+    const cronSecret = (process.env.CRON_SECRET || '').trim();
+
+    if (!cronSecret) {
+      console.error('❌ [Cron] CRON_SECRET not configured — refusing subscription expiry job');
+      return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+    }
+
+    const expected = `Bearer ${cronSecret}`;
+    if (!timingSafeEqualString(authHeader, expected)) {
+      console.error('❌ [Cron] Unauthorized cron job attempt');
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const now = new Date();

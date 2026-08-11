@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
+import { escapeHtml } from '@/lib/validation';
+import { PII_NO_STORE_HEADERS } from '@/lib/security';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -42,17 +44,16 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user with memberships to find tenant ID
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub as string },
-      include: { memberships: true }
-    });
+    // Prefer session current tenant over memberships[0] (multi-tenant users)
+    const sessionTenantId =
+      (token as { tenantId?: string }).tenantId ||
+      (token as { currentTenant?: { id?: string } }).currentTenant?.id;
 
-    if (!user || !user.memberships.length) {
+    if (!sessionTenantId) {
       return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
     }
 
-    const tenantId = user.memberships[0].tenantId;
+    const tenantId = sessionTenantId;
 
     // Get invoice
     const invoice = await prisma.invoice.findFirst({
@@ -91,14 +92,19 @@ export async function GET(
       });
     };
 
-    const items = invoice.items as any[];
+    const items = (Array.isArray(invoice.items) ? invoice.items : []) as Array<{
+      description?: unknown;
+      quantity?: unknown;
+      unitPrice?: number;
+      total?: number;
+    }>;
 
     const html = `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Factura ${invoice.invoiceNumber}</title>
+  <title>Factura ${escapeHtml(invoice.invoiceNumber)}</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 40px; }
     .header { text-align: center; margin-bottom: 30px; }
@@ -118,23 +124,23 @@ export async function GET(
 </head>
 <body>
   <div class="header">
-    <div class="company-name">${invoice.tenant.name}</div>
-    <div class="invoice-number">FACTURA ${invoice.invoiceNumber}</div>
+    <div class="company-name">${escapeHtml(invoice.tenant.name)}</div>
+    <div class="invoice-number">FACTURA ${escapeHtml(invoice.invoiceNumber)}</div>
   </div>
 
   <div class="info-section">
     <div class="info-row">
       <div>
         <div class="label">Cliente:</div>
-        <div>${invoice.customerName}</div>
-        ${invoice.customerIdNumber ? `<div>Cédula: ${invoice.customerIdNumber}</div>` : ''}
-        ${invoice.customerEmail ? `<div>Email: ${invoice.customerEmail}</div>` : ''}
-        ${invoice.customerPhone ? `<div>Tel: ${invoice.customerPhone}</div>` : ''}
-        ${invoice.customerAddress ? `<div>${invoice.customerAddress}</div>` : ''}
+        <div>${escapeHtml(invoice.customerName)}</div>
+        ${invoice.customerIdNumber ? `<div>Cédula: ${escapeHtml(invoice.customerIdNumber)}</div>` : ''}
+        ${invoice.customerEmail ? `<div>Email: ${escapeHtml(invoice.customerEmail)}</div>` : ''}
+        ${invoice.customerPhone ? `<div>Tel: ${escapeHtml(invoice.customerPhone)}</div>` : ''}
+        ${invoice.customerAddress ? `<div>${escapeHtml(invoice.customerAddress)}</div>` : ''}
       </div>
       <div style="text-align: right;">
-        <div><span class="label">Fecha:</span> ${formatDate(invoice.createdAt)}</div>
-        ${invoice.dueDate ? `<div><span class="label">Vencimiento:</span> ${formatDate(invoice.dueDate)}</div>` : ''}
+        <div><span class="label">Fecha:</span> ${escapeHtml(formatDate(invoice.createdAt))}</div>
+        ${invoice.dueDate ? `<div><span class="label">Vencimiento:</span> ${escapeHtml(formatDate(invoice.dueDate))}</div>` : ''}
         <div><span class="label">Estado:</span> ${invoice.paymentStatus === 'paid' ? 'Pagada' : 'Pendiente'}</div>
       </div>
     </div>
@@ -152,10 +158,10 @@ export async function GET(
     <tbody>
       ${items.map(item => `
         <tr>
-          <td>${item.description}</td>
-          <td style="text-align: center;">${item.quantity}</td>
-          <td style="text-align: right;">${formatCurrency(item.unitPrice)}</td>
-          <td style="text-align: right;">${formatCurrency(item.total)}</td>
+          <td>${escapeHtml(String(item.description ?? ''))}</td>
+          <td style="text-align: center;">${escapeHtml(String(item.quantity ?? ''))}</td>
+          <td style="text-align: right;">${escapeHtml(formatCurrency(Number(item.unitPrice) || 0))}</td>
+          <td style="text-align: right;">${escapeHtml(formatCurrency(Number(item.total) || 0))}</td>
         </tr>
       `).join('')}
     </tbody>
@@ -164,23 +170,23 @@ export async function GET(
   <div class="totals">
     <div class="total-row">
       <div>Subtotal:</div>
-      <div>${formatCurrency(invoice.subtotal)}</div>
+      <div>${escapeHtml(formatCurrency(invoice.subtotal))}</div>
     </div>
     ${invoice.tax > 0 ? `
       <div class="total-row">
         <div>IVA (13%):</div>
-        <div>${formatCurrency(invoice.tax)}</div>
+        <div>${escapeHtml(formatCurrency(invoice.tax))}</div>
       </div>
     ` : ''}
     ${invoice.discount > 0 ? `
       <div class="total-row">
         <div>Descuento:</div>
-        <div>-${formatCurrency(invoice.discount)}</div>
+        <div>-${escapeHtml(formatCurrency(invoice.discount))}</div>
       </div>
     ` : ''}
     <div class="total-row total-final">
       <div>TOTAL:</div>
-      <div>${formatCurrency(invoice.total)}</div>
+      <div>${escapeHtml(formatCurrency(invoice.total))}</div>
     </div>
   </div>
 
@@ -189,7 +195,7 @@ export async function GET(
   ${invoice.notes ? `
     <div class="notes">
       <div class="label">Notas:</div>
-      <div>${invoice.notes}</div>
+      <div>${escapeHtml(invoice.notes)}</div>
     </div>
   ` : ''}
 
@@ -203,7 +209,8 @@ export async function GET(
     // Generate PDF using Puppeteer
     browser = await getBrowser();
     const page = await browser.newPage();
-    
+    await page.setJavaScriptEnabled(false);
+
     // Set content and wait for it to load
     await page.setContent(html, { waitUntil: 'networkidle0' });
     
@@ -223,11 +230,13 @@ export async function GET(
     browser = null;
     
     // Return PDF response - convert Uint8Array to Buffer for NextResponse
+    const safeFilename = invoice.invoiceNumber.replace(/[^\w.\-]+/g, '_');
     return new NextResponse(Buffer.from(pdfBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="factura-${invoice.invoiceNumber}.pdf"`,
-        'Content-Length': pdfBuffer.length.toString()
+        'Content-Disposition': `attachment; filename="factura-${safeFilename}.pdf"`,
+        'Content-Length': pdfBuffer.length.toString(),
+        ...PII_NO_STORE_HEADERS,
       }
     });
   } catch (error) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { hashPassword } from '@/lib/password'
+import { hashPassword, validatePasswordStrength } from '@/lib/password'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { createSuccessResponse, createErrorResponse, handleApiError, validateRequiredFields, validatePassword } from '@/lib/apiUtils'
 import { logCreate, logDelete } from '@/lib/auditLogger'
@@ -80,9 +80,10 @@ export async function POST(request: NextRequest) {
       return createErrorResponse('Password is required when creating a new user', 400)
     }
     
-    // Validate password strength (minimum 8 characters)
-    if (password.trim().length < 8) {
-      return createErrorResponse('Password must be at least 8 characters long', 400)
+    // Validate password strength (same policy as self-registration / reset)
+    const passwordCheck = validatePasswordStrength(password)
+    if (!passwordCheck.valid) {
+      return createErrorResponse(passwordCheck.errors.join('. '), 400)
     }
     
     // Normalize email (trim and lowercase) for consistency

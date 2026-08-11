@@ -3,6 +3,7 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { Parser } from 'json2csv';
 import ExcelJS from 'exceljs';
+import { PII_NO_STORE_HEADERS } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -154,6 +155,7 @@ export async function GET(request: NextRequest) {
         'Content-Type': contentType,
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Content-Length': exportContent.length.toString(),
+        ...PII_NO_STORE_HEADERS,
       },
     });
   } catch (error) {

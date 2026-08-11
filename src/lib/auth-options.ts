@@ -6,6 +6,7 @@ import { prisma } from './db'
 import { verifyPassword, isBcryptHash } from './password'
 import { createDefaultOrderStatuses } from './default-statuses'
 import { withoutTenantIsolation } from './tenantContext'
+import { rateLimit } from './rate-limit'
 
 type MemberRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES' | 'PRODUCTION' | 'MEMBER' | 'VIEWER';
 
@@ -96,6 +97,17 @@ export const authOptions: NextAuthOptions = {
         try {
           // Normalize email (trim and lowercase) for consistent lookup
           const normalizedEmail = email.toLowerCase()
+
+          // Per-email rate limit to slow password spraying (memory/Redis via rateLimit)
+          const loginLimit = rateLimit(`credentials:${normalizedEmail}`, {
+            windowMs: 15 * 60 * 1000,
+            maxRequests: 10,
+            identifier: 'credentials-auth',
+          })
+          if (!loginLimit.allowed) {
+            console.log(`[Credentials Auth] Rate limited: ${normalizedEmail}`)
+            return null
+          }
 
           // Find user by email (CASE-INSENSITIVE to handle legacy data with mixed casing)
           const user = await prisma.user.findFirst({
@@ -255,6 +267,12 @@ export const authOptions: NextAuthOptions = {
               console.log(`[OAuth] 📊 Active memberships: ${dbUser.memberships.length}`);
               console.log(`[OAuth] 🎯 User active status: ${dbUser.active}`);
               console.log(`[OAuth] 🏢 Default tenant ID: ${dbUser.defaultTenantId || 'none'}`);
+
+              // Align with credentials auth: deactivated users cannot sign in via OAuth
+              if (!dbUser.active) {
+                console.log(`[OAuth] ❌ Rejected inactive user: ${dbUser.email}`);
+                return false;
+              }
 
               // Update user with latest info from OAuth provider, including OAuth provider info
               const updatedUser = await prisma.user.update({
@@ -785,12 +803,30 @@ export const authOptions: NextAuthOptions = {
           });
 
           if (dbUser) {
+            // Deactivated users must not keep a valid session after DB sync
+            if (!dbUser.active) {
+              console.log(`[JWT] ❌ Clearing session for inactive user: ${dbUser.email}`);
+              // Force middleware to treat this as unauthenticated on next request
+              const cleared = { ...token } as JWT & { error?: string; active?: boolean };
+              delete (cleared as { sub?: string }).sub;
+              cleared.id = '';
+              cleared.email = '';
+              cleared.memberships = [];
+              cleared.currentTenant = null;
+              cleared.allTenantIds = [];
+              cleared.tenantId = null;
+              cleared.active = false;
+              cleared.error = 'inactive_user';
+              return cleared;
+            }
+
             // Update token with latest user data
             token.id = dbUser.id;
             token.name = dbUser.name;
             token.email = dbUser.email;
             token.image = dbUser.image;
             token.isLogisticsAdmin = dbUser.isLogisticsAdmin ?? false;
+            token.active = dbUser.active;
 
             // Update memberships and role
             const memberships = dbUser.memberships || [];

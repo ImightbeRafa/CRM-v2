@@ -157,8 +157,6 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       message: 'Registration successful! You can now log in.',
-      userId: result.user.id,
-      tenantId: result.tenant.id,
     });
 
   } catch (error: any) {

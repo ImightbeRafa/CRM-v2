@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { calculateTilopayFees, isTilopayOrder, TILOPAY_FEE_RATES } from '@/lib/tilopay-fees';
 import { getLogisticsRates } from '@/lib/logistics-rates';
+import { isManagedTenantId } from '@/lib/logistics-managed-tenants';
 
 const CR_TZ = 'America/Costa_Rica';
 const CORREOS_TAX_RATE = 0.13;
@@ -67,6 +68,9 @@ export async function GET(req: NextRequest) {
     const currentWeek = url.searchParams.get('currentWeek') === 'true';
 
     if (!tenantId) return NextResponse.json({ error: 'tenantId required' }, { status: 400 });
+    if (!isManagedTenantId(tenantId)) {
+        return NextResponse.json({ error: 'Tenant not in managed allowlist' }, { status: 403 });
+    }
 
     try {
         let weekMeta: { id: number; week_start: string; week_end: string; finalized_at: string | null } | null = null;

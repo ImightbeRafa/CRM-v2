@@ -4,20 +4,14 @@ import { prisma } from '@/lib/db';
 import { authOptions } from '@/lib/auth-options';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { getLogisticsRates } from '@/lib/logistics-rates';
+import {
+    MANAGED_TENANT_IDS,
+    filterToManagedTenantIds,
+} from '@/lib/logistics-managed-tenants';
 
 const CR_TZ = 'America/Costa_Rica';
 const MAX_BATCH = 200;
 const SETTLEMENT_METHODS = new Set(['sinpe', 'efectivo']);
-const MANAGED_TENANT_IDS = [
-    'cmh32z0ol0000k004hvx9tg3p',
-    'cmhsibjue0004js04gie724nx',
-    'cmhutd1th0000jp04oqibtz54',
-    'cmigornmw0000lb04kl75262e',
-    'cmjdabz4d0000il04dyc5qmcc',
-    'cmln5u7k70000ld042qify2og',
-    'cmh44aerw0006vijg0640vfl0',
-    'cmm4pv8fl0000jr045en1nik9',
-];
 
 async function ensureCePaymentMethodColumn() {
     try {
@@ -150,7 +144,11 @@ export async function GET(req: NextRequest) {
         const archived = url.searchParams.get('archived') === 'true';
         const search = url.searchParams.get('search')?.trim();
         const requestedTenantIds = url.searchParams.getAll('tenantId').filter(Boolean);
-        const tenantIds = requestedTenantIds.length > 0 ? requestedTenantIds : MANAGED_TENANT_IDS;
+        const filteredRequested = filterToManagedTenantIds(requestedTenantIds);
+        if (requestedTenantIds.length > 0 && filteredRequested.length === 0) {
+            return NextResponse.json({ error: 'Tenant not in managed allowlist' }, { status: 403 });
+        }
+        const tenantIds = filteredRequested.length > 0 ? filteredRequested : [...MANAGED_TENANT_IDS];
         const rates = await getLogisticsRates(['mensajeria_rate']);
         const defaultCost = rates.mensajeria_rate;
 

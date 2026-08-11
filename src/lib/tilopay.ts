@@ -1,3 +1,6 @@
+import { createHmac } from 'crypto';
+import { timingSafeEqualString } from '@/lib/security';
+
 const TILOPAY_BASE_URL = process.env.TILOPAY_BASE_URL || 'https://api.tilopay.com/v1';
 const TILOPAY_API_KEY = process.env.TILOPAY_API_KEY || '';
 const TILOPAY_USER = process.env.TILOPAY_USER || '';
@@ -114,43 +117,33 @@ export async function getTransactionStatus(id: string) {
 
 /**
  * Verify Tilopay webhook authenticity
- * 
- * Tilopay uses different authentication methods:
- * - x-tilopay-secret header (simple shared secret)
- * - hash-tilopay header (HMAC signature for Repeat subscriptions)
- * 
- * @param req - The incoming request
- * @param body - Optional raw body for HMAC verification
- * @returns true if webhook is authentic, false otherwise
+ *
+ * Accepted methods (fail-closed when TILOPAY_WEBHOOK_SECRET is unset):
+ * - x-tilopay-secret header (constant-time shared secret)
+ * - hash-tilopay header = HMAC-SHA256(rawBody, secret) hex digest
+ *
+ * Presence of hash-tilopay alone is NOT sufficient.
  */
 export function verifyWebhookSharedSecret(req: Request, body?: string): boolean {
   const expected = (process.env.TILOPAY_WEBHOOK_SECRET || '').trim();
   const providedSecret = (req.headers.get('x-tilopay-secret') || '').trim();
   const providedHash = (req.headers.get('hash-tilopay') || '').trim();
-  
-  // If no secret configured, log warning and allow (for testing only)
+
   if (!expected) {
-    console.warn('[Webhook Verification] WARNING: TILOPAY_WEBHOOK_SECRET not configured - allowing all webhooks');
+    console.error('[Webhook Verification] TILOPAY_WEBHOOK_SECRET not configured — rejecting webhook');
+    return false;
+  }
+
+  // Method 1: Simple shared secret (one-time payments)
+  if (providedSecret && timingSafeEqualString(providedSecret, expected)) {
     return true;
   }
 
-  // Method 1: Simple shared secret (used by one-time payments)
-  if (providedSecret && providedSecret === expected) {
-    console.log('[Webhook Verification] Valid (shared secret)');
-    return true;
-  }
-
-  // Method 2: HMAC signature (used by Repeat subscriptions)
-  if (providedHash && body) {
+  // Method 2: HMAC-SHA256 of raw body (Repeat / signed payloads)
+  if (providedHash && typeof body === 'string') {
     try {
-      const crypto = require('crypto');
-      const computedHash = crypto
-        .createHmac('sha256', expected)
-        .update(body)
-        .digest('hex');
-
-      if (computedHash === providedHash) {
-        console.log('[Webhook Verification] Valid (HMAC signature)');
+      const computedHash = createHmac('sha256', expected).update(body, 'utf8').digest('hex');
+      if (timingSafeEqualString(computedHash, providedHash)) {
         return true;
       }
     } catch (err) {
@@ -158,14 +151,7 @@ export function verifyWebhookSharedSecret(req: Request, body?: string): boolean 
     }
   }
 
-  // Method 3: Allow if hash-tilopay header exists (some Tilopay versions)
-  // TODO: Implement proper hash verification with Tilopay documentation
-  if (providedHash) {
-    console.warn('[Webhook Verification] Allowing hash-tilopay without full verification (implement proper check)');
-    return true;
-  }
-
-  console.error('[Webhook Verification] Invalid - no valid authentication method');
+  console.error('[Webhook Verification] Invalid — no valid authentication method');
   return false;
 }
 

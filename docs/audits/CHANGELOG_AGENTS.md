@@ -2,6 +2,24 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-11 — cybersecurity review + safe hardening
+
+- Full evidence-led security audit (auth, tenant isolation, Tilopay/billing,
+  logistics, secrets/deps). PR description is the authoritative report.
+- **Fixed (safe hardening):** invoice + other tenant models added to
+  `TENANT_MODELS`; Tilopay webhook fail-closed + HMAC-only (no presence-only
+  accept); callback no longer mutates plans; `/api/tilopay/auth` disabled;
+  subscription cron always requires `CRON_SECRET`; invoice PDF HTML escape +
+  session tenant; export `no-store` + CSV formula neutralization; backup Blob
+  fails closed on public store; integration test 404 in prod; integration log
+  PII redaction; logistics managed-tenant allowlist enforcement; OAuth/JWT reject
+  inactive users; invite password strength; registration omits IDs; dep bumps
+  `next@15.5.23`, `next-auth@4.24.15`, `@auth/core@0.41.3`, `axios@1.19.0`.
+- **Documented only (product/risk):** membership auto-reactivation, ADMIN→OWNER
+  role assignment, export/API-key/bulk RBAC tightening, OAuth account linking,
+  WhatsApp OAuth state, CSP unsafe-inline, Tilopay HMAC algorithm confirmation
+  with provider if production used presence-only hashes.
+
 ## 2026-08-03 — workforce clock reliability hardening
 
 - Read-only production forensic check: one Lau employee, one valid open entry, no

@@ -11,7 +11,7 @@ export const MANAGED_TENANTS = [
   { id: 'cmln5u7k70000ld042qify2og', defaultName: 'DeepCLean', defaultColor: '#a855f7' },
   { id: 'cmh44aerw0006vijg0640vfl0', defaultName: 'PeterTesting', defaultColor: '#06b6d4' },
   { id: 'cmm4pv8fl0000jr045en1nik9', defaultName: 'Bloom', defaultColor: '#ec4899' },
-  { id: 'cmsrgct420000vipcp3xyqb0m', defaultName: 'KeylanVega', defaultColor: '#f97316' },
+  { id: 'cmsrgct420000vipcp3xyqb0m', defaultName: 'Forge', defaultColor: '#f97316' },
 ] as const;
 
 export type ManagedTenantId = (typeof MANAGED_TENANTS)[number]['id'];

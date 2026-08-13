@@ -54,7 +54,7 @@ describe('logistics managed tenants', () => {
     }
   });
 
-  it('includes KeylanVega in the logistics allowlist', () => {
+  it('includes Forge in the logistics allowlist', () => {
     assert.equal(isManagedTenantId('cmsrgct420000vipcp3xyqb0m'), true);
     const resolved = resolveManagedTenantFilter('cmsrgct420000vipcp3xyqb0m');
     assert.equal(resolved.ok, true);

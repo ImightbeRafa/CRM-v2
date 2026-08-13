@@ -8,11 +8,11 @@ Append-only. Newest entries at the top.
   Sign-in/register reused that User row and OAuth/JWT silently reactivated the
   old tenant. Bloom orders were not modified (still 473). Bloom OWNER
   (`bloomparchescr@gmail.com`) left intact. Forge Bloom membership was
-  deactivated; a new owned tenant `KeylanVega's Organization` was created.
+  deactivated; a new owned tenant was created and renamed to Forge.
 - Auth no longer reactivates inactive memberships on Google login or JWT
   refresh. Detached Google users get a new owned tenant. Removing a user
   clears/repoints `defaultTenantId`. Re-invite reactivates the inactive row.
-- Added tenant `cmsrgct420000vipcp3xyqb0m` (KeylanVega) to the logistics
+- Added tenant `cmsrgct420000vipcp3xyqb0m` (Forge) to the logistics
   managed-tenant allowlist and centralized leftover hardcoded copies onto
   `src/lib/logistics-managed-tenants.ts`. Finance DeepSleep/Bloom allowlist
   was not changed.

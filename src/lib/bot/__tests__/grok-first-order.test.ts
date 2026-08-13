@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import * as xaiResponses from '../xai-responses';
 
 process.env.XAI_API_KEY ||= 'test-key';
 
@@ -729,5 +730,119 @@ testExpandMashedProductEntries();
 testInventoryMatchPickPreservesSiblingProducts();
 testGapFillUpgradesPartialMultiProductUnderCapture();
 testMashedPendingPickFlowKeepsFourLines();
+testXaiResponsesHelpers();
 
 console.log('Grok-first bot helper tests passed.');
+
+function testXaiResponsesHelpers() {
+  const {
+    buildPromptCacheKey,
+    parseResponseFunctionCalls,
+    parseResponseText,
+    toFunctionCallOutputs,
+    toResponsesInputMessages,
+    buildXaiResponseBody,
+    buildToolFollowUpInput,
+  } = xaiResponses;
+
+  const cacheKey = buildPromptCacheKey({ tenantId: 't1', platform: 'whatsapp', platformId: '5068888' });
+  assert.equal(cacheKey.startsWith('betsy:'), true);
+  assert.equal(cacheKey.includes('5068888'), false);
+  assert.equal(cacheKey.includes('whatsapp'), false);
+  assert.equal(cacheKey.includes('t1'), false);
+  assert.equal(
+    buildPromptCacheKey({ tenantId: 't1', platform: 'whatsapp', platformId: '5068888' }),
+    cacheKey,
+  );
+  assert.notEqual(
+    buildPromptCacheKey({ tenantId: 't1', platform: 'whatsapp', platformId: '5069999' }),
+    cacheKey,
+  );
+
+  const input = toResponsesInputMessages([
+    { role: 'system', content: 'ignore me' },
+    { role: 'user', content: 'hola' },
+    { role: 'assistant', content: 'en que te ayudo' },
+  ]);
+  assert.equal(input.length, 2);
+  assert.equal(input[0].role, 'user');
+  assert.equal(input[1].role, 'assistant');
+
+  const calls = parseResponseFunctionCalls({
+    output: [
+      { type: 'reasoning', id: 'r1', summary: [] } as any,
+      {
+        type: 'function_call',
+        call_id: 'call_1',
+        name: 'get_orders',
+        arguments: '{"status":"Pendiente"}',
+      },
+    ],
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].id, 'call_1');
+  assert.equal(calls[0].name, 'get_orders');
+
+  const text = parseResponseText({
+    output_text: '',
+    output: [
+      {
+        type: 'message',
+        id: 'm1',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: 'Listo', annotations: [] }],
+      } as any,
+    ],
+  });
+  assert.equal(text, 'Listo');
+
+  const outputs = toFunctionCallOutputs(calls, ['3 ordenes']);
+  assert.deepEqual(outputs, [{
+    type: 'function_call_output',
+    call_id: 'call_1',
+    output: '3 ordenes',
+  }]);
+
+  const priorOutput = [
+    {
+      type: 'function_call',
+      call_id: 'call_1',
+      name: 'get_orders',
+      arguments: '{"status":"Pendiente"}',
+    },
+  ] as any;
+  const followUpInput = buildToolFollowUpInput(priorOutput, outputs);
+  assert.equal(followUpInput.length, 2);
+  assert.equal((followUpInput[1] as any).type, 'function_call_output');
+  assert.equal((followUpInput[1] as any).call_id, 'call_1');
+
+  const body = buildXaiResponseBody({
+    model: 'grok-4.6',
+    input: [{ role: 'user', content: 'hola' }],
+    promptCacheKey: cacheKey,
+    maxOutputTokens: 2000,
+    temperature: 0.1,
+    reasoningEffort: 'low',
+    includeEncryptedReasoning: true,
+    tools: [{
+      type: 'function',
+      name: 'get_orders',
+      description: 'List orders',
+      parameters: { type: 'object', properties: {} },
+      strict: false,
+    }],
+    toolChoice: 'auto',
+  });
+  assert.equal(body.model, 'grok-4.6');
+  assert.equal(body.store, false);
+  assert.equal(body.prompt_cache_key, cacheKey);
+  assert.equal(body.prompt_cache_key.includes('5068888'), false);
+  assert.equal(body.reasoning.effort, 'low');
+  assert.equal(body.tool_choice, 'auto');
+  assert.deepEqual(body.include, ['reasoning.encrypted_content']);
+  assert.equal('previous_response_id' in body, false);
+  assert.equal(body.tools?.[0].type, 'function');
+  assert.equal((body.tools?.[0] as any).name, 'get_orders');
+  assert.equal((body.tools?.[0] as any).function, undefined);
+}

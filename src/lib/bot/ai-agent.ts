@@ -1,10 +1,12 @@
 ﻿/**
  * Betsy AI Agent
- * 
+ *
  * The main AI agent that processes user messages, decides which tools to use,
- * and generates natural Spanish responses. Uses xAI Grok with function calling.
- * 
- * xAI API is OpenAI-compatible, using the same SDK with a different base URL.
+ * and generates natural Spanish responses. Uses xAI Grok via the Responses API.
+ *
+ * xAI is OpenAI-compatible (OpenAI SDK + https://api.x.ai/v1). Chat Completions
+ * is legacy. Requests use store:false; tool follow-ups replay encrypted
+ * reasoning + function_call_output in-process (no previous_response_id).
  */
 
 import OpenAI from 'openai';
@@ -19,6 +21,17 @@ import {
   updateToolSchemasWithCustomFields,
   getFormattedCustomFieldsForOrder,
 } from './ai-tools';
+import {
+  buildPromptCacheKey,
+  buildToolFollowUpInput,
+  buildXaiResponseBody,
+  parseResponseFunctionCalls,
+  parseResponseText,
+  toFunctionCallOutputs,
+  toResponsesInputMessages,
+  type NormalizedFunctionCall,
+  type ResponsesFunctionTool,
+} from './xai-responses';
 
 export type { ToolAttachment };
 
@@ -70,10 +83,10 @@ const xai = new OpenAI({
 
 // Model configuration
 // IMPORTANT: For deterministic tool-calling, keep TEMPERATURE low (0.0-0.2).
-// REASONING_EFFORT is supported by grok-4.3 and dramatically improves rule
-// adherence on a long system prompt. MAX_TOKENS must be large enough to fit
-// multi-product tool-call JSON without truncation.
-const MODEL = process.env.XAI_MODEL || 'grok-4.3';
+// REASONING_EFFORT defaults to low for WhatsApp latency (15s timeout).
+// grok-4.6 defaults to high if omitted — do not drop this field.
+// MAX_TOKENS must be large enough to fit multi-product tool-call JSON.
+const MODEL = process.env.XAI_MODEL || 'grok-4.6';
 const MAX_TOKENS = Number(process.env.XAI_MAX_TOKENS || 2000);
 const TEMPERATURE = (() => {
   const raw = process.env.XAI_TEMPERATURE;
@@ -98,7 +111,40 @@ if (process.env.NEXT_PHASE !== 'phase-production-build') {
     timeoutMs: XAI_TIMEOUT_MS,
     extractionTimeoutMs: XAI_EXTRACTION_TIMEOUT_MS,
     maxRetries: XAI_MAX_RETRIES,
+    api: 'responses',
   });
+}
+
+async function createXaiResponse(
+  args: Omit<Parameters<typeof buildXaiResponseBody>[0], 'model'> & { model?: string },
+  requestOptions?: { timeout?: number; maxRetries?: number },
+): Promise<OpenAI.Responses.Response> {
+  const startedAt = Date.now();
+  const body = buildXaiResponseBody({
+    ...args,
+    model: args.model || MODEL,
+  });
+
+  const response = await xai.responses.create(
+    body as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,
+    {
+      ...(requestOptions?.timeout ? { timeout: requestOptions.timeout } : {}),
+      maxRetries: requestOptions?.maxRetries ?? 0,
+    },
+  );
+
+  console.info('[AI Agent] xAI responses call', {
+    elapsedMs: Date.now() - startedAt,
+    store: body.store,
+    hasTools: Boolean(body.tools?.length),
+    toolChoice: body.tool_choice || 'none',
+    inputTokens: response.usage?.input_tokens,
+    cachedTokens: response.usage?.input_tokens_details?.cached_tokens,
+    outputTokens: response.usage?.output_tokens,
+    reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
+  });
+
+  return response;
 }
 
 // Action keywords that require tool calls (to prevent AI hallucination)
@@ -196,7 +242,7 @@ type PreparedToolCall = {
   id: string;
   name: ToolName;
   args: any;
-  original: OpenAI.Chat.Completions.ChatCompletionMessageToolCall;
+  original: NormalizedFunctionCall;
 };
 
 function stableStringify(value: unknown): string {
@@ -813,22 +859,35 @@ async function extractOrderArgsWithGrok(
   });
 
   try {
-    const response = await xai.beta.chat.completions.parse({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
+    const format = zodResponseFormat(OrderExtractionSchema, 'betsy_order_extraction');
+    const response = await createXaiResponse({
+      input: [{ role: 'user', content: userMessage }],
+      instructions: systemPrompt,
+      promptCacheKey: 'betsy:order-extraction',
+      maxOutputTokens: 900,
       temperature: 0,
-      max_tokens: 900,
-      reasoning_effort: XAI_EXTRACTION_REASONING_EFFORT,
-      response_format: zodResponseFormat(OrderExtractionSchema, 'betsy_order_extraction'),
+      reasoningEffort: XAI_EXTRACTION_REASONING_EFFORT,
+      textFormat: {
+        name: format.json_schema.name,
+        schema: format.json_schema.schema as Record<string, unknown>,
+        strict: format.json_schema.strict ?? true,
+      },
     }, {
       timeout: XAI_EXTRACTION_TIMEOUT_MS,
       maxRetries: 0,
     });
 
-    const parsed = response.choices[0]?.message?.parsed as AIOrderExtraction | null | undefined;
+    const rawText = parseResponseText(response);
+    let parsed: AIOrderExtraction | null = null;
+    if (rawText) {
+      try {
+        const json = JSON.parse(rawText);
+        const checked = OrderExtractionSchema.safeParse(json);
+        parsed = checked.success ? checked.data : (json as AIOrderExtraction);
+      } catch {
+        parsed = null;
+      }
+    }
     if (!parsed) {
       console.warn('[AI Agent] extractOrderArgsWithGrok: structured parse returned empty', {
         elapsedMs: Date.now() - startedAt,
@@ -2389,12 +2448,12 @@ function zodFieldToJsonSchema(zodField: z.ZodTypeAny): any {
   return fieldSchema;
 }
 
-// Convert Zod schemas to OpenAI function definitions
-function zodToOpenAITool(name: string, schema: { description: string; parameters: z.ZodType<any> }) {
+// Convert Zod schemas to xAI Responses function tools (flat, not Chat Completions nested).
+function zodToOpenAITool(name: string, schema: { description: string; parameters: z.ZodType<any> }): ResponsesFunctionTool {
   const zodSchema = schema.parameters;
 
   // Convert Zod to JSON Schema manually for the fields we use
-  const jsonSchema: any = {
+  const jsonSchema: Record<string, unknown> = {
     type: 'object',
     properties: {},
     required: [],
@@ -2402,24 +2461,28 @@ function zodToOpenAITool(name: string, schema: { description: string; parameters
 
   if (zodSchema instanceof z.ZodObject) {
     const shape = zodSchema.shape;
+    const properties: Record<string, unknown> = {};
+    const required: string[] = [];
 
     for (const [key, value] of Object.entries(shape)) {
       const zodField = value as z.ZodTypeAny;
       const typeName = zodField._def.typeName;
       if (typeName !== 'ZodOptional' && typeName !== 'ZodDefault') {
-        jsonSchema.required.push(key);
+        required.push(key);
       }
-      jsonSchema.properties[key] = zodFieldToJsonSchema(zodField);
+      properties[key] = zodFieldToJsonSchema(zodField);
     }
+
+    jsonSchema.properties = properties;
+    jsonSchema.required = required;
   }
 
   return {
-    type: 'function' as const,
-    function: {
-      name,
-      description: schema.description,
-      parameters: jsonSchema,
-    },
+    type: 'function',
+    name,
+    description: schema.description,
+    parameters: jsonSchema,
+    strict: false,
   };
 }
 
@@ -2741,7 +2804,7 @@ export async function processMessage(
     }
 
     // ── AI-first order extraction ───────────────────────────────────────
-    // Grok 4.3 is the brain. When the message looks like an order-creation
+    // Grok 4.6 is the brain. When the message looks like an order-creation
     // request, we let the model read it the way a human would and produce
     // the structured fields. The regex parser is NOT layered on top of the
     // AI output — that was actively limiting the model and producing bugs
@@ -2846,11 +2909,12 @@ export async function processMessage(
       .replace('{{CURRENT_TIME}}', currentTime)
       .replace('{{CUSTOM_FIELDS_SECTION}}', customFieldsSection);
 
-    // Build messages array
-    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemPromptWithDate },
-      ...history.slice(-20),
-    ];
+    const promptCacheKey = buildPromptCacheKey({
+      tenantId: context.tenantId,
+      platform,
+      platformId,
+    });
+    const input = toResponsesInputMessages(history.slice(-20));
 
     // Detect if this is an action request that should require tool execution
     const requiresToolCall = isActionRequest(userMessage);
@@ -2859,28 +2923,33 @@ export async function processMessage(
       console.log('[AI Agent] 🔧 Action request detected, forcing tool_choice: required');
     }
 
-    // Call xAI with dynamic tool_choice
-    const response = await xai.chat.completions.create({
-      model: MODEL,
-      messages,
+    // Call xAI Responses API. store:false — do not retain PII on xAI.
+    // Tool follow-up replays this response.output in-process; never persist
+    // previous_response_id across WhatsApp turns (history sanitization).
+    const response = await createXaiResponse({
+      input,
+      instructions: systemPromptWithDate,
       tools: currentTools,
-      tool_choice: requiresToolCall ? 'required' : 'auto',
-      max_tokens: MAX_TOKENS,
+      toolChoice: requiresToolCall ? 'required' : 'auto',
+      promptCacheKey,
+      maxOutputTokens: MAX_TOKENS,
       temperature: TEMPERATURE,
-      reasoning_effort: REASONING_EFFORT,
+      reasoningEffort: REASONING_EFFORT,
+      includeEncryptedReasoning: true,
     });
 
-    const message = response.choices[0]?.message;
+    const functionCalls = parseResponseFunctionCalls(response);
+    const responseText = parseResponseText(response);
 
-    if (!message) {
+    if (functionCalls.length === 0 && !responseText) {
       throw new Error('No response from AI');
     }
 
     // SECURITY CHECK: Detect when AI should have called a tool but didn't
-    if (requiresToolCall && (!message.tool_calls || message.tool_calls.length === 0)) {
+    if (requiresToolCall && functionCalls.length === 0) {
       console.warn('[AI Agent] ⚠️ ACTION REQUEST BUT NO TOOL CALLS!');
       console.warn('[AI Agent] User message:', userMessage);
-      console.warn('[AI Agent] AI response (text only):', message.content?.slice(0, 300));
+      console.warn('[AI Agent] AI response (text only):', responseText.slice(0, 300));
 
       const safeResponse = `Para ejecutar esta acción, necesito más información. Por favor proporciona en un solo mensaje:
 
@@ -2901,16 +2970,16 @@ export async function processMessage(
     }
 
     // Handle tool calls
-    if (message.tool_calls && message.tool_calls.length > 0) {
+    if (functionCalls.length > 0) {
       const toolResults: string[] = [];
       const toolCallsLog: any[] = [];
       const allAttachments: ToolAttachment[] = [];
-      const preparedToolCalls = mergeCreateOrderCalls(message.tool_calls.map((toolCall) => {
-        const toolName = toolCall.function.name as ToolName;
+      const preparedToolCalls = mergeCreateOrderCalls(functionCalls.map((toolCall) => {
+        const toolName = toolCall.name as ToolName;
         let toolArgs: any;
 
         try {
-          toolArgs = JSON.parse(toolCall.function.arguments);
+          toolArgs = JSON.parse(toolCall.arguments);
         } catch {
           toolArgs = {};
         }
@@ -3111,34 +3180,20 @@ export async function processMessage(
         return { text: directResponse };
       }
 
-      // Get a natural language response about the tool results
-      const followUpMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-        ...messages,
-        {
-          role: 'assistant',
-          content: null,
-          tool_calls: message.tool_calls.map((tc) => ({
-            id: tc.id,
-            type: 'function' as const,
-            function: tc.function,
-          })),
-        },
-        {
-          role: 'tool',
-          content: toolResults.join('\n\n'),
-          tool_call_id: message.tool_calls[0]?.id || '',
-        },
-      ];
-
-      const followUpResponse = await xai.chat.completions.create({
-        model: MODEL,
-        messages: followUpMessages,
-        max_tokens: MAX_TOKENS,
+      // Stateless follow-up: replay prior output (incl. encrypted reasoning)
+      // plus one function_call_output per call_id. No previous_response_id.
+      const functionCallOutputs = toFunctionCallOutputs(preparedToolCalls, toolResults);
+      const followUpResponse = await createXaiResponse({
+        input: buildToolFollowUpInput(response.output, functionCallOutputs),
+        instructions: systemPromptWithDate,
+        promptCacheKey,
+        maxOutputTokens: MAX_TOKENS,
         temperature: TEMPERATURE,
-        reasoning_effort: REASONING_EFFORT,
+        reasoningEffort: REASONING_EFFORT,
+        includeEncryptedReasoning: true,
       });
 
-      const finalMessage = followUpResponse.choices[0]?.message?.content;
+      const finalMessage = parseResponseText(followUpResponse);
 
       if (finalMessage) {
         await addAssistantMessage(platform, platformId, finalMessage);
@@ -3151,9 +3206,9 @@ export async function processMessage(
     }
 
     // No tool calls, just return the AI response
-    if (message.content) {
-      await addAssistantMessage(platform, platformId, message.content);
-      return { text: message.content };
+    if (responseText) {
+      await addAssistantMessage(platform, platformId, responseText);
+      return { text: responseText };
     }
 
     return { text: 'Lo siento, no pude procesar tu solicitud.' };

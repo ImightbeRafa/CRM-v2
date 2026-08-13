@@ -2,6 +2,19 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-13 — WhatsApp/Telegram bot → xAI Responses API + Grok 4.6
+
+- Default model is `grok-4.6` (`XAI_MODEL` still overrides). Reasoning stays `low`
+  so WhatsApp's 15s timeout is not blown by the 4.6 high default.
+- Agent chat and order extraction now call `/v1/responses` instead of Chat
+  Completions. Tools use the flat Responses function shape.
+- Privacy: every request is `store:false`. Tool follow-ups replay in-memory
+  `response.output` (with encrypted reasoning) plus per-`call_id`
+  `function_call_output`. No `previous_response_id` (that requires 30-day
+  xAI retention). `prompt_cache_key` is HMAC'd so the WhatsApp phone is not
+  sent as a cache key.
+- Helpers live in `src/lib/bot/xai-responses.ts`; covered by `test:bot-grok`.
+
 ## 2026-08-13 — removed-assistant account recovery
 
 - `forgecostarica04@gmail.com` was still an active Bloom ADMIN after "delete".

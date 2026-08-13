@@ -3,14 +3,9 @@ import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { calculateTilopayFees, isTilopayOrder } from '@/lib/tilopay-fees';
 import { getLogisticsRates } from '@/lib/logistics-rates';
+import { MANAGED_TENANT_IDS } from '@/lib/logistics-managed-tenants';
 
 export const dynamic = 'force-dynamic';
-
-const MANAGED_IDS = [
-    'cmh32z0ol0000k004hvx9tg3p', 'cmhsibjue0004js04gie724nx', 'cmhutd1th0000jp04oqibtz54',
-    'cmigornmw0000lb04kl75262e', 'cmjdabz4d0000il04dyc5qmcc', 'cmln5u7k70000ld042qify2og',
-    'cmh44aerw0006vijg0640vfl0', 'cmm4pv8fl0000jr045en1nik9',
-];
 
 async function getBrowser() {
     if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
@@ -115,7 +110,7 @@ export async function GET(req: NextRequest) {
 
         const tenantRows = await prisma.$queryRawUnsafe<{ id: string; name: string }[]>(`
             SELECT id, name FROM "Tenant" WHERE id = ANY($1::text[])
-        `, MANAGED_IDS);
+        `, MANAGED_TENANT_IDS);
         const tenantNameMap: Record<string, string> = {};
         for (const t of tenantRows) tenantNameMap[t.id] = t.name;
 
@@ -170,7 +165,7 @@ export async function GET(req: NextRequest) {
         let grandTotalTilopay = 0;
         let grandSubtotalLogistics = 0;
 
-        for (const tenantId of MANAGED_IDS) {
+        for (const tenantId of MANAGED_TENANT_IDS) {
             const tOrders = orders.filter(o => o.tenantId === tenantId);
             if (tOrders.length === 0) continue;
 

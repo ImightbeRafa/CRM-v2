@@ -8,6 +8,7 @@ import {
     X, Check, Calendar,
 } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
+import { MANAGED_TENANT_IDS } from '@/lib/logistics-managed-tenants';
 
 /* ─── Styling constants ────────────────────────────────── */
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14 } as const;
@@ -49,12 +50,6 @@ const formatPeriodLabel = (from?: string | null, to?: string | null) => {
     if (from) return `Desde ${fmtDate(from)}`;
     return `Hasta ${fmtDate(to!)}`;
 };
-
-const MANAGED_IDS = [
-    'cmh32z0ol0000k004hvx9tg3p', 'cmhsibjue0004js04gie724nx', 'cmhutd1th0000jp04oqibtz54',
-    'cmigornmw0000lb04kl75262e', 'cmjdabz4d0000il04dyc5qmcc', 'cmln5u7k70000ld042qify2og',
-    'cmh44aerw0006vijg0640vfl0', 'cmm4pv8fl0000jr045en1nik9',
-];
 
 /* ─── Types ───────────────────────────────────────────── */
 type ReportPeriodMode = 'currentWeek' | 'custom';
@@ -156,7 +151,7 @@ export default function ReportsPage() {
     const [activeTab, setActiveTab] = useState<'reports' | 'history'>('reports');
 
     // Report controls — default to all tenants for the live dashboard
-    const [selectedTenants, setSelectedTenants] = useState<string[]>([...MANAGED_IDS]);
+    const [selectedTenants, setSelectedTenants] = useState<string[]>([...MANAGED_TENANT_IDS]);
     const [staffName, setStaffName] = useState('Ma');
     const [reportMode, setReportMode] = useState<ReportPeriodMode>('currentWeek');
     const [dateFrom, setDateFrom] = useState(() => startOfMonthKey(toDateKeyCR()));
@@ -231,7 +226,7 @@ export default function ReportsPage() {
         setSelectedTenants(prev => prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]);
     };
     const toggleAll = () => {
-        setSelectedTenants(prev => prev.length === MANAGED_IDS.length ? [] : [...MANAGED_IDS]);
+        setSelectedTenants(prev => prev.length === MANAGED_TENANT_IDS.length ? [] : [...MANAGED_TENANT_IDS]);
     };
     const toggleExpanded = (id: string) => {
         setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
@@ -239,7 +234,7 @@ export default function ReportsPage() {
 
     // ─── Generate current week report ──────────────────
     const generate = useCallback(async () => {
-        const tenants = selectedTenants.length > 0 ? selectedTenants : MANAGED_IDS;
+        const tenants = selectedTenants.length > 0 ? selectedTenants : MANAGED_TENANT_IDS;
         if (tenants.length === 0) return;
 
         if (reportMode === 'custom' && dateFrom && dateTo && dateFrom > dateTo) {
@@ -428,7 +423,7 @@ export default function ReportsPage() {
     const loadHistoryDetail = useCallback(async (week: BillingWeek) => {
         try {
             const settled = await Promise.allSettled(
-                MANAGED_IDS.map(async (tenantId) => {
+                MANAGED_TENANT_IDS.map(async (tenantId) => {
                     const p = new URLSearchParams({
                         tenantId,
                         dateFrom: week.week_start.slice(0, 10),
@@ -532,7 +527,7 @@ export default function ReportsPage() {
         downloadCSV(csv, `reporte_${ws}_${we}.csv`);
     }
 
-    const allSelected = selectedTenants.length === MANAGED_IDS.length;
+    const allSelected = selectedTenants.length === MANAGED_TENANT_IDS.length;
     const hasReports = reports.length > 0;
     const isWeekFinalized = weekInfo?.finalized_at != null;
     const isCustomReport = reportMode === 'custom';
@@ -666,7 +661,7 @@ export default function ReportsPage() {
                                 </button>
                             </div>
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                {MANAGED_IDS.map(id => {
+                                {MANAGED_TENANT_IDS.map(id => {
                                     const isSelected = selectedTenants.includes(id);
                                     const color = getTenantColor(id);
                                     return (

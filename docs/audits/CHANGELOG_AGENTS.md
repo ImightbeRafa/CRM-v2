@@ -2,6 +2,21 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-13 — removed-assistant account recovery
+
+- `forgecostarica04@gmail.com` was still an active Bloom ADMIN after "delete".
+  Sign-in/register reused that User row and OAuth/JWT silently reactivated the
+  old tenant. Bloom orders were not modified (still 473). Bloom OWNER
+  (`bloomparchescr@gmail.com`) left intact. Forge Bloom membership was
+  deactivated; a new owned tenant `KeylanVega's Organization` was created.
+- Auth no longer reactivates inactive memberships on Google login or JWT
+  refresh. Detached Google users get a new owned tenant. Removing a user
+  clears/repoints `defaultTenantId`. Re-invite reactivates the inactive row.
+- Added tenant `cmsrgct420000vipcp3xyqb0m` (KeylanVega) to the logistics
+  managed-tenant allowlist and centralized leftover hardcoded copies onto
+  `src/lib/logistics-managed-tenants.ts`. Finance DeepSleep/Bloom allowlist
+  was not changed.
+
 ## 2026-08-11 — cybersecurity review + safe hardening
 
 - Full evidence-led security audit (auth, tenant isolation, Tilopay/billing,

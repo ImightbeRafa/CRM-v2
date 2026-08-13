@@ -53,4 +53,17 @@ describe('logistics managed tenants', () => {
       assert.ok(typeof resolved.tenantId === 'object' && 'in' in resolved.tenantId);
     }
   });
+
+  it('includes KeylanVega in the logistics allowlist', () => {
+    assert.equal(isManagedTenantId('cmsrgct420000vipcp3xyqb0m'), true);
+    const resolved = resolveManagedTenantFilter('cmsrgct420000vipcp3xyqb0m');
+    assert.equal(resolved.ok, true);
+    if (resolved.ok) {
+      assert.equal(resolved.tenantId, 'cmsrgct420000vipcp3xyqb0m');
+    }
+  });
+
+  it('keeps Bloom in the logistics allowlist', () => {
+    assert.equal(isManagedTenantId('cmm4pv8fl0000jr045en1nik9'), true);
+  });
 });

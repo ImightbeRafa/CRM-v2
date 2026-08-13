@@ -5,6 +5,7 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { createSuccessResponse, createErrorResponse, handleApiError, validateRequiredFields, validatePassword } from '@/lib/apiUtils'
 import { logCreate, logDelete } from '@/lib/auditLogger'
 import { checkUserLimit } from '@/lib/plan-enforcement'
+import { inviteMembershipAction, resolveDefaultTenantAfterRemoval } from '@/lib/membership-lifecycle'
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic'
@@ -125,9 +126,44 @@ export async function POST(request: NextRequest) {
           tenantId: tenantId
         }
       })
-      
-      if (existingMembership) {
+
+      const membershipAction = inviteMembershipAction(existingMembership)
+      if (membershipAction === 'conflict') {
         return createErrorResponse('El usuario ya pertenece a este tenant', 409)
+      }
+      if (membershipAction === 'reactivate' && existingMembership) {
+        const reactivated = await prisma.membership.update({
+          where: { id: existingMembership.id },
+          data: {
+            isActive: true,
+            role: role as any,
+            joinedAt: new Date(),
+          }
+        })
+
+        if (!existingUser.defaultTenantId) {
+          await prisma.user.update({
+            where: { id: existingUser.id },
+            data: { defaultTenantId: tenantId }
+          })
+        }
+
+        try {
+          await logCreate(request, 'user', existingUser.id, username || normalizedEmail, {
+            email: normalizedEmail,
+            username: username || normalizedEmail,
+            role: role || 'VIEWER',
+            tenantId,
+            reactivated: true,
+          })
+        } catch (auditError) {
+          console.error('Failed to log user reactivation audit:', auditError)
+        }
+
+        return createSuccessResponse(
+          { userId: existingUser.id, email: normalizedEmail, role, membershipId: reactivated.id },
+          'Usuario agregado al tenant'
+        )
       }
       
       // Add existing user to this tenant
@@ -298,12 +334,38 @@ export async function DELETE(request: NextRequest) {
       return createErrorResponse('Usuario no encontrado en este tenant', 404)
     }
     
-    // CRITICAL: Remove membership only, NOT the user
-    // This allows the user to exist in other tenants
-    await prisma.membership.update({
-      where: { id: membership.id },
-      data: {
-        isActive: false
+    // Remove membership only, NOT the user. Sign-in must not revive this row.
+    await prisma.$transaction(async (tx) => {
+      await tx.membership.update({
+        where: { id: membership.id },
+        data: {
+          isActive: false
+        }
+      })
+
+      const [targetUser, remaining] = await Promise.all([
+        tx.user.findUnique({
+          where: { id },
+          select: { defaultTenantId: true }
+        }),
+        tx.membership.findMany({
+          where: { userId: id, isActive: true },
+          select: { tenantId: true },
+          orderBy: { joinedAt: 'desc' }
+        })
+      ])
+
+      const nextDefault = resolveDefaultTenantAfterRemoval(
+        targetUser?.defaultTenantId,
+        tenantId,
+        remaining.map((row) => row.tenantId)
+      )
+
+      if (targetUser && targetUser.defaultTenantId !== nextDefault) {
+        await tx.user.update({
+          where: { id },
+          data: { defaultTenantId: nextDefault }
+        })
       }
     })
     

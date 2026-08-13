@@ -6,21 +6,10 @@ import {
   generateRetiroReceiptPdf,
   type RetiroReceiptPaymentMethod,
 } from '@/lib/pdf/retiroReceiptPdf';
+import { MANAGED_TENANT_IDS } from '@/lib/logistics-managed-tenants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-/** Same managed-tenant allowlist used by /api/logistics/orders. */
-const MANAGED_TENANT_IDS = [
-  'cmh32z0ol0000k004hvx9tg3p',
-  'cmhsibjue0004js04gie724nx',
-  'cmhutd1th0000jp04oqibtz54',
-  'cmigornmw0000lb04kl75262e',
-  'cmjdabz4d0000il04dyc5qmcc',
-  'cmln5u7k70000ld042qify2og',
-  'cmh44aerw0006vijg0640vfl0',
-  'cmm4pv8fl0000jr045en1nik9',
-];
 
 function sanitizeFilename(value: string): string {
   return String(value || 'retiro')

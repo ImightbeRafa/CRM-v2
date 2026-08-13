@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/db';
-import { hashPassword, validatePasswordStrength } from '@/lib/password';
+import { hashPassword, validatePasswordStrength, verifyPassword, isBcryptHash } from '@/lib/password';
 import { sendVerificationEmail } from '@/lib/email';
 import { withoutTenantIsolation } from '@/lib/tenantContext';
 import { authRateLimit } from '@/lib/rate-limit';
 import { sendCAPIEvent } from '@/lib/meta-capi';
+import { provisionOwnedTenantForExistingUser } from '@/lib/tenant-provisioning';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,10 +39,47 @@ export async function POST(request: Request) {
           equals: normalizedEmail, 
           mode: 'insensitive' 
         } 
-      }
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        username: true,
+        password: true,
+        active: true,
+        memberships: {
+          where: { isActive: true },
+          select: { id: true },
+          take: 1,
+        },
+      },
     });
 
     if (existingUser) {
+      const existingPassword = existingUser.password;
+      const canClaimOwnTenant =
+        existingUser.active !== false &&
+        existingUser.memberships.length === 0 &&
+        !!existingPassword &&
+        isBcryptHash(existingPassword) &&
+        await verifyPassword(password, existingPassword);
+
+      if (canClaimOwnTenant) {
+        await withoutTenantIsolation(async () => {
+          await prisma.$transaction(async (tx) => {
+            await provisionOwnedTenantForExistingUser(tx, {
+              userId: existingUser.id,
+              email: existingUser.email,
+              displayName: name || existingUser.name || existingUser.username || normalizedEmail.split('@')[0],
+              businessName: businessName || null,
+              phone: phone || null,
+              country: country || null,
+              province: province || null,
+            });
+          });
+        });
+      }
+
       return NextResponse.json(
         { success: true, message: 'Registration successful! Please check your email to verify your account.' },
         { status: 200 }

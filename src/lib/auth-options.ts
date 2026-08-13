@@ -4,9 +4,10 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import GoogleProvider from "next-auth/providers/google"
 import { prisma } from './db'
 import { verifyPassword, isBcryptHash } from './password'
-import { createDefaultOrderStatuses } from './default-statuses'
 import { withoutTenantIsolation } from './tenantContext'
 import { rateLimit } from './rate-limit'
+import { selectActiveTenantId } from './membership-lifecycle'
+import { provisionOwnedTenantForExistingUser } from './tenant-provisioning'
 
 type MemberRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES' | 'PRODUCTION' | 'MEMBER' | 'VIEWER';
 
@@ -165,7 +166,10 @@ export const authOptions: NextAuthOptions = {
           }
 
           // Get membership role (OWNER, ADMIN, MANAGER, SALES, PRODUCTION, VIEWER)
-          const membershipRole = user.memberships.length > 0 ? user.memberships[0].role : null
+          const activeTenantIds = user.memberships.map((m) => m.tenantId)
+          const selectedTenantId = selectActiveTenantId(user.defaultTenantId, activeTenantIds)
+          const selectedMembership = user.memberships.find((m) => m.tenantId === selectedTenantId) || user.memberships[0]
+          const membershipRole = selectedMembership?.role ?? null
 
           // Legacy role for compatibility (OWNER -> MASTER)
           const role = membershipRole === 'OWNER' ? 'MASTER' : 'REGULAR'
@@ -176,7 +180,7 @@ export const authOptions: NextAuthOptions = {
             name: user.username || user.email, // Username for display, fallback to email
             role: role,
             membershipRole: membershipRole, // Actual role from Membership table
-            tenantId: user.defaultTenantId || user.memberships[0]?.tenantId,
+            tenantId: selectedTenantId,
             email_verified: !!user.emailVerified,
             active: user.active,
             memberships: user.memberships.map(m => ({
@@ -326,151 +330,43 @@ export const authOptions: NextAuthOptions = {
               if (updatedUser.memberships.length > 0) {
                 const hasOwnerRole = updatedUser.memberships.some(m => m.role === 'OWNER');
                 (user as any).role = hasOwnerRole ? 'MASTER' : 'REGULAR';
-                // Prioritize defaultTenantId if set, otherwise use first active membership
-                let selectedTenantId = updatedUser.defaultTenantId;
-                if (selectedTenantId) {
-                  // Verify defaultTenantId is in active memberships
-                  const hasDefaultTenant = updatedUser.memberships.some(m => m.tenantId === selectedTenantId);
-                  if (!hasDefaultTenant) {
-                    // Default tenant not in active memberships, use first one
-                    selectedTenantId = updatedUser.memberships[0]?.tenantId;
-                  }
-                } else {
-                  // No defaultTenantId, use first active membership
-                  selectedTenantId = updatedUser.memberships[0]?.tenantId;
-                }
+                const selectedTenantId = selectActiveTenantId(
+                  updatedUser.defaultTenantId,
+                  updatedUser.memberships.map((m) => m.tenantId),
+                );
                 (user as any).tenantId = selectedTenantId;
                 (user as any).memberships = updatedUser.memberships;
                 console.log(`[OAuth] ✅ User logged in with tenant: ${selectedTenantId} (${updatedUser.memberships.length} active membership(s))`);
                 return true; // SUCCESS - User has active memberships
-              } else {
-                // User exists but has no ACTIVE memberships
-                // CRITICAL: This happens when users are added via API - they have defaultTenantId but inactive membership
-                console.log(`[OAuth] ⚠️ User ${updatedUser.email} has no active memberships, checking for inactive ones...`);
-
-                if (updatedUser.defaultTenantId) {
-                  // User has a defaultTenantId - they were added to a tenant
-                  // Find and reactivate their membership
-                  try {
-                    // Look for ANY membership (active or inactive) for the default tenant
-                    const membership = await prisma.membership.findFirst({
-                      where: {
-                        userId: updatedUser.id,
-                        tenantId: updatedUser.defaultTenantId
-                      },
-                      include: {
-                        tenant: {
-                          select: {
-                            id: true,
-                            name: true,
-                            slug: true,
-                            plan: true,
-                            isActive: true,
-
-                            trialEndsAt: true
-                          }
-                        }
-                      }
-                    });
-
-                    if (membership) {
-                      // Membership exists - reactivate it if inactive
-                      if (!membership.isActive) {
-                        await prisma.membership.update({
-                          where: { id: membership.id },
-                          data: { isActive: true }
-                        });
-                        console.log(`[OAuth] ✅ Reactivated membership for ${updatedUser.email} in tenant ${updatedUser.defaultTenantId}`);
-                      }
-
-                      // Set user data for session
-                      (user as any).role = membership.role === 'OWNER' ? 'MASTER' : 'REGULAR';
-                      (user as any).tenantId = updatedUser.defaultTenantId;
-                      (user as any).memberships = [membership];
-                      console.log(`[OAuth] ✅ User ${updatedUser.email} logged in with reactivated membership`);
-                      return true;
-                    } else {
-                      // No membership exists yet - create one (user was added to User table with defaultTenantId but no membership record)
-                      const newMembership = await prisma.membership.create({
-                        data: {
-                          userId: updatedUser.id,
-                          tenantId: updatedUser.defaultTenantId,
-                          role: 'VIEWER', // Default role for API-added users
-                          isActive: true,
-                          joinedAt: new Date()
-                        },
-                        include: {
-                          tenant: {
-                            select: {
-                              id: true,
-                              name: true,
-                              slug: true,
-                              plan: true,
-                              isActive: true,
-
-                              trialEndsAt: true
-                            }
-                          }
-                        }
-                      });
-
-                      (user as any).role = 'REGULAR';
-                      (user as any).tenantId = updatedUser.defaultTenantId;
-                      (user as any).memberships = [newMembership];
-                      console.log(`[OAuth] ✅ Created new membership for ${updatedUser.email}`);
-                      return true;
-                    }
-                  } catch (membershipError) {
-                    console.error(`[OAuth] ❌ Error handling membership:`, membershipError);
-                    return false;
-                  }
-                }
-
-                // No defaultTenantId set - check if user has ANY old memberships to reactivate
-                console.log(`[OAuth] ⚠️ User ${updatedUser.email} has no defaultTenantId, checking for old memberships...`);
-                const anyMembership = await prisma.membership.findFirst({
-                  where: { userId: updatedUser.id },
-                  orderBy: { joinedAt: 'desc' },
-                  include: {
-                    tenant: {
-                      select: {
-                        id: true,
-                        name: true,
-                        slug: true,
-                        plan: true,
-                        isActive: true,
-
-                        trialEndsAt: true
-                      }
-                    }
-                  }
-                });
-
-                if (anyMembership) {
-                  // Found an old membership - reactivate it
-                  await prisma.membership.update({
-                    where: { id: anyMembership.id },
-                    data: { isActive: true }
-                  });
-                  // Set defaultTenantId
-                  await prisma.user.update({
-                    where: { id: updatedUser.id },
-                    data: { defaultTenantId: anyMembership.tenantId }
-                  });
-
-                  (user as any).role = anyMembership.role === 'OWNER' ? 'MASTER' : 'REGULAR';
-                  (user as any).tenantId = anyMembership.tenantId;
-                  (user as any).memberships = [anyMembership];
-                  console.log(`[OAuth] ✅ Reactivated old membership for ${updatedUser.email}`);
-                  return true;
-                }
-
-                // No memberships at all - user needs to be invited to a tenant first
-                console.error(`[OAuth] ❌ Access Denied: User ${updatedUser.email} has no tenant memberships. They must be invited by a tenant owner.`);
-                return false;
               }
 
-              return true;
+              // Removed assistants must NOT be silently put back into the old tenant.
+              // Google already proved control of this email, so provision a new owned tenant.
+              console.log(`[OAuth] ⚠️ User ${updatedUser.email} has no active memberships; provisioning a new owned tenant`);
+              try {
+                const newTenant = await withoutTenantIsolation(async () => {
+                  return prisma.$transaction(async (tx) => {
+                    return provisionOwnedTenantForExistingUser(tx, {
+                      userId: updatedUser.id,
+                      email: updatedUser.email,
+                      displayName: updatedUser.name || updatedUser.username || updatedUser.email.split('@')[0],
+                    });
+                  });
+                });
+
+                (user as any).role = 'MASTER';
+                (user as any).tenantId = newTenant.id;
+                (user as any).memberships = [{
+                  role: 'OWNER',
+                  tenantId: newTenant.id,
+                  tenant: newTenant,
+                }];
+                console.log(`[OAuth] ✅ Provisioned owned tenant ${newTenant.id} for ${updatedUser.email}`);
+                return true;
+              } catch (provisionError) {
+                console.error(`[OAuth] ❌ Failed to provision owned tenant for ${updatedUser.email}:`, provisionError);
+                return false;
+              }
             }
 
             // If we get here, user doesn't exist - create new user with tenant
@@ -838,19 +734,10 @@ export const authOptions: NextAuthOptions = {
               const hasOwnerRole = memberships.some(m => m.role === 'OWNER');
               token.role = hasOwnerRole ? 'MASTER' : 'REGULAR';
 
-              // Prioritize defaultTenantId if set and in active memberships
-              let selectedTenantId = dbUser.defaultTenantId;
-              if (selectedTenantId) {
-                // Verify defaultTenantId is in active memberships
-                const hasDefaultTenant = memberships.some(m => m.tenantId === selectedTenantId);
-                if (!hasDefaultTenant) {
-                  // Default tenant not in active memberships, use first one
-                  selectedTenantId = memberships[0]?.tenantId;
-                }
-              } else {
-                // No defaultTenantId, use first active membership
-                selectedTenantId = memberships[0]?.tenantId;
-              }
+              const selectedTenantId = selectActiveTenantId(
+                dbUser.defaultTenantId,
+                memberships.map((m) => m.tenantId),
+              );
 
               token.tenantId = selectedTenantId;
 
@@ -874,72 +761,12 @@ export const authOptions: NextAuthOptions = {
               }
             } else {
               // No active memberships found
-              // IMPORTANT: Do NOT auto-create tenants here! This runs on every JWT refresh.
-              // Tenants should only be created during explicit registration or first-time OAuth sign-up.
-              // Users without memberships need to be invited to a tenant or go through proper registration.
-              console.log(`[JWT] ⚠️ User ${dbUser.email} has no active memberships - not creating auto-tenant`);
-
-              // Check if user has a defaultTenantId but no membership (inconsistent state)
-              if (dbUser.defaultTenantId) {
-                // Try to find ANY membership (even inactive) and reactivate it
-                const anyMembership = await prisma.membership.findFirst({
-                  where: {
-                    userId: dbUser.id,
-                    tenantId: dbUser.defaultTenantId
-                  },
-                  include: {
-                    tenant: {
-                      select: {
-                        id: true,
-                        name: true,
-                        slug: true,
-                        isActive: true,
-                        plan: true,
-                        trialEndsAt: true
-                      }
-                    }
-                  }
-                });
-
-                if (anyMembership) {
-                  // Found membership - reactivate if inactive
-                  if (!anyMembership.isActive) {
-                    await prisma.membership.update({
-                      where: { id: anyMembership.id },
-                      data: { isActive: true }
-                    });
-                    console.log(`[JWT] ✅ Reactivated membership for ${dbUser.email}`);
-                  }
-
-                  token.role = anyMembership.role === 'OWNER' ? 'MASTER' : 'REGULAR';
-                  token.tenantId = dbUser.defaultTenantId;
-                  token.allTenantIds = [dbUser.defaultTenantId];
-                  token.currentTenant = {
-                    id: anyMembership.tenant.id,
-                    role: anyMembership.role,
-                    name: anyMembership.tenant.name,
-                    slug: anyMembership.tenant.slug,
-                    isActive: anyMembership.tenant.isActive,
-                    plan: anyMembership.tenant.plan || 'FREE',
-                    profileCompleted: false
-                  };
-                  // @ts-ignore
-                  token.memberships = [anyMembership];
-                } else {
-                  // No membership at all - user needs to be properly invited or registered
-                  console.log(`[JWT] ❌ User ${dbUser.email} has defaultTenantId but no membership record`);
-                  token.role = 'REGULAR';
-                  token.tenantId = null;
-                  token.allTenantIds = [];
-                  token.currentTenant = null;
-                }
-              } else {
-                // No defaultTenantId and no memberships - user needs proper registration
-                token.role = 'REGULAR';
-                token.tenantId = null;
-                token.allTenantIds = [];
-                token.currentTenant = null;
-              }
+              // IMPORTANT: Do NOT auto-create or reactivate tenants here. This runs on every JWT refresh.
+              console.log(`[JWT] ⚠️ User ${dbUser.email} has no active memberships - not reactivating old tenants`);
+              token.role = 'REGULAR';
+              token.tenantId = null;
+              token.allTenantIds = [];
+              token.currentTenant = null;
             }
           }
         } catch (error) {

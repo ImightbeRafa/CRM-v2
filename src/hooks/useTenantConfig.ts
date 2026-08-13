@@ -3,6 +3,8 @@
 
 import { useState, useEffect } from 'react';
 
+import { MANAGED_TENANTS } from '@/lib/logistics-managed-tenants';
+
 export interface TenantConfig {
     id: string;
     name: string;
@@ -11,16 +13,13 @@ export interface TenantConfig {
     defaultColor: string;
 }
 
-export const FALLBACK_TENANT_CONFIG: TenantConfig[] = [
-    { id: 'cmh32z0ol0000k004hvx9tg3p', name: 'WhatASheet CR', color: '#6c63ff', defaultName: 'WhatASheet CR', defaultColor: '#6c63ff' },
-    { id: 'cmhsibjue0004js04gie724nx', name: 'DeepSleep', color: '#3b82f6', defaultName: 'DeepSleep', defaultColor: '#3b82f6' },
-    { id: 'cmhutd1th0000jp04oqibtz54', name: 'WAS CR', color: '#22c55e', defaultName: 'WAS CR', defaultColor: '#22c55e' },
-    { id: 'cmigornmw0000lb04kl75262e', name: 'Kroma Lab', color: '#f59e0b', defaultName: 'Kroma Lab', defaultColor: '#f59e0b' },
-    { id: 'cmjdabz4d0000il04dyc5qmcc', name: 'SimplePatch', color: '#ef4444', defaultName: 'SimplePatch', defaultColor: '#ef4444' },
-    { id: 'cmln5u7k70000ld042qify2og', name: 'DeepCLean', color: '#a855f7', defaultName: 'DeepCLean', defaultColor: '#a855f7' },
-    { id: 'cmh44aerw0006vijg0640vfl0', name: 'PeterTesting', color: '#06b6d4', defaultName: 'PeterTesting', defaultColor: '#06b6d4' },
-    { id: 'cmm4pv8fl0000jr045en1nik9', name: 'Bloom', color: '#ec4899', defaultName: 'Bloom', defaultColor: '#ec4899' },
-];
+export const FALLBACK_TENANT_CONFIG: TenantConfig[] = MANAGED_TENANTS.map((t) => ({
+    id: t.id,
+    name: t.defaultName,
+    color: t.defaultColor,
+    defaultName: t.defaultName,
+    defaultColor: t.defaultColor,
+}));
 
 export function useTenantConfig() {
     const [tenants, setTenants] = useState<TenantConfig[]>(FALLBACK_TENANT_CONFIG);

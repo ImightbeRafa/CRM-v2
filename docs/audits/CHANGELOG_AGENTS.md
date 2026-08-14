@@ -2,6 +2,17 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-14 — mixed retiro lines map independently
+
+- 1 Dopa + 1 Stress was collapsing to one line and deducting 2 of the same SKU.
+- Product strings/details now split into separate lines. Generic Parche ×2
+  explodes into per-unit pickers. Allocations are stored per order/slot so
+  each unit can point at a different Laura SKU.
+- Unique named products can still seed a global alias. Generic labels like
+  Parche never do, so mixed future orders stay independently mappable.
+- Fuzzy match is unique-only (ambiguous “Pura S” stays unmapped). Confirm
+  rejects Laura pickups whose mapped qty does not cover the order.
+
 ## 2026-08-14 — Laura inventory product mapping
 
 - Retiros could warn “sin mapear · Laura” but had no way to assign a sales

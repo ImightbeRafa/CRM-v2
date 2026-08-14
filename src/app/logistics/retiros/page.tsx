@@ -13,7 +13,12 @@ import RetiroConfirmWizard, {
   type RetiroLinePreview,
 } from '@/app/logistics/components/RetiroConfirmWizard';
 import RetiroProductMapper from '@/app/logistics/components/RetiroProductMapper';
-import { buildAliasMapFromRows, mapOrderLinesLocal } from '@/lib/retiro-stock-utils';
+import {
+  buildAliasMapFromRows,
+  buildMappingSlots,
+  mapOrderLinesLocal,
+  type RetiroAllocationRow,
+} from '@/lib/retiro-stock-utils';
 
 const glass = {
   background: 'rgba(255,255,255,0.05)',
@@ -111,6 +116,7 @@ export default function RetirosPage() {
   const [lowStockCount, setLowStockCount] = useState(0);
   const [movements, setMovements] = useState<any[]>([]);
   const [aliases, setAliases] = useState<any[]>([]);
+  const [allocationsByOrder, setAllocationsByOrder] = useState<Record<string, RetiroAllocationRow[]>>({});
   const [stockBusy, setStockBusy] = useState(false);
   const [kpis, setKpis] = useState<Kpis>({
     pending: 0,
@@ -174,11 +180,17 @@ export default function RetirosPage() {
 
       if (raOrders.length > 0) {
         const ids = raOrders.map((o: any) => o.id).join(',');
-        const handoffRes = await fetch(`/api/logistics/retiros/schedule?ids=${encodeURIComponent(ids)}`);
+        const [handoffRes, allocRes] = await Promise.all([
+          fetch(`/api/logistics/retiros/schedule?ids=${encodeURIComponent(ids)}`),
+          fetch(`/api/logistics/retiros/allocations?ids=${encodeURIComponent(ids)}`),
+        ]);
         const handoffData = await handoffRes.json().catch(() => ({}));
+        const allocData = await allocRes.json().catch(() => ({}));
         if (handoffRes.ok) setHandoffs(handoffData.handoffs || {});
+        if (allocRes.ok) setAllocationsByOrder(allocData.allocations || {});
       } else {
         setHandoffs({});
+        setAllocationsByOrder({});
       }
     } catch (e) {
       console.error(e);
@@ -265,17 +277,25 @@ export default function RetirosPage() {
   }
 
   function linesForOrder(order: any): RetiroLinePreview[] {
-    return mapOrderLinesLocal(order, aliasMap);
+    return buildMappingSlots(mapOrderLinesLocal(order, aliasMap), allocationsByOrder[order.id] || []);
   }
 
-  async function mapProductAlias(order: any, rawName: string, sku: string, overwrite = false) {
-    const res = await fetch('/api/logistics/retiros/aliases', {
+  async function mapProductAlias(order: any, rawName: string, sku: string, overwrite = false, slotKey = '0', qty = 1) {
+    const res = await fetch('/api/logistics/retiros/allocations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderId: order.id, rawName, sku, overwrite }),
+      body: JSON.stringify({ orderId: order.id, slotKey, rawName, sku, qty, overwrite }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'No se pudo mapear el producto');
+    if (data.allocation) {
+      setAllocationsByOrder((prev) => {
+        const current = prev[order.id] || [];
+        const next = current.filter((row) => row.slotKey !== data.allocation.slotKey);
+        next.push(data.allocation);
+        return { ...prev, [order.id]: next };
+      });
+    }
     if (data.alias) {
       setAliases((prev) => {
         const next = prev.filter((a: { aliasNormalized?: string }) => a.aliasNormalized !== data.alias.aliasNormalized);
@@ -829,22 +849,23 @@ export default function RetirosPage() {
                         Productos vs inventario Laura
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {lines.map((line, idx) => (
+                        {lines.map((line) => (
                           <RetiroProductMapper
-                            key={`${line.rawName}-${idx}`}
+                            key={line.slotKey || `${line.rawName}`}
                             rawName={line.rawName}
                             qty={line.qty}
                             sku={line.sku}
                             displayName={line.displayName}
+                            unitHint={line.unitHint}
                             stock={stock}
                             disabled={busy || isDelivered}
-                            onMap={(sku, overwrite) => mapProductAlias(o, line.rawName, sku, overwrite)}
+                            onMap={(sku, overwrite) => mapProductAlias(o, line.rawName, sku, overwrite, line.slotKey || '0', line.qty)}
                           />
                         ))}
                       </div>
                       {unmappedCount > 0 && (
                         <div style={{ marginTop: 6, color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>
-                          El mapeo solo es obligatorio si el retiro es en Laura Escazu. Marlenn no descuenta inventario.
+                          El mapeo es por unidad. Si el pedido mezcla productos (1 Dopa + 1 Stress), asigná un SKU Laura distinto a cada fila. Marlenn no descuenta inventario.
                         </div>
                       )}
                     </div>
@@ -965,7 +986,7 @@ export default function RetirosPage() {
         stock={stock}
         busy={confirmBusy}
         onMapProduct={confirmOrder
-          ? (rawName, sku, overwrite) => mapProductAlias(confirmOrder, rawName, sku, overwrite)
+          ? (rawName, sku, overwrite, slotKey, qty) => mapProductAlias(confirmOrder, rawName, sku, overwrite, slotKey, qty)
           : undefined}
         onConfirm={submitRetiroConfirm}
         onCancel={() => { if (!confirmBusy) setConfirmOrder(null); }}

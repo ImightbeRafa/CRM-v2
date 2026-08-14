@@ -1,7 +1,10 @@
 import { prisma } from '@/lib/db';
 import {
+  buildMappingSlots,
+  linesNeedIndependentSlots,
   mapOrderLinesLocal,
   normalizeProductName,
+  type RetiroAllocationRow,
   type RetiroOrderLine,
 } from '@/lib/retiro-stock-utils';
 import {
@@ -15,12 +18,16 @@ import {
 export type { RetiroOrderLine };
 export {
   buildAliasMapFromRows,
+  buildMappingSlots,
   extractOrderLines,
+  linesNeedIndependentSlots,
   mapOrderLinesLocal,
   normalizeProductName,
   orderContainsProductLabel,
   resolveSkuFromMap,
+  shouldPersistGlobalAlias,
 } from '@/lib/retiro-stock-utils';
+export type { RetiroAllocationRow, RetiroMappingSlot } from '@/lib/retiro-stock-utils';
 export {
   RETIRO_PICKUP_LOCATIONS,
   normalizePickupLocation,
@@ -51,12 +58,12 @@ const SEED_STOCK: Array<{ sku: string; displayName: string; qty: number; minQty:
   { sku: 'pura_s_sandia', displayName: 'Pura S Sandia', qty: 5, minQty: 2, aliases: ['pura s sandia', 'pura sandia', 'sandia', 'sandía', 'pura s. sandia'] },
   { sku: 'pura_s_rasp', displayName: 'Pura S Rasp', qty: 5, minQty: 2, aliases: ['pura s rasp', 'pura rasp', 'rasp', 'raspberry', 'pura s. rasp'] },
   { sku: 'pura_s_fresa', displayName: 'Pura S Fresa', qty: 5, minQty: 2, aliases: ['pura s fresa', 'pura fresa', 'fresa', 'pura s. fresa'] },
-  { sku: 'energia', displayName: 'Energía', qty: 10, minQty: 3, aliases: ['energia', 'energía', 'energy'] },
-  { sku: 'focus', displayName: 'Focus', qty: 10, minQty: 3, aliases: ['focus'] },
-  { sku: 'dopamina', displayName: 'Dopamina', qty: 10, minQty: 3, aliases: ['dopamina', 'dopamine'] },
-  { sku: 'estres', displayName: 'Estres', qty: 10, minQty: 3, aliases: ['estres', 'estrés', 'stress'] },
-  { sku: 'glp', displayName: 'GLP', qty: 10, minQty: 3, aliases: ['glp', 'glp-1', 'glp1'] },
-  { sku: 'sleeping', displayName: 'Sleeping', qty: 15, minQty: 5, aliases: ['sleeping', 'sleep'] },
+  { sku: 'energia', displayName: 'Energía', qty: 10, minQty: 3, aliases: ['energia', 'energía', 'energy', 'energy patch'] },
+  { sku: 'focus', displayName: 'Focus', qty: 10, minQty: 3, aliases: ['focus', 'focus patch'] },
+  { sku: 'dopamina', displayName: 'Dopamina', qty: 10, minQty: 3, aliases: ['dopamina', 'dopamine', 'dopa', 'dopamine patch'] },
+  { sku: 'estres', displayName: 'Estres', qty: 10, minQty: 3, aliases: ['estres', 'estrés', 'stress', 'stress patch'] },
+  { sku: 'glp', displayName: 'GLP', qty: 10, minQty: 3, aliases: ['glp', 'glp-1', 'glp1', 'glp patch'] },
+  { sku: 'sleeping', displayName: 'Sleeping', qty: 15, minQty: 5, aliases: ['sleeping', 'sleep', 'sleeping patch', 'sleeping patches'] },
 ];
 
 let ensurePromise: Promise<void> | null = null;
@@ -135,6 +142,17 @@ export async function ensureRetiroStockTables() {
         CREATE INDEX IF NOT EXISTS lm_retiro_handoffs_confirmed_idx
         ON lm_retiro_handoffs (confirmed_at DESC)
         WHERE confirmed_at IS NOT NULL
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS lm_retiro_order_allocations (
+          crm_order_id TEXT NOT NULL,
+          slot_key TEXT NOT NULL,
+          sku TEXT NOT NULL,
+          qty INTEGER NOT NULL,
+          raw_name TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (crm_order_id, slot_key)
+        )
       `);
       await seedLauraStockIfNeeded(DEFAULT_RETIRO_AGENT);
     })().catch((err) => {
@@ -393,6 +411,121 @@ export async function upsertProductAlias(params: {
   };
 }
 
+export async function listOrderAllocations(orderId: string): Promise<RetiroAllocationRow[]> {
+  await ensureRetiroStockTables();
+  const rows = await prisma.$queryRawUnsafe<{
+    slot_key: string;
+    sku: string;
+    qty: number;
+    raw_name: string;
+    display_name: string | null;
+  }[]>(
+    `SELECT a.slot_key, a.sku, a.qty, a.raw_name, s.display_name
+     FROM lm_retiro_order_allocations a
+     LEFT JOIN lm_retiro_stock s ON s.agent_key = $2 AND s.sku = a.sku
+     WHERE a.crm_order_id = $1
+     ORDER BY a.slot_key`,
+    orderId,
+    DEFAULT_RETIRO_AGENT,
+  );
+  return rows.map((row) => ({
+    slotKey: row.slot_key,
+    sku: row.sku,
+    qty: Number(row.qty) || 1,
+    rawName: row.raw_name,
+    displayName: row.display_name,
+  }));
+}
+
+export async function getAllocationsForOrders(orderIds: string[]): Promise<Record<string, RetiroAllocationRow[]>> {
+  if (orderIds.length === 0) return {};
+  await ensureRetiroStockTables();
+  const rows = await prisma.$queryRawUnsafe<{
+    crm_order_id: string;
+    slot_key: string;
+    sku: string;
+    qty: number;
+    raw_name: string;
+    display_name: string | null;
+  }[]>(
+    `SELECT a.crm_order_id, a.slot_key, a.sku, a.qty, a.raw_name, s.display_name
+     FROM lm_retiro_order_allocations a
+     LEFT JOIN lm_retiro_stock s ON s.agent_key = $2 AND s.sku = a.sku
+     WHERE a.crm_order_id = ANY($1::text[])
+     ORDER BY a.crm_order_id, a.slot_key`,
+    orderIds,
+    DEFAULT_RETIRO_AGENT,
+  );
+
+  const map: Record<string, RetiroAllocationRow[]> = {};
+  for (const row of rows) {
+    if (!map[row.crm_order_id]) map[row.crm_order_id] = [];
+    map[row.crm_order_id].push({
+      slotKey: row.slot_key,
+      sku: row.sku,
+      qty: Number(row.qty) || 1,
+      rawName: row.raw_name,
+      displayName: row.display_name,
+    });
+  }
+  return map;
+}
+
+export async function upsertOrderAllocation(params: {
+  orderId: string;
+  slotKey: string;
+  rawName: string;
+  sku: string;
+  qty?: number;
+}): Promise<RetiroAllocationRow> {
+  const orderId = params.orderId.trim().slice(0, 128);
+  const slotKey = params.slotKey.trim().slice(0, 32);
+  const rawName = params.rawName.trim().slice(0, 200);
+  const sku = params.sku.trim().slice(0, 64);
+  const qty = Math.max(1, Math.min(100, Math.floor(Number(params.qty) || 1)));
+
+  if (!orderId || !slotKey || !rawName || !sku) {
+    throw new RetiroAliasValidationError('Datos de mapeo incompletos');
+  }
+  if (!/^[0-9]+(?::[0-9]+)?$/.test(slotKey)) {
+    throw new RetiroAliasValidationError('slotKey inválido');
+  }
+
+  await ensureRetiroStockTables();
+  const stockRows = await prisma.$queryRawUnsafe<{ sku: string; display_name: string }[]>(
+    `SELECT sku, display_name FROM lm_retiro_stock
+     WHERE agent_key = $1 AND sku = $2 AND active = TRUE
+     LIMIT 1`,
+    DEFAULT_RETIRO_AGENT,
+    sku,
+  );
+  if (!stockRows[0]) {
+    throw new RetiroAliasValidationError('SKU desconocido o inactivo en el inventario de Laura');
+  }
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO lm_retiro_order_allocations (crm_order_id, slot_key, sku, qty, raw_name)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (crm_order_id, slot_key) DO UPDATE SET
+       sku = EXCLUDED.sku,
+       qty = EXCLUDED.qty,
+       raw_name = EXCLUDED.raw_name`,
+    orderId,
+    slotKey,
+    sku,
+    qty,
+    rawName,
+  );
+
+  return {
+    slotKey,
+    sku,
+    qty,
+    rawName,
+    displayName: stockRows[0].display_name,
+  };
+}
+
 async function loadAliasMap(agentKey: string): Promise<Map<string, { sku: string; displayName: string }>> {
   const [aliases, stock] = await Promise.all([
     prisma.$queryRawUnsafe<{ sku: string; alias_normalized: string }[]>(
@@ -428,12 +561,22 @@ async function loadAliasMap(agentKey: string): Promise<Map<string, { sku: string
 }
 
 export async function mapOrderLines(
-  order: { product?: string | null; quantity?: number | null; productDetails?: string | null },
+  order: { id?: string; product?: string | null; quantity?: number | null; productDetails?: string | null },
   agentKey = DEFAULT_RETIRO_AGENT,
 ): Promise<RetiroOrderLine[]> {
   await ensureRetiroStockTables();
   const aliasMap = await loadAliasMap(agentKey);
-  return mapOrderLinesLocal(order, aliasMap);
+  const lines = mapOrderLinesLocal(order, aliasMap);
+  const allocations = order.id ? await listOrderAllocations(order.id) : [];
+  if (allocations.length === 0 && !linesNeedIndependentSlots(lines)) {
+    return lines;
+  }
+  return buildMappingSlots(lines, allocations).map((slot) => ({
+    rawName: slot.rawName,
+    qty: slot.qty,
+    sku: slot.sku,
+    displayName: slot.displayName,
+  }));
 }
 
 export async function adjustRetiroStock(params: {

@@ -5,6 +5,7 @@ import { syncLogisticsStatusToCrmOrders } from '@/lib/logistics-crm-sync';
 import {
   applyRetiroDecrement,
   DEFAULT_RETIRO_AGENT,
+  extractOrderLines,
   mapOrderLines,
   normalizePickupLocation,
   RETIRO_PICKUP_LOCATIONS,
@@ -204,6 +205,15 @@ export async function POST(req: NextRequest) {
     const lines = usesRetiroInventory(pickupLocation)
       ? await mapOrderLines(order, agent)
       : [];
+    if (usesRetiroInventory(pickupLocation)) {
+      const expectedQty = extractOrderLines(order).reduce((sum, line) => sum + line.qty, 0);
+      const mappedQty = lines.reduce((sum, line) => sum + line.qty, 0);
+      if (mappedQty !== expectedQty) {
+        return NextResponse.json({
+          error: 'El mapeo no cubre todas las unidades del pedido. Mapear cada producto/unidad e intentar de nuevo.',
+        }, { status: 400 });
+      }
+    }
     const stockResult = await applyRetiroDecrement({
       agentKey: agent,
       orderId,

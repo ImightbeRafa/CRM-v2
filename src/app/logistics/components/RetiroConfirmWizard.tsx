@@ -16,10 +16,12 @@ type EmployeeOption = {
 };
 
 export type RetiroLinePreview = {
+  slotKey?: string;
   rawName: string;
   qty: number;
   sku: string | null;
   displayName: string | null;
+  unitHint?: string | null;
 };
 
 export type RetiroConfirmPayload = {
@@ -37,7 +39,7 @@ interface RetiroConfirmWizardProps {
   busy?: boolean;
   onConfirm: (payload: RetiroConfirmPayload) => void;
   onCancel: () => void;
-  onMapProduct?: (rawName: string, sku: string, overwrite: boolean) => Promise<void>;
+  onMapProduct?: (rawName: string, sku: string, overwrite: boolean, slotKey: string, qty: number) => Promise<void>;
 }
 
 const LOCATION_OPTIONS = (Object.entries(RETIRO_PICKUP_LOCATIONS) as [RetiroPickupLocation, string][]).map(
@@ -200,14 +202,15 @@ export default function RetiroConfirmWizard({
                 {lines.map((line, idx) => (
                   onMapProduct ? (
                     <RetiroProductMapper
-                      key={`${line.rawName}-${idx}`}
+                      key={line.slotKey || `${line.rawName}-${idx}`}
                       rawName={line.rawName}
                       qty={line.qty}
                       sku={line.sku}
                       displayName={line.displayName}
+                      unitHint={line.unitHint}
                       stock={stock}
                       disabled={busy}
-                      onMap={(sku, overwrite) => onMapProduct(line.rawName, sku, overwrite)}
+                      onMap={(sku, overwrite) => onMapProduct(line.rawName, sku, overwrite, line.slotKey || String(idx), line.qty)}
                     />
                   ) : (
                     <div
@@ -243,7 +246,7 @@ export default function RetiroConfirmWizard({
               </div>
               {unmapped.length > 0 && (
                 <p style={{ margin: '10px 0 0', color: '#f87171', fontSize: 12 }}>
-                  Mapear cada producto al inventario de Laura para poder confirmar y descontar stock.
+                  Mapear cada unidad al inventario de Laura. Pedidos mixtos (1 Dopa + 1 Stress) deben ir a SKUs distintos.
                 </p>
               )}
             </>

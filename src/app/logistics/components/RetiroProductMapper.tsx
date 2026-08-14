@@ -13,6 +13,7 @@ interface RetiroProductMapperProps {
   qty: number;
   sku: string | null;
   displayName: string | null;
+  unitHint?: string | null;
   stock: RetiroMapStockItem[];
   disabled?: boolean;
   onMap: (sku: string, overwrite: boolean) => Promise<void>;
@@ -23,6 +24,7 @@ export default function RetiroProductMapper({
   qty,
   sku,
   displayName,
+  unitHint = null,
   stock,
   disabled = false,
   onMap,
@@ -75,6 +77,11 @@ export default function RetiroProductMapper({
           <div style={{ color: mapped && !editing ? 'rgba(255,255,255,0.8)' : '#f87171', fontSize: 12.5, fontWeight: 700 }}>
             {displayName || rawName}{mapped ? '' : ' (sin mapear)'}
           </div>
+          {unitHint && (
+            <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 2 }}>
+              {unitHint} — elige un SKU Laura distinto si este pedido mezcla productos
+            </div>
+          )}
           {mapped && displayName && displayName !== rawName && !editing && (
             <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 2 }}>
               Pedido: {rawName}

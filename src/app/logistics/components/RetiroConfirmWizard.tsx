@@ -7,6 +7,7 @@ import {
   usesRetiroInventory,
   type RetiroPickupLocation,
 } from '@/lib/retiro-locations';
+import RetiroProductMapper, { type RetiroMapStockItem } from '@/app/logistics/components/RetiroProductMapper';
 
 type EmployeeOption = {
   id: string;
@@ -32,9 +33,11 @@ interface RetiroConfirmWizardProps {
   title?: string;
   subtitle?: string;
   lines: RetiroLinePreview[];
+  stock?: RetiroMapStockItem[];
   busy?: boolean;
   onConfirm: (payload: RetiroConfirmPayload) => void;
   onCancel: () => void;
+  onMapProduct?: (rawName: string, sku: string, overwrite: boolean) => Promise<void>;
 }
 
 const LOCATION_OPTIONS = (Object.entries(RETIRO_PICKUP_LOCATIONS) as [RetiroPickupLocation, string][]).map(
@@ -46,9 +49,11 @@ export default function RetiroConfirmWizard({
   title = 'Confirmar retiro',
   subtitle,
   lines,
+  stock = [],
   busy = false,
   onConfirm,
   onCancel,
+  onMapProduct,
 }: RetiroConfirmWizardProps) {
   const [employeeId, setEmployeeId] = useState('');
   const [pickupLocation, setPickupLocation] = useState<RetiroPickupLocation | ''>('');
@@ -115,7 +120,7 @@ export default function RetiroConfirmWizard({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: '100%', maxWidth: 460,
+          width: '100%', maxWidth: 520,
           background: 'rgba(22,24,32,0.98)',
           border: '1px solid rgba(255,255,255,0.12)',
           borderRadius: 16, padding: 22,
@@ -193,39 +198,52 @@ export default function RetiroConfirmWizard({
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {lines.map((line, idx) => (
-                  <div
-                    key={`${line.rawName}-${idx}`}
-                    style={{
-                      display: 'flex', justifyContent: 'space-between', gap: 8,
-                      padding: '8px 10px', borderRadius: 8,
-                      background: line.sku ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.08)',
-                      border: `1px solid ${line.sku ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.25)'}`,
-                    }}
-                  >
-                    <div>
-                      <div style={{ color: '#F2F2F2', fontSize: 12.5, fontWeight: 700 }}>
-                        {line.displayName || line.rawName}
+                  onMapProduct ? (
+                    <RetiroProductMapper
+                      key={`${line.rawName}-${idx}`}
+                      rawName={line.rawName}
+                      qty={line.qty}
+                      sku={line.sku}
+                      displayName={line.displayName}
+                      stock={stock}
+                      disabled={busy}
+                      onMap={(sku, overwrite) => onMapProduct(line.rawName, sku, overwrite)}
+                    />
+                  ) : (
+                    <div
+                      key={`${line.rawName}-${idx}`}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', gap: 8,
+                        padding: '8px 10px', borderRadius: 8,
+                        background: line.sku ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.08)',
+                        border: `1px solid ${line.sku ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.25)'}`,
+                      }}
+                    >
+                      <div>
+                        <div style={{ color: '#F2F2F2', fontSize: 12.5, fontWeight: 700 }}>
+                          {line.displayName || line.rawName}
+                        </div>
+                        {!line.sku && (
+                          <div style={{ color: '#f87171', fontSize: 11, marginTop: 2 }}>
+                            No mapeado · “{line.rawName}”
+                          </div>
+                        )}
+                        {line.sku && line.displayName !== line.rawName && (
+                          <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 2 }}>
+                            {line.rawName}
+                          </div>
+                        )}
                       </div>
-                      {!line.sku && (
-                        <div style={{ color: '#f87171', fontSize: 11, marginTop: 2 }}>
-                          No mapeado · “{line.rawName}”
-                        </div>
-                      )}
-                      {line.sku && line.displayName !== line.rawName && (
-                        <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 2 }}>
-                          {line.rawName}
-                        </div>
-                      )}
+                      <div style={{ color: line.sku ? '#22c55e' : '#f87171', fontWeight: 900, fontSize: 13 }}>
+                        −{line.qty}
+                      </div>
                     </div>
-                    <div style={{ color: line.sku ? '#22c55e' : '#f87171', fontWeight: 900, fontSize: 13 }}>
-                      −{line.qty}
-                    </div>
-                  </div>
+                  )
                 ))}
               </div>
               {unmapped.length > 0 && (
                 <p style={{ margin: '10px 0 0', color: '#f87171', fontSize: 12 }}>
-                  No se puede confirmar hasta mapear todos los productos al inventario de Laura.
+                  Mapear cada producto al inventario de Laura para poder confirmar y descontar stock.
                 </p>
               )}
             </>

@@ -2,6 +2,15 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-14 — Laura inventory product mapping
+
+- Retiros could warn “sin mapear · Laura” but had no way to assign a sales
+  label (e.g. Parche) to a Laura SKU, so confirmation stayed blocked.
+- Added `POST /api/logistics/retiros/aliases` (logistics-admin, RA-only, Laura
+  namespace hardcoded). Identical maps are idempotent; remaps need `overwrite`.
+- Inline SKU picker on the retiro detail and Laura confirmation wizard. Marlenn
+  still confirms without mapping or stock deduction.
+
 ## 2026-08-13 — WhatsApp/Telegram bot → xAI Responses API + Grok 4.6
 
 - Default model is `grok-4.6` (`XAI_MODEL` still overrides). Reasoning stays `low`

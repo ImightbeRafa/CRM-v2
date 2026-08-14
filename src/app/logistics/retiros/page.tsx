@@ -12,6 +12,7 @@ import RetiroConfirmWizard, {
   type RetiroConfirmPayload,
   type RetiroLinePreview,
 } from '@/app/logistics/components/RetiroConfirmWizard';
+import RetiroProductMapper from '@/app/logistics/components/RetiroProductMapper';
 import { buildAliasMapFromRows, mapOrderLinesLocal } from '@/lib/retiro-stock-utils';
 
 const glass = {
@@ -265,6 +266,24 @@ export default function RetirosPage() {
 
   function linesForOrder(order: any): RetiroLinePreview[] {
     return mapOrderLinesLocal(order, aliasMap);
+  }
+
+  async function mapProductAlias(order: any, rawName: string, sku: string, overwrite = false) {
+    const res = await fetch('/api/logistics/retiros/aliases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId: order.id, rawName, sku, overwrite }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'No se pudo mapear el producto');
+    if (data.alias) {
+      setAliases((prev) => {
+        const next = prev.filter((a: { aliasNormalized?: string }) => a.aliasNormalized !== data.alias.aliasNormalized);
+        next.push(data.alias);
+        return next;
+      });
+    }
+    await loadStock();
   }
 
   async function assignToRetiros(order: any) {
@@ -809,12 +828,18 @@ export default function RetirosPage() {
                       <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>
                         Productos vs inventario Laura
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {lines.map((line, idx) => (
-                          <div key={`${line.rawName}-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: line.sku ? 'rgba(255,255,255,0.55)' : '#f87171' }}>
-                            <span>{line.displayName || line.rawName}{line.sku ? '' : ' (sin mapear)'}</span>
-                            <span>×{line.qty}</span>
-                          </div>
+                          <RetiroProductMapper
+                            key={`${line.rawName}-${idx}`}
+                            rawName={line.rawName}
+                            qty={line.qty}
+                            sku={line.sku}
+                            displayName={line.displayName}
+                            stock={stock}
+                            disabled={busy || isDelivered}
+                            onMap={(sku, overwrite) => mapProductAlias(o, line.rawName, sku, overwrite)}
+                          />
                         ))}
                       </div>
                       {unmappedCount > 0 && (
@@ -937,7 +962,11 @@ export default function RetirosPage() {
         title="Confirmar retiro"
         subtitle={confirmOrder ? `#${confirmOrder.orderId} · ${confirmOrder.customerName}` : undefined}
         lines={confirmOrder ? linesForOrder(confirmOrder) : []}
+        stock={stock}
         busy={confirmBusy}
+        onMapProduct={confirmOrder
+          ? (rawName, sku, overwrite) => mapProductAlias(confirmOrder, rawName, sku, overwrite)
+          : undefined}
         onConfirm={submitRetiroConfirm}
         onCancel={() => { if (!confirmBusy) setConfirmOrder(null); }}
       />

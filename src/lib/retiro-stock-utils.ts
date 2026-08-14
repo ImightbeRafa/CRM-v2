@@ -93,6 +93,15 @@ export function buildAliasMapFromRows(
   return map;
 }
 
+export function orderContainsProductLabel(
+  order: { product?: string | null; quantity?: number | null; productDetails?: string | null },
+  rawName: string,
+): boolean {
+  const target = normalizeProductName(rawName);
+  if (!target) return false;
+  return extractOrderLines(order).some((line) => normalizeProductName(line.rawName) === target);
+}
+
 export function mapOrderLinesLocal(
   order: { product?: string | null; quantity?: number | null; productDetails?: string | null },
   aliasMap: Map<string, { sku: string; displayName: string }>,

@@ -18,6 +18,7 @@ export {
   extractOrderLines,
   mapOrderLinesLocal,
   normalizeProductName,
+  orderContainsProductLabel,
   resolveSkuFromMap,
 } from '@/lib/retiro-stock-utils';
 export {
@@ -270,6 +271,126 @@ export async function listProductAliases(agentKey = DEFAULT_RETIRO_AGENT) {
      WHERE a.agent_key = $1`,
     agentKey,
   );
+}
+
+export class RetiroAliasConflictError extends Error {
+  readonly status = 409 as const;
+  constructor(
+    public existingSku: string,
+    public existingDisplayName: string,
+  ) {
+    super(`Este producto ya está mapeado a ${existingDisplayName}`);
+    this.name = 'RetiroAliasConflictError';
+  }
+}
+
+export class RetiroAliasValidationError extends Error {
+  readonly status = 400 as const;
+  constructor(message: string) {
+    super(message);
+    this.name = 'RetiroAliasValidationError';
+  }
+}
+
+export type UpsertProductAliasResult = {
+  sku: string;
+  displayName: string;
+  aliasNormalized: string;
+  aliasRaw: string;
+  created: boolean;
+  previousSku: string | null;
+};
+
+export async function upsertProductAlias(params: {
+  rawName: string;
+  sku: string;
+  overwrite?: boolean;
+  actor?: string;
+  orderId?: string | null;
+}): Promise<UpsertProductAliasResult> {
+  const agentKey = DEFAULT_RETIRO_AGENT;
+  const rawName = params.rawName.trim().slice(0, 200);
+  const sku = params.sku.trim().slice(0, 64);
+  const aliasNormalized = normalizeProductName(rawName);
+
+  if (!rawName || !aliasNormalized) {
+    throw new RetiroAliasValidationError('Nombre de producto requerido');
+  }
+  if (!sku) {
+    throw new RetiroAliasValidationError('SKU requerido');
+  }
+
+  await ensureRetiroStockTables();
+
+  const stockRows = await prisma.$queryRawUnsafe<{ sku: string; display_name: string }[]>(
+    `SELECT sku, display_name FROM lm_retiro_stock
+     WHERE agent_key = $1 AND sku = $2 AND active = TRUE
+     LIMIT 1`,
+    agentKey,
+    sku,
+  );
+  if (!stockRows[0]) {
+    throw new RetiroAliasValidationError('SKU desconocido o inactivo en el inventario de Laura');
+  }
+
+  const existing = await prisma.$queryRawUnsafe<{ sku: string }[]>(
+    `SELECT sku FROM lm_retiro_product_aliases
+     WHERE agent_key = $1 AND alias_normalized = $2
+     LIMIT 1`,
+    agentKey,
+    aliasNormalized,
+  );
+  const previousSku = existing[0]?.sku ?? null;
+
+  if (previousSku && previousSku !== sku && !params.overwrite) {
+    const prevDisplay = await prisma.$queryRawUnsafe<{ display_name: string }[]>(
+      `SELECT display_name FROM lm_retiro_stock WHERE agent_key = $1 AND sku = $2 LIMIT 1`,
+      agentKey,
+      previousSku,
+    );
+    throw new RetiroAliasConflictError(previousSku, prevDisplay[0]?.display_name || previousSku);
+  }
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO lm_retiro_product_aliases (agent_key, sku, alias_normalized, alias_raw)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (agent_key, alias_normalized) DO UPDATE SET
+       sku = EXCLUDED.sku,
+       alias_raw = EXCLUDED.alias_raw`,
+    agentKey,
+    sku,
+    aliasNormalized,
+    rawName,
+  );
+
+  if (params.orderId && previousSku !== sku) {
+    try {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO lm_order_events (crm_order_id, event_type, payload, actor)
+         VALUES ($1, 'retiro_product_mapped', $2::jsonb, $3)`,
+        params.orderId,
+        JSON.stringify({
+          aliasNormalized,
+          sku,
+          displayName: stockRows[0].display_name,
+          previousSku,
+          overwrite: Boolean(params.overwrite),
+        }),
+        params.actor || null,
+      );
+    } catch (err) {
+      console.error('[retiro-stock] alias audit event failed', err);
+    }
+  }
+
+  return {
+    sku,
+    displayName: stockRows[0].display_name,
+    aliasNormalized,
+    aliasRaw: rawName,
+    created: !previousSku,
+    previousSku: previousSku === sku ? null : previousSku,
+  };
 }
 
 async function loadAliasMap(agentKey: string): Promise<Map<string, { sku: string; displayName: string }>> {

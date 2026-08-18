@@ -48,6 +48,9 @@ curl -i -H "x-api-key: $FINANCE_API_KEY" https://www.betsycrm.com/api/finance/v1
 
 Expect JSON catalog (200). Without header → 401.
 
+curl -s -H "x-api-key: $FINANCE_API_KEY" \
+  "[REDACTED]/api/finance/v1/facturacion?brand=deepclean&dateFrom=2026-08-01&dateTo=2026-08-17"
+
 Orders (period bootstrap, DeepSleep):
 
 ```bash

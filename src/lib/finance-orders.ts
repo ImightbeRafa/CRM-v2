@@ -8,7 +8,11 @@ import {
   type FinanceOrderClassification,
   type FinanceTenantSlug,
 } from '@/lib/finance-order-classifier';
-import { getFinanceTenantBySlug, type FINANCE_TENANTS } from '@/lib/finance-tenants';
+import {
+  FINANCE_BRAND_LIST,
+  getFinanceTenantBySlug,
+  type FINANCE_TENANTS,
+} from '@/lib/finance-tenants';
 import type { FinanceDateRange } from '@/lib/finance-dates';
 
 type FinanceTenant = (typeof FINANCE_TENANTS)[number];
@@ -114,12 +118,12 @@ export function resolveFinanceOrdersTenant(
   if (!brand || brand === 'all') {
     return {
       ok: false,
-      error: 'brand is required and must be a single tenant: deepsleep or bloom (not all)',
+      error: `brand is required and must be a single tenant: ${FINANCE_BRAND_LIST} (not all)`,
     };
   }
   const tenant = getFinanceTenantBySlug(brand);
   if (!tenant) {
-    return { ok: false, error: 'Invalid brand. Use deepsleep or bloom' };
+    return { ok: false, error: `Invalid brand. Use ${FINANCE_BRAND_LIST}` };
   }
   return { ok: true, tenant };
 }

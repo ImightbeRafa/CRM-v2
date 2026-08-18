@@ -14,10 +14,10 @@ export const dynamic = 'force-dynamic';
  * GET /api/finance/v1/orders
  *
  * Period bootstrap:
- *   ?brand=deepsleep|bloom&dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
+ *   ?brand=deepsleep|bloom|deepclean|forge&dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
  *
  * Incremental changes:
- *   ?brand=deepsleep|bloom&updatedSince=ISO-8601
+ *   ?brand=deepsleep|bloom|deepclean|forge&updatedSince=ISO-8601
  *
  * Optional: cursor, limit (max 250), needsManualAssignment=1
  */

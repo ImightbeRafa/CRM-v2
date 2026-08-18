@@ -5,7 +5,7 @@ import {
   FINANCE_ORDERS_DEFAULT_LIMIT,
   FINANCE_ORDERS_MAX_LIMIT,
 } from '@/lib/finance-orders';
-import { FINANCE_TENANTS } from '@/lib/finance-tenants';
+import { FINANCE_BRAND_SLUGS, FINANCE_TENANTS } from '@/lib/finance-tenants';
 import { getCurrentWeekStartKey, getWeekEndKey } from '@/lib/logistics-workforce';
 
 export const runtime = 'nodejs';
@@ -35,9 +35,11 @@ export async function GET(req: NextRequest) {
       classifierVersion: FINANCE_ORDER_CLASSIFIER_VERSION,
       deepsleepBusinesses: ['deepsleep', 'patchhouse', 'purasonrisa', 'unassigned'],
       bloomBusinesses: ['bloom'],
+      deepcleanBusinesses: ['deepclean'],
+      forgeBusinesses: ['forge'],
       channels: ['web', 'messages'],
       note:
-        'DeepSleep tenant contains three businesses. business=unassigned means finance app should assign manually. Seller/WhatsApp session never selects business.',
+        'DeepSleep tenant contains three businesses. Bloom, DeepClean, and Forge are 1:1 tenant=business. business=unassigned means finance app should assign manually (DeepSleep only). Seller/WhatsApp session never selects business.',
     },
     defaultPeriod: {
       dateFrom: weekStart,
@@ -71,7 +73,7 @@ export async function GET(req: NextRequest) {
         method: 'GET',
         path: '/api/finance/v1/orders',
         query: [
-          'brand (required: deepsleep|bloom)',
+          `brand (required: ${FINANCE_BRAND_SLUGS})`,
           'dateFrom',
           'dateTo',
           'updatedSince',
@@ -91,7 +93,7 @@ export async function GET(req: NextRequest) {
     ],
     warnings: [
       'Costs cover delivered (Entregado) orders by completion date; facturación covers all saved orders by sale date — do not treat them as a pure same-basis margin.',
-      'Payroll is a single shared logistics cost; do not double-count it into both DeepSleep and Bloom.',
+      'Payroll is a single shared logistics cost; do not double-count it across brands.',
       'Orders classifierVersion changes require re-bootstrap of stored finance periods.',
       'Hard-deleted CRM orders are not tombstoned — periodically re-pull recent periods.',
     ],

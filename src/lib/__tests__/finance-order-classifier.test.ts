@@ -33,6 +33,28 @@ test('malformed source on Bloom still serves business=bloom', () => {
   assert.equal(result.needsManualAssignment, false);
 });
 
+test('DeepClean is 1:1 tenant=business with no manual inbox', () => {
+  const result = classifyFinanceOrder({
+    tenantSlug: 'deepclean',
+    seller: 'Compu Ma',
+    product: 'generic item',
+  });
+  assert.equal(result.tenant, 'deepclean');
+  assert.equal(result.business, 'deepclean');
+  assert.equal(result.needsManualAssignment, false);
+});
+
+test('Forge is 1:1 tenant=business with no manual inbox', () => {
+  const result = classifyFinanceOrder({
+    tenantSlug: 'forge',
+    seller: 'Laura',
+    product: 'Forge product',
+  });
+  assert.equal(result.tenant, 'forge');
+  assert.equal(result.business, 'forge');
+  assert.equal(result.needsManualAssignment, false);
+});
+
 test('uncategorized leftovers are unassigned rows, not dropped', () => {
   const result = classifyFinanceOrder({
     tenantSlug: 'deepsleep',

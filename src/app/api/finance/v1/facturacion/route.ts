@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { guardFinanceApi } from '@/lib/finance-auth';
 import { parseFinanceDateRange } from '@/lib/finance-dates';
-import { resolveFinanceTenants } from '@/lib/finance-tenants';
+import { FINANCE_BRAND_LIST, resolveFinanceTenants } from '@/lib/finance-tenants';
 import { getFinanceFacturacionForTenant } from '@/lib/finance-facturacion';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/finance/v1/facturacion?dateFrom=&dateTo=&brand=deepsleep|bloom|all
+ * GET /api/finance/v1/facturacion?dateFrom=&dateTo=&brand=deepsleep|bloom|deepclean|forge|all
  * Revenue summary matching /estadisticas — not order-level.
  */
 export async function GET(req: NextRequest) {
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const tenants = resolveFinanceTenants(url.searchParams.get('brand'));
   if (!tenants) {
     return NextResponse.json(
-      { error: 'Invalid brand. Use deepsleep, bloom, or omit/all' },
+      { error: `Invalid brand. Use ${FINANCE_BRAND_LIST}, or omit/all` },
       { status: 400 },
     );
   }

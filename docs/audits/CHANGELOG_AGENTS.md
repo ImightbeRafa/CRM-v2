@@ -2,7 +2,14 @@
 
 Append-only. Newest entries at the top.
 
-## 2026-08-14 — mixed retiro lines map independently
+## 2026-08-18 — Finance API: DeepClean + Forge brands
+
+- Extended `FINANCE_TENANTS` with `deepclean` (`cmln5u7k70000ld042qify2og`) and
+  `forge` (`cmsrgct420000vipcp3xyqb0m`). `/meta`, `/costs`, `/facturacion`, and
+  `/orders` now accept all four slugs; payroll stays global.
+- Order classifier v1.1.0: DeepClean and Forge are 1:1 tenant=business (like Bloom).
+  DeepSleep sub-business rules unchanged.
+
 
 - 1 Dopa + 1 Stress was collapsing to one line and deducting 2 of the same SKU.
 - Product strings/details now split into separate lines. Generic Parche ×2

@@ -1,6 +1,6 @@
 /**
  * Hard allowlist for the external finance API.
- * Only DeepSleep + Bloom — never accept arbitrary client tenantIds.
+ * Only listed CRM tenants — never accept arbitrary client tenantIds.
  */
 
 export const FINANCE_TENANTS = [
@@ -14,10 +14,26 @@ export const FINANCE_TENANTS = [
     slug: 'bloom',
     name: 'Bloom',
   },
+  {
+    id: 'cmln5u7k70000ld042qify2og',
+    slug: 'deepclean',
+    name: 'DeepClean',
+  },
+  {
+    id: 'cmsrgct420000vipcp3xyqb0m',
+    slug: 'forge',
+    name: 'Forge',
+  },
 ] as const;
 
 export type FinanceTenantSlug = (typeof FINANCE_TENANTS)[number]['slug'];
 export type FinanceTenantId = (typeof FINANCE_TENANTS)[number]['id'];
+
+/** Pipe-separated slugs for route docs and error messages. */
+export const FINANCE_BRAND_SLUGS = FINANCE_TENANTS.map((t) => t.slug).join('|');
+
+/** Comma-separated slugs for human-readable errors. */
+export const FINANCE_BRAND_LIST = FINANCE_TENANTS.map((t) => t.slug).join(', ');
 
 const BY_ID = new Map(FINANCE_TENANTS.map((t) => [t.id, t]));
 const BY_SLUG = new Map(FINANCE_TENANTS.map((t) => [t.slug, t]));

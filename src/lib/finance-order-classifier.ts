@@ -1,17 +1,25 @@
 import { isTilopayOrder } from '@/lib/tilopay-fees';
+import type { FinanceTenantSlug } from '@/lib/finance-tenants';
 
 /** Bump when classification rules change — consumers should re-bootstrap periods. */
-export const FINANCE_ORDER_CLASSIFIER_VERSION = '1.0.1';
+export const FINANCE_ORDER_CLASSIFIER_VERSION = '1.1.0';
 
-export type FinanceTenantSlug = 'deepsleep' | 'bloom';
+export type { FinanceTenantSlug };
+
 export type FinanceBusinessSlug =
   | 'deepsleep'
   | 'patchhouse'
   | 'purasonrisa'
   | 'bloom'
+  | 'deepclean'
+  | 'forge'
   | 'unassigned';
+
 export type FinanceChannelSlug = 'web' | 'messages';
 export type FinanceConfidence = 'high' | 'medium' | 'low';
+
+/** One CRM tenant = one finance business (no sub-brand split). */
+const SIMPLE_BRAND_TENANTS = new Set<FinanceTenantSlug>(['bloom', 'deepclean', 'forge']);
 
 export type FinanceOrderClassification = {
   tenant: FinanceTenantSlug;
@@ -34,7 +42,7 @@ export type FinanceOrderClassifyInput = {
   customFields?: unknown;
 };
 
-const WEB_SOURCE_TO_BUSINESS: Record<string, Exclude<FinanceBusinessSlug, 'unassigned' | 'bloom'>> = {
+const WEB_SOURCE_TO_BUSINESS: Record<string, Exclude<FinanceBusinessSlug, 'unassigned' | 'bloom' | 'deepclean' | 'forge'>> = {
   'deepsleep website': 'deepsleep',
   'patchhouse website': 'patchhouse',
   'pura sonrisa cr website': 'purasonrisa',
@@ -61,7 +69,7 @@ const MESSAGE_SELLER_ALIASES = [
   'hola',
 ];
 
-type ProductHit = Exclude<FinanceBusinessSlug, 'unassigned' | 'bloom'>;
+type ProductHit = Exclude<FinanceBusinessSlug, 'unassigned' | 'bloom' | 'deepclean' | 'forge'>;
 
 /** Primitive-only normalize — never call String() on objects (can throw). */
 function normalize(value: unknown): string {
@@ -256,21 +264,33 @@ function classifyChannel(
   return { channel: 'messages', channelRule: 'default-messages' };
 }
 
+function classifySimpleBrandTenant(
+  tenantSlug: FinanceTenantSlug,
+  input: FinanceOrderClassifyInput,
+): FinanceOrderClassification {
+  const channel = classifyChannel(input);
+  const business = tenantSlug as FinanceBusinessSlug;
+  return {
+    tenant: tenantSlug,
+    business,
+    ...channel,
+    businessRule: `tenant-${tenantSlug}`,
+    confidence: 'high',
+    needsManualAssignment: false,
+    classifierVersion: FINANCE_ORDER_CLASSIFIER_VERSION,
+  };
+}
+
 function failSafeClassification(
   tenantSlug: FinanceTenantSlug,
   reason: string,
 ): FinanceOrderClassification {
-  if (tenantSlug === 'bloom') {
-    return {
-      tenant: 'bloom',
-      business: 'bloom',
-      channel: 'messages',
-      businessRule: reason,
-      channelRule: 'fail-safe-default-messages',
-      confidence: 'low',
-      needsManualAssignment: false,
-      classifierVersion: FINANCE_ORDER_CLASSIFIER_VERSION,
-    };
+  if (SIMPLE_BRAND_TENANTS.has(tenantSlug)) {
+    return classifySimpleBrandTenant(tenantSlug, {
+      tenantSlug,
+      seller: null,
+      salesChannel: null,
+    });
   }
   return {
     tenant: 'deepsleep',
@@ -288,37 +308,32 @@ function failSafeClassification(
  * Classify a finance order for tenant/business/channel.
  * DeepSleep leftovers that cannot be confidently tagged become `unassigned`
  * for manual assignment in the finance app (not in Betsy).
+ * Bloom, DeepClean, and Forge are 1:1 tenant=business.
  * Never throws — malformed input falls back to a safe classification so rows are still served.
  */
 export function classifyFinanceOrder(input: FinanceOrderClassifyInput): FinanceOrderClassification {
   try {
-    const channel = classifyChannel(input);
-
-    if (input.tenantSlug === 'bloom') {
-      return {
-        tenant: 'bloom',
-        business: 'bloom',
-        ...channel,
-        businessRule: 'tenant-bloom',
-        confidence: 'high',
-        needsManualAssignment: false,
-        classifierVersion: FINANCE_ORDER_CLASSIFIER_VERSION,
-      };
+    switch (input.tenantSlug) {
+      case 'bloom':
+      case 'deepclean':
+      case 'forge':
+        return classifySimpleBrandTenant(input.tenantSlug, input);
+      case 'deepsleep': {
+        const channel = classifyChannel(input);
+        const business = classifyDeepSleepBusiness(input);
+        return {
+          tenant: 'deepsleep',
+          ...business,
+          ...channel,
+          classifierVersion: FINANCE_ORDER_CLASSIFIER_VERSION,
+        };
+      }
+      default: {
+        const _exhaustive: never = input.tenantSlug;
+        void _exhaustive;
+        return failSafeClassification('deepsleep', 'invalid-tenant');
+      }
     }
-
-    if (input.tenantSlug === 'deepsleep') {
-      const business = classifyDeepSleepBusiness(input);
-      return {
-        tenant: 'deepsleep',
-        ...business,
-        ...channel,
-        classifierVersion: FINANCE_ORDER_CLASSIFIER_VERSION,
-      };
-    }
-
-    const _exhaustive: never = input.tenantSlug;
-    void _exhaustive;
-    return failSafeClassification('deepsleep', 'invalid-tenant');
   } catch {
     return failSafeClassification(input.tenantSlug, 'fail-safe-classifier-error');
   }

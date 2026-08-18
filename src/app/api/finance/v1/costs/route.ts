@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { guardFinanceApi } from '@/lib/finance-auth';
 import { parseFinanceDateRange } from '@/lib/finance-dates';
-import { FINANCE_BRAND_LIST, resolveFinanceTenants } from '@/lib/finance-tenants';
+import { FINANCE_BRAND_LIST, keyedBySlug, resolveFinanceTenants } from '@/lib/finance-tenants';
 import { getFinanceCostsForTenant, FINANCE_COST_RATES_META } from '@/lib/finance-costs';
 
 export const runtime = 'nodejs';
@@ -51,19 +51,30 @@ export async function GET(req: NextRequest) {
       { packages: 0, envioCrc: 0, impuestosCrc: 0, manejoCrc: 0, tilopayCrc: 0, subtotalCrc: 0 },
     );
 
-    return NextResponse.json({
-      currency: 'CRC',
-      period: parsed.range,
-      basis: {
-        orders: 'Entregado only',
-        dateField: 'COALESCE(lm_orders.completed_at, Order.timestamp) in America/Costa_Rica',
-        includesBilledWeeks: true,
-        excludesPayroll: true,
+    const extraKeys = keyedBySlug(brands);
+    return NextResponse.json(
+      {
+        currency: 'CRC',
+        dateFrom: parsed.range.dateFrom,
+        dateTo: parsed.range.dateTo,
+        period: parsed.range,
+        basis: {
+          orders: 'Entregado only',
+          dateField: 'COALESCE(lm_orders.completed_at, Order.timestamp) in America/Costa_Rica',
+          includesBilledWeeks: true,
+          excludesPayroll: true,
+        },
+        rates: FINANCE_COST_RATES_META,
+        brands,
+        ...extraKeys,
+        combined,
       },
-      rates: FINANCE_COST_RATES_META,
-      brands,
-      combined,
-    });
+      {
+        headers: {
+          'Cache-Control': 'private, no-store, no-cache, must-revalidate',
+        },
+      },
+    );
   } catch (error) {
     console.error('[finance/v1/costs]', error);
     return NextResponse.json({ error: 'Failed to fetch finance costs' }, { status: 500 });

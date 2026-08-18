@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { guardFinanceApi } from '@/lib/finance-auth';
 import { parseFinanceDateRange } from '@/lib/finance-dates';
-import { FINANCE_BRAND_LIST, resolveFinanceTenants } from '@/lib/finance-tenants';
+import { FINANCE_BRAND_LIST, keyedBySlug, resolveFinanceTenants } from '@/lib/finance-tenants';
 import { getFinanceFacturacionForTenant } from '@/lib/finance-facturacion';
 
 export const runtime = 'nodejs';
@@ -48,23 +48,34 @@ export async function GET(req: NextRequest) {
       { orderCount: 0, revenueCrc: 0, activeClientsPerBrandSum: 0 },
     );
 
-    return NextResponse.json({
-      currency: 'CRC',
-      period: parsed.range,
-      basis: {
-        orders: 'All saved orders (includes unconfirmed CE) — same as /estadisticas',
-        dateField: 'saleDate when present, else Order.timestamp (CR stats rules)',
-        warning:
-          'Facturación and logistics costs use different order populations and date bases; do not subtract them as a pure margin without aligning periods intentionally.',
+    const extraKeys = keyedBySlug(brands);
+    return NextResponse.json(
+      {
+        currency: 'CRC',
+        dateFrom: parsed.range.dateFrom,
+        dateTo: parsed.range.dateTo,
+        period: parsed.range,
+        basis: {
+          orders: 'All saved orders (includes unconfirmed CE) — same as /estadisticas',
+          dateField: 'saleDate when present, else Order.timestamp (CR stats rules)',
+          warning:
+            'Facturación and logistics costs use different order populations and date bases; do not subtract them as a pure margin without aligning periods intentionally.',
+        },
+        brands,
+        ...extraKeys,
+        combined: {
+          ...combined,
+          averageOrderValueCrc:
+            combined.orderCount > 0 ? combined.revenueCrc / combined.orderCount : 0,
+          note: 'activeClientsPerBrandSum can double-count customers who bought from both brands',
+        },
       },
-      brands,
-      combined: {
-        ...combined,
-        averageOrderValueCrc:
-          combined.orderCount > 0 ? combined.revenueCrc / combined.orderCount : 0,
-        note: 'activeClientsPerBrandSum can double-count customers who bought from both brands',
+      {
+        headers: {
+          'Cache-Control': 'private, no-store, no-cache, must-revalidate',
+        },
       },
-    });
+    );
   } catch (error) {
     console.error('[finance/v1/facturacion]', error);
     return NextResponse.json({ error: 'Failed to fetch finance facturacion' }, { status: 500 });

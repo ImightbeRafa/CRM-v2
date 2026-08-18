@@ -21,7 +21,8 @@ export async function GET(req: NextRequest) {
 
   const weekStart = getCurrentWeekStartKey();
 
-  return NextResponse.json({
+  return NextResponse.json(
+    {
     name: 'Betsy Finance API',
     version: 'v1',
     currency: 'CRC',
@@ -30,6 +31,7 @@ export async function GET(req: NextRequest) {
       header: 'x-api-key',
       alternate: 'Authorization: Bearer <FINANCE_API_KEY>',
     },
+    brandSlugs: FINANCE_TENANTS.map((t) => t.slug),
     brands: FINANCE_TENANTS.map(({ slug, name, id }) => ({ slug, name, tenantId: id })),
     orderClassification: {
       classifierVersion: FINANCE_ORDER_CLASSIFIER_VERSION,
@@ -94,8 +96,15 @@ export async function GET(req: NextRequest) {
     warnings: [
       'Costs cover delivered (Entregado) orders by completion date; facturación covers all saved orders by sale date — do not treat them as a pure same-basis margin.',
       'Payroll is a single shared logistics cost; do not double-count it across brands.',
+      'Costs and facturación include extra top-level keys per slug (deepclean, forge, …) in addition to brands[].',
       'Orders classifierVersion changes require re-bootstrap of stored finance periods.',
       'Hard-deleted CRM orders are not tombstoned — periodically re-pull recent periods.',
     ],
-  });
+    },
+    {
+      headers: {
+        'Cache-Control': 'private, no-store, no-cache, must-revalidate',
+      },
+    },
+  );
 }

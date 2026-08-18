@@ -2,6 +2,14 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-18 — Finance API extra keys for DeepClean / Forge
+
+- Bitácora (adsadder) reads `brand=all` via extra top-level keys
+  (`deepclean`, `forge`) in addition to `brands[]`. Missing keys show
+  "Pendiente de Betsy" instead of ₡0.
+- `/costs` and `/facturacion` now emit those keys, plus `dateFrom`/`dateTo`.
+- `/meta` now includes `brandSlugs`. Finance cost/facturación maxDuration 60s.
+
 ## 2026-08-18 — Finance API: DeepClean + Forge brands
 
 - Extended `FINANCE_TENANTS` with `deepclean` (`cmln5u7k70000ld042qify2og`) and

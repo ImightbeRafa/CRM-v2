@@ -11,6 +11,15 @@
     "src/app/api/**/*.ts": {
       "maxDuration": 30
     },
+    "src/app/api/finance/v1/costs/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/finance/v1/facturacion/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/finance/v1/orders/route.ts": {
+      "maxDuration": 60
+    },
     "src/app/api/cron/backup/route.ts": {
       "maxDuration": 300,
       "memory": 1024

@@ -57,3 +57,17 @@ export function resolveFinanceTenants(brand?: string | null) {
   const tenant = getFinanceTenantBySlug(normalized);
   return tenant ? [tenant] : null;
 }
+
+/**
+ * Adsadder / Bitácora reads `brand=all` two ways:
+ * 1. `brands[]` with `slug`
+ * 2. extra top-level keys (`deepsleep`, `bloom`, `deepclean`, `forge`)
+ * Keep both so a missing key is treated as "Pendiente de Betsy", not ₡0.
+ */
+export function keyedBySlug<T extends { slug: string }>(rows: readonly T[]): Record<string, T> {
+  const out: Record<string, T> = {};
+  for (const row of rows) {
+    out[row.slug] = row;
+  }
+  return out;
+}

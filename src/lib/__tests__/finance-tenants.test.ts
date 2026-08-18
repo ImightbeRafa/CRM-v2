@@ -3,6 +3,7 @@ import {
   FINANCE_BRAND_LIST,
   FINANCE_TENANTS,
   getFinanceTenantBySlug,
+  keyedBySlug,
   resolveFinanceTenants,
 } from '@/lib/finance-tenants';
 
@@ -32,6 +33,17 @@ test('resolveFinanceTenants accepts new slugs and rejects unknown', () => {
 
 test('FINANCE_BRAND_LIST matches allowlist', () => {
   assert.equal(FINANCE_BRAND_LIST, 'deepsleep, bloom, deepclean, forge');
+});
+
+test('keyedBySlug exposes extra top-level keys adsadder reads from brand=all', () => {
+  const rows = [
+    { slug: 'deepclean', revenueCrc: 10 },
+    { slug: 'forge', revenueCrc: 20 },
+  ];
+  const keyed = keyedBySlug(rows);
+  assert.equal(keyed.deepclean?.revenueCrc, 10);
+  assert.equal(keyed.forge?.revenueCrc, 20);
+  assert.equal(Object.keys(keyed).sort().join(','), 'deepclean,forge');
 });
 
 console.log('\nAll finance tenant tests passed.');

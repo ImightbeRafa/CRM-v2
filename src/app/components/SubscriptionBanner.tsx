@@ -24,6 +24,9 @@ interface TrialStatus {
   currentPlan: string;
 }
 
+const BILLING_CACHE_TTL_MS = 60_000;
+let billingCache: { billing: BillingInfo | null; trial: TrialStatus | null; timestamp: number } | null = null;
+
 export default function SubscriptionBanner() {
   const { status } = useSession();
   const pathname = usePathname();
@@ -38,37 +41,33 @@ export default function SubscriptionBanner() {
       return;
     }
 
-    // Load billing info with better error handling
-    fetch('/api/billing/current')
-      .then(r => {
-        if (!r.ok) {
-          console.warn('Billing API not available:', r.status);
-          return null;
-        }
-        return r.json();
-      })
-      .then(j => {
-        if (j && j.status === 'success' && j.data) setBilling(j.data);
-      })
-      .catch(err => {
-        console.warn('Failed to load billing info:', err);
-      });
+    if (billingCache && Date.now() - billingCache.timestamp < BILLING_CACHE_TTL_MS) {
+      setBilling(billingCache.billing);
+      setTrial(billingCache.trial);
+      return;
+    }
 
-    // Load trial status with better error handling
-    fetch('/api/billing/trial-status')
-      .then(r => {
-        if (!r.ok) {
-          console.warn('Trial status API not available:', r.status);
-          return null;
-        }
-        return r.json();
-      })
-      .then(data => {
-        if (data && (data.isInTrial || data.trialExpired)) setTrial(data);
-      })
-      .catch(err => {
-        console.warn('Failed to load trial status:', err);
-      });
+    let cancelled = false;
+
+    Promise.all([
+      fetch('/api/billing/current')
+        .then(r => (r.ok ? r.json() : null))
+        .catch(() => null),
+      fetch('/api/billing/trial-status')
+        .then(r => (r.ok ? r.json() : null))
+        .catch(() => null),
+    ]).then(([billingJson, trialData]) => {
+      if (cancelled) return;
+      const nextBilling = billingJson?.status === 'success' && billingJson.data ? billingJson.data : null;
+      const nextTrial = trialData && (trialData.isInTrial || trialData.trialExpired) ? trialData : null;
+      billingCache = { billing: nextBilling, trial: nextTrial, timestamp: Date.now() };
+      setBilling(nextBilling);
+      setTrial(nextTrial);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [status, isPublicRoute]);
 
   if (status !== 'authenticated' || isPublicRoute) return null;

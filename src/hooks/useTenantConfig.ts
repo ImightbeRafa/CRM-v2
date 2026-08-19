@@ -21,16 +21,49 @@ export const FALLBACK_TENANT_CONFIG: TenantConfig[] = MANAGED_TENANTS.map((t) =>
     defaultColor: t.defaultColor,
 }));
 
+const CACHE_TTL_MS = 5 * 60_000;
+let tenantConfigCache: { tenants: TenantConfig[]; timestamp: number } | null = null;
+let tenantConfigInflight: Promise<TenantConfig[]> | null = null;
+
+async function loadTenantConfig(): Promise<TenantConfig[]> {
+    if (tenantConfigCache && Date.now() - tenantConfigCache.timestamp < CACHE_TTL_MS) {
+        return tenantConfigCache.tenants;
+    }
+    if (tenantConfigInflight) return tenantConfigInflight;
+
+    tenantConfigInflight = fetch('/api/logistics/tenant-config')
+        .then(r => r.json())
+        .then(d => {
+            const tenants = d.tenants?.length ? d.tenants as TenantConfig[] : FALLBACK_TENANT_CONFIG;
+            tenantConfigCache = { tenants, timestamp: Date.now() };
+            return tenants;
+        })
+        .catch(() => FALLBACK_TENANT_CONFIG)
+        .finally(() => {
+            tenantConfigInflight = null;
+        });
+
+    return tenantConfigInflight;
+}
+
 export function useTenantConfig() {
-    const [tenants, setTenants] = useState<TenantConfig[]>(FALLBACK_TENANT_CONFIG);
-    const [loaded, setLoaded] = useState(false);
+    const [tenants, setTenants] = useState<TenantConfig[]>(
+        tenantConfigCache?.tenants ?? FALLBACK_TENANT_CONFIG
+    );
+    const [loaded, setLoaded] = useState(Boolean(tenantConfigCache));
 
     useEffect(() => {
-        fetch('/api/logistics/tenant-config')
-            .then(r => r.json())
-            .then(d => { if (d.tenants?.length) { setTenants(d.tenants); } })
-            .catch(() => {/* keep fallback */ })
-            .finally(() => setLoaded(true));
+        let cancelled = false;
+        loadTenantConfig()
+            .then((next) => {
+                if (!cancelled) setTenants(next);
+            })
+            .finally(() => {
+                if (!cancelled) setLoaded(true);
+            });
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
     const byId = Object.fromEntries(tenants.map(t => [t.id, t]));

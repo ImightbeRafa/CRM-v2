@@ -116,6 +116,9 @@ export default function EstadisticasDashboard() {
       setRevenueData(revenueRes.data);
       setTypeBreakdown(typeRes.data);
       setStatusBreakdown(statusRes.data);
+      setReportSummary(summaryRes.data);
+      setReportTypeBreakdown(typeRes.data);
+      setReportStatusBreakdown(statusRes.data);
     } catch (error) {
       if (axios.isCancel(error)) return;
       console.error('Error fetching period statistics:', error);
@@ -129,17 +132,9 @@ export default function EstadisticasDashboard() {
     setLoadingReport(true);
     setReportError('');
     try {
-      const params = { startDate, endDate };
-      const [summaryRes, typeRes, statusRes, ordersRes] = await Promise.all([
-        axios.get('/api/estadisticas/summary', { params, signal }),
-        axios.get('/api/estadisticas/type-breakdown', { params, signal }),
-        axios.get('/api/estadisticas/status-breakdown', { params, signal }),
-        axios.get('/api/estadisticas/order-details', { params, signal }),
-      ]);
-
-      setReportSummary(summaryRes.data);
-      setReportTypeBreakdown(typeRes.data);
-      setReportStatusBreakdown(statusRes.data);
+      const isSingleDay = startDate === endDate;
+      const params = { startDate, endDate, limit: isSingleDay ? 500 : 100 };
+      const ordersRes = await axios.get('/api/estadisticas/order-details', { params, signal });
       setReportOrders(ordersRes.data);
     } catch (error) {
       if (axios.isCancel(error)) return;

@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useMemo, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import {
   Card,
   CardContent,
@@ -26,9 +27,19 @@ import { ExportManager } from './ExportManager';
 import { OrderDetails } from './OrderDetail';
 import { MobileProductionWorkflow } from './MobileProductionWorkflow';
 import { ProductionWorkflowGuide } from './ProductionWorkflowGuide';
-import { GuiaGenerator } from './GuiaGenerator';
-import { InvoiceGenerator } from '@/app/config/components/InvoiceGenerator';
-import { KanbanBoard } from './KanbanBoard';
+
+const GuiaGenerator = dynamic(
+  () => import('./GuiaGenerator').then((mod) => mod.GuiaGenerator),
+  { ssr: false }
+);
+const InvoiceGenerator = dynamic(
+  () => import('@/app/config/components/InvoiceGenerator').then((mod) => mod.InvoiceGenerator),
+  { ssr: false }
+);
+const KanbanBoard = dynamic(
+  () => import('./KanbanBoard').then((mod) => mod.KanbanBoard),
+  { ssr: false }
+);
 
 // Dynamic Status Filter Component - now using global config
 const StatusFilterSelect = ({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) => {
@@ -762,14 +773,16 @@ export function EnhancedProductionDashboard({
         />
       )}
 
-      <GuiaGenerator
-        orders={filteredOrders.filter(order => order.orderType === 'EA')}
-        open={isGuiaGeneratorOpen}
-        onClose={onGuiaGeneratorClose}
-        onUpdateOrder={handleOrderUpdate}
-      />
+      {isGuiaGeneratorOpen && (
+        <GuiaGenerator
+          orders={filteredOrders.filter(order => order.orderType === 'EA')}
+          open={isGuiaGeneratorOpen}
+          onClose={onGuiaGeneratorClose}
+          onUpdateOrder={handleOrderUpdate}
+        />
+      )}
 
-      {onInvoiceGeneratorClose && (
+      {isInvoiceGeneratorOpen && onInvoiceGeneratorClose && (
         <InvoiceGenerator
           orders={filteredOrders.map(order => ({
             id: order.id,

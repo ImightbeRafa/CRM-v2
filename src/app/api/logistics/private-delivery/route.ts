@@ -13,17 +13,6 @@ const CR_TZ = 'America/Costa_Rica';
 const MAX_BATCH = 200;
 const SETTLEMENT_METHODS = new Set(['sinpe', 'efectivo']);
 
-async function ensureCePaymentMethodColumn() {
-    try {
-        await prisma.$executeRawUnsafe(`
-            ALTER TABLE lm_ce_payments
-            ADD COLUMN IF NOT EXISTS payment_method TEXT
-        `);
-    } catch {
-        // lm_ce_payments may not exist in some environments
-    }
-}
-
 async function ensurePrivateDeliveryTable() {
     await prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS lm_private_delivery_confirmations (
@@ -134,9 +123,6 @@ export async function GET(req: NextRequest) {
     if (guard) return guard;
 
     try {
-        await ensurePrivateDeliveryTable();
-        await ensureCePaymentMethodColumn();
-
         const url = new URL(req.url);
         const currentRange = currentMonthRangeCR();
         const dateFrom = url.searchParams.get('dateFrom') || currentRange.dateFrom;

@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
+import { usePathname } from 'next/navigation';
 
 type FetchState<T> = {
   data: T;
@@ -17,8 +18,6 @@ type ConfigKeys =
   | 'shipping'
   | 'inventory'
   | 'optionSets';
-
-type ConfigData = Record<ConfigKeys, any[]>;
 
 type ConfigContextType = {
   getState: <T = any[]>(key: ConfigKeys) => FetchState<T>;
@@ -53,6 +52,7 @@ const HIGH_PRIORITY_KEYS: ConfigKeys[] = [
 ];
 
 const LOW_PRIORITY_KEYS: ConfigKeys[] = ['inventory'];
+const CACHE_TTL_MS = 5 * 60_000;
 
 const UNAUTHENTICATED_STATE: FetchState<any[]> = {
   data: [],
@@ -60,8 +60,25 @@ const UNAUTHENTICATED_STATE: FetchState<any[]> = {
   error: null,
 };
 
+const resourceCache = new Map<ConfigKeys, { data: any[]; timestamp: number }>();
+
+function configKeysForPath(pathname: string | null): ConfigKeys[] {
+  if (!pathname) return [];
+  if (pathname === '/produccion' || pathname.startsWith('/produccion/')) {
+    return ['statuses', 'fields', 'businessInfoFields'];
+  }
+  if (pathname === '/ventas' || pathname.startsWith('/ventas/')) {
+    return HIGH_PRIORITY_KEYS;
+  }
+  if (pathname === '/config' || pathname.startsWith('/config/')) {
+    return HIGH_PRIORITY_KEYS;
+  }
+  return [];
+}
+
 export function ConfigProvider({ children }: { children: ReactNode }) {
   const { status } = useSession();
+  const pathname = usePathname();
   const isAuthenticated = status === 'authenticated';
 
   const [states, setStates] = useState<Record<ConfigKeys, FetchState<any[]>>>(() => {
@@ -90,6 +107,12 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     const endpoint = RESOURCE_ENDPOINTS[key];
     if (!endpoint) return;
 
+    const cached = resourceCache.get(key);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      updateState(key, { data: cached.data, loading: false, error: null });
+      return;
+    }
+
     try {
       updateState(key, { loading: true, error: null });
 
@@ -105,7 +128,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
       const json = await response.json();
       if (json.status === 'success') {
-        updateState(key, { data: json.data || [] });
+        const data = json.data || [];
+        resourceCache.set(key, { data, timestamp: Date.now() });
+        updateState(key, { data });
       } else {
         updateState(key, { data: [], error: json.error || 'Failed to load data' });
       }
@@ -123,14 +148,16 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const abortController = new AbortController();
+    const keys = configKeysForPath(pathname);
+    if (keys.length === 0) return;
 
-    HIGH_PRIORITY_KEYS.forEach((key) => {
+    const abortController = new AbortController();
+    keys.forEach((key) => {
       fetchResource(key, abortController.signal);
     });
 
     return () => abortController.abort();
-  }, [fetchResource, isAuthenticated]);
+  }, [fetchResource, isAuthenticated, pathname]);
 
   const refresh = useCallback(async (keys?: ConfigKeys | ConfigKeys[]) => {
     const targetKeys = Array.isArray(keys)
@@ -139,6 +166,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       ? [keys]
       : [...HIGH_PRIORITY_KEYS, ...LOW_PRIORITY_KEYS];
 
+    targetKeys.forEach((key) => resourceCache.delete(key));
     await Promise.all(targetKeys.map((key) => fetchResource(key)));
   }, [fetchResource]);
 

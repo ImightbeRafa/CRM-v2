@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
 
 interface TenantSettings {
@@ -29,26 +29,33 @@ const TenantSettingsContext = createContext<TenantSettingsContextType>({
   formatCurrency: (amount: number) => `₡${amount.toLocaleString()}`
 });
 
+const CACHE_TTL_MS = 5 * 60_000;
+let settingsCache: { data: TenantSettings; timestamp: number } | null = null;
+
 export function TenantSettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<TenantSettings>(defaultSettings);
-  const [isMounted, setIsMounted] = useState(true);
+  const [settings, setSettings] = useState<TenantSettings>(
+    settingsCache?.data ?? defaultSettings
+  );
 
   const { status } = useSession();
 
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
+    if (settingsCache && Date.now() - settingsCache.timestamp < CACHE_TTL_MS) {
+      setSettings(settingsCache.data);
+      return;
+    }
+
     try {
-      console.log('🔄 Loading tenant settings...');
       const res = await fetch('/api/config/settings', {
         credentials: 'include'
       });
-      
+
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
       }
-      
+
       const json = await res.json();
-      console.log('📥 Settings loaded:', json);
-      
+
       if (json.status === 'success' && json.data) {
         const newSettings = {
           currency: json.data.currency || 'CRC',
@@ -56,45 +63,40 @@ export function TenantSettingsProvider({ children }: { children: ReactNode }) {
           language: json.data.language || 'es',
           locale: json.data.locale || 'es-CR'
         };
-        console.log('✅ Applying settings:', newSettings);
-        if (isMounted) {
-          setSettings(newSettings);
-        }
+        settingsCache = { data: newSettings, timestamp: Date.now() };
+        setSettings(newSettings);
       }
     } catch (error) {
-      console.error('❌ Error loading tenant settings:', error);
-      // Keep default settings on error - don't throw to prevent app crash
+      console.error('Error loading tenant settings:', error);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    // Only load settings if user is authenticated
     if (status === 'authenticated') {
-      loadSettings();
+      void loadSettings();
     }
-    
-    return () => {
-      setIsMounted(false);
-    };
-  }, [status]);
+  }, [status, loadSettings]);
+
+  const refreshSettings = useCallback(async () => {
+    settingsCache = null;
+    await loadSettings();
+  }, [loadSettings]);
 
   const formatCurrency = (amount: number): string => {
     if (isNaN(amount)) return `${settings.currencySymbol}0`;
-    
-    // Format number with commas/dots based on locale
+
     const formatted = new Intl.NumberFormat(settings.locale, {
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
       useGrouping: true
     }).format(amount);
-    
-    // Return with currency symbol prefix
+
     return `${settings.currencySymbol}${formatted}`;
   };
 
   const value: TenantSettingsContextType = {
     settings,
-    refreshSettings: loadSettings,
+    refreshSettings,
     formatCurrency
   };
 
@@ -112,4 +114,3 @@ export function useTenantSettings() {
   }
   return context;
 }
-

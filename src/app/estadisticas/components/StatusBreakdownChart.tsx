@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import StatusBreakdownChartInner from './StatusBreakdownChartInner';
+import dynamic from 'next/dynamic';
 
 interface StatusBreakdownChartProps {
   data: Array<{
@@ -17,17 +16,11 @@ function StatusBreakdownChartSkeleton({ height = 300 }: { height?: number }) {
   return <div className="w-full bg-muted animate-pulse rounded" style={{ height }} />;
 }
 
+const StatusBreakdownChartInner = dynamic(() => import('./StatusBreakdownChartInner'), {
+  ssr: false,
+  loading: () => <StatusBreakdownChartSkeleton />,
+});
+
 export default function StatusBreakdownChart(props: StatusBreakdownChartProps) {
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  if (!isMounted) {
-    return <StatusBreakdownChartSkeleton height={props.height} />;
-  }
-
   return <StatusBreakdownChartInner {...props} />;
 }
-

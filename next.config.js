@@ -28,6 +28,10 @@ const nextConfig = {
   // Server-side packages that should not be bundled
   serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium', 'soap', 'axios'],
 
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'date-fns', 'recharts', 'framer-motion'],
+  },
+
   // Image configuration
   images: {
     remotePatterns: [

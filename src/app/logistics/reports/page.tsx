@@ -297,7 +297,10 @@ export default function ReportsPage() {
     useEffect(() => {
         if (activeTab !== 'reports') return;
         if (reportMode !== 'currentWeek') return;
-        const interval = setInterval(generate, 60000);
+        const interval = setInterval(() => {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            generate();
+        }, 5 * 60_000);
         return () => clearInterval(interval);
     }, [activeTab, reportMode, generate]);
 

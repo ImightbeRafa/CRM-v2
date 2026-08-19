@@ -67,81 +67,69 @@ export async function GET(request: NextRequest) {
 
     // Build where clause (tenant filter auto-injected by middleware)
     const whereClause: any = {};
-    
-    // Fetch orders this week
-    const ordersThisWeek = await prisma.order.count({
-      where: {
-        ...whereClause,
-        timestamp: {
-          gte: startOfWeek
-        }
-      }
-    });
+    const completedStatuses = ['Completado', 'Entregado', 'Cancelado', 'Rechazado'];
 
-    // Fetch orders last week
-    const ordersLastWeek = await prisma.order.count({
-      where: {
-        ...whereClause,
-        timestamp: {
-          gte: startOfLastWeek,
-          lt: startOfWeek
+    const [ordersThisWeek, ordersLastWeek, pendingOrders, totalClients, clientsLastWeek, weeklyRevenueAgg, lastWeekRevenueAgg] = await Promise.all([
+      prisma.order.count({
+        where: {
+          ...whereClause,
+          timestamp: {
+            gte: startOfWeek
+          }
         }
-      }
-    });
+      }),
+      prisma.order.count({
+        where: {
+          ...whereClause,
+          timestamp: {
+            gte: startOfLastWeek,
+            lt: startOfWeek
+          }
+        }
+      }),
+      prisma.order.count({
+        where: {
+          ...whereClause,
+          status: {
+            notIn: completedStatuses
+          }
+        }
+      }),
+      prisma.client.count({
+        where: whereClause
+      }),
+      prisma.client.count({
+        where: {
+          ...whereClause,
+          createdAt: {
+            lt: startOfWeek
+          }
+        }
+      }),
+      prisma.order.aggregate({
+        where: {
+          ...whereClause,
+          NOT: { contraEntrega: true, cePaymentConfirmed: false },
+          timestamp: { gte: startOfWeek },
+        },
+        _sum: { total: true },
+      }),
+      prisma.order.aggregate({
+        where: {
+          ...whereClause,
+          NOT: { contraEntrega: true, cePaymentConfirmed: false },
+          timestamp: { gte: startOfLastWeek, lt: startOfWeek },
+        },
+        _sum: { total: true },
+      }),
+    ]);
 
-    // Calculate percentage change
-    const ordersChange = ordersLastWeek > 0 
+    const ordersChange = ordersLastWeek > 0
       ? Math.round(((ordersThisWeek - ordersLastWeek) / ordersLastWeek) * 100)
       : ordersThisWeek > 0 ? 100 : 0;
 
-    // Fetch pending orders (orders not in completed/delivered status)
-    // Common completed/delivered status values in Spanish
-    const completedStatuses = ['Completado', 'Entregado', 'Cancelado', 'Rechazado'];
-    
-    const pendingOrders = await prisma.order.count({
-      where: {
-        ...whereClause,
-        status: {
-          notIn: completedStatuses
-        }
-      }
-    });
-
-    // Fetch total clients
-    const totalClients = await prisma.client.count({
-      where: whereClause
-    });
-
-    // Fetch clients from last week for comparison
-    const clientsLastWeek = await prisma.client.count({
-      where: {
-        ...whereClause,
-        createdAt: {
-          lt: startOfWeek
-        }
-      }
-    });
-
     const newClientsThisWeek = totalClients - clientsLastWeek;
-
-    const weeklyRevenueAgg = await prisma.order.aggregate({
-      where: {
-        ...whereClause,
-        NOT: { contraEntrega: true, cePaymentConfirmed: false },
-        timestamp: { gte: startOfWeek },
-      },
-      _sum: { total: true },
-    });
     const weeklyRevenue = weeklyRevenueAgg._sum.total || 0;
-
-    const lastWeekRevenueAgg = await prisma.order.aggregate({
-      where: {
-        ...whereClause,
-        NOT: { contraEntrega: true, cePaymentConfirmed: false },
-        timestamp: { gte: startOfLastWeek, lt: startOfWeek },
-      },
-      _sum: { total: true },
-    });
     const lastWeekRevenue = lastWeekRevenueAgg._sum.total || 0;
 
     const revenueChange = lastWeekRevenue > 0
@@ -170,9 +158,6 @@ export async function GET(request: NextRequest) {
     
     statsCache.set(tenantId, { data: stats, timestamp: Date.now() });
     pruneCache();
-
-    console.log(`[Dashboard Stats] Tenant ${tenantId}: Orders this week: ${ordersThisWeek}, Pending: ${pendingOrders}, Clients: ${totalClients}, Revenue: ${weeklyRevenue}`);
-
 
     return NextResponse.json(stats);
 

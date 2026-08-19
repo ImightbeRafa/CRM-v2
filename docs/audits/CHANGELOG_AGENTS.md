@@ -2,6 +2,23 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-19 — Site-wide load-time performance slice
+
+- Stopped `ConfigProvider` from fetching 6 config APIs on every authenticated
+  route; ventas/producción/config load only what they need, with a 5-minute
+  memory cache. Tenant settings and billing banner share the same cache pattern.
+- NextAuth `SessionProvider` no longer refetches on window focus.
+- Logistics `/orders` GET: bounded limit, tenant-scoped lm prefilter, parallel
+  enrichment, no `ALTER TABLE` on GET, dropped `productDetails`/`customFields`
+  from the list payload. Dashboard search is debounced; carriers/accounting
+  caps reduced; reports poll every 5 minutes when the tab is visible.
+- Dashboard stats, estadísticas summary/type/status/top-customers run independent
+  reads concurrently. Estadísticas no longer duplicate summary/type/status for
+  the day report; order-details is paginated. Recharts is `next/dynamic`.
+- Production lazy-loads Guia/Invoice/Kanban. Route `loading.tsx` files use
+  skeletons. `optimizePackageImports` for lucide/date-fns/recharts/framer-motion.
+  Logistics Inter via `next/font`. No schema or `lm_*` changes.
+
 ## 2026-08-18 — Finance API extra keys for DeepClean / Forge
 
 - Bitácora (adsadder) reads `brand=all` via extra top-level keys

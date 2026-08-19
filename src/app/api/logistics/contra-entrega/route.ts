@@ -54,7 +54,6 @@ export async function GET(req: NextRequest) {
     const collectedFilter = url.searchParams.get('collected'); // 'true' | 'false' | null
 
     try {
-        await ensureCePaymentMethodColumn();
 
         // Build date clause
         let dateSql = '';

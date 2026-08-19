@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { authenticateAPI } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
-import { resolveTenantId } from '@/lib/api-tenant';
 import { buildStatsOrderDateWhere } from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
@@ -9,16 +8,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    
-    if (!token || !token.sub) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const tenantId = await resolveTenantId(req, token);
-    if (!tenantId) {
-      return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
-    }
+    const auth = await authenticateAPI(req);
+    if (!auth.ok) return auth.response;
+    const tenantId = auth.tenantId;
     
     // CRITICAL: Use tenant-isolated prisma client
     const prisma = getTenantPrisma(tenantId);
@@ -34,79 +26,51 @@ export async function GET(req: NextRequest) {
       ...buildStatsOrderDateWhere(startDate, endDate),
     };
 
-    // Get top customers by total revenue
-    const topCustomersByRevenue = await orderModel.groupBy({
-      by: ['customerName'],
-      where: whereClause,
-      _sum: {
-        total: true,
-      },
-      _count: {
-        _all: true,
-      },
-      orderBy: {
-        _sum: {
-          total: 'desc',
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [topCustomersByRevenue, topCustomersByOrders, customerActivity, totals, distinctCustomers, recentCustomers] = await Promise.all([
+      orderModel.groupBy({
+        by: ['customerName'],
+        where: whereClause,
+        _sum: { total: true },
+        _count: { _all: true },
+        orderBy: { _sum: { total: 'desc' } } as any,
+        take: limit,
+      }),
+      orderModel.groupBy({
+        by: ['customerName'],
+        where: whereClause,
+        _count: { _all: true },
+        _sum: { total: true },
+        orderBy: { _count: { customerName: 'desc' } } as any,
+        take: limit,
+      }),
+      orderModel.groupBy({
+        by: ['customerName'],
+        where: whereClause,
+        _sum: { total: true },
+        _count: { _all: true },
+        _min: { timestamp: true },
+        _max: { timestamp: true },
+        orderBy: { _max: { timestamp: 'desc' } } as any,
+        take: limit,
+      }),
+      orderModel.aggregate({
+        where: whereClause,
+        _sum: { total: true },
+        _count: { _all: true },
+      }),
+      orderModel.groupBy({
+        by: ['customerName'],
+        where: whereClause,
+      }),
+      orderModel.groupBy({
+        by: ['customerName'],
+        where: {
+          ...whereClause,
+          timestamp: { gte: thirtyDaysAgo },
         },
-      } as any,
-      take: limit,
-    });
-
-    // Get top customers by order count
-    const topCustomersByOrders = await orderModel.groupBy({
-      by: ['customerName'],
-      where: whereClause,
-      _count: {
-        _all: true,
-      },
-      _sum: {
-        total: true,
-      },
-      orderBy: {
-        _count: {
-          customerName: 'desc',
-        },
-      } as any,
-      take: limit,
-    });
-
-    // Get customer activity data (recent orders, average order value, etc.)
-    const customerActivity = await orderModel.groupBy({
-      by: ['customerName'],
-      where: whereClause,
-      _sum: {
-        total: true,
-      },
-      _count: {
-        _all: true,
-      },
-      _min: {
-        timestamp: true,
-      },
-      _max: {
-        timestamp: true,
-      },
-      orderBy: {
-        _max: {
-          timestamp: 'desc',
-        },
-      } as any,
-      take: limit,
-    });
-
-    const allCustomerGroups = await orderModel.groupBy({
-      by: ['customerName'],
-      where: whereClause,
-      _sum: {
-        total: true,
-      },
-      _count: {
-        _all: true,
-      },
-      _max: {
-        timestamp: true,
-      },
-    });
+      }),
+    ]);
 
     // Calculate additional metrics for each customer
     const enhancedCustomerData = customerActivity.map((customer: any) => {
@@ -143,13 +107,9 @@ export async function GET(req: NextRequest) {
       return acc;
     }, {} as Record<string, number>);
 
-    const totalRevenue = allCustomerGroups.reduce((sum: number, customer: any) => sum + (customer._sum.total || 0), 0);
-    const totalOrders = allCustomerGroups.reduce((sum: number, customer: any) => sum + customer._count._all, 0);
-    const activeCustomers = allCustomerGroups.filter((customer: any) => {
-      if (!customer._max.timestamp) return false;
-      const daysSinceLastOrder = Math.floor((Date.now() - new Date(customer._max.timestamp).getTime()) / (1000 * 60 * 60 * 24));
-      return daysSinceLastOrder <= 30;
-    }).length;
+    const totalRevenue = totals._sum.total || 0;
+    const totalOrders = totals._count._all || 0;
+    const activeCustomers = recentCustomers.length;
 
     return NextResponse.json({
       topCustomersByRevenue: topCustomersByRevenue.map((customer: any) => ({
@@ -167,7 +127,7 @@ export async function GET(req: NextRequest) {
       customerActivity: enhancedCustomerData,
       customerStatusDistribution,
       summary: {
-        totalCustomers: allCustomerGroups.length,
+        totalCustomers: distinctCustomers.length,
         activeCustomers,
         totalRevenue,
         averageOrderValue: totalOrders > 0 ? totalRevenue / totalOrders : 0

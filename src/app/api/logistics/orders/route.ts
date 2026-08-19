@@ -25,8 +25,9 @@ export async function GET(req: NextRequest) {
         const search = url.searchParams.get('search');
         const dateFrom = url.searchParams.get('dateFrom');
         const dateTo = url.searchParams.get('dateTo');
-        const page = parseInt(url.searchParams.get('page') || '1', 10);
-        const limit = parseInt(url.searchParams.get('limit') || '200', 10);
+        const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
+        const requestedLimit = parseInt(url.searchParams.get('limit') || '100', 10);
+        const limit = Math.min(800, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : 100));
         const skip = (page - 1) * limit;
 
         // Default: only show orders from Feb 22 2026 onwards (cutoff date when LM went live)
@@ -36,6 +37,10 @@ export async function GET(req: NextRequest) {
         if (!tenantFilter.ok) {
             return NextResponse.json({ error: 'Tenant not in managed allowlist' }, { status: 403 });
         }
+
+        const tenantIds = Array.isArray(tenantFilter.tenantId)
+            ? tenantFilter.tenantId
+            : [tenantFilter.tenantId];
 
         const where: any = {
             tenantId: tenantFilter.tenantId,
@@ -57,12 +62,13 @@ export async function GET(req: NextRequest) {
         }
 
         // Pre-filter by lm_orders at DB level to avoid pagination holes.
-        // When a carrier or archive filter is specified, we first resolve matching
-        // order IDs from lm_orders so the main Prisma query only returns relevant rows.
+        // Scoped to managed tenants so we never scan the full lm_orders table.
         if (lmCarrierFilter) {
             try {
                 const lmFilterRows = await prisma.$queryRaw<{ crm_order_id: string }[]>`
-                    SELECT crm_order_id FROM lm_orders WHERE carrier = ${lmCarrierFilter}
+                    SELECT crm_order_id FROM lm_orders
+                    WHERE carrier = ${lmCarrierFilter}
+                    AND crm_tenant_id = ANY(${tenantIds}::text[])
                 `;
                 where.id = { in: lmFilterRows.map((r) => r.crm_order_id) };
             } catch {
@@ -71,7 +77,9 @@ export async function GET(req: NextRequest) {
         } else if (archivedFilter === 'true') {
             try {
                 const archivedRows = await prisma.$queryRaw<{ crm_order_id: string }[]>`
-                    SELECT crm_order_id FROM lm_orders WHERE archived_at IS NOT NULL
+                    SELECT crm_order_id FROM lm_orders
+                    WHERE archived_at IS NOT NULL
+                    AND crm_tenant_id = ANY(${tenantIds}::text[])
                 `;
                 where.id = { in: archivedRows.map((r) => r.crm_order_id) };
             } catch {
@@ -93,7 +101,6 @@ export async function GET(req: NextRequest) {
                     email: true,
                     product: true,
                     quantity: true,
-                    productDetails: true,
                     size: true,
                     color: true,
                     total: true,
@@ -110,7 +117,6 @@ export async function GET(req: NextRequest) {
                     pickupDate: true,
                     comments: true,
                     seller: true,
-                    customFields: true,
                     contraEntrega: true,
                     cePaymentConfirmed: true,
                     tenant: { select: { name: true, slug: true, businessName: true } },
@@ -122,117 +128,149 @@ export async function GET(req: NextRequest) {
             prisma.order.count({ where }),
         ]);
 
-        // Enrich with lm_orders data (logistics carrier + logistics status)
+        type LmRow = {
+            lmCarrier: string | null;
+            lmStatus: string | null;
+            isContraEntrega: boolean;
+            contraEntregaCollected: boolean;
+            archivedAt: string | null;
+            correosShippingCost: number | null;
+            cePaymentMethod?: string | null;
+            ceConfirmedBy?: string | null;
+        };
         const orderIds = orders.map((o) => o.id);
-        const lmData: Record<string, { lmCarrier: string | null; lmStatus: string | null; isContraEntrega: boolean; contraEntregaCollected: boolean; archivedAt: string | null; correosShippingCost: number | null }> = {};
+        const lmData: Record<string, LmRow> = {};
         const guiaData: Record<string, { guiaId: string; guiaNumber: string | null; trackingNumber: string | null; guiaStatus: string | null; guiaError: string | null; hasGuiaPdf: boolean }> = {};
         if (orderIds.length > 0) {
-            try {
-                const lmRows = await prisma.$queryRaw<{ crm_order_id: string; carrier: string | null; status: string | null; is_contra_entrega: boolean; contraentrega_collected: boolean; archived_at: string | null }[]>`
-                    SELECT crm_order_id, carrier, status, is_contra_entrega, contraentrega_collected, archived_at FROM lm_orders
-                    WHERE crm_order_id = ANY(${orderIds}::text[])
-                `;
-                for (const row of lmRows) {
-                    lmData[row.crm_order_id] = {
-                        lmCarrier: row.carrier,
-                        lmStatus: row.status,
-                        isContraEntrega: row.is_contra_entrega ?? false,
-                        contraEntregaCollected: row.contraentrega_collected ?? false,
-                        archivedAt: row.archived_at ?? null,
-                        correosShippingCost: null,
-                    };
-                }
-            } catch {
-                // lm_orders table may not be accessible; continue without lm data
-            }
-
-            // Fetch correos_shipping_cost separately — column may not exist if migration 006 hasn't run
-            try {
-                const costRows = await prisma.$queryRaw<{ crm_order_id: string; correos_shipping_cost: number | null }[]>`
-                    SELECT crm_order_id, correos_shipping_cost FROM lm_orders
-                    WHERE crm_order_id = ANY(${orderIds}::text[]) AND correos_shipping_cost IS NOT NULL
-                `;
-                for (const row of costRows) {
-                    if (lmData[row.crm_order_id]) {
-                        lmData[row.crm_order_id].correosShippingCost = row.correos_shipping_cost != null ? Number(row.correos_shipping_cost) : null;
-                    }
-                }
-            } catch {
-                // correos_shipping_cost column may not exist yet; ignore
-            }
-
-            // Latest CE payment method / confirmer (best-effort)
-            try {
-                await prisma.$executeRawUnsafe(`
-                    ALTER TABLE lm_ce_payments
-                    ADD COLUMN IF NOT EXISTS payment_method TEXT
-                `);
-                const ceRows = await prisma.$queryRaw<{ crm_order_id: string; payment_method: string | null; confirmed_by: string | null }[]>`
-                    SELECT DISTINCT ON (crm_order_id)
-                        crm_order_id, payment_method, confirmed_by
-                    FROM lm_ce_payments
-                    WHERE crm_order_id = ANY(${orderIds}::text[])
-                    ORDER BY crm_order_id, collected_at DESC NULLS LAST
-                `;
-                for (const row of ceRows) {
-                    if (lmData[row.crm_order_id]) {
-                        (lmData[row.crm_order_id] as any).cePaymentMethod = row.payment_method ?? null;
-                        (lmData[row.crm_order_id] as any).ceConfirmedBy = row.confirmed_by ?? null;
-                    } else {
+            const loadLm = async () => {
+                try {
+                    const lmRows = await prisma.$queryRaw<{
+                        crm_order_id: string;
+                        carrier: string | null;
+                        status: string | null;
+                        is_contra_entrega: boolean;
+                        contraentrega_collected: boolean;
+                        archived_at: string | null;
+                        correos_shipping_cost: number | null;
+                    }[]>`
+                        SELECT crm_order_id, carrier, status, is_contra_entrega, contraentrega_collected, archived_at, correos_shipping_cost
+                        FROM lm_orders
+                        WHERE crm_order_id = ANY(${orderIds}::text[])
+                    `;
+                    for (const row of lmRows) {
                         lmData[row.crm_order_id] = {
-                            lmCarrier: null,
-                            lmStatus: null,
-                            isContraEntrega: false,
-                            contraEntregaCollected: false,
-                            archivedAt: null,
-                            correosShippingCost: null,
-                            cePaymentMethod: row.payment_method ?? null,
-                            ceConfirmedBy: row.confirmed_by ?? null,
-                        } as any;
+                            lmCarrier: row.carrier,
+                            lmStatus: row.status,
+                            isContraEntrega: row.is_contra_entrega ?? false,
+                            contraEntregaCollected: row.contraentrega_collected ?? false,
+                            archivedAt: row.archived_at ?? null,
+                            correosShippingCost: row.correos_shipping_cost != null ? Number(row.correos_shipping_cost) : null,
+                        };
+                    }
+                } catch {
+                    try {
+                        const lmRows = await prisma.$queryRaw<{
+                            crm_order_id: string;
+                            carrier: string | null;
+                            status: string | null;
+                            is_contra_entrega: boolean;
+                            contraentrega_collected: boolean;
+                            archived_at: string | null;
+                        }[]>`
+                            SELECT crm_order_id, carrier, status, is_contra_entrega, contraentrega_collected, archived_at
+                            FROM lm_orders
+                            WHERE crm_order_id = ANY(${orderIds}::text[])
+                        `;
+                        for (const row of lmRows) {
+                            lmData[row.crm_order_id] = {
+                                lmCarrier: row.carrier,
+                                lmStatus: row.status,
+                                isContraEntrega: row.is_contra_entrega ?? false,
+                                contraEntregaCollected: row.contraentrega_collected ?? false,
+                                archivedAt: row.archived_at ?? null,
+                                correosShippingCost: null,
+                            };
+                        }
+                    } catch {
+                        // lm_orders table may not be accessible
                     }
                 }
-            } catch {
-                // CE payment enrichment is optional
-            }
+            };
 
-            try {
-                const guiaRows = await prisma.shippingGuia.findMany({
-                    where: {
-                        tenantId: { in: [...new Set(orders.map(o => o.tenantId))] },
-                        orderId: { in: orders.map(o => o.orderId) },
-                        carrier: 'correos_cr',
-                    },
-                    orderBy: [
-                        { updatedAt: 'desc' },
-                        { createdAt: 'desc' },
-                    ],
-                    select: {
-                        id: true,
-                        tenantId: true,
-                        orderId: true,
-                        guiaNumber: true,
-                        trackingNumber: true,
-                        status: true,
-                        errorMessage: true,
-                        pdfFileName: true,
-                    },
-                });
-
-                for (const row of guiaRows) {
-                    const key = `${row.tenantId}:${row.orderId}`;
-                    if (guiaData[key]) continue;
-                    guiaData[key] = {
-                        guiaId: row.id,
-                        guiaNumber: row.guiaNumber ?? null,
-                        trackingNumber: row.trackingNumber ?? null,
-                        guiaStatus: row.status ?? null,
-                        guiaError: row.errorMessage ?? null,
-                        hasGuiaPdf: !!row.pdfFileName,
-                    };
+            const loadCe = async () => {
+                try {
+                    const ceRows = await prisma.$queryRaw<{ crm_order_id: string; payment_method: string | null; confirmed_by: string | null }[]>`
+                        SELECT DISTINCT ON (crm_order_id)
+                            crm_order_id, payment_method, confirmed_by
+                        FROM lm_ce_payments
+                        WHERE crm_order_id = ANY(${orderIds}::text[])
+                        ORDER BY crm_order_id, collected_at DESC NULLS LAST
+                    `;
+                    for (const row of ceRows) {
+                        if (lmData[row.crm_order_id]) {
+                            lmData[row.crm_order_id].cePaymentMethod = row.payment_method ?? null;
+                            lmData[row.crm_order_id].ceConfirmedBy = row.confirmed_by ?? null;
+                        } else {
+                            lmData[row.crm_order_id] = {
+                                lmCarrier: null,
+                                lmStatus: null,
+                                isContraEntrega: false,
+                                contraEntregaCollected: false,
+                                archivedAt: null,
+                                correosShippingCost: null,
+                                cePaymentMethod: row.payment_method ?? null,
+                                ceConfirmedBy: row.confirmed_by ?? null,
+                            };
+                        }
+                    }
+                } catch {
+                    // CE payment enrichment is optional
                 }
-            } catch {
-                // Continue without guia enrichment if the table is unavailable.
-            }
+            };
+
+            const loadGuias = async () => {
+                try {
+                    const guiaRows = await prisma.shippingGuia.findMany({
+                        where: {
+                            tenantId: { in: [...new Set(orders.map(o => o.tenantId))] },
+                            orderId: { in: orders.map(o => o.orderId) },
+                            carrier: 'correos_cr',
+                        },
+                        orderBy: [
+                            { updatedAt: 'desc' },
+                            { createdAt: 'desc' },
+                        ],
+                        select: {
+                            id: true,
+                            tenantId: true,
+                            orderId: true,
+                            guiaNumber: true,
+                            trackingNumber: true,
+                            status: true,
+                            errorMessage: true,
+                            pdfFileName: true,
+                        },
+                    });
+
+                    for (const row of guiaRows) {
+                        const key = `${row.tenantId}:${row.orderId}`;
+                        if (guiaData[key]) continue;
+                        guiaData[key] = {
+                            guiaId: row.id,
+                            guiaNumber: row.guiaNumber ?? null,
+                            trackingNumber: row.trackingNumber ?? null,
+                            guiaStatus: row.status ?? null,
+                            guiaError: row.errorMessage ?? null,
+                            hasGuiaPdf: !!row.pdfFileName,
+                        };
+                    }
+                } catch {
+                    // Continue without guia enrichment if the table is unavailable.
+                }
+            };
+
+            await loadLm();
+            await Promise.all([loadCe(), loadGuias()]);
         }
 
         const enriched = orders.map((o) => ({

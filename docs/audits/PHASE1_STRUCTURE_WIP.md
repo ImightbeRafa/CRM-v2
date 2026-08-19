@@ -45,6 +45,12 @@ Organize unfinished work so Phase 2 can finish items deliberately. Seeded at kic
 - **Status:** partial — removed `@types/bcryptjs`; kept `sharp`
 - Still TODO: add missing `uuid` (and `xlsx` if script kept) to package.json
 
+### W10 — Site-wide perceived performance
+- **Status:** IN PROGRESS (first slice shipped)
+- **Done:** stop global ConfigProvider fan-out; slim logistics order list; parallel dashboard/stats queries; dynamic heavy production/estadísticas chunks; route skeletons
+- **Still open:** production `limit=all` operational window, estadísticas SQL date aggregation, config tab split, middleware auth reuse
+- **Phase:** finish remaining query bounds without hiding active orders
+
 ## Phase 2 queue (finish)
 
 1. Invoice email real send or honest error — `src/app/api/invoices/[id]/email/route.ts`

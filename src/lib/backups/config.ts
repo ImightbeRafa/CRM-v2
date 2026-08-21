@@ -40,6 +40,7 @@ export const REQUIRED_LM_TABLES = [
   'lm_orders',
   'lm_private_delivery_confirmations',
   'lm_retiro_handoffs',
+  'lm_retiro_order_allocations',
   'lm_retiro_product_aliases',
   'lm_retiro_stock',
   'lm_retiro_stock_movements',

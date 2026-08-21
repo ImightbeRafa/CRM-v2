@@ -2,6 +2,23 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-21 — Agent knowledge base (CRM + logistics)
+
+- Added `docs/kb/` as canonical architecture for future agents: two surfaces
+  (tenant Betsy CRM vs HolaMA logistics), auth axes, Prisma vs `lm_*` ownership,
+  order overlay flow, curated route map, integrations/finance, testing runbook.
+- Mechanical inventories via `scripts/kb-inventory.mjs` (`npm run kb:generate` /
+  `npm run kb:check`) write `docs/kb/generated/ROUTES.md` and `LM_SCHEMA.md`.
+- Wired `AGENTS.md` precedence + topology; marked `DOCUMENTATION.md` legacy;
+  added `.cursor/rules/betsy-data-boundaries.mdc`; Executor/Advisor skill
+  preflight now points at the KB.
+- Un-ignored `scripts/**` and `.cursor/rules/**` in `.gitignore` so the inventory
+  script and Cursor rule are actually commitable (the dir was blanket-ignored).
+- Closed backup allowlist hole: `lm_retiro_order_allocations` is now in
+  `REQUIRED_LM_TABLES` (plus backup fixture) so `npm run test:backups` matches
+  runtime Laura per-unit mapping.
+- No allowlist/tenant/schema product behavior change beyond that coverage row.
+
 ## 2026-08-19 — Site-wide load-time performance slice
 
 - Stopped `ConfigProvider` from fetching 6 config APIs on every authenticated

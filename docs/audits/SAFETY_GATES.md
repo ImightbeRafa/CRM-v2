@@ -35,6 +35,7 @@ Optional inventory (non-blocking):
 
 ```bash
 npm run audit:dead
+npm run kb:check    # if the slice added/removed routes, Prisma models, or lm_* tables
 ```
 
 ## Sol safety gate

@@ -7,7 +7,10 @@ supabase/migrations/*
 !supabase/migrations/017_workforce_system.sql
 # Testing
 coverage/
+# Historical blanket ignore; keep tracked npm scripts commitable
 scripts
+!scripts/
+!scripts/**
 SDK_V2_FINAL_CONFIGURATION.txt
 SDK_V2_IMPLEMENTATION.txt
 # Documentation and Notes (local only)
@@ -83,6 +86,8 @@ debug-vercel-api.ps1
 !.cursor/skills/**
 !.cursor/commands/
 !.cursor/commands/**
+!.cursor/rules/
+!.cursor/rules/**
 .cursorrules
 
 # Reference/scratch projects (not part of CRM-v2)

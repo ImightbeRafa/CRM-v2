@@ -1,0 +1,33 @@
+---
+description: Data boundaries between Betsy CRM (Prisma) and HolaMA logistics (lm_*)
+globs:
+  - prisma/**
+  - supabase/**
+  - src/middleware.ts
+  - src/lib/prisma-tenant.ts
+  - src/lib/logistics*.ts
+  - src/lib/logistics-*/**
+  - src/lib/retiro*.ts
+  - src/lib/finance*.ts
+  - src/lib/workforce*.ts
+  - src/lib/backups/**
+  - src/lib/logistics-crm-sync.ts
+  - src/app/api/logistics/**
+  - src/app/api/finance/**
+  - src/app/api/orders/**
+  - src/app/api/work-clock/**
+  - src/app/logistics/**
+  - docs/kb/**
+---
+
+# Betsy data boundaries
+
+Read `docs/kb/README.md` before changing orders, tenants, logistics, finance, or schema.
+
+- Two surfaces, one app: **CRM** = Prisma tenant data (`/ventas`, `/api/orders`). **Logistics** = `lm_*` overlay (`/logistics`, `/api/logistics`) for allowlisted tenants only (`src/lib/logistics-managed-tenants.ts`).
+- Join key is `Order.id` (cuid) = `lm_orders.crm_order_id`. Never join on `Order.orderId`. No database FK.
+- `lm_*` tables are **not** in Prisma. Never `prisma db push` / `prisma migrate` against shared Supabase. Use `supabase/migrations/` + `REQUIRED_LM_TABLES` in `src/lib/backups/config.ts`. `npm run db:push` is guarded; never `--accept-data-loss`.
+- Tenant isolation: `getTenantPrisma` / `TENANT_MODELS`. Do not trust client `x-tenant-id`. Logistics writes must pass `isManagedTenantId`. Finance writes do not exist — read API allowlist is `src/lib/finance-tenants.ts` (subset). Do not add allowlist ids without an explicit human request.
+- Auth axes are independent: membership RBAC ≠ `isLogisticsAdmin` ≠ worker HMAC ≠ `FINANCE_API_KEY`. Middleware-public prefixes (`/api/finance`, `/api/cron`, webhooks) must authenticate in the handler.
+- After adding/removing App Router pages, API routes, Prisma models, or `lm_*` CREATE TABLE: `npm run kb:generate` and commit `docs/kb/generated/`.
+- Laura inventory (`agent_key=laura`) only for `laura_escazu`. Marlenn is handoff-only. Do not deduct stock on Marlenn confirm.

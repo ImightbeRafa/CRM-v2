@@ -4,9 +4,15 @@
 **Last Updated:** July 2026  
 **Tech Stack:** Next.js 15, TypeScript, Prisma, PostgreSQL, NextAuth.js, TailwindCSS
 
-> **Note:** Agent-maintained audit and process truth lives in [`docs/audits/`](docs/audits/README.md)
-> (dead-code inventory, WIP structure, safety gates, agent changelog). Prefer those ledgers
-> over this file for slim/structure work. Stack is Next.js 15 (not 14).
+> **Legacy overview — not canonical.** Agents must treat this file as historical.
+> Architecture, CRM vs logistics boundaries, auth, and data ownership live in
+> [`docs/kb/README.md`](docs/kb/README.md). Cloud gotchas and hard stops live in
+> [`AGENTS.md`](AGENTS.md). Slim/WIP ledgers live in [`docs/audits/`](docs/audits/README.md).
+> Prefer those over this file. Sections below may disagree with `package.json`
+> (this file still mentions Next.js 14 in places) and with current bot/AI providers
+> (xAI Grok Responses API, not OpenAI Chat Completions). Verify in code.
+>
+> Stack is Next.js 15 (not 14). Do not add new architecture here — update `docs/kb/` instead.
 
 ---
 

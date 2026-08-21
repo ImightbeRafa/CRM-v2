@@ -2,6 +2,9 @@
 
 Living ledgers for the slim → structure → finish → bug-hunt program. **Agents must update these files after every meaningful slice.**
 
+Architecture for the two product surfaces (client Betsy CRM vs internal HolaMA logistics)
+is **not** this folder. Start at [`docs/kb/README.md`](../kb/README.md).
+
 ## Ledgers
 
 | File | Purpose |

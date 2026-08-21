@@ -25,7 +25,7 @@ You are the **Executor** (current session model). **Sol** (`gpt-5.6-sol-high`) i
 | Dead-code scout | `explore` or `generalPurpose` | Unused exports, routes, deps (`knip` + grep); read-only |
 | Domain auditors | `explore` (parallel) | Bounded ownership: `ventas`, `logistics`, `bot`, `billing/config` |
 | Safety reviewer | Sol verify mode | Diff gate: safe to delete? data/auth/billing risk? |
-| Doc scribe | `generalPurpose` | Keep `docs/audits/` ledgers + AGENTS process notes current |
+| Doc scribe | `generalPurpose` | Keep `docs/kb/` architecture + `docs/audits/` ledgers + AGENTS process notes current |
 | CI / smoke | shell + `ci-watcher` when PR exists | Prove green after each apply |
 
 Advisor/scouts never implement product changes. You never skip the verify prompt after completing work.
@@ -38,8 +38,8 @@ User request
   → [Audit?] Parent fans out parallel read-only scouts (non-overlapping ownership)
   → Sol merges findings → quarantine vs safe-delete
   → Executor applies approved slices SERIALLY
-  → Prove: lint + build + tests
-  → Doc scribe updates docs/audits/
+  → Prove: lint + build + tests + `npm run kb:check` if routes/schema changed
+  → Doc scribe updates docs/kb (if architecture changed) and docs/audits/
   → Ask user: "Should Sol verify?"
   → [If yes/verify] Sol Advisor verify
   → Executor fixes blockers → done
@@ -212,3 +212,14 @@ After completing work, summarize:
 - Whether Sol verified (and verdict if so)
 
 Keep Advisor summaries concise; full detail lives in subagent output you act on.
+
+## Architecture preflight (KB)
+
+Before planning or implementing work that touches orders, auth, tenants, billing, bots, logistics, finance, workforce, or schema:
+
+1. Read `docs/kb/README.md` then the relevant domain file (boundaries, auth, data ownership, order flow).
+2. Treat `AGENTS.md` hard stops as non-negotiable (`prisma db push` against Supabase, `lm_*` drops, allowlist edits without a human).
+3. After adding or removing App Router `page.tsx` / `route.ts`, Prisma models/enums, or `lm_*` `CREATE TABLE`: run `npm run kb:generate`, commit `docs/kb/generated/`, and update the curated file if behavior changed. `npm run kb:check` must stay clean.
+
+Do not duplicate domain content in this skill. The KB is the map; this skill is the loop.
+

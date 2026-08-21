@@ -8,6 +8,25 @@ NextAuth). It is not a monorepo — one dev server serves the whole product
 Standard commands live in `package.json` and `DOCUMENTATION.md`; notes below only
 cover non-obvious setup/run gotchas.
 
+### Two surfaces (read this first)
+
+This repo is **one deployment, two products**:
+
+| Surface | Audience | Data | Tree |
+|---------|----------|------|------|
+| **Betsy CRM** | Paying tenant members | Prisma (`schema.prisma`) | `/ventas`, `/produccion`, `/estadisticas`, `/config`, `/api/orders`, bots, Tilopay |
+| **HolaMA logistics** | `User.isLogisticsAdmin` + warehouse workers | Raw SQL `lm_*` (**not** in Prisma) | `/logistics`, `/work-clock`, `/api/logistics`, `/api/finance` |
+
+They share Prisma `Order` rows. Logistics overlays `lm_orders.crm_order_id = Order.id` (cuid, not `Order.orderId`). No database FK.
+
+**Canonical architecture for agents:** [`docs/kb/README.md`](docs/kb/README.md)
+(boundaries, auth, data ownership, order flow, route map, integrations, test runbook).
+Generated inventories: `docs/kb/generated/` (`npm run kb:generate` / `npm run kb:check`).
+
+**Doc precedence:** `AGENTS.md` hard stops → `docs/kb/` → `docs/audits/` → `DOCUMENTATION.md` (legacy, often stale) → customer MDX under `src/content/`. Code wins over all of them.
+
+When you add/remove App Router pages, API `route.ts` files, Prisma models, or `lm_*` tables, regenerate the KB inventories and update the matching curated file if behavior changed.
+
 ### Agent OS & audits
 - Skill: `.cursor/skills/executor-advisor-loop/SKILL.md` (Sol-orchestrated Executor/Advisor;
   Sol model `gpt-5.6-sol-high`; parent session dispatches parallel read-only scouts).
@@ -29,10 +48,10 @@ cover non-obvious setup/run gotchas.
   so the app/Prisma use Supabase regardless of what `.env` says. The schema is already
   applied there.
 - **Do NOT run `prisma db push` / `prisma migrate` against this DB.** The `lm_*`
-  logistics/workforce tables (24 of them: `lm_orders`, `lm_order_events`,
+  logistics/workforce tables (25 of them: `lm_orders`, `lm_order_events`,
   `lm_ce_payments`, `lm_billing_weeks`, `lm_employees`, `lm_time_entries`, `lm_work_days`,
-  etc.) are created by raw SQL in `supabase/migrations/` and are **NOT part of the Prisma
-  schema**. `prisma db push` makes the DB match `schema.prisma` exactly, so it will try to
+  `lm_retiro_order_allocations`, etc.) are created by raw SQL in `supabase/migrations/`
+  and/or runtime `CREATE TABLE` and are **NOT part of the Prisma schema**. `prisma db push` makes the DB match `schema.prisma` exactly, so it will try to
   **DROP every `lm_*` table** — this already caused a full logistics data loss once.
   `npm run db:push` runs `scripts/safe-db-push.mjs`, which refuses Supabase hosts,
   pooler port 6543, non-loopback URLs, and any database that already has `lm_%`
@@ -70,8 +89,9 @@ cover non-obvious setup/run gotchas.
 
 ### Scripts
 - Viable scripts: `dev`, `build`, `start`, `lint`, `db:*`, `backup:*`, `test:backups`,
-  `test:backup-roundtrip`, `test:bot-grok`, `audit:dead`.
+  `test:backup-roundtrip`, `test:bot-grok`, `audit:dead`, `kb:generate`, `kb:check`.
 - Stale scripts that pointed at missing `scripts/*.js` files were removed in the
   Phase 0 kickoff (see `docs/audits/PHASE0_DEAD_CODE.md`).
 - `DOCUMENTATION.md` may still reference missing files (e.g. `env-template-local.txt`);
-  agent-maintained audit truth lives under `docs/audits/`.
+  agent-maintained architecture truth lives under [`docs/kb/`](docs/kb/README.md);
+  audit ledgers live under `docs/audits/`.

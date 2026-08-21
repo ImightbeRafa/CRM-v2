@@ -47,7 +47,7 @@ Prisma models from `prisma/schema.prisma`. `lm_*` tables from `CREATE TABLE` in 
 ## `lm_*` tables
 
 | Distinct tables | 24 |
-| Backup allowlist (`REQUIRED_LM_TABLES`) | 24 |
+| Backup allowlist (`REQUIRED_LM_TABLES`) | 25 |
 
 | Table | Kind | Source | In `REQUIRED_LM_TABLES` |
 |---|---|---|---|
@@ -66,7 +66,7 @@ Prisma models from `prisma/schema.prisma`. `lm_*` tables from `CREATE TABLE` in 
 | `lm_orders` | migration | `supabase/migrations/002_logistics_manager.sql` | yes |
 | `lm_private_delivery_confirmations` | runtime | `src/app/api/logistics/private-delivery/route.ts` | yes |
 | `lm_retiro_handoffs` | runtime | `src/lib/retiro-stock.ts` | yes |
-| `lm_retiro_order_allocations` | runtime | `src/lib/retiro-stock.ts` | **no** |
+| `lm_retiro_order_allocations` | runtime | `src/lib/retiro-stock.ts` | yes |
 | `lm_retiro_product_aliases` | runtime | `src/lib/retiro-stock.ts` | yes |
 | `lm_retiro_stock` | runtime | `src/lib/retiro-stock.ts` | yes |
 | `lm_retiro_stock_movements` | runtime | `src/lib/retiro-stock.ts` | yes |
@@ -77,10 +77,6 @@ Prisma models from `prisma/schema.prisma`. `lm_*` tables from `CREATE TABLE` in 
 | `lm_workforce_audit_events` | migration | `supabase/migrations/017_workforce_system.sql` | yes |
 
 ## Backup coverage gaps (mechanical)
-
-Created in code/migrations but **not** in `src/lib/backups/config.ts` `REQUIRED_LM_TABLES`:
-
-- `lm_retiro_order_allocations`
 
 Listed in `REQUIRED_LM_TABLES` but no `CREATE TABLE` found in migrations or `src/`:
 

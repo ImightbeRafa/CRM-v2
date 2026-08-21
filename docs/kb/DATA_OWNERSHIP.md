@@ -70,7 +70,7 @@ Mechanical list and backup gaps: [generated/LM_SCHEMA.md](./generated/LM_SCHEMA.
 
 ### Known mechanical gaps
 
-- `lm_retiro_order_allocations` is created at runtime but **not** in `REQUIRED_LM_TABLES` (`src/lib/backups/config.ts`) — backup coverage hole.
+- `lm_retiro_order_allocations` is created at runtime in `src/lib/retiro-stock.ts`. It is now in `REQUIRED_LM_TABLES` so Blob backups include per-unit Laura mappings. Still **no dedicated migration file** (runtime DDL only).
 - `lm_operational_costs` is in the backup allowlist but has no in-repo `CREATE TABLE` outside `tests/fixtures/backup-source.sql`.
 - Duplicate migration numbers (`005_order_archive.sql` and `005_logistics_phase2.sql`). Ordering is operationally unclear; do not “normalize” without a human.
 - Early `002` used `status_id` + NOT NULL carrier; `004_schema_alignment.sql` moved to TEXT status + nullable carrier. App columns like `completed_at` evolved in code.

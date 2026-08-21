@@ -14,7 +14,10 @@ Append-only. Newest entries at the top.
   preflight now points at the KB.
 - Un-ignored `scripts/**` and `.cursor/rules/**` in `.gitignore` so the inventory
   script and Cursor rule are actually commitable (the dir was blanket-ignored).
-- No product behavior change. Did not alter allowlists, schema, or backups.
+- Closed backup allowlist hole: `lm_retiro_order_allocations` is now in
+  `REQUIRED_LM_TABLES` (plus backup fixture) so `npm run test:backups` matches
+  runtime Laura per-unit mapping.
+- No allowlist/tenant/schema product behavior change beyond that coverage row.
 
 ## 2026-08-19 — Site-wide load-time performance slice
 

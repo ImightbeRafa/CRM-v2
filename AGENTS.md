@@ -48,10 +48,10 @@ When you add/remove App Router pages, API `route.ts` files, Prisma models, or `l
   so the app/Prisma use Supabase regardless of what `.env` says. The schema is already
   applied there.
 - **Do NOT run `prisma db push` / `prisma migrate` against this DB.** The `lm_*`
-  logistics/workforce tables (24 of them: `lm_orders`, `lm_order_events`,
+  logistics/workforce tables (25 of them: `lm_orders`, `lm_order_events`,
   `lm_ce_payments`, `lm_billing_weeks`, `lm_employees`, `lm_time_entries`, `lm_work_days`,
-  etc.) are created by raw SQL in `supabase/migrations/` and are **NOT part of the Prisma
-  schema**. `prisma db push` makes the DB match `schema.prisma` exactly, so it will try to
+  `lm_retiro_order_allocations`, etc.) are created by raw SQL in `supabase/migrations/`
+  and/or runtime `CREATE TABLE` and are **NOT part of the Prisma schema**. `prisma db push` makes the DB match `schema.prisma` exactly, so it will try to
   **DROP every `lm_*` table** — this already caused a full logistics data loss once.
   `npm run db:push` runs `scripts/safe-db-push.mjs`, which refuses Supabase hosts,
   pooler port 6543, non-loopback URLs, and any database that already has `lm_%`

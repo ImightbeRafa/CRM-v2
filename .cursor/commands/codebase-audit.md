@@ -8,7 +8,7 @@ Phase 0 (dead code) and Phase 1 (structure WIP) discovery with **conservative** 
 
 ## Procedure
 
-1. **Read** `docs/audits/SAFETY_GATES.md` and `.cursor/skills/executor-advisor-loop/SKILL.md`.
+1. **Read** `docs/kb/README.md` (CRM vs logistics map), `docs/audits/SAFETY_GATES.md`, and `.cursor/skills/executor-advisor-loop/SKILL.md`.
 2. **Plan (Sol):** Call Sol (`gpt-5.6-sol-high`) in plan mode. Define scout ownership and out-of-scope paths (auth/billing/backup/`lm_*`).
 3. **Discover (parallel, read-only):** Parent session fans out:
    - Dead-code scout: `npm run audit:dead` + unused route/export grep

@@ -2,6 +2,19 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-24 — Payroll Sunday double-count (CR day bounds)
+
+- Confirmed: consecutive Mon–Sun payroll weeks both included Sunday
+  afternoon clock-ins (Lau + Marlenn 2026-08-16, 301 paid minutes / CRC 6 271)
+  because `date AT TIME ZONE 'America/Costa_Rica'` on PG 17/UTC returns
+  `timestamp without time zone` (week start at Sunday noon CR) while the
+  exclusive end bound stayed at Monday 00:00 CR.
+- Fix: filter with `timestamp AT TIME ZONE` (true CR midnight). Shared helper
+  `src/lib/costa-rica-clock-range.ts` used by workforce payroll, time-entries,
+  and finance payroll.
+- Prove: `npm run test:payroll-bounds`. Consecutive weeks 10–16 and 17–23 Aug
+  2026 now intersect to zero IDs.
+
 ## 2026-08-19 — Site-wide load-time performance slice
 
 - Stopped `ConfigProvider` from fetching 6 config APIs on every authenticated

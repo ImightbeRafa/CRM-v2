@@ -20,6 +20,7 @@
     "test:workforce-datetime": "npx tsx src/lib/__tests__/workforce-datetime.test.ts",
     "test:workforce-code": "npx tsx src/lib/__tests__/workforce-code.test.ts",
     "test:workforce-state": "npx tsx src/lib/__tests__/workforce-time-entry-state.test.ts",
+    "test:payroll-bounds": "npx tsx src/lib/__tests__/payroll-cr-day-bounds.test.ts",
     "audit:dead": "knip --no-exit-code"
   },
   "dependencies": {

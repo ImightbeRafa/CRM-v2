@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { prismaCostaRicaClockInRange } from '@/lib/costa-rica-clock-range';
 import type { FinanceDateRange } from '@/lib/finance-dates';
 
 function entryPayCrc(minutes: number, hourlyRate: number) {
@@ -44,8 +45,7 @@ export async function getFinancePayroll(range: FinanceDateRange): Promise<Financ
     INNER JOIN lm_employees e ON e.id = te.employee_id
     WHERE te.voided_at IS NULL
       AND te.clock_out_at IS NOT NULL
-      AND te.clock_in_at >= (${range.dateFrom}::date AT TIME ZONE 'America/Costa_Rica')
-      AND te.clock_in_at < ((${range.dateTo}::date + INTERVAL '1 day') AT TIME ZONE 'America/Costa_Rica')
+      AND ${prismaCostaRicaClockInRange(range.dateFrom, range.dateTo)}
     ORDER BY e.display_name ASC
   `;
 

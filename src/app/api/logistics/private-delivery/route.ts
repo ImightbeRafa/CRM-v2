@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
+import { sqlCostaRicaHalfOpenRange } from '@/lib/costa-rica-clock-range';
 import { prisma } from '@/lib/db';
 import { authOptions } from '@/lib/auth-options';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
@@ -192,8 +193,7 @@ export async function GET(req: NextRequest) {
             LEFT JOIN lm_private_delivery_confirmations pdc ON pdc.crm_order_id = o.id
             WHERE o."tenantId" = ANY($1::text[])
               AND lm.carrier = 'mensajeria'
-              AND COALESCE(lm.completed_at, o.timestamp) >= ($2::date AT TIME ZONE '${CR_TZ}')
-              AND COALESCE(lm.completed_at, o.timestamp) < (($3::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}')
+              AND ${sqlCostaRicaHalfOpenRange('COALESCE(lm.completed_at, o.timestamp)', '$2', '$3')}
               AND ${archived ? 'pdc.archived_at IS NOT NULL' : 'pdc.archived_at IS NULL'}
               ${searchSql}
             ORDER BY o.id, COALESCE(lm.completed_at, o.timestamp) ASC
@@ -293,8 +293,7 @@ export async function GET(req: NextRequest) {
                 LEFT JOIN lm_private_delivery_confirmations pdc ON pdc.crm_order_id = o.id
                 WHERE o."tenantId" = ANY($1::text[])
                   AND lm.carrier = 'mensajeria'
-                  AND COALESCE(lm.completed_at, o.timestamp) >= ($2::date AT TIME ZONE '${CR_TZ}')
-                  AND COALESCE(lm.completed_at, o.timestamp) < (($3::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}')
+                  AND ${sqlCostaRicaHalfOpenRange('COALESCE(lm.completed_at, o.timestamp)', '$2', '$3')}
                   ${searchSql}
             `, ...params);
             periodSent = Number(periodRows[0]?.sent) || 0;

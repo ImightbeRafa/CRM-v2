@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   SQL_CR_CLOCK_IN_RANGE_P12,
   prismaCostaRicaClockInRange,
+  sqlCostaRicaHalfOpenRange,
 } from '../costa-rica-clock-range';
 import { prisma } from '../db';
 import { costaRicaDateTimeLocalToIso } from '../workforce-datetime';
@@ -15,6 +18,34 @@ assert.match(
   /\$2::timestamp \+ INTERVAL '1 day'/,
 );
 assert.doesNotMatch(SQL_CR_CLOCK_IN_RANGE_P12, /::date AT TIME ZONE/);
+assert.match(
+  sqlCostaRicaHalfOpenRange('created_at', '$2', '$2'),
+  /\$2::timestamp AT TIME ZONE/,
+);
+
+function collectSourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    if (name === 'node_modules' || name === '.next' || name === '__tests__') continue;
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) {
+      out.push(...collectSourceFiles(full));
+      continue;
+    }
+    if (name.endsWith('.ts') || name.endsWith('.tsx')) out.push(full);
+  }
+  return out;
+}
+
+const banned = /::date AT TIME ZONE/;
+for (const file of collectSourceFiles(join(process.cwd(), 'src'))) {
+  const text = readFileSync(file, 'utf8');
+  assert.equal(
+    banned.test(text),
+    false,
+    `${file} still uses date AT TIME ZONE (Sunday week-overlap trap)`,
+  );
+}
 
 // Monday 17 Aug 2026 00:00 CR = 06:00 UTC
 assert.equal(costaRicaDateTimeLocalToIso('2026-08-17T00:00'), '2026-08-17T06:00:00.000Z');

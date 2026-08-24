@@ -13,7 +13,10 @@ Append-only. Newest entries at the top.
   `src/lib/costa-rica-clock-range.ts` used by workforce payroll, time-entries,
   and finance payroll.
 - Prove: `npm run test:payroll-bounds`. Consecutive weeks 10–16 and 17–23 Aug
-  2026 now intersect to zero IDs.
+  2026 now intersect to zero IDs. Same CR midnight bounds now used by
+  finance costs, logistics reports, private delivery, and retiros KPIs so
+  Sunday afternoon cannot leak into the next period anywhere we filter
+  timestamptz by calendar day.
 
 ## 2026-08-19 — Site-wide load-time performance slice
 

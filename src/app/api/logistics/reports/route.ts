@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import {
+    sqlCostaRicaDayAfter,
+    sqlCostaRicaDayStart,
+    sqlCostaRicaHalfOpenRange,
+} from '@/lib/costa-rica-clock-range';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { calculateTilopayFees, isTilopayOrder, TILOPAY_FEE_RATES } from '@/lib/tilopay-fees';
 import { getLogisticsRates } from '@/lib/logistics-rates';
@@ -146,14 +151,13 @@ export async function GET(req: NextRequest) {
                 const pFrom = params.length;
                 params.push(dateTo);
                 const pTo = params.length;
-                dateSql += ` AND ${dateCol} >= ($${pFrom}::date AT TIME ZONE '${CR_TZ}')
-                     AND ${dateCol} < (($${pTo}::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}')`;
+                dateSql += ` AND ${sqlCostaRicaHalfOpenRange(dateCol, `$${pFrom}`, `$${pTo}`)}`;
             } else if (dateFrom) {
                 params.push(dateFrom);
-                dateSql += ` AND ${dateCol} >= ($${params.length}::date AT TIME ZONE '${CR_TZ}')`;
+                dateSql += ` AND ${dateCol} >= ${sqlCostaRicaDayStart(`$${params.length}`)}`;
             } else if (dateTo) {
                 params.push(dateTo);
-                dateSql += ` AND ${dateCol} < (($${params.length}::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}')`;
+                dateSql += ` AND ${dateCol} < ${sqlCostaRicaDayAfter(`$${params.length}`)}`;
             }
         }
 

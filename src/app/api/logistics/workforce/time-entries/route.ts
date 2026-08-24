@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { SQL_CR_CLOCK_IN_RANGE_P12 } from '@/lib/costa-rica-clock-range';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import {
   calculatePaidMinutes,
@@ -66,8 +67,7 @@ export async function GET(req: NextRequest) {
         e.active AS employee_active
       FROM lm_time_entries te
       INNER JOIN lm_employees e ON e.id = te.employee_id
-      WHERE te.clock_in_at >= ($1::date AT TIME ZONE 'America/Costa_Rica')
-        AND te.clock_in_at < (($2::date + INTERVAL '1 day') AT TIME ZONE 'America/Costa_Rica')
+      WHERE ${SQL_CR_CLOCK_IN_RANGE_P12}
     `;
 
     if (employeeId) {

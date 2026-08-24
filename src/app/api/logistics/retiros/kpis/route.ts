@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { sqlCostaRicaHalfOpenRange } from '@/lib/costa-rica-clock-range';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import {
   DEFAULT_RETIRO_AGENT,
@@ -102,8 +103,7 @@ export async function GET(req: NextRequest) {
          FROM lm_retiro_stock_movements
          WHERE agent_key = $1
            AND reason = 'retiro'
-           AND created_at >= ($2::date AT TIME ZONE '${CR_TZ}')
-           AND created_at < (($2::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}')`,
+           AND ${sqlCostaRicaHalfOpenRange('created_at', '$2', '$2')}`,
         agent,
         today,
       );

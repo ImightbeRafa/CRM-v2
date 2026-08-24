@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { prismaCostaRicaClockInRange } from '@/lib/costa-rica-clock-range';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { getCurrentWeekStartKey, getWeekEndKey } from '@/lib/logistics-workforce';
 
@@ -45,8 +46,7 @@ export async function GET(req: NextRequest) {
         INNER JOIN lm_employees e ON e.id = te.employee_id
         WHERE te.voided_at IS NULL
           AND te.clock_out_at IS NOT NULL
-          AND te.clock_in_at >= (${dateFrom}::date AT TIME ZONE 'America/Costa_Rica')
-          AND te.clock_in_at < ((${dateTo}::date + INTERVAL '1 day') AT TIME ZONE 'America/Costa_Rica')
+          AND ${prismaCostaRicaClockInRange(dateFrom, dateTo)}
         ORDER BY e.display_name ASC, te.clock_in_at ASC
       `,
       prisma.$queryRaw<any[]>`

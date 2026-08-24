@@ -1,10 +1,10 @@
+import { sqlCostaRicaHalfOpenRange } from '@/lib/costa-rica-clock-range';
 import { prisma } from '@/lib/db';
 import { getLogisticsRates } from '@/lib/logistics-rates';
 import { calculateTilopayFees, isTilopayOrder, TILOPAY_FEE_RATES } from '@/lib/tilopay-fees';
 import type { FinanceDateRange } from '@/lib/finance-dates';
 import type { FINANCE_TENANTS } from '@/lib/finance-tenants';
 
-const CR_TZ = 'America/Costa_Rica';
 const CORREOS_TAX_RATE = 0.13;
 /** Soft safety cap per brand query — protects the live pool on wide ranges. */
 const MAX_ORDER_ROWS = 8000;
@@ -79,8 +79,7 @@ export async function getFinanceCostsForTenant(
     INNER JOIN lm_orders lm ON lm.crm_order_id = o.id
     WHERE o."tenantId" = $1
       AND lm.status = 'Entregado'
-      AND ${dateCol} >= ($2::date AT TIME ZONE '${CR_TZ}')
-      AND ${dateCol} < (($3::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}')
+      AND ${sqlCostaRicaHalfOpenRange(dateCol, '$2', '$3')}
     ORDER BY o.id
     LIMIT $4
     `,

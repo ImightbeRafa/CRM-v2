@@ -12,10 +12,11 @@ import { applyRetention, createMemoryBlobStore } from '../service';
 import { MANIFEST_PREFIX, OBJECT_PREFIX } from '../config';
 
 describe('backup config', () => {
-  it('requires 24 lm_* tables', () => {
-    assert.equal(REQUIRED_LM_TABLES.length, 24);
+  it('requires 25 lm_* tables', () => {
+    assert.equal(REQUIRED_LM_TABLES.length, 25);
     assert.ok(REQUIRED_LM_TABLES.includes('lm_orders'));
     assert.ok(REQUIRED_LM_TABLES.includes('lm_employees'));
+    assert.ok(REQUIRED_LM_TABLES.includes('lm_retiro_order_allocations'));
   });
 
   it('marks all lm_* and key CRM tables as hot', () => {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
+import { getMembershipForToken, getSelectedTenantId } from '@/lib/selected-tenant';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -18,20 +19,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user with memberships to find tenant ID
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub as string },
-      include: { memberships: true }
-    });
+    const selectedTenantId = getSelectedTenantId(token);
+    const membership = await getMembershipForToken(token);
 
-    if (!user) {
-      console.error('❌ User not found for token.sub:', token.sub);
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    if (!user.memberships.length) {
+    if (!membership && !selectedTenantId) {
       // User doesn't have a tenant yet - return default trial status
-      console.log('⚠️ User has no memberships, returning default trial status:', { userId: user.id });
       const defaultTrialEnd = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000); // 15 days from now
       return NextResponse.json({
         tenantId: null,
@@ -44,7 +36,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const tenantId = user.memberships[0].tenantId;
+    if (!membership) {
+      return NextResponse.json({ error: 'Selected tenant membership not found' }, { status: 403 });
+    }
+
+    const tenantId = membership.tenantId;
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },

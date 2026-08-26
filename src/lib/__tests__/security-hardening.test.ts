@@ -33,10 +33,16 @@ describe('security helpers', () => {
         phone: '8888-8888',
         product: 'Widget',
       },
+      customer: { name: 'Customer Name' },
+      shipping: { address: { fullAddress: 'Private address' } },
+      apiKey: 'secret-key',
+      metadata: { note: 'free-form customer details' },
     }) as any;
-    assert.equal(redacted.body.email, '[REDACTED]');
-    assert.equal(redacted.body.phone, '[REDACTED]');
-    assert.equal(redacted.body.product, 'Widget');
+    assert.equal(redacted.body, '[REDACTED]');
+    assert.equal(redacted.customer.name, '[REDACTED]');
+    assert.equal(redacted.shipping.address, '[REDACTED]');
+    assert.equal(redacted.apiKey, '[REDACTED]');
+    assert.equal(redacted.metadata, '[REDACTED]');
   });
 });
 

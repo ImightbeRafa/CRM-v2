@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
+import { getMembershipForToken, getSelectedTenantId } from '@/lib/selected-tenant';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -13,40 +14,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user and their tenant through memberships
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub },
-      select: {
-        id: true,
-        defaultTenantId: true,
-        memberships: {
-          where: { isActive: true },
-          select: {
-            tenantId: true,
-            tenant: {
-              select: {
-                id: true,
-                plan: true,
-                subscriptionStatus: true,
-                currentPeriodEnd: true,
-                cancelAtPeriodEnd: true,
-                tilopaySubscriptionId: true
-              }
-            }
-          },
-          take: 1
-        }
-      }
-    });
+    const selectedTenantId = getSelectedTenantId(token);
+    const membership = await getMembershipForToken(token);
 
-    if (!user) {
-      console.error('❌ User not found for token.sub:', token.sub);
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    if (!user.memberships || user.memberships.length === 0) {
+    if (!membership && !selectedTenantId) {
       // User doesn't have a tenant yet - return default FREE plan
-      console.log('⚠️ User has no memberships, returning default FREE plan:', { userId: user.id });
       return NextResponse.json({
         status: 'success',
         data: {
@@ -59,7 +31,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const tenant = user.memberships[0].tenant;
+    if (!membership) {
+      return NextResponse.json({ error: 'Selected tenant membership not found' }, { status: 403 });
+    }
+
+    const tenant = membership.tenant;
 
     console.log('📊 Billing API - Current plan:', tenant.plan, 'Status:', tenant.subscriptionStatus);
 

@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db'
 import { prismaRaw } from '@/lib/prisma-tenant'
 import { getToken } from 'next-auth/jwt'
 import { NextRequest } from 'next/server'
+import { getSelectedTenantId } from './selected-tenant'
 import {
   normalizeEntityType,
   pickSnapshot,
@@ -208,37 +209,38 @@ export async function getAuditContext(request: NextRequest) {
       return null
     }
 
-    // Get user details from database using the token's sub (user ID)
-    const user = await prismaRaw.user.findUnique({
-      where: { id: token.sub },
+    const selectedTenantId = getSelectedTenantId(token)
+    if (!token.sub || !selectedTenantId) return null
+
+    // Resolve only the membership selected by the authenticated session.
+    const membership = await prismaRaw.membership.findFirst({
+      where: {
+        userId: token.sub,
+        tenantId: selectedTenantId,
+        isActive: true,
+        user: { active: true },
+        tenant: { isActive: true },
+      },
       select: {
-        id: true,
-        username: true,
-        defaultTenantId: true,
-        memberships: {
-          where: { isActive: true },
-          select: {
-            role: true,
-            tenantId: true
-          },
-          take: 1
-        }
+        role: true,
+        tenantId: true,
+        user: { select: { id: true, username: true } },
       }
     })
 
-    if (!user || !user.memberships || user.memberships.length === 0) {
+    if (!membership) {
       console.warn('⚠️ User not found or no active memberships for audit context');
       return null
     }
 
     // Map the new role system to audit log format
-    const role = user.memberships[0].role
+    const role = membership.role
     const userRole = (role === 'OWNER' || role === 'ADMIN') ? 'MASTER' : 'REGULAR'
-    const tenantId = user.memberships[0].tenantId || user.defaultTenantId
+    const tenantId = membership.tenantId
 
     return {
-      userId: user.id,
-      userName: user.username || 'Unknown',
+      userId: membership.user.id,
+      userName: membership.user.username || 'Unknown',
       userRole: userRole as 'MASTER' | 'REGULAR',
       tenantId: tenantId,
       ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',

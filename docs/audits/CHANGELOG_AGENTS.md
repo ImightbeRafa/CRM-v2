@@ -135,3 +135,25 @@ Append-only. Newest entries at the top.
   `npm run test:bot-grok` (pass), `npm run audit:dead` (inventory only),
   `npm run build` (pass with `OPENAI_API_KEY` placeholder — import-time OpenAI client in
   WhatsApp webhook is a pre-existing env requirement at build collect time).
+# 2026-08-26 — Betsy v2 Slice 1: security and safety
+
+- Replaced first-membership tenant selection across billing, Tilopay, audit, and
+  shared API tenant resolution with the active tenant selected by the session.
+- Added missing Ventas dashboard RBAC; removed legacy MASTER-only UI gates from
+  regular-tenant Clients, Inventory, and Shipping while retaining OWNER→MASTER
+  authentication compatibility.
+- Disabled destructive frequent-data seeding in production; invoice email and
+  storage usage now report honest unavailable/unmeasured states.
+- Restricted integration CORS to exact allowlisted origins and redacted request
+  bodies, customer identity, addresses, API keys, and free-form metadata from logs.
+- Retired direct client-side paid activation. Hosted checkout prices are server
+  selected, provider correlation is persisted before redirect, webhook matching is
+  fail-closed, and only verified payment events activate paid entitlements. FREE
+  downgrade and cancellation are OWNER-only; cancellation must be provider-confirmed.
+- Added an audited super-admin Enterprise offline-contract activation endpoint.
+- Added `lm_retiro_order_allocations` to required backup coverage and its round-trip
+  fixture without changing Logistics behavior.
+- Prove: `npm run test:security` 14/14; `npm run test:backups` 8/8;
+  `npm run test:bot-grok` pass; lint pass with existing warnings; TypeScript pass;
+  production build pass; compiled server smoke returns 200 for `/` and sign-in,
+  401 for unauthenticated `/api/auth/me`, and redirects protected Ventas to sign-in.

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
+import { getMembershipForToken } from '@/lib/selected-tenant';
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,7 +11,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user details from database with membership
+    const membership = await getMembershipForToken(token);
+    if (!membership) {
+      return NextResponse.json({ error: 'Selected tenant membership not found' }, { status: 403 });
+    }
+
+    // Get profile fields without selecting an unrelated membership.
     const user = await prisma.user.findUnique({
       where: { id: token.sub },
       select: { 
@@ -18,13 +24,6 @@ export async function GET(request: NextRequest) {
         username: true, 
         email: true,
         active: true,
-        memberships: {
-          where: { isActive: true },
-          select: { 
-            role: true, 
-            tenant: { select: { name: true, id: true } }
-          }
-        }
       }
     });
 
@@ -32,10 +31,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User not found or inactive' }, { status: 404 });
     }
 
-    // Determine role from membership
-    const role = user.memberships.length > 0 && user.memberships[0].role === 'OWNER' 
-      ? 'MASTER' 
-      : 'REGULAR';
+    // Preserve the legacy OWNER -> MASTER UI compatibility only.
+    const role = membership.role === 'OWNER' ? 'MASTER' : membership.role;
 
     return NextResponse.json({
       status: 'success',
@@ -44,8 +41,9 @@ export async function GET(request: NextRequest) {
         username: user.username || user.email,
         email: user.email,
         role: role,
+        membershipRole: membership.role,
         active: user.active,
-        tenant: user.memberships[0]?.tenant
+        tenant: { id: membership.tenant.id, name: membership.tenant.name },
       }
     });
   } catch (error) {

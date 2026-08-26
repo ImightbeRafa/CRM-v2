@@ -7,7 +7,6 @@ import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { Badge } from '@/app/components/ui/badge';
 import { Star, Plus, Edit, Trash2, Users, Package, Settings, BarChart3, Truck } from 'lucide-react';
-import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { InventoryManagement } from './InventoryManagement';
 import { AutomaticClientManagement } from './AutomaticClientManagement';
 import { ShippingConfigManagement } from './ShippingConfigManagement';
@@ -47,7 +46,6 @@ interface MasterConfigDashboardProps {
 }
 
 export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial = false }: MasterConfigDashboardProps = {}) {
-  const { user, loading: userLoading } = useCurrentUser();
   const [activeTab, setActiveTab] = useState<'inventory' | 'clients' | 'shipping'>(initialTab);
   const [products, setProducts] = useState<FrequentProduct[]>([]);
   const [customers, setCustomers] = useState<FrequentCustomer[]>([]);
@@ -216,22 +214,8 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
     setShowCustomerForm(true);
   };
 
-  if (userLoading || loading) {
+  if (loading) {
     return <div className="p-4">Cargando...</div>;
-  }
-
-  if (!user || user.role !== 'MASTER') {
-    return (
-      <div className="p-4">
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-center text-muted-foreground">
-              Solo los usuarios MASTER pueden acceder a esta configuración.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
   }
 
   return (

@@ -49,12 +49,8 @@ export async function requirePermission(permission: Permission) {
     // For REGULAR, try to get role from membership or default to VIEWER
     if (session.user.currentTenant?.role) {
       role = session.user.currentTenant.role as Role;
-    } else if ((session.user as any).memberships && (session.user as any).memberships.length > 0) {
-      role = (session.user as any).memberships[0]?.role || 'VIEWER';
     } else {
-      // User without tenant - allow OWNER role for setup purposes
-      // This allows new users to access setup-wizard
-      role = 'OWNER';
+      role = tenantId ? 'VIEWER' : 'OWNER';
     }
   }
 

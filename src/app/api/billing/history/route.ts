@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
+import { getMembershipForToken } from '@/lib/selected-tenant';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -13,23 +14,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user and their tenant through memberships
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub },
-      select: {
-        memberships: {
-          where: { isActive: true },
-          select: { tenantId: true },
-          take: 1
-        }
-      }
-    });
-
-    if (!user || !user.memberships || user.memberships.length === 0) {
+    const membership = await getMembershipForToken(token);
+    if (!membership) {
       return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
     }
 
-    const tenantId = user.memberships[0].tenantId;
+    const tenantId = membership.tenantId;
 
     // Get billing transactions for this tenant
     const transactions = await prisma.billingTransaction.findMany({

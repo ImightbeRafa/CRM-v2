@@ -26,7 +26,6 @@ import {
   RefreshCw,
   Settings
 } from 'lucide-react';
-import { useCurrentUser } from '../../hooks/useCurrentUser';
 
 interface Client {
   id: string;
@@ -60,7 +59,6 @@ interface ClientStats {
 }
 
 export function AutomaticClientManagement() {
-  const { user, loading: userLoading } = useCurrentUser();
   const [clients, setClients] = useState<Client[]>([]);
   const [filteredClients, setFilteredClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -285,22 +283,8 @@ export function AutomaticClientManagement() {
     }
   };
 
-  if (userLoading || loading) {
+  if (loading) {
     return <div className="p-4">Cargando clientes...</div>;
-  }
-
-  if (!user || user.role !== 'MASTER') {
-    return (
-      <div className="p-4">
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-center text-muted-foreground">
-              Solo los usuarios MASTER pueden acceder a la gestión de clientes.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
   }
 
   return (

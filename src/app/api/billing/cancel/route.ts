@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
+import { getMembershipForToken } from '@/lib/selected-tenant';
+import { cancelTilopayRepeatPlan, TilopayCancellationError } from '@/lib/tilopay-repeat';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -13,47 +15,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user and their tenant through memberships
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub },
-      select: {
-        memberships: {
-          where: { isActive: true },
-          select: { 
-            tenantId: true,
-            tenant: {
-              select: {
-                plan: true,
-                tilopaySubscriptionId: true,
-                subscriptionStatus: true
-              }
-            }
-          },
-          take: 1
-        }
-      }
-    });
-
-    if (!user || !user.memberships || user.memberships.length === 0) {
+    const membership = await getMembershipForToken(token);
+    if (!membership) {
       return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
     }
 
+    if (membership.role !== 'OWNER') {
+      return NextResponse.json({ error: 'Only the tenant owner can cancel billing' }, { status: 403 });
+    }
+
     const { feedback } = await request.json();
-    const tenantId = user.memberships[0].tenantId;
-    const tenant = user.memberships[0].tenant;
+    const tenantId = membership.tenantId;
+    const tenant = membership.tenant;
 
     if (tenant.plan === 'FREE') {
       return NextResponse.json({ error: 'No active subscription to cancel' }, { status: 400 });
     }
 
-    console.log(`❌ Canceling subscription for tenant ${tenantId}, plan: ${tenant.plan}`);
+    if (!tenant.tilopaySubscriptionId) {
+      return NextResponse.json({
+        error: 'This subscription cannot be cancelled through self-service',
+        code: 'provider_subscription_missing',
+      }, { status: 409 });
+    }
 
-    // For Tilopay, mark subscription for cancellation at period end
-    // Tilopay Repeat subscriptions are managed in their dashboard
-    if (tenant.tilopaySubscriptionId) {
-      console.log('ℹ️ Tilopay subscription will be canceled at period end');
-    } 
-    console.log('ℹ️ User should also cancel in Tilopay to stop automatic charges');
+    await cancelTilopayRepeatPlan(tenant.tilopaySubscriptionId);
 
     // Update tenant - mark for cancellation at period end
     await prisma.tenant.update({
@@ -66,8 +52,6 @@ export async function POST(request: NextRequest) {
 
     // Log feedback if provided
     if (feedback) {
-      console.log(`📝 Cancellation feedback from tenant ${tenantId}:`, feedback);
-      
       // Store feedback in audit log
       try {
         await prisma.auditLog.create({
@@ -94,13 +78,17 @@ export async function POST(request: NextRequest) {
       status: 'success',
       data: {
         message: 'Subscription will be canceled at the end of the billing period',
-        note: tenant.tilopaySubscriptionId 
-          ? 'Para detener los cargos automáticos, también cancela tu suscripción en Tilopay.' 
-          : null
+        providerConfirmed: true,
       }
     });
   } catch (error) {
-    console.error('Error canceling subscription:', error);
+    if (error instanceof TilopayCancellationError) {
+      return NextResponse.json({
+        error: error.message,
+        code: error.code,
+      }, { status: error.code === 'not_configured' ? 503 : 502 });
+    }
+    console.error('Error canceling subscription:', error instanceof Error ? error.name : 'unknown_error');
     return NextResponse.json(
       { error: 'Failed to cancel subscription' },
       { status: 500 }

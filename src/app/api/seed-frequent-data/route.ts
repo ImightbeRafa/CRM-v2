@@ -3,6 +3,12 @@ import { prisma } from '@/lib/db';
 import { getToken } from 'next-auth/jwt';
 
 export async function POST(request: NextRequest) {
+  // This legacy helper replaces all tenant clients and inventory. It must
+  // never be reachable in the shared production environment.
+  if (process.env.NODE_ENV === 'production') {
+    return new NextResponse(null, { status: 404 });
+  }
+
   try {
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     

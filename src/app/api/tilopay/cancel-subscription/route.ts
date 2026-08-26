@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/db';
+import { getSelectedTenantMembership } from '@/lib/selected-tenant';
+import { cancelTilopayRepeatPlan, TilopayCancellationError } from '@/lib/tilopay-repeat';
 
 /**
  * Cancel Tilopay Subscription
@@ -25,25 +27,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const token = session.user as any;
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub },
-      include: {
-        memberships: {
-          where: { isActive: true },
-          include: { tenant: true }
-        }
-      }
-    });
+    const sessionUser = session.user as any;
+    const userId = String(sessionUser.id || '');
+    const tenantId = String(sessionUser.tenantId || '');
+    const membership = await getSelectedTenantMembership(userId, tenantId);
 
-    if (!user || !user.memberships.length) {
+    if (!membership) {
       return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
     }
 
-    const tenant = user.memberships[0].tenant;
-    const tenantId = tenant.id;
+    if (membership.role !== 'OWNER') {
+      return NextResponse.json({ error: 'Only the tenant owner can manage billing' }, { status: 403 });
+    }
 
-    console.log(`👤 [cancel-subscription] User authenticated: ${user.id}, Tenant: ${tenantId}`);
+    const tenant = membership.tenant;
+    const user = membership.user;
 
     // Check if tenant has active subscription
     if (!tenant.tilopaySubscriptionId || tenant.plan === 'FREE') {
@@ -53,68 +51,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Step 1: Cancel subscription with Tilopay
-    // Tilopay Repeat API - unsubscribe endpoint
-    const apiUser = process.env.TILOPAY_USER;
-    const apiPassword = process.env.TILOPAY_PASSWORD;
-    const apiBaseUrl = process.env.TILOPAY_BASE_URL || 'https://app.tilopay.com/api/v1';
-
-    if (!apiUser || !apiPassword) {
-      return NextResponse.json({
-        error: 'Tilopay credentials not configured'
-      }, { status: 500 });
-    }
-
-    // Authenticate with Tilopay
-    console.log('🔐 Authenticating with Tilopay...');
-    const loginResponse = await fetch(`${apiBaseUrl}/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        apiuser: apiUser,
-        password: apiPassword
-      })
-    });
-
-    if (!loginResponse.ok) {
-      const loginError = await loginResponse.text();
-      console.error('❌ Tilopay login failed:', loginResponse.status, loginError);
-      return NextResponse.json({
-        error: 'Failed to authenticate with payment provider'
-      }, { status: 500 });
-    }
-
-    const loginData = await loginResponse.json();
-    const accessToken = loginData.access_token;
-
-    // Cancel the subscription via Tilopay
-    console.log(`🚫 Cancelling Tilopay subscription: ${tenant.tilopaySubscriptionId}`);
-    
-    try {
-      const cancelResponse = await fetch(`${apiBaseUrl}/unsubscribePlan`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          id_plan: tenant.tilopaySubscriptionId
-        })
-      });
-
-      const cancelData = await cancelResponse.json();
-      console.log('📥 Tilopay cancel response:', cancelData);
-
-      if (cancelResponse.ok && cancelData.type === '200') {
-        console.log('✅ Subscription cancelled with Tilopay');
-      } else {
-        console.warn('⚠️ Tilopay cancellation response non-200:', cancelData);
-        // Continue anyway - update our DB even if Tilopay API has issues
-      }
-    } catch (tilopayError: any) {
-      console.error('❌ Tilopay cancellation API error:', tilopayError);
-      // Continue - we'll still mark as cancelled in our DB
-    }
+    await cancelTilopayRepeatPlan(tenant.tilopaySubscriptionId);
 
     // Step 2: Update tenant in our database
     // IMPORTANT: Keep subscription active until period end, then downgrade to FREE
@@ -175,7 +112,13 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('❌ [cancel-subscription] Error:', error);
+    if (error instanceof TilopayCancellationError) {
+      return NextResponse.json({
+        error: error.message,
+        code: error.code,
+      }, { status: error.code === 'not_configured' ? 503 : 502 });
+    }
+    console.error('❌ [cancel-subscription] Error:', error?.name || 'unknown_error');
     return NextResponse.json({
       error: 'Failed to cancel subscription'
     }, { status: 500 });

@@ -77,11 +77,9 @@ export async function POST(request: NextRequest) {
         payload = await request.json();
       }
     } catch (parseError: any) {
-      console.error(`❌ [WEBHOOK-REPEAT] Failed to parse JSON payload [${webhookId}]:`, parseError);
-      console.error(`❌ [WEBHOOK-REPEAT] Raw body was:`, rawBody.substring(0, 1000));
+      console.error(`❌ [WEBHOOK-REPEAT] Failed to parse JSON payload [${webhookId}]`);
       return NextResponse.json({ 
         error: 'Invalid JSON payload',
-        message: parseError.message,
         webhookId
       }, { status: 400 });
     }
@@ -96,7 +94,7 @@ export async function POST(request: NextRequest) {
     let paymentId = null;
     let orderNumber = null;
     let status = null;
-    let event = 'payment_success'; // Default for Tilopay Repeat
+    let event = 'unknown';
 
     // Detect format and extract data
     if (payload.email && payload.id_plan) {
@@ -107,18 +105,20 @@ export async function POST(request: NextRequest) {
       paymentId = payload.paymentId || payload.payment_id;
       orderNumber = payload.orderNumber || payload.order_number;
       status = payload.status || payload.estado || payload.state;
+      event = 'payment';
       
     } else if (payload.event && payload.data) {
       // Format 2: Structured event format
       subscriberEmail = payload.data.email || payload.data.subscriber_email || payload.data.billToEmail;
       amount = parseFloat(payload.data.amount || 0);
       event = payload.event;
+      planId = payload.data.id_plan || payload.data.planId || payload.data.plan_id;
       paymentId = payload.data.paymentId || payload.data.payment_id;
       status = payload.data.status || payload.data.estado || payload.data.state;
       orderNumber = payload.data.orderNumber || payload.data.order_number;
       
     } else {
-      console.error(`❌ [WEBHOOK-REPEAT] Unknown webhook format [${webhookId}]:`, payload);
+      console.error(`❌ [WEBHOOK-REPEAT] Unknown webhook format [${webhookId}]`);
       return NextResponse.json({ 
         error: 'Unknown payload format',
         webhookId,
@@ -133,161 +133,59 @@ export async function POST(request: NextRequest) {
                            statusLower.includes('approved') || 
                            statusLower.includes('paid') ||
                            statusLower.includes('completed') ||
-                           event.includes('payment_success') ||
-                           event.includes('subscription.created');
+                           event.includes('payment_success');
     
-    // ========================================================================
-    // TENANT IDENTIFICATION - Using Email (Simple approach)
-    // ========================================================================
-    
-    if (!subscriberEmail) {
-      console.error(`❌ [WEBHOOK-REPEAT] No subscriber email in webhook [${webhookId}]`);
-      return NextResponse.json({ 
-        error: 'No subscriber email',
-        webhookId 
-      }, { status: 400 });
+    if (!planId) {
+      return NextResponse.json({ error: 'Missing payment correlation ID', webhookId }, { status: 400 });
     }
 
-    // Normalize email (trim and lowercase for matching)
-    const normalizedEmail = subscriberEmail.trim().toLowerCase();
-
-    // Find user and their tenant through memberships
-    // Try exact match first, then case-insensitive search
-    let user = await prisma.user.findUnique({
-      where: { email: normalizedEmail },
-      select: { 
-        id: true,
-        email: true,
-        defaultTenantId: true,
-        memberships: {
-          where: {
-            isActive: true
-          },
-          select: {
-            tenantId: true,
-            role: true,
-            tenant: {
-              select: {
-                id: true,
-                name: true,
-                plan: true,
-                subscriptionStatus: true,
-                tilopaySubscriptionId: true
-              }
-            }
-          }
-        }
-      }
+    const correlationId = String(planId);
+    const matchedTenants = await prisma.tenant.findMany({
+      where: { tilopaySubscriptionId: correlationId },
+      take: 2,
     });
 
-    // If not found with exact match, try case-insensitive search
-    if (!user) {
-      const allUsers = await prisma.user.findMany({
-        where: {
-          email: {
-            contains: normalizedEmail,
-            mode: 'insensitive'
-          }
-        },
-        select: { 
-          id: true,
-          email: true,
-          defaultTenantId: true,
-          memberships: {
-            where: {
-              isActive: true
-            },
-            select: {
-              tenantId: true,
-              role: true,
-              tenant: {
-                select: {
-                  id: true,
-                  name: true,
-                  plan: true,
-                  subscriptionStatus: true,
-                  tilopaySubscriptionId: true
-                }
-              }
-            }
-          }
-        }
-      });
-      
-      if (allUsers.length > 0) {
-        user = allUsers[0];
-      }
+    if (matchedTenants.length !== 1) {
+      console.error(`❌ [WEBHOOK-REPEAT] Correlation failed [${webhookId}]`, { matches: matchedTenants.length });
+      return NextResponse.json({ error: 'Payment correlation failed', webhookId }, { status: 409 });
     }
 
-    if (!user) {
-      console.error(`❌ [WEBHOOK-REPEAT] User not found: "${normalizedEmail}" [${webhookId}]`);
-      console.error(`❌ [WEBHOOK-REPEAT] Available payload fields:`, Object.keys(payload));
-      return NextResponse.json({ 
-        error: `User not found: ${normalizedEmail}`,
-        webhookId,
-        searchedEmail: normalizedEmail,
-        payloadKeys: Object.keys(payload)
-      }, { status: 404 });
+    const tenant = matchedTenants[0];
+    const tenantId = tenant.id;
+    const membership = await prisma.membership.findFirst({
+      where: { tenantId, isActive: true, role: 'OWNER', user: { active: true } },
+      include: { user: true },
+    });
+    const user = membership?.user || null;
+    const settings = tenant.settings && typeof tenant.settings === 'object' && !Array.isArray(tenant.settings)
+      ? tenant.settings as Record<string, any>
+      : {};
+    const pendingCheckout = settings.billingPendingCheckout as Record<string, any> | undefined;
+    const pendingPlan = pendingCheckout?.correlationId === correlationId
+      ? String(pendingCheckout.plan || '').toUpperCase()
+      : '';
+    const newPlan = ['BASIC', 'PRO'].includes(pendingPlan)
+      ? pendingPlan
+      : (tenant.plan === 'BASIC' || tenant.plan === 'PRO' ? tenant.plan : null);
+    if (!newPlan) {
+      return NextResponse.json({ error: 'No approved plan for payment correlation', webhookId }, { status: 409 });
     }
 
-    // Get the user's tenant (prefer default, fallback to first membership)
-    const membership = user.memberships.find(m => m.tenantId === user.defaultTenantId) || user.memberships[0];
-    
-    if (!membership) {
-      console.error(`❌ [WEBHOOK-REPEAT] No active tenant membership for user: ${subscriberEmail}`);
-      return NextResponse.json({ error: 'User has no active tenant' }, { status: 404 });
-    }
-
-    const tenantId = membership.tenantId;
-    const tenant = membership.tenant;
-
-    // Determine plan from amount
-    // BASIC Plan: $15 USD/month (₡15,000 CRC) or ~15,000 colones
-    // PRO Plan: $45 USD/month (₡45,000 CRC) or ~45,000 colones
-    // 
-    // TiloPay might send amount in USD or CRC, so we check both:
-    // - If amount >= 40,000 it's likely in colones (PRO = 45,000)
-    // - If amount >= 40 and < 1,000 it's likely in USD (PRO = $45)
-    // - If amount >= 10,000 it's likely in colones (BASIC = 15,000)
-    // - If amount >= 10 and < 1,000 it's likely in USD (BASIC = $15)
-    
-    let newPlan = 'FREE';
-    const currency = payload.currency || payload.moneda || 'USD';
+    const currency = payload.currency || payload.moneda || pendingCheckout?.currency || 'CRC';
     const isColones = currency === 'CRC' || currency === '₡' || amount >= 1000;
-    
-    if (isColones) {
-      // Amount is in colones
-      if (amount >= 40000) {
-        newPlan = 'PRO';
-      } else if (amount >= 10000) {
-        newPlan = 'BASIC';
-      } else {
-        newPlan = tenant.plan || 'FREE';
-      }
-    } else {
-      // Amount is in USD
-      if (amount >= 40) {
-        newPlan = 'PRO';
-      } else if (amount >= 10) {
-        newPlan = 'BASIC';
-      } else {
-        newPlan = tenant.plan || 'FREE';
-      }
-    }
-    
-    // Also try to detect plan from planId if provided
-    if (planId) {
-      const planIdUpper = String(planId).toUpperCase();
-      if (['BASIC', 'PRO', 'FREE'].includes(planIdUpper)) {
-        newPlan = planIdUpper;
-      }
+    if (pendingCheckout && Number(pendingCheckout.amount) !== amount) {
+      return NextResponse.json({ error: 'Payment amount does not match checkout', webhookId }, { status: 409 });
     }
 
-    // Process successful payment if:
-    // 1. paymentId is present, OR
-    // 2. status indicates success, OR
-    // 3. event indicates success
-    const isPaymentSuccess = paymentId || isSuccessStatus;
+    if (isSuccessStatus && (
+      (!pendingCheckout && tenant.subscriptionStatus !== 'active') ||
+      (!orderNumber && !paymentId) ||
+      amount <= 0
+    )) {
+      return NextResponse.json({ error: 'Payment proof is incomplete', webhookId }, { status: 409 });
+    }
+
+    const isPaymentSuccess = isSuccessStatus;
     
     if (isPaymentSuccess) {
       
@@ -340,44 +238,35 @@ export async function POST(request: NextRequest) {
       const now = new Date();
       const nextBillingDate = new Date(now);
       nextBillingDate.setDate(nextBillingDate.getDate() + 30); // Monthly subscription
+      const { billingPendingCheckout: _completedCheckout, ...retainedSettings } = settings;
       
       try {
-        const updatedTenant = await prisma.tenant.update({
+        await prisma.tenant.update({
           where: { id: tenantId },
           data: {
             plan: newPlan as any, // Cast to any to ensure it's accepted
             subscriptionStatus: 'active',
-            tilopaySubscriptionId: orderNumber || paymentId?.toString(),
+            tilopaySubscriptionId: correlationId,
             currentPeriodStart: now,
             currentPeriodEnd: nextBillingDate,
             trialEndsAt: null, // Clear trial end date
-            cancelAtPeriodEnd: false // Clear any cancellation flags
+            cancelAtPeriodEnd: false,
+            settings: retainedSettings,
           }
         });
 
       } catch (updateError: any) {
-        console.error(`❌ [WEBHOOK-REPEAT] Failed to update tenant in database [${webhookId}]:`, updateError);
-        console.error(`   Error message: ${updateError.message}`);
-        console.error(`   Error code: ${updateError.code}`);
-        console.error(`   Tenant ID: ${tenantId}`);
-        console.error(`   New Plan: ${newPlan}`);
+        console.error(`❌ [WEBHOOK-REPEAT] Failed to update tenant [${webhookId}]`, updateError?.code || 'update_error');
         throw updateError;
       }
       
       // Create billing transaction record
       try {
-        const planPrices: Record<string, number> = {
-          'BASIC': 15000,  // ₡15,000
-          'PRO': 45000     // ₡45,000
-        };
-
-        const transactionAmount = planPrices[newPlan] || amount * 1000; // Convert to colones if in dollars
-
         await prisma.billingTransaction.create({
           data: {
             tenantId: tenantId,
-            amount: transactionAmount,
-            currency: 'CRC',
+            amount,
+            currency: String(currency === '₡' ? 'CRC' : currency),
             status: 'success',
             description: `Suscripción ${newPlan} - Pago mensual [${orderNumber || paymentId}]`,
             paymentMethod: 'tilopay',
@@ -396,9 +285,9 @@ export async function POST(request: NextRequest) {
         await prisma.auditLog.create({
           data: {
             tenantId: tenantId,
-            userId: user.id,
-            userName: user.email || subscriberEmail,
-            userRole: membership.role,
+            userId: user?.id || null,
+            userName: user?.name || 'Tilopay webhook',
+            userRole: membership?.role || 'SYSTEM',
             action: 'UPDATE', // Subscription plan updated
             entityType: 'subscription',
             entityId: orderNumber || paymentId?.toString() || 'unknown',
@@ -408,10 +297,11 @@ export async function POST(request: NextRequest) {
               status: 'trial_or_previous'
             },
             newValues: {
-              ...payload,
               webhookEvent: 'tilopay_payment_success',
               plan: newPlan,
-              status: 'active'
+              status: 'active',
+              correlationId,
+              paymentReference: orderNumber || paymentId?.toString() || null,
             }
           }
         });
@@ -441,10 +331,8 @@ export async function POST(request: NextRequest) {
         status: 'success',
         message: 'Payment processed and plan updated',
         webhookId,
-        tenantId: tenantId,
         oldPlan: tenant.plan,
         newPlan,
-        paymentId
       });
     }
 
@@ -466,9 +354,8 @@ export async function POST(request: NextRequest) {
         await prisma.tenant.update({
           where: { id: tenantId },
           data: {
-            plan: 'FREE',
             subscriptionStatus: 'cancelled',
-            tilopaySubscriptionId: null
+            cancelAtPeriodEnd: true,
           }
         });
         break;
@@ -485,9 +372,9 @@ export async function POST(request: NextRequest) {
       await prisma.auditLog.create({
         data: {
           tenantId: tenantId,
-          userId: user.id,
-          userName: user.email || subscriberEmail,
-          userRole: membership.role,
+          userId: user?.id || null,
+          userName: user?.name || 'Tilopay webhook',
+          userRole: membership?.role || 'SYSTEM',
           action: auditAction,
           entityType: 'subscription',
           entityId: orderNumber || paymentId?.toString() || 'unknown',
@@ -497,9 +384,9 @@ export async function POST(request: NextRequest) {
             status: 'previous'
           },
           newValues: {
-            ...payload,
             webhookEvent: event,
-            plan: newPlan
+            plan: newPlan,
+            correlationId,
           }
         }
       });
@@ -511,7 +398,6 @@ export async function POST(request: NextRequest) {
       status: 'success',
       message: 'Webhook processed',
       event,
-      tenantId: tenantId,
       newPlan
     });
 

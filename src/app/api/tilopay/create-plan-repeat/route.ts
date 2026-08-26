@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
+import { prisma } from '@/lib/db';
+import { getMembershipForToken } from '@/lib/selected-tenant';
+
+const HOSTED_PLAN_PRICING = {
+  basic: { name: 'Básico', amount: 10000, currency: 'CRC' },
+  pro: { name: 'Pro', amount: 10000, currency: 'CRC' },
+} as const;
 
 /**
  * Create Recurring Subscription Plan via Tilopay /createPlanRepeat
@@ -21,40 +28,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('✅ [create-plan-repeat] User authenticated:', token.sub);
-
     const body = await request.json();
-    console.log('📦 [create-plan-repeat] Request body:', body);
-    
-    const { planId, planName = 'Básico', amount, currency = 'CRC' } = body;
+    const planId = String(body?.planId || '').toLowerCase() as keyof typeof HOSTED_PLAN_PRICING;
+    const selectedPlan = HOSTED_PLAN_PRICING[planId];
 
-    if (!planId || !amount) {
+    if (!selectedPlan) {
       return NextResponse.json({ 
-        error: 'Missing required fields: planId, amount' 
+        error: 'Invalid or unavailable plan'
       }, { status: 400 });
     }
 
-    // Get user with tenant info
-    const { prisma } = await import('@/lib/db');
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        memberships: {
-          where: { isActive: true },
-          take: 1,
-          select: { tenantId: true }
-        }
-      }
-    });
-
-    if (!user || !user.memberships.length) {
+    const membership = await getMembershipForToken(token);
+    if (!membership) {
       return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
     }
 
-    const tenantId = user.memberships[0].tenantId;
+    if (membership.role !== 'OWNER') {
+      return NextResponse.json({ error: 'Only the tenant owner can manage billing' }, { status: 403 });
+    }
+
+    const tenantId = membership.tenantId;
+    const user = membership.user;
+    const { name: planName, amount, currency } = selectedPlan;
 
     // Step 1: Authenticate with Tilopay to get bearer token
     console.log('🔐 Authenticating with Tilopay...');
@@ -82,11 +77,9 @@ export async function POST(request: NextRequest) {
     });
 
     if (!loginResponse.ok) {
-      const loginError = await loginResponse.text();
-      console.error('❌ Tilopay login failed:', loginResponse.status, loginError);
+      console.error('❌ Tilopay login failed:', loginResponse.status);
       return NextResponse.json({ 
         error: 'Failed to authenticate with payment provider',
-        details: loginError,
         status: loginResponse.status
       }, { status: 500 });
     }
@@ -152,36 +145,49 @@ export async function POST(request: NextRequest) {
     console.log('📥 Plan creation response status:', planResponse.status);
 
     if (!planResponse.ok) {
-      const planError = await planResponse.text();
-      console.error('❌ Plan creation failed:', planResponse.status, planError);
+      console.error('❌ Plan creation failed:', planResponse.status);
       return NextResponse.json({ 
         error: 'Failed to create subscription plan'
       }, { status: 500 });
     }
 
     const planData = await planResponse.json();
-    console.log('✅ Plan created:', JSON.stringify(planData, null, 2));
-
     // Expected response: { type: '200', id: 624, url: 'https://app.tilopay.com/link/TmpJMHwx' }
     if (planData.type === '200' && planData.url) {
       const paymentUrl = planData.url;
       const tilopayPlanId = planData.id;
       
-      console.log('🔗 Hosted payment URL:', paymentUrl);
-      console.log('🆔 Tilopay plan ID:', tilopayPlanId);
-      
-      // Store Tilopay plan ID in tenant so webhooks can find it
-      try {
-        await prisma.tenant.update({
-          where: { id: tenantId },
-          data: {
-            tilopaySubscriptionId: String(tilopayPlanId)
-          }
-        });
-        console.log('✅ Tilopay plan ID stored in tenant for webhook matching');
-      } catch (dbError) {
-        console.warn('⚠️ Failed to store plan ID:', dbError);
+      const correlationId = String(tilopayPlanId);
+      const conflictingTenant = await prisma.tenant.findFirst({
+        where: { tilopaySubscriptionId: correlationId, id: { not: tenantId } },
+        select: { id: true },
+      });
+      if (conflictingTenant) {
+        console.error('❌ Tilopay correlation ID is not unique');
+        return NextResponse.json({ error: 'Payment correlation conflict' }, { status: 409 });
       }
+
+      // Persist correlation before returning the hosted URL. Paid entitlement
+      // remains unchanged until a verified webhook confirms payment.
+      await prisma.tenant.update({
+        where: { id: tenantId },
+        data: {
+          tilopaySubscriptionId: correlationId,
+          settings: {
+            ...((membership.tenant.settings && typeof membership.tenant.settings === 'object' && !Array.isArray(membership.tenant.settings))
+              ? membership.tenant.settings as Record<string, unknown>
+              : {}),
+            billingPendingCheckout: {
+              provider: 'tilopay',
+              correlationId,
+              plan: planId.toUpperCase(),
+              amount,
+              currency,
+              createdAt: new Date().toISOString(),
+            },
+          },
+        }
+      });
       
       return NextResponse.json({
         success: true,
@@ -191,16 +197,14 @@ export async function POST(request: NextRequest) {
       });
     } else {
       // Unexpected response format
-      console.error('❌ Unexpected plan response format:', planData);
+      console.error('❌ Unexpected plan response format');
       return NextResponse.json({
         error: 'Plan created but unexpected response format'
       }, { status: 500 });
     }
 
   } catch (error: any) {
-    console.error('❌ [create-plan-repeat] Error:', error);
-    console.error('❌ [create-plan-repeat] Error message:', error.message);
-    console.error('❌ [create-plan-repeat] Error stack:', error.stack);
+    console.error('❌ [create-plan-repeat] Error:', error?.name || 'unknown_error');
     return NextResponse.json({
       error: 'Failed to create subscription plan'
     }, { status: 500 });

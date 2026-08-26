@@ -1,28 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
-import { prisma } from '@/lib/db';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    const token = await getToken({ req: request });
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub },
-      include: { memberships: true }
-    });
-
-    if (!user || !user.memberships.length) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    const membership = user.memberships[0];
-    const tenantId = membership.tenantId;
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
+    if (!auth.ok) return auth.response;
+    const { tenantId } = auth;
 
     const { statuses } = await request.json();
 

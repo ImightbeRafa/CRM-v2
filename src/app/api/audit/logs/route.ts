@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireAdmin } from '@/lib/apiAuth'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { entityTypeFilterAliases } from '@/lib/auditPayload'
+import { getMembershipForToken } from '@/lib/selected-tenant'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,28 +13,16 @@ export async function GET(request: NextRequest) {
       return createErrorResponse('Unauthorized', 401)
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub },
-      select: {
-        defaultTenantId: true,
-        memberships: {
-          where: { isActive: true },
-          select: { tenantId: true, role: true },
-          take: 1
-        }
-      }
-    })
-
-    if (!user || !user.memberships || user.memberships.length === 0) {
+    const membership = await getMembershipForToken(token)
+    if (!membership) {
       return createErrorResponse('Unauthorized', 401)
     }
 
-    const membership = user.memberships[0]
     if (membership.role !== 'OWNER' && membership.role !== 'ADMIN') {
       return createErrorResponse('Forbidden — requires ADMIN or OWNER role', 403)
     }
 
-    const tenantId = membership.tenantId || user.defaultTenantId
+    const tenantId = membership.tenantId
 
     const { searchParams } = new URL(request.url)
     const action = searchParams.get('action')
@@ -42,8 +30,8 @@ export async function GET(request: NextRequest) {
     const userRole = searchParams.get('userRole')
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
-    const limit = parseInt(searchParams.get('limit') || '100')
-    const offset = parseInt(searchParams.get('offset') || '0')
+    const limit = Math.min(250, Math.max(1, parseInt(searchParams.get('limit') || '100') || 100))
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0') || 0)
 
     // Build where clause with TENANT ISOLATION
     const where: any = {

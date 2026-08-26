@@ -5,8 +5,7 @@ import { createSuccessResponse, createErrorResponse, handleApiError } from '@/li
 
 export async function POST(request: NextRequest) {
   try {
-    // Require 'view_config' permission for bulk delete
-    const auth = await authenticateAPIWithPermission(request, 'view_config');
+    const auth = await authenticateAPIWithPermission(request, 'manage_tenant');
     if (!auth.ok) return auth.response;
     
     const { tenantId, userId } = auth;
@@ -76,4 +75,3 @@ export async function POST(request: NextRequest) {
     return handleApiError(error)
   }
 }
-

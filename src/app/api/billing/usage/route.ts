@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
+import { getMembershipForToken } from '@/lib/selected-tenant';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -13,17 +14,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user with memberships to find tenant ID
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub as string },
-      include: { memberships: true }
-    });
-
-    if (!user || !user.memberships.length) {
+    const membership = await getMembershipForToken(token);
+    if (!membership) {
       return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
     }
 
-    const tenantId = user.memberships[0].tenantId;
+    const tenantId = membership.tenantId;
 
     // Get tenant plan to know limits
     const tenant = await prisma.tenant.findUnique({
@@ -77,8 +73,9 @@ export async function GET(request: NextRequest) {
           limit: limits.orders
         },
         storage: {
-          current: '0 MB', // TODO: Implement actual storage tracking
-          limit: limits.storage
+          current: null,
+          limit: limits.storage,
+          measured: false,
         }
       }
     });

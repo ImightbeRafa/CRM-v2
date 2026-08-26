@@ -6,7 +6,7 @@ import { createSuccessResponse, createErrorResponse, handleApiError } from '@/li
 export async function POST(request: NextRequest) {
   try {
     // Require appropriate permission based on type
-    const auth = await authenticateAPIWithPermission(request, 'view_config');
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
     if (!auth.ok) return auth.response;
     
     const { tenantId, userId, role, session } = auth;

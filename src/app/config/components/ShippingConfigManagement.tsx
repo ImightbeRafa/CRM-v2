@@ -12,7 +12,6 @@ import {
   Loader2,
   AlertCircle,
 } from 'lucide-react';
-import { useCurrentUser } from '../../hooks/useCurrentUser';
 
 interface ShippingConfig {
   id: string;
@@ -24,7 +23,6 @@ interface ShippingConfig {
 }
 
 export function ShippingConfigManagement() {
-  const { user, loading: userLoading } = useCurrentUser();
   const [loading, setLoading] = useState(true);
   const [existingId, setExistingId] = useState<string | null>(null);
 
@@ -133,25 +131,11 @@ export function ShippingConfigManagement() {
     }
   };
 
-  if (userLoading || loading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center p-8 text-muted-foreground gap-2">
         <Loader2 className="h-4 w-4 animate-spin" />
         Cargando configuración de Correos CR...
-      </div>
-    );
-  }
-
-  if (!user || user.role !== 'MASTER') {
-    return (
-      <div className="p-4">
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-center text-muted-foreground">
-              Solo los usuarios MASTER pueden acceder a la configuración de envíos.
-            </p>
-          </CardContent>
-        </Card>
       </div>
     );
   }

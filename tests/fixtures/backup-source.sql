@@ -240,6 +240,15 @@ CREATE TABLE IF NOT EXISTS lm_retiro_handoffs (
   agent_key text NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS lm_retiro_order_allocations (
+  crm_order_id text NOT NULL,
+  slot_key text NOT NULL,
+  sku text NOT NULL,
+  qty integer NOT NULL,
+  raw_name text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (crm_order_id, slot_key)
+);
 CREATE TABLE IF NOT EXISTS lm_private_delivery_confirmations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   crm_order_id text NOT NULL,
@@ -294,5 +303,7 @@ INSERT INTO lm_retiro_stock_movements (agent_key, sku, delta) VALUES ('agent', '
 INSERT INTO lm_retiro_product_aliases (agent_key, sku, alias_normalized)
 VALUES ('agent', 'SKU-1', 'sku1');
 INSERT INTO lm_retiro_handoffs (crm_order_id, agent_key) VALUES ('o1', 'agent');
+INSERT INTO lm_retiro_order_allocations (crm_order_id, slot_key, sku, qty, raw_name)
+VALUES ('o1', 'slot-1', 'SKU-1', 1, 'Widget');
 INSERT INTO lm_private_delivery_confirmations (crm_order_id, confirmed_at)
 VALUES ('o1', now());

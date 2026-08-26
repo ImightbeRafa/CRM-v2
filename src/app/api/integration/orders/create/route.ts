@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     tenantId = await validateApiKey(apiKey);
     if (!tenantId) {
       console.error('[Integration API] Invalid API key');
-      await logIntegrationActivity(null, 'INVALID_API_KEY', { apiKey: apiKey.substring(0, 8) + '...' });
+      await logIntegrationActivity(null, 'INVALID_API_KEY', { provided: true });
       return NextResponse.json(
         { error: 'Invalid API key' },
         { status: 401 }
@@ -81,8 +81,8 @@ export async function POST(req: NextRequest) {
     if (!validationResult.success) {
       console.error('[Integration API] Validation failed:', validationResult.error.errors);
       await logIntegrationActivity(tenantId, 'VALIDATION_ERROR', {
-        errors: validationResult.error.errors,
-        body: body
+        issueCount: validationResult.error.errors.length,
+        issues: validationResult.error.errors.map(issue => ({ code: issue.code, path: issue.path })),
       });
       return NextResponse.json(
         { 
@@ -143,13 +143,11 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     const processingTime = Date.now() - startTime;
-    console.error('[Integration API] Error after', processingTime, 'ms:', error);
+    console.error('[Integration API] Error after', processingTime, 'ms:', error instanceof Error ? error.name : 'unknown_error');
     
     // Log error with detailed information
     try {
       await logIntegrationActivity(tenantId, 'API_ERROR', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
         processingTime,
         errorType: error instanceof Error ? error.constructor.name : typeof error
       });

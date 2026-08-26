@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
+import { getMembershipForToken } from '@/lib/selected-tenant';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -13,17 +14,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user with memberships to find tenant ID
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub as string },
-      include: { memberships: true }
-    });
-
-    if (!user || !user.memberships.length) {
+    const membership = await getMembershipForToken(token);
+    if (!membership) {
       return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
     }
 
-    const tenantId = user.memberships[0].tenantId;
+    if (membership.role !== 'OWNER') {
+      return NextResponse.json({ error: 'Only the tenant owner can manage billing' }, { status: 403 });
+    }
+
+    const tenantId = membership.tenantId;
 
     const { planId } = await request.json();
 
@@ -103,9 +103,11 @@ export async function POST(request: NextRequest) {
         }, { status: 500 });
       }
     }
-    // Paid price 0 (enterprise handled offline)
-    await prisma.tenant.update({ where: { id: tenantId }, data: { plan: selectedPlan.name as any, subscriptionStatus: 'pending' } });
-    return NextResponse.json({ status: 'success', data: { plan: selectedPlan.name, status: 'pending' } });
+    // Enterprise is activated only through the audited offline-contract route.
+    return NextResponse.json({
+      error: 'Enterprise plans require an approved offline contract',
+      code: 'enterprise_contract_required',
+    }, { status: 409 });
   } catch (error) {
     console.error('Error changing plan:', error);
     return NextResponse.json(

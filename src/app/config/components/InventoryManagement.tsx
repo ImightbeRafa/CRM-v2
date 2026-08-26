@@ -37,7 +37,6 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useToast } from '@/app/hooks/use-toast';
-import { useCurrentUser } from '../../hooks/useCurrentUser';
 
 interface InventoryItem {
   id: string;
@@ -109,7 +108,6 @@ function getStockStatus(item: InventoryItem) {
 }
 
 export function InventoryManagement() {
-  const { user, loading: userLoading } = useCurrentUser();
   const { toast } = useToast();
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -297,25 +295,11 @@ export function InventoryManagement() {
     setFormData(prev => ({ ...prev, [key]: value }));
   };
 
-  if (userLoading || loading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center p-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mr-2" />
         <span className="text-muted-foreground">Cargando inventario...</span>
-      </div>
-    );
-  }
-
-  if (!user || user.role !== 'MASTER') {
-    return (
-      <div className="p-4">
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-center text-muted-foreground">
-              Solo los usuarios MASTER pueden acceder a la gestión de inventario.
-            </p>
-          </CardContent>
-        </Card>
       </div>
     );
   }

@@ -6,6 +6,7 @@ const PII_KEYS = new Set([
   'telefono',
   'teléfono',
   'address',
+  'fulladdress',
   'direccion',
   'dirección',
   'customername',
@@ -19,6 +20,7 @@ const PII_KEYS = new Set([
   'apikey',
   'api_key',
   'authorization',
+  'metadata',
 ]);
 
 /** Redact PII fields before persisting integration logs. */
@@ -32,9 +34,8 @@ export function redactIntegrationLogData(data: unknown): unknown {
     const normalized = key.toLowerCase().replace(/[\s_-]/g, '');
     if (PII_KEYS.has(normalized) || PII_KEYS.has(key.toLowerCase())) {
       out[key] = '[REDACTED]';
-    } else if (key === 'body' && value && typeof value === 'object') {
-      // Validation errors previously logged the full request body
-      out[key] = redactIntegrationLogData(value);
+    } else if (key === 'body') {
+      out[key] = '[REDACTED]';
     } else if (value && typeof value === 'object') {
       out[key] = redactIntegrationLogData(value);
     } else {

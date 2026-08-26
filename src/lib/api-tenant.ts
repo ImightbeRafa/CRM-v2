@@ -8,29 +8,22 @@ type ApiToken = {
 };
 
 export async function resolveTenantId(req: NextRequest, token: ApiToken | null): Promise<string | null> {
-  const headerTenantId = req.headers.get('x-tenant-id');
-  if (headerTenantId) return headerTenantId;
+  const selectedTenantId = req.headers.get('x-tenant-id')
+    || (typeof token?.tenantId === 'string' ? token.tenantId : null)
+    || (typeof token?.currentTenant?.id === 'string' ? token.currentTenant.id : null);
 
-  if (typeof token?.tenantId === 'string' && token.tenantId) {
-    return token.tenantId;
-  }
+  if (!token?.sub || !selectedTenantId) return null;
 
-  if (typeof token?.currentTenant?.id === 'string' && token.currentTenant.id) {
-    return token.currentTenant.id;
-  }
-
-  if (!token?.sub) return null;
-
-  const user = await globalPrisma.user.findUnique({
-    where: { id: token.sub },
-    select: {
-      memberships: {
-        where: { isActive: true },
-        select: { tenantId: true },
-        take: 1,
-      },
+  const membership = await globalPrisma.membership.findFirst({
+    where: {
+      userId: token.sub,
+      tenantId: selectedTenantId,
+      isActive: true,
+      user: { active: true },
+      tenant: { isActive: true },
     },
+    select: { tenantId: true },
   });
 
-  return user?.memberships?.[0]?.tenantId ?? null;
+  return membership?.tenantId ?? null;
 }

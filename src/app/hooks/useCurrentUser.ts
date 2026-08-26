@@ -5,18 +5,23 @@ interface User {
   id: string;
   username: string;
   role: 'MASTER' | 'REGULAR' | 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES' | 'PRODUCTION' | 'VIEWER';
+  membershipRole?: 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES' | 'PRODUCTION' | 'VIEWER';
   active: boolean;
+  tenant?: { id: string; name: string };
 }
 
 // Cache user data to avoid repeated API calls
 let cachedUser: User | null = null;
+let cachedTenantId: string | null = null;
 let cacheTimestamp = 0;
 const CACHE_DURATION = 60000; // 1 minute
 
 export function useCurrentUser() {
   const { data: session, status } = useSession();
-  const [user, setUser] = useState<User | null>(cachedUser);
-  const [loading, setLoading] = useState(!cachedUser);
+  const sessionTenantId = String((session?.user as any)?.tenantId || '');
+  const usableCachedUser = cachedTenantId === sessionTenantId ? cachedUser : null;
+  const [user, setUser] = useState<User | null>(usableCachedUser);
+  const [loading, setLoading] = useState(!usableCachedUser);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -26,12 +31,13 @@ export function useCurrentUser() {
         setUser(null);
         setLoading(false);
         cachedUser = null;
+        cachedTenantId = null;
         return;
       }
 
       // Use cache if available and fresh
       const now = Date.now();
-      if (cachedUser && (now - cacheTimestamp) < CACHE_DURATION) {
+      if (cachedUser && cachedTenantId === sessionTenantId && (now - cacheTimestamp) < CACHE_DURATION) {
         setUser(cachedUser);
         setLoading(false);
         return;
@@ -43,10 +49,12 @@ export function useCurrentUser() {
         
         if (data.status === 'success') {
           cachedUser = data.data;
+          cachedTenantId = sessionTenantId;
           cacheTimestamp = now;
           setUser(data.data);
         } else {
           cachedUser = null;
+          cachedTenantId = null;
           setUser(null);
         }
       } catch (error) {
@@ -58,7 +66,7 @@ export function useCurrentUser() {
     };
 
     fetchUser();
-  }, [session, status]);
+  }, [session, status, sessionTenantId]);
 
   return { user, loading, isAuthenticated: !!session };
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { createPaymentLink } from '@/lib/tilopay';
+import { getMembershipForToken } from '@/lib/selected-tenant';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,24 +13,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user with memberships to find tenant ID
-    const { prisma } = await import('@/lib/db');
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub as string },
-      include: { memberships: true }
-    });
-
-    if (!user || !user.memberships.length) {
+    const membership = await getMembershipForToken(token);
+    if (!membership) {
       return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
     }
 
-    const tenantId = user.memberships[0].tenantId;
-    
-    console.log('✅ Token found for:', user.email);
+    if (membership.role !== 'OWNER') {
+      return NextResponse.json({ error: 'Only the tenant owner can manage billing' }, { status: 403 });
+    }
+
+    const tenantId = membership.tenantId;
 
     const { planId } = await request.json();
-    console.log('📦 Plan requested:', planId);
-    
     if (!planId) return NextResponse.json({ error: 'planId required' }, { status: 400 });
 
     const planPricing: Record<string, { name: string; priceMinor: number; currency: string }> = {
@@ -59,16 +54,15 @@ export async function POST(request: NextRequest) {
       successUrl,
       cancelUrl,
       callbackUrl,
-      customerEmail: user.email as string
+      customerEmail: membership.user.email
     });
 
-    console.log('✅ Payment link created:', link.url);
     return NextResponse.json({ status: 'success', data: { checkoutUrl: link.url } });
   } catch (e: any) {
-    console.error('❌ Tilopay checkout error:', e);
+    console.error('❌ Tilopay checkout error:', e?.name || 'checkout_error');
     return NextResponse.json({ 
-      error: e?.message || 'Failed to create checkout',
-      stack: e?.stack 
+      error: 'Failed to create checkout',
+      code: e?.name || 'checkout_error',
     }, { status: 500 });
   }
 }

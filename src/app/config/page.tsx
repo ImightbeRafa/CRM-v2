@@ -6,6 +6,7 @@ import { useConfig } from '../contexts/ConfigContext'
 import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck, Bot, Building2 } from 'lucide-react'
 import { MobileBottomNav } from '../components/MobileBottomNav'
 import type { OrderStatus } from './components/StatusManager'
+import { useCurrentUser } from '../hooks/useCurrentUser'
 
 const BulkOperations = lazy(() => import('../components/ui/bulk-operations').then(m => ({ default: m.BulkOperations })))
 const SimpleAuditDashboard = lazy(() => import('../components/SimpleAuditDashboard').then(m => ({ default: m.SimpleAuditDashboard })))
@@ -23,7 +24,8 @@ function ConfigPageInner() {
   const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState('fields')
   const [newFieldType, setNewFieldType] = useState('text') // Track type for validation
-  const [isMasterUser, setIsMasterUser] = useState(true) // Simplified for demo
+  const { user: currentUser } = useCurrentUser()
+  const canManageSensitiveTools = currentUser?.membershipRole === 'OWNER' || currentUser?.membershipRole === 'ADMIN'
   const [mounted, setMounted] = useState(false) // Client-side mount detection
   
   // Data states
@@ -876,12 +878,12 @@ function ConfigPageInner() {
 
           {/* Bulk Delete Tab */}
           {activeTab === 'bulk-delete' && (
-            <OrderBulkDeleteDashboard isMaster={isMasterUser} />
+            <OrderBulkDeleteDashboard isMaster={canManageSensitiveTools} />
           )}
 
           {/* Audit Tab */}
           {activeTab === 'audit' && (
-            <SimpleAuditDashboard isMaster={isMasterUser} />
+            <SimpleAuditDashboard isMaster={canManageSensitiveTools} />
           )}
 
           {/* Legacy Fields Tab - keeping for reference */}

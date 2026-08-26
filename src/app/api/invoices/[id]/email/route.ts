@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
+import { getMembershipForToken } from '@/lib/selected-tenant';
 
 export async function POST(
   request: NextRequest,
@@ -14,17 +15,12 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user with memberships to find tenant ID
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub as string },
-      include: { memberships: true }
-    });
-
-    if (!user || !user.memberships.length) {
+    const membership = await getMembershipForToken(token);
+    if (!membership) {
       return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
     }
 
-    const tenantId = user.memberships[0].tenantId;
+    const tenantId = membership.tenantId;
 
     const { email } = await request.json();
 
@@ -51,17 +47,12 @@ export async function POST(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
 
-    // TODO: Implement email sending with nodemailer or similar
-    // For now, just return success
-    console.log(`Would send invoice ${invoice.invoiceNumber} to ${email}`);
-
     return NextResponse.json({
-      status: 'success',
-      data: {
-        message: `Invoice sent to ${email}`,
-        invoiceNumber: invoice.invoiceNumber
-      }
-    });
+      status: 'error',
+      code: 'email_not_sent',
+      error: 'El envío de facturas por correo aún no está disponible.',
+      invoiceNumber: invoice.invoiceNumber,
+    }, { status: 501 });
   } catch (error) {
     console.error('Error emailing invoice:', error);
     return NextResponse.json(

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { withTenantContext } from '@/lib/tenantContext';
 import { TenantError } from '@/lib/errors';
+import { isIntegrationOriginAllowed } from '@/lib/integration-cors';
 
 const CSP_HEADER = [
   "default-src 'self'",
@@ -73,10 +74,18 @@ export default async function middleware(request: Request) {
       console.log(`[Middleware] Integration API request from origin: ${origin}, path: ${pathname}`);
     }
 
+    if (!isIntegrationOriginAllowed(origin)) {
+      return NextResponse.json(
+        { error: 'Origin not allowed' },
+        { status: 403, headers: { Vary: 'Origin' } },
+      );
+    }
+
     const response = NextResponse.next(cleanFwd);
     response.headers.set('Access-Control-Allow-Origin', origin);
-    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
+    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
+    response.headers.set('Vary', 'Origin');
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 200, headers: response.headers });

@@ -2,6 +2,17 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-27 — Logistics archive shows terminated orders
+
+- Tablero de Envíos Archivo listed 0 finished orders even though ~2.4k
+  `lm_orders` rows have `archived_at`. `GET /api/logistics/orders?archived=true`
+  pulled every archived id into a Prisma `IN (...)` then applied the live-board
+  creation cutoff; failures became an empty list. Archive now joins
+  `lm_orders` to `"Order"`, sorts by `archived_at`, skips the cutoff, and
+  returns a real total. The panel shows phone/location/product/date, errors
+  instead of a fake empty state, and scrolls at a usable height.
+- Prove: `npm run test:logistics-archive`. No `lm_*` schema changes.
+
 ## 2026-08-24 — Payroll Sunday double-count (CR day bounds)
 
 - Confirmed: consecutive Mon–Sun payroll weeks both included Sunday

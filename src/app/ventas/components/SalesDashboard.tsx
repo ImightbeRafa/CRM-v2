@@ -261,7 +261,12 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                     label: 'Completar',
                     icon: <CheckCircle className="h-5 w-5" />,
                     color: '#10b981',
-                    onAction: () => updateStatus.mutate({ orderId: sale.orderId, status: 'Completado' }),
+                    onAction: () => updateStatus.mutate({
+                      orderId: sale.orderId,
+                      status: 'Completado',
+                      expectedStatus: sale.status,
+                      expectedUpdatedAt: sale.updatedAt,
+                    }),
                   }}
                   rightAction={{
                     label: 'Detalles',

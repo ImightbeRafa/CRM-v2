@@ -67,6 +67,7 @@ const TENANT_MODELS = [
   'clientIdentityConflict',
   'orderLifecycleOperation',
   'orderInventoryAllocation',
+  'tenantOrderStatusClassification',
   // Do NOT include nullable-tenant models (changelogEntry, integrationLog) —
   // auto-injecting tenantId would hide global rows or break unauthenticated logs.
 ] as const;

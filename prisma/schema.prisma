@@ -80,6 +80,7 @@ model Tenant {
   clientIdentityConflicts ClientIdentityConflict[]
   orderLifecycleOperations OrderLifecycleOperation[]
   orderInventoryAllocations OrderInventoryAllocation[]
+  orderStatusClassifications TenantOrderStatusClassification[]
   
   @@index([slug])
   @@index([isActive])
@@ -217,6 +218,8 @@ model Order {
   @@index([tenantId, status])
   @@index([tenantId, orderType])
   @@index([tenantId, timestamp])
+  @@index([tenantId, timestamp, id])
+  @@index([tenantId, status, timestamp, id])
   @@index([tenantId, updatedAt, id])
   @@index([tenantId, customerName])
   @@index([tenantId, contraEntrega])
@@ -312,6 +315,7 @@ model Client {
   @@index([tenantId, isFavorite])
   @@index([tenantId, totalSpent])
   @@index([tenantId, totalOrders])
+  @@index([tenantId, isActive, lastOrder, id])
 }
 
 // A conflict is a review task, never an instruction to merge records. The
@@ -544,6 +548,26 @@ model OrderStatus {
   @@index([tenantId])
   @@index([tenantId, isActive])
   @@index([tenantId, order])
+}
+
+// Classification is keyed by the normalized value stored on Order.status,
+// not only by configured OrderStatus rows. This keeps inactive, custom, and
+// previously unseen values visible until the tenant explicitly classifies them.
+model TenantOrderStatusClassification {
+  id                    String   @id @default(cuid())
+  tenantId              String
+  statusValue           String
+  normalizedStatusValue String
+  isTerminal            Boolean
+  approvedAt            DateTime
+  approvedBy            String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, normalizedStatusValue])
+  @@index([tenantId, isTerminal])
 }
 
 // ============================================================================

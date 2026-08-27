@@ -4,6 +4,11 @@ import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { Parser } from 'json2csv';
 import ExcelJS from 'exceljs';
 import { neutralizeCsvFormula, PII_NO_STORE_HEADERS } from '@/lib/security';
+import { buildClientWhere, parseClientQuery } from '@/lib/client-query';
+import { readClientsServerReadiness } from '@/lib/feature-flags';
+
+const MAX_EXPORT_CLIENTS = 10000;
+const MAX_EXPORT_ORDERS = 20000;
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,6 +19,7 @@ export async function GET(request: NextRequest) {
     const format = searchParams.get('format') || 'json';
     const includeOrders = searchParams.get('includeOrders') === 'true';
     const includeStats = searchParams.get('includeStats') === 'true';
+    const clientFilters = parseClientQuery(searchParams);
 
     if (!['json', 'csv', 'xlsx'].includes(format)) {
       return NextResponse.json(
@@ -24,32 +30,39 @@ export async function GET(request: NextRequest) {
 
     const prisma = getTenantPrisma(auth.tenantId);
     const clients = await prisma.client.findMany({
+      where: buildClientWhere(clientFilters),
       orderBy: { name: 'asc' },
-      take: 10000,
+      take: MAX_EXPORT_CLIENTS + 1,
     });
+    if (clients.length > MAX_EXPORT_CLIENTS) {
+      return NextResponse.json({ error: 'Export too large. Narrow the client filters.' }, { status: 413, headers: PII_NO_STORE_HEADERS });
+    }
 
-    const clientOrderFilters = clients.flatMap(client => ([
-      { phone: client.phone },
-      { customerName: client.name },
-    ]));
-
-    const clientOrders = includeOrders && clientOrderFilters.length > 0
+    if (includeOrders) {
+      const readiness = await readClientsServerReadiness(auth.tenantId);
+      if (!readiness.enabled) {
+        return NextResponse.json({ error: 'Client-linked order history is not ready', code: 'BACKFILL_REQUIRED' }, { status: 409, headers: PII_NO_STORE_HEADERS });
+      }
+    }
+    const clientIds = clients.map(client => client.id);
+    const clientOrders = includeOrders && clientIds.length > 0
       ? await prisma.order.findMany({
-          where: {
-            OR: clientOrderFilters,
-          },
+          where: { clientId: { in: clientIds } },
           orderBy: { timestamp: 'desc' },
-          take: 10000,
+          take: MAX_EXPORT_ORDERS + 1,
         })
       : [];
+    if (clientOrders.length > MAX_EXPORT_ORDERS) {
+      return NextResponse.json({ error: 'Order history export too large. Narrow the client filters.' }, { status: 413, headers: PII_NO_STORE_HEADERS });
+    }
 
     const ordersByClient = new Map<string, typeof clientOrders>();
     if (includeOrders) {
-      for (const client of clients) {
-        ordersByClient.set(
-          client.id,
-          clientOrders.filter(order => order.phone === client.phone || order.customerName === client.name)
-        );
+      for (const order of clientOrders) {
+        if (!order.clientId) continue;
+        const existing = ordersByClient.get(order.clientId) || [];
+        existing.push(order);
+        ordersByClient.set(order.clientId, existing);
       }
     }
 

@@ -443,6 +443,8 @@ export async function updateLifecycleOrder(input: {
   idempotencyKey: string;
   orderId: string;
   patch: Record<string, unknown>;
+  expectedStatus?: string;
+  expectedUpdatedAt?: string;
 }) {
   return prisma.$transaction(async tx => {
     const existingOperation = await tx.orderLifecycleOperation.findUnique({
@@ -468,7 +470,25 @@ export async function updateLifecycleOrder(input: {
     }
 
     const updateData = { ...buildUpdateData(input.patch), clientId };
-    const order = await tx.order.update({ where: { id: existing.id }, data: updateData as Prisma.OrderUpdateInput });
+    let order;
+    if (input.expectedStatus !== undefined || input.expectedUpdatedAt !== undefined) {
+      const expectedUpdatedAt = input.expectedUpdatedAt ? new Date(input.expectedUpdatedAt) : null;
+      if (expectedUpdatedAt && Number.isNaN(expectedUpdatedAt.getTime())) {
+        throw new OrderLifecycleError('INVALID_VERSION', 'Invalid expectedUpdatedAt', 400);
+      }
+      const changed = await tx.order.updateMany({
+        where: {
+          id: existing.id,
+          ...(input.expectedStatus !== undefined && { status: input.expectedStatus }),
+          ...(expectedUpdatedAt && { updatedAt: expectedUpdatedAt }),
+        },
+        data: updateData as Prisma.OrderUpdateManyMutationInput,
+      });
+      if (changed.count !== 1) throw new OrderLifecycleError('STALE_ORDER', 'Order changed before this update', 409);
+      order = await tx.order.findUniqueOrThrow({ where: { id: existing.id } });
+    } else {
+      order = await tx.order.update({ where: { id: existing.id }, data: updateData as Prisma.OrderUpdateInput });
+    }
     const productChanged = ['product', 'quantity', 'productDetails'].some(key => input.patch[key] !== undefined);
     const unresolvedInventory = productChanged
       ? await syncInventory(tx, input.tenantId, order.id, order as unknown as Record<string, unknown>)
@@ -510,6 +530,7 @@ export async function updateLifecycleOrder(input: {
 
 export async function setLifecycleOrderStatus(input: {
   tenantId: string; userId?: string; adapter: OrderLifecycleAdapter; idempotencyKey: string; orderId: string; status: string; courier?: string;
+  expectedStatus?: string; expectedUpdatedAt?: string;
 }) {
   const result = await updateLifecycleOrder({
     tenantId: input.tenantId,
@@ -518,6 +539,8 @@ export async function setLifecycleOrderStatus(input: {
     idempotencyKey: input.idempotencyKey,
     orderId: input.orderId,
     patch: { status: input.status, ...(input.courier && { courier: input.courier }) },
+    expectedStatus: input.expectedStatus,
+    expectedUpdatedAt: input.expectedUpdatedAt,
   });
   return result;
 }

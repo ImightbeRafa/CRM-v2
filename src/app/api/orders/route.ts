@@ -176,6 +176,7 @@ export async function GET(request: NextRequest) {
           orderType: true,
           status: true,
           timestamp: true,
+          updatedAt: true,
           customerName: true,
           username: true, // Social media username for customer
           phone: true,

@@ -5,14 +5,17 @@ import type { Sale } from '../produccion/types/sales';
 interface StatusUpdateInput {
   orderId: string;
   status: string;
+  expectedStatus?: string;
+  expectedUpdatedAt?: string;
 }
 
-async function updateOrderStatus({ orderId, status }: StatusUpdateInput) {
+async function updateOrderStatus({ orderId, status, expectedStatus, expectedUpdatedAt }: StatusUpdateInput) {
+  const idempotencyKey = expectedUpdatedAt ? `sales:${orderId}:${expectedUpdatedAt}:${status}` : undefined;
   const response = await fetch('/api/orders/status', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ orderId, status }),
+    body: JSON.stringify({ orderId, status, expectedStatus, expectedUpdatedAt, idempotencyKey }),
   });
 
   if (!response.ok) {

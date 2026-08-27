@@ -5,6 +5,7 @@ export interface BaseOrder {
   status: string;
   delivery: string;
   timestamp: string;
+  updatedAt: string;
   customerName: string;
   username: string;
   phone: string;

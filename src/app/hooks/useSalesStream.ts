@@ -8,6 +8,7 @@ interface SalesStreamOptions {
   onError?: (error: string) => void;
   pollingInterval?: number;
   enablePolling?: boolean;
+  enabled?: boolean;
   filters?: {
     status?: string;
     orderType?: string;
@@ -17,7 +18,7 @@ interface SalesStreamOptions {
   };
 }
 
-function parseOrder(data: any): Sale | null {
+export function parseOrder(data: any): Sale | null {
   if (!data.orderId || typeof data.orderId !== 'string') return null;
 
   const commonFields = {
@@ -26,6 +27,7 @@ function parseOrder(data: any): Sale | null {
     status: data.status || 'Pendiente',
     delivery: data.delivery || '-',
     timestamp: data.timestamp || new Date().toISOString(),
+    updatedAt: data.updatedAt || data.timestamp || new Date().toISOString(),
     customerName: data.customerName || '',
     username: data.username || '',
     phone: data.phone || '',
@@ -111,6 +113,7 @@ export function useSalesStream({
   onError,
   pollingInterval = 60000,
   enablePolling = true,
+  enabled = true,
   filters = {}
 }: SalesStreamOptions = {}) {
   const { toast } = useToast();
@@ -121,6 +124,7 @@ export function useSalesStream({
   const { data: sales = [], isLoading, error: queryError } = useQuery<Sale[], Error>({
     queryKey: ['sales', filterKey],
     queryFn: () => fetchSalesData(filters),
+    enabled,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
     refetchInterval: enablePolling ? pollingInterval : false,

@@ -198,3 +198,23 @@ Append-only. Newest entries at the top.
 - Prove: lifecycle 8/8; security/write coverage 69/69; TypeScript and lint pass (only
   existing warnings); production build and compiled unauthenticated smoke pass. No
   remote push, SQL, shared-database mutation, provider message, SOAP call, or charge.
+
+# 2026-08-27 — Betsy v2 Slice 4: server-driven Producción and Clients
+
+- Added dedicated, tenant-gated Producción metadata/list/summary APIs with signed,
+  filter-bound keyset cursors and server-side search/type/date/courier/priority/status
+  filtering. The legacy Ventas stream remains unchanged.
+- Replaced Kanban drag-and-drop and silent first-100/20 slicing with independent
+  per-column pages, `Sin configurar`, explicit status moves, idempotency, and stale-write
+  compare-and-set protection.
+- Added tenant-specific terminal-status classification SQL and a dry-run-first mapping
+  tool. Unknown/unclassified work stays visible; 30-day terminal retention requires a
+  complete, explicitly approved tenant mapping.
+- Upgraded Clients in place with server pagination, filtered KPIs/facets/export, lazy
+  `clientId`-only history, and a hard backfill-readiness gate.
+- Tenant-keyed the configuration cache and rejected late responses after tenant
+  switches without reopening the already scoped config request fan-out.
+- Added a local Playwright production-build harness and explicit opt-in tenant suite.
+- Prove: pagination contracts 8/8; security 69/69; lifecycle 8/8; backups 8/8; bot Grok,
+  TypeScript, lint (existing warnings), production build (125 pages), and Playwright
+  smoke 3/3 pass. Additive SQL was not run; no database/provider writes or remote push.

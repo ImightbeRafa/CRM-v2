@@ -23,14 +23,26 @@ interface ProductionStatsProps {
   onClose?: () => void;
   detailed?: boolean;
   onFilterChange?: (filter: 'all' | 'EA' | 'RA' | 'urgent') => void;
+  serverSummary?: {
+    total: number;
+    eaOrders: number;
+    raOrders: number;
+    urgentOrders: number;
+    totalAmount: number;
+  };
+  availableStatuses?: Array<{ key: string; label: string; color?: string | null }>;
 }
 
-export const ProductionStats = React.memo(function ProductionStats({ orders, onClose, detailed = false, onFilterChange }: ProductionStatsProps) {
+export const ProductionStats = React.memo(function ProductionStats({ orders, onClose, detailed = false, onFilterChange, serverSummary, availableStatuses: providedStatuses }: ProductionStatsProps) {
   const { formatCurrency } = useTenantSettings();
   const [availableStatuses, setAvailableStatuses] = useState<Array<{key: string; label: string; color?: string}>>([]);
   
   // Load available statuses from API
   useEffect(() => {
+    if (providedStatuses) {
+      setAvailableStatuses(providedStatuses.map(status => ({ ...status, color: status.color || undefined })));
+      return;
+    }
     const loadStatuses = async () => {
       try {
         const response = await fetch('/api/config/status', { credentials: 'include' });
@@ -43,7 +55,7 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
       }
     };
     loadStatuses();
-  }, []);
+  }, [providedStatuses]);
   
   const stats = React.useMemo(() => {
     const total = orders.length;
@@ -100,21 +112,24 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
     ).length;
     const completionRate = total > 0 ? (completedOrders / total) * 100 : 0;
     
+    const effectiveTotal = serverSummary?.total ?? total;
+    const effectiveRevenue = serverSummary?.totalAmount ?? totalRevenue;
     return {
-      total,
-      eaOrders: eaOrders.length,
-      raOrders: raOrders.length,
+      total: effectiveTotal,
+      eaOrders: serverSummary?.eaOrders ?? eaOrders.length,
+      raOrders: serverSummary?.raOrders ?? raOrders.length,
       statusCounts,
-      totalRevenue,
-      avgOrderValue,
+      totalRevenue: effectiveRevenue,
+      avgOrderValue: effectiveTotal > 0 ? effectiveRevenue / effectiveTotal : avgOrderValue,
       todayOrders: todayOrders.length,
       yesterdayOrders: yesterdayOrders.length,
       thisWeekOrders: thisWeekOrders.length,
-      urgentOrders: urgentOrders.length,
+      urgentOrders: serverSummary?.urgentOrders ?? urgentOrders.length,
       completionRate,
-      completedOrders
+      completedOrders,
+      loadedTotal: total,
     };
-  }, [orders]);
+  }, [orders, serverSummary]);
 
   const getStatusColor = (status: string) => {
     // First, try to find the status in the configured statuses with custom colors
@@ -275,6 +290,11 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
             )}
           </CardHeader>
           <CardContent className="space-y-6">
+            {serverSummary && (
+              <p className="text-xs text-muted-foreground">
+                Totales calculados en el servidor. Los desgloses detallados inferiores usan únicamente las filas cargadas.
+              </p>
+            )}
             {/* Overview Stats */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatCard
@@ -319,7 +339,7 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
                 color="text-blue-600 dark:text-blue-400"
               />
               <StatCard
-                title="Tasa de Completado"
+                title={serverSummary ? "Tasa de Completado (cargadas)" : "Tasa de Completado"}
                 value={`${stats.completionRate.toFixed(1)}%`}
                 icon={<CheckCircle className="h-5 w-5" />}
                 color="text-emerald-600 dark:text-emerald-400"
@@ -381,7 +401,7 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
                 <div>
                   <div className="flex justify-between text-sm mb-1">
                     <span>Completadas</span>
-                    <span>{stats.completedOrders} / {stats.total}</span>
+                    <span>{stats.completedOrders} / {stats.loadedTotal}</span>
                   </div>
                   <div className="w-full bg-muted rounded-full h-2">
                     <div 

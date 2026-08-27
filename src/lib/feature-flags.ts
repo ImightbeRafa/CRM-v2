@@ -2,6 +2,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 
 export const ORDER_LIFECYCLE_V2_FLAG = 'order_lifecycle_v2';
+export const PRODUCTION_SERVER_V2_FLAG = 'production_server_v2';
+export const CLIENTS_SERVER_V2_FLAG = 'clients_server_v2';
 
 function isMissingFeatureFlagTable(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError
@@ -29,6 +31,59 @@ export async function isTenantFeatureEnabled(tenantId: string, key: string): Pro
     if (isMissingFeatureFlagTable(error)) return false;
     throw error;
   }
+}
+
+type FeatureFlagConfig = Record<string, unknown>;
+
+export interface TenantFeatureReadiness {
+  enabled: boolean;
+  config: FeatureFlagConfig;
+}
+
+async function readTenantFlag(tenantId: string, key: string): Promise<TenantFeatureReadiness> {
+  try {
+    const flag = await prisma.tenantFeatureFlag.findFirst({
+      where: { tenantId, scope: 'tenant', key },
+      select: { enabled: true, config: true },
+    });
+    const config = flag?.config && typeof flag.config === 'object' && !Array.isArray(flag.config)
+      ? flag.config as FeatureFlagConfig
+      : {};
+    return { enabled: flag?.enabled === true, config };
+  } catch (error) {
+    if (isMissingFeatureFlagTable(error)) return { enabled: false, config: {} };
+    throw error;
+  }
+}
+
+export async function readProductionServerReadiness(tenantId: string) {
+  const flag = await readTenantFlag(tenantId, PRODUCTION_SERVER_V2_FLAG);
+  const mappingRevision = typeof flag.config.terminalMappingRevision === 'string'
+    ? flag.config.terminalMappingRevision
+    : null;
+  return {
+    enabled: flag.enabled,
+    terminalFilteringEnabled: flag.enabled
+      && flag.config.terminalFilteringEnabled === true
+      && mappingRevision !== null
+      && typeof flag.config.terminalMappingApprovedAt === 'string',
+    mappingRevision,
+  };
+}
+
+export async function readClientsServerReadiness(tenantId: string) {
+  const [clientsFlag, lifecycleFlag] = await Promise.all([
+    readTenantFlag(tenantId, CLIENTS_SERVER_V2_FLAG),
+    readTenantFlag(tenantId, ORDER_LIFECYCLE_V2_FLAG),
+  ]);
+  const backfillCompletedAt = typeof lifecycleFlag.config.clientBackfillCompletedAt === 'string'
+    ? lifecycleFlag.config.clientBackfillCompletedAt
+    : null;
+  return {
+    enabled: clientsFlag.enabled && backfillCompletedAt !== null,
+    requested: clientsFlag.enabled,
+    backfillCompletedAt,
+  };
 }
 
 export type OrderLifecycleAdapter =

@@ -29,13 +29,16 @@ import { ProductionWorkflowGuide } from './ProductionWorkflowGuide';
 import { GuiaGenerator } from './GuiaGenerator';
 import { InvoiceGenerator } from '@/app/config/components/InvoiceGenerator';
 import { KanbanBoard } from './KanbanBoard';
+import {
+  useProductionMetadata,
+  useProductionOrders,
+  useProductionStatusMove,
+  useProductionSummary,
+  type ProductionFilters,
+} from '@/app/hooks/useProductionServer';
 
 // Dynamic Status Filter Component - now using global config
-const StatusFilterSelect = ({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) => {
-  const { getState } = useConfig();
-  const statusesState = getState<OrderStatus[]>('statuses');
-  const statuses = statusesState.data ?? [];
-
+const StatusFilterSelect = ({ value, onValueChange, statuses }: { value: string; onValueChange: (value: string) => void; statuses: OrderStatus[] }) => {
   return (
     <Select value={value} onValueChange={onValueChange}>
       <SelectTrigger>
@@ -48,6 +51,7 @@ const StatusFilterSelect = ({ value, onValueChange }: { value: string; onValueCh
             {status.label}
           </SelectItem>
         ))}
+        <SelectItem value="__unconfigured__">Sin configurar</SelectItem>
       </SelectContent>
     </Select>
   );
@@ -174,6 +178,8 @@ const EnhancedHeader = React.memo(({
   onExport,
   onBulkOperations,
   onShowStats,
+  onAdvancedFilters,
+  statuses,
   onShowGuide,
   viewMode,
   onViewModeChange,
@@ -190,6 +196,8 @@ const EnhancedHeader = React.memo(({
   onExport: () => void;
   onBulkOperations: () => void;
   onShowStats: () => void;
+  onAdvancedFilters: () => void;
+  statuses: OrderStatus[];
   onShowGuide: () => void;
   viewMode: 'table' | 'mobile' | 'kanban';
   onViewModeChange: (mode: 'table' | 'mobile' | 'kanban') => void;
@@ -242,9 +250,9 @@ const EnhancedHeader = React.memo(({
         />
       </div>
 
-      <StatusFilterSelect value={statusFilter} onValueChange={onStatusChange} />
+      <StatusFilterSelect value={statusFilter} onValueChange={onStatusChange} statuses={statuses} />
 
-      <Button variant="outline" size="sm" className="justify-start h-9 text-xs min-h-[36px]">
+      <Button variant="outline" size="sm" className="justify-start h-9 text-xs min-h-[36px]" onClick={onAdvancedFilters}>
         <Filter className="h-4 w-4 mr-1" />
         Filtros
       </Button>
@@ -316,6 +324,7 @@ export function EnhancedProductionDashboard({
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'EA' | 'RA' | 'urgent'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const { getState } = useConfig();
   const statusesState = getState<OrderStatus[]>('statuses');
   const statuses = statusesState.data ?? [];
@@ -340,9 +349,38 @@ export function EnhancedProductionDashboard({
   const [showGuide, setShowGuide] = useState(false);
   const [lastSync, setLastSync] = useState<Date>(new Date());
   const { toast } = useToast();
-
-  const { sales: orders, isLoading: loading, error, refresh } = useSalesStream({
+  const metadataQuery = useProductionMetadata();
+  const serverDriven = metadataQuery.data?.enabled === true;
+  const activeStatuses = metadataQuery.data?.statuses?.length ? metadataQuery.data.statuses : statuses;
+  const selectedStatusId = statusFilter === 'all'
+    ? undefined
+    : activeStatuses.find(status => status.label.toLowerCase() === statusFilter.toLowerCase())?.id;
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+  const serverFilters = useMemo<ProductionFilters>(() => ({
+    search: debouncedSearch,
+    orderType: orderTypeFilter === 'EA' || orderTypeFilter === 'RA' ? orderTypeFilter : '',
+    dateFrom: dateRange.from,
+    dateTo: dateRange.to,
+    courier: courierFilter,
+    priority: orderTypeFilter === 'urgent' ? 'urgent' : priorityFilter === 'all' ? '' : priorityFilter as ProductionFilters['priority'],
+  }), [debouncedSearch, orderTypeFilter, dateRange, courierFilter, priorityFilter]);
+  const productionOrders = useProductionOrders({
+    enabled: serverDriven,
+    view: 'list',
+    statusId: selectedStatusId,
+    unconfigured: statusFilter === '__unconfigured__',
+    filters: serverFilters,
+    limit: 60,
+  });
+  const productionSummary = useProductionSummary(serverFilters, serverDriven);
+  const moveProductionStatus = useProductionStatusMove();
+  const legacyEnabled = metadataQuery.isError || (!metadataQuery.isLoading && !serverDriven);
+  const legacySales = useSalesStream({
     pollingInterval: 30000,
+    enabled: legacyEnabled,
     onError: (error) => {
       toast({
         variant: "destructive",
@@ -351,6 +389,16 @@ export function EnhancedProductionDashboard({
       });
     }
   });
+  const orders = serverDriven ? productionOrders.orders : legacySales.sales;
+  const loading = metadataQuery.isLoading || (serverDriven ? productionOrders.isLoading : legacySales.isLoading);
+  const error = serverDriven ? productionOrders.error?.message || null : legacySales.error;
+  const refresh = () => {
+    if (serverDriven) {
+      void Promise.all([productionOrders.refetch(), productionSummary.refetch(), metadataQuery.refetch()]);
+    } else {
+      legacySales.refresh();
+    }
+  };
 
   // Config data now comes from global context - no need to load separately
 
@@ -362,7 +410,12 @@ export function EnhancedProductionDashboard({
   }, [orders, loading]);
 
   const filteredOrders = useMemo(() => {
-    let filtered = filterOrders(orders, statusFilter, searchTerm, dateRange, priorityFilter, courierFilter);
+    if (serverDriven) return orders;
+    const effectiveStatusFilter = statusFilter === '__unconfigured__' ? 'all' : statusFilter;
+    let filtered = filterOrders(orders, effectiveStatusFilter, searchTerm, dateRange, priorityFilter, courierFilter);
+    if (statusFilter === '__unconfigured__') {
+      filtered = filtered.filter(order => !activeStatuses.some(status => status.label.toLowerCase() === order.status.toLowerCase()));
+    }
 
     // Apply order type filter from stat cards
     if (orderTypeFilter === 'EA') {
@@ -383,7 +436,7 @@ export function EnhancedProductionDashboard({
     }
 
     return filtered;
-  }, [orders, statusFilter, searchTerm, dateRange, priorityFilter, courierFilter, orderTypeFilter]);
+  }, [orders, statusFilter, searchTerm, dateRange, priorityFilter, courierFilter, orderTypeFilter, serverDriven, activeStatuses]);
 
   const groupedOrders = useMemo(() => ({
     EA: filteredOrders.filter(order => order.orderType === 'EA'),
@@ -398,6 +451,15 @@ export function EnhancedProductionDashboard({
 
   const updateOrderStatus = async (orderId: string, newStatus: string, skipRefresh = false) => {
     try {
+      if (serverDriven) {
+        const current = orders.find(order => order.orderId === orderId);
+        if (!current) throw new Error('La orden no está en la página cargada');
+        await moveProductionStatus(current, newStatus);
+        if (!skipRefresh) {
+          toast({ title: "Estado actualizado", description: "El estado de la orden ha sido actualizado exitosamente." });
+        }
+        return;
+      }
       const response = await fetch('/api/orders/status', {
         method: 'POST',
         headers: {
@@ -583,8 +645,9 @@ export function EnhancedProductionDashboard({
             })}
           </span>
           <Badge variant="secondary" className="ml-2 text-xs">
-            {orders.length}
+            {serverDriven ? `${orders.length} / ${productionOrders.totalCount}` : orders.length}
           </Badge>
+          {serverDriven && <span className="hidden sm:inline">Acciones masivas: solo filas cargadas</span>}
         </div>
         <Button
           onClick={() => {
@@ -614,6 +677,8 @@ export function EnhancedProductionDashboard({
       <ProductionStats
         orders={orders}
         onFilterChange={handleStatsFilter}
+        serverSummary={serverDriven ? productionSummary.data : undefined}
+        availableStatuses={activeStatuses}
       />
 
       {/* Main Dashboard */}
@@ -630,10 +695,12 @@ export function EnhancedProductionDashboard({
             onExport={() => setShowExport(true)}
             onBulkOperations={() => setShowBulkOperations(true)}
             onShowStats={() => setShowStats(true)}
+            onAdvancedFilters={() => setShowAdvancedFilters(true)}
+            statuses={activeStatuses}
             onShowGuide={() => setShowGuide(true)}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
-            totalOrders={orders.length}
+            totalOrders={serverDriven ? productionOrders.totalCount : orders.length}
             filteredCount={filteredOrders.length}
           />
         </CardHeader>
@@ -647,7 +714,10 @@ export function EnhancedProductionDashboard({
           ) : viewMode === 'kanban' ? (
             <KanbanBoard
               orders={filteredOrders}
-              statuses={statuses}
+              statuses={activeStatuses}
+              serverDriven={serverDriven}
+              filters={serverFilters}
+              statusFilter={statusFilter}
               onOrderUpdate={async (orderId, updates) => {
                 await handleOrderUpdate(orderId, updates);
               }}
@@ -689,7 +759,7 @@ export function EnhancedProductionDashboard({
                               : [...prev, orderId]
                           );
                         }}
-                        availableStatuses={statuses}
+                        availableStatuses={activeStatuses}
                         businessInfoFields={businessInfoFields}
                         productFieldConfigs={productFieldConfigs}
                         onConfirmPayment={handleConfirmPayment}
@@ -706,6 +776,19 @@ export function EnhancedProductionDashboard({
                 </TabsContent>
               ))}
             </Tabs>
+          )}
+          {serverDriven && viewMode !== 'kanban' && productionOrders.hasNextPage && (
+            <div className="flex justify-center pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={productionOrders.isFetchingNextPage}
+                onClick={() => void productionOrders.fetchNextPage()}
+              >
+                {productionOrders.isFetchingNextPage ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Cargar más pedidos
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -753,6 +836,8 @@ export function EnhancedProductionDashboard({
           orders={orders}
           onClose={() => setShowStats(false)}
           detailed={true}
+          serverSummary={serverDriven ? productionSummary.data : undefined}
+          availableStatuses={activeStatuses}
         />
       )}
 

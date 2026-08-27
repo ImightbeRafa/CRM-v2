@@ -1,103 +1,134 @@
-import { NextResponse } from 'next/server'
-import { logUpdate } from '@/lib/auditLogger'
-import { getTenantPrisma } from '@/lib/prisma-tenant'
-import { withTenantContext } from '@/lib/tenantContext'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
-import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags'
-import { lifecycleIdempotencyKey, OrderLifecycleError, setLifecycleOrderStatus } from '@/lib/order-lifecycle'
+import { NextResponse } from 'next/server';
+import { logUpdate } from '@/lib/auditLogger';
+import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { withTenantContext } from '@/lib/tenantContext';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
+import { readProductionServerReadiness, shouldUseOrderLifecycleV2 } from '@/lib/feature-flags';
+import { lifecycleIdempotencyKey, OrderLifecycleError, setLifecycleOrderStatus } from '@/lib/order-lifecycle';
 
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
+    const body = await request.json();
     if (!body.orderId || !body.status) {
-      return NextResponse.json(
-        { error: 'Missing required fields: orderId, status' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Missing required fields: orderId, status' }, { status: 400 });
     }
-    const auth = await authenticateAPIWithPermission(request as any, 'update_production')
-    if (!auth.ok) return auth.response
-    const { tenantId, userId, role: userRole } = auth
-    const userName = 'Authenticated user'
+    const auth = await authenticateAPIWithPermission(request as any, 'update_production');
+    if (!auth.ok) return auth.response;
+    const { tenantId, userId, role: userRole } = auth;
 
-    return await withTenantContext({ tenantId, userId, role: userRole, userRole, userName }, async () => {
-      const prisma = getTenantPrisma(tenantId)
-      
-      // Get the existing order (tenant filter applied by middleware)
-      const existingOrder = await prisma.order.findFirst({
-        where: { orderId: body.orderId }
-      })
-      
-      if (!existingOrder) {
-        console.error('[orders/status] SECURITY: Order not found or wrong tenant', { 
-          orderId: body.orderId, 
-          tenantId,
-          attemptedBy: userId 
+    return await withTenantContext({
+      tenantId,
+      userId,
+      role: userRole,
+      userRole,
+      userName: 'Authenticated user',
+    }, async () => {
+      const tenantPrisma = getTenantPrisma(tenantId);
+      const existingOrder = await tenantPrisma.order.findFirst({ where: { orderId: body.orderId } });
+      if (!existingOrder) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+
+      const productionV2 = await readProductionServerReadiness(tenantId);
+      let destinationStatus = String(body.status);
+      if (productionV2.enabled) {
+        if (!body.expectedStatus || !body.expectedUpdatedAt || !body.idempotencyKey) {
+          return NextResponse.json({
+            error: 'expectedStatus, expectedUpdatedAt, and idempotencyKey are required',
+            code: 'VERSION_REQUIRED',
+          }, { status: 428 });
+        }
+        const destination = await tenantPrisma.orderStatus.findFirst({
+          where: { isActive: true, label: { equals: destinationStatus, mode: 'insensitive' } },
+          select: { label: true },
         });
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        if (!destination) {
+          return NextResponse.json({ error: 'Destination status is not active', code: 'INVALID_STATUS' }, { status: 400 });
+        }
+        destinationStatus = destination.label;
       }
 
-      // A tenant is either on the canonical lifecycle for every non-bot
-      // adapter or on the legacy set for all of them.
-      let updatedOrder
-      const useLifecycleV2 = await shouldUseOrderLifecycleV2(tenantId, 'production-status')
+      const staleResponse = async () => {
+        const current = await tenantPrisma.order.findFirst({
+          where: { id: existingOrder.id },
+          select: { orderId: true, status: true, updatedAt: true },
+        });
+        return NextResponse.json({
+          error: 'Order changed before this update',
+          code: 'STALE_ORDER',
+          current,
+        }, { status: 409 });
+      };
+
+      const useLifecycleV2 = await shouldUseOrderLifecycleV2(tenantId, 'production-status');
+      let updatedOrder;
       if (useLifecycleV2) {
         try {
           const lifecycle = await setLifecycleOrderStatus({
             tenantId,
             userId,
             adapter: 'production-status',
-            idempotencyKey: lifecycleIdempotencyKey(request, `production-status:${existingOrder.id}:${body.status}:${existingOrder.updatedAt.toISOString()}`),
+            idempotencyKey: body.idempotencyKey || lifecycleIdempotencyKey(
+              request,
+              `production-status:${existingOrder.id}:${destinationStatus}:${existingOrder.updatedAt.toISOString()}`,
+            ),
             orderId: existingOrder.orderId,
-            status: body.status,
-          })
-          updatedOrder = lifecycle.order
+            status: destinationStatus,
+            expectedStatus: productionV2.enabled ? String(body.expectedStatus) : undefined,
+            expectedUpdatedAt: productionV2.enabled ? String(body.expectedUpdatedAt) : undefined,
+          });
+          updatedOrder = lifecycle.order;
         } catch (error) {
           if (error instanceof OrderLifecycleError) {
-            return NextResponse.json({ error: error.message }, { status: error.status })
+            if (error.code === 'STALE_ORDER') return staleResponse();
+            return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
           }
-          throw error
+          throw error;
         }
+      } else if (productionV2.enabled) {
+        const expectedUpdatedAt = new Date(String(body.expectedUpdatedAt));
+        if (Number.isNaN(expectedUpdatedAt.getTime())) {
+          return NextResponse.json({ error: 'Invalid expectedUpdatedAt' }, { status: 400 });
+        }
+        const changed = await tenantPrisma.order.updateMany({
+          where: {
+            id: existingOrder.id,
+            status: String(body.expectedStatus),
+            updatedAt: expectedUpdatedAt,
+          },
+          data: { status: destinationStatus },
+        });
+        if (changed.count !== 1) return staleResponse();
+        updatedOrder = await tenantPrisma.order.findFirst({ where: { id: existingOrder.id } });
       } else {
-        updatedOrder = await prisma.order.update({
+        updatedOrder = await tenantPrisma.order.update({
           where: { id: existingOrder.id },
-          data: { status: body.status }
-        })
+          data: { status: destinationStatus },
+        });
       }
 
-      // Log audit trail (non-blocking)
-      if (!useLifecycleV2) try {
-        console.log('[orders/status] Status update:', {
-          orderId: body.orderId,
-          oldStatus: existingOrder.status,
-          newStatus: body.status,
-          userId
-        })
-        await logUpdate(request as any, 'order', updatedOrder.id, `Order #${body.orderId}`, 
-          { status: existingOrder.status, changes: [`Estado: "${existingOrder.status}" → "${body.status}"`] }, 
-          { status: body.status })
-      } catch (auditError) {
-        console.error('[orders/status] Audit logging failed (non-fatal):', auditError)
+      if (!useLifecycleV2 && updatedOrder) {
+        try {
+          await logUpdate(
+            request as any,
+            'order',
+            updatedOrder.id,
+            `Order #${body.orderId}`,
+            { status: existingOrder.status, changes: [`Estado: "${existingOrder.status}" → "${destinationStatus}"`] },
+            { status: destinationStatus },
+          );
+        } catch (auditError) {
+          console.error('[orders/status] Audit logging failed (non-fatal):', auditError);
+        }
       }
-
-      return NextResponse.json({ success: true, data: updatedOrder })
-    })
+      return NextResponse.json({ success: true, data: updatedOrder });
+    });
   } catch (error) {
-    console.error('[orders/status] Error:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Internal server error'
-    
-    return NextResponse.json(
-      { 
-        error: 'Internal server error',
-        details: process.env.NODE_ENV !== 'production' ? errorMessage : undefined
-      },
-      { status: 500 }
-    )
+    console.error('[orders/status] Error:', error);
+    return NextResponse.json({
+      error: 'Internal server error',
+      details: process.env.NODE_ENV !== 'production' && error instanceof Error ? error.message : undefined,
+    }, { status: 500 });
   }
 }

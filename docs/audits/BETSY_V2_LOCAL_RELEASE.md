@@ -88,3 +88,46 @@ backfills require separate approval and are never applied by Prisma schema comma
 - **Rollback:** disable `order_lifecycle_v2` first, then revert the Slice 3 commit if
   needed. Additive columns/tables remain compatible with old code; no down migration is
   part of rollback.
+
+## Slice 4 — Server-driven Producción and Clients
+
+- **Local branch:** `codex/betsyv2-s4-server-pagination`.
+- **Schema dependency:** additive tenant status-classification table and supporting
+  Order/Client indexes packaged in `supabase/migrations/020_betsy_v2_server_pagination.sql`.
+  The SQL was **not** executed. `schema.prisma` remains synchronized and only
+  `prisma generate` ran.
+- **Database writes used for verification:** none. The status-mapping package was not
+  pointed at the shared database, no feature flags were changed, and the authenticated
+  tenant Playwright suite was not run without an explicitly authorized test tenant.
+- **Producción:** the v2 flag selects dedicated cursor-paginated, server-filtered list,
+  summary, and per-column Kanban APIs. The legacy Ventas stream contract is unchanged.
+  Kanban no longer drags partially loaded cards; each configured column plus
+  `Sin configurar` loads independently and uses an explicit status action with
+  expected-status/updated-time compare-and-set protection.
+- **Terminal mapping:** classification is tenant-specific, exact, and read-only by
+  default. Apply requires a complete mapping file plus an exact approved tenant value.
+  Unknown statuses fail open and remain visible; open-plus-30-terminal-day filtering
+  cannot activate until an approved mapping revision is recorded for that tenant.
+- **Clients:** the existing management screen upgrades in place behind
+  `clients_server_v2`, requires the lifecycle client-backfill marker, paginates and
+  filters on the server, computes full filtered KPIs, and loads history strictly through
+  `Order.clientId`. Filtered exports have explicit size limits instead of silent
+  truncation.
+- **Tenant switching:** configuration resource cache keys now include tenant ID and
+  late responses from a previous tenant are ignored. The already path-scoped config
+  loading remains path-scoped; this slice does not reintroduce the old six-request fan-out.
+- **Playwright:** added a local production-build harness. The safe unauthenticated suite
+  passed 3/3 (public render, protected-page redirects, and fail-closed new APIs/status
+  mutation). The tenant suite requires explicit credentials and
+  `BETSY_V2_TEST_WRITES_AUTHORIZED=1`; it cannot silently target a real tenant.
+- **Verification:** pagination/query/security contracts 8/8; security/write coverage
+  69/69; lifecycle 8/8; backups 8/8; bot Grok pass; TypeScript pass; lint pass with
+  pre-existing warnings; production build pass (125 pages); compiled Playwright smoke
+  3/3. No provider messages, charges, SQL, remote push, or shared-database mutation.
+- **Known limitations:** authenticated pagination, client-history, stale-write, export,
+  and status-mapping workflows require the separately approved additive SQL and a
+  designated test tenant. Both v2 feature flags default off, so current tenants retain
+  the legacy read paths after deployment until explicitly enabled.
+- **Rollback:** disable `production_server_v2` and `clients_server_v2` first. Revert the
+  Slice 4 commit only if a code rollback is needed. Additive indexes/table may remain;
+  old code ignores them and no down migration is part of rollback.

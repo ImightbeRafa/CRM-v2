@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -26,6 +26,7 @@ import {
   RefreshCw,
   Settings
 } from 'lucide-react';
+import { PaginatedClientManagement } from './PaginatedClientManagement';
 
 interface Client {
   id: string;
@@ -58,7 +59,7 @@ interface ClientStats {
   totalRevenue: number;
 }
 
-export function AutomaticClientManagement() {
+function LegacyAutomaticClientManagement() {
   const [clients, setClients] = useState<Client[]>([]);
   const [filteredClients, setFilteredClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -657,4 +658,11 @@ export function AutomaticClientManagement() {
       )}
     </div>
   );
+}
+
+export function AutomaticClientManagement() {
+  const [useLegacy, setUseLegacy] = useState(false);
+  const handleUnavailable = useCallback(() => setUseLegacy(true), []);
+  if (useLegacy) return <LegacyAutomaticClientManagement />;
+  return <PaginatedClientManagement onUnavailable={handleUnavailable} />;
 }

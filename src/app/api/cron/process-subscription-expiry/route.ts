@@ -2,164 +2,192 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { timingSafeEqualString } from '@/lib/security';
 
-/**
- * Cron Job: Process Expired Subscriptions
- *
- * Endpoint: GET/POST /api/cron/process-subscription-expiry
- *
- * Purpose: Downgrade expired subscriptions to FREE plan WITHOUT deleting any data
- *
- * Security: Always requires Authorization: Bearer ${CRON_SECRET} (fail-closed).
- */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function asDate(value: unknown): Date | null {
+  if (!value) return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export async function GET(request: NextRequest) {
-  return await processExpiredSubscriptions(request);
+  return processExpiredSubscriptions(request);
 }
 
 export async function POST(request: NextRequest) {
-  return await processExpiredSubscriptions(request);
+  return processExpiredSubscriptions(request);
 }
 
 async function processExpiredSubscriptions(request: NextRequest) {
   const startTime = Date.now();
-  
-  try {
-    console.log('🔄 [Cron] Starting subscription expiry processing...');
+  const authHeader = request.headers.get('authorization') || '';
+  const cronSecret = (process.env.CRON_SECRET || '').trim();
 
-    const authHeader = request.headers.get('authorization') || '';
-    const cronSecret = (process.env.CRON_SECRET || '').trim();
+  if (!cronSecret) {
+    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+  }
+  if (!timingSafeEqualString(authHeader, `Bearer ${cronSecret}`)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
-    if (!cronSecret) {
-      console.error('❌ [Cron] CRON_SECRET not configured — refusing subscription expiry job');
-      return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
-    }
+  const now = new Date();
+  const tenants = await prisma.tenant.findMany({
+    where: {
+      isActive: true,
+      plan: { not: 'FREE' },
+      AND: [
+        {
+          OR: [
+            { subscriptionStatus: null },
+            { subscriptionStatus: { not: 'expired' } },
+          ],
+        },
+        {
+          OR: [
+            { currentPeriodEnd: { lte: now } },
+            { subscriptionStatus: { in: ['payment_failed', 'past_due', 'grace'] } },
+          ],
+        },
+      ],
+    },
+    select: {
+      id: true,
+      plan: true,
+      subscriptionStatus: true,
+      currentPeriodEnd: true,
+      settings: true,
+      tilopaySubscriptionId: true,
+    },
+  });
 
-    const expected = `Bearer ${cronSecret}`;
-    if (!timingSafeEqualString(authHeader, expected)) {
-      console.error('❌ [Cron] Unauthorized cron job attempt');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  let graceStarted = 0;
+  let stillInGrace = 0;
+  let restricted = 0;
+  let errors = 0;
 
-    const now = new Date();
-    
-    // Find all tenants with expired paid subscriptions
-    const expiredTenants = await prisma.tenant.findMany({
-      where: {
-        AND: [
-          { currentPeriodEnd: { lt: now } },  // Period has ended
-          { plan: { not: 'FREE' } },  // Not already on FREE plan
-          {
-            OR: [
-              { subscriptionStatus: 'active' },
-              { subscriptionStatus: 'cancelled' },
-              { subscriptionStatus: 'payment_failed' }
-            ]
-          }
-        ]
-      },
-      select: {
-        id: true,
-        name: true,
-        plan: true,
-        subscriptionStatus: true,
-        currentPeriodEnd: true,
-        tilopaySubscriptionId: true
+  for (const tenant of tenants) {
+    try {
+      const status = String(tenant.subscriptionStatus || 'unknown').toLowerCase();
+      const settings = asRecord(tenant.settings);
+      const storedAccess = asRecord(settings.billingAccess);
+      const storedStart = asDate(storedAccess.graceStartedAt);
+      const storedEnd = asDate(storedAccess.graceEndsAt);
+      const legacyFailureEnd = status === 'payment_failed'
+        && tenant.currentPeriodEnd
+        && tenant.currentPeriodEnd > now
+        ? tenant.currentPeriodEnd
+        : null;
+      const graceEndsAt = storedEnd
+        || legacyFailureEnd
+        || new Date((tenant.currentPeriodEnd || now).getTime() + 7 * DAY_MS);
+      const graceStartedAt = storedStart
+        || (legacyFailureEnd ? new Date(legacyFailureEnd.getTime() - 7 * DAY_MS) : tenant.currentPeriodEnd)
+        || now;
+
+      if (now < graceEndsAt) {
+        if (!storedStart || !storedEnd) {
+          await prisma.$transaction(async tx => {
+            await tx.$executeRaw`
+              UPDATE "Tenant"
+              SET "subscriptionStatus" = 'grace',
+                  "updatedAt" = ${now},
+                  "settings" = jsonb_set(
+                    jsonb_set(
+                      jsonb_set(
+                        COALESCE("settings", '{}'::jsonb),
+                        '{billingAccess}',
+                        COALESCE("settings" -> 'billingAccess', '{}'::jsonb),
+                        true
+                      ),
+                      '{billingAccess,graceStartedAt}',
+                      to_jsonb(${graceStartedAt.toISOString()}::text),
+                      true
+                    ),
+                    '{billingAccess,graceEndsAt}',
+                    to_jsonb(${graceEndsAt.toISOString()}::text),
+                    true
+                  )
+              WHERE "id" = ${tenant.id}
+            `;
+            await tx.auditLog.create({
+              data: {
+                tenantId: tenant.id,
+                userId: null,
+                userName: 'Subscription Expiry Cron',
+                userRole: 'SYSTEM',
+                action: 'UPDATE',
+                entityType: 'subscription',
+                entityId: tenant.tilopaySubscriptionId || tenant.id,
+                entityName: 'Billing grace started',
+                oldValues: { plan: tenant.plan, status: tenant.subscriptionStatus },
+                newValues: {
+                  plan: tenant.plan,
+                  status: 'grace',
+                  graceStartedAt: graceStartedAt.toISOString(),
+                  graceEndsAt: graceEndsAt.toISOString(),
+                },
+              },
+            });
+          });
+          graceStarted += 1;
+        } else {
+          stillInGrace += 1;
+        }
+        continue;
       }
-    });
 
-    console.log(`📊 [Cron] Found ${expiredTenants.length} expired subscriptions to process`);
-
-    if (expiredTenants.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: 'No expired subscriptions to process',
-        processedCount: 0,
-        processingTime: `${Date.now() - startTime}ms`
-      });
-    }
-
-    const results = {
-      success: [] as string[],
-      errors: [] as { tenantId: string; error: string }[]
-    };
-
-    // Process each expired tenant
-    for (const tenant of expiredTenants) {
-      try {
-        console.log(`🔽 [Cron] Downgrading ${tenant.name} (${tenant.id}) from ${tenant.plan} to FREE`);
-        
-        // IMPORTANT: Downgrade to FREE, but NEVER delete data
-        await prisma.tenant.update({
+      await prisma.$transaction([
+        prisma.tenant.update({
           where: { id: tenant.id },
           data: {
-            plan: 'FREE',
             subscriptionStatus: 'expired',
             cancelAtPeriodEnd: false,
-            // Keep all other data intact - orders, clients, inventory, etc.
-          }
-        });
-
-        // Create audit log for downgrade
-        try {
-          await prisma.auditLog.create({
-            data: {
-              tenantId: tenant.id,
-              userId: 'system',
-              userName: 'Subscription Expiry Cron',
-              userRole: 'SYSTEM',
-              action: 'UPDATE',
-              entityType: 'subscription',
-              entityId: tenant.tilopaySubscriptionId || 'none',
-              entityName: `${tenant.plan} → FREE (Expired)`,
-              oldValues: {
-                plan: tenant.plan,
-                status: tenant.subscriptionStatus,
-                expiredAt: tenant.currentPeriodEnd?.toISOString()
-              },
-              newValues: {
-                plan: 'FREE',
-                status: 'expired',
-                processedAt: now.toISOString(),
-                note: 'Automatically downgraded to FREE after subscription expiry. All data preserved.'
-              }
-            }
-          });
-        } catch (auditError) {
-          console.error(`⚠️ [Cron] Failed to create audit log for ${tenant.id}:`, auditError);
-        }
-
-        results.success.push(tenant.id);
-        console.log(`✅ [Cron] Successfully downgraded ${tenant.name} (${tenant.id})`);
-
-      } catch (error: any) {
-        console.error(`❌ [Cron] Failed to process ${tenant.id}:`, error);
-        results.errors.push({
-          tenantId: tenant.id,
-          error: error.message || 'Unknown error'
-        });
-      }
+          },
+        }),
+        prisma.auditLog.create({
+          data: {
+            tenantId: tenant.id,
+            userId: null,
+            userName: 'Subscription Expiry Cron',
+            userRole: 'SYSTEM',
+            action: 'UPDATE',
+            entityType: 'subscription',
+            entityId: tenant.tilopaySubscriptionId || tenant.id,
+            entityName: 'Billing grace expired',
+            oldValues: { plan: tenant.plan, status: tenant.subscriptionStatus },
+            newValues: {
+              plan: tenant.plan,
+              status: 'expired',
+              graceEndsAt: graceEndsAt.toISOString(),
+              note: 'Access restricted; tenant data and paid plan label preserved.',
+            },
+          },
+        }),
+      ]);
+      restricted += 1;
+    } catch (error) {
+      errors += 1;
+      console.error('[SubscriptionExpiry] Tenant processing failed', {
+        code: error instanceof Error ? error.name : 'processing_error',
+      });
     }
-
-    const processingTime = Date.now() - startTime;
-    
-    console.log(`✅ [Cron] Completed: ${results.success.length} downgraded, ${results.errors.length} errors`);
-    console.log(`⏱️ [Cron] Processing time: ${processingTime}ms`);
-
-    return NextResponse.json({
-      success: true,
-      message: 'Subscription expiry processing completed',
-      processed: results.success.length,
-      errors: results.errors.length,
-      processingTime: `${processingTime}ms`,
-      timestamp: now.toISOString()
-    });
-
-  } catch (error: any) {
-    const processingTime = Date.now() - startTime;
-    console.error('❌ [Cron] Fatal error processing subscription expiry:', error);
-    
-    return NextResponse.json({
-      error: 'Failed to process subscription expiry',
-      processingTime: `${processingTime}ms`
-    }, { status: 500 });
   }
+
+  return NextResponse.json({
+    success: errors === 0,
+    counts: {
+      candidates: tenants.length,
+      graceStarted,
+      stillInGrace,
+      restricted,
+      errors,
+    },
+    processingTimeMs: Date.now() - startTime,
+  }, { status: errors === 0 ? 200 : 207 });
 }

@@ -6,10 +6,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
 import { generateConnectionToken } from '@/lib/bot/bot-session';
 import { generateDeepLink } from '@/lib/bot/telegram';
 import { prisma } from '@/lib/db';
+import { authenticateAPI } from '@/lib/auth-helpers';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -19,29 +19,13 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(request: NextRequest) {
   try {
-    // Authenticate user
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET });
-    
-    if (!token || !token.sub) {
-      return NextResponse.json(
-        { error: 'Unauthorized', message: 'Debes iniciar sesión para conectar Telegram' },
-        { status: 401 }
-      );
-    }
-    
-    // Get tenant ID from token
-    const tenantId = (token as any).tenantId;
-    
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: 'No tenant', message: 'No tienes un tenant asociado' },
-        { status: 400 }
-      );
-    }
+    const auth = await authenticateAPI(request);
+    if (!auth.ok) return auth.response;
+    const { tenantId, userId } = auth;
     
     // Get user details
     const user = await prisma.user.findUnique({
-      where: { id: token.sub },
+      where: { id: userId },
       select: {
         id: true,
         name: true,
@@ -99,28 +83,14 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     // Authenticate user
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET });
-    
-    if (!token || !token.sub) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-    
-    const tenantId = (token as any).tenantId;
-    
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: 'No tenant' },
-        { status: 400 }
-      );
-    }
+    const auth = await authenticateAPI(request);
+    if (!auth.ok) return auth.response;
+    const { tenantId, userId } = auth;
     
     // Get bot sessions for this user
     const sessions = await prisma.botSession.findMany({
       where: {
-        userId: token.sub,
+        userId,
         tenantId,
         isActive: true,
       },
@@ -173,32 +143,17 @@ export async function GET(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    // Authenticate user
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET });
-    
-    if (!token || !token.sub) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const auth = await authenticateAPI(request);
+    if (!auth.ok) return auth.response;
+    const { tenantId, userId } = auth;
     
     const { searchParams } = new URL(request.url);
     const platform = searchParams.get('platform') || 'telegram';
     
-    const tenantId = (token as any).tenantId;
-    
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: 'No tenant' },
-        { status: 400 }
-      );
-    }
-    
     // Find and deactivate the session
     const session = await prisma.botSession.findFirst({
       where: {
-        userId: token.sub,
+        userId,
         tenantId,
         platform,
         isActive: true,
@@ -217,7 +172,7 @@ export async function DELETE(request: NextRequest) {
       data: { isActive: false },
     });
     
-    console.log(`[Bot Connect] Disconnected ${platform} session for user ${token.sub}`);
+    console.log(`[Bot Connect] Disconnected ${platform} session for authenticated user`);
     
     return NextResponse.json({
       status: 'success',

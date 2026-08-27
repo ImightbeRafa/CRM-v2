@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
-import { getMembershipForToken } from '@/lib/selected-tenant';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -9,18 +8,9 @@ export async function POST(
 ) {
   try {
     const { id: invoiceId } = await params;
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const membership = await getMembershipForToken(token);
-    if (!membership) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
-
-    const tenantId = membership.tenantId;
+    const auth = await authenticateAPIWithPermission(request, 'update_sales');
+    if (!auth.ok) return auth.response;
+    const { tenantId } = auth;
 
     const { email } = await request.json();
 

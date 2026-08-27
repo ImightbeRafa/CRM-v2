@@ -5,10 +5,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/db';
 import { generateUniqueBotAccessCode } from '@/lib/bot/access-code';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,23 +16,9 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const tenantId = (session.user as any).tenantId;
-    
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: 'No tenant found' },
-        { status: 400 }
-      );
-    }
+    const auth = await authenticateAPIWithPermission(request, 'view_config');
+    if (!auth.ok) return auth.response;
+    const { tenantId } = auth;
 
     // Get tenant with bot code
     const tenant = await prisma.tenant.findUnique({
@@ -89,32 +74,9 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const tenantId = (session.user as any).tenantId;
-    const userRole = (session.user as any).role;
-    
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: 'No tenant found' },
-        { status: 400 }
-      );
-    }
-
-    // Only MASTER/OWNER can generate codes
-    if (userRole !== 'MASTER' && userRole !== 'OWNER') {
-      return NextResponse.json(
-        { error: 'Only administrators can generate bot access codes' },
-        { status: 403 }
-      );
-    }
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
+    if (!auth.ok) return auth.response;
+    const { tenantId, role: userRole, userId } = auth;
 
     // Generate new unique code
     const code = await generateUniqueBotAccessCode(tenantId);
@@ -126,8 +88,8 @@ export async function POST(request: NextRequest) {
         entityType: 'BotAccessCode',
         entityId: tenantId,
         entityName: 'Bot Access Code',
-        userId: session.user.id,
-        userName: session.user.email || 'Unknown',
+        userId,
+        userName: 'Authenticated user',
         userRole: userRole,
         tenantId,
         newValues: {

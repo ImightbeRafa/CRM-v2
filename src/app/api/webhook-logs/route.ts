@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth-options';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -12,33 +11,19 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await authenticateAPIWithPermission(request, 'view_config');
+    if (!auth.ok) return auth.response;
 
     const { searchParams } = new URL(request.url);
-    const tenantId = searchParams.get('tenantId');
+    const requestedTenantId = searchParams.get('tenantId');
+    const tenantId = auth.tenantId;
     const level = searchParams.get('level');
     const source = searchParams.get('source');
     const search = searchParams.get('search');
     const days = parseInt(searchParams.get('days') || '7');
 
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant ID is required' }, { status: 400 });
-    }
-
-    // Verify user has access to this tenant
-    const membership = await prisma.membership.findFirst({
-      where: {
-        userId: session.user.id,
-        tenantId: tenantId,
-        isActive: true
-      }
-    });
-
-    if (!membership) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+    if (requestedTenantId && requestedTenantId !== tenantId) {
+      return NextResponse.json({ error: 'Selected tenant mismatch' }, { status: 403 });
     }
 
     // Build where clause
@@ -103,33 +88,15 @@ export async function GET(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
+    if (!auth.ok) return auth.response;
 
     const body = await request.json();
-    const { tenantId } = body;
-
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant ID is required' }, { status: 400 });
+    const requestedTenantId = body.tenantId ? String(body.tenantId) : auth.tenantId;
+    if (requestedTenantId !== auth.tenantId) {
+      return NextResponse.json({ error: 'Selected tenant mismatch' }, { status: 403 });
     }
-
-    // Verify user has admin access to this tenant
-    const membership = await prisma.membership.findFirst({
-      where: {
-        userId: session.user.id,
-        tenantId: tenantId,
-        isActive: true,
-        role: {
-          in: ['OWNER', 'ADMIN']
-        }
-      }
-    });
-
-    if (!membership) {
-      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
-    }
+    const tenantId = auth.tenantId;
 
     // Delete logs older than 30 days
     const cutoffDate = new Date();

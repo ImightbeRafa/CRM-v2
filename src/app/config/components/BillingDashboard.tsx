@@ -33,7 +33,7 @@ interface Plan {
   features: string[];
   limits: {
     users: number;
-    orders: number;
+    orders: number | null;
     storage: string;
   };
   popular?: boolean;
@@ -57,8 +57,8 @@ interface BillingTransaction {
 
 interface UsageStats {
   users: { current: number; limit: number };
-  orders: { current: number; limit: number };
-  storage: { current: string; limit: string };
+  orders: { current: number; limit: number | null; unlimited?: boolean };
+  storage: { current: string | null; limit: string; measured?: boolean };
 }
 
 export function BillingDashboard({ tenantId }: BillingDashboardProps) {
@@ -72,8 +72,8 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
   const [transactions, setTransactions] = useState<BillingTransaction[]>([]);
   const [usageStats, setUsageStats] = useState<UsageStats>({
     users: { current: 1, limit: 1 },
-    orders: { current: 0, limit: 100 },
-    storage: { current: '0 MB', limit: '500 MB' }
+    orders: { current: 0, limit: null, unlimited: true },
+    storage: { current: null, limit: '500 MB', measured: false }
   });
   
   const [loading, setLoading] = useState(false);
@@ -81,7 +81,15 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
   const [showCheckout, setShowCheckout] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<{id: string, amount: number} | null>(null);
   const [paymentMessage, setPaymentMessage] = useState<{type: 'success' | 'error' | 'cancelled', message: string} | null>(null);
-  const [trialStatus, setTrialStatus] = useState<{trialExpired: boolean, daysRemaining: number, isInTrial: boolean, trialEndsAt?: string | null} | null>(null);
+  const [trialStatus, setTrialStatus] = useState<{
+    state: 'ACTIVE' | 'GRACE' | 'RESTRICTED';
+    enforced: boolean;
+    trialExpired: boolean;
+    daysRemaining: number;
+    isInTrial: boolean;
+    trialEndsAt?: string | null;
+    graceEndsAt?: string | null;
+  } | null>(null);
 
   const plans: Plan[] = [
     {
@@ -93,11 +101,12 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         'Prueba gratuita de 7 días',
         'Acceso completo a todas las funciones',
         '1 usuario',
+        'Pedidos ilimitados',
         'Soporte por email'
       ],
       limits: {
         users: 1,
-        orders: 100,
+        orders: null,
         storage: '500 MB'
       }
     },
@@ -121,7 +130,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       ],
       limits: {
         users: 999999,
-        orders: 999999,
+        orders: null,
         storage: 'Ilimitado'
       },
       popular: true
@@ -203,15 +212,23 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         }
       }
 
-      // Load trial status
-      const trialRes = await fetch('/api/billing/trial-status');
+      // Use the same fresh DB-backed evaluator that protects writes.
+      const trialRes = await fetch('/api/billing/access', { cache: 'no-store' });
       if (trialRes.ok) {
-        const trialData = await trialRes.json();
+        const payload = await trialRes.json();
+        const trialData = payload.data;
+        const trialEnd = trialData?.trialEndsAt ? new Date(trialData.trialEndsAt) : null;
+        const daysRemaining = trialEnd && trialEnd > new Date()
+          ? Math.ceil((trialEnd.getTime() - Date.now()) / 86_400_000)
+          : 0;
         setTrialStatus({
-          trialExpired: trialData.trialExpired || false,
-          daysRemaining: trialData.daysRemaining || 0,
-          isInTrial: trialData.isInTrial || false,
-          trialEndsAt: trialData.trialEndsAt || null
+          state: trialData.state,
+          enforced: trialData.enforced,
+          trialExpired: trialData.state === 'RESTRICTED',
+          daysRemaining,
+          isInTrial: trialData.plan === 'FREE' && trialData.state === 'ACTIVE' && Boolean(trialEnd),
+          trialEndsAt: trialData.trialEndsAt || null,
+          graceEndsAt: trialData.graceEndsAt || null,
         });
       }
     } catch (error) {
@@ -371,7 +388,9 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
   const currentPlanDetails = plans.find(p => p.id === currentPlan.name.toLowerCase());
   const usagePercentage = {
     users: (usageStats.users.current / usageStats.users.limit) * 100,
-    orders: (usageStats.orders.current / usageStats.orders.limit) * 100
+    orders: usageStats.orders.limit
+      ? (usageStats.orders.current / usageStats.orders.limit) * 100
+      : 0
   };
 
   return (
@@ -384,11 +403,12 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
               <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">
-                  Tu Período de Prueba ha Expirado
+                  {trialStatus.enforced ? 'Cuenta restringida por facturación' : 'Aviso de facturación'}
                 </h3>
                 <p className="text-red-800 dark:text-red-200 mb-4">
-                  Tu período de prueba gratuita de 7 días ha finalizado. Para continuar usando todas las funcionalidades de BetsyCRM, 
-                  necesitas actualizar a un plan de pago.
+                  {trialStatus.enforced
+                    ? 'Los cambios están pausados hasta renovar la suscripción.'
+                    : 'La cuenta todavía puede trabajar. Renueva antes de que se apruebe la aplicación del bloqueo.'}
                 </p>
                 <div className="flex gap-3 flex-wrap">
                   <Button
@@ -400,7 +420,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                   </Button>
                 </div>
                 <p className="text-sm text-red-700 dark:text-red-300 mt-4">
-                  <strong>Nota:</strong> Tu acceso está restringido hasta que actualices tu plan. Solo puedes acceder a esta página de facturación.
+                  <strong>Nota:</strong> Las páginas siguen disponibles. La restricción se aplica a escrituras y el propietario siempre puede pagar.
                 </p>
               </div>
             </div>
@@ -513,6 +533,12 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                           Período de prueba expirado
                         </p>
                       )}
+                      {trialStatus.state === 'GRACE' && trialStatus.graceEndsAt && (
+                        <p className="text-sm text-orange-600 dark:text-orange-400 font-medium">
+                          <Clock className="inline w-4 h-4 mr-1" />
+                          Período de gracia hasta {formatDate(trialStatus.graceEndsAt)}
+                        </p>
+                      )}
                       {trialStatus.daysRemaining > 0 && trialStatus.daysRemaining <= 7 && (
                         <p className="text-sm text-orange-600 dark:text-orange-400">
                           <Clock className="inline w-4 h-4 mr-1" />
@@ -590,10 +616,10 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                     Órdenes este mes
                   </span>
                   <span className="font-medium">
-                    {usageStats.orders.current} / {usageStats.orders.limit}
+                    {usageStats.orders.current} / {usageStats.orders.unlimited || usageStats.orders.limit === null ? 'Ilimitado' : usageStats.orders.limit}
                   </span>
                 </div>
-                <div className="w-full bg-muted rounded-full h-2">
+                {!usageStats.orders.unlimited && usageStats.orders.limit !== null && <div className="w-full bg-muted rounded-full h-2">
                   <div 
                     className={`h-2 rounded-full ${
                       usagePercentage.orders >= 90 ? 'bg-red-500' :
@@ -602,7 +628,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                     }`}
                     style={{ width: `${Math.min(usagePercentage.orders, 100)}%` }}
                   />
-                </div>
+                </div>}
               </div>
 
               {/* Storage */}
@@ -613,7 +639,9 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                     Almacenamiento
                   </span>
                   <span className="font-medium">
-                    {usageStats.storage.current} / {usageStats.storage.limit}
+                    {usageStats.storage.measured === false || usageStats.storage.current === null
+                      ? `No medido / ${usageStats.storage.limit}`
+                      : `${usageStats.storage.current} / ${usageStats.storage.limit}`}
                   </span>
                 </div>
               </div>

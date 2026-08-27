@@ -11,7 +11,6 @@ import { z } from 'zod';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { prisma } from '@/lib/db';
-import { checkOrderLimit } from '@/lib/plan-enforcement';
 import {
   addDaysToStatsDateKey,
   buildStatsDateRange,
@@ -28,6 +27,7 @@ import {
   CustomFieldsData 
 } from '@/lib/customFields';
 import { normalizeLocationForOrderCapture } from '@/lib/locationValidator';
+import { guardTenantWrite } from '@/lib/billing-access';
 
 // Tool execution context
 export interface ToolContext {
@@ -892,13 +892,6 @@ export async function createOrder(
     { tenantId: ctx.tenantId, userId: ctx.userId, userName: ctx.userName, userRole: ctx.userRole },
     async () => {
       try {
-        const planCheck = await checkOrderLimit(ctx.tenantId);
-        if (!planCheck.allowed) {
-          return {
-            success: false,
-            error: `❌ ${planCheck.message}`,
-          };
-        }
         const tenantPrisma = getTenantPrisma(ctx.tenantId);
         
         const timestamp = Date.now();
@@ -2369,6 +2362,30 @@ export async function executeTool(
       if (key.startsWith('_') && !(key in validatedParams)) {
         validatedParams[key] = value;
       }
+    }
+  }
+
+  if (WRITE_TOOLS.includes(toolName)) {
+    try {
+      // Evaluate immediately before execution so queued/retried messages never
+      // rely on billing state captured when the webhook was received.
+      const guard = await guardTenantWrite(ctx.tenantId, {
+        channel: 'bot',
+        route: `tool:${toolName}`,
+      });
+      if (!guard.allowed) {
+        return {
+          success: false,
+          error: '❌ La cuenta está restringida por facturación. El propietario debe completar el pago en BetsyCRM.',
+          data: { code: 'billing_restricted', state: guard.access.state },
+        };
+      }
+    } catch {
+      return {
+        success: false,
+        error: '❌ No se pudo verificar el acceso de facturación. Intenta de nuevo más tarde.',
+        data: { code: 'billing_access_unavailable' },
+      };
     }
   }
   

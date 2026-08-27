@@ -157,3 +157,24 @@ Append-only. Newest entries at the top.
   `npm run test:bot-grok` pass; lint pass with existing warnings; TypeScript pass;
   production build pass; compiled server smoke returns 200 for `/` and sign-in,
   401 for unauthenticated `/api/auth/me`, and redirects protected Ventas to sign-in.
+
+# 2026-08-27 — Betsy v2 Slice 2: DB-backed billing access
+
+- Added a fresh-database ACTIVE/GRACE/RESTRICTED evaluator with staged
+  observe/warn/enforce controls, exact seven-day windows, explicit approval, and a
+  database global kill switch. The additive feature-flag SQL is source-controlled but
+  was not executed; missing schema fails safe to observe-only.
+- Applied the write guard through shared API auth and audited custom adapters,
+  including imports, CE confirmation, status changes, invoice/guía operations, bot
+  tools, social/config changes, and tenant-scoped user mutations. Removed stale JWT
+  billing redirects and added a static route coverage suite.
+- Kept OWNER checkout/create-plan-repeat reachable while restricted. Direct paid plan
+  writes remain retired; provider retries cannot extend a stored grace window; the
+  expiry cron starts/preserves grace and never changes the plan to FREE.
+- Made FREE and paid orders unlimited across Ventas, website, import, bot, usage API,
+  and billing UI. Website intake remains open with unique order idempotency, layered
+  rate limits, and restricted-backlog marking. Routine observe/integration logs do not
+  include order or customer content.
+- Prove: security/coverage 68/68; `tsc --noEmit`; lint pass with existing warnings;
+  production build pass; compiled local server smoke pass. No remote push, SQL,
+  shared-database mutation, provider message, or charge.

@@ -32,11 +32,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Define plan limits
-    const planLimits: Record<string, { users: number; orders: number; storage: string }> = {
-      FREE: { users: 1, orders: 100, storage: '500 MB' },
-      BASIC: { users: 5, orders: 1000, storage: '5 GB' },
-      PRO: { users: 25, orders: 999999, storage: 'Ilimitado' },
-      ENTERPRISE: { users: 999999, orders: 999999, storage: 'Ilimitado' }
+    const planLimits: Record<string, { users: number; storage: string }> = {
+      FREE: { users: 1, storage: '500 MB' },
+      BASIC: { users: 5, storage: '5 GB' },
+      PRO: { users: 25, storage: 'Ilimitado' },
+      ENTERPRISE: { users: 999999, storage: 'Ilimitado' }
     };
 
     const limits = planLimits[tenant.plan] || planLimits.FREE;
@@ -70,7 +70,8 @@ export async function GET(request: NextRequest) {
         },
         orders: {
           current: ordersCount,
-          limit: limits.orders
+          limit: null,
+          unlimited: true,
         },
         storage: {
           current: null,

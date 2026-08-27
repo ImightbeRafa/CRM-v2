@@ -1,108 +1,97 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { MemberRole } from '@prisma/client'
-import bcrypt from 'bcryptjs'
-import { createSuccessResponse, createErrorResponse, handleApiError, validatePassword } from '@/lib/apiUtils'
-import { requireAdmin } from '@/lib/apiAuth'
+import { NextRequest } from 'next/server';
+import { MemberRole } from '@prisma/client';
+import { prisma } from '@/lib/db';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
+import { createErrorResponse, createSuccessResponse, handleApiError } from '@/lib/apiUtils';
+import { resolveDefaultTenantAfterRemoval } from '@/lib/membership-lifecycle';
 
-// PUT /api/users/[id] - Update user (master only)
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdmin(request)
-  if (!auth.authorized) {
-    return createErrorResponse('Unauthorized', 401)
-  }
+type RouteContext = { params: Promise<{ id: string }> };
+
+// Legacy compatibility endpoint. Changes are intentionally membership-scoped:
+// a tenant administrator must never modify or delete a global user shared by
+// another tenant.
+export async function PUT(request: NextRequest, { params }: RouteContext) {
+  const auth = await authenticateAPIWithPermission(request, 'manage_users');
+  if (!auth.ok) return auth.response;
 
   try {
-    const { username, password, role, active } = await request.json()
-    const { id: userId } = await params
-    
-    const updateData: any = {}
-    
-    if (username !== undefined) updateData.username = username
-    if (active !== undefined) updateData.active = active
-    
-    if (password && password.length > 0) {
-      const passwordError = validatePassword(password)
-      if (passwordError) {
-        return createErrorResponse(passwordError, 400)
-      }
-      updateData.password = await bcrypt.hash(password, 12)
-    }
-    
-    // Check if username already exists (if changing username)
-    if (username) {
-      const existingUser = await prisma.user.findFirst({
-        where: { 
-          username,
-          id: { not: userId }
-        }
-      })
-      
-      if (existingUser) {
-        return createErrorResponse('El usuario ya existe', 409)
-      }
-    }
-    
-    if (role !== undefined) {
-      if (!Object.values(MemberRole).includes(role)) {
-        return createErrorResponse('Rol invalido', 400)
-      }
+    const { id: userId } = await params;
+    const { role, active } = await request.json();
 
-      await prisma.membership.updateMany({
-        where: { userId },
-        data: { role }
-      })
+    if (role !== undefined && !Object.values(MemberRole).includes(role)) {
+      return createErrorResponse('Rol inválido', 400);
     }
 
-    const user = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-      select: {
-        id: true,
-        username: true,
-        active: true,
-        updatedAt: true,
-        memberships: {
-          select: {
-            role: true,
-            tenantId: true,
-            isActive: true
-          }
-        }
-      }
-    })
-    
-    return createSuccessResponse(user, 'Usuario actualizado exitosamente')
+    const membership = await prisma.membership.findFirst({
+      where: { userId, tenantId: auth.tenantId },
+      include: { user: { select: { id: true, username: true, email: true } } },
+    });
+    if (!membership) return createErrorResponse('Usuario no encontrado en este tenant', 404);
+
+    const updated = await prisma.membership.update({
+      where: { id: membership.id },
+      data: {
+        ...(role !== undefined ? { role } : {}),
+        ...(active !== undefined ? { isActive: Boolean(active) } : {}),
+      },
+    });
+
+    if (active === false) await repairDefaultTenant(userId, auth.tenantId);
+
+    return createSuccessResponse({
+      id: membership.user.id,
+      username: membership.user.username,
+      email: membership.user.email,
+      role: updated.role,
+      active: updated.isActive,
+    }, 'Membresía actualizada exitosamente');
   } catch (error) {
-    return handleApiError(error)
+    return handleApiError(error);
   }
 }
 
-// DELETE /api/users/[id] - Delete user (master only)
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdmin(request)
-  if (!auth.authorized) {
-    return createErrorResponse('Unauthorized', 401)
-  }
+export async function DELETE(request: NextRequest, { params }: RouteContext) {
+  const auth = await authenticateAPIWithPermission(request, 'manage_users');
+  if (!auth.ok) return auth.response;
 
   try {
-    const { id: userId } = await params
-    
-    // Don't allow deleting the master user
-    const user = await prisma.user.findUnique({
-      where: { id: userId }
-    })
-    
-    if (user?.isSuperAdmin) {
-      return createErrorResponse('No se puede eliminar el usuario maestro', 400)
-    }
-    
-    await prisma.user.delete({
-      where: { id: userId }
-    })
-    
-    return createSuccessResponse(null, 'Usuario eliminado exitosamente')
+    const { id: userId } = await params;
+    const membership = await prisma.membership.findFirst({
+      where: { userId, tenantId: auth.tenantId },
+      include: { user: { select: { isSuperAdmin: true } } },
+    });
+    if (!membership) return createErrorResponse('Usuario no encontrado en este tenant', 404);
+    if (membership.user.isSuperAdmin) return createErrorResponse('No se puede remover al usuario maestro', 400);
+
+    await prisma.membership.update({
+      where: { id: membership.id },
+      data: { isActive: false },
+    });
+    await repairDefaultTenant(userId, auth.tenantId);
+
+    return createSuccessResponse(null, 'Usuario removido de este tenant');
   } catch (error) {
-    return handleApiError(error)
+    return handleApiError(error);
+  }
+}
+
+async function repairDefaultTenant(userId: string, removedTenantId: string) {
+  const [user, remaining] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { defaultTenantId: true } }),
+    prisma.membership.findMany({
+      where: { userId, isActive: true },
+      select: { tenantId: true },
+      orderBy: { joinedAt: 'desc' },
+    }),
+  ]);
+  if (!user) return;
+
+  const nextDefault = resolveDefaultTenantAfterRemoval(
+    user.defaultTenantId,
+    removedTenantId,
+    remaining.map(row => row.tenantId),
+  );
+  if (nextDefault !== user.defaultTenantId) {
+    await prisma.user.update({ where: { id: userId }, data: { defaultTenantId: nextDefault } });
   }
 }

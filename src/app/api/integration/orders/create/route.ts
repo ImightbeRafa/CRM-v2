@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { validateApiKey, updateApiKeyLastUsed } from '@/lib/integration-auth';
-import { createExternalOrder, checkDuplicateOrder } from '@/lib/integration-orders';
+import { Prisma } from '@prisma/client';
+import { validateApiKey, updateApiKeyLastUsed, hashApiKey } from '@/lib/integration-auth';
+import { countRecentExternalOrders, createExternalOrder, findExternalOrderByOrderId } from '@/lib/integration-orders';
 import { logIntegrationActivity } from '@/lib/integration-logs';
+import { createIdentifierRateLimit, getClientIP } from '@/lib/rate-limit';
+import { evaluateTenantAccess, markRestrictedBacklog, type TenantAccessEvaluation } from '@/lib/billing-access';
 
 // Configure route for Vercel deployment
 export const maxDuration = 30; // Maximum execution time in seconds
 export const dynamic = 'force-dynamic'; // Disable static optimization
+
+const websiteIntakeRateLimit = createIdentifierRateLimit({
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 120,
+  identifier: 'website-order-intake',
+});
 
 // Validation schema for external order data
 const ExternalOrderSchema = z.object({
@@ -47,6 +56,7 @@ const ExternalOrderSchema = z.object({
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   let tenantId: string | null = null;
+  let access: TenantAccessEvaluation | null = null;
   
   try {
     // Extract and validate API key
@@ -70,12 +80,24 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
-    console.log(`[Integration API] Tenant validated: ${tenantId}`);
+    const rate = await websiteIntakeRateLimit(`${tenantId}:${hashApiKey(apiKey)}:${getClientIP(req)}`);
+    if (!rate.allowed) {
+      return NextResponse.json({ error: 'Too many order requests' }, { status: 429, headers: rate.headers });
+    }
+
+    try {
+      // Website intake is the sole regular-tenant write exception. We still
+      // evaluate fresh DB state so restricted backlog can be marked accurately.
+      access = await evaluateTenantAccess(tenantId);
+    } catch (error) {
+      console.error('[Integration API] Billing evaluation unavailable', {
+        code: error instanceof Error ? error.name : 'evaluation_error',
+      });
+    }
 
     // Parse and validate request body
     console.log('[Integration API] Parsing request body...');
     const body = await req.json();
-    console.log(`[Integration API] Order ID: ${body.orderId}`);
     const validationResult = ExternalOrderSchema.safeParse(body);
     
     if (!validationResult.success) {
@@ -97,33 +119,57 @@ export async function POST(req: NextRequest) {
     const orderData = validationResult.data;
 
     // Check for duplicate order ID
-    console.log('[Integration API] Checking for duplicates...');
-    const existingOrder = await checkDuplicateOrder(tenantId, orderData.orderId);
+    const existingOrder = await findExternalOrderByOrderId(tenantId, orderData.orderId);
     if (existingOrder) {
-      console.log(`[Integration API] Duplicate order found: ${orderData.orderId}`);
-      await logIntegrationActivity(tenantId, 'DUPLICATE_ORDER', { orderId: orderData.orderId });
-      return NextResponse.json(
-        { 
-          error: 'Order already exists',
-          orderId: orderData.orderId
-        },
-        { status: 409 }
-      );
+      return NextResponse.json({
+        success: true,
+        idempotentReplay: true,
+        crmOrderId: existingOrder.id,
+        orderId: existingOrder.orderId,
+      });
     }
-    console.log('[Integration API] No duplicate found');
+    const recentExternalOrders = await countRecentExternalOrders(
+      tenantId,
+      new Date(Date.now() - 15 * 60 * 1000),
+    );
+    if (recentExternalOrders >= 120) {
+      return NextResponse.json({ error: 'Too many order requests' }, { status: 429, headers: rate.headers });
+    }
 
     // Create the order in the CRM
     console.log('[Integration API] Creating order in CRM...');
-    const createdOrder = await createExternalOrder(tenantId, orderData);
-    console.log(`[Integration API] Order created with ID: ${createdOrder.id}`);
-
+    let createdOrder;
+    try {
+      createdOrder = await createExternalOrder(tenantId, orderData);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const racedOrder = await findExternalOrderByOrderId(tenantId, orderData.orderId);
+        if (racedOrder) {
+          return NextResponse.json({
+            success: true,
+            idempotentReplay: true,
+            crmOrderId: racedOrder.id,
+            orderId: racedOrder.orderId,
+          });
+        }
+      }
+      throw error;
+    }
     // Log successful integration
     await logIntegrationActivity(tenantId, 'ORDER_CREATED', {
-      orderId: orderData.orderId,
       source: orderData.source,
-      crmOrderId: createdOrder.id,
       processingTime: Date.now() - startTime
     });
+
+    if (access?.wouldRestrict || access?.state === 'RESTRICTED') {
+      try {
+        await markRestrictedBacklog(tenantId, access);
+      } catch (error) {
+        console.error('[Integration API] Failed to mark restricted backlog', {
+          code: error instanceof Error ? error.name : 'backlog_error',
+        });
+      }
+    }
 
     // Update API key last used timestamp (non-blocking)
     updateApiKeyLastUsed(apiKey).catch(err => 
@@ -131,8 +177,6 @@ export async function POST(req: NextRequest) {
     );
 
     const processingTime = Date.now() - startTime;
-    console.log(`[Integration API] Success! Total time: ${processingTime}ms`);
-    
     return NextResponse.json({
       success: true,
       message: 'Order created successfully',

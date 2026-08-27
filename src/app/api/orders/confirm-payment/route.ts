@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getTenantPrisma } from '@/lib/prisma-tenant'
 import { withTenantContext } from '@/lib/tenantContext'
-import { getToken } from 'next-auth/jwt'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { logUpdate } from '@/lib/auditLogger'
 
 export const runtime = 'nodejs'
@@ -17,19 +17,10 @@ export async function POST(request: Request) {
       )
     }
 
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const tenantId = (token as any).tenantId as string
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
-    }
-
-    const userId = (token as any)?.sub as string | undefined
-    const userName = (token as any)?.name || (token as any)?.email || 'System'
-    const userRole = (token as any)?.membershipRole
+    const auth = await authenticateAPIWithPermission(request as any, 'update_production')
+    if (!auth.ok) return auth.response
+    const { tenantId, userId, role: userRole } = auth
+    const userName = 'Authenticated user'
 
     return await withTenantContext({ tenantId, userId, role: userRole, userRole, userName }, async () => {
       const prisma = getTenantPrisma(tenantId)

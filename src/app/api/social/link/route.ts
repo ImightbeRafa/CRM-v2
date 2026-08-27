@@ -1,20 +1,18 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getToken } from 'next-auth/jwt'
 import { subscribeWhatsAppApp } from '@/lib/meta-api'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const db = prisma as any
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const tenantId = (token as any).tenantId as string
-    if (!tenantId) return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
 
-    const userId = (token as any)?.sub as string
+    const db = prisma as any
+    const { tenantId, userId } = auth
     const body = await request.json()
     const platform = String(body.platform || '').toLowerCase()
     const accountId = String(body.accountId || '').trim()

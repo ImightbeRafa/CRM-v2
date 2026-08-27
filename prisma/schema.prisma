@@ -76,9 +76,29 @@ model Tenant {
   botSessions    BotSession[]
   feedbackTickets FeedbackTicket[]
   changelogEntries ChangelogEntry[]
+  featureFlags    TenantFeatureFlag[]
   
   @@index([slug])
   @@index([isActive])
+}
+
+// Additive, database-controlled feature flags. `scope` is either `global` or
+// a tenant id, allowing a global kill switch without overloading tenant data.
+model TenantFeatureFlag {
+  id        String   @id @default(cuid())
+  scope     String
+  tenantId  String?
+  key       String
+  enabled   Boolean  @default(false)
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([scope, key])
+  @@index([tenantId])
+  @@index([key, enabled])
 }
 
 model Membership {
@@ -109,8 +129,8 @@ enum MemberRole {
 }
 
 enum SubscriptionTier {
-  FREE       // 1 user, 100 orders/month, basic features
-  BASIC      // 5 users, 1000 orders/month, reports
+  FREE       // 1 user, unlimited orders, basic features
+  BASIC      // 5 users, unlimited orders, reports
   PRO        // 25 users, unlimited orders, API access
   ENTERPRISE // Unlimited everything, custom domains
 }

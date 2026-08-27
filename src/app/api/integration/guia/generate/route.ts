@@ -5,6 +5,7 @@ import { prisma as globalPrisma } from '@/lib/db';
 import { withTenantContext } from '@/lib/tenantContext';
 import { CorreosWebService, buildGuiaDescription, buildFullAddress, getCorreosWSCredentials } from '@/lib/correos';
 import { logIntegrationActivity } from '@/lib/integration-logs';
+import { guardTenantWrite } from '@/lib/billing-access';
 
 // Configure route for Vercel deployment
 export const maxDuration = 300; // 5 minutes for guia generation
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
     tenantId = await validateApiKey(apiKey);
     if (!tenantId) {
       console.error('[Guia API] Invalid API key');
-      await logIntegrationActivity(null, 'INVALID_API_KEY', { apiKey: apiKey.substring(0, 8) + '...' });
+      await logIntegrationActivity(null, 'INVALID_API_KEY', { provided: true });
       return NextResponse.json(
         { error: 'Invalid API key' },
         { status: 401 }
@@ -70,6 +71,12 @@ export async function POST(req: NextRequest) {
     }
     const activeTenantId = tenantId;
     console.log(`[Guia API] Tenant validated: ${activeTenantId}`);
+
+    const guard = await guardTenantWrite(activeTenantId, {
+      channel: 'integration-api',
+      route: '/api/integration/guia/generate',
+    });
+    if (!guard.allowed) return guard.response;
 
     // Parse request body
     const body = await req.json();

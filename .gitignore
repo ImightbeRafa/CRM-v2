@@ -5,6 +5,7 @@ node_modules/
 .yarn/install-state.gz
 supabase/migrations/*
 !supabase/migrations/017_workforce_system.sql
+!supabase/migrations/018_betsy_v2_feature_flags.sql
 # Testing
 coverage/
 scripts

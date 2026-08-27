@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
 import { getMembershipForToken } from '@/lib/selected-tenant';
+import { cancelTilopayRepeatPlan, TilopayCancellationError } from '@/lib/tilopay-repeat';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -46,6 +47,16 @@ export async function POST(request: NextRequest) {
 
     // Handle free plan (downgrade)
     if (planId.toLowerCase() === 'free') {
+      if (membership.tenant.plan !== 'FREE') {
+        if (!membership.tenant.tilopaySubscriptionId) {
+          return NextResponse.json({
+            error: 'This paid plan requires an audited offline downgrade',
+            code: 'provider_subscription_missing',
+          }, { status: 409 });
+        }
+        await cancelTilopayRepeatPlan(membership.tenant.tilopaySubscriptionId);
+      }
+
       await prisma.tenant.update({
         where: { id: tenantId },
         data: {
@@ -58,15 +69,12 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         status: 'success',
-        data: { plan: 'FREE' }
+        data: { plan: 'FREE', providerConfirmed: membership.tenant.plan !== 'FREE' }
       });
     }
 
     // Use Tilopay exclusively
     if (selectedPlan.price > 0) {
-      console.log('🔄 Creating Tilopay checkout for plan:', planId);
-      console.log('📍 Tilopay endpoint:', `${process.env.NEXTAUTH_URL}/api/tilopay/checkout`);
-      
       try {
         const resp = await fetch(`${process.env.NEXTAUTH_URL}/api/tilopay/checkout`, {
           method: 'POST',
@@ -78,19 +86,13 @@ export async function POST(request: NextRequest) {
         });
         
         const data = await resp.json();
-        console.log('📦 Tilopay response status:', resp.status);
-        console.log('📦 Tilopay response data:', data);
-        
         if (!resp.ok) {
-          console.error('❌ Tilopay checkout failed:', data);
           return NextResponse.json({ 
-            error: data.error || 'Tilopay checkout failed', 
-            details: data 
-          }, { status: 500 });
+            error: data.error || 'Tilopay checkout failed',
+          }, { status: resp.status });
         }
         
         if (data.data?.checkoutUrl) {
-          console.log('✅ Checkout URL created:', data.data.checkoutUrl);
           return NextResponse.json({ status: 'success', data: { checkoutUrl: data.data.checkoutUrl } });
         }
         
@@ -109,7 +111,12 @@ export async function POST(request: NextRequest) {
       code: 'enterprise_contract_required',
     }, { status: 409 });
   } catch (error) {
-    console.error('Error changing plan:', error);
+    if (error instanceof TilopayCancellationError) {
+      return NextResponse.json({ error: error.message, code: error.code }, {
+        status: error.code === 'not_configured' ? 503 : 502,
+      });
+    }
+    console.error('Error changing plan:', error instanceof Error ? error.name : 'unknown_error');
     return NextResponse.json(
       { error: 'Failed to change plan' },
       { status: 500 }

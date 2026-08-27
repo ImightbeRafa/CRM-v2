@@ -139,6 +139,19 @@ export function createRateLimit(config: RateLimitConfig) {
   };
 }
 
+/** Build a limiter for an application-provided stable identifier (for example,
+ * a tenant plus API-key hash), with the same Redis-first/local fallback policy. */
+export function createIdentifierRateLimit(config: RateLimitConfig) {
+  const prefix = config.identifier || 'custom-identifier';
+  const redisLimiter = createRedisLimiter({ prefix, ...config });
+
+  return async (identifier: string) => rateLimitAsync(
+    identifier,
+    redisLimiter,
+    { ...config, prefix },
+  );
+}
+
 export const authRateLimit = createRateLimit({
   windowMs: 15 * 60 * 1000,
   maxRequests: 5,

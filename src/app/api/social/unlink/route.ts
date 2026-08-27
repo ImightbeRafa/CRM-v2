@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getToken } from 'next-auth/jwt'
 import { prisma } from '@/lib/db'
-import { withTenantContext } from '@/lib/tenantContext'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -12,12 +11,9 @@ export const dynamic = 'force-dynamic'
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
-    if (!token?.tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const tenantId = token.tenantId as string
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    const { tenantId } = auth
     const { searchParams } = new URL(request.url)
     const accountId = searchParams.get('id')
 
@@ -33,9 +29,6 @@ export async function DELETE(request: NextRequest) {
       WHERE id = ${accountId}
     `
     
-    console.log('[social/unlink] Account check:', accountCheck)
-    console.log('[social/unlink] Requested tenantId:', tenantId)
-
     if (!accountCheck || (accountCheck as any[]).length === 0) {
       return NextResponse.json({ error: 'Account not found' }, { status: 404 })
     }
@@ -53,8 +46,6 @@ export async function DELETE(request: NextRequest) {
       DELETE FROM "SocialAccount" 
       WHERE id = ${accountId} AND "tenantId" = ${tenantId}
     `
-
-    console.log(`[social/unlink] Deleted account ${accountId} for tenant ${tenantId}`)
 
     return NextResponse.json({ 
       success: true,

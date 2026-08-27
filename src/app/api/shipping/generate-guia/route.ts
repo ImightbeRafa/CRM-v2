@@ -4,23 +4,14 @@ import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
 import { withTenantContext } from '@/lib/tenantContext';
 import { CorreosWebService, buildGuiaDescription, buildFullAddress, getCorreosWSCredentials } from '@/lib/correos';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 
 export async function POST(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const tenantId = (token as any).tenantId as string;
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-    }
-
-    const userId = (token as any)?.sub as string | undefined;
-    const userName = (token as any)?.name || (token as any)?.email || 'System';
-    const userRole = (token as any)?.membershipRole;
+    const auth = await authenticateAPIWithPermission(request, 'update_production');
+    if (!auth.ok) return auth.response;
+    const { tenantId, userId, role: userRole } = auth;
+    const userName = 'Authenticated user';
 
     const body = await request.json();
     const { orderIds, carrier = 'correos_cr', deliveryType = 'Domicilio', verifiedLocations } = body;

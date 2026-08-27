@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/db';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,35 +58,11 @@ export async function GET() {
 }
 
 // PUT - Update tenant profile
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const tenantId = (session.user as any).tenantId || (session.user as any).defaultTenantId;
-    
-    if (!tenantId) {
-      return NextResponse.json({ error: 'No tenant found' }, { status: 404 });
-    }
-
-    // Check if user has permission to update (OWNER or ADMIN)
-    const membership = await prisma.membership.findFirst({
-      where: {
-        userId: session.user.id,
-        tenantId: tenantId,
-        isActive: true,
-      }
-    });
-
-    if (!membership || !['OWNER', 'ADMIN'].includes(membership.role)) {
-      return NextResponse.json(
-        { error: 'No tienes permiso para editar el perfil del negocio' },
-        { status: 403 }
-      );
-    }
+    const auth = await authenticateAPIWithPermission(request, 'update_config');
+    if (!auth.ok) return auth.response;
+    const { tenantId } = auth;
 
     const body = await request.json();
     const { businessName, ownerName, phone, country, province } = body;

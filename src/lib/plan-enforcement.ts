@@ -11,52 +11,7 @@ export interface PlanCheck {
 
 const planLimits = {
   users: { FREE: 1, BASIC: 5, PRO: 25, ENTERPRISE: 999999 },
-  ordersPerMonth: { FREE: 100, BASIC: 999999, PRO: 999999, ENTERPRISE: 999999 },
 };
-
-/**
- * Check if tenant can create more orders this month
- * Returns soft limit info instead of throwing
- */
-export async function checkOrderLimit(tenantId: string): Promise<PlanCheck> {
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: tenantId },
-    select: { plan: true }
-  });
-
-  if (!tenant) {
-    return {
-      allowed: false,
-      needsUpgrade: false,
-      message: 'Tenant not found',
-      currentPlan: 'FREE',
-      currentCount: 0,
-      limit: 0
-    };
-  }
-
-  const plan = tenant.plan as keyof typeof planLimits.ordersPerMonth;
-  const limit = planLimits.ordersPerMonth[plan] ?? 100;
-
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const currentCount = await prisma.order.count({
-    where: { tenantId, timestamp: { gte: startOfMonth } }
-  });
-
-  const allowed = currentCount < limit;
-
-  return {
-    allowed,
-    needsUpgrade: !allowed,
-    message: allowed
-      ? 'OK'
-      : `Límite mensual de órdenes alcanzado (${currentCount}/${limit}). Actualiza tu plan para continuar.`,
-    currentPlan: plan,
-    currentCount,
-    limit
-  };
-}
 
 /**
  * Check if tenant can add more users

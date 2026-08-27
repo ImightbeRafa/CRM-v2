@@ -10,6 +10,7 @@ import { redirect } from 'next/navigation';
 import { NextRequest, NextResponse } from 'next/server';
 import { authOptions } from './auth-options';
 import { Permission, Role, hasPermission } from './rbac';
+import { guardTenantWrite } from './billing-access';
 
 /**
  * Get the current session or redirect to login
@@ -110,13 +111,14 @@ export async function authenticateAPI(request: NextRequest) {
   const headerTenantId = request.headers.get('x-tenant-id');
 
   if (headerUserId && headerTenantId) {
-    return {
+    const auth = {
       ok: true as const,
       session: null,
       tenantId: headerTenantId,
       role: (headerRole || 'VIEWER') as Role,
       userId: headerUserId,
     };
+    return applyBillingWriteGuard(request, auth);
   }
 
   // Fallback: full session check (for routes where middleware didn't inject headers)
@@ -146,13 +148,41 @@ export async function authenticateAPI(request: NextRequest) {
     };
   }
 
-  return {
+  const auth = {
     ok: true as const,
     session,
     tenantId: tenantId as string,
     role: role,
     userId: session.user.id || session.user.email || '',
   };
+  return applyBillingWriteGuard(request, auth);
+}
+
+async function applyBillingWriteGuard<T extends {
+  ok: true;
+  tenantId: string;
+}>(request: NextRequest, auth: T): Promise<T | { ok: false; response: NextResponse }> {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) return auth;
+
+  try {
+    const guard = await guardTenantWrite(auth.tenantId, {
+      channel: 'api',
+      route: request.nextUrl.pathname,
+    });
+    return guard.allowed ? auth : { ok: false as const, response: guard.response };
+  } catch (error) {
+    console.error('[BillingAccess] Failed to evaluate tenant write', {
+      route: request.nextUrl.pathname,
+      code: error instanceof Error ? error.name : 'evaluation_error',
+    });
+    return {
+      ok: false as const,
+      response: NextResponse.json({
+        error: 'Unable to verify tenant billing access',
+        code: 'billing_access_unavailable',
+      }, { status: 503 }),
+    };
+  }
 }
 
 /**

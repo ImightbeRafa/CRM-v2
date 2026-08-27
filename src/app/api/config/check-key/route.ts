@@ -1,11 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireAdmin } from '@/lib/apiAuth'
+import { getToken } from 'next-auth/jwt'
+import { getMembershipForToken } from '@/lib/selected-tenant'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 
 export async function POST(request: NextRequest) {
-  const { authorized } = await requireAdmin(request)
-  if (!authorized) return createErrorResponse('Unauthorized', 401)
+  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
+  if (!token?.sub) return createErrorResponse('Unauthorized', 401)
+  const membership = await getMembershipForToken(token)
+  if (!membership) return createErrorResponse('Selected tenant membership not found', 403)
   
   try {
     const body = await request.json()
@@ -20,7 +23,7 @@ export async function POST(request: NextRequest) {
     
     if (type === 'optionSet') {
       const existing = await prisma.productOptionSet.findFirst({
-        where: { key }
+        where: { tenantId: membership.tenantId, key }
       })
       exists = !!existing
       
@@ -37,7 +40,7 @@ export async function POST(request: NextRequest) {
       }
     } else if (type === 'field') {
       const existing = await prisma.productField.findFirst({
-        where: { key }
+        where: { tenantId: membership.tenantId, key }
       })
       exists = !!existing
       

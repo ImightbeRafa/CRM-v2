@@ -367,75 +367,8 @@ async function handleAppRoute(
   // Setup wizard is now optional - users can access it from the dashboard if needed
   // No blocking logic - users can navigate freely throughout the application
 
-  // Check trial/subscription status and enforce restrictions
-  // Allow billing-related routes for expired trials
-  const isBillingApiRoute = pathname.startsWith('/api/billing') ||
-    pathname.startsWith('/api/tilopay/checkout') ||
-    pathname.startsWith('/api/tilopay/create-payment-link');
-  const isConfigPage = pathname === '/config';
-  const isBillingTab = isConfigPage && url.searchParams.get('tab') === 'billing';
-
-  // Check if trial has expired or subscription is inactive
-  // Use JWT token data (already decoded, no extra getToken() call needed)
-  if (tenantId) {
-    try {
-      const currentTenant = (token as any)?.currentTenant;
-      const plan = currentTenant?.plan || 'FREE';
-      const subscriptionStatus = currentTenant?.subscriptionStatus || null;
-      const trialEndsAt = currentTenant?.trialEndsAt ? new Date(currentTenant.trialEndsAt) : null;
-
-      // Normalize plan (handle enum/string)
-      const normalizedPlan = plan ? String(plan).trim().toUpperCase() : 'FREE';
-      const normalizedStatus = subscriptionStatus ? String(subscriptionStatus).trim().toLowerCase() : null;
-
-      // Check if trial expired (only for FREE plan)
-      let trialExpired = false;
-      if (normalizedPlan === 'FREE') {
-        const now = new Date();
-        const trialEnd = trialEndsAt || new Date(Date.now() + 15 * 24 * 60 * 60 * 1000); // Default 15 days
-        trialExpired = now >= trialEnd;
-      }
-
-      // Check if subscription is active
-      // For paid plans (BASIC, PRO), allow unless explicitly blocked
-      let subscriptionActive = false;
-      if (normalizedPlan !== 'FREE' && normalizedPlan !== '') {
-        // Paid plan - allow unless explicitly blocked
-        const blockingStatuses = ['canceled', 'expired', 'past_due'];
-        const isBlocked = normalizedStatus && blockingStatuses.includes(normalizedStatus);
-        subscriptionActive = !isBlocked; // Active if not blocked
-      } else {
-        // FREE plan - check if trial is active
-        subscriptionActive = !trialExpired;
-      }
-
-      // CRITICAL: Only restrict if trial expired OR subscription inactive
-      const shouldRestrict = trialExpired || !subscriptionActive;
-
-      if (shouldRestrict) {
-        // Allow billing API routes
-        if (isBillingApiRoute) {
-          // Allow API routes to proceed
-          // Continue to normal flow below
-        }
-        // Allow /config with billing tab
-        else if (isBillingTab) {
-          // Allow billing page to proceed
-          // Continue to normal flow below
-        }
-        // If accessing /config but not billing tab, redirect to billing
-        else if (isConfigPage && !isBillingTab) {
-          return NextResponse.redirect(new URL('/config?tab=billing', url.origin));
-        }
-        // Block all other routes - redirect to billing
-        else {
-          return NextResponse.redirect(new URL('/config?tab=billing', url.origin));
-        }
-      }
-    } catch (error) {
-      console.error('[Middleware] Subscription check error:', error);
-    }
-  }
+  // Billing is evaluated from current database state inside every business write.
+  // JWT subscription fields and page redirects are intentionally non-authoritative.
 
   // Run the request with tenant context
   return withTenantContext(

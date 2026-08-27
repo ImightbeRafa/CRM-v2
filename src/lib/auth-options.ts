@@ -168,7 +168,7 @@ export const authOptions: NextAuthOptions = {
           // Get membership role (OWNER, ADMIN, MANAGER, SALES, PRODUCTION, VIEWER)
           const activeTenantIds = user.memberships.map((m) => m.tenantId)
           const selectedTenantId = selectActiveTenantId(user.defaultTenantId, activeTenantIds)
-          const selectedMembership = user.memberships.find((m) => m.tenantId === selectedTenantId) || user.memberships[0]
+          const selectedMembership = user.memberships.find((m) => m.tenantId === selectedTenantId)
           const membershipRole = selectedMembership?.role ?? null
 
           // Legacy role for compatibility (OWNER -> MASTER)
@@ -563,12 +563,18 @@ export const authOptions: NextAuthOptions = {
         if (memberships.length > 0) {
           token.allTenantIds = memberships.map((m: any) => m.tenantId || m.tenant?.id).filter(Boolean);
 
-          // Find current tenant details - prioritize user's tenantId, fallback to first membership
+          // Resolve one explicit active tenant, then look up only that membership.
           const userTenantId = (user as any).tenantId;
-          const currentMembership = memberships.find((m: any) => (m.tenantId || m.tenant?.id) === userTenantId) || memberships[0];
+          const selectedActiveTenantId = selectActiveTenantId(
+            userTenantId,
+            memberships.map((m: any) => m.tenantId || m.tenant?.id).filter(Boolean),
+          );
+          const currentMembership = memberships.find(
+            (m: any) => (m.tenantId || m.tenant?.id) === selectedActiveTenantId,
+          );
 
           // CRITICAL: Always set tenantId on token when user has memberships
-          const selectedTenantId = currentMembership.tenantId || currentMembership.tenant?.id;
+          const selectedTenantId = currentMembership?.tenantId || currentMembership?.tenant?.id;
           if (selectedTenantId) {
             token.tenantId = selectedTenantId;
             console.log(`[JWT] ✅ Set tenantId on initial sign-in: ${selectedTenantId}`);
@@ -745,7 +751,7 @@ export const authOptions: NextAuthOptions = {
               token.allTenantIds = memberships.map(m => m.tenantId);
 
               // Find the membership for the selected tenant
-              const currentMembership = memberships.find(m => m.tenantId === selectedTenantId) || memberships[0];
+              const currentMembership = memberships.find(m => m.tenantId === selectedTenantId);
               if (currentMembership?.tenant) {
                 token.currentTenant = {
                   id: currentMembership.tenant.id,
@@ -796,9 +802,10 @@ export const authOptions: NextAuthOptions = {
         } else if (token.role === 'MASTER') {
           (session.user as any).membershipRole = 'OWNER';
         } else if (token.memberships && token.memberships.length > 0) {
-          // Fallback: get role from first active membership
-          const firstMembership = token.memberships[0];
-          (session.user as any).membershipRole = firstMembership?.role || 'VIEWER';
+          const selectedMembership = token.memberships.find(
+            membership => (membership.tenantId || membership.id) === token.tenantId,
+          );
+          (session.user as any).membershipRole = selectedMembership?.role || 'VIEWER';
         }
       }
       return session;

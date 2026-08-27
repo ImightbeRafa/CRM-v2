@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { prisma } from '@/lib/db';
 import { verifyWebhookSharedSecret } from '@/lib/tilopay';
 import { sendCAPIEvent } from '@/lib/meta-capi';
+import { startTenantBillingGrace } from '@/lib/billing-access';
 
 // Force dynamic rendering for webhooks
 export const dynamic = 'force-dynamic';
@@ -273,21 +274,7 @@ async function processRepeatEvent(eventType: string, tenantId: string, body: any
     case 'rejected':
       console.log('❌ [Repeat API] Processing payment failure:', { tenantId, reason: body.reason });
       
-      // IMPORTANT: Never delete data on payment failure!
-      // Set 7-day grace period before restricting access
-      const gracePeriodEnd = new Date();
-      gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 7);
-
-      await prisma.tenant.update({
-        where: { id: tenantId },
-        data: {
-          subscriptionStatus: 'payment_failed',
-          currentPeriodEnd: gracePeriodEnd  // 7-day grace period
-        }
-      });
-
-      console.log(`⚠️ [Repeat API] Tenant ${tenantId} marked as payment_failed with grace period until ${gracePeriodEnd.toISOString()}`);
-      console.log(`📧 TODO: Send email notification to tenant about failed payment`);
+      await startTenantBillingGrace(tenantId);
       break;
 
     case 'unsubscribe':
@@ -575,12 +562,7 @@ export async function POST(req: NextRequest) {
       
       // Update subscription status to indicate payment failure
       try {
-        await prisma.tenant.update({
-          where: { id: tenantId },
-          data: { 
-            subscriptionStatus: 'payment_failed',
-          }
-        });
+        await startTenantBillingGrace(tenantId);
       } catch (updateError) {
         logWebhookEvent('error', 'Failed to update tenant status', {
           webhookId,

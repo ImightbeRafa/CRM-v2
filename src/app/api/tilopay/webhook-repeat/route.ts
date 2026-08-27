@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { prisma } from '@/lib/db';
 import { verifyWebhookSharedSecret } from '@/lib/tilopay';
 import { sendCAPIEvent } from '@/lib/meta-capi';
+import { startTenantBillingGrace } from '@/lib/billing-access';
 
 // Force dynamic rendering for webhooks
 export const dynamic = 'force-dynamic';
@@ -340,12 +341,7 @@ export async function POST(request: NextRequest) {
     switch (event) {
       case 'subscription.payment_failed':
       case 'payment_failed':
-        await prisma.tenant.update({
-          where: { id: tenantId },
-          data: {
-            subscriptionStatus: 'payment_failed'
-          }
-        });
+        await startTenantBillingGrace(tenantId);
         break;
 
       case 'subscription.cancelled':

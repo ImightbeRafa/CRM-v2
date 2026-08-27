@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getTenantPrisma } from '@/lib/prisma-tenant'
 import { createSuccessResponse, createErrorResponse, handleApiError, validateRequiredFields, sanitizeInput } from '@/lib/apiUtils'
 import { logCreate, logUpdate } from '@/lib/auditLogger'
-import { getToken } from 'next-auth/jwt'
 import { withTenantContext } from '@/lib/tenantContext'
 import { ORDER_COMMENT_FIELD_ALIASES, hasOrderCommentInput, resolveOrderComment } from '@/lib/order-comments'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 
 export const runtime = 'nodejs'
 
@@ -81,20 +81,9 @@ function detectChanges(oldData: any, newData: any): string[] {
 
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
-    
-    if (!token) {
-      return createErrorResponse('Unauthorized', 401)
-    }
-
-    // Get tenant ID from token
-    const tenantId = (token as any).tenantId as string
-    if (!tenantId) {
-      return createErrorResponse('Tenant not found', 400)
-    }
-
-    const userId = (token as any).sub as string
+    const auth = await authenticateAPIWithPermission(request, 'update_sales')
+    if (!auth.ok) return auth.response
+    const { tenantId, userId, role } = auth
 
     const body = await request.json()
     
@@ -112,7 +101,7 @@ export async function POST(request: NextRequest) {
       ])
     )
 
-    return await withTenantContext({ tenantId, userId, role: (token as any)?.membershipRole, userRole: (token as any)?.membershipRole, userName: (token as any)?.name || (token as any)?.email || 'System' }, async () => {
+    return await withTenantContext({ tenantId, userId, role, userRole: role, userName: 'Authenticated user' }, async () => {
       const prisma = getTenantPrisma(tenantId)
       // Find order with tenant isolation (middleware auto-filters by tenantId)
       const existing = await prisma.order.findFirst({ 

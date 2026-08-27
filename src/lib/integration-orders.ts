@@ -87,6 +87,28 @@ export async function checkDuplicateOrder(tenantId: string, orderId: string): Pr
   }
 }
 
+export async function findExternalOrderByOrderId(tenantId: string, orderId: string) {
+  const tenantPrisma = getTenantPrisma(tenantId);
+  return tenantPrisma.order.findFirst({
+    where: { tenantId, orderId },
+    select: { id: true, orderId: true },
+  });
+}
+
+/** Durable, cross-instance cap for successful website writes. Upstash also
+ * limits attempts, while this DB check prevents serverless write amplification
+ * if Redis is temporarily unavailable or not configured. */
+export async function countRecentExternalOrders(tenantId: string, since: Date) {
+  const tenantPrisma = getTenantPrisma(tenantId);
+  return tenantPrisma.order.count({
+    where: {
+      tenantId,
+      timestamp: { gte: since },
+      customFields: { path: ['external'], equals: true },
+    },
+  });
+}
+
 export async function getExternalOrders(
   tenantId: string,
   options: {

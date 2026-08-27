@@ -5,7 +5,6 @@ import { authenticateAPI } from '@/lib/auth-helpers'
 import { withTenantContext } from '@/lib/tenantContext'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { logCreate } from '@/lib/auditLogger'
-import { checkOrderLimit } from '@/lib/plan-enforcement'
 import { ORDER_COMMENT_FIELD_ALIASES, resolveOrderComment } from '@/lib/order-comments'
 
 // Force dynamic rendering for authentication
@@ -291,19 +290,6 @@ export async function POST(request: NextRequest) {
      // Map seller/order comments into the canonical Order.comments column.
      const commentValue = resolveOrderComment(body, customFields)
 
-    // Check plan limits (soft enforcement with clear messaging)
-    const limitCheck = await checkOrderLimit(tenantId)
-    if (!limitCheck.allowed) {
-      return NextResponse.json({
-        status: 'error',
-        error: limitCheck.message,
-        needsUpgrade: true,
-        currentPlan: limitCheck.currentPlan,
-        currentCount: limitCheck.currentCount,
-        limit: limitCheck.limit
-      }, { status: 402 }) // 402 Payment Required
-    }
-    
     // Calculate total on server side to ensure accuracy
     const productCost = Number(body.productCost || 0);
     const shippingCost = Number(body.shippingCost || 0);

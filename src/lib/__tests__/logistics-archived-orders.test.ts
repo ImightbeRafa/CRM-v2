@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { MANAGED_TENANT_IDS } from '../logistics-managed-tenants';
+import { MANAGED_TENANT_IDS, managedTenantIdsForSql, resolveManagedTenantFilter } from '../logistics-managed-tenants';
 import {
   fetchArchivedLogisticsOrders,
   sanitizeArchivedSearch,
@@ -22,6 +22,17 @@ await test('sanitizeArchivedSearch strips ILIKE wildcards and trims', () => {
   assert.equal(sanitizeArchivedSearch('a'.repeat(100)).length, 80);
 });
 
+await test('managedTenantIdsForSql unwraps Prisma in-filters', () => {
+  assert.deepEqual(managedTenantIdsForSql('cmh32z0ol0000k004hvx9tg3p'), ['cmh32z0ol0000k004hvx9tg3p']);
+  const all = resolveManagedTenantFilter(null);
+  assert.equal(all.ok, true);
+  if (all.ok) {
+    const ids = managedTenantIdsForSql(all.tenantId);
+    assert.deepEqual(ids, MANAGED_TENANT_IDS);
+    assert.equal(ids.every((id) => typeof id === 'string'), true);
+  }
+});
+
 await test('archive helper source does not apply the live-board cutoff', () => {
   const source = readFileSync(join(process.cwd(), 'src/lib/logistics-archived-orders.ts'), 'utf8');
   assert.equal(source.includes('2026-02-22'), false);
@@ -32,6 +43,7 @@ await test('archive helper source does not apply the live-board cutoff', () => {
 await test('archived GET route uses the dedicated helper and does not IN-list every archived id', () => {
   const source = readFileSync(join(process.cwd(), 'src/app/api/logistics/orders/route.ts'), 'utf8');
   assert.match(source, /fetchArchivedLogisticsOrders/);
+  assert.match(source, /managedTenantIdsForSql/);
   assert.equal(source.includes("SELECT crm_order_id FROM lm_orders\n                    WHERE archived_at IS NOT NULL"), false);
 });
 

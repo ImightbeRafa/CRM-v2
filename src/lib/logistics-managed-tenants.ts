@@ -41,6 +41,13 @@ export function resolveManagedTenantFilter(
   return { ok: true, tenantId: requestedTenantId };
 }
 
+/** Flatten Prisma `{ in: ids }` / single id into a `text[]` bind for raw SQL. */
+export function managedTenantIdsForSql(
+  tenantId: string | { in: string[] },
+): string[] {
+  return typeof tenantId === 'string' ? [tenantId] : tenantId.in;
+}
+
 export function filterToManagedTenantIds(ids: string[]): string[] {
   return ids.filter((id) => isManagedTenantId(id));
 }

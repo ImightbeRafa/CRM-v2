@@ -8,6 +8,7 @@ import {
 import {
     isManagedTenantId,
     resolveManagedTenantFilter,
+    managedTenantIdsForSql,
 } from '@/lib/logistics-managed-tenants';
 import { fetchArchivedLogisticsOrders, type ArchivedLogisticsOrder } from '@/lib/logistics-archived-orders';
 
@@ -133,9 +134,7 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Tenant not in managed allowlist' }, { status: 403 });
         }
 
-        const tenantIds = Array.isArray(tenantFilter.tenantId)
-            ? tenantFilter.tenantId
-            : [tenantFilter.tenantId];
+        const tenantIds = managedTenantIdsForSql(tenantFilter.tenantId);
 
         if (archivedFilter === 'true') {
             const archived = await fetchArchivedLogisticsOrders({

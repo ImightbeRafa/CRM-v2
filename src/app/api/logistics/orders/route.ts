@@ -8,7 +8,103 @@ import {
 import {
     isManagedTenantId,
     resolveManagedTenantFilter,
+    managedTenantIdsForSql,
 } from '@/lib/logistics-managed-tenants';
+import { fetchArchivedLogisticsOrders, type ArchivedLogisticsOrder } from '@/lib/logistics-archived-orders';
+
+type GuiaInfo = {
+    guiaId: string;
+    guiaNumber: string | null;
+    trackingNumber: string | null;
+    guiaStatus: string | null;
+    guiaError: string | null;
+    hasGuiaPdf: boolean;
+};
+
+async function enrichArchivedOrders(orders: ArchivedLogisticsOrder[]) {
+    if (orders.length === 0) return [];
+
+    const orderIds = orders.map((o) => o.id);
+    const ceById: Record<string, { method: string | null; confirmedBy: string | null }> = {};
+    const guiaByKey: Record<string, GuiaInfo> = {};
+
+    await Promise.all([
+        (async () => {
+            try {
+                const ceRows = await prisma.$queryRaw<{ crm_order_id: string; payment_method: string | null; confirmed_by: string | null }[]>`
+                    SELECT DISTINCT ON (crm_order_id)
+                        crm_order_id, payment_method, confirmed_by
+                    FROM lm_ce_payments
+                    WHERE crm_order_id = ANY(${orderIds}::text[])
+                    ORDER BY crm_order_id, collected_at DESC NULLS LAST
+                `;
+                for (const row of ceRows) {
+                    ceById[row.crm_order_id] = {
+                        method: row.payment_method ?? null,
+                        confirmedBy: row.confirmed_by ?? null,
+                    };
+                }
+            } catch {
+                // CE payment enrichment is optional
+            }
+        })(),
+        (async () => {
+            try {
+                const guiaRows = await prisma.shippingGuia.findMany({
+                    where: {
+                        tenantId: { in: [...new Set(orders.map((o) => o.tenantId))] },
+                        orderId: { in: orders.map((o) => o.orderId) },
+                        carrier: 'correos_cr',
+                    },
+                    orderBy: [
+                        { updatedAt: 'desc' },
+                        { createdAt: 'desc' },
+                    ],
+                    select: {
+                        id: true,
+                        tenantId: true,
+                        orderId: true,
+                        guiaNumber: true,
+                        trackingNumber: true,
+                        status: true,
+                        errorMessage: true,
+                        pdfFileName: true,
+                    },
+                });
+                for (const row of guiaRows) {
+                    const key = `${row.tenantId}:${row.orderId}`;
+                    if (guiaByKey[key]) continue;
+                    guiaByKey[key] = {
+                        guiaId: row.id,
+                        guiaNumber: row.guiaNumber ?? null,
+                        trackingNumber: row.trackingNumber ?? null,
+                        guiaStatus: row.status ?? null,
+                        guiaError: row.errorMessage ?? null,
+                        hasGuiaPdf: !!row.pdfFileName,
+                    };
+                }
+            } catch {
+                // Continue without guia enrichment if the table is unavailable.
+            }
+        })(),
+    ]);
+
+    return orders.map((o) => {
+        const guia = guiaByKey[`${o.tenantId}:${o.orderId}`];
+        const ce = ceById[o.id];
+        return {
+            ...o,
+            cePaymentMethod: ce?.method ?? null,
+            ceConfirmedBy: ce?.confirmedBy ?? null,
+            guiaId: guia?.guiaId ?? null,
+            guiaNumber: guia?.guiaNumber ?? null,
+            trackingNumber: guia?.trackingNumber ?? null,
+            guiaStatus: guia?.guiaStatus ?? null,
+            guiaError: guia?.guiaError ?? null,
+            hasGuiaPdf: guia?.hasGuiaPdf ?? false,
+        };
+    });
+}
 
 // GET /api/logistics/orders
 export async function GET(req: NextRequest) {
@@ -38,9 +134,31 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Tenant not in managed allowlist' }, { status: 403 });
         }
 
-        const tenantIds = Array.isArray(tenantFilter.tenantId)
-            ? tenantFilter.tenantId
-            : [tenantFilter.tenantId];
+        const tenantIds = managedTenantIdsForSql(tenantFilter.tenantId);
+
+        if (archivedFilter === 'true') {
+            const archived = await fetchArchivedLogisticsOrders({
+                tenantIds,
+                search,
+                dateFrom,
+                dateTo,
+                status,
+                courier,
+                lmCarrier: lmCarrierFilter,
+                page,
+                limit,
+            });
+            const enriched = await enrichArchivedOrders(archived.orders);
+            return NextResponse.json({
+                orders: enriched,
+                pagination: {
+                    total: archived.total,
+                    page,
+                    limit,
+                    pages: Math.ceil(archived.total / limit) || 0,
+                },
+            });
+        }
 
         const where: any = {
             tenantId: tenantFilter.tenantId,
@@ -73,17 +191,6 @@ export async function GET(req: NextRequest) {
                 where.id = { in: lmFilterRows.map((r) => r.crm_order_id) };
             } catch {
                 // lm_orders table may not exist; fall back to post-query filtering
-            }
-        } else if (archivedFilter === 'true') {
-            try {
-                const archivedRows = await prisma.$queryRaw<{ crm_order_id: string }[]>`
-                    SELECT crm_order_id FROM lm_orders
-                    WHERE archived_at IS NOT NULL
-                    AND crm_tenant_id = ANY(${tenantIds}::text[])
-                `;
-                where.id = { in: archivedRows.map((r) => r.crm_order_id) };
-            } catch {
-                // fall back to post-query filtering
             }
         }
 
@@ -297,9 +404,7 @@ export async function GET(req: NextRequest) {
             : enriched;
 
         // Filter by archive status
-        if (archivedFilter === 'true') {
-            filtered = filtered.filter((o) => o.archivedAt !== null);
-        } else if (archivedFilter !== 'all') {
+        if (archivedFilter !== 'all') {
             // Default: exclude archived orders from the active board
             filtered = filtered.filter((o) => o.archivedAt === null);
         }

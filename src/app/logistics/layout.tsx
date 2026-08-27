@@ -408,6 +408,12 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                     }
                     .lm-archive-panel {
                         max-height: none !important;
+                        height: auto !important;
+                        min-height: 0 !important;
+                    }
+                    .lm-archive-list {
+                        max-height: min(50vh, 420px);
+                        overflow-y: auto !important;
                     }
                     .lm-archive-toolbar {
                         flex-direction: column !important;
@@ -427,6 +433,10 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                     }
                     .lm-archive-row {
                         flex-wrap: wrap !important;
+                    }
+                    .lm-archive-row-actions {
+                        width: 100%;
+                        justify-content: flex-end;
                     }
                     .lm-location-grid {
                         grid-template-columns: 1fr !important;

@@ -23,7 +23,7 @@ const ExternalOrderSchema = z.object({
   customer: z.object({
     name: z.string().min(1),
     phone: z.string().min(1),
-    email: z.string().email(),
+    email: z.string().email().optional(),
   }),
   product: z.object({
     name: z.string().min(1),
@@ -42,11 +42,11 @@ const ExternalOrderSchema = z.object({
   }),
   total: z.string().min(1),
   payment: z.object({
-    method: z.string().min(1),
-    transactionId: z.string().min(1),
-    status: z.string().min(1),
-    date: z.string().min(1),
-  }),
+    method: z.string().min(1).optional(),
+    transactionId: z.string().min(1).optional(),
+    status: z.string().min(1).optional(),
+    date: z.string().min(1).optional(),
+  }).optional(),
   source: z.string().optional(),
   salesChannel: z.string().optional(),
   seller: z.string().optional(),

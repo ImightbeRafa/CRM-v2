@@ -525,18 +525,8 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
           })
         );
 
-        for (const orderResult of result.data.results) {
-          if (orderResult.success) {
-            try {
-              await fetch('/api/orders/status', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ orderId: orderResult.orderId, status: 'Enviado' }),
-              });
-            } catch {}
-          }
-        }
+        // The guía API owns the single Enviado transition. Writing it again
+        // here caused duplicate audit entries and status races.
       } else {
         setGenerationResults({ error: result.error || 'Error generando guías' });
         setOrderGuias((prev) =>
@@ -555,10 +545,31 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
 
   // ── Manual print ──────────────────────────────────────────
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     const selectedOrders = orderGuias.filter((og) => og.selected);
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
+
+    try {
+      const response = await fetch('/api/shipping/guias/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          entries: selectedOrders.map(order => ({ orderId: order.orderId, guiaNumber: order.guiaNumber })),
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        printWindow.close();
+        alert(`❌ ${payload.error || 'No se pudieron guardar las guías manuales'}`);
+        return;
+      }
+    } catch {
+      printWindow.close();
+      alert('❌ No se pudieron guardar las guías manuales');
+      return;
+    }
 
     const orderElements = selectedOrders
       .map((og) => {

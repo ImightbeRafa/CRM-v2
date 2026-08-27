@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
+import { normalizeClientEmail, normalizeClientPhone } from '@/lib/order-lifecycle';
 
 export async function POST(request: NextRequest) {
   try {
@@ -80,7 +81,7 @@ export async function POST(request: NextRequest) {
 
       // Check if client already exists (auto-filtered by tenantPrisma)
       const existingClient = await prisma.client.findFirst({
-        where: { phone, isActive: true }
+        where: { OR: [{ normalizedPhone: normalizeClientPhone(phone) }, { phone }], isActive: true }
       });
 
       if (existingClient) {
@@ -104,6 +105,8 @@ export async function POST(request: NextRequest) {
           data: {
             tenantId,
             ...clientInfo,
+            normalizedPhone: normalizeClientPhone(clientInfo.phone),
+            normalizedEmail: normalizeClientEmail(clientInfo.email),
             totalOrders,
             totalSpent,
             averageOrderValue,

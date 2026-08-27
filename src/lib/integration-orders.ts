@@ -1,5 +1,7 @@
 import { getTenantPrisma } from './prisma-tenant';
 import { ExternalOrderData } from '@/types/integration';
+import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags';
+import { createLifecycleOrder } from '@/lib/order-lifecycle';
 
 export async function createExternalOrder(tenantId: string, orderData: ExternalOrderData) {
   console.log(`[createExternalOrder] Starting for tenant ${tenantId}, order ${orderData.orderId}`);
@@ -10,6 +12,53 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
   try {
     // Use tenant-isolated Prisma client for security
     const tenantPrisma = getTenantPrisma(tenantId);
+    const customFields = {
+      external: true,
+      source: orderData.source,
+      originalData: orderData.metadata,
+      paymentMethod: orderData.payment?.method,
+      paymentStatus: orderData.payment?.status,
+      paymentTransactionId: orderData.payment?.transactionId,
+      paymentDate: orderData.payment?.date,
+    };
+
+    if (await shouldUseOrderLifecycleV2(tenantId, 'website')) {
+      const lifecycle = await createLifecycleOrder({
+        tenantId,
+        userId: 'website-integration',
+        adapter: 'website',
+        idempotencyKey: `website:create:${orderData.orderId}`,
+        data: {
+          tenantId,
+          orderId: orderData.orderId,
+          customerName: orderData.customer.name,
+          phone: orderData.customer.phone,
+          email: orderData.customer.email || '',
+          product: orderData.product.name,
+          quantity: orderData.product.quantity,
+          productCost: parsePrice(orderData.product.unitPrice),
+          total: parsePrice(orderData.total),
+          shippingCost: parsePrice(orderData.shipping.cost),
+          province: orderData.shipping.address.province,
+          canton: orderData.shipping.address.canton,
+          district: orderData.shipping.address.district,
+          address: orderData.shipping.address.fullAddress,
+          courier: orderData.shipping.courier,
+          salesChannel: orderData.salesChannel,
+          seller: orderData.seller,
+          orderType: 'EA',
+          status: 'Pendiente',
+          saleDate: new Date().toISOString().split('T')[0],
+          comments,
+          customFields,
+        },
+      });
+      return {
+        id: lifecycle.order.id,
+        orderId: lifecycle.order.orderId,
+        customerName: lifecycle.order.customerName,
+      };
+    }
     
     // Map external order data to internal Order model
     const order = await tenantPrisma.order.create({
@@ -36,15 +85,7 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
         saleDate: new Date().toISOString().split('T')[0],
         comments: comments,
         // Store original external data as custom fields
-        customFields: {
-          external: true,
-          source: orderData.source,
-          originalData: orderData.metadata,
-          paymentMethod: orderData.payment.method,
-          paymentStatus: orderData.payment.status,
-          paymentTransactionId: orderData.payment.transactionId,
-          paymentDate: orderData.payment.date,
-        },
+        customFields,
       },
       select: {
         id: true,

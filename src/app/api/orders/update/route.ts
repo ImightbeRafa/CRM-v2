@@ -6,6 +6,8 @@ import { logCreate, logUpdate } from '@/lib/auditLogger'
 import { withTenantContext } from '@/lib/tenantContext'
 import { ORDER_COMMENT_FIELD_ALIASES, hasOrderCommentInput, resolveOrderComment } from '@/lib/order-comments'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags'
+import { lifecycleIdempotencyKey, OrderLifecycleError, updateLifecycleOrder } from '@/lib/order-lifecycle'
 
 export const runtime = 'nodejs'
 
@@ -186,6 +188,27 @@ export async function POST(request: NextRequest) {
     if (Object.keys(mergedCustomFields).length > 0) {
       updateData.customFields = mergedCustomFields
     }
+
+      if (await shouldUseOrderLifecycleV2(tenantId, 'orders-update')) {
+        try {
+          const lifecycle = await updateLifecycleOrder({
+            tenantId,
+            userId,
+            adapter: 'orders-update',
+            idempotencyKey: lifecycleIdempotencyKey(request, `orders-update:${existing.id}:${existing.updatedAt.toISOString()}`),
+            orderId: existing.orderId,
+            patch: updateData,
+          })
+          return createSuccessResponse({
+            ...lifecycle.order,
+            idempotentReplay: lifecycle.idempotentReplay,
+            unresolvedInventory: lifecycle.unresolvedInventory,
+          }, 'Order updated successfully')
+        } catch (error) {
+          if (error instanceof OrderLifecycleError) return createErrorResponse(error.message, error.status)
+          throw error
+        }
+      }
 
       // Update order with tenant isolation (middleware auto-filters by tenantId)
       const updateRes = await prisma.order.updateMany({ 

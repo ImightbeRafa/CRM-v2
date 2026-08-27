@@ -12,9 +12,12 @@ import {
   validateXlsxUpload,
   type ImportResult,
 } from '@/lib/import-helpers';
+import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags';
+import { createLifecycleOrder } from '@/lib/order-lifecycle';
 
-async function importOrders(rows: any[], tenantId: string): Promise<ImportResult> {
+async function importOrders(rows: any[], tenantId: string, userId: string): Promise<ImportResult> {
   const result: ImportResult = { success: true, imported: 0, failed: 0, errors: [] };
+  const useLifecycleV2 = await shouldUseOrderLifecycleV2(tenantId, 'excel');
   
   console.log(`📊 Starting import of ${rows.length} orders for tenant ${tenantId}`);
   
@@ -102,9 +105,7 @@ async function importOrders(rows: any[], tenantId: string): Promise<ImportResult
       const businessStr = mapped.business ? String(mapped.business).trim() : '';
       const sellerStr = mapped.seller ? String(mapped.seller).trim() : '';
       
-      // Create order with tenantId
-      await prisma.order.create({
-        data: {
+      const orderData = {
           orderId: String(mapped.orderId).trim(),
           orderType: mapped.orderType,
           status: mapped.status,
@@ -138,8 +139,19 @@ async function importOrders(rows: any[], tenantId: string): Promise<ImportResult
           seller: sellerStr,
           timestamp: parsedTimestamp || new Date(),
           tenantId: tenantId,
-        }
-      });
+      };
+
+      if (useLifecycleV2) {
+        await createLifecycleOrder({
+          tenantId,
+          userId,
+          adapter: 'excel',
+          idempotencyKey: `excel:create:${orderData.orderId}`,
+          data: orderData,
+        });
+      } else {
+        await prisma.order.create({ data: orderData });
+      }
       
       result.imported++;
     } catch (error: any) {
@@ -270,7 +282,7 @@ export async function POST(request: NextRequest) {
     // Check authentication
     const auth = await authenticateAPIWithPermission(request, 'create_sales');
     if (!auth.ok) return auth.response;
-    const { tenantId } = auth;
+    const { tenantId, userId } = auth;
     
     console.log(`👤 User authenticated, tenantId: ${tenantId}`);
 
@@ -343,7 +355,7 @@ export async function POST(request: NextRequest) {
     let itemType: string;
     
     if (importType === 'orders') {
-      result = await importOrders(rows, tenantId);
+      result = await importOrders(rows, tenantId, userId);
       itemType = 'pedidos';
     } else if (importType === 'inventory' || importType === 'products') {
       result = await importInventory(rows, tenantId);

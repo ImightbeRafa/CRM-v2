@@ -3,6 +3,7 @@ import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { authenticateAPI } from '@/lib/auth-helpers';
 import { withTenantContext } from '@/lib/tenantContext';
+import { calculateIncludedIva, invoiceGrossFromItems } from '@/lib/invoice-calculation';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
           where: {
             id: { in: orderIdsToValidate }
           },
-          select: { id: true, tenantId: true }
+          select: { id: true, tenantId: true, total: true }
         });
 
         const validOrderIds = new Set(validOrders.map(o => o.id));
@@ -83,10 +84,18 @@ export async function POST(request: NextRequest) {
       // Create invoices in batch
       const createdInvoices = [];
       const errors = [];
+      const linkedOrders = orderIdsToValidate.length > 0
+        ? await prisma.order.findMany({ where: { id: { in: orderIdsToValidate } }, select: { id: true, total: true } })
+        : [];
+      const grossByOrderId = new Map(linkedOrders.map(order => [order.id, order.total]));
       
       for (let i = 0; i < invoicesData.length; i++) {
         const invoiceData = invoicesData[i];
         const invoiceNumber = `INV-${currentYear}${currentMonth}-${String(invoiceCount + i + 1).padStart(4, '0')}`;
+        const calculation = calculateIncludedIva(
+          (invoiceData.orderId && grossByOrderId.get(invoiceData.orderId)) ?? invoiceGrossFromItems(invoiceData.items || []),
+          invoiceData.discount || 0,
+        );
 
         try {
           const invoice = await prisma.invoice.create({
@@ -101,10 +110,11 @@ export async function POST(request: NextRequest) {
               customerAddress: invoiceData.customerAddress || null,
               customerIdNumber: invoiceData.customerIdNumber || null,
               items: invoiceData.items,
-              subtotal: invoiceData.subtotal,
-              tax: invoiceData.tax,
-              discount: invoiceData.discount || 0,
-              total: invoiceData.total,
+              subtotal: calculation.subtotal,
+              tax: calculation.tax,
+              discount: calculation.discount,
+              total: calculation.total,
+              calculationVersion: calculation.calculationVersion,
               paymentStatus: invoiceData.paymentStatus || 'pending',
               paymentMethod: invoiceData.paymentMethod || null,
               notes: invoiceData.notes || null,

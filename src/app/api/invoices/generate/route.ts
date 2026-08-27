@@ -3,6 +3,7 @@ import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { authenticateAPI } from '@/lib/auth-helpers';
 import { withTenantContext } from '@/lib/tenantContext';
+import { calculateIncludedIva, invoiceGrossFromItems } from '@/lib/invoice-calculation';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -33,13 +34,14 @@ export async function POST(request: NextRequest) {
       }
 
       // CRITICAL: Validate orderId exists and belongs to this tenant
+      let linkedOrder: { id: string; tenantId: string; total: number } | null = null;
       if (invoiceData.orderId) {
-        const order = await prisma.order.findUnique({
+        linkedOrder = await prisma.order.findUnique({
           where: { id: invoiceData.orderId },
-          select: { id: true, tenantId: true }
+          select: { id: true, tenantId: true, total: true }
         });
 
-        if (!order) {
+        if (!linkedOrder) {
           console.error(`[Invoice Generate] Order not found: ${invoiceData.orderId}`);
           return NextResponse.json(
             { error: 'Order not found. Please ensure the order exists.' },
@@ -47,8 +49,8 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        if (order.tenantId !== tenantId) {
-          console.error(`[Invoice Generate] Tenant isolation breach attempt: Order ${invoiceData.orderId} belongs to tenant ${order.tenantId}, not ${tenantId}`);
+        if (linkedOrder.tenantId !== tenantId) {
+          console.error(`[Invoice Generate] Tenant isolation breach attempt for order ${invoiceData.orderId}`);
           return NextResponse.json(
             { error: 'Order not found' },
             { status: 404 }
@@ -72,7 +74,12 @@ export async function POST(request: NextRequest) {
 
       const invoiceNumber = `INV-${currentYear}${currentMonth}-${String(invoiceCount + 1).padStart(4, '0')}`;
 
-      // Create invoice with validated data
+      const calculation = calculateIncludedIva(
+        linkedOrder?.total ?? invoiceGrossFromItems(invoiceData.items),
+        invoiceData.discount || 0,
+      );
+
+      // Create invoice with server-owned, IVA-inclusive arithmetic.
       const invoice = await prisma.invoice.create({
         data: {
           invoiceNumber,
@@ -85,10 +92,11 @@ export async function POST(request: NextRequest) {
           customerAddress: invoiceData.customerAddress || null,
           customerIdNumber: invoiceData.customerIdNumber || null,
           items: invoiceData.items,
-          subtotal: invoiceData.subtotal,
-          tax: invoiceData.tax,
-          discount: invoiceData.discount || 0,
-          total: invoiceData.total,
+          subtotal: calculation.subtotal,
+          tax: calculation.tax,
+          discount: calculation.discount,
+          total: calculation.total,
+          calculationVersion: calculation.calculationVersion,
           paymentStatus: invoiceData.paymentStatus || 'pending',
           paymentMethod: invoiceData.paymentMethod || null,
           notes: invoiceData.notes || null,

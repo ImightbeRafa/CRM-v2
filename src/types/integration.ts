@@ -4,7 +4,7 @@ export interface ExternalOrderData {
   customer: {
     name: string;
     phone: string;
-    email: string;
+    email?: string;
   };
   product: {
     name: string;
@@ -22,11 +22,11 @@ export interface ExternalOrderData {
     };
   };
   total: string;
-  payment: {
-    method: string;
-    transactionId: string;
-    status: string;
-    date: string;
+  payment?: {
+    method?: string;
+    transactionId?: string;
+    status?: string;
+    date?: string;
   };
   // Optional metadata
   source?: string; // Website name/identifier

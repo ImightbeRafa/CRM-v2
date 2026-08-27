@@ -77,6 +77,9 @@ model Tenant {
   feedbackTickets FeedbackTicket[]
   changelogEntries ChangelogEntry[]
   featureFlags    TenantFeatureFlag[]
+  clientIdentityConflicts ClientIdentityConflict[]
+  orderLifecycleOperations OrderLifecycleOperation[]
+  orderInventoryAllocations OrderInventoryAllocation[]
   
   @@index([slug])
   @@index([isActive])
@@ -194,11 +197,20 @@ model Order {
   // Contra entrega (cash on delivery)
   contraEntrega      Boolean @default(false)
   cePaymentConfirmed Boolean @default(false)
+
+  // Betsy v2 linkage. Nullable so the currently deployed application keeps
+  // working before tenant-by-tenant client reconciliation is approved.
+  clientId        String?
+  lifecycleVersion Int      @default(1)
   
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   invoices Invoice[]  // Orders can have invoices
   chatMessages ChatMessage[]
+  client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  identityConflicts ClientIdentityConflict[]
+  lifecycleOperations OrderLifecycleOperation[]
+  inventoryAllocations OrderInventoryAllocation[]
   
   @@unique([tenantId, orderId]) // Unique within tenant
   @@index([tenantId])
@@ -208,6 +220,7 @@ model Order {
   @@index([tenantId, updatedAt, id])
   @@index([tenantId, customerName])
   @@index([tenantId, contraEntrega])
+  @@index([tenantId, clientId])
 }
 
 model User {
@@ -264,6 +277,9 @@ model Client {
   name              String
   phone             String
   email             String?
+  normalizedPhone   String?
+  normalizedEmail   String?
+  isProvisional     Boolean  @default(false)
   province          String
   canton            String
   district          String
@@ -286,13 +302,79 @@ model Client {
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   chatMessages ChatMessage[]
+  orders Order[]
   
   @@index([tenantId])
   @@index([tenantId, isActive])
   @@index([tenantId, phone])
+  @@index([tenantId, normalizedPhone])
+  @@index([tenantId, normalizedEmail])
   @@index([tenantId, isFavorite])
   @@index([tenantId, totalSpent])
   @@index([tenantId, totalOrders])
+}
+
+// A conflict is a review task, never an instruction to merge records. The
+// candidate IDs are retained as JSON so no relationship is inferred silently.
+model ClientIdentityConflict {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  orderId            String?
+  normalizedPhone    String?
+  normalizedEmail    String?
+  candidateClientIds Json
+  reason             String
+  status             String   @default("open")
+  resolvedBy         String?
+  resolvedAt         DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order  Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, orderId])
+}
+
+// Durable idempotency ledger shared by every non-bot order adapter. A single
+// tenant feature flag enables the complete adapter set; channels are never
+// switched independently.
+model OrderLifecycleOperation {
+  id             String   @id @default(cuid())
+  tenantId       String
+  adapter        String
+  operation      String
+  idempotencyKey String
+  orderId        String?
+  result         Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order  Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, adapter, idempotencyKey])
+  @@index([tenantId, orderId])
+}
+
+// Records the exact stock movement owned by a v2 order. Updating an order
+// applies only the delta from these rows, preventing duplicate decrements.
+model OrderInventoryAllocation {
+  id              String   @id @default(cuid())
+  tenantId        String
+  orderId         String
+  inventoryItemId String
+  quantity        Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, orderId, inventoryItemId])
+  @@index([tenantId, inventoryItemId])
 }
 
 model InventoryItem {
@@ -321,6 +403,7 @@ model InventoryItem {
   
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderAllocations OrderInventoryAllocation[]
   
   @@unique([tenantId, sku]) // SKU unique within tenant
   @@index([tenantId])
@@ -631,6 +714,14 @@ model Invoice {
   notes           String?
   dueDate         DateTime?
   currency        String   @default("CRC")
+
+  // Version 1 is historical/client-supplied arithmetic. Version 2 is the
+  // gross, IVA-inclusive Betsy calculation and is immutable once persisted.
+  calculationVersion Int      @default(1)
+  emailStatus       String   @default("not_sent")
+  emailProviderId   String?
+  emailedAt         DateTime?
+  emailError        String?
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

@@ -3,6 +3,8 @@ import { logUpdate } from '@/lib/auditLogger'
 import { getTenantPrisma } from '@/lib/prisma-tenant'
 import { withTenantContext } from '@/lib/tenantContext'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags'
+import { lifecycleIdempotencyKey, OrderLifecycleError, setLifecycleOrderStatus } from '@/lib/order-lifecycle'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -41,14 +43,36 @@ export async function POST(request: Request) {
         )
       }
 
-      // Update the order status
-      const updatedOrder = await prisma.order.update({
-        where: { id: existingOrder.id },
-        data: { status: body.status }
-      })
+      // A tenant is either on the canonical lifecycle for every non-bot
+      // adapter or on the legacy set for all of them.
+      let updatedOrder
+      const useLifecycleV2 = await shouldUseOrderLifecycleV2(tenantId, 'production-status')
+      if (useLifecycleV2) {
+        try {
+          const lifecycle = await setLifecycleOrderStatus({
+            tenantId,
+            userId,
+            adapter: 'production-status',
+            idempotencyKey: lifecycleIdempotencyKey(request, `production-status:${existingOrder.id}:${body.status}:${existingOrder.updatedAt.toISOString()}`),
+            orderId: existingOrder.orderId,
+            status: body.status,
+          })
+          updatedOrder = lifecycle.order
+        } catch (error) {
+          if (error instanceof OrderLifecycleError) {
+            return NextResponse.json({ error: error.message }, { status: error.status })
+          }
+          throw error
+        }
+      } else {
+        updatedOrder = await prisma.order.update({
+          where: { id: existingOrder.id },
+          data: { status: body.status }
+        })
+      }
 
       // Log audit trail (non-blocking)
-      try {
+      if (!useLifecycleV2) try {
         console.log('[orders/status] Status update:', {
           orderId: body.orderId,
           oldStatus: existingOrder.status,

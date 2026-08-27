@@ -120,9 +120,10 @@ export function InvoiceGenerator({
       });
     }
 
-    const subtotal = items.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * (currentInvoice.taxRate / 100);
-    const total = subtotal + tax - currentInvoice.discount;
+    const gross = items.reduce((sum, item) => sum + item.total, 0);
+    const total = Math.max(0, gross - currentInvoice.discount);
+    const subtotal = total / 1.13;
+    const tax = total - subtotal;
 
     setCurrentInvoice({
       ...currentInvoice,
@@ -202,9 +203,10 @@ export function InvoiceGenerator({
 
   const recalculateTotals = () => {
     setCurrentInvoice(prev => {
-      const subtotal = prev.items.reduce((sum, item) => sum + item.total, 0);
-      const tax = subtotal * (prev.taxRate / 100);
-      const total = subtotal + tax - prev.discount;
+      const gross = prev.items.reduce((sum, item) => sum + item.total, 0);
+      const total = Math.max(0, gross - prev.discount);
+      const subtotal = total / 1.13;
+      const tax = total - subtotal;
       
       return {
         ...prev,
@@ -272,11 +274,11 @@ export function InvoiceGenerator({
             unitPrice: order.total / (order.quantity || 1),
             total: order.total
           }],
-          subtotal: order.total,
+          subtotal: order.total / 1.13,
           taxRate: 13,
-          tax: order.total * 0.13,
+          tax: order.total - (order.total / 1.13),
           discount: 0,
-          total: order.total * 1.13,
+          total: order.total,
           notes: `Factura generada automáticamente para orden #${order.orderId}`,
           dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
           paymentMethod: 'pending'

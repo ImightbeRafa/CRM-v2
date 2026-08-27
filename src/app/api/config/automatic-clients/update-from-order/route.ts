@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withTenantContext } from '@/lib/tenantContext';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
+import { normalizeClientEmail, normalizeClientPhone } from '@/lib/order-lifecycle';
 
 export const runtime = 'nodejs';
 
@@ -50,9 +51,10 @@ export async function POST(request: NextRequest) {
 
       // Otherwise, check if client exists with this phone number
       if (!existingClient) {
+        const normalizedPhone = normalizeClientPhone(phone);
         existingClient = await prisma.client.findFirst({
           where: { 
-            phone, 
+            OR: [{ normalizedPhone }, { phone }],
             isActive: true
           }
         });
@@ -72,6 +74,8 @@ export async function POST(request: NextRequest) {
           data: {
             name,
             email: email || existingClient.email,
+            normalizedPhone: normalizeClientPhone(phone),
+            normalizedEmail: normalizeClientEmail(email || existingClient.email),
             province,
             canton,
             district,
@@ -103,6 +107,8 @@ export async function POST(request: NextRequest) {
             name,
             phone,
             email: email || '',
+            normalizedPhone: normalizeClientPhone(phone),
+            normalizedEmail: normalizeClientEmail(email),
             province,
             canton,
             district,

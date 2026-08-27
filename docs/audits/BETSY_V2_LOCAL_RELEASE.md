@@ -48,3 +48,43 @@ backfills require separate approval and are never applied by Prisma schema comma
 - **Rollback:** turn off the global enforcement flag first, then revert the Slice 2
   commit if code rollback is needed. The additive table may remain; no down migration
   is required, and old code ignores it.
+
+## Slice 3 — Canonical lifecycle and Clients linkage
+
+- **Local branch:** `codex/betsyv2-s3-lifecycle`.
+- **Schema dependency:** additive `Order.clientId`/lifecycle version, normalized and
+  provisional Client identity, conflict queue, lifecycle idempotency ledger, exact
+  inventory allocations, and versioned invoice/email state packaged in
+  `supabase/migrations/019_betsy_v2_order_lifecycle.sql`. The SQL was **not** executed.
+- **Database writes used for verification:** none. No dry-run script was pointed at the
+  shared database because the additive schema is not approved/applied, and no test
+  tenant identifier was guessed.
+- **Activation:** one tenant flag (`order_lifecycle_v2`) controls Ventas, website,
+  Excel, order update, production status, CE confirmation, and tenant guía writes as a
+  complete set. The flag also requires `config.clientBackfillCompletedAt`; a bare flag
+  cannot activate a legacy tenant. Missing flag/schema remains legacy/off. Bots remain
+  on the old order lifecycle until Slice 5.
+- **Behavior:** v2 create/update runs client resolution, order mutation, exact-match
+  inventory deltas, statistics refresh, conflicts, and idempotency in a serializable
+  transaction. Phone wins over email, identity disagreement creates a provisional
+  client plus review conflict, and no records are auto-merged. Inventory never uses a
+  fuzzy first match and repeated operations cannot decrement twice.
+- **Backfill:** `npm run betsyv2:clients:backfill -- --tenant=<id>` is read-only by
+  default. Apply requires both `--apply` and an exact matching
+  `BETSY_V2_BACKFILL_APPROVED_TENANT`; real-tenant use remains separately approved.
+- **Invoices and guías:** new invoices store v2 gross/IVA-included arithmetic while
+  historical v1 rows/PDFs remain unchanged. Resend now records sending/sent/failed and
+  returns provider-confirmed success only. Tenant guía routes share one bounded,
+  concurrency-limited generator; delivery type and manual numbers persist, and only
+  the server writes `Enviado`.
+- **Verification:** lifecycle 8/8; security/write coverage 69/69; `tsc --noEmit` pass;
+  lint pass with pre-existing warnings; production build pass (125 pages); compiled
+  server smoke: `/` and sign-in 200, Ventas redirects to sign-in, billing access 401,
+  website POST without API key 401, and manual guía POST without session 401.
+- **Known limitations:** no shared-database schema or test-tenant mutation, Resend
+  delivery, Correos SOAP request, authenticated adapter workflow, or real backfill was
+  exercised. Those tests require the separately approved SQL and designated tenant /
+  provider accounts. The old lifecycle remains active for every current tenant.
+- **Rollback:** disable `order_lifecycle_v2` first, then revert the Slice 3 commit if
+  needed. Additive columns/tables remain compatible with old code; no down migration is
+  part of rollback.

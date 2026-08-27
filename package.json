@@ -18,10 +18,12 @@
     "test:backup-roundtrip": "npx tsx scripts/test-backup-roundtrip.ts",
     "test:bot-grok": "npx tsx src/lib/bot/__tests__/grok-first-order.test.ts",
     "test:security": "npx tsx --test src/lib/__tests__/security-hardening.test.ts src/lib/__tests__/integration-cors.test.ts src/lib/__tests__/tilopay-repeat.test.ts src/lib/__tests__/billing-access.test.ts src/lib/__tests__/tenant-write-coverage.test.ts",
+    "test:lifecycle": "npx tsx --test src/lib/__tests__/order-lifecycle.test.ts",
     "test:workforce-datetime": "npx tsx src/lib/__tests__/workforce-datetime.test.ts",
     "test:workforce-code": "npx tsx src/lib/__tests__/workforce-code.test.ts",
     "test:workforce-state": "npx tsx src/lib/__tests__/workforce-time-entry-state.test.ts",
-    "audit:dead": "knip --no-exit-code"
+    "audit:dead": "knip --no-exit-code",
+    "betsyv2:clients:backfill": "npx tsx scripts/betsy-v2-client-backfill.ts"
   },
   "dependencies": {
     "@auth/core": "0.41.3",

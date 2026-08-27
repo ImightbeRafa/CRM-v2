@@ -7,6 +7,8 @@
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
 import { CorreosWebService, buildGuiaDescription, buildFullAddress, getCorreosWSCredentials } from '@/lib/correos';
+import { shouldUseOrderLifecycleV2, type OrderLifecycleAdapter } from '@/lib/feature-flags';
+import { setLifecycleOrderStatus } from '@/lib/order-lifecycle';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,6 +35,41 @@ interface SenderInfo {
   phone: string;
 }
 
+export interface GuiaGenerationOptions {
+  deliveryType?: 'Domicilio' | 'Sucursal' | 'Punto de correo';
+  verifiedLocations?: Array<{ orderId: string; province: string; canton: string; district: string; address?: string }>;
+  adapter?: Extract<OrderLifecycleAdapter, 'tenant-guia'>;
+  userId?: string;
+  timeoutMs?: number;
+  concurrency?: number;
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Correos request timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await worker(items[index]);
+    }
+  }));
+  return results;
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -44,6 +81,7 @@ export async function generateGuiasForOrders(
   tenantId: string,
   orderIds: string[],
   carrier = 'correos_cr',
+  options: GuiaGenerationOptions = {},
 ): Promise<GuiaBatchResult> {
   const tenantPrisma = getTenantPrisma(tenantId);
 
@@ -92,7 +130,7 @@ export async function generateGuiasForOrders(
   }
 
   const orders = await tenantPrisma.order.findMany({
-    where: { orderId: { in: orderIds }, tenantId },
+    where: { orderId: { in: orderIds }, tenantId, orderType: 'EA' },
   });
 
   if (orders.length === 0) {
@@ -115,40 +153,68 @@ export async function generateGuiasForOrders(
   };
 
   const ws = new CorreosWebService(wsCreds);
-  const results: GuiaGenerationResult[] = [];
+  const locationMap = new Map((options.verifiedLocations || []).map(location => [location.orderId, location]));
+  const deliveryType = options.deliveryType || 'Domicilio';
+  const useLifecycleV2 = options.adapter
+    ? await shouldUseOrderLifecycleV2(tenantId, options.adapter)
+    : false;
+  const markOrderShipped = async (order: (typeof orders)[number], idempotencyKey: string) => {
+    if (useLifecycleV2) {
+      await setLifecycleOrderStatus({
+        tenantId,
+        userId: options.userId,
+        adapter: 'tenant-guia',
+        idempotencyKey,
+        orderId: order.orderId,
+        status: 'Enviado',
+        courier: carrier,
+      });
+    } else {
+      await tenantPrisma.order.update({
+        where: { tenantId_orderId: { tenantId, orderId: order.orderId } },
+        data: { status: 'Enviado', courier: carrier },
+      });
+    }
+  };
 
-  for (const order of orders) {
+  const results = await mapWithConcurrency(orders, Math.max(1, Math.min(options.concurrency || 3, 4)), async order => {
     // Skip if guía already exists for this order
     const existing = await tenantPrisma.shippingGuia.findFirst({
       where: { orderId: order.orderId, tenantId },
     });
 
     if (existing && existing.status === 'completed') {
-      results.push({
+      try {
+        await markOrderShipped(order, `guia:${order.id}:${existing.guiaNumber || existing.id}`);
+      } catch (error) {
+        console.warn(`[GuiaService] Failed to reconcile order status for ${order.orderId}:`, error);
+      }
+      return {
         success: true,
         orderId: order.orderId,
         guiaNumber: existing.guiaNumber || undefined,
         trackingNumber: existing.trackingNumber || undefined,
         pdfBuffer: existing.pdfData ? Buffer.from(existing.pdfData) : undefined,
         pdfFileName: existing.pdfFileName || `guia-${existing.guiaNumber}.pdf`,
-      });
-      continue;
+      };
     }
 
     try {
+      const verified = locationMap.get(order.orderId);
+      const addressData = verified ? { ...order, ...verified } : order;
       let destZip = '10101';
-      if (order.province && order.canton && order.district) {
+      if (addressData.province && addressData.canton && addressData.district) {
         try {
-          destZip = await ws.getPostalCode(order.province, order.canton, order.district);
+          destZip = await withTimeout(ws.getPostalCode(addressData.province, addressData.canton, addressData.district), options.timeoutMs || 12_000);
         } catch (geoErr: any) {
           console.warn(`[GuiaService] Could not resolve postal code for ${order.orderId}: ${geoErr.message}`);
         }
       }
 
-      const res = await ws.generateAndRegisterGuia({
+      const res = await withTimeout(ws.generateAndRegisterGuia({
         customerName: order.customerName || 'Destinatario',
         customerPhone: order.phone || '00000000',
-        customerAddress: buildFullAddress(order),
+        customerAddress: buildFullAddress(addressData),
         customerZip: destZip,
         customerApartado: destZip,
         senderName: sender.name,
@@ -156,8 +222,8 @@ export async function generateGuiasForOrders(
         senderZip: sender.zip,
         senderPhone: sender.phone,
         weight: 500,
-        description: buildGuiaDescription(order as any),
-      });
+        description: `${buildGuiaDescription(order as any)} | Entrega: ${deliveryType}`,
+      }), options.timeoutMs || 20_000);
 
       if (res.success && res.guiaNumber) {
         const pdfBuf = res.pdfBuffer
@@ -170,7 +236,7 @@ export async function generateGuiasForOrders(
           guiaNumber: res.guiaNumber,
           trackingNumber: res.guiaNumber,
           status: 'completed',
-          serviceType: 'standard',
+          serviceType: deliveryType,
           tenant: { connect: { id: tenantId } },
         };
 
@@ -185,12 +251,10 @@ export async function generateGuiasForOrders(
         }
         await tenantPrisma.shippingGuia.create({ data: guiaData });
 
-        // Update order status
+        // The server is the single Enviado writer. V2 uses the canonical
+        // lifecycle; bots remain on their legacy path until Slice 5.
         try {
-          await tenantPrisma.order.update({
-            where: { tenantId_orderId: { tenantId, orderId: order.orderId } },
-            data: { status: 'Enviado', courier: carrier },
-          });
+          await markOrderShipped(order, `guia:${order.id}:${res.guiaNumber}`);
         } catch (e) {
           console.warn(`[GuiaService] Failed to update order status for ${order.orderId}:`, e);
         }
@@ -207,30 +271,30 @@ export async function generateGuiasForOrders(
           console.warn(`[GuiaService] Failed to upsert lm_orders for ${order.orderId}:`, lmErr);
         }
 
-        results.push({
+        return {
           success: true,
           orderId: order.orderId,
           guiaNumber: res.guiaNumber,
           trackingNumber: res.guiaNumber,
           pdfBuffer: pdfBuf,
           pdfFileName: `guia-${res.guiaNumber}.pdf`,
-        });
+        };
       } else {
-        results.push({
+        return {
           success: false,
           orderId: order.orderId,
           error: res.error || 'Correos WS returned an error',
-        });
+        };
       }
     } catch (err: any) {
       console.error(`[GuiaService] Error generating guía for ${order.orderId}:`, err.message);
-      results.push({
+      return {
         success: false,
         orderId: order.orderId,
         error: err.message || 'Error inesperado al generar guía',
-      });
+      };
     }
-  }
+  });
 
   // Fill in results for orders that weren't found in the DB
   const processedIds = new Set(results.map(r => r.orderId));

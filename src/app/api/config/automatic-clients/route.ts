@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
+import { normalizeClientEmail, normalizeClientPhone } from '@/lib/order-lifecycle';
 
 export async function GET(request: NextRequest) {
   try {
@@ -73,8 +74,12 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Check if client already exists by phone (auto-filtered by tenantPrisma)
+    const normalizedPhone = normalizeClientPhone(phone);
+    if (!normalizedPhone) {
+      return NextResponse.json({ error: 'Valid phone number is required' }, { status: 400 });
+    }
     const existingClient = await prisma.client.findFirst({
-      where: { phone, isActive: true }
+      where: { OR: [{ normalizedPhone }, { phone }], isActive: true }
     });
 
     if (existingClient) {
@@ -90,6 +95,8 @@ export async function POST(request: NextRequest) {
         name,
         phone,
         email,
+        normalizedPhone,
+        normalizedEmail: normalizeClientEmail(email),
         province,
         canton,
         district,
@@ -147,9 +154,13 @@ export async function PUT(request: NextRequest) {
     } = body;
 
     // Check if phone already exists for different client (auto-filtered by tenantPrisma)
+    const normalizedPhone = normalizeClientPhone(phone);
+    if (!normalizedPhone) {
+      return NextResponse.json({ error: 'Valid phone number is required' }, { status: 400 });
+    }
     const existingClient = await prisma.client.findFirst({
       where: { 
-        phone, 
+        OR: [{ normalizedPhone }, { phone }],
         isActive: true,
         id: { not: id }
       }
@@ -168,6 +179,8 @@ export async function PUT(request: NextRequest) {
         name,
         phone,
         email,
+        normalizedPhone,
+        normalizedEmail: normalizeClientEmail(email),
         province,
         canton,
         district,

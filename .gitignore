@@ -6,9 +6,13 @@ node_modules/
 supabase/migrations/*
 !supabase/migrations/017_workforce_system.sql
 !supabase/migrations/018_betsy_v2_feature_flags.sql
+!supabase/migrations/019_betsy_v2_order_lifecycle.sql
 # Testing
 coverage/
 scripts
+!scripts/
+scripts/*
+!scripts/betsy-v2-client-backfill.ts
 SDK_V2_FINAL_CONFIGURATION.txt
 SDK_V2_IMPLEMENTATION.txt
 # Documentation and Notes (local only)

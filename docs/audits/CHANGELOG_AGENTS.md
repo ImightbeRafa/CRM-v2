@@ -178,3 +178,23 @@ Append-only. Newest entries at the top.
 - Prove: security/coverage 68/68; `tsc --noEmit`; lint pass with existing warnings;
   production build pass; compiled local server smoke pass. No remote push, SQL,
   shared-database mutation, provider message, or charge.
+
+# 2026-08-27 — Betsy v2 Slice 3: canonical order lifecycle
+
+- Added a single tenant-gated, serializable lifecycle for all non-bot write adapters:
+  Ventas, website, Excel, order update, production status, CE confirmation, and tenant
+  guía generation. Activation is all-on/all-off and requires an acknowledged client
+  backfill marker; bots stay legacy until Slice 5.
+- Added nullable Order→Client linkage, normalized phone/email identity, provisional
+  clients, a no-auto-merge conflict queue, durable adapter idempotency, and exact
+  inventory allocation deltas. All schema is additive SQL and was not executed.
+- Added a tenant-scoped client-link dry-run/apply package. Apply is double-gated by an
+  exact tenant environment value and remains subject to separate approval.
+- Corrected invoices to treat `Order.total` as gross and IVA-inclusive, versioned new
+  calculations while leaving old rows still, and replaced fake email success with
+  provider-confirmed Resend state.
+- Consolidated regular-tenant guía APIs into the shared bounded generator, persisted
+  delivery type and manual guía numbers, and removed the duplicate UI `Enviado` write.
+- Prove: lifecycle 8/8; security/write coverage 69/69; TypeScript and lint pass (only
+  existing warnings); production build and compiled unauthenticated smoke pass. No
+  remote push, SQL, shared-database mutation, provider message, SOAP call, or charge.

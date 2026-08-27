@@ -6,6 +6,8 @@ import { withTenantContext } from '@/lib/tenantContext'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { logCreate } from '@/lib/auditLogger'
 import { ORDER_COMMENT_FIELD_ALIASES, resolveOrderComment } from '@/lib/order-comments'
+import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags'
+import { createLifecycleOrder, lifecycleIdempotencyKey, OrderLifecycleError } from '@/lib/order-lifecycle'
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic'
@@ -169,6 +171,7 @@ export async function GET(request: NextRequest) {
         ...(limit && { take: limit }), // Only add take if limit is defined
         select: {
           id: true,
+          clientId: true,
           orderId: true,
           orderType: true,
           status: true,
@@ -289,6 +292,32 @@ export async function POST(request: NextRequest) {
 
      // Map seller/order comments into the canonical Order.comments column.
      const commentValue = resolveOrderComment(body, customFields)
+
+     if (await shouldUseOrderLifecycleV2(tenantId, 'ventas')) {
+       const requestedOrderId = body.orderId || `ORDER-${Date.now()}`
+       try {
+         const lifecycle = await createLifecycleOrder({
+           tenantId,
+           userId,
+           adapter: 'ventas',
+           idempotencyKey: lifecycleIdempotencyKey(request, `ventas:create:${requestedOrderId}`),
+           data: {
+             ...body,
+             orderId: requestedOrderId,
+             comments: commentValue || '',
+             customFields,
+           },
+         })
+         return createSuccessResponse({
+           ...lifecycle.order,
+           idempotentReplay: lifecycle.idempotentReplay,
+           unresolvedInventory: lifecycle.unresolvedInventory,
+         }, lifecycle.idempotentReplay ? 'Order already created' : 'Order created successfully')
+       } catch (error) {
+         if (error instanceof OrderLifecycleError) return createErrorResponse(error.message, error.status)
+         throw error
+       }
+     }
 
     // Calculate total on server side to ensure accuracy
     const productCost = Number(body.productCost || 0);

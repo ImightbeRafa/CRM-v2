@@ -5,10 +5,30 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { createSuccessResponse, createErrorResponse, handleApiError, validateRequiredFields, validatePassword } from '@/lib/apiUtils'
 import { logCreate, logDelete } from '@/lib/auditLogger'
 import { checkUserLimit } from '@/lib/plan-enforcement'
+import { getTenantSeatUsageWithClient } from '@/lib/plan-enforcement'
 import { inviteMembershipAction, resolveDefaultTenantAfterRemoval } from '@/lib/membership-lifecycle'
+import { Prisma } from '@prisma/client'
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic'
+
+async function lockAndReadSeatUsage(tx: Prisma.TransactionClient, tenantId: string) {
+  // Shared with bot-session admission so a member and bot cannot both claim
+  // the tenant's final seat concurrently.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`bot-seat:${tenantId}`}))`
+  return getTenantSeatUsageWithClient(tx, tenantId)
+}
+
+function seatLimitResponse(usage: Awaited<ReturnType<typeof getTenantSeatUsageWithClient>>) {
+  return NextResponse.json({
+    status: 'error',
+    error: `Límite de usuarios alcanzado (${usage.currentCount}/${usage.limit}). Actualiza tu plan para agregar más usuarios.`,
+    needsUpgrade: true,
+    currentPlan: usage.plan,
+    currentCount: usage.currentCount,
+    limit: usage.limit,
+  }, { status: 402 })
+}
 
 // GET /api/users - List users belonging to current tenant only
 export async function GET(request: NextRequest) {
@@ -132,14 +152,21 @@ export async function POST(request: NextRequest) {
         return createErrorResponse('El usuario ya pertenece a este tenant', 409)
       }
       if (membershipAction === 'reactivate' && existingMembership) {
-        const reactivated = await prisma.membership.update({
-          where: { id: existingMembership.id },
-          data: {
-            isActive: true,
-            role: role as any,
-            joinedAt: new Date(),
-          }
-        })
+        const admission = await prisma.$transaction(async tx => {
+          const usage = await lockAndReadSeatUsage(tx, tenantId)
+          if (usage.currentCount >= usage.limit) return { usage, membership: null }
+          const membership = await tx.membership.update({
+            where: { id: existingMembership.id },
+            data: {
+              isActive: true,
+              role: role as any,
+              joinedAt: new Date(),
+            }
+          })
+          return { usage, membership }
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+        if (!admission.membership) return seatLimitResponse(admission.usage)
+        const reactivated = admission.membership
 
         if (!existingUser.defaultTenantId) {
           await prisma.user.update({
@@ -215,15 +242,22 @@ export async function POST(request: NextRequest) {
     }
     
     // Create membership for current tenant
-    const membership = await prisma.membership.create({
-      data: {
-        userId: userId,
-        tenantId: tenantId,
-        role: role as any,
-        isActive: true,
-        joinedAt: new Date().toISOString()
-      }
-    })
+    const admission = await prisma.$transaction(async tx => {
+      const usage = await lockAndReadSeatUsage(tx, tenantId)
+      if (usage.currentCount >= usage.limit) return { usage, membership: null }
+      const membership = await tx.membership.create({
+        data: {
+          userId: userId,
+          tenantId: tenantId,
+          role: role as any,
+          isActive: true,
+          joinedAt: new Date().toISOString()
+        }
+      })
+      return { usage, membership }
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+    if (!admission.membership) return seatLimitResponse(admission.usage)
+    const membership = admission.membership
     
     // Log audit trail
     try {
@@ -275,14 +309,36 @@ export async function PUT(request: NextRequest) {
       return createErrorResponse('Usuario no encontrado en este tenant', 404)
     }
     
-    // Update membership role only (not the user itself)
-    const updatedMembership = await prisma.membership.update({
-      where: { id: membership.id },
-      data: {
-        ...(role && { role: role as any }),
-        ...(active !== undefined && { isActive: active })
-      }
-    })
+    // Reactivation consumes a seat. Use the same transaction-scoped advisory
+    // lock as POST membership admission and bot-session admission so two
+    // channels cannot claim the tenant's last seat concurrently.
+    let updatedMembership
+    if (active === true && !membership.isActive) {
+      const admission = await prisma.$transaction(async tx => {
+        const usage = await lockAndReadSeatUsage(tx, tenantId)
+        if (usage.currentCount >= usage.limit) return { usage, membership: null }
+        const reactivated = await tx.membership.update({
+          where: { id: membership.id },
+          data: {
+            ...(role && { role: role as any }),
+            isActive: true,
+          },
+        })
+        return { usage, membership: reactivated }
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+      if (!admission.membership) return seatLimitResponse(admission.usage)
+      updatedMembership = admission.membership
+    } else {
+      // Role-only updates, deactivation, and no-op active updates do not admit
+      // a new seat and therefore do not need the admission lock.
+      updatedMembership = await prisma.membership.update({
+        where: { id: membership.id },
+        data: {
+          ...(role && { role: role as any }),
+          ...(active !== undefined && { isActive: active })
+        }
+      })
+    }
     
     return createSuccessResponse(
       { 

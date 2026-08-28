@@ -131,3 +131,68 @@ backfills require separate approval and are never applied by Prisma schema comma
 - **Rollback:** disable `production_server_v2` and `clients_server_v2` first. Revert the
   Slice 4 commit only if a code rollback is needed. Additive indexes/table may remain;
   old code ignores them and no down migration is part of rollback.
+
+## Slice 5 — Durable WhatsApp and Telegram inbox
+
+- **Local branch:** `codex/betsyv2-s5-bot-inbox`.
+- **Schema dependency:** additive durable inbox and outbound-delivery claims,
+  bot-session seat metadata, and bot invoice idempotency key packaged in
+  `supabase/migrations/021_betsy_v2_bot_inbox.sql`.
+  The SQL was **not** executed. Existing bot rows are not rewritten: a null seat policy
+  is interpreted as grandfathered, and the new code writes explicit policies only when
+  a session is created or reconnected. `schema.prisma` is synchronized and only
+  `prisma generate` ran.
+- **Database/provider writes used for verification:** none. No feature flag, bot
+  session, inbox message, invoice, order, client, inventory, or subscription row was
+  changed; no Meta, Telegram, Resend, Tilopay, or Correos call was made.
+- **Inbox behavior:** authenticated provider messages for an enabled tenant are stored
+  before the webhook returns 200. Persistence failure returns 503. Provider IDs are
+  durably unique, and every message in a batched Meta envelope is stored atomically
+  before acknowledgement. Claims use leases plus `FOR UPDATE SKIP LOCKED`, and older
+  messages in the same conversation block later claims. A protected Vercel cron is the
+  recovery authority; post-response processing only reduces latency. Delivery and
+  transient AI failures remain retryable, retries are bounded, and terminal/completed
+  payloads are cleared, with old metadata purged after 30 days. A provider operation
+  key atomically deduplicates both user and assistant history across retries. Each
+  outbound text chunk and PDF is durably claimed before provider delivery; confirmed
+  chunks are skipped on retry, while an unresolved provider result stops as an
+  owner-reconciliation case rather than risking a duplicate customer message.
+- **Activation:** `bot_inbox_v2` and `bot_lifecycle_v2` are separate tenant flags and
+  both default off. Queued writes also require the complete Slice 3 lifecycle readiness
+  marker. Enabling the inbox alone can exercise delivery/retry reliability but cannot
+  write business data through the old lifecycle. The claimant checks the tenant-scoped
+  inbox flag before every claim, so disabling it is an immediate stop control.
+- **Billing, roles, and seats:** billing is re-read from the database immediately before
+  each bot write. Unlinked sessions use `BOT_OPERATOR`, not `MANAGER`. Existing null/
+  grandfathered sessions remain active and excluded from enforcement; new unlinked
+  sessions are counted. Observe/warn records and exposes actual overage while enforce
+  blocks only a new counted connection that would exceed the plan. Bot and dashboard
+  member creation/reactivation and bot admission share one tenant lock, so they cannot
+  race to claim the final seat.
+- **Factura:** the bot tool requires an explicit current-message invoice request,
+  confirmation, a durable provider operation key, and separate email intent. Invoice
+  creation and Resend use stable idempotency keys; responses distinguish not requested,
+  provider-confirmed sent, and failed delivery. Existing invoice PDFs remain unchanged.
+- **Guías:** queued automatic Correos work uses the canonical bot lifecycle and a stable
+  per-order external claim. Correos has no idempotency key, so an ambiguous timeout or
+  crash stops for owner reconciliation instead of risking a second provider guía.
+  Queued manual guía generation is intentionally directed to Producción; the legacy
+  direct/manual path is never used by the v2 inbox.
+- **PII handling:** routine logs contain hashed conversation references and counts, not
+  message bodies, phones/chat IDs, transcription text, media URLs, customer fields, or
+  access-code content. Raw authenticated payload is retained only while the durable
+  message needs processing/retry and is cleared on completion or terminal failure.
+- **Verification:** inbox contracts 8/8; lifecycle 8/8; security/write coverage 69/69;
+  pagination contracts 8/8; backups 8/8; bot Grok pass; TypeScript pass; lint pass with
+  pre-existing warnings; production build pass (125 pages); compiled Playwright smoke
+  3/3, including fail-closed cron/provider checks. No remote push or shared-database
+  mutation occurred.
+- **Known limitations:** authenticated queue, provider-delivery, serverless-restart,
+  seat-enforcement, and factura workflows require approved additive SQL, designated
+  test accounts, and explicit tenant flags. An ambiguous Correos claim requires manual
+  reconciliation before any new attempt. An outbound row left in `sending` or marked
+  `ambiguous` also requires reconciliation; the system intentionally accepts a possible
+  missing response rather than blindly duplicating a provider-accepted text or PDF.
+- **Rollback:** disable `bot_lifecycle_v2` first, then `bot_inbox_v2`. Revert the Slice 5
+  commit only if code rollback is required. The additive columns/table can remain and
+  old code ignores them; no down migration is part of rollback.

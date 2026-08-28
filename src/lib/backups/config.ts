@@ -69,6 +69,12 @@ export const HOT_PRISMA_TABLES = [
   'WebhookLog',
   'UsageLog',
   'ChatMessage',
+  'BotSession',
+  'BotInboxMessage',
+  'BotInboxDelivery',
+  'OrderLifecycleOperation',
+  'OrderInventoryAllocation',
+  'ClientIdentityConflict',
 ] as const;
 
 /** Preferred watermark columns (first match wins). */

@@ -4,6 +4,8 @@ import { prisma } from '@/lib/db';
 export const ORDER_LIFECYCLE_V2_FLAG = 'order_lifecycle_v2';
 export const PRODUCTION_SERVER_V2_FLAG = 'production_server_v2';
 export const CLIENTS_SERVER_V2_FLAG = 'clients_server_v2';
+export const BOT_INBOX_V2_FLAG = 'bot_inbox_v2';
+export const BOT_LIFECYCLE_V2_FLAG = 'bot_lifecycle_v2';
 
 function isMissingFeatureFlagTable(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError
@@ -21,7 +23,7 @@ export async function isTenantFeatureEnabled(tenantId: string, key: string): Pro
     const flag = await prisma.tenantFeatureFlag.findFirst({
       where: {
         tenantId,
-        scope: 'tenant',
+        scope: tenantId,
         key,
       },
       select: { enabled: true },
@@ -43,7 +45,7 @@ export interface TenantFeatureReadiness {
 async function readTenantFlag(tenantId: string, key: string): Promise<TenantFeatureReadiness> {
   try {
     const flag = await prisma.tenantFeatureFlag.findFirst({
-      where: { tenantId, scope: 'tenant', key },
+      where: { tenantId, scope: tenantId, key },
       select: { enabled: true, config: true },
     });
     const config = flag?.config && typeof flag.config === 'object' && !Array.isArray(flag.config)
@@ -86,6 +88,27 @@ export async function readClientsServerReadiness(tenantId: string) {
   };
 }
 
+export async function readBotInboxReadiness(tenantId: string) {
+  const flag = await readTenantFlag(tenantId, BOT_INBOX_V2_FLAG);
+  const configuredSeatMode = flag.config.seatMode;
+  const seatMode: 'observe' | 'warn' | 'enforce' = configuredSeatMode === 'enforce' || configuredSeatMode === 'warn'
+    ? configuredSeatMode
+    : 'observe';
+  return {
+    enabled: flag.enabled,
+    seatMode,
+  };
+}
+
+export async function shouldUseBotLifecycleV2(tenantId: string) {
+  const [lifecycleReady, inbox, botLifecycle] = await Promise.all([
+    readLifecycleReadiness(tenantId),
+    readTenantFlag(tenantId, BOT_INBOX_V2_FLAG),
+    readTenantFlag(tenantId, BOT_LIFECYCLE_V2_FLAG),
+  ]);
+  return lifecycleReady && inbox.enabled && botLifecycle.enabled;
+}
+
 export type OrderLifecycleAdapter =
   | 'ventas'
   | 'website'
@@ -93,7 +116,8 @@ export type OrderLifecycleAdapter =
   | 'orders-update'
   | 'production-status'
   | 'ce-confirmation'
-  | 'tenant-guia';
+  | 'tenant-guia'
+  | 'bot';
 
 /** One flag controls the complete non-bot adapter set. There is intentionally
  * no per-channel override because partial activation forks business truth. */
@@ -104,7 +128,7 @@ export function shouldUseOrderLifecycleV2(tenantId: string, _adapter: OrderLifec
 async function readLifecycleReadiness(tenantId: string) {
   try {
     const flag = await prisma.tenantFeatureFlag.findFirst({
-      where: { tenantId, scope: 'tenant', key: ORDER_LIFECYCLE_V2_FLAG },
+      where: { tenantId, scope: tenantId, key: ORDER_LIFECYCLE_V2_FLAG },
       select: { enabled: true, config: true },
     });
     const config = flag?.config && typeof flag.config === 'object' && !Array.isArray(flag.config)

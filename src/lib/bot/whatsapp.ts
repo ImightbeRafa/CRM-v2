@@ -30,7 +30,7 @@ export async function sendWhatsAppMessage(
   
   if (!accessToken || !phoneNumberId) {
     console.error('[WhatsApp] Missing WHATSAPP_ACCESS_TOKEN or WHATSAPP_PHONE_NUMBER_ID');
-    return { success: false, error: 'WhatsApp not configured' };
+    throw new Error('WHATSAPP_DELIVERY_UNAVAILABLE');
   }
   
   try {
@@ -55,21 +55,24 @@ export async function sendWhatsAppMessage(
     const data = await response.json();
     
     if (!response.ok) {
-      console.error('[WhatsApp] sendMessage failed:', data);
-      return { 
-        success: false, 
-        error: data.error?.message || 'Failed to send message' 
-      };
+      console.error('[WhatsApp] sendMessage failed', {
+        status: response.status,
+        providerCode: data?.error?.code ?? null,
+      });
+      throw new Error('WHATSAPP_DELIVERY_FAILED');
     }
     
-    console.log(`[WhatsApp] ✅ Message sent to ${to}`);
+    console.log('[WhatsApp] Message delivered');
     return { 
       success: true, 
       messageId: data.messages?.[0]?.id 
     };
   } catch (error: any) {
-    console.error('[WhatsApp] sendMessage error:', error);
-    return { success: false, error: error.message };
+    if (error instanceof Error && error.message.startsWith('WHATSAPP_DELIVERY_')) throw error;
+    console.error('[WhatsApp] sendMessage transport error', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
+    throw new Error('WHATSAPP_DELIVERY_FAILED');
   }
 }
 
@@ -88,7 +91,7 @@ export async function sendWhatsAppButtonMessage(
   
   if (!accessToken || !phoneNumberId) {
     console.error('[WhatsApp] Missing credentials');
-    return { success: false, error: 'WhatsApp not configured' };
+    throw new Error('WHATSAPP_DELIVERY_UNAVAILABLE');
   }
   
   // WhatsApp allows max 3 buttons
@@ -132,14 +135,20 @@ export async function sendWhatsAppButtonMessage(
     const data = await response.json();
     
     if (!response.ok) {
-      console.error('[WhatsApp] sendButtonMessage failed:', data);
-      return { success: false, error: data.error?.message };
+      console.error('[WhatsApp] sendButtonMessage failed', {
+        status: response.status,
+        providerCode: data?.error?.code ?? null,
+      });
+      throw new Error('WHATSAPP_DELIVERY_FAILED');
     }
     
     return { success: true, messageId: data.messages?.[0]?.id };
   } catch (error: any) {
-    console.error('[WhatsApp] sendButtonMessage error:', error);
-    return { success: false, error: error.message };
+    if (error instanceof Error && error.message.startsWith('WHATSAPP_DELIVERY_')) throw error;
+    console.error('[WhatsApp] sendButtonMessage transport error', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
+    throw new Error('WHATSAPP_DELIVERY_FAILED');
   }
 }
 
@@ -252,8 +261,11 @@ export async function sendWhatsAppDocument(
     const uploadData = await uploadResponse.json();
 
     if (!uploadResponse.ok || !uploadData.id) {
-      console.error('[WhatsApp] ❌ Media upload failed:', uploadData);
-      return { success: false, error: uploadData.error?.message || 'Media upload failed' };
+      console.error('[WhatsApp] Media upload failed', {
+        status: uploadResponse.status,
+        providerCode: uploadData?.error?.code ?? null,
+      });
+      return { success: false, error: 'WHATSAPP_MEDIA_UPLOAD_FAILED' };
     }
 
     const mediaId = uploadData.id;
@@ -287,15 +299,20 @@ export async function sendWhatsAppDocument(
     const sendData = await sendResponse.json();
 
     if (!sendResponse.ok) {
-      console.error('[WhatsApp] ❌ sendDocument failed:', sendData);
-      return { success: false, error: sendData.error?.message || 'Failed to send document' };
+      console.error('[WhatsApp] sendDocument failed', {
+        status: sendResponse.status,
+        providerCode: sendData?.error?.code ?? null,
+      });
+      return { success: false, error: 'WHATSAPP_DOCUMENT_DELIVERY_FAILED' };
     }
 
-    console.log(`[WhatsApp] ✅ Document "${filename}" sent to ${to}`);
+    console.log('[WhatsApp] Document delivered', { byteLength: fileBuffer.byteLength });
     return { success: true };
-  } catch (error: any) {
-    console.error('[WhatsApp] sendDocument error:', error);
-    return { success: false, error: error.message };
+  } catch (error) {
+    console.error('[WhatsApp] sendDocument transport error', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
+    return { success: false, error: 'WHATSAPP_DOCUMENT_DELIVERY_FAILED' };
   }
 }
 
@@ -374,7 +391,7 @@ export async function sendWhatsAppTemplate(
       };
     }
 
-    console.log(`[WhatsApp] Template "${templateName}" sent to ${to}`);
+    console.log('[WhatsApp] Template delivered', { templateName });
     return { success: true, messageId: data.messages?.[0]?.id };
   } catch (error: any) {
     console.error('[WhatsApp] sendTemplate error:', error);
@@ -440,7 +457,7 @@ export async function downloadWhatsAppMedia(mediaId: string): Promise<Buffer | n
     }
     
     // Download the actual file
-    console.log(`[WhatsApp] 📥 Downloading media from: ${mediaData.url.slice(0, 50)}...`);
+    console.log('[WhatsApp] Downloading authenticated media attachment');
     const fileResponse = await fetch(mediaData.url, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -505,7 +522,9 @@ export async function transcribeWhatsAppVoice(mediaId: string): Promise<string |
     }
     
     const transcription = await whisperResponse.json();
-    console.log(`[WhatsApp] ✅ Transcription: "${transcription.text?.slice(0, 100)}..."`);
+    console.log('[WhatsApp] Transcription received', {
+      characterCount: transcription.text?.length || 0,
+    });
     
     return transcription.text || null;
   } catch (error: any) {
@@ -560,30 +579,10 @@ export interface WhatsAppMessage {
   };
 }
 
-export function parseWhatsAppWebhook(body: any): WhatsAppMessage | null {
+function parseWhatsAppMessage(message: any, contacts: any[]): WhatsAppMessage | null {
   try {
-    const entry = body?.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const value = changes?.value;
-    
-    if (!value) {
-      console.log('[WhatsApp] No value in webhook payload');
-      return null;
-    }
-    
-    // Handle status updates (delivery receipts, etc.)
-    if (value.statuses) {
-      console.log('[WhatsApp] Status update received:', value.statuses[0]?.status);
-      return null; // Ignore status updates
-    }
-    
-    const message = value.messages?.[0];
-    if (!message) {
-      console.log('[WhatsApp] No message in webhook payload');
-      return null;
-    }
-    
-    const contact = value.contacts?.[0];
+    if (!message?.id || !message?.from) return null;
+    const contact = contacts.find(candidate => candidate?.wa_id === message.from) || contacts[0];
     
     const result: WhatsAppMessage = {
       from: message.from,
@@ -654,6 +653,28 @@ export function parseWhatsAppWebhook(body: any): WhatsAppMessage | null {
     console.error('[WhatsApp] parseWebhook error:', error);
     return null;
   }
+}
+
+/** Meta may batch several entries, changes, and messages in one authenticated
+ * envelope. Flatten all of them before the endpoint acknowledges the envelope. */
+export function parseWhatsAppWebhooks(body: any): WhatsAppMessage[] {
+  const parsed: WhatsAppMessage[] = [];
+  for (const entry of Array.isArray(body?.entry) ? body.entry : []) {
+    for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
+      const value = change?.value;
+      if (!value) continue;
+      const contacts = Array.isArray(value.contacts) ? value.contacts : [];
+      for (const rawMessage of Array.isArray(value.messages) ? value.messages : []) {
+        const message = parseWhatsAppMessage(rawMessage, contacts);
+        if (message) parsed.push(message);
+      }
+    }
+  }
+  return parsed;
+}
+
+export function parseWhatsAppWebhook(body: any): WhatsAppMessage | null {
+  return parseWhatsAppWebhooks(body)[0] || null;
 }
 
 /**

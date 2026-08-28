@@ -9,9 +9,9 @@
 
 // Module loaded
 
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { getTelegramBot, sendMessage, sendTypingAction, sendDocument } from '@/lib/bot/telegram';
-import { timingSafeEqual } from 'crypto';
+import { createHash, timingSafeEqual } from 'crypto';
 import { 
   findBotSession, 
   getBotSessionWithContext,
@@ -21,6 +21,14 @@ import {
 import { processMessage, generateWelcomeMessage, generateUnauthorizedMessage } from '@/lib/bot/ai-agent';
 import { clearConversationHistory, clearPendingConfirmation } from '@/lib/bot/conversation-memory';
 import { escapeHtml } from '@/lib/validation';
+import { readBotInboxReadiness } from '@/lib/feature-flags';
+import {
+  deliverBotOutputOnce,
+  hashBotDeliveryContent,
+  persistBotInboxMessage,
+  processBotInboxMessageById,
+} from '@/lib/bot/inbox';
+import { registerBotInboxProcessor } from '@/lib/bot/processor-registry';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -40,6 +48,10 @@ let lastDedupCleanup = Date.now();
 
 // Max message length to prevent excessive AI token costs
 const MAX_MESSAGE_LENGTH = 4000;
+
+function logConversationRef(value: string) {
+  return createHash('sha256').update(`telegram:${value}`).digest('hex').slice(0, 12);
+}
 
 /**
  * Check if an update_id was already processed (deduplication)
@@ -157,7 +169,37 @@ export async function POST(request: NextRequest) {
     
     const body = await request.json();
     
-    console.log('[Telegram Webhook] ✅ Received update:', JSON.stringify(body).slice(0, 500));
+    console.log('[Telegram Webhook] ✅ Authenticated provider update received');
+
+    const providerMessageId = body.update_id == null ? null : String(body.update_id);
+    const conversationKey = String(
+      body.message?.chat?.id
+      ?? body.callback_query?.message?.chat?.id
+      ?? body.callback_query?.from?.id
+      ?? '',
+    );
+    const existingSession = conversationKey
+      ? await findBotSession('telegram', conversationKey)
+      : null;
+    if (providerMessageId && existingSession && (await readBotInboxReadiness(existingSession.tenantId)).enabled) {
+      try {
+        const persisted = await persistBotInboxMessage({
+          tenantId: existingSession.tenantId,
+          platform: 'telegram',
+          providerMessageId,
+          conversationKey,
+          payload: body,
+        });
+        if (persisted.status === 'pending' || persisted.status === 'retry') {
+          after(() => processBotInboxMessageById(persisted.id));
+        }
+        return NextResponse.json({ ok: true, accepted: true, duplicate: persisted.duplicate });
+      } catch (persistError) {
+        console.error('[Telegram Webhook] Durable persistence failed', persistError instanceof Error ? persistError.name : 'unknown');
+        // Telegram retries non-2xx; acknowledging here would lose the update.
+        return NextResponse.json({ ok: false, error: 'Persistence unavailable' }, { status: 503 });
+      }
+    }
     
     // Deduplication: skip if this update_id was already processed
     if (body.update_id && isDuplicateUpdate(body.update_id)) {
@@ -173,7 +215,7 @@ export async function POST(request: NextRequest) {
       // Per-chat lock: wait for any ongoing processing for this chat to finish
       const existingLock = chatProcessingLocks.get(chatId);
       if (existingLock) {
-        console.log(`[Telegram Webhook] ⏳ Waiting for existing processing on chat ${chatId}`);
+        console.log('[Telegram Webhook] Waiting for existing conversation processing', { conversationRef: logConversationRef(chatId) });
         await existingLock.catch(() => {}); // Wait but ignore errors from previous processing
       }
       
@@ -200,9 +242,9 @@ export async function POST(request: NextRequest) {
     // Always return 200 to acknowledge receipt
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    console.error('[Telegram Webhook] ❌ CRITICAL ERROR:', error);
-    console.error('[Telegram Webhook] Error stack:', error.stack);
-    console.error('[Telegram Webhook] Error message:', error.message);
+    console.error('[Telegram Webhook] Processing failed', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
     // Still return 200 to prevent Telegram from retrying
     return NextResponse.json({ ok: true, error: 'Internal error' });
   }
@@ -222,7 +264,7 @@ async function transcribeVoiceMessage(fileId: string): Promise<string | null> {
   
   try {
     // 1. Get file path from Telegram
-    console.log(`[Telegram] 🎤 Getting file path for voice message: ${fileId}`);
+    console.log('[Telegram] Resolving voice attachment');
     const fileResponse = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`);
     const fileData = await fileResponse.json();
     
@@ -264,11 +306,15 @@ async function transcribeVoiceMessage(fileId: string): Promise<string | null> {
     }
     
     const transcription = await whisperResponse.json();
-    console.log(`[Telegram] ✅ Transcription: "${transcription.text?.slice(0, 100)}..."`);
+    console.log('[Telegram] Transcription received', {
+      characterCount: transcription.text?.length || 0,
+    });
     
     return transcription.text || null;
   } catch (error: any) {
-    console.error('[Telegram] Voice transcription error:', error);
+    console.error('[Telegram] Voice transcription failed', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
     return null;
   }
 }
@@ -276,7 +322,10 @@ async function transcribeVoiceMessage(fileId: string): Promise<string | null> {
 /**
  * Handle incoming messages
  */
-async function handleMessage(message: any) {
+async function handleMessage(
+  message: any,
+  operation?: { inboxMessageId: string; providerMessageId: string; tenantId: string },
+) {
   try {
     const chatId = String(message.chat.id);
     const userId = String(message.from?.id || chatId);
@@ -286,7 +335,7 @@ async function handleMessage(message: any) {
     
     // Handle voice messages
     if (message.voice) {
-      console.log(`[Telegram] 🎤 Voice message from ${displayName} (${chatId}), duration: ${message.voice.duration}s`);
+      console.log('[Telegram] Voice message received', { conversationRef: logConversationRef(chatId), durationSeconds: message.voice.duration });
       
       await sendMessage(chatId, '🎤 Procesando tu mensaje de voz...');
       
@@ -298,12 +347,12 @@ async function handleMessage(message: any) {
       }
       
       text = transcribedText;
-      console.log(`[Telegram] 📝 Transcribed voice: "${text.slice(0, 100)}"`);
+      console.log('[Telegram] Voice transcription completed', { characterCount: text.length });
     }
     
     // Handle audio messages (similar to voice but different field)
     if (message.audio) {
-      console.log(`[Telegram] 🎵 Audio message from ${displayName} (${chatId})`);
+      console.log('[Telegram] Audio message received', { conversationRef: logConversationRef(chatId) });
       
       await sendMessage(chatId, '🎵 Procesando tu audio...');
       
@@ -315,42 +364,42 @@ async function handleMessage(message: any) {
       }
       
       text = transcribedText;
-      console.log(`[Telegram] 📝 Transcribed audio: "${text.slice(0, 100)}"`);
+      console.log('[Telegram] Audio transcription completed', { characterCount: text.length });
     }
     
-    console.log(`[Telegram] 📩 Message from ${displayName} (${chatId}): ${text.slice(0, 100)}`);
+    console.log('[Telegram] Message ready for command processing', { conversationRef: logConversationRef(chatId), characterCount: text.length });
     
     // Input length validation - prevent excessively long messages
     if (text.length > MAX_MESSAGE_LENGTH) {
-      console.log(`[Telegram] ⚠️ Message too long (${text.length} chars) from ${chatId}`);
+      console.log('[Telegram] Message too long', { conversationRef: logConversationRef(chatId), characterCount: text.length });
       await sendMessage(chatId, `⚠️ Tu mensaje es demasiado largo (${text.length} caracteres). El máximo es ${MAX_MESSAGE_LENGTH}. Por favor acorta tu mensaje.`);
       return;
     }
     
     // Rate limiting
     if (isRateLimited(chatId)) {
-      console.log(`[Telegram] ⏳ Rate limited: ${chatId}`);
+      console.log('[Telegram] Rate limited', { conversationRef: logConversationRef(chatId) });
       await sendMessage(chatId, '⏳ Has enviado muchos mensajes. Por favor espera un momento antes de continuar.');
       return;
     }
     
     // Handle /start command (connection flow)
     if (text.startsWith('/start')) {
-      console.log(`[Telegram] 🚀 Handling /start command for ${chatId}`);
+      console.log('[Telegram] Handling start command', { conversationRef: logConversationRef(chatId) });
       await handleStartCommand(chatId, text, { displayName, username });
       return;
     }
     
     // Handle /help command
     if (text === '/help') {
-      console.log(`[Telegram] ❓ Handling /help command for ${chatId}`);
+      console.log('[Telegram] Handling help command', { conversationRef: logConversationRef(chatId) });
       await handleHelpCommand(chatId);
       return;
     }
     
     // Handle /clear command (clear conversation history)
     if (text === '/clear') {
-      console.log(`[Telegram] 🗑️ Handling /clear command for ${chatId}`);
+      console.log('[Telegram] Handling clear command', { conversationRef: logConversationRef(chatId) });
       await clearConversationHistory('telegram', chatId);
       await sendMessage(chatId, '🗑️ Historial de conversación limpiado. ¡Empecemos de nuevo!');
       return;
@@ -358,7 +407,7 @@ async function handleMessage(message: any) {
 
     // Handle /new and /nuevo command (start fresh conversation)
     if (text === '/new' || text === '/nuevo') {
-      console.log(`[Telegram] 🆕 Handling /new command for ${chatId}`);
+      console.log('[Telegram] Handling new command', { conversationRef: logConversationRef(chatId) });
       await clearConversationHistory('telegram', chatId);
       await clearPendingConfirmation('telegram', chatId);
       await sendMessage(chatId, '🆕 <b>Nueva conversación iniciada</b>\n\nEl historial anterior fue limpiado. ¿En qué puedo ayudarte?');
@@ -367,7 +416,7 @@ async function handleMessage(message: any) {
 
     // Handle /status command
     if (text === '/status') {
-      console.log(`[Telegram] 📊 Handling /status command for ${chatId}`);
+      console.log('[Telegram] Handling status command', { conversationRef: logConversationRef(chatId) });
       await handleStatusCommand(chatId);
       return;
     }
@@ -377,7 +426,7 @@ async function handleMessage(message: any) {
     const state = await getConversationState('telegram', chatId);
 
     if (state?.awaitingName) {
-      console.log(`[Telegram] 📝 User provided name during setup: ${text}`);
+      console.log('[Telegram] Setup name received', { conversationRef: logConversationRef(chatId) });
 
       if (text.length < 2 || text.length > 100) {
         await sendMessage(chatId, '⚠️ Por favor ingresa un nombre válido (entre 2 y 100 caracteres).');
@@ -385,7 +434,7 @@ async function handleMessage(message: any) {
       }
 
       try {
-        console.log(`[Telegram] 🔧 Creating session for ${chatId} in tenant ${state.tenantId}`);
+        console.log('[Telegram] Creating bot session', { conversationRef: logConversationRef(chatId) });
         const session = await createBotSession(
           'telegram',
           chatId,
@@ -398,11 +447,9 @@ async function handleMessage(message: any) {
           }
         );
 
-        console.log(`[Telegram] ✅ Session created successfully:`, {
-          id: session.id,
-          platformId: session.platformId,
-          tenantId: session.tenantId,
-          providedName: session.providedName,
+        console.log('[Telegram] Session created', {
+          conversationRef: logConversationRef(chatId),
+          linkedUser: Boolean(session.userId),
         });
 
         const verifySession = await findBotSession('telegram', chatId);
@@ -411,16 +458,19 @@ async function handleMessage(message: any) {
           await sendMessage(chatId, '⚠️ Hubo un error al guardar tu sesión. Por favor intenta de nuevo con /start CODE');
           return;
         }
-        console.log(`[Telegram] ✅ Session verified: ${verifySession.id}`);
+        console.log('[Telegram] Session verified', { conversationRef: logConversationRef(chatId) });
 
       } catch (error: any) {
-        console.error(`[Telegram] ❌ Error creating session:`, error);
-        console.error(`[Telegram] Error details:`, {
-          message: error.message,
-          code: error.code,
-          meta: error.meta,
+        console.error('[Telegram] Session creation failed', {
+          errorName: error instanceof Error ? error.name : 'unknown',
+          errorCode: error?.message === 'BOT_SEAT_LIMIT_REACHED' ? 'seat_limit' : 'session_create_failed',
         });
-        await sendMessage(chatId, '❌ Error al crear tu sesión. Por favor contacta a soporte.');
+        await sendMessage(
+          chatId,
+          error?.message === 'BOT_SEAT_LIMIT_REACHED'
+            ? '❌ El plan alcanzó su límite de usuarios. El propietario debe liberar un asiento o actualizar el plan.'
+            : '❌ Error al crear tu sesión. Por favor contacta a soporte.',
+        );
         return;
       }
 
@@ -473,37 +523,33 @@ Usa /help para ver todos los comandos disponibles.`;
 
       await sendMessage(chatId, welcomeMsg);
 
-      console.log(`[Telegram] ✅ Session created for ${text.trim()} (@${username}) in tenant ${state.tenantName}`);
+      console.log('[Telegram] Bot session created', { conversationRef: logConversationRef(chatId) });
       return;
     }
 
     // Check if user is connected
-    console.log(`[Telegram] 🔍 Checking session for ${chatId}...`);
-    console.log(`[Telegram] 🔍 Chat ID type: ${typeof chatId}, value: "${chatId}"`);
+    console.log('[Telegram] Checking session', { conversationRef: logConversationRef(chatId) });
 
     const simpleSession = await findBotSession('telegram', chatId);
-    console.log(`[Telegram] 🔍 Simple session lookup result:`, simpleSession ? {
-      id: simpleSession.id,
-      platformId: simpleSession.platformId,
-      userId: simpleSession.userId,
-      tenantId: simpleSession.tenantId,
-      isActive: simpleSession.isActive,
-    } : 'null');
+    console.log('[Telegram] Session lookup completed', {
+      conversationRef: logConversationRef(chatId),
+      found: Boolean(simpleSession),
+    });
 
     const sessionContext = await getBotSessionWithContext('telegram', chatId);
 
     if (!sessionContext) {
-      console.log(`[Telegram] ⚠️ No session context found for ${chatId}`);
+      console.log('[Telegram] No session context found', { conversationRef: logConversationRef(chatId) });
       console.log(`[Telegram] 📋 But simple session was: ${simpleSession ? 'FOUND' : 'NOT FOUND'}`);
       await sendMessage(chatId, generateUnauthorizedMessage());
       return;
     }
     
-    console.log(`[Telegram] ✅ Session found for ${chatId} - User: ${sessionContext.user.email}, Tenant: ${sessionContext.tenant.name}`);
+    console.log('[Telegram] Active session found', { conversationRef: logConversationRef(chatId) });
     
     // Check if tenant is active
     if (!sessionContext.tenant.isActive) {
-      console.log(`[Telegram] ⚠️ Tenant inactive for ${chatId}`);
+      console.log('[Telegram] Tenant inactive for bot session', { conversationRef: logConversationRef(chatId) });
       await sendMessage(chatId, '⚠️ Tu cuenta de Betsy está desactivada. Contacta a soporte para más información.');
       return;
     }
@@ -524,40 +570,91 @@ Usa /help para ver todos los comandos disponibles.`;
         userId: sessionContext.user.id,
         userName: sessionContext.user.name || sessionContext.user.username || sessionContext.user.email || displayName,
         userRole: sessionContext.role,
+        operationKey: operation ? `telegram:${operation.providerMessageId}` : undefined,
+        inboxMessageId: operation?.inboxMessageId,
       }
     );
     
     console.log(`[Telegram] 💬 AI Response generated (${response.text.length} chars)`);
     
     // Send text response (split if too long for Telegram)
-    console.log(`[Telegram] 📤 Sending response to ${chatId}...`);
-    await sendLongMessage(chatId, response.text);
+    console.log('[Telegram] Sending response', { conversationRef: logConversationRef(chatId) });
+    await sendLongMessage(chatId, response.text, operation?.inboxMessageId);
 
     // Send any PDF attachments from tool results
     if (response.attachments && response.attachments.length > 0) {
-      for (const attachment of response.attachments) {
-        try {
-          console.log(`[Telegram] 📎 Sending attachment "${attachment.filename}" to ${chatId}...`);
-          await sendDocument(chatId, attachment.buffer, attachment.filename, attachment.caption);
-        } catch (attachErr: any) {
-          console.error(`[Telegram] ❌ Failed to send attachment "${attachment.filename}":`, attachErr.message);
-          await sendMessage(chatId, `⚠️ No pude enviar el archivo "${attachment.filename}". Puedes descargarlo desde el panel de Betsy.`);
+      for (const [index, attachment] of response.attachments.entries()) {
+        console.log('[Telegram] Sending attachment', { conversationRef: logConversationRef(chatId) });
+        if (operation) {
+          await deliverBotOutputOnce({
+            inboxMessageId: operation.inboxMessageId,
+            deliveryKey: `document:${index}`,
+            kind: 'document',
+            contentHash: hashBotDeliveryContent(Buffer.concat([
+              Buffer.from(`${attachment.filename}\n${attachment.caption || ''}\n`),
+              attachment.buffer,
+            ])),
+            send: () => sendDocument(chatId, attachment.buffer, attachment.filename, attachment.caption),
+          });
+        } else {
+          try {
+            await sendDocument(chatId, attachment.buffer, attachment.filename, attachment.caption);
+          } catch (attachErr) {
+            console.error('[Telegram] Attachment delivery failed', {
+              errorName: attachErr instanceof Error ? attachErr.name : 'unknown',
+            });
+            await sendMessage(chatId, `⚠️ No pude enviar el archivo "${attachment.filename}". Puedes descargarlo desde el panel de Betsy.`);
+          }
         }
       }
     }
 
-    console.log(`[Telegram] ✅ Response sent successfully to ${chatId}`);
+    console.log('[Telegram] Response sent', { conversationRef: logConversationRef(chatId) });
   } catch (error: any) {
-    console.error(`[Telegram] ❌ Error in handleMessage:`, error);
-    console.error(`[Telegram] Error stack:`, error.stack);
-    // Try to send error message to user
+    console.error('[Telegram] Message handler failed', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
+    if (operation) throw error;
+    // Legacy inline path keeps its current user-facing failure response.
     try {
       await sendMessage(message.chat.id, '❌ Lo siento, ocurrió un error al procesar tu mensaje. Por favor intenta de nuevo.');
     } catch (sendError) {
-      console.error(`[Telegram] ❌ Failed to send error message:`, sendError);
+      console.error('[Telegram] Failed to send error message', {
+        errorName: sendError instanceof Error ? sendError.name : 'unknown',
+      });
     }
   }
 }
+
+async function processQueuedTelegramPayload(
+  payload: unknown,
+  operation: { inboxMessageId: string; providerMessageId: string; tenantId: string },
+) {
+  const body = payload as any;
+  if (!body || String(body.update_id) !== operation.providerMessageId) {
+    throw new Error('TELEGRAM_PAYLOAD_INVALID');
+  }
+  const conversationKey = String(
+    body.message?.chat?.id
+    ?? body.callback_query?.message?.chat?.id
+    ?? body.callback_query?.from?.id
+    ?? '',
+  );
+  const session = conversationKey ? await findBotSession('telegram', conversationKey) : null;
+  if (!session) throw new Error('BOT_SESSION_INACTIVE');
+  if (session.tenantId !== operation.tenantId) throw new Error('BOT_SESSION_TENANT_CHANGED');
+  if (body.message) {
+    await handleMessage(body.message, operation);
+    return;
+  }
+  if (body.callback_query) {
+    await handleCallbackQuery(body.callback_query);
+    return;
+  }
+  throw new Error('TELEGRAM_UPDATE_UNSUPPORTED');
+}
+
+registerBotInboxProcessor('telegram', processQueuedTelegramPayload);
 
 /**
  * Handle /start command - NEW CODE-BASED flow
@@ -770,7 +867,7 @@ async function handleCallbackQuery(callbackQuery: any) {
   const data = callbackQuery.data;
   const messageId = callbackQuery.message?.message_id;
   
-  console.log(`[Telegram] Callback query from ${chatId}: ${data}`);
+  console.log('[Telegram] Callback query received', { conversationRef: logConversationRef(chatId) });
   
   // Acknowledge the callback
   const bot = getTelegramBot();
@@ -789,14 +886,9 @@ async function handleCallbackQuery(callbackQuery: any) {
  * Send a long message by splitting it if necessary
  * Telegram has a 4096 character limit
  */
-async function sendLongMessage(chatId: string, text: string) {
+async function sendLongMessage(chatId: string, text: string, inboxMessageId?: string) {
   const MAX_LENGTH = 4000; // Leave some margin
-  
-  if (text.length <= MAX_LENGTH) {
-    await sendMessage(chatId, text);
-    return;
-  }
-  
+  const chunks: string[] = [];
   // Split by paragraphs first
   const paragraphs = text.split('\n\n');
   let currentChunk = '';
@@ -804,7 +896,7 @@ async function sendLongMessage(chatId: string, text: string) {
   for (const paragraph of paragraphs) {
     if ((currentChunk + paragraph).length > MAX_LENGTH) {
       if (currentChunk) {
-        await sendMessage(chatId, currentChunk.trim());
+        chunks.push(currentChunk.trim());
       }
       currentChunk = paragraph + '\n\n';
     } else {
@@ -813,7 +905,22 @@ async function sendLongMessage(chatId: string, text: string) {
   }
   
   if (currentChunk.trim()) {
-    await sendMessage(chatId, currentChunk.trim());
+    chunks.push(currentChunk.trim());
+  }
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index];
+    if (inboxMessageId) {
+      await deliverBotOutputOnce({
+        inboxMessageId,
+        deliveryKey: `text:${index}`,
+        kind: 'text',
+        contentHash: hashBotDeliveryContent(chunk),
+        send: () => sendMessage(chatId, chunk),
+      });
+    } else {
+      await sendMessage(chatId, chunk);
+    }
   }
 }
 

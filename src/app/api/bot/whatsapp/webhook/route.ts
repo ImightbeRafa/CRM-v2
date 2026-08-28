@@ -13,7 +13,7 @@
  * 4. Subscribe to: messages
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { 
   sendWhatsAppMessage, 
@@ -22,6 +22,7 @@ import {
   markMessageAsRead,
   transcribeWhatsAppVoice,
   parseWhatsAppWebhook,
+  parseWhatsAppWebhooks,
   verifyWebhook,
   type WhatsAppMessage 
 } from '@/lib/bot/whatsapp';
@@ -33,6 +34,14 @@ import {
 import { validateBotAccessCode } from '@/lib/bot/access-code';
 import { processMessage } from '@/lib/bot/ai-agent';
 import { clearConversationHistory, clearPendingConfirmation, getConversationState, setConversationState, clearConversationState } from '@/lib/bot/conversation-memory';
+import { readBotInboxReadiness } from '@/lib/feature-flags';
+import {
+  deliverBotOutputOnce,
+  hashBotDeliveryContent,
+  persistBotInboxMessages,
+  processBotInboxMessageById,
+} from '@/lib/bot/inbox';
+import { registerBotInboxProcessor } from '@/lib/bot/processor-registry';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -98,6 +107,10 @@ const chatProcessingLocks = new Map<string, Promise<void>>();
 
 const MAX_MESSAGE_LENGTH = 4000;
 
+function logConversationRef(value: string) {
+  return crypto.createHash('sha256').update(`whatsapp:${value}`).digest('hex').slice(0, 12);
+}
+
 /**
  * GET handler - Webhook verification (required by Meta)
  * Meta sends a GET request to verify your webhook endpoint
@@ -153,53 +166,86 @@ export async function POST(request: NextRequest) {
 
     const body = JSON.parse(rawBody);
     
-    console.log('[WhatsApp Webhook] Received:', JSON.stringify(body).slice(0, 500));
+    console.log('[WhatsApp Webhook] Authenticated provider update received');
     
-    // Parse the webhook payload
-    const message = parseWhatsAppWebhook(body);
-    
-    if (!message) {
+    const messages = parseWhatsAppWebhooks(body);
+    if (messages.length === 0) {
       return NextResponse.json({ status: 'ok' });
     }
-    
-    // Deduplication: skip if this message was already processed (Meta can retry)
-    if (isDuplicateMessage(message.messageId)) {
-      console.log(`[WhatsApp Webhook] ⚠️ Duplicate message ${message.messageId}, skipping`);
-      return NextResponse.json({ status: 'ok' });
-    }
-    
-    console.log(`[WhatsApp Webhook] 📩 Message from ${message.from}: type=${message.type}`);
-    
-    // Per-chat lock: wait for any ongoing processing for this phone number
-    const phoneNumber = message.from;
-    const existingLock = chatProcessingLocks.get(phoneNumber);
-    if (existingLock) {
-      console.log(`[WhatsApp Webhook] ⏳ Waiting for existing processing on ${phoneNumber}`);
-      await existingLock.catch(() => {});
+
+    // Resolve every message before acknowledging a batched Meta envelope. Queue
+    // rows are then inserted atomically so a failure cannot persist only the
+    // first message and silently lose the rest.
+    const resolved = await Promise.all(messages.map(async message => {
+      const session = await findBotSession('whatsapp', message.from);
+      const queueEnabled = session
+        ? (await readBotInboxReadiness(session.tenantId)).enabled
+        : false;
+      return { message, session, queueEnabled };
+    }));
+    const queued = resolved.filter(item => item.session && item.queueEnabled);
+    let persistedRows: Awaited<ReturnType<typeof persistBotInboxMessages>> = [];
+    if (queued.length > 0) {
+      try {
+        persistedRows = await persistBotInboxMessages(queued.map(item => ({
+          tenantId: item.session!.tenantId,
+          platform: 'whatsapp' as const,
+          providerMessageId: item.message.messageId,
+          conversationKey: item.message.from,
+          // Store only the authenticated message needed by this row instead of
+          // redundantly copying the complete batched envelope into every row.
+          payload: { version: 1, message: item.message },
+        })));
+      } catch (persistError) {
+        console.error('[WhatsApp Webhook] Durable persistence failed', persistError instanceof Error ? persistError.name : 'unknown');
+        return NextResponse.json({ error: 'Persistence unavailable' }, { status: 503 });
+      }
     }
 
-    let resolveLock: () => void;
-    const lockPromise = new Promise<void>((resolve) => { resolveLock = resolve; });
-    chatProcessingLocks.set(phoneNumber, lockPromise);
-
-    try {
-      await handleWhatsAppMessage(message);
-    } finally {
-      resolveLock!();
-      chatProcessingLocks.delete(phoneNumber);
+    for (const row of persistedRows) {
+      if (row.status === 'pending' || row.status === 'retry') {
+        after(() => processBotInboxMessageById(row.id));
+      }
     }
-    
-    return NextResponse.json({ status: 'ok' });
+
+    const legacy = resolved.filter(item => !item.queueEnabled);
+    for (const { message } of legacy) {
+      if (isDuplicateMessage(message.messageId)) continue;
+      console.log('[WhatsApp Webhook] Message accepted', { conversationRef: logConversationRef(message.from), type: message.type });
+      const phoneNumber = message.from;
+      const existingLock = chatProcessingLocks.get(phoneNumber);
+      if (existingLock) await existingLock.catch(() => {});
+
+      let resolveLock: () => void;
+      const lockPromise = new Promise<void>((resolve) => { resolveLock = resolve; });
+      chatProcessingLocks.set(phoneNumber, lockPromise);
+      try {
+        await handleWhatsAppMessage(message);
+      } catch (error) {
+        // Delivery/processing failed before acknowledgement. Let Meta retry the
+        // complete envelope and do not let the in-memory duplicate window eat it.
+        processedMessages.delete(message.messageId);
+        throw error;
+      } finally {
+        resolveLock!();
+        chatProcessingLocks.delete(phoneNumber);
+      }
+    }
+
+    return NextResponse.json({ status: 'accepted', queued: persistedRows.length, legacy: legacy.length });
   } catch (error: any) {
-    console.error('[WhatsApp Webhook] ❌ Error:', error);
-    return NextResponse.json({ status: 'error' });
+    console.error('[WhatsApp Webhook] Processing failed', { errorName: error instanceof Error ? error.name : 'unknown' });
+    return NextResponse.json({ status: 'error' }, { status: 500 });
   }
 }
 
 /**
  * Handle incoming WhatsApp message
  */
-async function handleWhatsAppMessage(message: WhatsAppMessage) {
+async function handleWhatsAppMessage(
+  message: WhatsAppMessage,
+  operation?: { inboxMessageId: string; providerMessageId: string; tenantId: string },
+) {
   const phoneNumber = message.from;
   const displayName = message.contact?.name || phoneNumber;
   
@@ -209,7 +255,7 @@ async function handleWhatsAppMessage(message: WhatsAppMessage) {
     
     // Rate limiting
     if (isRateLimited(phoneNumber)) {
-      console.log(`[WhatsApp] ⏳ Rate limited: ${phoneNumber}`);
+      console.log('[WhatsApp] Rate limited', { conversationRef: logConversationRef(phoneNumber) });
       await sendWhatsAppMessage(phoneNumber, '⏳ Has enviado muchos mensajes. Por favor espera un momento.');
       return;
     }
@@ -225,13 +271,13 @@ async function handleWhatsAppMessage(message: WhatsAppMessage) {
       case 'voice':
       case 'audio':
         if (message.mediaId) {
-          console.log(`[WhatsApp] 🎤 Processing voice message from ${phoneNumber}`);
+          console.log('[WhatsApp] Processing voice message', { conversationRef: logConversationRef(phoneNumber) });
           await sendWhatsAppMessage(phoneNumber, '🎤 Procesando tu mensaje de voz...');
           
           const transcription = await transcribeWhatsAppVoice(message.mediaId);
           if (transcription) {
             text = transcription;
-            console.log(`[WhatsApp] 📝 Transcribed: "${text.slice(0, 100)}"`);
+            console.log('[WhatsApp] Voice transcription completed', { characterCount: text.length });
           } else {
             await sendWhatsAppMessage(phoneNumber, '❌ No pude procesar tu mensaje de voz. Por favor intenta de nuevo o escribe tu mensaje.');
             return;
@@ -243,7 +289,7 @@ async function handleWhatsAppMessage(message: WhatsAppMessage) {
         // Button or list reply
         if (message.interactiveReply) {
           text = message.interactiveReply.id; // Use the button/list ID as command
-          console.log(`[WhatsApp] 🔘 Interactive reply: ${text}`);
+          console.log('[WhatsApp] Interactive reply received');
         }
         break;
         
@@ -261,12 +307,12 @@ async function handleWhatsAppMessage(message: WhatsAppMessage) {
     }
 
     if (text.length > MAX_MESSAGE_LENGTH) {
-      console.log(`[WhatsApp] ⚠️ Message too long (${text.length} chars) from ${phoneNumber}`);
+      console.log('[WhatsApp] Message too long', { conversationRef: logConversationRef(phoneNumber), characterCount: text.length });
       await sendWhatsAppMessage(phoneNumber, `⚠️ Tu mensaje es demasiado largo (${text.length} caracteres). El máximo es ${MAX_MESSAGE_LENGTH}. Por favor acorta tu mensaje.`);
       return;
     }
     
-    console.log(`[WhatsApp] 📩 Message from ${displayName} (${phoneNumber}): ${text.slice(0, 100)}`);
+    console.log('[WhatsApp] Message ready for command processing', { conversationRef: logConversationRef(phoneNumber), characterCount: text.length });
     
     // Handle special commands
     const lowerText = text.toLowerCase().trim();
@@ -314,22 +360,22 @@ async function handleWhatsAppMessage(message: WhatsAppMessage) {
     }
     
     // Check for session
-    console.log(`[WhatsApp] 🔍 Checking session for ${phoneNumber}...`);
+    console.log('[WhatsApp] Checking session', { conversationRef: logConversationRef(phoneNumber) });
     const session = await findBotSession('whatsapp', phoneNumber);
     
     if (!session) {
-      console.log(`[WhatsApp] ❌ No session found for ${phoneNumber}`);
+      console.log('[WhatsApp] No active session', { conversationRef: logConversationRef(phoneNumber) });
       await handleUnauthorized(phoneNumber, displayName);
       return;
     }
     
-    console.log(`[WhatsApp] ✅ Session found for ${phoneNumber} - Tenant: ${session.tenantId}`);
+    console.log('[WhatsApp] Active session found', { conversationRef: logConversationRef(phoneNumber) });
     
     // Get full session context
     const sessionContext = await getBotSessionWithContext('whatsapp', phoneNumber);
     
     if (!sessionContext) {
-      console.error(`[WhatsApp] ❌ Failed to get session context for ${phoneNumber}`);
+      console.error('[WhatsApp] Failed to get session context', { conversationRef: logConversationRef(phoneNumber) });
       await sendWhatsAppMessage(phoneNumber, '❌ Error al obtener tu sesión. Por favor intenta reconectarte con /start');
       return;
     }
@@ -353,55 +399,89 @@ async function handleWhatsAppMessage(message: WhatsAppMessage) {
         userId: userId || `whatsapp-${phoneNumber}`,
         userName: userName,
         userRole: userRole,
+        operationKey: operation ? `whatsapp:${operation.providerMessageId}` : undefined,
+        inboxMessageId: operation?.inboxMessageId,
       }
     );
     
-    await sendLongWhatsAppMessage(phoneNumber, response.text);
+    await sendLongWhatsAppMessage(phoneNumber, response.text, operation?.inboxMessageId);
 
     // Send any PDF attachments from tool results
     if (response.attachments && response.attachments.length > 0) {
-      for (const attachment of response.attachments) {
-        try {
-          console.log(`[WhatsApp] 📎 Sending attachment "${attachment.filename}" to ${phoneNumber}...`);
+      for (const [index, attachment] of response.attachments.entries()) {
+        console.log('[WhatsApp] Sending attachment', { conversationRef: logConversationRef(phoneNumber) });
+        if (operation) {
+          await deliverBotOutputOnce({
+            inboxMessageId: operation.inboxMessageId,
+            deliveryKey: `document:${index}`,
+            kind: 'document',
+            contentHash: hashBotDeliveryContent(Buffer.concat([
+              Buffer.from(`${attachment.filename}\n${attachment.caption || ''}\n`),
+              attachment.buffer,
+            ])),
+            send: async () => {
+              const result = await sendWhatsAppDocument(
+                phoneNumber,
+                attachment.buffer,
+                attachment.filename,
+                attachment.caption,
+              );
+              if (!result.success) throw new Error('WHATSAPP_DOCUMENT_DELIVERY_FAILED');
+              return result;
+            },
+          });
+        } else {
           const docResult = await sendWhatsAppDocument(phoneNumber, attachment.buffer, attachment.filename, attachment.caption);
           if (!docResult.success) {
-            console.error(`[WhatsApp] ❌ Failed to send attachment "${attachment.filename}":`, docResult.error);
+            console.error('[WhatsApp] Attachment delivery failed');
             await sendWhatsAppMessage(phoneNumber, `⚠️ No pude enviar el archivo "${attachment.filename}". Puedes descargarlo desde el panel de Betsy.`);
           }
-        } catch (attachErr: any) {
-          console.error(`[WhatsApp] ❌ Failed to send attachment "${attachment.filename}":`, attachErr.message);
-          await sendWhatsAppMessage(phoneNumber, `⚠️ No pude enviar el archivo "${attachment.filename}". Puedes descargarlo desde el panel de Betsy.`);
         }
       }
     }
 
-    console.log(`[WhatsApp] ✅ Response sent to ${phoneNumber}`);
+    console.log('[WhatsApp] Response sent', { conversationRef: logConversationRef(phoneNumber) });
     
   } catch (error: any) {
-    console.error(`[WhatsApp] ❌ Error handling message from ${phoneNumber}:`, error);
+    console.error('[WhatsApp] Message handling failed', { conversationRef: logConversationRef(phoneNumber), errorName: error?.name || 'unknown' });
+    if (operation) throw error;
     await sendWhatsAppMessage(phoneNumber, '❌ Ocurrió un error procesando tu mensaje. Por favor intenta de nuevo.');
   }
 }
+
+async function processQueuedWhatsAppPayload(
+  payload: unknown,
+  operation: { inboxMessageId: string; providerMessageId: string; tenantId: string },
+) {
+  const queuedPayload = payload as { version?: unknown; message?: unknown };
+  const message = queuedPayload?.version === 1
+    ? queuedPayload.message as WhatsAppMessage
+    : parseWhatsAppWebhook(payload);
+  if (!message || message.messageId !== operation.providerMessageId) {
+    throw new Error('WHATSAPP_PAYLOAD_INVALID');
+  }
+  const session = await findBotSession('whatsapp', message.from);
+  if (!session) throw new Error('BOT_SESSION_INACTIVE');
+  if (session.tenantId !== operation.tenantId) throw new Error('BOT_SESSION_TENANT_CHANGED');
+  await handleWhatsAppMessage(message, operation);
+}
+
+registerBotInboxProcessor('whatsapp', processQueuedWhatsAppPayload);
 
 /**
  * Send a long message by splitting it if necessary.
  * WhatsApp has a 4096 character limit per text message.
  */
-async function sendLongWhatsAppMessage(phoneNumber: string, text: string) {
+async function sendLongWhatsAppMessage(phoneNumber: string, text: string, inboxMessageId?: string) {
   const MAX_LENGTH = 4000; // Leave margin below 4096
-
-  if (text.length <= MAX_LENGTH) {
-    await sendWhatsAppMessage(phoneNumber, text);
-    return;
-  }
-
+  const chunks: string[] = [];
   const paragraphs = text.split('\n\n');
   let currentChunk = '';
 
   for (const paragraph of paragraphs) {
     if ((currentChunk + paragraph).length > MAX_LENGTH) {
       if (currentChunk) {
-        await sendWhatsAppMessage(phoneNumber, currentChunk.trim());
+        chunks.push(currentChunk.trim());
       }
       currentChunk = paragraph + '\n\n';
     } else {
@@ -410,7 +490,23 @@ async function sendLongWhatsAppMessage(phoneNumber: string, text: string) {
   }
 
   if (currentChunk.trim()) {
-    await sendWhatsAppMessage(phoneNumber, currentChunk.trim());
+    chunks.push(currentChunk.trim());
+  }
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index];
+    if (inboxMessageId) {
+      await deliverBotOutputOnce({
+        inboxMessageId,
+        deliveryKey: `text:${index}`,
+        kind: 'text',
+        contentHash: hashBotDeliveryContent(chunk),
+        send: () => sendWhatsAppMessage(phoneNumber, chunk),
+        providerDeliveryId: result => result.messageId,
+      });
+    } else {
+      await sendWhatsAppMessage(phoneNumber, chunk);
+    }
   }
 }
 
@@ -426,7 +522,7 @@ async function handleStartCommand(phoneNumber: string, text: string, displayName
 
   if (code) {
     // Validate the access code (works for new connections AND tenant switching)
-    console.log(`[WhatsApp] 🔑 Verifying code from /start for ${phoneNumber}: ${code}`);
+    console.log('[WhatsApp] Verifying access code from start command', { conversationRef: logConversationRef(phoneNumber) });
     const tenant = await validateBotAccessCode(code);
 
     if (!tenant) {
@@ -503,7 +599,7 @@ async function handleCodeProvided(phoneNumber: string, code: string, displayName
   }
   
   // Verify the access code (12-character alphanumeric)
-  console.log(`[WhatsApp] 🔑 Verifying code for ${phoneNumber}: ${code}`);
+  console.log('[WhatsApp] Verifying access code', { conversationRef: logConversationRef(phoneNumber) });
   const tenant = await validateBotAccessCode(code.trim().toUpperCase());
   
   if (!tenant) {
@@ -542,7 +638,7 @@ async function handleNameProvided(phoneNumber: string, name: string, displayName
   
   try {
     // Create bot session
-    console.log(`[WhatsApp] 🔧 Creating session for ${phoneNumber} in tenant ${state.tenantId}`);
+    console.log('[WhatsApp] Creating bot session', { conversationRef: logConversationRef(phoneNumber) });
     const session = await createBotSession(
       'whatsapp',
       phoneNumber,
@@ -570,11 +666,18 @@ async function handleNameProvided(phoneNumber: string, name: string, displayName
       `🎉 *¡Listo, ${name}!*\n\nYa estás conectado a *${state.tenantName}*.\n\nAhora puedes:\n• 📦 Crear y consultar órdenes\n• 📊 Ver inventario y estadísticas\n• 🚚 Gestionar envíos\n• Y mucho más...\n\n¿En qué puedo ayudarte hoy?`
     );
     
-    console.log(`[WhatsApp] ✅ Session created for ${phoneNumber} in tenant ${state.tenantId}`);
+    console.log('[WhatsApp] Bot session created', { conversationRef: logConversationRef(phoneNumber) });
     
   } catch (error: any) {
-    console.error(`[WhatsApp] ❌ Error creating session:`, error);
-    await sendWhatsAppMessage(phoneNumber, '❌ Error al conectar. Por favor intenta de nuevo con /start');
+    console.error('[WhatsApp] Session creation failed', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
+    await sendWhatsAppMessage(
+      phoneNumber,
+      error?.message === 'BOT_SEAT_LIMIT_REACHED'
+        ? '❌ El plan alcanzó su límite de usuarios. El propietario debe liberar un asiento o actualizar el plan.'
+        : '❌ Error al conectar. Por favor intenta de nuevo con /start',
+    );
     await clearConversationState('whatsapp', phoneNumber);
   }
 }

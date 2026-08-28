@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { generateUniqueBotAccessCode } from '@/lib/bot/access-code';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
+import { getTenantSeatUsage } from '@/lib/plan-enforcement';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,16 +50,25 @@ export async function GET(request: NextRequest) {
         providedName: true,
         username: true,
         connectedAt: true,
+        accessRole: true,
+        seatPolicy: true,
+        seatOverageAt: true,
       },
       orderBy: {
         connectedAt: 'desc',
       },
     });
 
+    const seatUsage = await getTenantSeatUsage(tenantId);
     return NextResponse.json({
       code: tenant.botAccessCode,
       tenantName: tenant.name,
       sessions,
+      seatUsage: {
+        ...seatUsage,
+        overage: Math.max(0, seatUsage.totalWithGrandfathered - seatUsage.limit),
+        warning: seatUsage.totalWithGrandfathered > seatUsage.limit,
+      },
     });
   } catch (error: any) {
     console.error('[Bot Access Code API] GET error:', error);

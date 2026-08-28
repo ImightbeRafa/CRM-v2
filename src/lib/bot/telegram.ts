@@ -96,7 +96,10 @@ export async function sendMessage(
     body.reply_markup = options.replyMarkup;
   }
   
-  console.log(`[Telegram] 📤 Sending message to ${chatId} (original: ${text.length} chars, processed: ${processedText.length} chars)...`);
+  console.log('[Telegram] Sending message', {
+    originalCharacters: text.length,
+    processedCharacters: processedText.length,
+  });
   
   const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
@@ -109,8 +112,11 @@ export async function sendMessage(
   const responseData = await response.json();
   
   if (!response.ok || !responseData.ok) {
-    console.error('[Telegram] ❌ sendMessage failed:', JSON.stringify(responseData));
-    throw new Error(`Telegram API error: ${responseData.description || 'Unknown error'}`);
+    console.error('[Telegram] sendMessage failed', {
+      status: response.status,
+      providerCode: responseData?.error_code ?? null,
+    });
+    throw new Error('TELEGRAM_DELIVERY_FAILED');
   }
   
   console.log(`[Telegram] ✅ Message delivered, message_id: ${responseData.result?.message_id}`);
@@ -211,7 +217,7 @@ export async function sendDocument(
     formData.append('parse_mode', 'HTML');
   }
 
-  console.log(`[Telegram] 📎 Sending document "${filename}" (${fileBuffer.length} bytes) to ${chatId}...`);
+  console.log('[Telegram] Sending document', { byteLength: fileBuffer.length });
 
   const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
     method: 'POST',
@@ -221,8 +227,11 @@ export async function sendDocument(
   const responseData = await response.json();
 
   if (!response.ok || !responseData.ok) {
-    console.error('[Telegram] ❌ sendDocument failed:', JSON.stringify(responseData));
-    throw new Error(`Telegram sendDocument error: ${responseData.description || 'Unknown error'}`);
+    console.error('[Telegram] sendDocument failed', {
+      status: response.status,
+      providerCode: responseData?.error_code ?? null,
+    });
+    throw new Error('TELEGRAM_DOCUMENT_DELIVERY_FAILED');
   }
 
   console.log(`[Telegram] ✅ Document delivered, message_id: ${responseData.result?.message_id}`);

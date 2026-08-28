@@ -28,4 +28,17 @@ test('new read APIs and stale-safe mutation fail closed without a session', asyn
     data: { orderId: 'V2TEST-NOT-REAL', status: 'Pendiente' },
   });
   expect(mutation.status()).toBe(401);
+
+  const cron = await request.get('/api/cron/bot-inbox');
+  expect([401, 500]).toContain(cron.status());
+
+  const telegram = await request.post('/api/bot/telegram/webhook', {
+    data: { update_id: 1, message: { chat: { id: 'V2TEST-NOT-REAL' }, text: 'ignored' } },
+  });
+  expect(telegram.status()).toBe(401);
+
+  const whatsapp = await request.post('/api/bot/whatsapp/webhook', {
+    data: { object: 'whatsapp_business_account', entry: [] },
+  });
+  expect([403, 500]).toContain(whatsapp.status());
 });

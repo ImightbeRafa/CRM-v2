@@ -8,6 +8,7 @@ supabase/migrations/*
 !supabase/migrations/018_betsy_v2_feature_flags.sql
 !supabase/migrations/019_betsy_v2_order_lifecycle.sql
 !supabase/migrations/020_betsy_v2_server_pagination.sql
+!supabase/migrations/021_betsy_v2_bot_inbox.sql
 # Testing
 coverage/
 scripts

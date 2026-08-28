@@ -218,3 +218,36 @@ Append-only. Newest entries at the top.
 - Prove: pagination contracts 8/8; security 69/69; lifecycle 8/8; backups 8/8; bot Grok,
   TypeScript, lint (existing warnings), production build (125 pages), and Playwright
   smoke 3/3 pass. Additive SQL was not run; no database/provider writes or remote push.
+
+# 2026-08-27 — Betsy v2 Slice 5: durable bot inbox
+
+- Added a Postgres-backed, persist-before-200 inbox for enabled WhatsApp and Telegram
+  tenants. Batched Meta messages persist atomically. Claims use provider-ID
+  deduplication, leases, per-conversation ordering, bounded retries, hard time budgets,
+  a protected recovery cron, and terminal payload cleanup; no permanent server process
+  is assumed.
+- Added durable per-chunk/document outbound claims. Confirmed provider deliveries skip
+  on retry; unresolved provider acceptance becomes a terminal reconciliation case
+  instead of sending duplicate text or PDFs. Redis history claim+append is atomic and
+  both user and assistant turns are operation-keyed.
+- Kept bot writes all-on/all-off with the canonical lifecycle. The bot is enabled only
+  when inbox, bot-lifecycle, and Slice 3 readiness flags all agree, and billing is read
+  from the database immediately before every write.
+- Replaced unlinked-session `MANAGER` authority with `BOT_OPERATOR`. Existing sessions
+  are grandfather-safe without a destructive backfill; new unlinked sessions consume
+  seats, observe/warn reports actual overage, and enforce blocks only new over-limit
+  connections. Bot and dashboard membership create/reactivation use the same tenant
+  lock.
+- Added an explicitly confirmed, provider-idempotent factura tool with versioned
+  IVA-included calculations and honest Resend state. Removed message, transcription,
+  chat-ID, media-URL, and extracted-customer-content logs from the bot path.
+- Added a stable per-order Correos side-effect claim for queued bot guías. Ambiguous
+  provider results stop for reconciliation rather than retrying into a duplicate;
+  queued manual guías are directed to Producción instead of the legacy direct writer.
+- Corrected tenant feature-flag reads to use the schema's tenant-ID scope rather than a
+  stale literal `tenant`, which otherwise made Slice 2–5 tenant flags impossible to
+  activate.
+- Prove: inbox 8/8; lifecycle 8/8; security 69/69; pagination 8/8; backups 8/8; bot
+  Grok, TypeScript, lint (existing warnings), production build (125 pages), and
+  Playwright smoke 3/3 pass. Additive SQL was not run; no database/provider writes or
+  remote push.

@@ -65,9 +65,16 @@ test('all non-bot adapters use the one tenant lifecycle flag', () => {
   assert.doesNotMatch(source('src/lib/feature-flags.ts'), /ORDER_LIFECYCLE_V2_CHANNELS/);
 });
 
-test('bot order creation remains on the legacy lifecycle until inbox migration', () => {
+test('bot lifecycle remains legacy unless both durable inbox and bot lifecycle flags are ready', () => {
   const tools = source('src/lib/bot/ai-tools.ts');
-  assert.doesNotMatch(tools, /createLifecycleOrder|updateLifecycleOrder/);
+  const flags = source('src/lib/feature-flags.ts');
+  assert.match(tools, /shouldUseBotLifecycleV2/);
+  assert.match(tools, /ctx\.operationKey/);
+  assert.match(tools, /createLifecycleOrder/);
+  assert.match(tools, /updateLifecycleOrder/);
+  assert.match(flags, /BOT_INBOX_V2_FLAG/);
+  assert.match(flags, /BOT_LIFECYCLE_V2_FLAG/);
+  assert.match(flags, /return lifecycleReady && inbox\.enabled && botLifecycle\.enabled/);
 });
 
 test('schema additions remain additive and historical invoices stay version 1', () => {

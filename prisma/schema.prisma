@@ -74,6 +74,7 @@ model Tenant {
   apiKeys        ApiKey[]
   integrationLogs IntegrationLog[]
   botSessions    BotSession[]
+  botInboxMessages BotInboxMessage[]
   feedbackTickets FeedbackTicket[]
   changelogEntries ChangelogEntry[]
   featureFlags    TenantFeatureFlag[]
@@ -746,6 +747,9 @@ model Invoice {
   emailProviderId   String?
   emailedAt         DateTime?
   emailError        String?
+  // Durable idempotency key for bot/provider generated invoices. Null keeps
+  // historical and dashboard-created invoices backward compatible.
+  sourceOperationKey String?
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -755,6 +759,7 @@ model Invoice {
   order  Order?  @relation(fields: [orderId], references: [id])
   
   @@unique([tenantId, invoiceNumber])
+  @@unique([tenantId, sourceOperationKey])
   @@index([tenantId])
   @@index([paymentStatus])
   @@index([createdAt])
@@ -882,6 +887,14 @@ model BotSession {
   tenantId     String
   connectedAt  DateTime @default(now())
   isActive     Boolean  @default(true)
+
+  // Existing unlinked sessions are grandfathered by the additive SQL. New
+  // code-based sessions are explicitly COUNTED and use a constrained virtual
+  // role rather than inheriting MANAGER permissions.
+  accessRole    String?
+  seatPolicy    String?
+  grandfatheredAt DateTime?
+  seatOverageAt DateTime?
   
   // User identification (for audit trail)
   providedName String?  // Name provided during bot setup
@@ -895,6 +908,57 @@ model BotSession {
   @@index([tenantId])
   @@index([userId])
   @@index([platform, isActive])
+}
+
+// Authenticated provider updates are persisted before acknowledgement. The
+// cron/post-response claimant owns retries; payload is cleared after terminal
+// processing to minimize retained message content.
+model BotInboxMessage {
+  id                String   @id @default(cuid())
+  tenantId          String
+  platform          String
+  providerMessageId String
+  conversationKey   String
+  payload           Json?
+  status            String   @default("pending")
+  attempts          Int      @default(0)
+  availableAt       DateTime @default(now())
+  leaseToken        String?
+  leaseExpiresAt    DateTime?
+  processingStartedAt DateTime?
+  processedAt       DateTime?
+  failedAt          DateTime?
+  lastErrorCode     String?
+  lastErrorAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveries BotInboxDelivery[]
+
+  @@unique([platform, providerMessageId])
+  @@index([status, availableAt, createdAt])
+  @@index([platform, conversationKey, status, createdAt])
+  @@index([tenantId, status])
+}
+
+model BotInboxDelivery {
+  id                String   @id @default(cuid())
+  inboxMessageId    String
+  deliveryKey       String
+  kind              String
+  contentHash       String
+  status            String   @default("sending")
+  providerDeliveryId String?
+  lastErrorCode     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  sentAt            DateTime?
+
+  inboxMessage BotInboxMessage @relation(fields: [inboxMessageId], references: [id], onDelete: Cascade)
+
+  @@unique([inboxMessageId, deliveryKey])
+  @@index([status, updatedAt])
 }
 
 // ============================================================================

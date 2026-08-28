@@ -19,6 +19,7 @@ export async function deliverInvoiceEmail(input: {
   subtotal: number;
   tax: number;
   items: Array<{ description?: unknown; quantity?: unknown; unitPrice?: unknown; total?: unknown }>;
+  idempotencyKey?: string;
 }) {
   if (process.env.NODE_ENV === 'test' || process.env.SUPPRESS_EXTERNAL_MESSAGES === 'true') {
     throw new Error('External email delivery is suppressed in this environment');
@@ -53,7 +54,7 @@ export async function deliverInvoiceEmail(input: {
       </div>
       <p style="color:#666;font-size:12px">El IVA mostrado ya está incluido en el total; no se agregó nuevamente.</p>
     </div>`,
-  });
+  }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
   if (response.error || !response.data?.id) throw new Error(response.error?.message || 'Resend did not confirm delivery');
   return { providerId: response.data.id };
 }

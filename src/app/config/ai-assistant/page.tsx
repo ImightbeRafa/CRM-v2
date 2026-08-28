@@ -16,6 +16,7 @@ export default function AIAssistantPage() {
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
+  const [seatUsage, setSeatUsage] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'telegram' | 'whatsapp'>('telegram');
 
@@ -31,6 +32,7 @@ export default function AIAssistantPage() {
         const data = await res.json();
         setBotCode(data.code);
         setActiveSessions(data.sessions || []);
+        setSeatUsage(data.seatUsage || null);
       }
     } catch (err) {
       console.error('Error loading bot code:', err);
@@ -108,6 +110,17 @@ export default function AIAssistantPage() {
 
         {/* Main Card */}
         <div className="bg-card rounded-2xl shadow-xl p-8 mb-6 border border-border">
+          {seatUsage?.warning && (
+            <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+              <p className="font-semibold">Asientos del bot por encima del plan</p>
+              <p className="mt-1 text-sm">
+                Uso visible: {seatUsage.totalWithGrandfathered}/{seatUsage.limit}
+                ({seatUsage.grandfatheredBotSessions} protegidas). Las conexiones existentes con
+                protección heredada siguen funcionando; no se cortarán por sorpresa. Revisa los
+                asientos antes de activar la aplicación estricta.
+              </p>
+            </div>
+          )}
           <div className="flex items-center gap-3 mb-6">
             <Key className="w-6 h-6 text-blue-600 dark:text-blue-400" />
             <h2 className="text-2xl font-bold text-foreground">Código de Acceso</h2>

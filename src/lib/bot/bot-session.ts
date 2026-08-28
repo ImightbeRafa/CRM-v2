@@ -6,8 +6,16 @@
  */
 
 import { prisma } from '@/lib/db';
+import { Prisma } from '@prisma/client';
 import { SignJWT, jwtVerify } from 'jose';
 import { clearConversationHistory, clearPendingConfirmation } from './conversation-memory';
+import { readBotInboxReadiness } from '@/lib/feature-flags';
+import { getTenantSeatUsageWithClient } from '@/lib/plan-enforcement';
+import { createHash } from 'crypto';
+
+function sessionLogRef(platform: string, platformId: string) {
+  return createHash('sha256').update(`${platform}:${platformId}`).digest('hex').slice(0, 12);
+}
 
 // JWT secret for magic link tokens (lazy-initialized to avoid crashing unrelated imports)
 let _botJwtSecret: Uint8Array | null = null;
@@ -36,6 +44,10 @@ export interface BotSessionData {
   username: string | null;
   isActive: boolean;
   connectedAt: Date;
+  accessRole: string | null;
+  seatPolicy: string | null;
+  grandfatheredAt: Date | null;
+  seatOverageAt: Date | null;
 }
 
 export interface ConnectionTokenPayload {
@@ -101,48 +113,90 @@ export async function createBotSession(
     providedName?: string;
   }
 ): Promise<BotSessionData> {
-  // Defense-in-depth: detect tenant change and wipe stale conversation data
-  const existing = await prisma.botSession.findUnique({
-    where: { platform_platformId: { platform, platformId } },
-    select: { tenantId: true },
-  });
+  const rollout = await readBotInboxReadiness(tenantId);
+  const result = await prisma.$transaction(async tx => {
+    // Serialize bot-seat admission for this tenant. Serializable isolation also
+    // makes the count and write one decision instead of a raceable preflight.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`bot-seat:${tenantId}`}))`;
+    const existing = await tx.botSession.findUnique({
+      where: { platform_platformId: { platform, platformId } },
+      select: {
+        tenantId: true,
+        userId: true,
+        isActive: true,
+        seatPolicy: true,
+        grandfatheredAt: true,
+      },
+    });
+    const tenantSwitched = Boolean(existing && existing.tenantId !== tenantId);
+    const preservesGrandfathering = userId === null
+      && existing?.tenantId === tenantId
+      && existing.userId === null
+      && existing.isActive
+      && (existing.seatPolicy === null || existing.seatPolicy === 'GRANDFATHERED');
+    const seatPolicy = userId ? 'LINKED' : preservesGrandfathering ? 'GRANDFATHERED' : 'COUNTED';
+    const alreadyConsumesSeat = seatPolicy === 'COUNTED'
+      && existing?.tenantId === tenantId
+      && existing.userId === null
+      && existing.isActive
+      && existing.seatPolicy === 'COUNTED';
+    let seatOverageAt: Date | null | undefined;
+    if (seatPolicy === 'COUNTED' && !alreadyConsumesSeat) {
+      const usage = await getTenantSeatUsageWithClient(tx, tenantId);
+      const wouldExceed = usage.currentCount >= usage.limit;
+      if (wouldExceed && rollout.seatMode === 'enforce') {
+        const error = new Error('BOT_SEAT_LIMIT_REACHED');
+        error.name = 'BotSeatLimitError';
+        throw error;
+      }
+      seatOverageAt = wouldExceed ? new Date() : null;
+    }
 
-  if (existing && existing.tenantId !== tenantId) {
-    console.log(`[BotSession] Tenant switch detected for ${platform}:${platformId}: ${existing.tenantId} -> ${tenantId}. Clearing conversation data.`);
+    const session = await tx.botSession.upsert({
+      where: { platform_platformId: { platform, platformId } },
+      create: {
+        platform,
+        platformId,
+        userId,
+        tenantId,
+        providedName: metadata?.providedName || null,
+        displayName: metadata?.displayName || null,
+        username: metadata?.username || null,
+        isActive: true,
+        accessRole: 'BOT_OPERATOR',
+        seatPolicy,
+        grandfatheredAt: seatPolicy === 'GRANDFATHERED' ? new Date() : null,
+        seatOverageAt: seatOverageAt ?? null,
+      },
+      update: {
+        userId,
+        tenantId,
+        providedName: metadata?.providedName || null,
+        displayName: metadata?.displayName || null,
+        username: metadata?.username || null,
+        isActive: true,
+        connectedAt: new Date(),
+        accessRole: 'BOT_OPERATOR',
+        seatPolicy,
+        grandfatheredAt: seatPolicy === 'GRANDFATHERED'
+          ? existing?.grandfatheredAt || new Date()
+          : null,
+        seatOverageAt,
+      },
+    });
+    return { session, tenantSwitched };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+  // Only clear old-tenant memory after admission succeeds. A rejected tenant
+  // switch must leave the still-active prior session intact.
+  if (result.tenantSwitched) {
+    console.log('[BotSession] Tenant switch completed; clearing conversation data', { sessionRef: sessionLogRef(platform, platformId) });
     await clearConversationHistory(platform, platformId);
     await clearPendingConfirmation(platform, platformId);
   }
-
-  // Upsert - create if not exists, update if exists
-  const session = await prisma.botSession.upsert({
-    where: {
-      platform_platformId: {
-        platform,
-        platformId,
-      },
-    },
-    create: {
-      platform,
-      platformId,
-      userId,
-      tenantId,
-      providedName: metadata?.providedName || null,
-      displayName: metadata?.displayName || null,
-      username: metadata?.username || null,
-      isActive: true,
-    },
-    update: {
-      userId,
-      tenantId,
-      providedName: metadata?.providedName || null,
-      displayName: metadata?.displayName || null,
-      username: metadata?.username || null,
-      isActive: true,
-      connectedAt: new Date(),
-    },
-  });
+  const session = result.session;
   
-  console.log(`[BotSession] Created/updated session for ${platform}:${platformId} -> tenant:${tenantId}${userId ? ` (user:${userId})` : ' (team member)'}`);
+  console.log('[BotSession] Created or updated session', { platform, sessionRef: sessionLogRef(platform, platformId), linkedUser: Boolean(userId) });
   
   return session as BotSessionData;
 }
@@ -239,7 +293,7 @@ export async function deactivateBotSession(
       },
     });
     
-    console.log(`[BotSession] Deactivated session for ${platform}:${platformId}`);
+    console.log('[BotSession] Deactivated session', { platform, sessionRef: sessionLogRef(platform, platformId) });
     return true;
   } catch (error) {
     console.error('[BotSession] Failed to deactivate session:', error);
@@ -313,7 +367,7 @@ export async function getBotSessionWithContext(
         memberships: [],
       },
       tenant: session.tenant,
-      role: 'MANAGER' as const, // Default role for team members
+      role: session.accessRole || 'BOT_OPERATOR',
     };
   }
   

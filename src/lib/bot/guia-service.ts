@@ -6,8 +6,9 @@
 
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
+import { Prisma } from '@prisma/client';
 import { CorreosWebService, buildGuiaDescription, buildFullAddress, getCorreosWSCredentials } from '@/lib/correos';
-import { shouldUseOrderLifecycleV2, type OrderLifecycleAdapter } from '@/lib/feature-flags';
+import { shouldUseBotLifecycleV2, shouldUseOrderLifecycleV2, type OrderLifecycleAdapter } from '@/lib/feature-flags';
 import { setLifecycleOrderStatus } from '@/lib/order-lifecycle';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -38,8 +39,9 @@ interface SenderInfo {
 export interface GuiaGenerationOptions {
   deliveryType?: 'Domicilio' | 'Sucursal' | 'Punto de correo';
   verifiedLocations?: Array<{ orderId: string; province: string; canton: string; district: string; address?: string }>;
-  adapter?: Extract<OrderLifecycleAdapter, 'tenant-guia'>;
+  adapter?: Extract<OrderLifecycleAdapter, 'tenant-guia' | 'bot'>;
   userId?: string;
+  operationKey?: string;
   timeoutMs?: number;
   concurrency?: number;
 }
@@ -155,15 +157,17 @@ export async function generateGuiasForOrders(
   const ws = new CorreosWebService(wsCreds);
   const locationMap = new Map((options.verifiedLocations || []).map(location => [location.orderId, location]));
   const deliveryType = options.deliveryType || 'Domicilio';
-  const useLifecycleV2 = options.adapter
-    ? await shouldUseOrderLifecycleV2(tenantId, options.adapter)
-    : false;
+  const useLifecycleV2 = options.adapter === 'bot'
+    ? await shouldUseBotLifecycleV2(tenantId)
+    : options.adapter
+      ? await shouldUseOrderLifecycleV2(tenantId, options.adapter)
+      : false;
   const markOrderShipped = async (order: (typeof orders)[number], idempotencyKey: string) => {
     if (useLifecycleV2) {
       await setLifecycleOrderStatus({
         tenantId,
         userId: options.userId,
-        adapter: 'tenant-guia',
+        adapter: options.adapter || 'tenant-guia',
         idempotencyKey,
         orderId: order.orderId,
         status: 'Enviado',
@@ -208,6 +212,64 @@ export async function generateGuiasForOrders(
           destZip = await withTimeout(ws.getPostalCode(addressData.province, addressData.canton, addressData.district), options.timeoutMs || 12_000);
         } catch (geoErr: any) {
           console.warn(`[GuiaService] Could not resolve postal code for ${order.orderId}: ${geoErr.message}`);
+        }
+      }
+
+      // Correos exposes no provider idempotency key. A queued bot attempt must
+      // durably claim the external side effect immediately before registration.
+      // An unresolved prior claim is never retried automatically because the
+      // provider may have registered the guía before a timeout or crash.
+      let externalClaimKey: string | null = null;
+      if (options.adapter === 'bot') {
+        if (!options.operationKey || !useLifecycleV2) {
+          return {
+            success: false,
+            orderId: order.orderId,
+            error: 'La generación de guía del bot no está habilitada de forma segura.',
+          };
+        }
+        // Deliberately stable across different provider messages: after an
+        // ambiguous external attempt, a newly worded retry must not bypass the
+        // claim and register a second guía for the same order.
+        externalClaimKey = `correos-guia:${order.id}`;
+        try {
+          await globalPrisma.orderLifecycleOperation.create({
+            data: {
+              tenantId,
+              adapter: 'bot',
+              operation: 'correos_guia_external_claim',
+              idempotencyKey: externalClaimKey,
+              orderId: order.id,
+              result: { state: 'claimed', claimedAt: new Date().toISOString() },
+            },
+          });
+        } catch (claimError) {
+          if (!(claimError instanceof Prisma.PrismaClientKnownRequestError && claimError.code === 'P2002')) {
+            throw claimError;
+          }
+          const completed = await tenantPrisma.shippingGuia.findFirst({
+            where: { tenantId, orderId: order.orderId, status: 'completed' },
+          });
+          if (completed) {
+            try {
+              await markOrderShipped(order, `guia:${order.id}:${completed.guiaNumber || completed.id}`);
+            } catch {
+              // Status reconciliation must not create another provider guía.
+            }
+            return {
+              success: true,
+              orderId: order.orderId,
+              guiaNumber: completed.guiaNumber || undefined,
+              trackingNumber: completed.trackingNumber || undefined,
+              pdfBuffer: completed.pdfData ? Buffer.from(completed.pdfData) : undefined,
+              pdfFileName: completed.pdfFileName || `guia-${completed.guiaNumber}.pdf`,
+            };
+          }
+          return {
+            success: false,
+            orderId: order.orderId,
+            error: 'La guía está en proceso o requiere reconciliación. Revísala en Producción antes de reintentar.',
+          };
         }
       }
 
@@ -259,6 +321,19 @@ export async function generateGuiasForOrders(
           console.warn(`[GuiaService] Failed to update order status for ${order.orderId}:`, e);
         }
 
+        if (externalClaimKey) {
+          await globalPrisma.orderLifecycleOperation.updateMany({
+            where: { tenantId, adapter: 'bot', idempotencyKey: externalClaimKey },
+            data: {
+              result: {
+                state: 'completed',
+                guiaNumber: res.guiaNumber,
+                completedAt: new Date().toISOString(),
+              },
+            },
+          });
+        }
+
         // Upsert lm_orders for logistics
         try {
           await globalPrisma.$executeRaw`
@@ -280,6 +355,17 @@ export async function generateGuiasForOrders(
           pdfFileName: `guia-${res.guiaNumber}.pdf`,
         };
       } else {
+        if (externalClaimKey) {
+          await globalPrisma.orderLifecycleOperation.updateMany({
+            where: { tenantId, adapter: 'bot', idempotencyKey: externalClaimKey },
+            data: {
+              result: {
+                state: 'provider_failed',
+                failedAt: new Date().toISOString(),
+              },
+            },
+          });
+        }
         return {
           success: false,
           orderId: order.orderId,

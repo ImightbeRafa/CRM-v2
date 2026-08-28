@@ -8,6 +8,7 @@
  */
 
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { prisma } from '@/lib/db';
@@ -28,6 +29,10 @@ import {
 } from '@/lib/customFields';
 import { normalizeLocationForOrderCapture } from '@/lib/locationValidator';
 import { guardTenantWrite } from '@/lib/billing-access';
+import { createInvoiceForOrder } from '@/lib/invoice-service';
+import { createLifecycleOrder, setLifecycleOrderStatus, updateLifecycleOrder } from '@/lib/order-lifecycle';
+import { shouldUseBotLifecycleV2 } from '@/lib/feature-flags';
+import { hasPermission, type Permission, type Role } from '@/lib/rbac';
 
 // Tool execution context
 export interface ToolContext {
@@ -36,6 +41,13 @@ export interface ToolContext {
   userId: string;
   userName: string;
   userRole: string;
+  operationKey?: string;
+  inboxMessageId?: string;
+  confirmedInvoiceIntent?: boolean;
+  confirmedInvoiceEmailIntent?: boolean;
+  /** Captured once by executeTool for a queued write. Executors must never
+   * re-read flags and fall through to a legacy mutation. */
+  botLifecycleReady?: boolean;
 }
 
 // Attachment returned by tools (e.g. PDF guía)
@@ -64,14 +76,36 @@ export interface ToolResult<T = unknown> {
     currentStock: number;
     sellingPrice: number;
   }>;
+  /** Internal queue hint. Never expose provider/database details to the user. */
+  retryable?: boolean;
+}
+
+const SENSITIVE_LOG_KEY = /(customer|client|phone|email|address|comment|note|name|query|search|message|text|code)/i;
+
+function redactSensitiveLogValue(value: unknown, key = ''): unknown {
+  if (SENSITIVE_LOG_KEY.test(key)) return '[redacted]';
+  if (Array.isArray(value)) return value.map(item => redactSensitiveLogValue(item));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([nestedKey, nestedValue]) => [nestedKey, redactSensitiveLogValue(nestedValue, nestedKey)]),
+    );
+  }
+  return value;
 }
 
 function redactOrderParamsForLog(params: Record<string, unknown>) {
-  const redacted = { ...params };
-  for (const key of ['customerName', 'phone', 'email', 'address', 'comments']) {
-    if (key in redacted) redacted[key] = '[redacted]';
-  }
-  return redacted;
+  return redactSensitiveLogValue(params);
+}
+
+function logBotToolFailure(label: string, error: unknown) {
+  const errorCode = error && typeof error === 'object' && 'code' in error
+    ? String((error as { code?: unknown }).code || '')
+    : '';
+  console.error(label, {
+    errorName: error instanceof Error ? error.name : 'unknown',
+    errorCode: /^P\d{4}$/.test(errorCode) ? errorCode : undefined,
+  });
 }
 
 const COMMENT_FIELD_KEYWORDS = [
@@ -359,6 +393,15 @@ export const toolSchemas = {
     }),
   },
 
+  generate_invoice: {
+    description: 'Generar una factura para una orden existente. SOLO úsala cuando el usuario pida explícitamente generar/crear la factura y confirme la acción. El email solo se envía si también lo solicita.',
+    parameters: z.object({
+      orderId: z.string().min(1).describe('ID interno o número visible de la orden'),
+      confirmed: z.literal(true).describe('True únicamente tras confirmación explícita del usuario'),
+      sendEmail: z.boolean().default(false).describe('Enviar por email solo si el usuario lo pidió explícitamente'),
+    }),
+  },
+
   // Location validation (standalone only — create_order validates internally)
   validate_order_location: {
     description: 'SOLO para consultas de ubicación independientes. NO uses esta herramienta si vas a crear una orden — create_order ya valida la ubicación internamente. Úsalo ÚNICAMENTE cuando el usuario pide verificar una ubicación SIN crear orden, o necesita ver las opciones disponibles de cantones/distritos.',
@@ -536,7 +579,7 @@ async function syncClientFromOrder(
         lastUpdated: new Date(),
       },
     });
-    console.log(`[AI Tool] syncClient - Updated existing client: ${existingClient.id} (${phone})`);
+    console.log('[AI Tool] syncClient - Updated existing client', { clientId: existingClient.id });
   } else {
     await tenantPrisma.client.create({
       data: {
@@ -559,7 +602,7 @@ async function syncClientFromOrder(
         createdBy: ctx.userId,
       },
     });
-    console.log(`[AI Tool] syncClient - Created new client for phone: ${phone}`);
+    console.log('[AI Tool] syncClient - Created new client');
   }
 }
 
@@ -935,7 +978,9 @@ export async function createOrder(
         
         // STEP 3: Extract and validate custom fields
         const extractedCustomFields = extractCustomFields(params, customFieldsConfig);
-        console.log('[AI Tool] createOrder - Extracted customFields:', JSON.stringify(extractedCustomFields, null, 2));
+        console.log('[AI Tool] createOrder - Custom fields extracted', {
+          fieldCount: Object.keys(extractedCustomFields).length,
+        });
         
         // Validate required custom fields
         const customValidation = validateCustomFields(extractedCustomFields, customFieldsConfig);
@@ -1191,6 +1236,27 @@ export async function createOrder(
           };
         }
 
+        if (ctx.operationKey) {
+          if (!ctx.botLifecycleReady) throw new Error('BOT_LIFECYCLE_NOT_READY');
+          const lifecycle = await createLifecycleOrder({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            adapter: 'bot',
+            idempotencyKey: `${ctx.operationKey}:create_order`,
+            data: orderData,
+          });
+          const inventoryMessage = lifecycle.unresolvedInventory.length > 0
+            ? `\n⚠️ Inventario sin coincidencia exacta: ${lifecycle.unresolvedInventory.join(', ')}`
+            : '';
+          return {
+            success: true,
+            data: lifecycle.order,
+            message: lifecycle.idempotentReplay
+              ? `✅ La orden #${lifecycle.order.orderId} ya estaba creada; no repetí inventario ni cliente.${inventoryMessage}`
+              : `✅ Orden #${lifecycle.order.orderId} creada exitosamente para ${params.customerName}.${inventoryMessage}`,
+          };
+        }
+
         const order = await (tenantPrisma as any).$transaction(async (tx: any) => {
           const createdOrder = await tx.order.create({
             data: orderData,
@@ -1303,14 +1369,8 @@ export async function createOrder(
           message: successMessage,
         };
       } catch (error: any) {
-        console.error('[AI Tool] createOrder error:', error);
-        console.error('[AI Tool] createOrder params:', JSON.stringify(redactOrderParamsForLog(params), null, 2));
-        console.error('[AI Tool] createOrder error details:', {
-          name: error.name,
-          message: error.message,
-          code: error.code,
-          meta: error.meta,
-        });
+        logBotToolFailure('[AI Tool] createOrder failed', error);
+        console.error('[AI Tool] createOrder parameter shape', { keys: Object.keys(params) });
         
         // Parse Prisma errors to provide specific field information
         let userFriendlyError = 'Error al crear la orden';
@@ -1340,13 +1400,16 @@ export async function createOrder(
           const productName = error.message.replace('INVENTORY_STOCK_CHANGED:', '');
           userFriendlyError = `El stock de "${productName}" cambio mientras se creaba la orden. No cree la orden ni descuente inventario; revisa el inventario e intenta de nuevo.`;
         } else if (error.message) {
-          console.error('[AI Tool] createOrder - Unhandled error:', error.message);
           userFriendlyError = `❌ Error al crear la orden. Por favor intenta de nuevo o contacta a soporte.`;
         }
+
+        const knownBusinessFailure = ['P2002', 'P2003', 'P2011', 'P2012'].includes(error.code)
+          || error.name === 'PrismaClientValidationError';
         
         return {
           success: false,
           error: userFriendlyError,
+          retryable: Boolean(ctx.operationKey && !knownBusinessFailure),
         };
       }
     }
@@ -1539,6 +1602,24 @@ export async function updateOrder(
           const existingCustomFields = (existingOrder.customFields as Record<string, unknown>) || {};
           baseUpdates.customFields = { ...existingCustomFields, ...customFieldUpdates };
         }
+
+        if (ctx.operationKey) {
+          if (!ctx.botLifecycleReady) throw new Error('BOT_LIFECYCLE_NOT_READY');
+          const lifecycle = await updateLifecycleOrder({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            adapter: 'bot',
+            idempotencyKey: `${ctx.operationKey}:update_order:${existingOrder.id}`,
+            orderId: existingOrder.orderId,
+            patch: baseUpdates,
+          });
+          const updatedFields = Object.keys(params.updates).join(', ');
+          return {
+            success: true,
+            data: lifecycle.order,
+            message: `✅ Orden #${lifecycle.order.orderId} actualizada (${updatedFields})`,
+          };
+        }
         
         const order = await tenantPrisma.order.update({
           where: { id: existingOrder.id },
@@ -1553,10 +1634,11 @@ export async function updateOrder(
           message: `✅ Orden #${order.orderId} actualizada (${updatedFields})`,
         };
       } catch (error: any) {
-        console.error('[AI Tool] updateOrder error:', error);
+        logBotToolFailure('[AI Tool] updateOrder failed', error);
         return {
           success: false,
-          error: error.message || 'Error al actualizar la orden',
+          error: 'Error al actualizar la orden',
+          retryable: Boolean(ctx.operationKey),
         };
       }
     }
@@ -1605,6 +1687,27 @@ export async function updateOrderStatus(
         
         const oldStatus = existingOrder.status;
 
+        if (ctx.operationKey) {
+          if (!ctx.botLifecycleReady) throw new Error('BOT_LIFECYCLE_NOT_READY');
+          const lifecycle = await setLifecycleOrderStatus({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            adapter: 'bot',
+            idempotencyKey: `${ctx.operationKey}:status:${existingOrder.id}:${params.status}`,
+            orderId: existingOrder.orderId,
+            status: params.status,
+            expectedStatus: oldStatus,
+            expectedUpdatedAt: existingOrder.updatedAt.toISOString(),
+          });
+          return {
+            success: true,
+            data: lifecycle.order,
+            message: lifecycle.idempotentReplay
+              ? `✅ El cambio de estado de la orden #${lifecycle.order.orderId} ya estaba aplicado; no lo repetí.`
+              : `✅ Estado de orden #${lifecycle.order.orderId} cambiado: ${oldStatus} → ${params.status}`,
+          };
+        }
+
         if (oldStatus === params.status) {
           return {
             success: false,
@@ -1623,10 +1726,11 @@ export async function updateOrderStatus(
           message: `✅ Estado de orden #${order.orderId} cambiado: ${oldStatus} → ${params.status}`,
         };
       } catch (error: any) {
-        console.error('[AI Tool] updateOrderStatus error:', error);
+        logBotToolFailure('[AI Tool] updateOrderStatus failed', error);
         return {
           success: false,
-          error: error.message || 'Error al actualizar el estado',
+          error: 'Error al actualizar el estado',
+          retryable: Boolean(ctx.operationKey),
         };
       }
     }
@@ -1930,6 +2034,13 @@ export async function generateShippingGuia(
     async () => {
       try {
         const tenantPrisma = getTenantPrisma(ctx.tenantId);
+        if (ctx.operationKey && !ctx.botLifecycleReady) throw new Error('BOT_LIFECYCLE_NOT_READY');
+        if (ctx.operationKey && params.mode === 'manual') {
+          return {
+            success: false,
+            error: 'La guía manual debe generarse desde Producción para evitar duplicados. El bot puede generar la guía automática de Correos.',
+          };
+        }
         const order = await tenantPrisma.order.findFirst({
           where: {
             OR: [
@@ -1968,19 +2079,38 @@ export async function generateShippingGuia(
 
             if (Object.keys(updates).length > 0) {
               try {
-                await tenantPrisma.order.update({
-                  where: { tenantId_orderId: { tenantId: ctx.tenantId, orderId: order.orderId } },
-                  data: updates,
+                if (ctx.operationKey) {
+                  await updateLifecycleOrder({
+                    tenantId: ctx.tenantId,
+                    userId: ctx.userId,
+                    adapter: 'bot',
+                    idempotencyKey: `${ctx.operationKey}:guia-location:${order.id}`,
+                    orderId: order.orderId,
+                    patch: updates,
+                  });
+                } else {
+                  await tenantPrisma.order.update({
+                    where: { tenantId_orderId: { tenantId: ctx.tenantId, orderId: order.orderId } },
+                    data: updates,
+                  });
+                }
+                console.log('[AI Tool] Auto-corrected order location', {
+                  orderId: order.orderId,
+                  fieldCount: Object.keys(updates).length,
                 });
-                console.log(`[AI Tool] Auto-corrected location for ${order.orderId}:`, updates);
               } catch (e) {
-                console.warn(`[AI Tool] Failed to auto-correct location for ${order.orderId}:`, e);
+                console.warn('[AI Tool] Failed to auto-correct order location', { orderId: order.orderId });
               }
             }
           }
 
           const { generateGuiasForOrders } = await import('./guia-service');
-          const batch = await generateGuiasForOrders(ctx.tenantId, [order.orderId]);
+          const batch = await generateGuiasForOrders(ctx.tenantId, [order.orderId], 'correos_cr', {
+            adapter: ctx.operationKey ? 'bot' : undefined,
+            userId: ctx.userId,
+            operationKey: ctx.operationKey ? `${ctx.operationKey}:generate_guia` : undefined,
+            concurrency: 1,
+          });
           const result = batch.results[0];
 
           if (!result || !result.success) {
@@ -2111,8 +2241,12 @@ export async function generateShippingGuia(
           attachments,
         };
       } catch (error: any) {
-        console.error('[AI Tool] generateShippingGuia error:', error);
-        return { success: false, error: error.message || 'Error al generar guía de envío' };
+        logBotToolFailure('[AI Tool] generateShippingGuia failed', error);
+        return {
+          success: false,
+          error: 'Error al generar guía de envío',
+          retryable: Boolean(ctx.operationKey),
+        };
       }
     }
   );
@@ -2129,8 +2263,14 @@ export async function generateGuiasBulk(
     { tenantId: ctx.tenantId, userId: ctx.userId, userName: ctx.userName, userRole: ctx.userRole },
     async () => {
       try {
+        if (ctx.operationKey && !ctx.botLifecycleReady) throw new Error('BOT_LIFECYCLE_NOT_READY');
         const { generateGuiasForOrders } = await import('./guia-service');
-        const batch = await generateGuiasForOrders(ctx.tenantId, params.orderIds);
+        const batch = await generateGuiasForOrders(ctx.tenantId, params.orderIds, 'correos_cr', {
+          adapter: ctx.operationKey ? 'bot' : undefined,
+          userId: ctx.userId,
+          operationKey: ctx.operationKey ? `${ctx.operationKey}:generate_guias_bulk` : undefined,
+          concurrency: ctx.operationKey ? 1 : undefined,
+        });
 
         const attachments: ToolAttachment[] = [];
         for (const r of batch.results) {
@@ -2166,8 +2306,12 @@ export async function generateGuiasBulk(
           attachments,
         };
       } catch (error: any) {
-        console.error('[AI Tool] generateGuiasBulk error:', error);
-        return { success: false, error: error.message || 'Error al generar guías en bulk' };
+        logBotToolFailure('[AI Tool] generateGuiasBulk failed', error);
+        return {
+          success: false,
+          error: 'Error al generar guías en bulk',
+          retryable: Boolean(ctx.operationKey),
+        };
       }
     }
   );
@@ -2185,6 +2329,59 @@ export async function updateInventoryStock(
     async () => {
       try {
         const tenantPrisma = getTenantPrisma(ctx.tenantId);
+
+        if (ctx.operationKey) {
+          if (!ctx.botLifecycleReady) throw new Error('BOT_LIFECYCLE_NOT_READY');
+          const idempotencyKey = `${ctx.operationKey}:inventory:${params.productId}:${params.change}`;
+          return await prisma.$transaction(async tx => {
+            const replay = await tx.orderLifecycleOperation.findUnique({
+              where: {
+                tenantId_adapter_idempotencyKey: {
+                  tenantId: ctx.tenantId,
+                  adapter: 'bot',
+                  idempotencyKey,
+                },
+              },
+              select: { result: true },
+            });
+            if (replay?.result) return replay.result as unknown as ToolResult;
+
+            const product = await tx.inventoryItem.findFirst({
+              where: {
+                tenantId: ctx.tenantId,
+                OR: [
+                  { id: params.productId },
+                  { name: { contains: params.productId, mode: 'insensitive' } },
+                  { sku: params.productId },
+                ],
+              },
+            });
+            if (!product) return { success: false, error: `No se encontró el producto "${params.productId}"` };
+            const oldStock = product.currentStock || 0;
+            const newStock = oldStock + params.change;
+            if (newStock < 0) return { success: false, error: `No se puede reducir el stock a ${newStock}. Stock actual: ${oldStock}` };
+            const changed = await tx.inventoryItem.updateMany({
+              where: { id: product.id, tenantId: ctx.tenantId, currentStock: oldStock },
+              data: { currentStock: newStock },
+            });
+            if (changed.count !== 1) throw new Error('INVENTORY_STOCK_CHANGED');
+            const result: ToolResult = {
+              success: true,
+              data: { productId: product.id, productName: product.name, oldStock, newStock, change: params.change },
+              message: `✅ Stock ${params.change > 0 ? 'agregado' : 'reducido'} exitosamente.\n\n**Producto:** ${product.name}\n**Stock anterior:** ${oldStock}\n**Stock nuevo:** ${newStock}\n**Cambio:** ${params.change > 0 ? '+' : ''}${params.change}`,
+            };
+            await tx.orderLifecycleOperation.create({
+              data: {
+                tenantId: ctx.tenantId,
+                adapter: 'bot',
+                operation: 'inventory_update',
+                idempotencyKey,
+                result: result as unknown as Prisma.InputJsonValue,
+              },
+            });
+            return result;
+          }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        }
 
         // Find product by ID or name
         const product = await tenantPrisma.inventoryItem.findFirst({
@@ -2236,10 +2433,11 @@ export async function updateInventoryStock(
           message: `✅ Stock ${action} exitosamente.\n\n**Producto:** ${updated.name}\n**Stock anterior:** ${oldStock}\n**Stock nuevo:** ${newStock}\n**Cambio:** ${params.change > 0 ? '+' : ''}${params.change}`,
         };
       } catch (error: any) {
-        console.error('[AI Tool] updateInventoryStock error:', error);
+        logBotToolFailure('[AI Tool] updateInventoryStock failed', error);
         return {
           success: false,
-          error: error.message || 'Error al actualizar inventario',
+          error: 'Error al actualizar inventario',
+          retryable: Boolean(ctx.operationKey),
         };
       }
     }
@@ -2271,6 +2469,56 @@ export async function validateOrderLocation(
   }
 }
 
+async function generateInvoice(
+  ctx: ToolContext,
+  params: z.infer<typeof toolSchemas.generate_invoice.parameters>,
+): Promise<ToolResult> {
+  if (!ctx.confirmedInvoiceIntent || params.confirmed !== true) {
+    return { success: false, error: 'Necesito que confirmes explícitamente que deseas generar la factura.' };
+  }
+  if (!ctx.operationKey) {
+    return { success: false, error: 'No pude obtener una clave segura para generar la factura. Intenta de nuevo.' };
+  }
+  if (params.sendEmail && !ctx.confirmedInvoiceEmailIntent) {
+    return { success: false, error: 'La factura no se envió: necesito que pidas explícitamente el envío por correo.' };
+  }
+  try {
+    const result = await createInvoiceForOrder({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      orderReference: params.orderId,
+      sourceOperationKey: `${ctx.operationKey}:invoice:${params.orderId}`,
+      sendEmail: params.sendEmail,
+    });
+    const emailText = params.sendEmail
+      ? result.delivery === 'sent'
+        ? ' El correo fue confirmado por el proveedor.'
+        : ' La factura se creó, pero el correo no fue enviado.'
+      : ' No se solicitó envío por correo.';
+    return {
+      success: true,
+      data: {
+        invoiceId: result.invoice.id,
+        invoiceNumber: result.invoice.invoiceNumber,
+        total: result.invoice.total,
+        emailStatus: result.delivery,
+        idempotentReplay: result.idempotentReplay,
+      },
+      message: `✅ Factura ${result.invoice.invoiceNumber} lista.${emailText}`,
+    };
+  } catch (error) {
+    if (error instanceof Error && error.message === 'ORDER_NOT_FOUND') {
+      return { success: false, error: 'No encontré esa orden en este negocio.', retryable: false };
+    }
+    logBotToolFailure('[AI Tool] generateInvoice failed', error);
+    return {
+      success: false,
+      error: 'No pude generar la factura. Intenta de nuevo.',
+      retryable: Boolean(ctx.operationKey),
+    };
+  }
+}
+
 // ============================================================================
 // TOOL EXECUTOR
 // ============================================================================
@@ -2290,6 +2538,7 @@ const toolExecutors: Record<ToolName, (ctx: ToolContext, params: any) => Promise
   search_clients: searchClients,
   generate_shipping_guia: generateShippingGuia,
   generate_guias_bulk: generateGuiasBulk,
+  generate_invoice: generateInvoice,
   validate_order_location: validateOrderLocation,
 };
 
@@ -2307,10 +2556,47 @@ export async function executeTool(
 ): Promise<ToolResult> {
   const WRITE_TOOLS: ToolName[] = [
     'create_order', 'update_order', 'update_order_status',
-    'update_inventory_stock', 'generate_shipping_guia', 'generate_guias_bulk',
+    'update_inventory_stock', 'generate_shipping_guia', 'generate_guias_bulk', 'generate_invoice',
   ];
 
-  if (WRITE_TOOLS.includes(toolName) && ctx.userRole === 'VIEWER') {
+  let executionContext = ctx;
+  if (ctx.operationKey && WRITE_TOOLS.includes(toolName)) {
+    const botLifecycleReady = await shouldUseBotLifecycleV2(ctx.tenantId);
+    if (!botLifecycleReady) {
+      return {
+        success: false,
+        error: '⏳ Las escrituras del bot todavía no están habilitadas para este negocio.',
+        data: { code: 'bot_lifecycle_not_enabled' },
+      };
+    }
+    executionContext = { ...ctx, botLifecycleReady: true };
+  }
+
+  const BOT_OPERATOR_TOOLS = new Set<ToolName>([
+    'create_order', 'get_orders', 'get_order_details', 'update_order', 'update_order_status',
+    'get_inventory_item', 'search_inventory', 'update_inventory_stock',
+    'get_statistics_summary', 'search_clients', 'generate_shipping_guia',
+    'generate_guias_bulk', 'validate_order_location', 'generate_invoice',
+  ]);
+
+  if (ctx.userRole === 'BOT_OPERATOR' && !BOT_OPERATOR_TOOLS.has(toolName)) {
+    return { success: false, error: '❌ Esta sesión del bot no tiene permiso para esa acción.' };
+  }
+
+  const writePermission: Partial<Record<ToolName, Permission>> = {
+    create_order: 'create_sales',
+    update_order: 'update_sales',
+    update_order_status: 'update_sales',
+    update_inventory_stock: 'update_config',
+    generate_shipping_guia: 'update_production',
+    generate_guias_bulk: 'update_production',
+    generate_invoice: 'update_sales',
+  };
+  const knownRole = ['OWNER', 'ADMIN', 'MANAGER', 'SALES', 'PRODUCTION', 'VIEWER'].includes(ctx.userRole)
+    ? ctx.userRole as Role
+    : null;
+  const requiredPermission = writePermission[toolName];
+  if (requiredPermission && ctx.userRole !== 'BOT_OPERATOR' && (!knownRole || !hasPermission(knownRole, requiredPermission))) {
     return {
       success: false,
       error: '❌ No tienes permisos para realizar esta acción. Contacta a un administrador.',
@@ -2381,6 +2667,11 @@ export async function executeTool(
         };
       }
     } catch {
+      if (ctx.operationKey) {
+        const retryable = new Error('BOT_BILLING_CHECK_FAILED');
+        retryable.name = 'BotBillingCheckError';
+        throw retryable;
+      }
       return {
         success: false,
         error: '❌ No se pudo verificar el acceso de facturación. Intenta de nuevo más tarde.',
@@ -2389,6 +2680,12 @@ export async function executeTool(
     }
   }
   
-  return executor(ctx, validatedParams);
+  const result = await executor(executionContext, validatedParams);
+  if (ctx.operationKey && WRITE_TOOLS.includes(toolName) && result.retryable) {
+    const retryable = new Error('BOT_TOOL_RETRYABLE_FAILURE');
+    retryable.name = 'BotToolRetryableError';
+    throw retryable;
+  }
+  return result;
 }
 

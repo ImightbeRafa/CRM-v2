@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Betsy AI Agent
  *
  * The main AI agent that processes user messages, decides which tools to use,
@@ -47,6 +47,7 @@ import {
   setPendingConfirmation,
   clearPendingConfirmation,
   removeLastUserMessage,
+  type ConversationMessage,
 } from './conversation-memory';
 import { formatOrderForTelegram, formatInventoryForTelegram, formatStatsForTelegram } from './telegram';
 import { formatOrderForWhatsApp, formatInventoryForWhatsApp, formatStatsForWhatsApp } from './whatsapp';
@@ -221,21 +222,37 @@ const MUTATING_TOOLS = new Set<ToolName>([
   'update_inventory_stock',
   'generate_shipping_guia',
   'generate_guias_bulk',
+  'generate_invoice',
 ]);
+
+function hasConfirmedInvoiceIntent(message: string) {
+  const normalized = normalizeSpanishText(message);
+  return /\b(genera|generar|crea|crear|confirma|confirmo)\b/.test(normalized)
+    && /\b(factura|invoice)\b/.test(normalized);
+}
+
+function hasConfirmedInvoiceEmailIntent(message: string) {
+  const normalized = normalizeSpanishText(message);
+  return hasConfirmedInvoiceIntent(message)
+    && /\b(email|correo|envia|enviar|manda|mandar)\b/.test(normalized);
+}
 
 function isMutatingTool(toolName: string): boolean {
   return MUTATING_TOOLS.has(toolName as ToolName);
 }
 
-function redactToolArgsForLog(toolName: string, toolArgs: any) {
-  if (!toolArgs || typeof toolArgs !== 'object') return toolArgs;
-  if (toolName !== 'create_order' && toolName !== 'update_order') return toolArgs;
+const SENSITIVE_TOOL_LOG_KEY = /(customer|client|phone|email|address|comment|note|name|query|search|message|text|code)/i;
 
-  const redacted = { ...toolArgs };
-  for (const key of ['customerName', 'phone', 'email', 'address', 'comments']) {
-    if (key in redacted) redacted[key] = '[redacted]';
+function redactToolArgsForLog(_toolName: string, toolArgs: unknown, key = ''): unknown {
+  if (SENSITIVE_TOOL_LOG_KEY.test(key)) return '[redacted]';
+  if (Array.isArray(toolArgs)) return toolArgs.map(item => redactToolArgsForLog(_toolName, item));
+  if (toolArgs && typeof toolArgs === 'object') {
+    return Object.fromEntries(
+      Object.entries(toolArgs as Record<string, unknown>)
+        .map(([nestedKey, value]) => [nestedKey, redactToolArgsForLog(_toolName, value, nestedKey)]),
+    );
   }
-  return redacted;
+  return toolArgs;
 }
 
 type PreparedToolCall = {
@@ -2111,7 +2128,7 @@ function applyOrderCaptureLocationNormalization(args: Record<string, any>): void
       console.info('[AI Agent] location capture normalization', {
         action: result.action,
         validForGuia: result.validForGuia,
-        corrections: result.corrections,
+        correctionCount: result.corrections.length,
       });
     }
   } catch (e) {
@@ -2502,6 +2519,21 @@ export async function processMessage(
   userMessage: string,
   context: ToolContext
 ): Promise<MessageResponse> {
+  context = {
+    ...context,
+    confirmedInvoiceIntent: hasConfirmedInvoiceIntent(userMessage),
+    confirmedInvoiceEmailIntent: hasConfirmedInvoiceEmailIntent(userMessage),
+  };
+  const addAssistantTurn = (
+    content: string,
+    toolCalls?: ConversationMessage['toolCalls'],
+  ) => addAssistantMessage(
+    platform,
+    platformId,
+    content,
+    toolCalls,
+    context.operationKey ? `${context.operationKey}:assistant` : undefined,
+  );
   // Tracks whether a mutating tool already committed during this turn. If so,
   // and a later step throws, the global catch surfaces the success message
   // instead of a misleading "ocurrió un error" that would contradict reality
@@ -2531,20 +2563,20 @@ export async function processMessage(
           console.info('[AI Agent] User rejected pending order_repair — clearing.');
           await clearPendingConfirmation(platform, platformId);
           const text = 'Entendido, descarté esa orden. Cuando quieras crear una nueva, envíame los datos completos.';
-          await addAssistantMessage(platform, platformId, text);
+          await addAssistantTurn(text);
           return { text };
         }
 
         if (isConfirmation(userMessage)) {
           const responseText = 'Para completar la orden necesito el dato faltante. Enviamelo asi: producto: ENERGY PATCH X1';
-          await addAssistantMessage(platform, platformId, responseText);
+          await addAssistantTurn(responseText);
           return { text: responseText };
         }
 
         // Only an explicit new-order intent clears the repair. Correction
         // wording like "cambie el distrito" stays here and Grok interprets it.
         if (hasOrderCreationIntent(userMessage)) {
-          console.info(`[AI Agent] Clearing pending order_repair — user started a new order: "${userMessage.substring(0, 60)}"`);
+          console.info('[AI Agent] Clearing pending order repair because the user started a new order');
           await clearPendingConfirmation(platform, platformId);
           // Fall through to normal processing; Grok extraction or the LLM will
           // pick up the fresh order data below.
@@ -2624,7 +2656,7 @@ export async function processMessage(
           const text = isExplicitRejection(userMessage)
             ? 'Entendido, descarté esa revisión. Envíame de nuevo los datos correctos de la orden y preparo la revisión final.'
             : 'Entendido, orden cancelada antes de crearla.';
-          await addAssistantMessage(platform, platformId, text);
+          await addAssistantTurn(text);
           return { text };
         }
 
@@ -2643,7 +2675,7 @@ export async function processMessage(
           const result = await executePendingAction(confirmedPending, context, platform, platformId);
           // Sanitize the history copy of the success message to prevent the
           // LLM from borrowing customer/products/total data on later turns.
-          await addAssistantMessage(platform, platformId, sanitizeOrderSuccessForHistory(result));
+          await addAssistantTurn(sanitizeOrderSuccessForHistory(result));
           return { text: result };
         }
 
@@ -2719,7 +2751,7 @@ export async function processMessage(
           console.info('[AI Agent] User cancelled inventory_match_pick');
           await clearPendingConfirmation(platform, platformId);
           const text = 'Entendido, cancelé la selección de producto. La orden no se creó. Cuando quieras, envíame los datos de nuevo.';
-          await addAssistantMessage(platform, platformId, text);
+          await addAssistantTurn(text);
           return { text };
         }
 
@@ -2740,7 +2772,7 @@ export async function processMessage(
             '',
             'Respondé con el número, el SKU, o el nombre exacto. O escribí Cancelar.',
           ].join('\n');
-          await addAssistantMessage(platform, platformId, text);
+          await addAssistantTurn(text);
           return { text };
         }
 
@@ -2767,7 +2799,7 @@ export async function processMessage(
           expiresAt: Date.now() + 120_000,
         };
         const result = await executePendingAction(confirmedPending, context, platform, platformId);
-        await addAssistantMessage(platform, platformId, sanitizeOrderSuccessForHistory(result));
+        await addAssistantTurn(sanitizeOrderSuccessForHistory(result));
         return { text: `Seleccionaste *${chosen.name}* (SKU: ${chosen.sku}).\n\n${result}` };
       }
 
@@ -2777,7 +2809,7 @@ export async function processMessage(
       if (confirmed) {
         await clearPendingConfirmation(platform, platformId);
         const result = await executePendingAction(pending, context, platform, platformId);
-        await addAssistantMessage(platform, platformId, sanitizeOrderSuccessForHistory(result));
+        await addAssistantTurn(sanitizeOrderSuccessForHistory(result));
         return { text: result };
       } else if (denied) {
         await clearPendingConfirmation(platform, platformId);
@@ -2785,7 +2817,7 @@ export async function processMessage(
       }
       // Not a confirmation/denial — check if this is a new action request
       if (isActionRequest(userMessage)) {
-        console.info(`[AI Agent] 🧹 Clearing stale pending confirmation — user started a new action: "${userMessage.substring(0, 60)}"`);
+        console.info('[AI Agent] Clearing stale pending confirmation because the user started a new action');
         await clearPendingConfirmation(platform, platformId);
       }
       // Fall through to normal AI processing
@@ -2795,11 +2827,11 @@ export async function processMessage(
       // fall through to the LLM here: history still contains the assistant's
       // review message, and the model might helpfully re-invoke create_order
       // using that stale data. Give the user a clear, friendly stop instead.
-      console.warn(`[AI Agent] ⚠️ Yes/No message "${userMessage}" received with no pending confirmation. Likely an expired review. Stopping safely.`);
+      console.warn('[AI Agent] Yes/no message received without a pending confirmation; stopping safely');
       const text = isConfirmation(userMessage)
         ? 'No tengo nada pendiente que confirmar en este momento. La revisión anterior caducó. Si querés crear la orden, envíame los datos completos de nuevo y preparo la revisión final.'
         : 'No hay ninguna acción pendiente que cancelar. Si necesitás algo más, decime qué hacemos.';
-      await addAssistantMessage(platform, platformId, text);
+      await addAssistantTurn(text);
       return { text };
     }
 
@@ -2823,7 +2855,7 @@ export async function processMessage(
     // cause the LLM to re-create the order from leftover history.
     if (looksLikeFieldOnlyOrderFragment(userMessage)) {
       console.warn('[AI Agent] Field-only order fragment received with no pending order; refusing LLM reuse');
-      await addAssistantMessage(platform, platformId, FIELD_ONLY_WITHOUT_PENDING_TEXT);
+      await addAssistantTurn(FIELD_ONLY_WITHOUT_PENDING_TEXT);
       return { text: FIELD_ONLY_WITHOUT_PENDING_TEXT };
     }
 
@@ -2869,12 +2901,12 @@ export async function processMessage(
       }
 
       console.warn('[AI Agent] local_order_fallback could not extract enough order fields');
-      await addAssistantMessage(platform, platformId, ORDER_DETAILS_REQUIRED_TEXT);
+      await addAssistantTurn(ORDER_DETAILS_REQUIRED_TEXT);
       return { text: ORDER_DETAILS_REQUIRED_TEXT };
     }
 
     // Non-order messages go to the LLM, which needs them in history.
-    await addUserMessage(platform, platformId, userMessage);
+    await addUserMessage(platform, platformId, userMessage, context.operationKey);
 
     // Get conversation history
     const history = await getFormattedHistory(platform, platformId);
@@ -2900,7 +2932,12 @@ export async function processMessage(
     // Build per-request tool schemas with tenant-specific custom fields (no global mutation)
     const { tenantToolSchemas } = await updateToolSchemasWithCustomFields(context.tenantId);
 
-    const currentTools = buildToolsArray(tenantToolSchemas);
+    const availableToolSchemas = context.operationKey
+      ? tenantToolSchemas
+      : Object.fromEntries(
+          Object.entries(tenantToolSchemas).filter(([name]) => name !== 'generate_invoice'),
+        ) as typeof tenantToolSchemas;
+    const currentTools = buildToolsArray(availableToolSchemas);
 
     const tenantName = context.tenantName || 'Negocio';
     const systemPromptWithDate = SYSTEM_PROMPT
@@ -2948,8 +2985,10 @@ export async function processMessage(
     // SECURITY CHECK: Detect when AI should have called a tool but didn't
     if (requiresToolCall && functionCalls.length === 0) {
       console.warn('[AI Agent] ⚠️ ACTION REQUEST BUT NO TOOL CALLS!');
-      console.warn('[AI Agent] User message:', userMessage);
-      console.warn('[AI Agent] AI response (text only):', responseText.slice(0, 300));
+      console.warn('[AI Agent] Model response failed for a user message', { characterCount: userMessage.length });
+      console.warn('[AI Agent] AI returned text instead of the required tool call', {
+        characterCount: responseText.length,
+      });
 
       const safeResponse = `Para ejecutar esta acción, necesito más información. Por favor proporciona en un solo mensaje:
 
@@ -2965,7 +3004,7 @@ export async function processMessage(
 
 ¿Puedes proporcionar estos datos?`;
 
-      await addAssistantMessage(platform, platformId, safeResponse);
+      await addAssistantTurn(safeResponse);
       return { text: safeResponse };
     }
 
@@ -3070,7 +3109,7 @@ export async function processMessage(
         } else if (result.needsConfirmation) {
           console.log(`[AI Agent] 🔄 Tool ${toolName} needs confirmation: ${result.confirmationType}`);
         } else {
-          console.error(`[AI Agent] ❌ Tool ${toolName} failed:`, result.error);
+          console.error('[AI Agent] Tool failed', { toolName });
         }
 
         // Handle inventory confirmation flow for create_order
@@ -3159,7 +3198,7 @@ export async function processMessage(
         // message in the chat reply.
         const historyText = sanitizeOrderSuccessForHistory(directResponse);
         try {
-          await addAssistantMessage(platform, platformId, historyText);
+          await addAssistantTurn(historyText);
         } catch (e) {
           console.error('[AI Agent] addAssistantMessage failed after mutation tool success:', e);
         }
@@ -3176,7 +3215,7 @@ export async function processMessage(
 
       if (inventoryLookupOnly) {
         const directResponse = toolResults.join('\n\n') || 'No encontre productos con esos criterios.';
-        await addAssistantMessage(platform, platformId, directResponse);
+        await addAssistantTurn(directResponse);
         return { text: directResponse };
       }
 
@@ -3196,28 +3235,35 @@ export async function processMessage(
       const finalMessage = parseResponseText(followUpResponse);
 
       if (finalMessage) {
-        await addAssistantMessage(platform, platformId, finalMessage);
+        await addAssistantTurn(finalMessage);
         return { text: finalMessage, attachments: allAttachments.length > 0 ? allAttachments : undefined };
       }
 
       const fallback = toolResults.join('\n\n') || 'No pude generar una respuesta. Por favor intenta de nuevo.';
-      await addAssistantMessage(platform, platformId, fallback);
+      await addAssistantTurn(fallback);
       return { text: fallback, attachments: allAttachments.length > 0 ? allAttachments : undefined };
     }
 
     // No tool calls, just return the AI response
     if (responseText) {
-      await addAssistantMessage(platform, platformId, responseText);
+      await addAssistantTurn(responseText);
       return { text: responseText };
     }
 
     return { text: 'Lo siento, no pude procesar tu solicitud.' };
 
   } catch (error) {
-    console.error('[AI Agent] Error processing message:', error);
+    console.error('[AI Agent] Error processing message', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
     if (mutationSuccessText) {
       console.warn('[AI Agent] Surfacing mutation success despite later error in turn.');
       return { text: mutationSuccessText, attachments: mutationSuccessAttachments };
+    }
+    if (context.operationKey) {
+      const retryable = new Error('BOT_PROCESSING_FAILED');
+      retryable.name = 'BotProcessingError';
+      throw retryable;
     }
     return { text: 'Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo.' };
   }

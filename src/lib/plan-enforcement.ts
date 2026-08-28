@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import type { Prisma } from '@prisma/client';
 
 export interface PlanCheck {
   allowed: boolean;
@@ -13,16 +14,47 @@ const planLimits = {
   users: { FREE: 1, BASIC: 5, PRO: 25, ENTERPRISE: 999999 },
 };
 
+export async function getTenantSeatUsageWithClient(client: Prisma.TransactionClient, tenantId: string) {
+  const tenant = await client.tenant.findUnique({ where: { id: tenantId }, select: { plan: true } });
+  if (!tenant) return { plan: 'FREE', members: 0, countedBotSessions: 0, grandfatheredBotSessions: 0, currentCount: 0, totalWithGrandfathered: 0, limit: 0 };
+  const plan = tenant.plan as keyof typeof planLimits.users;
+  const limit = planLimits.users[plan] ?? 1;
+  const [members, countedBotSessions, grandfatheredBotSessions] = await Promise.all([
+    client.membership.count({ where: { tenantId, isActive: true } }),
+    client.botSession.count({
+      where: { tenantId, isActive: true, userId: null, seatPolicy: 'COUNTED' },
+    }),
+    client.botSession.count({
+      where: {
+        tenantId,
+        isActive: true,
+        userId: null,
+        OR: [{ seatPolicy: null }, { seatPolicy: 'GRANDFATHERED' }],
+      },
+    }),
+  ]);
+  const currentCount = members + countedBotSessions;
+  return {
+    plan,
+    members,
+    countedBotSessions,
+    grandfatheredBotSessions,
+    currentCount,
+    totalWithGrandfathered: currentCount + grandfatheredBotSessions,
+    limit,
+  };
+}
+
+export async function getTenantSeatUsage(tenantId: string) {
+  return getTenantSeatUsageWithClient(prisma as unknown as Prisma.TransactionClient, tenantId);
+}
+
 /**
  * Check if tenant can add more users
  */
 export async function checkUserLimit(tenantId: string): Promise<PlanCheck> {
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: tenantId },
-    select: { plan: true }
-  });
-
-  if (!tenant) {
+  const usage = await getTenantSeatUsage(tenantId);
+  if (usage.limit === 0) {
     return {
       allowed: false,
       needsUpgrade: false,
@@ -33,13 +65,7 @@ export async function checkUserLimit(tenantId: string): Promise<PlanCheck> {
     };
   }
 
-  const plan = tenant.plan as keyof typeof planLimits.users;
-  const limit = planLimits.users[plan] ?? 1;
-
-  const currentCount = await prisma.membership.count({
-    where: { tenantId, isActive: true }
-  });
-
+  const { plan, limit, currentCount } = usage;
   const allowed = currentCount < limit;
 
   return {

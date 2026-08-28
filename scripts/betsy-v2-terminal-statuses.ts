@@ -117,7 +117,7 @@ async function main() {
       });
     }
     const existingFlag = await tx.tenantFeatureFlag.findFirst({
-      where: { tenantId, scope: 'tenant', key: PRODUCTION_SERVER_V2_FLAG },
+      where: { tenantId, scope: tenantId, key: PRODUCTION_SERVER_V2_FLAG },
       select: { id: true, enabled: true, config: true },
     });
     const config = {
@@ -130,7 +130,7 @@ async function main() {
       await tx.tenantFeatureFlag.update({ where: { id: existingFlag.id }, data: { config } });
     } else {
       await tx.tenantFeatureFlag.create({
-        data: { tenantId, scope: 'tenant', key: PRODUCTION_SERVER_V2_FLAG, enabled: false, config },
+        data: { tenantId, scope: tenantId, key: PRODUCTION_SERVER_V2_FLAG, enabled: false, config },
       });
     }
   });

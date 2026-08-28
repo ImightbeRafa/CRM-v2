@@ -8,6 +8,7 @@
  */
 
 import { Redis } from '@upstash/redis';
+import { createHash } from 'crypto';
 
 // Maximum messages to keep per conversation
 const MAX_MESSAGES = 25;
@@ -17,10 +18,23 @@ const MESSAGE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 // Redis client (initialized lazily)
 let redisClient: Redis | null = null;
+let redisInitialized = false;
 
 // In-memory fallback storage (for development without Redis)
 const memoryStorage = new Map<string, ConversationMessage[]>();
 const stateStorage = new Map<string, Record<string, any>>();
+const memoryOperationKeys = new Map<string, Set<string>>();
+
+const ATOMIC_APPEND_SCRIPT = `
+if redis.call('EXISTS', KEYS[1]) == 1 then
+  return 0
+end
+redis.call('SET', KEYS[1], '1', 'EX', ARGV[2])
+redis.call('RPUSH', KEYS[2], ARGV[1])
+redis.call('LTRIM', KEYS[2], -tonumber(ARGV[3]), -1)
+redis.call('EXPIRE', KEYS[2], ARGV[2])
+return 1
+`;
 
 export interface ConversationMessage {
   role: 'user' | 'assistant' | 'system';
@@ -38,7 +52,8 @@ export interface ConversationMessage {
  * Get Redis client (or null if not configured)
  */
 function getRedisClient(): Redis | null {
-  if (redisClient) return redisClient;
+  if (redisInitialized) return redisClient;
+  redisInitialized = true;
   
   const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
@@ -90,9 +105,14 @@ export async function getConversationHistory(
 export async function addMessage(
   platform: string,
   platformId: string,
-  message: Omit<ConversationMessage, 'timestamp'>
+  message: Omit<ConversationMessage, 'timestamp'>,
+  operationKey?: string,
 ): Promise<void> {
   const key = getConversationKey(platform, platformId);
+  const operationHash = operationKey
+    ? createHash('sha256').update(operationKey).digest('hex')
+    : null;
+  const dedupeKey = operationHash ? `${key}:operation:${operationHash}` : null;
   const fullMessage: ConversationMessage = {
     ...message,
     timestamp: Date.now(),
@@ -102,6 +122,18 @@ export async function addMessage(
   
   if (redis) {
     try {
+      if (dedupeKey) {
+        // The operation claim and list append must be one Redis operation.
+        // If a serverless invocation dies, a retry must see either both the
+        // claim and message or neither of them.
+        const inserted = await redis.eval(
+          ATOMIC_APPEND_SCRIPT,
+          [dedupeKey, key],
+          [JSON.stringify(fullMessage), String(MESSAGE_TTL_SECONDS), String(MAX_MESSAGES)],
+        ) as number;
+        if (Number(inserted) === 0) return;
+        return;
+      }
       // Push to end of list
       await redis.rpush(key, fullMessage);
       
@@ -111,12 +143,26 @@ export async function addMessage(
       // Set/refresh TTL
       await redis.expire(key, MESSAGE_TTL_SECONDS);
     } catch (error) {
-      console.error('[ConversationMemory] Redis write error:', error);
+      console.error('[ConversationMemory] Redis write failed', {
+        errorName: error instanceof Error ? error.name : 'unknown',
+      });
+      if (operationKey) throw new Error('CONVERSATION_HISTORY_WRITE_FAILED');
     }
     return;
   }
   
   // Fallback to in-memory
+  if (operationHash) {
+    const seen = memoryOperationKeys.get(key) || new Set<string>();
+    if (seen.has(operationHash)) return;
+    seen.add(operationHash);
+    while (seen.size > MAX_MESSAGES * 4) {
+      const oldest = seen.values().next().value;
+      if (!oldest) break;
+      seen.delete(oldest);
+    }
+    memoryOperationKeys.set(key, seen);
+  }
   const existing = memoryStorage.get(key) || [];
   existing.push(fullMessage);
   
@@ -134,12 +180,13 @@ export async function addMessage(
 export async function addUserMessage(
   platform: string,
   platformId: string,
-  content: string
+  content: string,
+  operationKey?: string,
 ): Promise<void> {
   await addMessage(platform, platformId, {
     role: 'user',
     content,
-  });
+  }, operationKey);
 }
 
 /**
@@ -149,13 +196,14 @@ export async function addAssistantMessage(
   platform: string,
   platformId: string,
   content: string,
-  toolCalls?: ConversationMessage['toolCalls']
+  toolCalls?: ConversationMessage['toolCalls'],
+  operationKey?: string,
 ): Promise<void> {
   await addMessage(platform, platformId, {
     role: 'assistant',
     content,
     toolCalls,
-  });
+  }, operationKey);
 }
 
 /**
@@ -217,6 +265,7 @@ export async function clearConversationHistory(
   
   // Fallback to in-memory
   memoryStorage.delete(key);
+  memoryOperationKeys.delete(key);
 }
 
 /**

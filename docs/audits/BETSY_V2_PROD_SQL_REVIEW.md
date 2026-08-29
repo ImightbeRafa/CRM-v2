@@ -10,8 +10,7 @@ Prisma migrate / `db push`: **not used**
 
 **SAFE TO APPLY as additive expand-only DDL** after RLS hardening. Do **not**
 enable any v2 feature flag. Do **not** push `origin/dev` from this review.
-Authenticated tenant writes still need an explicit password and a pinned tenant
-ID because `peter@peter.com` is a privileged, multi-tenant account.
+Authenticated writes use a new isolated tenant, not `peter@peter.com`.
 
 ## Catalog preflight (read-only)
 
@@ -36,28 +35,33 @@ Indexes stay inside each file's `BEGIN/COMMIT` with `lock_timeout=3s` and
 `statement_timeout=30s`. Concurrent indexes are unnecessary at this size; a
 lock wait longer than 3s aborts and rolls the file back.
 
-## Dedicated test tenant (`peter@peter.com`)
+## Dedicated test tenant (isolated, not Peter)
 
-User exists, active, has a password, email not verified.
+`peter@peter.com` was rejected: super-admin, logistics-admin, two memberships.
+A new isolated account was created on the shared database for v2 testing only.
 
-| Flag | Value |
+| Field | Value |
 |---|---|
-| `isSuperAdmin` | **true** |
-| `isLogisticsAdmin` | **true** |
+| Email | `betsyv2.isolated@betsycrm.test` |
+| User ID | `cmteijik70001jsoy2coxg806` |
+| Tenant ID | `cmteijij70000jsoyedmtfnl1` |
+| Slug | `betsyv2-isolated-test` |
+| Role | OWNER (single membership) |
+| `isSuperAdmin` | false |
+| `isLogisticsAdmin` | false |
+| Tilopay | none |
+| `lm_tenant_links` | none |
+| Orders / clients | 0 / 0 |
+| v2 flags | none |
 
-| Tenant | ID | Orders | Notes |
-|---|---|---|---|
-| PeterTesting (`peter`) | `cmh44aerw0006vijg0640vfl0` | 1 | FREE, `subscriptionStatus=expired`, has a Tilopay subscription id, linked in `lm_tenant_links` |
-| Peter Test Company | `cmh7b02500000vizge80ekjmk` | 150 | FREE, no Tilopay, not in logistics links |
+Password is not stored in git. Use `BETSY_V2_TEST_EMAIL` / `BETSY_V2_TEST_PASSWORD` /
+`BETSY_V2_TEST_TENANT_ID=cmteijij70000jsoyedmtfnl1`. `peter@peter.com` was not
+modified.
 
-Sol's isolation gate does **not** fully pass: the account is super-admin,
-logistics-admin, and owns two tenants. It can still be the designated test login
-**if** every mutation asserts `BETSY_V2_TEST_TENANT_ID` and no flags are
-enabled for any other tenant. Prefer PeterTesting (`cmh44aerw0006vijg0640vfl0`)
-for writes because it has almost no operational data.
-
-This environment does **not** have `BETSY_V2_TEST_PASSWORD`, so authenticated
-Playwright / API writes were not run here.
+Login proof (local Next 15.5.23): credentials callback 200;
+`/api/auth/me` returns OWNER on tenant `cmteijij70000jsoyedmtfnl1`;
+session `allTenantIds` is only that tenant; `/api/production/metadata`
+returns `enabled: false`.
 
 ## Apply command
 
@@ -103,8 +107,10 @@ tables as an emergency rollback; old production code ignores them.
 3. Confirm `git rev-parse HEAD` is `9943fe5` or a descendant that only adds
    the RLS/apply-script commits.
 4. Put secrets in Cloud secrets, never the prompt: `NEXTAUTH_SECRET`,
-   `NEXTAUTH_URL`, `RESEND_API_KEY`, `BETSY_V2_TEST_EMAIL=peter@peter.com`,
-   `BETSY_V2_TEST_PASSWORD`, `BETSY_V2_TEST_TENANT_ID=cmh44aerw0006vijg0640vfl0`.
+   `NEXTAUTH_URL`, `RESEND_API_KEY`,
+   `BETSY_V2_TEST_EMAIL=betsyv2.isolated@betsycrm.test`,
+   `BETSY_V2_TEST_PASSWORD`,
+   `BETSY_V2_TEST_TENANT_ID=cmteijij70000jsoyedmtfnl1`.
 5. Instruct the agent:
    - no `prisma migrate` / `db push` / `--accept-data-loss`
    - no provider calls (xAI, Resend, Meta, Telegram, Tilopay, Correos)

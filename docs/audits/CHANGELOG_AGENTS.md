@@ -2,6 +2,14 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-29 — Isolated Betsy v2 test tenant
+
+- Did not use `peter@peter.com` (super-admin + logistics-admin, two tenants).
+- Created isolated OWNER `betsyv2.isolated@betsycrm.test` /
+  tenant `cmteijij70000jsoyedmtfnl1` (`betsyv2-isolated-test`).
+- Not super-admin, not logistics-admin, not in `lm_tenant_links`, no Tilopay,
+  no flags, 0 orders. Peter rows were not modified.
+
 ## 2026-08-29 — Betsy v2 additive SQL review (018–023)
 
 - Pinned `codex/betsyv2-review` @ `9943fe5` (ancestor `5ea4377`). Read-only
@@ -9,9 +17,7 @@ Append-only. Newest entries at the top.
 - Hardened 018–023 with the existing Prisma RLS pattern (`service_role` only)
   so new public tables are not Data-API readable via default `anon` grants.
 - Gated apply script `scripts/apply-betsy-v2-additive-sql.mjs` (host confirm,
-  no Prisma). Flags stay off. `peter@peter.com` is super-admin + logistics
-  admin with two tenants — authenticated writes still need a pinned tenant ID
-  and password (not in this environment).
+  no Prisma). Flags stay off. Isolated test tenant created separately.
 - Prove: SQL static tests + apply postconditions. No `origin/dev` push.
 
 ## 2026-08-27 — Logistics archive shows terminated orders

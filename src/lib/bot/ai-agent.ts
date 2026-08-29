@@ -54,12 +54,12 @@ import { formatOrderForWhatsApp, formatInventoryForWhatsApp, formatStatsForWhats
 import { z } from 'zod';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import {
-  getTenantCustomFields,
   formatCustomFieldsForTelegram,
   extractCustomFields,
   validateCustomFields,
   type CustomFieldsData,
 } from '@/lib/customFields';
+import { getTenantCustomFields } from '@/lib/customFields-server';
 import { getCurrentStatsDateKey, STATS_TIME_ZONE } from '@/lib/statistics-dates';
 import { normalizeLocationForOrderCapture } from '@/lib/locationValidator';
 

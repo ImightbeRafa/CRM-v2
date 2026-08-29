@@ -12,12 +12,9 @@ import { Sale, SaleKeys } from '../types/sales';
 import { ScrollArea } from "@/app/components/ui/scroll-area";
 import { Pencil, X, Save, Banknote } from "lucide-react";
 import { Alert, AlertTitle } from "@/app/components/ui/alert";
-import { 
-  getTenantCustomFields, 
-  shouldDisplayField, 
-  getFieldLabel,
+import {
   extractCustomFields,
-  CustomFieldsData 
+  type CustomFieldsData
 } from "@/lib/customFields";
 
 interface OrderDetailsProps {

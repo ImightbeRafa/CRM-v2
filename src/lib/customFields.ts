@@ -8,8 +8,6 @@
  * They are stored in the customFields JSON column of the Order model.
  */
 
-import { getTenantPrisma } from '@/lib/prisma-tenant';
-import { withTenantContext } from '@/lib/tenantContext';
 import { z } from 'zod';
 
 // Types for custom fields
@@ -46,56 +44,6 @@ export interface BusinessInfoField {
 export interface CustomFieldsData {
   productFields: CustomField[];
   businessInfoFields: BusinessInfoField[];
-}
-
-/**
- * Get all active custom fields for a tenant
- */
-export async function getTenantCustomFields(tenantId: string): Promise<CustomFieldsData> {
-  return withTenantContext(
-    { tenantId, userId: 'system', userName: 'system', userRole: 'system' },
-    async () => {
-      const tenantPrisma = getTenantPrisma(tenantId);
-
-      // Fetch product fields (Campos Personalizados)
-      const productFields = await tenantPrisma.productField.findMany({
-        where: { active: true },
-        orderBy: [{ order: 'asc' }, { key: 'asc' }],
-        include: {
-          optionSet: {
-            include: {
-              options: {
-                where: { active: true },
-                orderBy: { label: 'asc' }
-              }
-            }
-          }
-        },
-      });
-
-      // Fetch business info fields
-      const businessInfoFields = await tenantPrisma.businessInfo.findMany({
-        where: { isActive: true, tenantId },
-        orderBy: { order: 'asc' },
-      });
-
-      return {
-        productFields: productFields.map((field: any) => ({
-          id: field.id,
-          key: field.key,
-          label: field.label,
-          type: field.type,
-          required: field.required,
-          order: field.order,
-          optionSetId: field.optionSetId,
-          multiSelect: field.multiSelect,
-          active: field.active,
-          options: field.optionSet?.options || []
-        })),
-        businessInfoFields
-      };
-    }
-  );
 }
 
 /**

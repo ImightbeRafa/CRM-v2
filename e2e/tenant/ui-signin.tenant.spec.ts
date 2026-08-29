@@ -6,7 +6,7 @@ const password = process.env.BETSY_V2_TEST_PASSWORD;
 const expectedTenantId = process.env.BETSY_V2_TEST_TENANT_ID;
 const writesAuthorized = process.env.BETSY_V2_TEST_WRITES_AUTHORIZED === '1';
 const origin = process.env.BETSY_V2_UI_ORIGIN || 'http://localhost:3000';
-const artifactDir = process.env.BETSY_V2_UI_ARTIFACT_DIR || '';
+const artifactDir = process.env.BETSY_V2_UI_ARTIFACT_DIR || path.join(process.cwd(), 'test-results', 'betsyv2-ui');
 
 test.use({ baseURL: origin });
 
@@ -17,9 +17,10 @@ test.beforeEach(async () => {
 });
 
 test('isolated tenant can sign in through /auth/signin and open ventas and produccion', async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto('/auth/signin');
   await expect(page.getByRole('heading', { name: 'Iniciar Sesión' })).toBeVisible();
-  await page.getByLabel('Correo Electrónico').fill(email!);
+  await page.getByPlaceholder('tu@email.com').fill(email!);
   await page.locator('input[type="password"]').fill(password!);
   await page.getByRole('button', { name: 'Ingresar' }).click();
   await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
@@ -34,16 +35,17 @@ test('isolated tenant can sign in through /auth/signin and open ventas and produ
     await page.screenshot({ path: path.join(artifactDir, 'ui_dashboard_after_signin.png'), fullPage: true });
   }
 
-  await page.goto('/ventas');
+  await page.goto('/ventas', { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await expect(page).toHaveURL(/\/ventas/);
   await expect(page.locator('body')).toBeVisible();
   if (artifactDir) {
     await page.screenshot({ path: path.join(artifactDir, 'ui_ventas_isolated_tenant.png'), fullPage: true });
   }
 
-  await page.goto('/produccion');
+  await page.goto('/produccion', { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await expect(page).toHaveURL(/\/produccion/);
-  await expect(page.locator('body')).toBeVisible();
+  await expect(page.getByText('Panel de Producción')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText('Total Órdenes')).toBeVisible({ timeout: 60_000 });
   if (artifactDir) {
     await page.screenshot({ path: path.join(artifactDir, 'ui_produccion_isolated_tenant.png'), fullPage: true });
   }

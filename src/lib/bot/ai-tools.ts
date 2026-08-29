@@ -20,13 +20,13 @@ import {
   normalizeStatsDateInput,
 } from '@/lib/statistics-dates';
 import { 
-  getTenantCustomFields, 
   extractCustomFields, 
   validateCustomFields,
   formatCustomFieldsForTelegram,
   getCustomFieldsSchema,
   CustomFieldsData 
 } from '@/lib/customFields';
+import { getTenantCustomFields } from '@/lib/customFields-server';
 import { normalizeLocationForOrderCapture } from '@/lib/locationValidator';
 import { guardTenantWrite } from '@/lib/billing-access';
 import { createInvoiceForOrder } from '@/lib/invoice-service';

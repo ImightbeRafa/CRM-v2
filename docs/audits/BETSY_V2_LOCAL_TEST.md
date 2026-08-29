@@ -27,6 +27,11 @@ like a failed login. Keep `NEXTAUTH_URL` on the same host you open in the browse
 Standalone Playwright uses port **3106** and needs
 `NEXTAUTH_URL=http://127.0.0.1:3106` for that process.
 
+Do not run `npm run build` while `npm run dev` is serving: the production `.next`
+output overwrites unhashed `main-app.js`, the browser then 404s client JS, and
+the sign-in form native-submits without hydrating. Restart `npm run dev` after a
+build if you need the UI.
+
 ## Commands
 
 ```bash

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { CorreosWebService } from '@/lib/correos';
-import { getCorreosWSCredentials } from '@/lib/correos';
+import { CorreosWebService, resolveCorreosWSCredentials } from '@/lib/correos';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,8 +9,8 @@ export const maxDuration = 30;
 /**
  * POST /api/config/correos-test
  *
- * Tests the platform-level Correos CR SOAP connection using
- * credentials from environment variables.
+ * Token + read-only province lookup using the same credential resolver as
+ * tenant guía generation (logistics DB first, env fallback).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -20,22 +19,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const role = (token as any).currentTenant?.role || (token as any).membershipRole;
+    const role = (token as { currentTenant?: { role?: string }; membershipRole?: string }).currentTenant?.role
+      || (token as { membershipRole?: string }).membershipRole;
     if (role !== 'OWNER' && role !== 'ADMIN' && role !== 'MANAGER') {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
-    let creds;
+    let resolved;
     try {
-      creds = getCorreosWSCredentials();
-    } catch (e: any) {
+      resolved = await resolveCorreosWSCredentials();
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Correos WS credentials are not configured.';
       return NextResponse.json({
         success: false,
-        error: e.message || 'Correos WS platform credentials not configured.',
+        error: message,
       });
     }
 
-    const ws = new CorreosWebService(creds);
+    const ws = new CorreosWebService(resolved.credentials);
 
     await ws.getSoapClient().getTokenManager().getToken();
 
@@ -45,16 +46,18 @@ export async function POST(req: NextRequest) {
     if (prov.CodRespuesta !== '00') {
       return NextResponse.json({
         success: false,
+        source: resolved.source,
         error: `Correos respondió con código ${prov.CodRespuesta}`,
       });
     }
 
     return NextResponse.json({
       success: true,
+      source: resolved.source,
       message: `Conexión exitosa. ${provinceCount} provincias encontradas.`,
     });
-  } catch (e: any) {
-    const message = e.message || 'Error de conexión desconocido';
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Error de conexión desconocido';
     return NextResponse.json({ success: false, error: message }, { status: 200 });
   }
 }

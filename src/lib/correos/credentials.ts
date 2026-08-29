@@ -1,17 +1,45 @@
+import { prisma } from '@/lib/db';
 import type { CorreosWSCredentials } from './types';
+import {
+  selectCorreosWSCredentials,
+  type ResolvedCorreosCredentials,
+} from './credential-select';
 
-const REQUIRED_VARS = [
+const REQUIRED_ENV_VARS = [
   'CORREOS_WS_USERNAME',
   'CORREOS_WS_PASSWORD',
 ] as const;
 
+async function loadLogisticsCorreosConfig(): Promise<Record<string, string>> {
+  try {
+    const rows = await prisma.$queryRaw<{ key: string; value: string }[]>`
+      SELECT key, value FROM lm_carrier_configs
+      WHERE key LIKE 'correos_ws_%'
+    `;
+    const cfg: Record<string, string> = {};
+    for (const row of rows) cfg[row.key] = row.value;
+    return cfg;
+  } catch {
+    console.error('[CorreosCredentials] Failed to read logistics Correos config');
+    return {};
+  }
+}
+
 /**
- * Reads Correos de Costa Rica SOAP API credentials from platform-level
- * environment variables.  These are shared across all tenants — individual
- * tenants only configure their own sender (remitente) data.
+ * Tenant guía generation and Correos diagnostics use the same live
+ * logistics credentials that already authenticate. Env vars are fallback only.
+ */
+export async function resolveCorreosWSCredentials(): Promise<ResolvedCorreosCredentials> {
+  const db = await loadLogisticsCorreosConfig();
+  return selectCorreosWSCredentials({ db, env: process.env });
+}
+
+/**
+ * Reads Correos SOAP credentials from platform env vars only.
+ * Prefer `resolveCorreosWSCredentials()` for tenant guía generation.
  */
 export function getCorreosWSCredentials(): CorreosWSCredentials {
-  const missing = REQUIRED_VARS.filter((v) => !process.env[v]);
+  const missing = REQUIRED_ENV_VARS.filter((v) => !process.env[v]);
   if (missing.length > 0) {
     throw new Error(
       `Correos WS platform credentials not configured. Missing env vars: ${missing.join(', ')}`,
@@ -28,10 +56,24 @@ export function getCorreosWSCredentials(): CorreosWSCredentials {
   };
 }
 
-/**
- * Returns true when the platform-level Correos WS env vars are present.
- * Used by status endpoints so the UI can show whether shipping is available.
- */
 export function isCorreosWSConfigured(): boolean {
-  return REQUIRED_VARS.every((v) => !!process.env[v]);
+  return REQUIRED_ENV_VARS.every((v) => !!process.env[v]);
 }
+
+export async function isCorreosWSReady(): Promise<boolean> {
+  try {
+    await resolveCorreosWSCredentials();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export {
+  selectCorreosWSCredentials,
+  credentialTokenCacheKey,
+} from './credential-select';
+export type {
+  CorreosCredentialSource,
+  ResolvedCorreosCredentials,
+} from './credential-select';

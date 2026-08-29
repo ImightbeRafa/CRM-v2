@@ -2,6 +2,16 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-29 — Tenant Correos guías use logistics credentials
+
+- Tenant `/api/shipping/generate-guia` authenticated with stale `CORREOS_WS_*`
+  env vars (401) while logistics succeeded with `lm_carrier_configs`.
+- Shared resolver prefers a complete logistics DB set and never mixes
+  username/password across sources. Token cache is fingerprinted so rotations
+  cannot reuse a token.
+- DialogContent opts out of the missing-Description warning.
+- Prove: `npm run test:correos-credentials`. Do not merge `origin/dev` yet.
+
 ## 2026-08-29 — Isolated-tenant local verification
 
 - Tenant E2E now pins `BETSY_V2_TEST_TENANT_ID`, asserts `/api/auth/me` +

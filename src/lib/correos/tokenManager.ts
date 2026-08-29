@@ -1,4 +1,5 @@
 import type { CorreosWSCredentials, TokenRequest } from './types';
+import { credentialTokenCacheKey } from './credential-select';
 import { getTokenUrl, getProxySecret, isProxyConfigured } from './proxy';
 
 const TOKEN_TTL_MS = 4 * 60 * 1000; // 4 minutes (tokens expire at 5 min)
@@ -69,7 +70,7 @@ export class CorreosTokenManager {
 
   constructor(credentials: CorreosWSCredentials) {
     this.credentials = credentials;
-    this.cacheKey = credentials.username;
+    this.cacheKey = credentialTokenCacheKey(credentials);
   }
 
   async getToken(): Promise<string> {

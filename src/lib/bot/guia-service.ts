@@ -7,7 +7,7 @@
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
-import { CorreosWebService, buildGuiaDescription, buildFullAddress, getCorreosWSCredentials } from '@/lib/correos';
+import { CorreosWebService, buildGuiaDescription, buildFullAddress, resolveCorreosWSCredentials } from '@/lib/correos';
 import { shouldUseBotLifecycleV2, shouldUseOrderLifecycleV2, type OrderLifecycleAdapter } from '@/lib/feature-flags';
 import { setLifecycleOrderStatus } from '@/lib/order-lifecycle';
 
@@ -111,14 +111,17 @@ export async function generateGuiasForOrders(
 
   let wsCreds;
   try {
-    wsCreds = getCorreosWSCredentials();
-  } catch (e: any) {
-    console.error(`[GuiaService] Platform credentials check FAILED: ${e.message}`);
+    const resolved = await resolveCorreosWSCredentials();
+    wsCreds = resolved.credentials;
+    console.log(`[GuiaService] Using Correos credentials from ${resolved.source}`);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Correos WS credentials are not configured.';
+    console.error(`[GuiaService] Platform credentials check FAILED: ${message}`);
     return {
       results: orderIds.map(id => ({
         success: false,
         orderId: id,
-        error: e.message || 'Correos WS platform credentials not configured.',
+        error: message,
       })),
       successful: 0,
       failed: orderIds.length,

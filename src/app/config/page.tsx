@@ -883,7 +883,10 @@ function ConfigPageInner() {
 
           {/* Audit Tab */}
           {activeTab === 'audit' && (
-            <SimpleAuditDashboard isMaster={canManageSensitiveTools} />
+            <SimpleAuditDashboard
+              isMaster={canManageSensitiveTools}
+              canRestore={currentUser?.membershipRole === 'OWNER'}
+            />
           )}
 
           {/* Legacy Fields Tab - keeping for reference */}

@@ -78,6 +78,7 @@ export async function getFinanceCostsForTenant(
     FROM "Order" o
     INNER JOIN lm_orders lm ON lm.crm_order_id = o.id
     WHERE o."tenantId" = $1
+      AND o."deletedAt" IS NULL
       AND lm.status = 'Entregado'
       AND ${dateCol} >= ($2::date AT TIME ZONE '${CR_TZ}')
       AND ${dateCol} < (($3::date + INTERVAL '1 day') AT TIME ZONE '${CR_TZ}')

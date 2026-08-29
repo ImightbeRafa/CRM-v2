@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Clock, User, Trash2, Edit, Plus, AlertTriangle, Shield, Download,
   Filter, Activity, ToggleLeft, RefreshCw, ChevronDown, ChevronRight,
-  X, FileText, Package, Settings, Users, Truck, Tag, Layers
+  X, FileText, Package, Settings, Users, Truck, Tag, Layers, RotateCcw
 } from 'lucide-react'
 import {
   buildFieldDiffLines,
@@ -16,6 +16,7 @@ import {
 
 interface SimpleAuditDashboardProps {
   isMaster: boolean
+  canRestore?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -322,7 +323,15 @@ function KeyValueGrid({
   )
 }
 
-function LogDetailPanel({ log }: { log: any }) {
+function LogDetailPanel({
+  log,
+  onRestore,
+  restoring,
+}: {
+  log: any
+  onRestore?: (log: any) => void
+  restoring?: boolean
+}) {
   const changeList: string[] = Array.isArray(log.oldValues?.changes) ? log.oldValues.changes : []
   const isDelete = log.action === 'DELETE' || log.action === 'BULK_DELETE'
   const isCreate = log.action === 'CREATE'
@@ -405,6 +414,24 @@ function LogDetailPanel({ log }: { log: any }) {
         </div>
       )}
 
+      {log.restore?.eligible && onRestore && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2">
+          <div className="text-xs text-muted-foreground">
+            Restaurable hasta {new Date(log.restore.expiresAt).toLocaleString('es-CR')}.
+            No se repetirán facturas, guías, pagos ni movimientos de inventario.
+          </div>
+          <button
+            type="button"
+            onClick={() => onRestore(log)}
+            disabled={restoring}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-amber-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+          >
+            <RotateCcw className={`h-3.5 w-3.5 ${restoring ? 'animate-spin' : ''}`} />
+            {restoring ? 'Restaurando' : 'Restaurar'}
+          </button>
+        </div>
+      )}
+
       {updatePayloadEntries.length > 0 && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -417,7 +444,19 @@ function LogDetailPanel({ log }: { log: any }) {
   )
 }
 
-function LogEntry({ log, isExpanded, onToggle }: { log: any; isExpanded: boolean; onToggle: () => void }) {
+function LogEntry({
+  log,
+  isExpanded,
+  onToggle,
+  onRestore,
+  restoring,
+}: {
+  log: any
+  isExpanded: boolean
+  onToggle: () => void
+  onRestore?: (log: any) => void
+  restoring?: boolean
+}) {
   const accent = getActionAccent(log.action)
   const hasDetails = logHasRenderableDetails(log)
   const normalizedType = normalizeEntityType(String(log.entityType || ''))
@@ -485,7 +524,7 @@ function LogEntry({ log, isExpanded, onToggle }: { log: any; isExpanded: boolean
         </div>
       </button>
 
-      {isExpanded && <LogDetailPanel log={log} />}
+      {isExpanded && <LogDetailPanel log={log} onRestore={onRestore} restoring={restoring} />}
     </div>
   )
 }
@@ -496,7 +535,7 @@ function LogEntry({ log, isExpanded, onToggle }: { log: any; isExpanded: boolean
 
 const ITEMS_PER_PAGE = 20
 
-export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
+export function SimpleAuditDashboard({ isMaster, canRestore = false }: SimpleAuditDashboardProps) {
   const [logs, setLogs] = useState<any[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -504,6 +543,8 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
   const [showFilters, setShowFilters] = useState(false)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [currentPage, setCurrentPage] = useState(1)
+  const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [restoreError, setRestoreError] = useState<string | null>(null)
 
   const [filters, setFilters] = useState({
     action: '',
@@ -559,6 +600,27 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
     await fetchLogs(currentPage, filters)
     setRefreshing(false)
   }, [currentPage, filters, fetchLogs])
+
+  const handleRestore = useCallback(async (log: any) => {
+    if (!canRestore || !log.restore?.eligible || restoringId) return
+    if (!window.confirm('¿Restaurar esta orden? No se repetirán facturas, guías, pagos ni inventario.')) return
+    setRestoringId(log.id)
+    setRestoreError(null)
+    try {
+      const response = await fetch(`/api/audit/logs/${encodeURIComponent(log.id)}/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expectedDeletedAt: log.restore.expectedDeletedAt }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result.error || 'No se pudo restaurar la orden')
+      await fetchLogs(currentPage, filters)
+    } catch (error) {
+      setRestoreError(error instanceof Error ? error.message : 'No se pudo restaurar la orden')
+    } finally {
+      setRestoringId(null)
+    }
+  }, [canRestore, currentPage, fetchLogs, filters, restoringId])
 
   // ----- Filter handlers -----
   const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
@@ -708,6 +770,12 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
       </div>
 
       {/* Filters */}
+      {restoreError && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+          {restoreError}
+        </div>
+      )}
+
       {showFilters && (
         <div className="bg-card border border-border rounded-xl p-4 animate-in slide-in-from-top-2 duration-200">
           <div className="flex items-center justify-between mb-3">
@@ -831,6 +899,8 @@ export function SimpleAuditDashboard({ isMaster }: SimpleAuditDashboardProps) {
                       log={log}
                       isExpanded={expandedIds.has(log.id)}
                       onToggle={() => toggleExpand(log.id)}
+                      onRestore={canRestore ? handleRestore : undefined}
+                      restoring={restoringId === log.id}
                     />
                   ))}
                 </div>

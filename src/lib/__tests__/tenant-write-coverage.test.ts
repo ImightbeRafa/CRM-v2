@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 const guardedTenantRoutes = [
   'src/app/api/audit/bulk-delete/route.ts',
+  'src/app/api/audit/logs/[id]/restore/route.ts',
   'src/app/api/bulk/delete/route.ts',
   'src/app/api/bulk/toggle-active/route.ts',
   'src/app/api/bulk/update/route.ts',

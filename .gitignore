@@ -9,6 +9,7 @@ supabase/migrations/*
 !supabase/migrations/019_betsy_v2_order_lifecycle.sql
 !supabase/migrations/020_betsy_v2_server_pagination.sql
 !supabase/migrations/021_betsy_v2_bot_inbox.sql
+!supabase/migrations/022_betsy_v2_order_archive.sql
 # Testing
 coverage/
 scripts

@@ -204,6 +204,14 @@ model Order {
   // working before tenant-by-tenant client reconciliation is approved.
   clientId        String?
   lifecycleVersion Int      @default(1)
+
+  // Betsy v2 archival. Nullable/additive so old code keeps working. Restoring
+  // only clears deletedAt on this same row; related business side effects are
+  // never replayed from audit JSON.
+  deletedAt       DateTime?
+  deletedBy       String?
+  deleteReason    String?    @db.Text
+  archiveMetadata Json?
   
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -215,6 +223,7 @@ model Order {
   inventoryAllocations OrderInventoryAllocation[]
   
   @@unique([tenantId, orderId]) // Unique within tenant
+  @@index([tenantId, deletedAt, timestamp])
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([tenantId, orderType])

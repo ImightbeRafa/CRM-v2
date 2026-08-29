@@ -4,6 +4,8 @@ import { createSuccessResponse, createErrorResponse, handleApiError } from './ap
 import { logBulkDelete, logBulkUpdate, logBulkToggle } from './auditLogger'
 import { withTenantContext } from './tenantContext'
 import { NextRequest } from 'next/server'
+import { shouldUseSoftDeleteRestoreV2 } from './feature-flags'
+import { archiveOrder } from './order-archive'
 
 export interface BulkOperationResult {
   success: number
@@ -43,6 +45,7 @@ export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperat
   // If we have a tenantId, use regular prisma with manual tenant filtering
   if (tenantId) {
     console.log(`🔧 Using regular Prisma client with manual tenant filtering for tenant: ${tenantId}`);
+    const softDeleteOrders = await shouldUseSoftDeleteRestoreV2(tenantId)
     
     // Set tenant context for audit logging
     return await withTenantContext(
@@ -55,7 +58,18 @@ export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperat
       },
       async () => {
         console.log(`🔧 Tenant context set, proceeding with bulk delete`);
-        return await performBulkDeleteWithTenant(ids, type, reason, httpRequest || null, prisma, tenantId);
+        return await performBulkDeleteWithTenant(
+          ids,
+          type,
+          reason,
+          httpRequest || null,
+          prisma,
+          tenantId,
+          userId || 'system',
+          session?.user?.email || 'system',
+          role || 'SYSTEM',
+          softDeleteOrders,
+        );
       }
     );
   } else {
@@ -71,7 +85,11 @@ async function performBulkDeleteWithTenant(
   reason: string | undefined, 
   httpRequest: NextRequest | null, 
   db: any,
-  tenantId: string
+  tenantId: string,
+  actorUserId: string,
+  actorName: string,
+  actorRole: string,
+  softDeleteOrders: boolean,
 ): Promise<BulkOperationResult> {
   const result: BulkOperationResult = {
     success: 0,
@@ -213,7 +231,19 @@ async function performBulkDeleteWithTenant(
           await db.user.delete({ where: { id } });
           break;
         case 'orders':
-          await db.order.delete({ where: { id, tenantId } });
+          if (softDeleteOrders) {
+            await archiveOrder({
+              tenantId,
+              orderId: id,
+              actorUserId,
+              actorName,
+              actorRole,
+              reason,
+              source: 'bulk-delete',
+            });
+          } else {
+            await db.order.delete({ where: { id, tenantId } });
+          }
           break;
         case 'fields':
           await db.productField.delete({ where: { id, tenantId } });
@@ -253,7 +283,7 @@ async function performBulkDeleteWithTenant(
   }
 
   // Log audit trail for successful deletions
-  if (httpRequest && successfulIds.length > 0) {
+  if (httpRequest && successfulIds.length > 0 && !(type === 'orders' && softDeleteOrders)) {
     try {
       console.log(`✅ Logging ${successfulIds.length} successful deletions for audit trail`);
       const snapshotsById: Record<string, Record<string, unknown>> = {}

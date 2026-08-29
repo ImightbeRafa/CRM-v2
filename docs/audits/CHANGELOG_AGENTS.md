@@ -251,3 +251,22 @@ Append-only. Newest entries at the top.
   Grok, TypeScript, lint (existing warnings), production build (125 pages), and
   Playwright smoke 3/3 pass. Additive SQL was not run; no database/provider writes or
   remote push.
+
+# 2026-08-28 — Betsy v2 Slice 6: soft-delete and restore
+
+- Added nullable Order archive metadata and an off-by-default tenant flag. Direct and
+  bulk regular-tenant deletes retain the original row when enabled, while top-level
+  active-order reads and legacy mutations reject archived rows.
+- Bound every archive version to its exact audit event in the same serializable
+  transaction. Restore requires OWNER, current DB billing access, the matching audit
+  event, an exact `deletedAt` compare-and-set, and the 30-day window.
+- Restore only unsets `deletedAt` on the retained Order and writes an atomic audit row.
+  It never reconstructs from audit JSON and never replays invoice, guía, payment, or
+  inventory side effects. Historical hard-deletes remain non-restorable.
+- Added OWNER restore controls to Auditoría, fail-closed API coverage, the additive SQL
+  package, and active-row filtering for the regular finance-cost raw query. Logistics
+  behavior remains outside this slice.
+- Prove: archive 6/6; security 70/70; lifecycle 8/8; pagination 8/8; inbox 8/8; backups
+  8/8; bot Grok, TypeScript, lint (existing warnings), production build (125 pages),
+  and Playwright smoke 3/3 pass. Additive SQL was not run; no database/provider writes
+  or remote push.

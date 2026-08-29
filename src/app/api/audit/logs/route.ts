@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma, prismaRaw } from '@/lib/db'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { entityTypeFilterAliases } from '@/lib/auditPayload'
 import { getMembershipForToken } from '@/lib/selected-tenant'
+import { shouldUseSoftDeleteRestoreV2 } from '@/lib/feature-flags'
+import { getOrderRestoreEligibility } from '@/lib/order-archive'
 
 export async function GET(request: NextRequest) {
   try {
@@ -63,8 +65,51 @@ export async function GET(request: NextRequest) {
 
     const total = await prisma.auditLog.count({ where })
 
+    let responseLogs: Array<Record<string, unknown>> = auditLogs
+    if (membership.role === 'OWNER' && await shouldUseSoftDeleteRestoreV2(tenantId)) {
+      const restorableAuditLogs = auditLogs.filter(log => (
+        (log.action === 'DELETE' || log.action === 'BULK_DELETE')
+        && ['order', 'orders', 'sale', 'sales'].includes(log.entityType.toLowerCase())
+      ))
+      const orderIds = [...new Set(restorableAuditLogs.map(log => log.entityId))]
+      const archivedOrders = orderIds.length > 0
+        ? await prismaRaw.order.findMany({
+            where: { tenantId, id: { in: orderIds }, deletedAt: { not: null } },
+            select: { id: true, deletedAt: true, archiveMetadata: true },
+          })
+        : []
+      const archivedByAuditId = new Map<string, { orderId: string; deletedAt: Date }>()
+      for (const order of archivedOrders) {
+        const metadata = order.archiveMetadata
+        const auditLogId = (
+          metadata
+          && typeof metadata === 'object'
+          && !Array.isArray(metadata)
+          && 'archiveAuditLogId' in metadata
+          && typeof metadata.archiveAuditLogId === 'string'
+        ) ? metadata.archiveAuditLogId : undefined
+        if (auditLogId && order.deletedAt) {
+          archivedByAuditId.set(auditLogId, { orderId: order.id, deletedAt: order.deletedAt })
+        }
+      }
+      responseLogs = auditLogs.map(log => {
+        const archived = archivedByAuditId.get(log.id)
+        if (!archived || archived.orderId !== log.entityId) return log
+        const deletedAt = archived.deletedAt
+        const restore = getOrderRestoreEligibility(deletedAt)
+        return {
+          ...log,
+          restore: {
+            eligible: restore.eligible,
+            expectedDeletedAt: deletedAt.toISOString(),
+            expiresAt: restore.expiresAt.toISOString(),
+          },
+        }
+      })
+    }
+
     return createSuccessResponse({
-      logs: auditLogs,
+      logs: responseLogs,
       total,
       limit,
       offset

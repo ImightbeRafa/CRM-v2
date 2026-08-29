@@ -29,6 +29,11 @@ test('new read APIs and stale-safe mutation fail closed without a session', asyn
   });
   expect(mutation.status()).toBe(401);
 
+  const restore = await request.post('/api/audit/logs/V2TEST-NOT-REAL/restore', {
+    data: { expectedDeletedAt: '2026-01-01T00:00:00.000Z' },
+  });
+  expect(restore.status()).toBe(401);
+
   const cron = await request.get('/api/cron/bot-inbox');
   expect([401, 500]).toContain(cron.status());
 

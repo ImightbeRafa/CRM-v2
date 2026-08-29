@@ -196,3 +196,39 @@ backfills require separate approval and are never applied by Prisma schema comma
 - **Rollback:** disable `bot_lifecycle_v2` first, then `bot_inbox_v2`. Revert the Slice 5
   commit only if code rollback is required. The additive columns/table can remain and
   old code ignores them; no down migration is part of rollback.
+
+## Slice 6 — Soft-delete and conflict-safe restore
+
+- **Local branch:** `codex/betsyv2-s6-soft-delete`.
+- **Schema dependency:** nullable Order archive fields (`deletedAt`, `deletedBy`,
+  `deleteReason`, and `archiveMetadata`) plus an active-row index are packaged in
+  `supabase/migrations/022_betsy_v2_order_archive.sql`. The SQL was **not** executed.
+  `schema.prisma` is synchronized and only `prisma generate` ran.
+- **Database/provider writes used for verification:** none. No order, invoice, guía,
+  payment, inventory, audit, flag, subscription, or logistics row was changed, and no
+  external provider was called.
+- **Activation and compatibility:** `soft_delete_restore_v2` defaults off per tenant.
+  Existing delete behavior remains active while it is off. When enabled after the SQL
+  is approved, direct and bulk regular-tenant order deletes archive the retained row;
+  active Prisma reads and legacy mutations exclude archived orders. Explicit raw SQL
+  remains caller-reviewed, and the regular finance-cost query includes the active-row
+  predicate. Logistics behavior was not redesigned.
+- **Restore contract:** restore is OWNER-only, rechecks current database billing access,
+  and is available for exactly 30 days. The caller must supply the current `deletedAt`
+  version, and the retained row is bound to the exact archive audit ID created in the
+  same serializable transaction. Restore clears only `deletedAt` on that row and writes
+  a new audit event atomically; it never rebuilds from audit JSON and never creates or
+  updates invoices, guías, payments, inventory allocations, or other side effects.
+- **Verification:** archive contracts 6/6; security/write coverage 70/70; lifecycle 8/8;
+  pagination 8/8; durable inbox 8/8; backups 8/8; bot Grok pass; TypeScript pass; lint
+  pass with pre-existing warnings; local production build pass (125 pages); compiled
+  Playwright smoke 3/3, including unauthenticated restore fail-closed. No remote push,
+  SQL execution, shared-database mutation, provider message, or charge occurred.
+- **Known limitations:** an authenticated archive/restore workflow cannot be exercised
+  until the additive SQL is separately approved and applied and a designated test
+  tenant is explicitly authorized. Historical hard-deleted orders and pre-v2 audit
+  rows remain intentionally non-restorable. A restore does not reverse or replay the
+  original order's business side effects.
+- **Rollback:** disable `soft_delete_restore_v2` first. Revert the Slice 6 commit only if
+  a code rollback is required. The nullable columns/index may remain for backward
+  compatibility; no down migration is part of rollback.

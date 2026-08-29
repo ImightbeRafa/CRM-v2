@@ -6,7 +6,7 @@
  */
 
 import { PrismaClient, Prisma } from '@prisma/client';
-import { prisma as globalPrisma } from './db';
+import { prisma as globalPrisma, prismaRaw as globalPrismaRaw } from './db';
 import { getTenantContext } from './tenantContext';
 import { logAudit } from './auditLogger';
 import { TenantError } from './errors';
@@ -88,8 +88,9 @@ const TENANT_MODELS_LOWER: readonly string[] = TENANT_MODELS.map((m) => m.toLowe
 // and was the primary cause of Supabase "Max client connections reached" errors.
 const basePrismaClient = globalPrisma;
 
-// Export raw Prisma client without ANY middleware for system operations
-export const prismaRaw = basePrismaClient;
+// Export the true raw singleton for tightly scoped system operations. Regular
+// tenant work must use getTenantPrisma() or the active-row global client.
+export const prismaRaw = globalPrismaRaw;
 
 // Cache tenant-scoped Prisma clients to avoid expensive re-creation
 // Use LRU-like behavior: limit cache size and evict oldest entries

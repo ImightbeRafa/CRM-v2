@@ -4,6 +4,8 @@ import { authenticateAPI } from '@/lib/auth-helpers'
 import { withTenantContext } from '@/lib/tenantContext'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { logCreate, logUpdate, logDelete } from '@/lib/auditLogger'
+import { shouldUseSoftDeleteRestoreV2 } from '@/lib/feature-flags'
+import { archiveOrder, OrderArchiveError } from '@/lib/order-archive'
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic'
@@ -83,7 +85,7 @@ export async function DELETE(request: NextRequest) {
     const auth = await authenticateAPI(request)
     if (!auth.ok) return auth.response
     
-    const { tenantId, userId, role } = auth
+    const { tenantId, userId, role, session } = auth
 
     if (role !== 'OWNER' && role !== 'ADMIN') {
       return createErrorResponse('Forbidden — requires ADMIN or OWNER role to delete sales', 403)
@@ -108,19 +110,38 @@ export async function DELETE(request: NextRequest) {
         return createErrorResponse('Sale not found', 404)
       }
 
-      // Delete with tenant isolation
-      await tenantPrisma.order.delete({ where: { id } })
+      const softDelete = await shouldUseSoftDeleteRestoreV2(tenantId)
+      if (softDelete) {
+        await archiveOrder({
+          tenantId,
+          orderId: id,
+          actorUserId: userId,
+          actorName: session?.user?.email || 'Unknown',
+          actorRole: role,
+          reason: 'Deleted from sales',
+          source: 'sales-delete',
+          expectedUpdatedAt: searchParams.get('expectedUpdatedAt') || undefined,
+        })
+      } else {
+        // Legacy behavior remains behind the off-by-default feature flag.
+        await tenantPrisma.order.delete({ where: { id } })
 
-      // Log audit trail
-      try {
-        await logDelete(request, 'sale', id, `Sale #${sale.orderId}`, sale)
-      } catch (auditError) {
-        console.error('Failed to log audit trail:', auditError)
+        try {
+          await logDelete(request, 'sale', id, `Sale #${sale.orderId}`, sale)
+        } catch (auditError) {
+          console.error('Failed to log audit trail:', auditError)
+        }
       }
 
-      return createSuccessResponse(null, 'Sale deleted successfully')
+      return createSuccessResponse(
+        softDelete ? { archived: true } : null,
+        softDelete ? 'Sale archived successfully' : 'Sale deleted successfully',
+      )
     })
   } catch (error) {
+    if (error instanceof OrderArchiveError) {
+      return createErrorResponse(error.message, error.status)
+    }
     return handleApiError(error)
   }
 }

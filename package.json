@@ -21,6 +21,7 @@
     "test:lifecycle": "npx tsx --test src/lib/__tests__/order-lifecycle.test.ts",
     "test:pagination": "npx tsx --test src/lib/__tests__/server-pagination.test.ts",
     "test:bot-inbox": "npx tsx --test src/lib/__tests__/bot-inbox.test.ts",
+    "test:archive": "npx tsx --test src/lib/__tests__/order-archive.test.ts",
     "test:e2e": "playwright test e2e/smoke.spec.ts",
     "test:e2e:tenant": "playwright test e2e/tenant",
     "test:workforce-datetime": "npx tsx src/lib/__tests__/workforce-datetime.test.ts",

@@ -6,6 +6,7 @@ export const PRODUCTION_SERVER_V2_FLAG = 'production_server_v2';
 export const CLIENTS_SERVER_V2_FLAG = 'clients_server_v2';
 export const BOT_INBOX_V2_FLAG = 'bot_inbox_v2';
 export const BOT_LIFECYCLE_V2_FLAG = 'bot_lifecycle_v2';
+export const SOFT_DELETE_RESTORE_V2_FLAG = 'soft_delete_restore_v2';
 
 function isMissingFeatureFlagTable(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError
@@ -107,6 +108,10 @@ export async function shouldUseBotLifecycleV2(tenantId: string) {
     readTenantFlag(tenantId, BOT_LIFECYCLE_V2_FLAG),
   ]);
   return lifecycleReady && inbox.enabled && botLifecycle.enabled;
+}
+
+export async function shouldUseSoftDeleteRestoreV2(tenantId: string) {
+  return isTenantFeatureEnabled(tenantId, SOFT_DELETE_RESTORE_V2_FLAG);
 }
 
 export type OrderLifecycleAdapter =

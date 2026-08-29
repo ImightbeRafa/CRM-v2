@@ -30,15 +30,51 @@ export const getDatabaseUrl = () => {
   return `${baseUrl}${separator}${params.join('&')}`;
 };
 
-const prisma = globalThis.prisma ??
+const prismaRaw = globalThis.prisma ??
   new PrismaClient({
     log: ['warn', 'error'],
     datasourceUrl: getDatabaseUrl(),
   });
 
 if (!globalThis.prisma) {
-  globalThis.prisma = prisma;
+  globalThis.prisma = prismaRaw;
 }
 
-export { prisma };
+function withActiveOrder(args: Record<string, any> | undefined) {
+  return {
+    ...(args || {}),
+    where: {
+      ...((args || {}).where || {}),
+      deletedAt: null,
+    },
+  };
+}
+
+// Soft-deleted regular-tenant orders must disappear consistently from every
+// top-level Prisma read and must not be mutated by legacy write paths.
+// Raw queries are intentionally explicit: regular-tenant callers must add the
+// active-row predicate themselves. The archive service uses prismaRaw with
+// explicit tenant predicates to reach archived rows.
+const prisma = prismaRaw.$extends({
+  name: 'activeOrderReads',
+  query: {
+    order: {
+      findUnique({ args, query }) { return query(withActiveOrder(args) as typeof args); },
+      findUniqueOrThrow({ args, query }) { return query(withActiveOrder(args) as typeof args); },
+      findFirst({ args, query }) { return query(withActiveOrder(args) as typeof args); },
+      findFirstOrThrow({ args, query }) { return query(withActiveOrder(args) as typeof args); },
+      findMany({ args, query }) { return query(withActiveOrder(args) as typeof args); },
+      count({ args, query }) { return query(withActiveOrder(args) as typeof args); },
+      aggregate({ args, query }) { return query(withActiveOrder(args) as typeof args); },
+      groupBy({ args, query }) { return query(withActiveOrder(args) as typeof args); },
+      update({ args, query }) { return query(withActiveOrder(args) as typeof args); },
+      updateMany({ args, query }) { return query(withActiveOrder(args) as typeof args); },
+      delete({ args, query }) { return query(withActiveOrder(args) as typeof args); },
+      deleteMany({ args, query }) { return query(withActiveOrder(args) as typeof args); },
+      upsert({ args, query }) { return query(withActiveOrder(args) as typeof args); },
+    },
+  },
+}) as unknown as PrismaClient;
+
+export { prisma, prismaRaw };
 export default prisma;

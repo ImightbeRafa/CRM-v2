@@ -2,6 +2,20 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-29 — Preview unlock and Vercel build repair
+
+- Preview (`VERCEL_ENV=preview`) and local `next dev` synthesize Betsy v2
+  product flags in code. No TenantFeatureFlag rows are written. Production
+  stays flag-gated. Billing remains observe-only on preview.
+- Tenant guías claim one in-flight generate per order. 401/403 surfaces as
+  “Correos rechazó las credenciales” instead of generic Fallida.
+- Fixed `customFields-server.ts` Prisma `optionSet: null` typing that failed
+  `next build`. Ventas hook dependency warnings addressed.
+- Dual client APIs and “Sincronizar desde Ventas” remain quarantined; no knip
+  mass-delete.
+- Prove: `npx tsc --noEmit`, `npm run test:correos-credentials`,
+  `npm run test:lifecycle`, `npm run test:bot-inbox`. Do not merge `origin/dev`.
+
 ## 2026-08-29 — Tenant Correos guías use logistics credentials
 
 - Tenant `/api/shipping/generate-guia` authenticated with stale `CORREOS_WS_*`

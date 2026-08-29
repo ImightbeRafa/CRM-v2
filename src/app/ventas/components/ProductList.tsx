@@ -97,6 +97,14 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
 
   // Update order totals when products change
   useEffect(() => {
+    if (
+      orderInfo.orderSubtotal === orderTotals.subtotal
+      && orderInfo.orderShipping === orderTotals.shipping
+      && orderInfo.orderIVA === orderTotals.iva
+      && orderInfo.orderTotal === orderTotals.total
+    ) {
+      return;
+    }
     onOrderInfoChange({
       ...orderInfo,
       orderSubtotal: orderTotals.subtotal,
@@ -104,7 +112,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
       orderIVA: orderTotals.iva,
       orderTotal: orderTotals.total
     });
-  }, [orderTotals]);
+  }, [orderTotals, orderInfo, onOrderInfoChange]);
 
   const addProduct = () => {
     // Initialize a draft product so manual inputs persist in the modal

@@ -4,6 +4,7 @@ import {
   credentialTokenCacheKey,
   selectCorreosWSCredentials,
 } from '../correos/credential-select';
+import { formatGuiaFailureDetail, formatGuiaFailureLabel } from '../correos/auth-error';
 
 describe('Correos credential selection', () => {
   it('prefers a complete logistics DB set over environment variables', () => {
@@ -86,5 +87,13 @@ describe('Correos credential selection', () => {
     assert.notEqual(first, rotated);
     assert.equal(first.length, 64);
     assert.match(first, /^[a-f0-9]+$/);
+  });
+});
+
+describe('Correos guía failure copy', () => {
+  it('labels 401 token failures as credential rejection', () => {
+    assert.equal(formatGuiaFailureLabel('Correos token auth failed (401)'), 'Correos rechazó las credenciales');
+    assert.equal(formatGuiaFailureDetail('Correos token auth failed (401)'), 'Correos rechazó las credenciales');
+    assert.equal(formatGuiaFailureLabel('timeout'), 'Fallida');
   });
 });

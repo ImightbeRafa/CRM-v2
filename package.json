@@ -29,7 +29,7 @@
     "test:workforce-code": "npx tsx src/lib/__tests__/workforce-code.test.ts",
     "test:workforce-state": "npx tsx src/lib/__tests__/workforce-time-entry-state.test.ts",
     "test:payroll-bounds": "npx tsx src/lib/__tests__/payroll-cr-day-bounds.test.ts",
-    "test:correos-credentials": "npx tsx --test src/lib/__tests__/correos-credentials.test.ts",
+    "test:correos-credentials": "npx tsx --test src/lib/__tests__/correos-credentials.test.ts src/lib/__tests__/review-environment.test.ts",
     "audit:dead": "knip --no-exit-code",
     "betsyv2:clients:backfill": "npx tsx scripts/betsy-v2-client-backfill.ts",
     "betsyv2:statuses:classify": "npx tsx scripts/betsy-v2-terminal-statuses.ts"

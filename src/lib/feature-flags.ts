@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
+import { arePreviewFeaturesUnlocked } from '@/lib/review-environment';
 
 export const ORDER_LIFECYCLE_V2_FLAG = 'order_lifecycle_v2';
 export const PRODUCTION_SERVER_V2_FLAG = 'production_server_v2';
@@ -10,6 +11,18 @@ export const SOFT_DELETE_RESTORE_V2_FLAG = 'soft_delete_restore_v2';
 export const AI_CUSTOMER_PASTE_V2_FLAG = 'ai_customer_paste_v2';
 export const SETUP_GUIDE_V2_FLAG = 'setup_guide_v2';
 export const STATISTICS_REVENUE_V2_FLAG = 'statistics_revenue_v2';
+
+const PREVIEW_UNLOCKED_KEYS = new Set([
+  ORDER_LIFECYCLE_V2_FLAG,
+  PRODUCTION_SERVER_V2_FLAG,
+  CLIENTS_SERVER_V2_FLAG,
+  BOT_INBOX_V2_FLAG,
+  BOT_LIFECYCLE_V2_FLAG,
+  SOFT_DELETE_RESTORE_V2_FLAG,
+  AI_CUSTOMER_PASTE_V2_FLAG,
+  SETUP_GUIDE_V2_FLAG,
+  STATISTICS_REVENUE_V2_FLAG,
+]);
 
 function isMissingFeatureFlagTable(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError
@@ -23,6 +36,7 @@ function isMissingFeatureFlagTable(error: unknown) {
  * set continues unchanged.
  */
 export async function isTenantFeatureEnabled(tenantId: string, key: string): Promise<boolean> {
+  if (arePreviewFeaturesUnlocked() && PREVIEW_UNLOCKED_KEYS.has(key)) return true;
   try {
     const flag = await prisma.tenantFeatureFlag.findFirst({
       where: {
@@ -55,9 +69,16 @@ async function readTenantFlag(tenantId: string, key: string): Promise<TenantFeat
     const config = flag?.config && typeof flag.config === 'object' && !Array.isArray(flag.config)
       ? flag.config as FeatureFlagConfig
       : {};
-    return { enabled: flag?.enabled === true, config };
+    const enabled = flag?.enabled === true
+      || (arePreviewFeaturesUnlocked() && PREVIEW_UNLOCKED_KEYS.has(key));
+    return { enabled, config };
   } catch (error) {
-    if (isMissingFeatureFlagTable(error)) return { enabled: false, config: {} };
+    if (isMissingFeatureFlagTable(error)) {
+      if (arePreviewFeaturesUnlocked() && PREVIEW_UNLOCKED_KEYS.has(key)) {
+        return { enabled: true, config: {} };
+      }
+      return { enabled: false, config: {} };
+    }
     throw error;
   }
 }
@@ -86,8 +107,8 @@ export async function readClientsServerReadiness(tenantId: string) {
     ? lifecycleFlag.config.clientBackfillCompletedAt
     : null;
   return {
-    enabled: clientsFlag.enabled && backfillCompletedAt !== null,
-    requested: clientsFlag.enabled,
+    enabled: (clientsFlag.enabled && backfillCompletedAt !== null) || arePreviewFeaturesUnlocked(),
+    requested: clientsFlag.enabled || arePreviewFeaturesUnlocked(),
     backfillCompletedAt,
   };
 }
@@ -133,15 +154,22 @@ export async function readTenantUiReadiness(tenantId: string) {
       ? statistics.config as Record<string, unknown>
       : {};
     return {
-      aiCustomerPaste: byKey.get(AI_CUSTOMER_PASTE_V2_FLAG)?.enabled === true,
-      setupGuide: byKey.get(SETUP_GUIDE_V2_FLAG)?.enabled === true,
+      aiCustomerPaste: byKey.get(AI_CUSTOMER_PASTE_V2_FLAG)?.enabled === true || arePreviewFeaturesUnlocked(),
+      setupGuide: byKey.get(SETUP_GUIDE_V2_FLAG)?.enabled === true || arePreviewFeaturesUnlocked(),
       statistics: {
-        enabled: statistics?.enabled === true,
-        mode: statisticsConfig.mode === 'primary' ? 'primary' as const : 'observe' as const,
+        enabled: statistics?.enabled === true || arePreviewFeaturesUnlocked(),
+        mode: arePreviewFeaturesUnlocked() || statisticsConfig.mode === 'primary' ? 'primary' as const : 'observe' as const,
       },
     };
   } catch (error) {
     if (isMissingFeatureFlagTable(error)) {
+      if (arePreviewFeaturesUnlocked()) {
+        return {
+          aiCustomerPaste: true,
+          setupGuide: true,
+          statistics: { enabled: true, mode: 'primary' as const },
+        };
+      }
       return {
         aiCustomerPaste: false,
         setupGuide: false,
@@ -178,10 +206,12 @@ async function readLifecycleReadiness(tenantId: string) {
       ? flag.config as Record<string, unknown>
       : {};
     // Enabling the switch without recording reconciliation readiness must not
-    // create duplicate clients for a legacy tenant.
-    return flag?.enabled === true && typeof config.clientBackfillCompletedAt === 'string';
+    // create duplicate clients for a legacy tenant. Preview unlocks the adapter
+    // so reviewers can exercise the full Ventas/Producción path.
+    return (flag?.enabled === true && typeof config.clientBackfillCompletedAt === 'string')
+      || arePreviewFeaturesUnlocked();
   } catch (error) {
-    if (isMissingFeatureFlagTable(error)) return false;
+    if (isMissingFeatureFlagTable(error)) return arePreviewFeaturesUnlocked();
     throw error;
   }
 }

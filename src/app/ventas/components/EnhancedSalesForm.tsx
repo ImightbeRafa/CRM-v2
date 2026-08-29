@@ -170,7 +170,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       }
     }, 30000);
     return () => clearInterval(interval);
-  }, [isClient, isMounted]);
+  }, [isClient, isMounted, autoSave]);
 
   // Load auto-saved data on component mount
   useEffect(() => {
@@ -560,9 +560,9 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     }
   };
 
-  const handleOrderInfoChange = (newOrderInfo: OrderInfo) => {
+  const handleOrderInfoChange = useCallback((newOrderInfo: OrderInfo) => {
     setOrderInfo(newOrderInfo);
-  };
+  }, []);
 
   const handleCustomerInfoChange = (customerInfo: CustomerInfo) => {
     setOrderInfo(prev => ({ ...prev, customerInfo }));

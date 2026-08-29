@@ -29,6 +29,7 @@ import {
   ChevronLeft,
   Search,
 } from 'lucide-react';
+import { formatGuiaFailureDetail, formatGuiaFailureLabel } from '@/lib/correos/auth-error';
 import {
   costaRicaLocations,
   provinceNames,
@@ -476,7 +477,7 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
   // ── Generate with verified data ───────────────────────────
 
   const handleGenerateVerified = async () => {
-    if (!allValid) return;
+    if (!allValid || isGenerating) return;
     setIsGenerating(true);
     setGenerationResults(null);
 
@@ -1084,7 +1085,7 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
                                 {guia.status === 'completed'
                                   ? 'Completada'
                                   : guia.status === 'failed'
-                                  ? 'Fallida'
+                                  ? formatGuiaFailureLabel(guia.errorMessage)
                                   : guia.status}
                               </Badge>
                             </div>
@@ -1110,7 +1111,7 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
                                 {guia.phone && <span>Tel: {guia.phone}</span>}
                               </div>
                               {guia.errorMessage && (
-                                <p className="text-red-500 mt-0.5">{guia.errorMessage}</p>
+                                <p className="text-red-500 mt-0.5">{formatGuiaFailureDetail(guia.errorMessage)}</p>
                               )}
                               <p className="text-muted-foreground/60">
                                 {new Date(guia.createdAt).toLocaleString('es-CR')}

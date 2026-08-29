@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { Prisma, SubscriptionTier, Tenant } from '@prisma/client';
 import { prisma } from '@/lib/db';
+import { arePreviewFeaturesUnlocked } from '@/lib/review-environment';
 
 export const BILLING_ACCESS_FLAG = 'billing_access';
 export const BILLING_ENFORCEMENT_KILL_SWITCH = 'billing_write_enforcement';
@@ -214,7 +215,7 @@ export async function evaluateTenantAccess(tenantId: string): Promise<TenantAcce
         settings: true,
       },
     }),
-    readBillingFlags(tenantId),
+    arePreviewFeaturesUnlocked() ? Promise.resolve([]) : readBillingFlags(tenantId),
   ]);
 
   if (!tenant) throw new Error('Tenant not found');

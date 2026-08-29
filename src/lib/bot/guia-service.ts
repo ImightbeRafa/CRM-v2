@@ -8,6 +8,7 @@ import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { prisma as globalPrisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { CorreosWebService, buildGuiaDescription, buildFullAddress, resolveCorreosWSCredentials } from '@/lib/correos';
+import { CorreosAuthError, isCorreosCredentialRejection } from '@/lib/correos/auth-error';
 import { shouldUseBotLifecycleV2, shouldUseOrderLifecycleV2, type OrderLifecycleAdapter } from '@/lib/feature-flags';
 import { setLifecycleOrderStatus } from '@/lib/order-lifecycle';
 
@@ -45,6 +46,14 @@ export interface GuiaGenerationOptions {
   timeoutMs?: number;
   concurrency?: number;
 }
+
+const inFlightGuiaKeys = new Set<string>();
+
+function guiaFlightKey(tenantId: string, orderId: string) {
+  return `${tenantId}:${orderId}`;
+}
+
+const CORREOS_PROVIDER_ADAPTER = 'correos-provider';
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -206,6 +215,17 @@ export async function generateGuiasForOrders(
       };
     }
 
+    const flightKey = guiaFlightKey(tenantId, order.orderId);
+    if (inFlightGuiaKeys.has(flightKey)) {
+      return {
+        success: false,
+        orderId: order.orderId,
+        error: 'Esta guía ya se está generando.',
+      };
+    }
+    inFlightGuiaKeys.add(flightKey);
+    let externalClaimKey: string | null = null;
+
     try {
       const verified = locationMap.get(order.orderId);
       const addressData = verified ? { ...order, ...verified } : order;
@@ -218,62 +238,56 @@ export async function generateGuiasForOrders(
         }
       }
 
-      // Correos exposes no provider idempotency key. A queued bot attempt must
-      // durably claim the external side effect immediately before registration.
-      // An unresolved prior claim is never retried automatically because the
-      // provider may have registered the guía before a timeout or crash.
-      let externalClaimKey: string | null = null;
-      if (options.adapter === 'bot') {
-        if (!options.operationKey || !useLifecycleV2) {
-          return {
-            success: false,
-            orderId: order.orderId,
-            error: 'La generación de guía del bot no está habilitada de forma segura.',
-          };
+      // Correos exposes no provider idempotency key. Claim once per order
+      // across UI, integration, and bot so a double-click cannot register two guías.
+      if (options.adapter === 'bot' && (!options.operationKey || !useLifecycleV2)) {
+        return {
+          success: false,
+          orderId: order.orderId,
+          error: 'La generación de guía del bot no está habilitada de forma segura.',
+        };
+      }
+      // Correos exposes no provider idempotency key. Claim once per order
+      // across UI, integration, and bot so a double-click cannot register two guías.
+      externalClaimKey = `correos-guia:${order.id}`;
+      try {
+        await globalPrisma.orderLifecycleOperation.create({
+          data: {
+            tenantId,
+            adapter: CORREOS_PROVIDER_ADAPTER,
+            operation: 'correos_guia_external_claim',
+            idempotencyKey: externalClaimKey,
+            orderId: order.id,
+            result: { state: 'claimed', claimedAt: new Date().toISOString(), channel: options.adapter || 'tenant-guia' },
+          },
+        });
+      } catch (claimError) {
+        if (!(claimError instanceof Prisma.PrismaClientKnownRequestError && claimError.code === 'P2002')) {
+          throw claimError;
         }
-        // Deliberately stable across different provider messages: after an
-        // ambiguous external attempt, a newly worded retry must not bypass the
-        // claim and register a second guía for the same order.
-        externalClaimKey = `correos-guia:${order.id}`;
-        try {
-          await globalPrisma.orderLifecycleOperation.create({
-            data: {
-              tenantId,
-              adapter: 'bot',
-              operation: 'correos_guia_external_claim',
-              idempotencyKey: externalClaimKey,
-              orderId: order.id,
-              result: { state: 'claimed', claimedAt: new Date().toISOString() },
-            },
-          });
-        } catch (claimError) {
-          if (!(claimError instanceof Prisma.PrismaClientKnownRequestError && claimError.code === 'P2002')) {
-            throw claimError;
-          }
-          const completed = await tenantPrisma.shippingGuia.findFirst({
-            where: { tenantId, orderId: order.orderId, status: 'completed' },
-          });
-          if (completed) {
-            try {
-              await markOrderShipped(order, `guia:${order.id}:${completed.guiaNumber || completed.id}`);
-            } catch {
-              // Status reconciliation must not create another provider guía.
-            }
-            return {
-              success: true,
-              orderId: order.orderId,
-              guiaNumber: completed.guiaNumber || undefined,
-              trackingNumber: completed.trackingNumber || undefined,
-              pdfBuffer: completed.pdfData ? Buffer.from(completed.pdfData) : undefined,
-              pdfFileName: completed.pdfFileName || `guia-${completed.guiaNumber}.pdf`,
-            };
+        const completed = await tenantPrisma.shippingGuia.findFirst({
+          where: { tenantId, orderId: order.orderId, status: 'completed' },
+        });
+        if (completed) {
+          try {
+            await markOrderShipped(order, `guia:${order.id}:${completed.guiaNumber || completed.id}`);
+          } catch {
+            // Status reconciliation must not create another provider guía.
           }
           return {
-            success: false,
+            success: true,
             orderId: order.orderId,
-            error: 'La guía está en proceso o requiere reconciliación. Revísala en Producción antes de reintentar.',
+            guiaNumber: completed.guiaNumber || undefined,
+            trackingNumber: completed.trackingNumber || undefined,
+            pdfBuffer: completed.pdfData ? Buffer.from(completed.pdfData) : undefined,
+            pdfFileName: completed.pdfFileName || `guia-${completed.guiaNumber}.pdf`,
           };
         }
+        return {
+          success: false,
+          orderId: order.orderId,
+          error: 'La guía está en proceso o requiere reconciliación. Revísala en Producción antes de reintentar.',
+        };
       }
 
       const res = await withTimeout(ws.generateAndRegisterGuia({
@@ -326,7 +340,7 @@ export async function generateGuiasForOrders(
 
         if (externalClaimKey) {
           await globalPrisma.orderLifecycleOperation.updateMany({
-            where: { tenantId, adapter: 'bot', idempotencyKey: externalClaimKey },
+            where: { tenantId, adapter: CORREOS_PROVIDER_ADAPTER, idempotencyKey: externalClaimKey },
             data: {
               result: {
                 state: 'completed',
@@ -360,7 +374,7 @@ export async function generateGuiasForOrders(
       } else {
         if (externalClaimKey) {
           await globalPrisma.orderLifecycleOperation.updateMany({
-            where: { tenantId, adapter: 'bot', idempotencyKey: externalClaimKey },
+            where: { tenantId, adapter: CORREOS_PROVIDER_ADAPTER, idempotencyKey: externalClaimKey },
             data: {
               result: {
                 state: 'provider_failed',
@@ -375,13 +389,21 @@ export async function generateGuiasForOrders(
           error: res.error || 'Correos WS returned an error',
         };
       }
-    } catch (err: any) {
-      console.error(`[GuiaService] Error generating guía for ${order.orderId}:`, err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error inesperado al generar guía';
+      console.error(`[GuiaService] Error generating guía for ${order.orderId}:`, message);
+      if (externalClaimKey && (err instanceof CorreosAuthError || isCorreosCredentialRejection(message))) {
+        await globalPrisma.orderLifecycleOperation.deleteMany({
+          where: { tenantId, adapter: CORREOS_PROVIDER_ADAPTER, idempotencyKey: externalClaimKey },
+        });
+      }
       return {
         success: false,
         orderId: order.orderId,
-        error: err.message || 'Error inesperado al generar guía',
+        error: message,
       };
+    } finally {
+      inFlightGuiaKeys.delete(flightKey);
     }
   });
 

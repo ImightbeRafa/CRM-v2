@@ -1,5 +1,6 @@
 import type { CorreosWSCredentials, TokenRequest } from './types';
 import { credentialTokenCacheKey } from './credential-select';
+import { CorreosAuthError } from './auth-error';
 import { getTokenUrl, getProxySecret, isProxyConfigured } from './proxy';
 
 const TOKEN_TTL_MS = 4 * 60 * 1000; // 4 minutes (tokens expire at 5 min)
@@ -93,7 +94,7 @@ export class CorreosTokenManager {
     );
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw new Error(`Correos token auth failed (${res.statusCode})`);
+      throw new CorreosAuthError(res.statusCode);
     }
 
     let token: string | undefined;

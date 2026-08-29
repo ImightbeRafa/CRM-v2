@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProductInfo } from './types';
 import { RefreshCw } from 'lucide-react';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
@@ -24,14 +24,14 @@ const ProductForm: React.FC<ProductFormProps> = ({
 
   // Auto-assign vendedor when user is loaded
   useEffect(() => {
-    // Check if vendedor is empty string (not just falsy) to properly auto-assign
     if (user && (!productInfo.vendedor || productInfo.vendedor.trim() === '')) {
       onProductInfoChange({
         ...productInfo,
         vendedor: user.username
       });
     }
-  }, [user, productInfo.vendedor]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- including productInfo retriggers on every keystroke
+  }, [user, productInfo.vendedor, onProductInfoChange]);
 
   const recalcProduct = (info: ProductInfo): ProductInfo => {
     // Recompute option deltas based on current dynamic selections
@@ -75,11 +75,11 @@ const ProductForm: React.FC<ProductFormProps> = ({
   const [fields, setFields] = useState<any[]>([])
   const [sellers, setSellers] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
-  const [isMounted, setIsMounted] = useState(true)
+  const mountedRef = useRef(true)
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
-      if (!isMounted) return;
+      if (!mountedRef.current) return;
       setLoading(true)
       const [fRes, sRes, setsRes] = await Promise.all([
         fetch('/api/config/fields'),
@@ -87,9 +87,8 @@ const ProductForm: React.FC<ProductFormProps> = ({
         fetch('/api/config/option-sets')
       ])
       const [fJson, sJson, setsJson] = await Promise.all([fRes.json(), sRes.json(), setsRes.json()])
-      if (fJson.status === 'success' && isMounted) {
+      if (fJson.status === 'success' && mountedRef.current) {
         let nextFields = fJson.data
-        // Defensive fix: some select fields might be missing linked optionSet
         if (setsJson?.status === 'success') {
           const setByKey: Record<string, any> = {}
             ; (setsJson.data || []).forEach((set: any) => { setByKey[set.key] = set })
@@ -105,34 +104,36 @@ const ProductForm: React.FC<ProductFormProps> = ({
         }
         setFields(nextFields)
       }
-      if (sJson.status === 'success' && isMounted) setSellers(sJson.data)
+      if (sJson.status === 'success' && mountedRef.current) setSellers(sJson.data)
     } catch (error) {
       console.error('Error loading form data:', error)
     } finally {
-      if (isMounted) {
+      if (mountedRef.current) {
         setLoading(false)
       }
     }
-  }
-
-  useEffect(() => {
-    loadData()
   }, [])
 
-  // Refresh data when component becomes visible (for new options)
+  useEffect(() => {
+    mountedRef.current = true
+    void loadData()
+    return () => {
+      mountedRef.current = false
+    }
+  }, [loadData])
+
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!document.hidden && isMounted) {
-        loadData()
+      if (!document.hidden && mountedRef.current) {
+        void loadData()
       }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
-      setIsMounted(false)
     }
-  }, [isMounted])
+  }, [loadData])
 
   // No per-product shipping calculation; shipping is handled at order level
 

@@ -232,3 +232,49 @@ backfills require separate approval and are never applied by Prisma schema comma
 - **Rollback:** disable `soft_delete_restore_v2` first. Revert the Slice 6 commit only if
   a code rollback is required. The nullable columns/index may remain for backward
   compatibility; no down migration is part of rollback.
+
+## Slice 7 — AI paste, setup, statistics, and regular-tenant UI
+
+- **Local branch:** `codex/betsyv2-s7-tenant-ui`.
+- **Schema dependency:** dedicated tenant setup-progress state is packaged in additive
+  `supabase/migrations/023_betsy_v2_tenant_ui.sql`. The SQL was **not** executed.
+  `schema.prisma` is synchronized and only `prisma generate` ran. Code deployed before
+  the table and all three missing/off flags fall back to existing behavior.
+- **Database/provider writes used for verification:** none. No setup progress, tenant
+  flag, order, client, subscription, configuration, or Logistics row was changed. No
+  xAI/Resend/Meta/Telegram/Tilopay/Correos request was made.
+- **Customer paste:** the existing heuristic parser remains the immediate zero-network
+  first layer. `ai_customer_paste_v2` only exposes an explicit Grok action. The request
+  is limited to eight customer fields, uses strict JSON, `store:false`, zero retries,
+  a hard timeout, and tenant/user rate limiting. It has no order/lifecycle/database
+  write dependency. Changed fields are individually reviewable, and Ventas refuses to
+  submit until the suggestion is applied or discarded.
+- **Setup:** `setup_guide_v2` stores tenant-wide progress with an optimistic revision,
+  supports visit/complete/optional skip/dismiss/restart, and never deletes real config.
+  Return targets are limited to regular-tenant pages; Logistics and external targets
+  are rejected. Dashboard dismissal is server-persisted when enabled, while legacy
+  localStorage remains the off-path fallback. Config now honors the actual tab IDs in
+  deep links, including inventory, clients, and shipping configuration.
+- **Statistics:** `statistics_revenue_v2` selects one bounded, cached overview read in
+  place of the legacy multi-endpoint client fan-out. Existing date/status semantics and
+  booked totals remain still. Observation shows booked gross, non-COD booked, confirmed
+  COD, pending COD, and collected revenue side by side. Because the current Order model
+  has no collection timestamp, confirmed COD is explicitly attributed to its sale date.
+  Legacy endpoints and UI remain unchanged while the flag is off.
+- **Visual scope:** the visual pass is limited to regular-tenant setup, Ventas AI review,
+  and statistics reconciliation cards, uses the existing theme tokens, and does not
+  alter global styling or any Logistics page/API/role/billing behavior.
+- **Verification:** tenant-UI contracts 7/7; security/write coverage 71/71; lifecycle
+  8/8; pagination 8/8; durable inbox 8/8; archive 6/6; backups 8/8; bot Grok pass;
+  TypeScript pass; lint pass with pre-existing warnings; local production build pass
+  (126 pages); compiled Playwright smoke 3/3 including new unauthenticated endpoints.
+  No remote push, SQL execution, shared-database mutation, provider message, or charge.
+- **Known limitations:** authenticated AI, setup persistence, statistics reconciliation,
+  and visual workflows require the separately approved additive SQL, a designated test
+  tenant, and explicit tenant flags. Automated tests intentionally suppress real xAI and
+  other provider calls. Statistics refuse ranges over 366 days or over 25,000 orders;
+  detail payload is capped at 1,000 while aggregate totals remain complete.
+- **Rollback:** disable `ai_customer_paste_v2`, `setup_guide_v2`, and
+  `statistics_revenue_v2`. Revert the Slice 7 commit only if code rollback is required.
+  The additive setup table may remain; old code ignores it and no down migration is part
+  of rollback.

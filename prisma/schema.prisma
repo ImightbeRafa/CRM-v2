@@ -82,6 +82,7 @@ model Tenant {
   orderLifecycleOperations OrderLifecycleOperation[]
   orderInventoryAllocations OrderInventoryAllocation[]
   orderStatusClassifications TenantOrderStatusClassification[]
+  setupProgress TenantSetupProgress?
   
   @@index([slug])
   @@index([isActive])
@@ -104,6 +105,26 @@ model TenantFeatureFlag {
   @@unique([scope, key])
   @@index([tenantId])
   @@index([key, enabled])
+}
+
+// Tenant-wide guide state. This stays separate from Tenant.settings because
+// billing and provider checkout also update that JSON document.
+model TenantSetupProgress {
+  id             String   @id @default(cuid())
+  tenantId       String   @unique
+  currentStep    String?
+  completedSteps Json     @default("[]")
+  skippedSteps   Json     @default("[]")
+  status         String   @default("in_progress")
+  dismissedAt    DateTime?
+  completedAt    DateTime?
+  revision       Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status, updatedAt])
 }
 
 model Membership {

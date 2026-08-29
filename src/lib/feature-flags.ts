@@ -7,6 +7,9 @@ export const CLIENTS_SERVER_V2_FLAG = 'clients_server_v2';
 export const BOT_INBOX_V2_FLAG = 'bot_inbox_v2';
 export const BOT_LIFECYCLE_V2_FLAG = 'bot_lifecycle_v2';
 export const SOFT_DELETE_RESTORE_V2_FLAG = 'soft_delete_restore_v2';
+export const AI_CUSTOMER_PASTE_V2_FLAG = 'ai_customer_paste_v2';
+export const SETUP_GUIDE_V2_FLAG = 'setup_guide_v2';
+export const STATISTICS_REVENUE_V2_FLAG = 'statistics_revenue_v2';
 
 function isMissingFeatureFlagTable(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError
@@ -112,6 +115,41 @@ export async function shouldUseBotLifecycleV2(tenantId: string) {
 
 export async function shouldUseSoftDeleteRestoreV2(tenantId: string) {
   return isTenantFeatureEnabled(tenantId, SOFT_DELETE_RESTORE_V2_FLAG);
+}
+
+export async function readTenantUiReadiness(tenantId: string) {
+  try {
+    const flags = await prisma.tenantFeatureFlag.findMany({
+      where: {
+        tenantId,
+        scope: tenantId,
+        key: { in: [AI_CUSTOMER_PASTE_V2_FLAG, SETUP_GUIDE_V2_FLAG, STATISTICS_REVENUE_V2_FLAG] },
+      },
+      select: { key: true, enabled: true, config: true },
+    });
+    const byKey = new Map(flags.map(flag => [flag.key, flag]));
+    const statistics = byKey.get(STATISTICS_REVENUE_V2_FLAG);
+    const statisticsConfig = statistics?.config && typeof statistics.config === 'object' && !Array.isArray(statistics.config)
+      ? statistics.config as Record<string, unknown>
+      : {};
+    return {
+      aiCustomerPaste: byKey.get(AI_CUSTOMER_PASTE_V2_FLAG)?.enabled === true,
+      setupGuide: byKey.get(SETUP_GUIDE_V2_FLAG)?.enabled === true,
+      statistics: {
+        enabled: statistics?.enabled === true,
+        mode: statisticsConfig.mode === 'primary' ? 'primary' as const : 'observe' as const,
+      },
+    };
+  } catch (error) {
+    if (isMissingFeatureFlagTable(error)) {
+      return {
+        aiCustomerPaste: false,
+        setupGuide: false,
+        statistics: { enabled: false, mode: 'observe' as const },
+      };
+    }
+    throw error;
+  }
 }
 
 export type OrderLifecycleAdapter =

@@ -9,7 +9,7 @@ import ChartContainer from './ChartContainer';
 import DateRangePicker from './DateRangePicker';
 import RevenueChart from './RevenueChart';
 import StatusBreakdownChart from './StatusBreakdownChart';
-import TopCustomersChart from './TopCustomersChart';
+import TopCustomersChart, { TopCustomersData } from './TopCustomersChart';
 import SelectedDayReport, { DailyOrderDetail } from './SelectedDayReport';
 
 interface SummaryData {
@@ -28,6 +28,9 @@ interface RevenueData {
   date: string;
   revenue: number;
   orderCount: number;
+  bookedGross?: number;
+  collectedRevenue?: number;
+  pendingCod?: number;
 }
 
 interface TypeBreakdown {
@@ -69,7 +72,21 @@ function fillDailyRevenueData(data: RevenueData[], startDate: string, endDate: s
   return filled;
 }
 
-export default function EstadisticasDashboard() {
+interface StatisticsV2Readiness {
+  enabled: boolean;
+  mode: 'observe' | 'primary';
+}
+
+interface RevenueReconciliation {
+  bookedGross: number;
+  bookedCodGross: number;
+  collectedCod: number;
+  nonCodBooked: number;
+  collectedRevenue: number;
+  pendingCod: number;
+}
+
+export default function EstadisticasDashboard({ statisticsV2 }: { statisticsV2: StatisticsV2Readiness }) {
   const { settings } = useTenantSettings();
   const initialToday = todayKey();
 
@@ -85,6 +102,8 @@ export default function EstadisticasDashboard() {
   const [reportTypeBreakdown, setReportTypeBreakdown] = useState<TypeBreakdown | null>(null);
   const [reportStatusBreakdown, setReportStatusBreakdown] = useState<StatusBreakdown[]>([]);
   const [reportOrders, setReportOrders] = useState<DailyOrderDetail[]>([]);
+  const [reconciliation, setReconciliation] = useState<RevenueReconciliation | null>(null);
+  const [topCustomers, setTopCustomers] = useState<TopCustomersData | null>(null);
 
   const [loadingPeriod, setLoadingPeriod] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
@@ -105,6 +124,36 @@ export default function EstadisticasDashboard() {
     setPeriodError('');
     try {
       const params = { startDate, endDate };
+      if (statisticsV2.enabled) {
+        const response = await axios.get('/api/estadisticas/v2/overview', { params, signal });
+        const data = response.data;
+        const primaryRevenue = statisticsV2.mode === 'primary'
+          ? data.revenue.collectedRevenue
+          : data.revenue.bookedGross;
+        const summaryData = {
+          ...data.summary,
+          totalRevenue: primaryRevenue,
+          averageOrderValue: data.summary.totalSales ? primaryRevenue / data.summary.totalSales : 0,
+        };
+        setSummary(summaryData);
+        setRevenueData(data.daily.map((day: RevenueData) => ({
+          ...day,
+          revenue: statisticsV2.mode === 'primary'
+            ? Number(day.collectedRevenue || 0)
+            : Number(day.bookedGross || 0),
+        })));
+        setTypeBreakdown(data.typeBreakdown);
+        setStatusBreakdown(data.statusBreakdown);
+        setReportSummary(summaryData);
+        setReportTypeBreakdown(data.typeBreakdown);
+        setReportStatusBreakdown(data.statusBreakdown);
+        setReportOrders(data.orders);
+        setTopCustomers(data.topCustomers);
+        setReconciliation(data.revenue);
+        setLoadingReport(false);
+        setReportError('');
+        return;
+      }
       const [summaryRes, revenueRes, typeRes, statusRes] = await Promise.all([
         axios.get('/api/estadisticas/summary', { params, signal }),
         axios.get('/api/estadisticas/revenue', { params: { ...params, groupBy: 'day' }, signal }),
@@ -123,12 +172,16 @@ export default function EstadisticasDashboard() {
     } finally {
       setLoadingPeriod(false);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, statisticsV2.enabled, statisticsV2.mode]);
 
   const fetchSelectedReportData = useCallback(async (signal?: AbortSignal) => {
     setLoadingReport(true);
     setReportError('');
     try {
+      if (statisticsV2.enabled) {
+        setLoadingReport(false);
+        return;
+      }
       const params = { startDate, endDate };
       const [summaryRes, typeRes, statusRes, ordersRes] = await Promise.all([
         axios.get('/api/estadisticas/summary', { params, signal }),
@@ -148,7 +201,7 @@ export default function EstadisticasDashboard() {
     } finally {
       setLoadingReport(false);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, statisticsV2.enabled]);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -211,6 +264,31 @@ export default function EstadisticasDashboard() {
           onDateChange={handleDateRangeChange}
         />
       </div>
+
+      {statisticsV2.enabled && reconciliation && (
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 print:hidden" aria-label="Conciliación de ingresos v2">
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ventas registradas</p>
+            <p className="mt-2 text-2xl font-bold text-foreground">{formatCurrency(reconciliation.bookedGross)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Todos los pedidos guardados</p>
+          </div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/20">
+            <p className="text-xs font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Ingresos cobrados</p>
+            <p className="mt-2 text-2xl font-bold text-emerald-700 dark:text-emerald-400">{formatCurrency(reconciliation.collectedRevenue)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">No-COD + contra entrega confirmada</p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm dark:border-amber-900 dark:bg-amber-950/20">
+            <p className="text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">COD pendiente</p>
+            <p className="mt-2 text-2xl font-bold text-amber-700 dark:text-amber-400">{formatCurrency(reconciliation.pendingCod)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Reservado, todavía no confirmado</p>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Modo de observación</p>
+            <p className="mt-2 text-base font-semibold text-foreground">{statisticsV2.mode === 'primary' ? 'Cobrado principal' : 'Legacy principal'}</p>
+            <p className="mt-1 text-xs text-muted-foreground">COD cobrado se atribuye a la fecha de venta hasta guardar fecha de cobro.</p>
+          </div>
+        </section>
+      )}
 
       <div className="print:hidden">
         <ChartContainer
@@ -297,7 +375,7 @@ export default function EstadisticasDashboard() {
       </div>
 
       <div className="print:hidden">
-        <TopCustomersChart startDate={startDate} endDate={endDate} />
+        <TopCustomersChart startDate={startDate} endDate={endDate} prefetchedData={statisticsV2.enabled ? topCustomers : undefined} />
       </div>
     </div>
   );

@@ -18,15 +18,14 @@ Organize unfinished work so Phase 2 can finish items deliberately. Seeded at kic
 - **Phase:** Finish in Phase 2 (billing-sensitive — careful)
 
 ### W4 — Invoice email
-- **Status:** Incomplete
+- **Status:** DONE (Betsy v2 Slice 3)
 - **Path:** `src/app/api/invoices/[id]/email/route.ts`
-- **Issue:** Logs and returns success without sending email
-- **Phase:** Phase 2 finish
+- **Resolution:** Provider-confirmed Resend state; failed/unconfigured delivery returns
+  an honest non-success result.
 
 ### W5 — Billing storage display
-- **Status:** Incomplete
-- **Issue:** Storage usage hard-coded to `0 MB`
-- **Phase:** Phase 2 finish
+- **Status:** DONE (Betsy v2 Slice 1)
+- **Resolution:** Removed the fake `0 MB` measurement and reports unavailable honestly.
 
 ### W6 — Oversized modules (structure only, no behavior change)
 - **Status:** Structure candidate
@@ -47,10 +46,10 @@ Organize unfinished work so Phase 2 can finish items deliberately. Seeded at kic
 
 ## Phase 2 queue (finish)
 
-1. Invoice email real send or honest error — `src/app/api/invoices/[id]/email/route.ts`
-2. Tilopay: token cache (`api/tilopay/auth`), webhook hash verify (`lib/tilopay.ts`, `webhook`, `webhook-repeat`), failed-payment email TODO
-3. Billing storage real metric or remove fake `0 MB` — `api/billing/usage`
-4. ~~Deployment~~ removed in Phase 0 orphan purge
+1. Tilopay follow-up: confirm provider HMAC contract and any failed-payment notification policy.
+2. ~~Invoice email~~ completed in Betsy v2 Slice 3.
+3. ~~Billing storage fake metric~~ removed in Betsy v2 Slice 1.
+4. ~~Deployment~~ removed in Phase 0 orphan purge.
 
 ## Phase 3 (later)
 

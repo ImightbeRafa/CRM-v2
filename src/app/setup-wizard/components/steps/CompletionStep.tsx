@@ -54,20 +54,16 @@ export function CompletionStep({ markCompleted }: WizardStepProps) {
   const [completing, setCompleting] = useState(true);
 
   useEffect(() => {
-    completeWizard();
-  }, []);
-
-  const completeWizard = async () => {
-    try {
-      await fetch('/api/setup/wizard-complete', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      markCompleted();
+    let active = true;
+    void markCompleted().then(completed => {
+      if (!active || !completed) return;
+      setCompleting(false);
       try { localStorage.removeItem('betsy-wizard-progress'); } catch { /* noop */ }
-    } catch { /* still mark completed in UI */ markCompleted(); }
-    finally { setCompleting(false); }
-  };
+    });
+    // Completion persistence is owned by SetupWizard so it cannot race a
+    // second progress write from this presentational step.
+    return () => { active = false; };
+  }, [markCompleted]);
 
   if (completing) {
     return (
@@ -89,8 +85,8 @@ export function CompletionStep({ markCompleted }: WizardStepProps) {
         <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 mb-4 shadow-lg">
           <PartyPopper className="h-10 w-10 text-white" />
         </div>
-        <h2 className="text-3xl font-bold text-gray-900 mb-2">¡Tu CRM está listo!</h2>
-        <p className="text-gray-600 text-lg max-w-md mx-auto">
+        <h2 className="text-3xl font-bold text-foreground mb-2">¡Tu CRM está listo!</h2>
+        <p className="text-muted-foreground text-lg max-w-md mx-auto">
           Has completado la configuración inicial. Aquí tienes algunas ideas para empezar:
         </p>
       </motion.div>
@@ -113,12 +109,12 @@ export function CompletionStep({ markCompleted }: WizardStepProps) {
                   <step.icon className="h-5 w-5 text-white" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-gray-900 group-hover:text-blue-700 transition-colors">
+                  <h3 className="font-semibold text-foreground group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors">
                     {step.title}
                   </h3>
-                  <p className="text-sm text-gray-500">{step.description}</p>
+                  <p className="text-sm text-muted-foreground">{step.description}</p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-gray-300 group-hover:text-blue-500 transition-colors mt-1" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-blue-500 transition-colors mt-1" />
               </div>
             </Card>
           </motion.div>

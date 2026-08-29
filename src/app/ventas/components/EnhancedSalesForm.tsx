@@ -59,6 +59,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   const [businessInfoFields, setBusinessInfoFields] = useState<any[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(true);
+  const [aiPasteReviewPending, setAiPasteReviewPending] = useState(false);
 
   // Resolve expected date from either the canonical field (fechaEsperada)
   // or from any business info date field (prefer one whose name/label mentions "esperada" or "expected")
@@ -284,6 +285,14 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (aiPasteReviewPending) {
+      setSubmitStatus({
+        type: 'error',
+        message: 'Revisa o descarta la sugerencia de Grok antes de guardar el pedido',
+      });
+      return;
+    }
 
     // Auto-assign vendedor before validation if user is loaded and products are missing vendedor
     if (user && orderInfo.products.some(p => !p.vendedor || !p.vendedor.trim())) {
@@ -513,6 +522,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   };
 
   const resetForm = () => {
+    setAiPasteReviewPending(false);
     setOrderInfo({
       customerInfo: {
         name: '',
@@ -687,6 +697,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                 rawCustomerText={rawCustomerText}
                 onRawCustomerTextChange={setRawCustomerText}
                 orderType={orderInfo.customerInfo.orderType}
+                onAiReviewPendingChange={setAiPasteReviewPending}
               />
             </div>
 
@@ -829,7 +840,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               </Button>
               <Button
                 type="submit"
-                disabled={isSubmitting || orderInfo.products.length === 0}
+                disabled={isSubmitting || aiPasteReviewPending || orderInfo.products.length === 0}
                 className={`px-4 sm:px-8 py-2 flex items-center justify-center gap-2 w-full sm:w-auto transition-all duration-200 ${isSubmitting
                   ? 'bg-blue-400 cursor-not-allowed'
                   : 'bg-blue-500 hover:bg-blue-600 hover:shadow-lg'

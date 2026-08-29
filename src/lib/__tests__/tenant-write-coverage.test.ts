@@ -41,6 +41,7 @@ const guardedTenantRoutes = [
   'src/app/api/sales/route.ts',
   'src/app/api/seed-frequent-data/route.ts',
   'src/app/api/setup/wizard-complete/route.ts',
+  'src/app/api/setup/progress/route.ts',
   'src/app/api/shipping/generate-guia/route.ts',
   'src/app/api/shipping/guias/manual/route.ts',
   'src/app/api/social/link/route.ts',

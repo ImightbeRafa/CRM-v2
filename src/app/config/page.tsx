@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, Suspense, lazy } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useConfig } from '../contexts/ConfigContext'
 import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck, Bot, Building2 } from 'lucide-react'
 import { MobileBottomNav } from '../components/MobileBottomNav'
@@ -20,8 +20,15 @@ const StatusManager = lazy(() => import('./components/StatusManager').then(m => 
 const TenantSettingsPanel = lazy(() => import('../components/TenantSettingsPanel').then(m => ({ default: m.TenantSettingsPanel })))
 const BusinessProfileSettings = lazy(() => import('./components/BusinessProfileSettings').then(m => ({ default: m.BusinessProfileSettings })))
 
+const CONFIG_TAB_IDS = [
+  'profile', 'fields', 'statuses', 'inventory', 'clients', 'shipping-config',
+  'users', 'social', 'ai-assistant', 'integrations', 'import', 'billing',
+  'bulk-delete', 'audit',
+] as const
+
 function ConfigPageInner() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState('fields')
   const [newFieldType, setNewFieldType] = useState('text') // Track type for validation
   const { user: currentUser } = useCurrentUser()
@@ -129,8 +136,7 @@ function ConfigPageInner() {
     if (!mounted) return
     const tabParam = searchParams?.get('tab')
     if (tabParam) {
-      const validTabs = ['profile', 'fields', 'business', 'users', 'option-sets', 'shipping', 'sellers', 'import', 'billing', 'bulk-delete', 'audit', 'legacy-fields', 'social', 'integrations', 'statuses', 'ai-assistant']
-      if (validTabs.includes(tabParam)) {
+      if ((CONFIG_TAB_IDS as readonly string[]).includes(tabParam)) {
         setActiveTab(tabParam)
       }
     }
@@ -144,6 +150,11 @@ function ConfigPageInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, activeTab])
+
+  const selectTab = (tabId: string) => {
+    setActiveTab(tabId)
+    router.replace(`/config?tab=${encodeURIComponent(tabId)}`, { scroll: false })
+  }
 
   // Bulk operation handlers
   const handleBulkDelete = async (ids: string[], reason?: string) => {
@@ -613,7 +624,7 @@ function ConfigPageInner() {
                 return (
                 <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => selectTab(tab.id)}
                     className={`group rounded-lg transition-all duration-200 px-3 py-3.5 min-h-[60px] flex flex-col items-center justify-center gap-2 ${
                       activeTab === tab.id
                         ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md ring-1 ring-blue-400/50'
@@ -643,7 +654,7 @@ function ConfigPageInner() {
                 return (
                 <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => selectTab(tab.id)}
                     className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 whitespace-nowrap min-h-[40px] ${
                       isActive
                         ? 'bg-blue-600 text-white shadow-md'

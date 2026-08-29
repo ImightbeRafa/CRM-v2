@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CustomerInfo } from './types';
 import {
   costaRicaLocations,
@@ -6,6 +6,7 @@ import {
   ProvinceData,
   CantonData,
 } from './costaRicaLocations';
+import { parseCustomerPaste } from '@/lib/customer-paste';
 
 type CantonWithProvince = {
   province: string;
@@ -24,6 +25,8 @@ interface CustomerFormProps {
   rawCustomerText: string;
   onRawCustomerTextChange: (text: string) => void;
   orderType: 'EA' | 'RA';
+  aiPasteEnabled?: boolean;
+  onAiReviewPendingChange?: (pending: boolean) => void;
 }
 
 const normalizeText = (value: string | undefined | null) => {
@@ -59,11 +62,39 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
   rawCustomerText,
   onRawCustomerTextChange,
   orderType,
+  aiPasteEnabled: aiPasteEnabledProp,
+  onAiReviewPendingChange,
 }) => {
   const [cantonSearch, setCantonSearch] = useState(customerInfo.canton || '');
   const [districtSearch, setDistrictSearch] = useState(customerInfo.district || '');
   const [cantonSuggestionsOpen, setCantonSuggestionsOpen] = useState(false);
   const [districtSuggestionsOpen, setDistrictSuggestionsOpen] = useState(false);
+  const [aiPasteEnabled, setAiPasteEnabled] = useState(Boolean(aiPasteEnabledProp));
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiSuggestion, setAiSuggestion] = useState<CustomerInfo | null>(null);
+  const [aiSourceText, setAiSourceText] = useState('');
+  const [aiSelectedFields, setAiSelectedFields] = useState<string[]>([]);
+  const rawCustomerTextRef = useRef(rawCustomerText);
+
+  useEffect(() => {
+    rawCustomerTextRef.current = rawCustomerText;
+    if (aiSuggestion && rawCustomerText !== aiSourceText) {
+      setAiSuggestion(null);
+      setAiSelectedFields([]);
+      onAiReviewPendingChange?.(false);
+    }
+  }, [aiSourceText, aiSuggestion, onAiReviewPendingChange, rawCustomerText]);
+
+  useEffect(() => {
+    if (aiPasteEnabledProp !== undefined) return;
+    const controller = new AbortController();
+    fetch('/api/ventas/customer-paste/enhance', { signal: controller.signal })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => setAiPasteEnabled(data?.enabled === true))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [aiPasteEnabledProp]);
 
   const selectedProvince = useMemo(
     () => findProvince(customerInfo.province),
@@ -210,174 +241,60 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
   }, [customerInfo.district]);
 
   const parseCustomerText = (text: string) => {
-    if (!text.trim()) return;
-    
-    const lines = text.split(/[\n\r]+/).map(line => line.trim()).filter(Boolean);
-    const normalizedText = text.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ');
-    
-    // ===== STRATEGY 1: Multi-pattern labeled extraction =====
-    // Support for various separators: :, -, =, |, etc.
-    const separators = '[:=|\\-~]';
-    
-    const extractField = (keywords: string[], wholeText: string): string => {
-      // Try each keyword with flexible separators
-      for (const keyword of keywords) {
-        // Pattern 1: Label with separator and content until next field or end
-        const pattern1 = new RegExp(
-          `(?:📍|☎️|🏠|✉️|🗺️)?\\s*${keyword}\\s*${separators}?\\s*([^\\n]+?)(?=(?:Nombre|Tel[eé]fono|Tel|Provincia|Cant[oó]n|Distrito|Correo|Email|Direcci[oó]n|$))`,
-          'i'
-        );
-        const match1 = wholeText.match(pattern1);
-        if (match1 && match1[1].trim()) return match1[1].trim();
-        
-        // Pattern 2: Label with separator on its own line or inline
-        const pattern2 = new RegExp(`${keyword}\\s*${separators}\\s*(.+?)(?=\\n|$)`, 'i');
-        const match2 = wholeText.match(pattern2);
-        if (match2 && match2[1].trim()) return match2[1].trim();
-      }
-      return '';
-    };
-    
-    // Extract with multiple keyword variations
-    const nameRaw = extractField([
-      'Nombre\\s*completo',
-      'Nombre',
-      'Name',
-      'Cliente',
-      'Comprador'
-    ], normalizedText);
-    
-    const phoneRaw = extractField([
-      'Tel[eé]fono',
-      'Tel[eé]f',
-      'Tel',
-      'Phone',
-      'Celular',
-      'M[oó]vil',
-      'Contacto'
-    ], normalizedText);
-    
-    const emailRaw = extractField([
-      'Correo\\s*electr[oó]nico',
-      'Correo',
-      'Email',
-      'e-mail',
-      'E-mail',
-      'Mail'
-    ], normalizedText);
-    
-    const addressRaw = extractField([
-      'Direcci[oó]n\\s*exacta\\s*donde\\s*deseas?\\s*recibirlo',
-      'Direcci[oó]n\\s*exacta',
-      'Direcci[oó]n\\s*de\\s*entrega',
-      'Direcci[oó]n',
-      'Address',
-      'Domicilio',
-      'Ubicaci[oó]n',
-      'Donde\\s*desea\\s*recibir'
-    ], normalizedText);
-    
-    // ===== STRATEGY 2: Location extraction with multiple formats =====
-    let province = '', canton = '', district = '';
-    
-    // Try grouped format: "Provincia/Cantón/Distrito: X, Y, Z" or "Provincia, Cantón, Distrito: X, Y, Z"
-    const locationGroupPattern = /(?:Provincia[,\/\s]*Cant[oó]n[,\/\s]*Distrito)\s*[:=|\-~]?\s*([^,\n]+),\s*([^,\n]+),\s*([^.\n]+)/i;
-    const locationGroupMatch = normalizedText.match(locationGroupPattern);
-    
-    if (locationGroupMatch) {
-      province = locationGroupMatch[1].trim().replace(/\.$/, '');
-      canton = locationGroupMatch[2].trim().replace(/\.$/, '');
-      district = locationGroupMatch[3].trim().replace(/\.$/, '');
-    } else {
-      // Try individual extraction
-      province = extractField(['Provincia', 'Province'], normalizedText);
-      canton = extractField(['Cant[oó]n', 'Canton'], normalizedText);
-      district = extractField(['Distrito', 'District'], normalizedText);
-    }
-    
-    // ===== STRATEGY 3: Smart content-based detection (fallback) =====
-    // If labeled extraction failed, use intelligent content detection
-    
-    // Email: anything with @ symbol
-    let email = emailRaw;
-    if (!email) {
-      const emailMatch = normalizedText.match(/([a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-      email = emailMatch ? emailMatch[1] : '';
-    }
-    
-    // Phone: Look for 8+ consecutive digits (with optional separators)
-    let phone = phoneRaw;
-    if (!phone) {
-      // Try to find phone in any line
-      const phonePatterns = [
-        /(\d{4}[\s\-]?\d{4})/,  // 8 digits with optional separator
-        /(\d{8,})/,              // 8+ consecutive digits
-        /(\+?\d{1,3}[\s\-]?\d{4}[\s\-]?\d{4})/ // International format
-      ];
-      
-      for (const pattern of phonePatterns) {
-        const match = normalizedText.match(pattern);
-        if (match) {
-          phone = match[1];
-          break;
-        }
-      }
-    }
-    phone = phone.replace(/[-\s]/g, ''); // Clean phone number
-    
-    // Name: If not found, use first substantial line (more than 3 words or 10 chars)
-    let name = nameRaw;
-    if (!name) {
-      name = lines.find(line => {
-        const cleanLine = line.replace(/[📍☎️🏠✉️🗺️]/g, '').trim();
-        return cleanLine.length > 10 || cleanLine.split(/\s+/).length >= 2;
-      }) || lines[0] || '';
-    }
-    
-    // Address: If not found, look for longest line or one with address keywords
-    let address = addressRaw;
-    if (!address) {
-      const addressKeywords = ['casa', 'apartamento', 'condominio', 'edificio', 'residencial', 'metros', 'frente', 'costado', 'cruce', 'esquina', 'barrio', 'colonia'];
-      address = lines.find(l => addressKeywords.some(kw => l.toLowerCase().includes(kw))) || '';
-      
-      // If still nothing, take longest line (likely the address)
-      if (!address) {
-        address = lines.reduce((longest, current) => 
-          current.length > longest.length ? current : longest, ''
-        );
-        // But only if it's substantial
-        if (address.length < 15) address = '';
-      }
-    }
-    
-    // Province: Check common Costa Rican provinces
-    if (!province) {
-      const provinces = ['San José', 'Alajuela', 'Cartago', 'Heredia', 'Guanacaste', 'Puntarenas', 'Limón'];
-      province = lines.find(l => provinces.some(p => l.includes(p))) || '';
-    }
-    
-    // ===== Build result =====
-    const provinceMatch = findProvince(province) || selectedProvince;
-    const cantonMatch = findCanton(provinceMatch, canton) || selectedCanton;
-    const districtMatch = cantonMatch?.distritos.find(
-      (d) => normalizeText(d) === normalizeText(district)
-    );
-
-    const newCustomerInfo = {
-      ...customerInfo,
-      name: name.replace(/^(Nombre|Name)[:\-=|~]?\s*/i, '').trim(),
-      phone,
-      province: provinceMatch?.nombre || province,
-      canton: cantonMatch?.nombre || canton,
-      district: districtMatch || district,
-      email,
-      address: address.replace(/^(Dirección|Address)[:\-=|~]?\s*/i, '').trim(),
-    };
-
+    rawCustomerTextRef.current = text;
     onRawCustomerTextChange(text);
-    onCustomerInfoChange(newCustomerInfo);
+    if (aiSuggestion && text !== aiSourceText) {
+      setAiSuggestion(null);
+      setAiSelectedFields([]);
+      onAiReviewPendingChange?.(false);
+    }
+    if (!text.trim()) return;
+    onCustomerInfoChange(parseCustomerPaste(text, customerInfo));
   };
 
+  const requestAiEnhancement = async () => {
+    if (!rawCustomerText.trim() || aiLoading) return;
+    const submittedText = rawCustomerText;
+    setAiLoading(true);
+    setAiError('');
+    setAiSuggestion(null);
+    onAiReviewPendingChange?.(true);
+    try {
+      const response = await fetch('/api/ventas/customer-paste/enhance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rawText: submittedText, heuristic: customerInfo }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'No se pudo mejorar el texto');
+      if (rawCustomerTextRef.current !== submittedText) {
+        onAiReviewPendingChange?.(false);
+        return;
+      }
+      const suggestion = { ...customerInfo, ...data.suggestion } as CustomerInfo;
+      const changed = ['name', 'phone', 'email', 'username', 'province', 'canton', 'district', 'address']
+        .filter(field => String(suggestion[field] || '') !== String(customerInfo[field] || ''));
+      setAiSourceText(submittedText);
+      setAiSuggestion(suggestion);
+      setAiSelectedFields(changed);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : 'No se pudo mejorar el texto');
+      onAiReviewPendingChange?.(false);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const finishAiReview = (accept: boolean) => {
+    if (accept && aiSuggestion) {
+      const next = { ...customerInfo };
+      for (const field of aiSelectedFields) next[field] = aiSuggestion[field];
+      onCustomerInfoChange(next);
+    }
+    setAiSuggestion(null);
+    setAiSelectedFields([]);
+    onAiReviewPendingChange?.(false);
+  };
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
@@ -456,6 +373,52 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
           onPaste={handlePaste}
           placeholder="📋 Pegar información del cliente aquí...&#10;&#10;✅ Acepta múltiples formatos:&#10;• Con etiquetas: Nombre: Carlos | Tel: 88979856 | Email: test@mail.com&#10;• Con emojis: 📍 Nombre - Juan | ☎️ Teléfono: 88887777&#10;• Ubicación: Provincia/Cantón/Distrito: Alajuela, Alajuela, Carrizal&#10;• Sin etiquetas: Detecta emails (@), teléfonos (8+ dígitos), direcciones&#10;• Separadores flexibles: : - = | ~&#10;&#10;💡 Inteligente: Si no encuentra etiquetas, analiza el contenido automáticamente"
         />
+        {aiPasteEnabled && (
+          <div className="rounded-lg border border-violet-200 bg-violet-50/70 p-3 dark:border-violet-800 dark:bg-violet-950/20">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Opcional: envía este texto de cliente a Grok para sugerir correcciones. Nunca crea ni modifica pedidos.
+              </p>
+              <button
+                type="button"
+                disabled={aiLoading || rawCustomerText.trim().length < 3}
+                onClick={requestAiEnhancement}
+                className="rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+              >
+                {aiLoading ? 'Analizando…' : 'Mejorar con Grok'}
+              </button>
+            </div>
+            {aiError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{aiError}</p>}
+            {aiSuggestion && (
+              <div className="mt-3 space-y-3 border-t border-violet-200 pt-3 dark:border-violet-800">
+                <p className="text-sm font-medium">Revisa cada cambio antes de continuar</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {['name', 'phone', 'email', 'username', 'province', 'canton', 'district', 'address'].map(field => {
+                    const before = String(customerInfo[field] || '');
+                    const after = String(aiSuggestion[field] || '');
+                    if (before === after) return null;
+                    return (
+                      <label key={field} className="flex gap-2 rounded border border-border bg-card p-2 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={aiSelectedFields.includes(field)}
+                          onChange={(event) => setAiSelectedFields(current => event.target.checked
+                            ? [...current, field]
+                            : current.filter(value => value !== field))}
+                        />
+                        <span><strong>{field}</strong><br /><span className="text-muted-foreground">{before || 'Vacío'} →</span> {after || 'Vacío'}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => finishAiReview(true)} className="rounded bg-violet-600 px-3 py-2 text-sm text-white">Aplicar seleccionados</button>
+                  <button type="button" onClick={() => finishAiReview(false)} className="rounded border border-border px-3 py-2 text-sm">Descartar</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Customer Information Display */}

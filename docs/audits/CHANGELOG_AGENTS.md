@@ -270,3 +270,22 @@ Append-only. Newest entries at the top.
   8/8; bot Grok, TypeScript, lint (existing warnings), production build (125 pages),
   and Playwright smoke 3/3 pass. Additive SQL was not run; no database/provider writes
   or remote push.
+
+# 2026-08-29 — Betsy v2 Slice 7: tenant setup, AI paste, and revenue observation
+
+- Kept the existing customer paste heuristic as the immediate local parser and added an
+  explicit, off-by-default Grok suggestion layer. Only customer fields leave the app;
+  output is strict, non-writing, bounded, rate-limited, stale-text protected, and must be
+  reviewed before Ventas can submit.
+- Added additive tenant-persisted setup progress with optimistic revisions, optional
+  skips, dismissal, restart-without-delete, safe regular-tenant return links, and legacy
+  fallback when the flag/table is absent. Fixed Config's stale deep-link tab allowlist.
+- Added one consolidated, bounded v2 statistics overview and observation UI separating
+  booked gross, collected revenue, confirmed COD, and pending COD while leaving existing
+  numbers and endpoints unchanged off-flag.
+- Scoped visual cleanup to regular-tenant setup, Ventas AI review, and statistics cards;
+  no Logistics file was changed.
+- Prove: tenant UI 7/7; security 71/71; lifecycle 8/8; pagination 8/8; inbox 8/8;
+  archive 6/6; backups 8/8; bot Grok; TypeScript; lint (existing warnings); production
+  build (126 pages); Playwright smoke 3/3. No SQL, shared-data/provider write, remote push,
+  or deployment.

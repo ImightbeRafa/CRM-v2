@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Badge } from '@/app/components/ui/badge';
 import { Users, TrendingUp, DollarSign, Activity, Clock } from 'lucide-react';
 
-interface TopCustomer {
+export interface TopCustomer {
   customerName: string;
   totalRevenue: number;
   orderCount: number;
@@ -17,7 +17,7 @@ interface TopCustomer {
   customerStatus: string;
 }
 
-interface TopCustomersData {
+export interface TopCustomersData {
   topCustomersByRevenue: TopCustomer[];
   topCustomersByOrders: TopCustomer[];
   customerActivity: TopCustomer[];
@@ -33,22 +33,29 @@ interface TopCustomersData {
 interface TopCustomersChartProps {
   startDate: string;
   endDate: string;
+  prefetchedData?: TopCustomersData | null;
 }
 
-export default function TopCustomersChart({ startDate, endDate }: TopCustomersChartProps) {
-  const [data, setData] = useState<TopCustomersData | null>(null);
+export default function TopCustomersChart({ startDate, endDate, prefetchedData }: TopCustomersChartProps) {
+  const [data, setData] = useState<TopCustomersData | null>(prefetchedData ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'revenue' | 'orders' | 'activity'>('revenue');
 
   useEffect(() => {
+    if (prefetchedData !== undefined) {
+      setData(prefetchedData ?? null);
+      setLoading(false);
+      setError('');
+      return;
+    }
     const abortController = new AbortController();
     fetchData(abortController.signal);
     
     return () => {
       abortController.abort();
     };
-  }, [startDate, endDate]);
+  }, [startDate, endDate, prefetchedData]);
 
   const fetchData = async (signal?: AbortSignal) => {
     setLoading(true);

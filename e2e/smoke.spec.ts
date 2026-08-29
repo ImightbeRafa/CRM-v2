@@ -20,6 +20,9 @@ test('new read APIs and stale-safe mutation fail closed without a session', asyn
     '/api/production/orders?view=list&limit=20',
     '/api/production/summary',
     '/api/config/automatic-clients/v2?limit=20',
+    '/api/setup/progress',
+    '/api/ventas/customer-paste/enhance',
+    '/api/estadisticas/v2/overview?startDate=2026-01-01&endDate=2026-01-02',
   ]) {
     const response = await request.get(path);
     expect(response.status(), path).toBe(401);

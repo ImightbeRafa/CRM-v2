@@ -34,6 +34,13 @@ interface SetupStatusResponse {
   completedCount: number;
   totalCount: number;
   items: SetupStatusItem[];
+  guide?: {
+    enabled: boolean;
+    progress: {
+      status: 'in_progress' | 'dismissed' | 'completed';
+      revision: number;
+    } | null;
+  };
 }
 
 const DISMISS_KEY = 'betsy-setup-checklist-dismissed';
@@ -75,7 +82,7 @@ export function SetupChecklist() {
       const json: SetupStatusResponse = await res.json();
       setData(json);
 
-      if (json.allCompleted && !hasAutoCompleted.current) {
+      if (!json.guide?.enabled && json.allCompleted && !hasAutoCompleted.current) {
         hasAutoCompleted.current = true;
         setShowCelebration(true);
         try {
@@ -85,6 +92,11 @@ export function SetupChecklist() {
           });
         } catch { /* best-effort */ }
         setTimeout(() => setShowCelebration(false), 4000);
+      }
+
+      if (json.guide?.enabled) {
+        setIsDismissed(json.guide.progress?.status === 'dismissed' || json.guide.progress?.status === 'completed');
+        return;
       }
 
       const currentHash = computeIncompleteHash(json.items);
@@ -110,8 +122,23 @@ export function SetupChecklist() {
     fetchStatus();
   }, [fetchStatus]);
 
-  const handleDismiss = () => {
+  const handleDismiss = async () => {
     setIsDismissed(true);
+    if (data?.guide?.enabled && data.guide.progress) {
+      const response = await fetch('/api/setup/progress', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'dismiss',
+          expectedRevision: data.guide.progress.revision,
+        }),
+      });
+      if (!response.ok) {
+        setIsDismissed(false);
+        await fetchStatus();
+      }
+      return;
+    }
     try {
       localStorage.setItem(DISMISS_KEY, 'true');
       if (data) {
@@ -121,7 +148,7 @@ export function SetupChecklist() {
   };
 
   if (isLoading || !data) return null;
-  if (data.allCompleted && !showCelebration) return null;
+  if ((!data.guide?.enabled && data.allCompleted && !showCelebration) || data.guide?.progress?.status === 'completed') return null;
   if (isDismissed) return null;
 
   const progressPercent = (data.completedCount / data.totalCount) * 100;
@@ -268,7 +295,7 @@ export function SetupChecklist() {
                           variant="outline"
                           size="sm"
                           className="gap-1.5 w-full sm:w-auto min-h-[44px]"
-                          onClick={() => router.push('/setup-wizard')}
+                          onClick={() => router.push('/setup-wizard?returnTo=%2Fdashboard')}
                         >
                           <Sparkles className="h-3.5 w-3.5" />
                           Completar con Asistente

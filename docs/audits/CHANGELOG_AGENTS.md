@@ -2,6 +2,18 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-29 — Betsy v2 additive SQL review (018–023)
+
+- Pinned `codex/betsyv2-review` @ `9943fe5` (ancestor `5ea4377`). Read-only
+  catalog on shared Supabase: ~3640 orders / ~7MB, no v2 objects present.
+- Hardened 018–023 with the existing Prisma RLS pattern (`service_role` only)
+  so new public tables are not Data-API readable via default `anon` grants.
+- Gated apply script `scripts/apply-betsy-v2-additive-sql.mjs` (host confirm,
+  no Prisma). Flags stay off. `peter@peter.com` is super-admin + logistics
+  admin with two tenants — authenticated writes still need a pinned tenant ID
+  and password (not in this environment).
+- Prove: SQL static tests + apply postconditions. No `origin/dev` push.
+
 ## 2026-08-27 — Logistics archive shows terminated orders
 
 - Tablero de Envíos Archivo listed 0 finished orders even though ~2.4k

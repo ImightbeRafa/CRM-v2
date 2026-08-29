@@ -18,6 +18,7 @@ scripts
 scripts/*
 !scripts/betsy-v2-client-backfill.ts
 !scripts/betsy-v2-terminal-statuses.ts
+!scripts/apply-betsy-v2-additive-sql.mjs
 SDK_V2_FINAL_CONFIGURATION.txt
 SDK_V2_IMPLEMENTATION.txt
 # Documentation and Notes (local only)

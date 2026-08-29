@@ -1,6 +1,8 @@
 -- Betsy v2 order soft-delete metadata.
 -- HUMAN APPROVAL REQUIRED BEFORE EXECUTION AGAINST SHARED SUPABASE.
 -- Additive only. The currently deployed application ignores these columns.
+-- Indexes stay in-transaction: production "Order" is ~4k rows / ~7MB, so a
+-- 3s lock_timeout aborts on contention instead of holding writers.
 
 BEGIN;
 

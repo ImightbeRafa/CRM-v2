@@ -75,6 +75,9 @@ export const HOT_PRISMA_TABLES = [
   'OrderLifecycleOperation',
   'OrderInventoryAllocation',
   'ClientIdentityConflict',
+  'TenantFeatureFlag',
+  'TenantSetupProgress',
+  'TenantOrderStatusClassification',
 ] as const;
 
 /** Preferred watermark columns (first match wins). */

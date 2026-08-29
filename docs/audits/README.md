@@ -12,6 +12,7 @@ Living ledgers for the slim → structure → finish → bug-hunt program. **Age
 | [CHANGELOG_AGENTS.md](./CHANGELOG_AGENTS.md) | Append-only agent process and fix notes |
 | [BETSY_V2_LOCAL_RELEASE.md](./BETSY_V2_LOCAL_RELEASE.md) | Per-slice implementation and safety ledger |
 | [BETSY_V2_RELEASE_REPORT.md](./BETSY_V2_RELEASE_REPORT.md) | Integrated local release evidence and rollout gates |
+| [BETSY_V2_PROD_SQL_REVIEW.md](./BETSY_V2_PROD_SQL_REVIEW.md) | Production catalog review and additive SQL 018–023 apply gate |
 
 ## How agents update
 

@@ -89,4 +89,17 @@ CREATE TABLE IF NOT EXISTS public."BotInboxDelivery" (
 CREATE INDEX IF NOT EXISTS "BotInboxDelivery_status_updatedAt_idx"
   ON public."BotInboxDelivery"("status", "updatedAt");
 
+ALTER TABLE public."BotInboxMessage" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."BotInboxDelivery" ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "service_role_bypass" ON public."BotInboxMessage"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "service_role_bypass" ON public."BotInboxDelivery"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 COMMIT;

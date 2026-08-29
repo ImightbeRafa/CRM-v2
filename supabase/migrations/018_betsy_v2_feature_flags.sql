@@ -31,4 +31,14 @@ CREATE INDEX IF NOT EXISTS "TenantFeatureFlag_tenantId_idx"
 CREATE INDEX IF NOT EXISTS "TenantFeatureFlag_key_enabled_idx"
   ON public."TenantFeatureFlag"("key", "enabled");
 
+-- Match existing Prisma tables: RLS on, only service_role has a policy.
+-- The app connects as table-owner postgres (bypasses RLS). anon/authenticated
+-- Data API is denied. CREATE POLICY is wrapped so a second apply is a no-op.
+ALTER TABLE public."TenantFeatureFlag" ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "service_role_bypass" ON public."TenantFeatureFlag"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 COMMIT;

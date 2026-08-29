@@ -27,4 +27,11 @@ CREATE TABLE IF NOT EXISTS public."TenantSetupProgress" (
 CREATE INDEX IF NOT EXISTS "TenantSetupProgress_status_updatedAt_idx"
   ON public."TenantSetupProgress"("status", "updatedAt");
 
+ALTER TABLE public."TenantSetupProgress" ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "service_role_bypass" ON public."TenantSetupProgress"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 COMMIT;

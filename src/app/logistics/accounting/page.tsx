@@ -66,7 +66,7 @@ function ResumenTab({ rates }: { rates: Rates }) {
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const p = new URLSearchParams({ limit: '1000' });
+            const p = new URLSearchParams({ limit: '500' });
             if (dateFrom) p.set('dateFrom', new Date(dateFrom).toISOString());
             if (dateTo) { const d = new Date(dateTo); d.setHours(23, 59, 59); p.set('dateTo', d.toISOString()); }
             const orders = ((await (await fetch(`/api/logistics/orders?${p}`)).json()).orders) || [];

@@ -81,9 +81,9 @@ async function updateInventoryForProduct(product: any, tenantPrisma: any) {
           { sku: { contains: productType, mode: 'insensitive' } },
           { category: { contains: productType, mode: 'insensitive' } },
           { name: { contains: productType, mode: 'insensitive' } },
-          { description: { contains: productType, mode: 'insensitive' } },
         ],
       },
+      take: 5,
     })
 
     let finalMatches = matchingItems
@@ -136,8 +136,6 @@ export async function GET(request: NextRequest) {
       const dateFrom = searchParams.get('dateFrom')
       const dateTo = searchParams.get('dateTo')
 
-      console.log(`[GET /api/orders] Tenant ${tenantId}`, { status, orderType, search })
-      
       // Build where clause for filtering (tenant filter auto-injected by middleware)
       const whereClause: any = {}
       if (status && status !== 'all') whereClause.status = status
@@ -160,11 +158,10 @@ export async function GET(request: NextRequest) {
         if (dateTo) whereClause.timestamp.lte = new Date(dateTo)
       }
       
-      // Get total count for pagination - using tenant-isolated client
-      const totalCount = await tenantPrisma.order.count({ where: whereClause })
-      
-      // Fetch only essential fields to reduce payload - using tenant-isolated client
-      const orders = await tenantPrisma.order.findMany({
+      // Get total count and page in parallel
+      const [totalCount, orders] = await Promise.all([
+        tenantPrisma.order.count({ where: whereClause }),
+        tenantPrisma.order.findMany({
         where: whereClause,
         orderBy: { timestamp: 'desc' },
         skip,
@@ -211,24 +208,22 @@ export async function GET(request: NextRequest) {
           tenantId: true, // Include for security verification
           // Exclude only the heaviest field: productDetails (can be loaded separately if needed)
         }
-    })
-    
-    // Security logging - verify all orders belong to this tenant
+        }),
+      ]);
+
     if (process.env.NODE_ENV !== 'production') {
       const wrongTenantOrders = orders.filter((o: any) => o.tenantId !== tenantId);
       if (wrongTenantOrders.length > 0) {
-        console.error('🚨 CRITICAL TENANT ISOLATION BREACH in /api/orders:', {
+        console.error('CRITICAL TENANT ISOLATION BREACH in /api/orders:', {
           requestedTenant: tenantId,
-          breachedOrders: wrongTenantOrders.map((o: any) => ({ 
-            orderId: o.orderId, 
+          breachedOrders: wrongTenantOrders.map((o: any) => ({
+            orderId: o.orderId,
             tenantId: o.tenantId,
-            customerName: o.customerName 
+            customerName: o.customerName
           }))
         });
       }
     }
-    
-    console.log(`[GET /api/orders] Returning ${orders.length} orders for tenant ${tenantId}`)
       
       // Return orders with pagination metadata - NO CACHE HEADERS
       const response = NextResponse.json({

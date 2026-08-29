@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useMemo, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import {
   Card,
   CardContent,
@@ -26,9 +27,6 @@ import { ExportManager } from './ExportManager';
 import { OrderDetails } from './OrderDetail';
 import { MobileProductionWorkflow } from './MobileProductionWorkflow';
 import { ProductionWorkflowGuide } from './ProductionWorkflowGuide';
-import { GuiaGenerator } from './GuiaGenerator';
-import { InvoiceGenerator } from '@/app/config/components/InvoiceGenerator';
-import { KanbanBoard } from './KanbanBoard';
 import {
   useProductionMetadata,
   useProductionOrders,
@@ -36,6 +34,19 @@ import {
   useProductionSummary,
   type ProductionFilters,
 } from '@/app/hooks/useProductionServer';
+
+const GuiaGenerator = dynamic(
+  () => import('./GuiaGenerator').then((module) => module.GuiaGenerator),
+  { ssr: false },
+);
+const InvoiceGenerator = dynamic(
+  () => import('@/app/config/components/InvoiceGenerator').then((module) => module.InvoiceGenerator),
+  { ssr: false },
+);
+const KanbanBoard = dynamic(
+  () => import('./KanbanBoard').then((module) => module.KanbanBoard),
+  { ssr: false },
+);
 
 // Dynamic Status Filter Component - now using global config
 const StatusFilterSelect = ({ value, onValueChange, statuses }: { value: string; onValueChange: (value: string) => void; statuses: OrderStatus[] }) => {

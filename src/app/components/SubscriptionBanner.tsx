@@ -18,6 +18,9 @@ interface BillingAccess {
   graceEndsAt: string | null;
 }
 
+const BILLING_CACHE_TTL_MS = 60_000;
+const billingAccessCache = new Map<string, { access: BillingAccess; timestamp: number }>();
+
 export default function SubscriptionBanner() {
   const { data: session, status } = useSession();
   const pathname = usePathname();
@@ -27,15 +30,30 @@ export default function SubscriptionBanner() {
   const isPublicRoute = PUBLIC_PATHS.some(path => pathname === path || pathname.startsWith(`${path}/`));
   const membershipRole = session?.user?.membershipRole || session?.user?.currentTenant?.role;
   const isOwner = membershipRole === 'OWNER';
+  const tenantId = session?.user?.currentTenant?.id || session?.user?.tenantId || null;
 
   useEffect(() => {
-    if (status !== 'authenticated' || isPublicRoute) return;
+    setDismissed(false);
+    setAccess(null);
+  }, [tenantId]);
+
+  useEffect(() => {
+    if (status !== 'authenticated' || isPublicRoute || !tenantId) return;
+
+    const cached = billingAccessCache.get(tenantId);
+    if (cached && Date.now() - cached.timestamp < BILLING_CACHE_TTL_MS) {
+      setAccess(cached.access);
+      return;
+    }
 
     const controller = new AbortController();
     fetch('/api/billing/access', { cache: 'no-store', signal: controller.signal })
       .then(response => response.ok ? response.json() : null)
       .then(payload => {
-        if (payload?.status === 'success' && payload.data) setAccess(payload.data);
+        if (payload?.status === 'success' && payload.data) {
+          billingAccessCache.set(tenantId, { access: payload.data, timestamp: Date.now() });
+          setAccess(payload.data);
+        }
       })
       .catch(error => {
         if (error instanceof Error && error.name !== 'AbortError') {
@@ -44,7 +62,7 @@ export default function SubscriptionBanner() {
       });
 
     return () => controller.abort();
-  }, [status, isPublicRoute, pathname]);
+  }, [status, isPublicRoute, tenantId]);
 
   if (status !== 'authenticated' || isPublicRoute || dismissed || !access || access.state === 'ACTIVE') {
     return null;

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { authenticateAPI } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
-import { resolveTenantId } from '@/lib/api-tenant';
 import {
   buildStatsOrderDateWhere,
   getOrderStatsDateKey,
@@ -18,16 +17,9 @@ const CACHE_MAX = 200;
 
 export async function GET(req: NextRequest) {
   try {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    
-    if (!token || !token.sub) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const tenantId = await resolveTenantId(req, token);
-    if (!tenantId) {
-      return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
-    }
+    const auth = await authenticateAPI(req);
+    if (!auth.ok) return auth.response;
+    const tenantId = auth.tenantId;
 
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get('startDate');

@@ -10,6 +10,8 @@ Living ledgers for the slim → structure → finish → bug-hunt program. **Age
 | [PHASE0_DEAD_CODE.md](./PHASE0_DEAD_CODE.md) | Removed / quarantined / keep inventory |
 | [PHASE1_STRUCTURE_WIP.md](./PHASE1_STRUCTURE_WIP.md) | Unfinished work + structure plan |
 | [CHANGELOG_AGENTS.md](./CHANGELOG_AGENTS.md) | Append-only agent process and fix notes |
+| [BETSY_V2_LOCAL_RELEASE.md](./BETSY_V2_LOCAL_RELEASE.md) | Per-slice implementation and safety ledger |
+| [BETSY_V2_RELEASE_REPORT.md](./BETSY_V2_RELEASE_REPORT.md) | Integrated local release evidence and rollout gates |
 
 ## How agents update
 

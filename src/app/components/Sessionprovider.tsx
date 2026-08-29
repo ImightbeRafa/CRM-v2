@@ -1,5 +1,4 @@
 'use client'
-// app/components/SessionProvider.tsx
 import { SessionProvider as Provider } from "next-auth/react"
 
 type Props = {
@@ -7,5 +6,9 @@ type Props = {
 }
 
 export default function SessionProvider({ children }: Props) {
-  return <Provider>{children}</Provider>
+  return (
+    <Provider refetchOnWindowFocus={false} refetchInterval={0}>
+      {children}
+    </Provider>
+  )
 }

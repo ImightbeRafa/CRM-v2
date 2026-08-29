@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Package, Search, Filter, RefreshCw } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import { MANAGED_TENANT_IDS } from '@/lib/logistics-managed-tenants';
@@ -27,24 +27,33 @@ export default function LogisticsDashboardPage() {
     const { getTenantName, getTenantColor } = useTenantConfig();
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
+    const [searchInput, setSearchInput] = useState('');
     const [search, setSearch] = useState('');
     const [tenantFilter, setTenantFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [carrierFilter, setCarrierFilter] = useState('');
     const [refreshing, setRefreshing] = useState(false);
+    const hasLoadedRef = useRef(false);
+
+    useEffect(() => {
+        const timer = setTimeout(() => setSearch(searchInput), 300);
+        return () => clearTimeout(timer);
+    }, [searchInput]);
 
     const loadOrders = useCallback(async () => {
-        const p = new URLSearchParams({ limit: '300' });
+        if (!hasLoadedRef.current) setLoading(true);
+        const p = new URLSearchParams({ limit: '100' });
         if (search) p.set('search', search);
         if (tenantFilter) p.set('tenantId', tenantFilter);
         if (statusFilter) p.set('status', statusFilter);
+        if (carrierFilter && carrierFilter !== 'none') p.set('lmCarrier', carrierFilter);
         try {
             const res = await fetch(`/api/logistics/orders?${p}`);
             const data = await res.json();
             let list: Order[] = data.orders || [];
             if (carrierFilter === 'none') list = list.filter(o => !o.lmCarrier);
-            else if (carrierFilter) list = list.filter(o => o.lmCarrier === carrierFilter);
             setOrders(list);
+            hasLoadedRef.current = true;
         } catch (e) { console.error(e); }
         finally { setLoading(false); setRefreshing(false); }
     }, [search, tenantFilter, statusFilter, carrierFilter]);
@@ -104,7 +113,7 @@ export default function LogisticsDashboardPage() {
             <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
                 <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
                     <Search size={13} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)', pointerEvents: 'none' }} />
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar cliente, orden..."
+                    <input value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Buscar cliente, orden..."
                         style={{ width: '100%', padding: '9px 12px 9px 34px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
                 </div>
                 {[

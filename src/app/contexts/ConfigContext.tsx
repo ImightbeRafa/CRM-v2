@@ -28,7 +28,7 @@ function blankState(loading = false): Record<ConfigKeys, FetchState<any[]>> {
 }
 
 function keysForPath(pathname: string): ConfigKeys[] {
-  if (pathname.startsWith('/produccion')) return ['fields', 'businessInfoFields'];
+  if (pathname.startsWith('/produccion')) return ['statuses', 'fields', 'businessInfoFields'];
   if (pathname.startsWith('/ventas')) return ['statuses', 'fields', 'sellers', 'shipping', 'businessInfoFields', 'optionSets'];
   if (pathname.startsWith('/config')) return ['statuses', 'fields', 'sellers', 'shipping', 'businessInfoFields', 'optionSets'];
   return [];

@@ -16,7 +16,12 @@ export default defineConfig({
     video: 'off',
   },
   webServer: {
-    command: `npm run start -- -p ${port}`,
+    command: 'node --env-file=.env.local e2e/start-standalone.mjs',
+    env: {
+      ...process.env,
+      HOSTNAME: '127.0.0.1',
+      PORT: String(port),
+    },
     url: `http://127.0.0.1:${port}/auth/signin`,
     reuseExistingServer: true,
     timeout: 60_000,

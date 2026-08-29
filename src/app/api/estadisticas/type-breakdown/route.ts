@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { authenticateAPI } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
-import { resolveTenantId } from '@/lib/api-tenant';
 import { buildStatsOrderDateWhere } from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
@@ -12,16 +11,9 @@ const CACHE_TTL = 30000;
 
 export async function GET(req: NextRequest) {
   try {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    
-    if (!token || !token.sub) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const tenantId = await resolveTenantId(req, token);
-    if (!tenantId) {
-      return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
-    }
+    const auth = await authenticateAPI(req);
+    if (!auth.ok) return auth.response;
+    const tenantId = auth.tenantId;
 
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get('startDate');
@@ -43,25 +35,24 @@ export async function GET(req: NextRequest) {
       ...buildStatsOrderDateWhere(startDate, endDate),
     };
 
-    // Get EA orders
-    const eaOrders = await prisma.order.aggregate({
-      where: {
-        ...whereClause,
-        orderType: 'EA',
-      },
-      _count: { _all: true },
-      _sum: { total: true },
-    });
-
-    // Get RA orders
-    const raOrders = await prisma.order.aggregate({
-      where: {
-        ...whereClause,
-        orderType: 'RA',
-      },
-      _count: { _all: true },
-      _sum: { total: true },
-    });
+    const [eaOrders, raOrders] = await Promise.all([
+      prisma.order.aggregate({
+        where: {
+          ...whereClause,
+          orderType: 'EA',
+        },
+        _count: { _all: true },
+        _sum: { total: true },
+      }),
+      prisma.order.aggregate({
+        where: {
+          ...whereClause,
+          orderType: 'RA',
+        },
+        _count: { _all: true },
+        _sum: { total: true },
+      }),
+    ]);
 
     const result = {
       EA: {

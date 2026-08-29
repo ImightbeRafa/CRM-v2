@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { authenticateAPI } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
-import { resolveTenantId } from '@/lib/api-tenant';
 import { buildStatsOrderDateWhere } from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
@@ -12,16 +11,9 @@ const CACHE_TTL = 30000;
 
 export async function GET(req: NextRequest) {
   try {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    
-    if (!token || !token.sub) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const tenantId = await resolveTenantId(req, token);
-    if (!tenantId) {
-      return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
-    }
+    const auth = await authenticateAPI(req);
+    if (!auth.ok) return auth.response;
+    const tenantId = auth.tenantId;
 
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get('startDate');
@@ -42,26 +34,25 @@ export async function GET(req: NextRequest) {
       ...buildStatsOrderDateWhere(startDate, endDate),
     };
 
-    // Group orders by status
-    const statusGroups = await orderModel.groupBy({
-      by: ['status'],
-      where: whereClause,
-      _count: {
-        _all: true,
-      },
-    });
-
-    // Get status colors from OrderStatus table (with tenant isolation)
-    const statuses = await prisma.orderStatus.findMany({
-      where: { 
-        isActive: true,
-        tenantId 
-      },
-      select: {
-        label: true,
-        color: true,
-      },
-    });
+    const [statusGroups, statuses] = await Promise.all([
+      orderModel.groupBy({
+        by: ['status'],
+        where: whereClause,
+        _count: {
+          _all: true,
+        },
+      }),
+      prisma.orderStatus.findMany({
+        where: {
+          isActive: true,
+          tenantId
+        },
+        select: {
+          label: true,
+          color: true,
+        },
+      }),
+    ]);
 
     const statusColorMap = new Map(
       statuses.map((s: { label: string; color: string | null }) => [s.label, s.color || '#3B82F6'])

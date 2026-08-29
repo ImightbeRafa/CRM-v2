@@ -278,3 +278,15 @@ backfills require separate approval and are never applied by Prisma schema comma
   `statistics_revenue_v2`. Revert the Slice 7 commit only if code rollback is required.
   The additive setup table may remain; old code ignores it and no down migration is part
   of rollback.
+
+## Integrated release verification
+
+- Latest `origin/dev` at `610f77c` was merged locally after Slice 7. Upstream performance,
+  finance, payroll, and Logistics archive changes were retained; resolved overlaps keep
+  v2 billing, tenant-cache, statistics, and Producción safety contracts.
+- Final merged checks pass: TypeScript; lint with existing warnings; production build
+  for 126 routes; standalone Playwright 3/3; all Betsy contract suites; backups; bot Grok;
+  and upstream payroll/finance/Logistics archive regressions.
+- The complete evidence, flags, SQL state, rollout order, and remaining approvals are in
+  [BETSY_V2_RELEASE_REPORT.md](./BETSY_V2_RELEASE_REPORT.md).
+- No SQL, real-tenant mutation, provider side effect, remote push, or deployment occurred.

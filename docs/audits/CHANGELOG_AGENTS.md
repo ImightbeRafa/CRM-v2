@@ -2,7 +2,68 @@
 
 Append-only. Newest entries at the top.
 
-## 2026-08-14 — mixed retiro lines map independently
+## 2026-08-27 — Logistics archive shows terminated orders
+
+- Tablero de Envíos Archivo listed 0 finished orders even though ~2.4k
+  `lm_orders` rows have `archived_at`. `GET /api/logistics/orders?archived=true`
+  flattened `{ in: managedIds }` incorrectly (`[{ in: [...] }]` instead of the
+  id list), so the tenant `ANY()` prefilter failed closed and the UI treated
+  errors as an empty archive. Archive now joins `lm_orders` to `"Order"`,
+  unwraps managed tenant ids for SQL, sorts by `archived_at`, skips the
+  live-board cutoff, and returns a real total. The panel shows
+  phone/location/product/date, errors instead of a fake empty state, and
+  scrolls at a usable height.
+- Prove: `npm run test:logistics-archive`. No `lm_*` schema changes.
+
+## 2026-08-24 — Payroll Sunday double-count (CR day bounds)
+
+- Confirmed: consecutive Mon–Sun payroll weeks both included Sunday
+  afternoon clock-ins (Lau + Marlenn 2026-08-16, 301 paid minutes / CRC 6 271)
+  because `date AT TIME ZONE 'America/Costa_Rica'` on PG 17/UTC returns
+  `timestamp without time zone` (week start at Sunday noon CR) while the
+  exclusive end bound stayed at Monday 00:00 CR.
+- Fix: filter with `timestamp AT TIME ZONE` (true CR midnight). Shared helper
+  `src/lib/costa-rica-clock-range.ts` used by workforce payroll, time-entries,
+  and finance payroll.
+- Prove: `npm run test:payroll-bounds`. Consecutive weeks 10–16 and 17–23 Aug
+  2026 now intersect to zero IDs. Same CR midnight bounds now used by
+  finance costs, logistics reports, private delivery, and retiros KPIs so
+  Sunday afternoon cannot leak into the next period anywhere we filter
+  timestamptz by calendar day.
+
+## 2026-08-19 — Site-wide load-time performance slice
+
+- Stopped `ConfigProvider` from fetching 6 config APIs on every authenticated
+  route; ventas/producción/config load only what they need, with a 5-minute
+  memory cache. Tenant settings and billing banner share the same cache pattern.
+- NextAuth `SessionProvider` no longer refetches on window focus.
+- Logistics `/orders` GET: bounded limit, tenant-scoped lm prefilter, parallel
+  enrichment, no `ALTER TABLE` on GET, dropped `productDetails`/`customFields`
+  from the list payload. Dashboard search is debounced; carriers/accounting
+  caps reduced; reports poll every 5 minutes when the tab is visible.
+- Dashboard stats, estadísticas summary/type/status/top-customers run independent
+  reads concurrently. Estadísticas no longer duplicate summary/type/status for
+  the day report; order-details is paginated. Recharts is `next/dynamic`.
+- Production lazy-loads Guia/Invoice/Kanban. Route `loading.tsx` files use
+  skeletons. `optimizePackageImports` for lucide/date-fns/recharts/framer-motion.
+  Logistics Inter via `next/font`. No schema or `lm_*` changes.
+
+## 2026-08-18 — Finance API extra keys for DeepClean / Forge
+
+- Bitácora (adsadder) reads `brand=all` via extra top-level keys
+  (`deepclean`, `forge`) in addition to `brands[]`. Missing keys show
+  "Pendiente de Betsy" instead of ₡0.
+- `/costs` and `/facturacion` now emit those keys, plus `dateFrom`/`dateTo`.
+- `/meta` now includes `brandSlugs`. Finance cost/facturación maxDuration 60s.
+
+## 2026-08-18 — Finance API: DeepClean + Forge brands
+
+- Extended `FINANCE_TENANTS` with `deepclean` (`cmln5u7k70000ld042qify2og`) and
+  `forge` (`cmsrgct420000vipcp3xyqb0m`). `/meta`, `/costs`, `/facturacion`, and
+  `/orders` now accept all four slugs; payroll stays global.
+- Order classifier v1.1.0: DeepClean and Forge are 1:1 tenant=business (like Bloom).
+  DeepSleep sub-business rules unchanged.
+
 
 - 1 Dopa + 1 Stress was collapsing to one line and deducting 2 of the same SKU.
 - Product strings/details now split into separate lines. Generic Parche ×2
@@ -289,3 +350,19 @@ Append-only. Newest entries at the top.
   archive 6/6; backups 8/8; bot Grok; TypeScript; lint (existing warnings); production
   build (126 pages); Playwright smoke 3/3. No SQL, shared-data/provider write, remote push,
   or deployment.
+
+# 2026-08-29 — Betsy v2 integrated release verification
+
+- Fetched and locally merged `origin/dev` at `610f77c` after all seven slice commits.
+  Preserved upstream performance, finance, payroll, and Logistics archive fixes while
+  retaining v2 DB-backed billing display, tenant-keyed configuration, bounded statistics,
+  and server Producción contracts.
+- Fixed the Producción lazy-dialog merge import and enabled Next's isolated webpack
+  build worker after the Windows in-process compiler terminated natively without a JS
+  error. The clean production build then completed all 126 routes.
+- Updated Playwright to serve the actual standalone artifact, including its static and
+  public assets and local env, rather than relying on `next start` compatibility.
+- Prove: TypeScript; lint (existing warnings); production build (126 routes); standalone
+  Playwright 3/3; security 71/71; lifecycle 8/8; pagination 8/8; inbox 8/8; archive 6/6;
+  tenant UI 7/7; backups 8/8; bot Grok; upstream payroll/finance; read-only Logistics
+  archive regression. No SQL, shared-data/provider write, remote push, or deployment.

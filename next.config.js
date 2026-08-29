@@ -28,6 +28,13 @@ const nextConfig = {
   // Server-side packages that should not be bundled
   serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium', 'soap', 'axios'],
 
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'date-fns', 'recharts', 'framer-motion'],
+    // Keep the three webpack targets isolated. The in-process compiler is unstable
+    // on the Windows release workstation and can terminate Node without an error.
+    webpackBuildWorker: true,
+  },
+
   // Image configuration
   images: {
     remotePatterns: [

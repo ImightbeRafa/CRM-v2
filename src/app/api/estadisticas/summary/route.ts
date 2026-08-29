@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { authenticateAPI } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
-import { resolveTenantId } from '@/lib/api-tenant';
 import { buildStatsOrderDateWhere, getPreviousStatsPeriod } from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
@@ -13,16 +12,9 @@ const CACHE_MAX = 200;
 
 export async function GET(req: NextRequest) {
   try {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    
-    if (!token || !token.sub) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const tenantId = await resolveTenantId(req, token);
-    if (!tenantId) {
-      return NextResponse.json({ error: 'No active tenant found' }, { status: 404 });
-    }
+    const auth = await authenticateAPI(req);
+    if (!auth.ok) return auth.response;
+    const tenantId = auth.tenantId;
     
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get('startDate');
@@ -45,20 +37,17 @@ export async function GET(req: NextRequest) {
       ...buildStatsOrderDateWhere(startDate, endDate),
     };
 
-    // Get current period data
-    const [orders, totalRevenue] = await Promise.all([
+    const [orders, totalRevenue, uniqueClients] = await Promise.all([
       orderModel.count({ where: whereClause }),
       orderModel.aggregate({
         where: whereClause,
         _sum: { total: true },
       }),
+      orderModel.groupBy({
+        by: ['customerName'],
+        where: whereClause,
+      }),
     ]);
-
-    // Get unique clients
-    const uniqueClients = await orderModel.groupBy({
-      by: ['customerName'],
-      where: whereClause,
-    });
 
     const totalSales = orders;
     const revenue = totalRevenue._sum.total || 0;

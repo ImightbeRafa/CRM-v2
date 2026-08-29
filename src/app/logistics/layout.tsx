@@ -1,3 +1,4 @@
+import { Inter } from 'next/font/google';
 import { redirect } from 'next/navigation';
 import { requireLogisticsAdmin } from '@/lib/logistics-auth';
 import Link from 'next/link';
@@ -8,6 +9,12 @@ import {
 } from 'lucide-react';
 import { LOGISTICS_NAV_ITEMS } from './nav-items';
 import { LogisticsMobileNav } from './components/LogisticsMobileNav';
+
+const inter = Inter({
+    subsets: ['latin'],
+    display: 'swap',
+    weight: ['400', '500', '600', '700'],
+});
 
 export const metadata: Metadata = {
     title: 'HolaMA · Logistics Manager',
@@ -21,13 +28,12 @@ export default async function LogisticsLayout({ children }: { children: React.Re
     if (!session) redirect('/dashboard');
 
     return (
-        <div className="lm-root" style={{
+        <div className={`lm-root ${inter.className}`} style={{
             display: 'flex',
             minHeight: '100vh',
             background: '#0D0D0D',
             position: 'relative',
             overflow: 'hidden',
-            fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         }}>
             {/* ── Ambient orbs ─────────────────────────────── */}
             <div className="lm-orbs" style={{
@@ -128,7 +134,6 @@ export default async function LogisticsLayout({ children }: { children: React.Re
             </main>
 
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
                 * { box-sizing: border-box; }
                 body { margin: 0; }
                 .lm-nav-link:hover {
@@ -403,6 +408,12 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                     }
                     .lm-archive-panel {
                         max-height: none !important;
+                        height: auto !important;
+                        min-height: 0 !important;
+                    }
+                    .lm-archive-list {
+                        max-height: min(50vh, 420px);
+                        overflow-y: auto !important;
                     }
                     .lm-archive-toolbar {
                         flex-direction: column !important;
@@ -422,6 +433,10 @@ export default async function LogisticsLayout({ children }: { children: React.Re
                     }
                     .lm-archive-row {
                         flex-wrap: wrap !important;
+                    }
+                    .lm-archive-row-actions {
+                        width: 100%;
+                        justify-content: flex-end;
                     }
                     .lm-location-grid {
                         grid-template-columns: 1fr !important;

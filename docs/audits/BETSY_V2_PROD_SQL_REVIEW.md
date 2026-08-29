@@ -67,6 +67,31 @@ BETSY_V2_APPLY_CONFIRM_HOST=db.bmolvybsqzkeswkomgzw.supabase.co \
 node scripts/apply-betsy-v2-additive-sql.mjs
 ```
 
+## Apply result (2026-08-29, this Cloud Agent)
+
+Applied one file at a time via `DIRECT_URL` port 5432. Prisma was not used.
+
+| File | Duration | Result |
+|---|---|---|
+| 018 | 634ms | ok |
+| 019 | 1037ms | ok |
+| 020 | 307ms | ok (PG truncated unique index name to 63 chars) |
+| 021 | 166ms | ok |
+| 022 | 97ms | ok |
+| 023 | 61ms | ok |
+
+Postconditions:
+
+- 8 new tables exist, RLS on, one `service_role` policy each
+- All new Order/Client/Invoice/BotSession columns exist
+- `Order` still 3640, `Client` still 2036, invoices still 13
+- New tables are empty; `TenantFeatureFlag` has 0 rows (nothing enabled)
+- No invalid indexes
+- Existing PeterTesting order still `clientId=null`, `lifecycleVersion=1`, `deletedAt=null`
+
+Prisma Client can read the new models. Current production code on `dev` ignores
+them while flags are off.
+
 Rollback is flag-first (nothing is turned on). Do not DROP the new columns or
 tables as an emergency rollback; old production code ignores them.
 

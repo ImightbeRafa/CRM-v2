@@ -8,6 +8,7 @@
  *   BETSY_V2_BACKFILL_APPROVED_TENANT=<exact-id> npx tsx scripts/betsy-v2-client-backfill.ts --tenant=<exact-id> --apply
  */
 import { prisma } from '../src/lib/db';
+import { ORDER_LIFECYCLE_V2_FLAG } from '../src/lib/feature-flags';
 import { normalizeClientEmail, normalizeClientPhone } from '../src/lib/order-lifecycle';
 
 const tenantArg = process.argv.find(arg => arg.startsWith('--tenant='));
@@ -109,8 +110,33 @@ if (apply) {
         });
       }
     }
+
+    const completedAt = new Date().toISOString();
+    const existingFlag = await tx.tenantFeatureFlag.findFirst({
+      where: { tenantId, scope: tenantId, key: ORDER_LIFECYCLE_V2_FLAG },
+      select: { id: true, config: true },
+    });
+    const config = {
+      ...(existingFlag?.config && typeof existingFlag.config === 'object' && !Array.isArray(existingFlag.config)
+        ? existingFlag.config as Record<string, unknown>
+        : {}),
+      clientBackfillCompletedAt: completedAt,
+    };
+    if (existingFlag) {
+      await tx.tenantFeatureFlag.update({ where: { id: existingFlag.id }, data: { config } });
+    } else {
+      await tx.tenantFeatureFlag.create({
+        data: {
+          tenantId,
+          scope: tenantId,
+          key: ORDER_LIFECYCLE_V2_FLAG,
+          enabled: false,
+          config,
+        },
+      });
+    }
   });
-  console.log(JSON.stringify({ applied: true, linked: links.length, queuedConflicts: conflicts.length }));
+  console.log(JSON.stringify({ applied: true, linked: links.length, queuedConflicts: conflicts.length, clientBackfillCompletedAt: true }));
 }
 
 await prisma.$disconnect();

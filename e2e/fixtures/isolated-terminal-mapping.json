@@ -1,0 +1,11 @@
+{
+  "approvedBy": "cursor-cloud-agent-3015",
+  "statuses": {
+    "Pendiente": false,
+    "En Proceso": false,
+    "Urgente": false,
+    "Completado": true,
+    "Enviado": true,
+    "Entregado": true
+  }
+}

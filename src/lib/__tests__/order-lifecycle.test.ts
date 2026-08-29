@@ -91,5 +91,6 @@ test('backfill package is tenant-scoped and dry-run by default', () => {
   assert.match(script, /Exact --tenant=<id> is required/);
   assert.match(script, /process\.argv\.includes\('--apply'\)/);
   assert.match(script, /BETSY_V2_BACKFILL_APPROVED_TENANT/);
+  assert.match(script, /clientBackfillCompletedAt/);
   assert.doesNotMatch(script, /updateMany\(\{\s*data:/);
 });

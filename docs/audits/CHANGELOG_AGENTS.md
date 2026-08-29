@@ -2,6 +2,18 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-29 — Isolated-tenant local verification
+
+- Tenant E2E now pins `BETSY_V2_TEST_TENANT_ID`, asserts `/api/auth/me` +
+  `allTenantIds`, and creates an RA pickup, status change, and archive.
+- Client backfill `--apply` writes `clientBackfillCompletedAt` and does not
+  auto-enable the flag. UI Playwright covers `/auth/signin` → `/ventas` /
+  `/produccion`.
+- Read-only `scripts/verify-betsy-v2-additive-sql.mjs` re-checks 018–023
+  catalog, RLS, and that no other tenant has v2 flags. Do not re-apply SQL.
+- Prove: `npm run test:lifecycle`, `npm run test:e2e:tenant`, verify script.
+  Stay off `origin/dev`.
+
 ## 2026-08-29 — Isolated Betsy v2 test tenant
 
 - Did not use `peter@peter.com` (super-admin + logistics-admin, two tenants).

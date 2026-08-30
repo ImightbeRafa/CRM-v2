@@ -135,13 +135,15 @@ export async function GET(request: NextRequest) {
       const search = searchParams.get('search')
       const dateFrom = searchParams.get('dateFrom')
       const dateTo = searchParams.get('dateTo')
+      const sortByParam = searchParams.get('sortBy')
+      const sortBy = sortByParam === 'updatedAt' ? 'updatedAt' : 'timestamp'
 
       // Build where clause for filtering (tenant filter auto-injected by middleware)
       const whereClause: any = {}
       if (status && status !== 'all') whereClause.status = status
       if (orderType && orderType !== 'all') whereClause.orderType = orderType
       
-      // Add search filter
+      // Search is tenant-scoped via getTenantPrisma — never cross-shop phone/id leakage.
       if (search) {
         whereClause.OR = [
           { customerName: { contains: search, mode: 'insensitive' } },
@@ -158,12 +160,12 @@ export async function GET(request: NextRequest) {
         if (dateTo) whereClause.timestamp.lte = new Date(dateTo)
       }
       
-      // Get total count and page in parallel
+      // Cap in SQL `take`. Search WHERE runs before take so older matches still return.
       const [totalCount, orders] = await Promise.all([
         tenantPrisma.order.count({ where: whereClause }),
         tenantPrisma.order.findMany({
         where: whereClause,
-        orderBy: { timestamp: 'desc' },
+        orderBy: [{ [sortBy]: 'desc' }, { id: 'desc' }],
         skip,
         ...(limit && { take: limit }), // Only add take if limit is defined
         select: {

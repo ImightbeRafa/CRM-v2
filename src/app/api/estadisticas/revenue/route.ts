@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAPI } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
-import {
-  buildStatsOrderDateWhere,
-  getOrderStatsDateKey,
-  toStatsPeriodKey,
-  type StatsGroupBy,
-} from '@/lib/statistics-dates';
+import { fetchDailyRevenueAggregates } from '@/lib/statistics-period-query';
+import type { StatsGroupBy } from '@/lib/statistics-dates';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -43,50 +39,10 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Get all orders in the date range (with tenant isolation)
-    // Use saleDate when available for more accurate sales reporting.
+    // Period totals via SQL GROUP BY — never hydrate every order row.
     // NOTE: We intentionally DO NOT filter out unconfirmed contra-entrega (COD) orders here.
     // /produccion counts every saved order, so stats must too or the totals won't reconcile.
-    const orders = await prisma.order.findMany({
-      where: {
-        tenantId,
-        ...buildStatsOrderDateWhere(startDate, endDate),
-      },
-      select: {
-        timestamp: true,
-        saleDate: true,
-        total: true,
-      },
-      orderBy: [
-        { saleDate: 'asc' },
-        { timestamp: 'asc' },
-      ],
-    });
-
-    // Group by specified period
-    const grouped = new Map<string, { revenue: number; orderCount: number }>();
-
-    orders.forEach((order: { timestamp: Date; saleDate: string | null; total: number | null }) => {
-      const orderDateKey = getOrderStatsDateKey(order);
-      if (!orderDateKey) return;
-
-      const key = toStatsPeriodKey(orderDateKey, groupBy);
-
-      const existing = grouped.get(key) || { revenue: 0, orderCount: 0 };
-      grouped.set(key, {
-        revenue: existing.revenue + (order.total || 0),
-        orderCount: existing.orderCount + 1,
-      });
-    });
-
-    // Convert map to array and sort
-    const result = Array.from(grouped.entries())
-      .map(([date, data]) => ({
-        date,
-        revenue: data.revenue,
-        orderCount: data.orderCount,
-      }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    const result = await fetchDailyRevenueAggregates(prisma, tenantId, startDate, endDate, groupBy);
 
     revenueCache.set(cacheKey, { data: result, timestamp: Date.now() });
     if (revenueCache.size > CACHE_MAX) {
@@ -104,4 +60,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-

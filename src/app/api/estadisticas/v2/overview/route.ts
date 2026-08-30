@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
-import { buildStatsDateRange, buildStatsOrderDateWhere } from '@/lib/statistics-dates';
+import { buildStatsDateRange } from '@/lib/statistics-dates';
 import { readTenantUiReadiness } from '@/lib/feature-flags';
-import { buildStatisticsV2Overview } from '@/lib/statistics-v2';
+import { fetchStatisticsV2PeriodOverview } from '@/lib/statistics-period-query';
 
 export const dynamic = 'force-dynamic';
 const cache = new Map<string, { at: number; data: unknown }>();
@@ -29,31 +29,21 @@ export async function GET(request: NextRequest) {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL) return NextResponse.json(hit.data);
 
-  const tenantPrisma = getTenantPrisma(auth.tenantId);
-  const [orders, statuses] = await Promise.all([
-    tenantPrisma.order.findMany({
-      where: { tenantId: auth.tenantId, ...buildStatsOrderDateWhere(startDate, endDate) },
-      select: {
-        id: true, orderId: true, orderType: true, status: true, customerName: true, total: true,
-        saleDate: true, timestamp: true, seller: true, salesChannel: true, contraEntrega: true, cePaymentConfirmed: true, customFields: true,
-      },
-      orderBy: [{ saleDate: 'desc' }, { timestamp: 'desc' }],
-      take: 25_001,
-    }),
-    tenantPrisma.orderStatus.findMany({
-      where: { tenantId: auth.tenantId, isActive: true },
-      select: { label: true, color: true },
-    }),
-  ]);
-  if (orders.length > 25_000) {
-    return NextResponse.json({ error: 'This range is too large; choose a shorter period' }, { status: 413 });
+  try {
+    const tenantPrisma = getTenantPrisma(auth.tenantId);
+    const overview = await fetchStatisticsV2PeriodOverview(tenantPrisma, {
+      tenantId: auth.tenantId,
+      startDate: startDate!,
+      endDate: endDate!,
+    });
+    const data = { ...overview, mode: readiness.statistics.mode };
+    cache.set(key, { at: Date.now(), data });
+    if (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value as string);
+    return NextResponse.json(data);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to load statistics';
+    const status = (error as { status?: number })?.status === 413 ? 413 : 500;
+    if (status >= 500) console.error('[estadisticas/v2/overview]', message);
+    return NextResponse.json({ error: message }, { status });
   }
-  const overview = buildStatisticsV2Overview(
-    orders,
-    new Map(statuses.map(status => [status.label, status.color || '#3B82F6'])),
-  );
-  const data = { ...overview, mode: readiness.statistics.mode };
-  cache.set(key, { at: Date.now(), data });
-  if (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value as string);
-  return NextResponse.json(data);
 }

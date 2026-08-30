@@ -97,7 +97,7 @@ test('client filters and cursors are server-scoped', () => {
 });
 
 test('slice 4 static safety contracts remain in place', async () => {
-  const [productionHook, board, statusRoute, configContext, migration, classificationScript, historyRoute, exportRoute] = await Promise.all([
+  const [productionHook, board, statusRoute, configContext, migration, classificationScript, historyRoute, exportRoute, productionOrders] = await Promise.all([
     readFile('src/app/hooks/useProductionServer.ts', 'utf8'),
     readFile('src/app/produccion/components/KanbanBoard.tsx', 'utf8'),
     readFile('src/app/api/orders/status/route.ts', 'utf8'),
@@ -106,8 +106,11 @@ test('slice 4 static safety contracts remain in place', async () => {
     readFile('scripts/betsy-v2-terminal-statuses.ts', 'utf8'),
     readFile('src/app/api/config/automatic-clients/[id]/orders/route.ts', 'utf8'),
     readFile('src/app/api/exports/clients/route.ts', 'utf8'),
+    readFile('src/app/api/production/orders/route.ts', 'utf8'),
   ]);
   assert.doesNotMatch(productionHook, /limit:\s*['"]all/);
+  assert.match(productionOrders, /orderBy:\s*\[\s*\{\s*updatedAt:\s*'desc'/);
+  assert.match(productionOrders, /PRODUCTION_LIST_DEFAULT_LIMIT/);
   assert.doesNotMatch(board, /DndContext|useSortable|DragOverlay/);
   assert.match(board, /Sin configurar/);
   assert.match(statusRoute, /expectedUpdatedAt/);

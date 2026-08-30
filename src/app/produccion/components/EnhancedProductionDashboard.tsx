@@ -386,7 +386,7 @@ export function EnhancedProductionDashboard({
     statusId: selectedStatusId,
     unconfigured: statusFilter === '__unconfigured__',
     filters: serverFilters,
-    limit: 60,
+    limit: 100,
   });
   const productionSummary = useProductionSummary(serverFilters, serverDriven);
   const moveProductionStatus = useProductionStatusMove();
@@ -394,6 +394,12 @@ export function EnhancedProductionDashboard({
   const legacySales = useSalesStream({
     pollingInterval: 30000,
     enabled: legacyEnabled,
+    // Cap first load in SQL (100 most recently updated). Search hits whole tenant via API.
+    limit: 100,
+    sortBy: 'updatedAt',
+    filters: {
+      search: debouncedSearch.length >= 2 ? debouncedSearch : undefined,
+    },
     onError: (error) => {
       toast({
         variant: "destructive",
@@ -425,7 +431,9 @@ export function EnhancedProductionDashboard({
   const filteredOrders = useMemo(() => {
     if (serverDriven) return orders;
     const effectiveStatusFilter = statusFilter === '__unconfigured__' ? 'all' : statusFilter;
-    let filtered = filterOrders(orders, effectiveStatusFilter, searchTerm, dateRange, priorityFilter, courierFilter);
+    // Search already applied server-side for legacy path — pass '' so we don't re-slice the 100.
+    const clientSearch = debouncedSearch.length >= 2 ? '' : searchTerm;
+    let filtered = filterOrders(orders, effectiveStatusFilter, clientSearch, dateRange, priorityFilter, courierFilter);
     if (statusFilter === '__unconfigured__') {
       filtered = filtered.filter(order => !activeStatuses.some(status => status.label.toLowerCase() === order.status.toLowerCase()));
     }
@@ -449,7 +457,7 @@ export function EnhancedProductionDashboard({
     }
 
     return filtered;
-  }, [orders, statusFilter, searchTerm, dateRange, priorityFilter, courierFilter, orderTypeFilter, serverDriven, activeStatuses]);
+  }, [orders, statusFilter, searchTerm, debouncedSearch, dateRange, priorityFilter, courierFilter, orderTypeFilter, serverDriven, activeStatuses]);
 
   const groupedOrders = useMemo(() => ({
     EA: filteredOrders.filter(order => order.orderType === 'EA'),

@@ -39,6 +39,8 @@
 , "src/app/backup/publicbackupworker.js"  ],
   "exclude": [
     "node_modules",
-    "holama"
+    "holama",
+    "e2e",
+    "playwright.config.ts"
   ]
 }

@@ -15,7 +15,9 @@ Append-only. Newest entries at the top.
   `next build`. No Prisma schema / `lm_*` / historical order changes.
 - Prove: `npx tsx --test src/lib/__tests__/review-environment.test.ts`,
   `npm run test:tenant-ui`, `npm run test:correos-credentials`,
-  `npm run lint`, `npm run build`. Do not merge `origin/dev` from the agent.
+  `npm run test:lifecycle`, `npm run lint`, `npm run build` (127 routes).
+  `npm run betsyv2:verify-production`: 8 v2 tables + RLS, 0 enabled flags,
+  3647 orders unchanged. Do not merge `origin/dev` from the agent.
 
 ## 2026-08-30 — Preview QA: orders form, stats cobrado, copy
 

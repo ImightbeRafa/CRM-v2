@@ -37,6 +37,7 @@ if (parsed.port && parsed.port !== '5432') {
   fail(`Refusing pooler/non-direct port ${parsed.port}. Use DIRECT_URL on 5432.`);
 }
 
+const isolatedTenantId = process.env.BETSY_V2_TEST_TENANT_ID;
 const sql = postgres(url, { max: 1, ssl: 'require', prepare: false });
 
 const before = await sql`
@@ -50,6 +51,18 @@ if (before.length === 0) {
   console.log(JSON.stringify({ ok: true, updated: 0, before: [] }, null, 2));
   await sql.end({ timeout: 5 });
   process.exit(0);
+}
+
+if (isolatedTenantId) {
+  const other = before.filter((row) => row.tenantId !== isolatedTenantId);
+  if (other.length > 0) {
+    console.error(JSON.stringify({
+      error: 'Refusing to disable v2 flags on tenants other than BETSY_V2_TEST_TENANT_ID',
+      other,
+    }, null, 2));
+    await sql.end({ timeout: 5 });
+    process.exit(1);
+  }
 }
 
 const updated = await sql`

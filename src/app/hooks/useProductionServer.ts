@@ -88,7 +88,7 @@ export function useProductionOrders(args: {
     enabled: args.enabled,
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam }) => {
-      const params = new URLSearchParams({ view, limit: String(args.limit || (view === 'column' ? 20 : 60)) });
+      const params = new URLSearchParams({ view, limit: String(args.limit || (view === 'column' ? 20 : 100)) });
       if (args.statusId) params.set('statusId', args.statusId);
       if (args.unconfigured) params.set('column', 'unconfigured');
       if (typeof pageParam === 'string' && pageParam) params.set('cursor', pageParam);

@@ -9,6 +9,10 @@ interface SalesStreamOptions {
   pollingInterval?: number;
   enablePolling?: boolean;
   enabled?: boolean;
+  /** SQL take. Default `all` (API max 5000) for Ventas day boards; Producción passes 100. */
+  limit?: number | 'all';
+  /** Default timestamp for Ventas; Producción uses updatedAt. */
+  sortBy?: 'updatedAt' | 'timestamp';
   filters?: {
     status?: string;
     orderType?: string;
@@ -79,11 +83,18 @@ export function parseOrder(data: any): Sale | null {
   return null;
 }
 
-async function fetchSalesData(filters: SalesStreamOptions['filters'] = {}): Promise<Sale[]> {
-  // Load the full order set (API caps `all` at 5000) so Producción/Ventas boards
-  // show every order instead of only the first page. Previously hardcoded to 500,
-  // which made large tenants look incomplete.
-  const params = new URLSearchParams({ limit: 'all', page: '1' });
+async function fetchSalesData(
+  filters: SalesStreamOptions['filters'] = {},
+  limit: number | 'all' = 'all',
+  sortBy: 'updatedAt' | 'timestamp' = 'timestamp',
+): Promise<Sale[]> {
+  // Cap happens in the SQL `take` — never download unbounded then slice.
+  // Search is applied in the API WHERE (tenant-scoped), so older orders still match.
+  const params = new URLSearchParams({
+    limit: String(limit),
+    page: '1',
+    sortBy,
+  });
 
   if (filters.status && filters.status !== 'all') params.set('status', filters.status);
   if (filters.orderType && filters.orderType !== 'all') params.set('orderType', filters.orderType);
@@ -114,16 +125,18 @@ export function useSalesStream({
   pollingInterval = 60000,
   enablePolling = true,
   enabled = true,
+  limit = 'all',
+  sortBy = 'timestamp',
   filters = {}
 }: SalesStreamOptions = {}) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const filterKey = JSON.stringify(filters);
+  const filterKey = JSON.stringify({ filters, limit, sortBy });
 
   const { data: sales = [], isLoading, error: queryError } = useQuery<Sale[], Error>({
     queryKey: ['sales', filterKey],
-    queryFn: () => fetchSalesData(filters),
+    queryFn: () => fetchSalesData(filters, limit, sortBy),
     enabled,
     staleTime: 30_000,
     gcTime: 5 * 60_000,

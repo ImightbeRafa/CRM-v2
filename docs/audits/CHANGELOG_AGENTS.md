@@ -2,6 +2,16 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-30 — Producción/Estadísticas load caps (CoS brief)
+
+- `/produccion` default list: SQL `take` 100 ordered by `updatedAt` (server +
+  legacy paths). Search stays tenant-scoped and runs in WHERE before take so
+  older orders still match. No kanban/status-machine/IANAI UX added.
+- `/estadisticas`: period totals via aggregates / SQL `GROUP BY` instead of
+  hydrating up to 25_001 order rows. Detail list capped at 100; period totals
+  remain full-period. Default date range unchanged (last 30 days).
+- Prove before single push. Preview-only fat PR; do not merge.
+
 ## 2026-08-30 — Remove Grok enhance bar from Ventas form
 
 - Removed "Mejorar con Grok" from Nuevo pedido. Local paste-to-fill stays.

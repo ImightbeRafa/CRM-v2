@@ -108,12 +108,29 @@ describe('Betsy v2 tenant UI', () => {
     assert.doesNotMatch(layout, /arePreviewFeaturesUnlocked\(\)/);
   });
 
-  it('uses one bounded v2 order read while leaving the legacy route fan-out off-path', () => {
+  it('loads estadisticas v2 via period aggregates instead of hydrating every order', () => {
     const route = source('src/app/api/estadisticas/v2/overview/route.ts');
+    const aggregates = source('src/lib/statistics-period-query.ts');
     const dashboard = source('src/app/estadisticas/components/EstadisticasDashboard.tsx');
-    assert.match(route, /take:\s*25_001/);
-    assert.match(route, /readTenantUiReadiness/);
+    assert.match(route, /fetchStatisticsV2PeriodOverview/);
+    assert.doesNotMatch(route, /take:\s*25_001/);
+    assert.match(aggregates, /GROUP BY/);
+    assert.match(aggregates, /tenantId/);
+    assert.match(aggregates, /STATS_ORDER_DETAILS_CAP/);
     assert.match(dashboard, /if \(statisticsV2\.enabled\)/);
     assert.match(dashboard, /\/api\/estadisticas\/v2\/overview/);
+  });
+
+  it('caps producción default list at 100 updatedAt rows in SQL', () => {
+    const productionRoute = source('src/app/api/production/orders/route.ts');
+    const hook = source('src/app/hooks/useProductionServer.ts');
+    const dashboard = source('src/app/produccion/components/EnhancedProductionDashboard.tsx');
+    const legacy = source('src/app/hooks/useSalesStream.ts');
+    assert.match(productionRoute, /updatedAt:\s*'desc'/);
+    assert.match(productionRoute, /PRODUCTION_LIST_DEFAULT_LIMIT/);
+    assert.match(hook, /view === 'column' \? 20 : 100/);
+    assert.match(dashboard, /limit:\s*100/);
+    assert.match(dashboard, /sortBy:\s*'updatedAt'/);
+    assert.doesNotMatch(legacy, /limit:\s*['"]all['"].*Producci/);
   });
 });

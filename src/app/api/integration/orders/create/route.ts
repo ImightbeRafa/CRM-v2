@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { validateApiKey, updateApiKeyLastUsed, hashApiKey } from '@/lib/integration-auth';
 import { countRecentExternalOrders, createExternalOrder, findExternalOrderByOrderId } from '@/lib/integration-orders';
@@ -7,6 +6,7 @@ import { logIntegrationActivity } from '@/lib/integration-logs';
 import { CrcMoneyError } from '@/lib/crc-money';
 import { createIdentifierRateLimit, getClientIP } from '@/lib/rate-limit';
 import { evaluateTenantAccess, markRestrictedBacklog, type TenantAccessEvaluation } from '@/lib/billing-access';
+import { externalOrderIntakeSchema } from '@/lib/website-order-schema';
 
 // Configure route for Vercel deployment
 export const maxDuration = 30; // Maximum execution time in seconds
@@ -16,42 +16,6 @@ const websiteIntakeRateLimit = createIdentifierRateLimit({
   windowMs: 15 * 60 * 1000,
   maxRequests: 120,
   identifier: 'website-order-intake',
-});
-
-// Validation schema for external order data
-const ExternalOrderSchema = z.object({
-  orderId: z.string().min(1),
-  customer: z.object({
-    name: z.string().min(1),
-    phone: z.string().min(1),
-    email: z.string().email().optional(),
-  }),
-  product: z.object({
-    name: z.string().min(1),
-    quantity: z.number().positive(),
-    unitPrice: z.string().min(1),
-  }),
-  shipping: z.object({
-    cost: z.string().min(1),
-    courier: z.string().optional(),
-    address: z.object({
-      province: z.string().min(1),
-      canton: z.string().min(1),
-      district: z.string().min(1),
-      fullAddress: z.string().min(1),
-    }),
-  }),
-  total: z.string().min(1),
-  payment: z.object({
-    method: z.string().min(1).optional(),
-    transactionId: z.string().min(1).optional(),
-    status: z.string().min(1).optional(),
-    date: z.string().min(1).optional(),
-  }).optional(),
-  source: z.string().optional(),
-  salesChannel: z.string().optional(),
-  seller: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -99,7 +63,7 @@ export async function POST(req: NextRequest) {
     // Parse and validate request body
     console.log('[Integration API] Parsing request body...');
     const body = await req.json();
-    const validationResult = ExternalOrderSchema.safeParse(body);
+    const validationResult = externalOrderIntakeSchema.safeParse(body);
     
     if (!validationResult.success) {
       console.error('[Integration API] Validation failed:', validationResult.error.errors);

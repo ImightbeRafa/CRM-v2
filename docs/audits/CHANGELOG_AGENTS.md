@@ -2,6 +2,16 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-30 — Preview v2 for real tenants; website pickup on new orders
+
+- Preview / local `next dev` unlocks v2 for **every tenant** so reviewers can
+  see Ventas/Producción/Estadísticas on real stores. Production still never
+  synthesizes flags. DB flags stay off (production remains v1 after merge).
+- Website intake accepts optional `orderType: "RA"` on **new** orders only.
+  Existing payloads without the field stay Envío. No historical totals rewritten.
+- Prove: review-environment, website-order-map, tenant-ui, lint. Do not merge
+  `origin/dev` from the agent.
+
 ## 2026-08-30 — Production candidate: tenant-scoped Preview, flags off
 
 - Preview v2 product flags unlock only when `VERCEL_ENV` is non-production

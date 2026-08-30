@@ -12,11 +12,11 @@ approves.** The agent does not push or merge `origin/dev`.
   re-apply. Do not `prisma db push` / `prisma migrate`.
 - First production deploy: **all `TenantFeatureFlag.enabled` rows off**.
   Production never synthesizes v2 flags.
-- Vercel Preview unlocks v2 only for `BETSY_V2_TEST_TENANT_ID`
-  (`cmteijij70000jsoyedmtfnl1`). Other tenants on Preview keep production
-  flag state. The amber banner is env-only and does not unlock flags.
-- No historical order rewrite, no website pickup, no `lm_*` changes, no
-  payment DB column.
+- Vercel Preview and local `next dev` unlock v2 for **every tenant** so
+  reviewers can use real stores. Writes hit the shared DB. The amber
+  banner warns. Do not enable DB flags for real tenants.
+- Website intake accepts optional `orderType: "RA"` on new orders.
+  Historical totals are not rewritten. No `lm_*` changes.
 
 The 2026-08-29 local report below is historical (it recorded SQL as
 unexecuted before apply). Catalog truth is

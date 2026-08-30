@@ -92,13 +92,13 @@ describe('Betsy v2 tenant UI', () => {
     assert.match(config, /destination: '\/ventas'/);
   });
 
-  it('scopes Preview v2 unlock to the isolated tenant and never uses a global unlock', () => {
+  it('unlocks Preview v2 for every tenant and never unlocks production', () => {
     const env = source('src/lib/review-environment.ts');
     const flags = source('src/lib/feature-flags.ts');
     const billing = source('src/lib/billing-access.ts');
     const layout = source('src/app/layout.tsx');
     assert.match(env, /arePreviewFeaturesUnlockedForTenant/);
-    assert.match(env, /BETSY_V2_TEST_TENANT_ID/);
+    assert.match(env, /VERCEL_ENV === 'production'/);
     assert.match(flags, /arePreviewFeaturesUnlockedForTenant/);
     assert.match(billing, /arePreviewFeaturesUnlockedForTenant/);
     assert.match(layout, /shouldShowPreviewDataWarning/);

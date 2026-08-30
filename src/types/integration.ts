@@ -11,7 +11,10 @@ export interface ExternalOrderData {
     quantity: number;
     unitPrice: string;
   };
-  shipping: {
+  /** Omit or EA = envío (current websites). RA = retiro; shipping may be omitted. */
+  orderType?: 'EA' | 'RA';
+  pickupDate?: string;
+  shipping?: {
     cost: string;
     courier?: string;
     address: {

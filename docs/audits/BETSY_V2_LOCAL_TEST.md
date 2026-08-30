@@ -29,14 +29,16 @@ Standalone Playwright uses port **3106** and needs
 
 ## Preview vs production unlock
 
-Production (`VERCEL_ENV=production`) never synthesizes v2 flags. Ordinary
-tenants stay on `TenantFeatureFlag.enabled` (first deploy: all off).
+**Vercel Preview and local `next dev`:** v2 is ON for every tenant so you can
+review Ventas/Producción/Estadísticas with real stores. Writes still go to
+the shared production database. The amber banner is the warning. Do not
+run destructive tests on real customer data.
 
-Vercel Preview and local `next dev` show the shared-DB warning for everyone,
-but v2 product flags unlock **only** when `tenantId` exactly matches
-`BETSY_V2_TEST_TENANT_ID`. If that env is unset, no tenant is unlocked.
-Set it on Vercel Preview (not Production) to
-`cmteijij70000jsoyedmtfnl1`. Do not set it on the production project env.
+**Production (`VERCEL_ENV=production`):** never synthesizes flags. Ordinary
+stores stay on `TenantFeatureFlag.enabled` (first deploy: all off).
+
+Do not enable v2 flags in the database for real tenants — that would turn
+v2 on in production after merge. Preview env unlock is enough.
 
 First production deploy: `npm run betsyv2:verify-production` must report
 zero enabled flags. If isolated-tenant flags were left on from local
@@ -116,12 +118,12 @@ table (match existing Prisma tables). Indexes stayed in-transaction with
 4. **Apply-script verify is a subset** (tables/RLS + a few columns). It does not
    assert every column/index. Catalog SQL in this Cloud Agent run is the
    fuller check.
-5. **Flags stay off for real tenants.** First production deploy requires
-   zero enabled `TenantFeatureFlag` rows (`npm run betsyv2:verify-production`).
-   Isolated tenant `cmteijij70000jsoyedmtfnl1` gets Preview/local v2 through
-   `BETSY_V2_TEST_TENANT_ID`, not through production DB flags. Other-tenant
-   `Order` rows stay on v1 (`lifecycleVersion` 1, `clientId` null) until a
-   later rollout.
+5. **Flags stay off in the database for real tenants.** First production
+   deploy requires zero enabled `TenantFeatureFlag` rows
+   (`npm run betsyv2:verify-production`). Preview/local synthesize v2 in code
+   for every tenant without writing flag rows. Production stays v1 until a
+   later flag rollout. Other-tenant `Order` rows stay `lifecycleVersion` 1
+   until someone uses Preview/v2 adapters on them.
 6. **Never `prisma db push` / `prisma migrate`.** That would try to drop `lm_*`
    logistics tables. `npm run db:push` is gated; do not pass
    `--accept-data-loss`.

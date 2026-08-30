@@ -2,17 +2,15 @@ import { getTenantPrisma } from './prisma-tenant';
 import { ExternalOrderData } from '@/types/integration';
 import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags';
 import { createLifecycleOrder } from '@/lib/order-lifecycle';
-import { parseCrcProductAmount, parseCrcShippingAmount } from '@/lib/crc-money';
+import { mapWebsiteOrderCreate } from '@/lib/website-order-map';
 
 export async function createExternalOrder(tenantId: string, orderData: ExternalOrderData) {
   console.log(`[createExternalOrder] Starting for tenant ${tenantId}, order ${orderData.orderId}`);
-  
-  // Use comments from metadata if provided, otherwise leave empty
-  const comments = orderData.metadata?.comments || '';
 
   try {
     // Use tenant-isolated Prisma client for security
     const tenantPrisma = getTenantPrisma(tenantId);
+    const mapped = mapWebsiteOrderCreate(orderData);
     const customFields = {
       external: true,
       source: orderData.source,
@@ -37,20 +35,22 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
           email: orderData.customer.email || '',
           product: orderData.product.name,
           quantity: orderData.product.quantity,
-          productCost: parseCrcProductAmount(orderData.product.unitPrice, 'Precio unitario'),
-          total: parseCrcProductAmount(orderData.total, 'Total'),
-          shippingCost: parseCrcShippingAmount(orderData.shipping.cost, 'Costo de envío'),
-          province: orderData.shipping.address.province,
-          canton: orderData.shipping.address.canton,
-          district: orderData.shipping.address.district,
-          address: orderData.shipping.address.fullAddress,
-          courier: orderData.shipping.courier,
+          productCost: mapped.productCost,
+          total: mapped.total,
+          shippingCost: mapped.shippingCost,
+          province: mapped.province,
+          canton: mapped.canton,
+          district: mapped.district,
+          address: mapped.address,
+          courier: mapped.courier,
           salesChannel: orderData.salesChannel,
           seller: orderData.seller,
-          orderType: 'EA',
+          orderType: mapped.orderType,
+          pickupDate: mapped.pickupDate,
+          agreedDate: mapped.agreedDate,
           status: 'Pendiente',
           saleDate: new Date().toISOString().split('T')[0],
-          comments,
+          comments: mapped.comments,
           customFields,
         },
       });
@@ -60,7 +60,7 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
         customerName: lifecycle.order.customerName,
       };
     }
-    
+
     // Map external order data to internal Order model
     const order = await tenantPrisma.order.create({
       data: {
@@ -71,21 +71,22 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
         email: orderData.customer.email,
         product: orderData.product.name,
         quantity: orderData.product.quantity,
-        productCost: parseCrcProductAmount(orderData.product.unitPrice, 'Precio unitario'),
-        total: parseCrcProductAmount(orderData.total, 'Total'),
-        shippingCost: parseCrcShippingAmount(orderData.shipping.cost, 'Costo de envío'),
-        province: orderData.shipping.address.province,
-        canton: orderData.shipping.address.canton,
-        district: orderData.shipping.address.district,
-        address: orderData.shipping.address.fullAddress,
-        courier: orderData.shipping.courier,
+        productCost: mapped.productCost,
+        total: mapped.total,
+        shippingCost: mapped.shippingCost,
+        province: mapped.province,
+        canton: mapped.canton,
+        district: mapped.district,
+        address: mapped.address,
+        courier: mapped.courier,
         salesChannel: orderData.salesChannel,
         seller: orderData.seller,
-        orderType: 'EA', // Website integrations always send shipping orders; pickup is CRM/import/bot only
-        status: 'Pendiente', // Default status for new orders (order fulfillment status)
+        orderType: mapped.orderType,
+        pickupDate: mapped.pickupDate,
+        agreedDate: mapped.agreedDate,
+        status: 'Pendiente',
         saleDate: new Date().toISOString().split('T')[0],
-        comments: comments,
-        // Store original external data as custom fields
+        comments: mapped.comments,
         customFields,
       },
       select: {

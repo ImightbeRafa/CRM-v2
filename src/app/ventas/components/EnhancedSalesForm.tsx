@@ -483,7 +483,6 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   };
 
   const resetForm = () => {
-    setAiPasteReviewPending(false);
     setOrderInfo({
       customerInfo: {
         name: '',

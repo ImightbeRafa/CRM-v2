@@ -4,6 +4,7 @@ import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Checkbox } from "@/app/components/ui/checkbox";
 import { Sale } from '../types/sales';
+import { PaymentStatusBadge } from '@/app/components/orders/PaymentStatusBadge';
 import {
   Clock,
   User,
@@ -243,12 +244,7 @@ export function EnhancedOrderCard({
               {statusInfo.icon}
               {statusInfo.label}
             </Badge>
-            {order.contraEntrega && (
-              <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1 text-[10px] font-medium">
-                <Banknote className="h-3 w-3" />
-                CONTRA ENTREGA
-              </Badge>
-            )}
+            <PaymentStatusBadge order={order} />
           </div>
         </div>
       </div>

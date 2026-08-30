@@ -16,6 +16,7 @@ import {
   HelpCircle,
   LogOut,
   X,
+  MessageCircleQuestion,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -145,6 +146,18 @@ export function MobileBottomNav() {
                   );
                 })}
                 <div className="border-t border-border my-1 mx-4" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    window.dispatchEvent(new Event('betsy:open-feedback'));
+                  }}
+                  className="flex items-center gap-3 px-4 py-3.5 rounded-xl transition-colors text-muted-foreground hover:bg-muted active:bg-accent w-full min-h-[44px]"
+                >
+                  <MessageCircleQuestion className="h-5 w-5" />
+                  <span className="font-medium text-[15px]">Comentarios</span>
+                </button>
+                <div className="border-t border-border my-1 mx-4" />
                 <div className="flex items-center justify-between px-4 py-2 min-h-[44px]">
                   <span className="text-sm text-muted-foreground">Tema</span>
                   <ThemeToggle />
@@ -159,7 +172,7 @@ export function MobileBottomNav() {
                   className="flex items-center gap-3 px-4 py-3.5 rounded-xl transition-colors text-red-600 hover:bg-red-50 dark:hover:bg-red-950 active:bg-red-100 dark:active:bg-red-900 w-full min-h-[48px]"
                 >
                   <LogOut className="h-5 w-5" />
-                  <span className="font-medium text-[15px]">Cerrar Sesión</span>
+                  <span className="font-medium text-[15px]">Cerrar sesión</span>
                 </button>
               </nav>
             </motion.div>

@@ -10,9 +10,12 @@ import CustomerForm from './customerForm';
 import ProductList from './ProductList';
 import EnhancedSmartSuggestions from './EnhancedSmartSuggestions';
 import RecurringCustomers from './RecurringCustomers';
+import { ShippingMethodSelector } from './ShippingMethodSelector';
+import { validateOrderForm, type OrderFieldErrors } from './orderFormValidation';
 import { CustomerInfo, ProductInfo, OrderInfo, SubmitStatus, ProductTemplate, CustomerSuggestion } from './types';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useConfig } from '@/app/contexts/ConfigContext';
+import { paymentChoiceToOrderFields, type ManualPaymentChoice } from '@/lib/order-payment-status';
 
 interface EnhancedSalesFormProps {
   showOrderForm: boolean;
@@ -48,6 +51,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     orderSubtotal: 0,
     orderShipping: 0,
     contraEntrega: false,
+    paymentChoice: 'pendiente_pago',
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -60,6 +64,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(true);
   const [aiPasteReviewPending, setAiPasteReviewPending] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<OrderFieldErrors>({});
 
   // Resolve expected date from either the canonical field (fechaEsperada)
   // or from any business info date field (prefer one whose name/label mentions "esperada" or "expected")
@@ -217,70 +222,27 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     };
   }, []);
 
-  const validateForm = (): string | null => {
-    // Basic customer info validation (always required)
-    if (!orderInfo.customerInfo.name.trim()) {
-      return 'El nombre del cliente es requerido';
-    }
-    if (!orderInfo.customerInfo.phone.trim()) {
-      return 'El teléfono del cliente es requerido';
-    }
+  const validateForm = (): OrderFieldErrors => {
+    return validateOrderForm({
+      customerInfo: orderInfo.customerInfo,
+      products: orderInfo.products,
+      orderShippingMethod: orderInfo.orderShippingMethod,
+      businessInfoFields,
+    });
+  };
 
-    // Location and shipping info (ONLY required for EA - shipping orders)
-    const isShippingOrder = orderInfo.customerInfo.orderType === 'EA';
-
-    if (isShippingOrder) {
-      if (!orderInfo.customerInfo.province.trim()) {
-        return 'La provincia es requerida para pedidos de envío';
-      }
-      if (!orderInfo.customerInfo.canton.trim()) {
-        return 'El cantón es requerido para pedidos de envío';
-      }
-      if (!orderInfo.customerInfo.district.trim()) {
-        return 'El distrito es requerido para pedidos de envío';
-      }
-      if (!orderInfo.customerInfo.address.trim()) {
-        return 'La dirección es requerida para pedidos de envío';
-      }
-
-      // Validate order-level shipping method (only for EA - shipping orders)
-      if (!orderInfo.orderShippingMethod?.trim()) {
-        return 'La mensajería del pedido es requerida para envíos';
-      }
-    }
-
-    // Validate products
-    if (orderInfo.products.length === 0) {
-      return 'Debe agregar al menos un producto al pedido';
-    }
-
-    for (let i = 0; i < orderInfo.products.length; i++) {
-      const product = orderInfo.products[i];
-      if (!product.type.trim()) {
-        return `El tipo de producto #${i + 1} es requerido`;
-      }
-      if (product.cantidad <= 0) {
-        return `La cantidad del producto #${i + 1} debe ser mayor a 0`;
-      }
-      if (product.productCost <= 0) {
-        return `El costo del producto #${i + 1} debe ser mayor a 0`;
-      }
-      if (!product.vendedor.trim()) {
-        return `El vendedor del producto #${i + 1} es requerido`;
-      }
-    }
-
-    // Validate custom business fields that are marked as required
-    for (const field of businessInfoFields) {
-      if (field.required) {
-        const value = (orderInfo.customerInfo as any)[field.name];
-        if (!value || (typeof value === 'string' && !value.trim())) {
-          return `${field.label} es requerido`;
-        }
-      }
-    }
-
-    return null;
+  const scrollToFirstError = (errors: OrderFieldErrors) => {
+    const firstKey = Object.keys(errors)[0];
+    if (!firstKey) return;
+    const fieldName = firstKey.startsWith('product-')
+      ? 'products'
+      : firstKey.startsWith('business-')
+        ? firstKey.slice('business-'.length)
+        : firstKey;
+    const node = document.querySelector(`[data-field="${fieldName}"]`) as HTMLElement | null;
+    node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const focusable = node?.querySelector('input, select, textarea, button') as HTMLElement | null;
+    focusable?.focus();
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -305,15 +267,18 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       orderInfo.products = updatedProducts;
     }
 
-    // Validate form before submission
-    const validationError = validateForm();
-    if (validationError) {
+    const errors = validateForm();
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      const summary = Object.values(errors).join(' · ');
       setSubmitStatus({
         type: 'error',
-        message: validationError
+        message: summary,
       });
+      scrollToFirstError(errors);
       return;
     }
+    setFieldErrors({});
 
     setIsSubmitting(true);
     setSubmitStatus({ type: '', message: '' });
@@ -368,6 +333,12 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         }
       });
 
+      const paymentFields = paymentChoiceToOrderFields(
+        (orderInfo.paymentChoice || 'pendiente_pago') as ManualPaymentChoice,
+      );
+      customFieldsToSend.paymentStatus = paymentFields.paymentStatus;
+      const isPickup = orderInfo.customerInfo.orderType === 'RA';
+
       if (process.env.NODE_ENV === 'development') {
         console.log('[SalesForm] customFieldsToSend:', customFieldsToSend)
       }
@@ -384,12 +355,12 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         product: orderInfo.products.map(p => p.type).join(', '),
         quantity: orderInfo.products.reduce((sum, p) => sum + p.cantidad, 0),
         iva: orderInfo.orderIVA,
-        shippingCost: orderInfo.orderShipping,
-        address: orderInfo.customerInfo.address || '',
-        province: orderInfo.customerInfo.province || '',
-        canton: orderInfo.customerInfo.canton || '',
-        district: orderInfo.customerInfo.district || '',
-        courier: orderInfo.orderShippingMethod,
+        shippingCost: isPickup ? 0 : orderInfo.orderShipping,
+        address: isPickup ? '' : (orderInfo.customerInfo.address || ''),
+        province: isPickup ? '' : (orderInfo.customerInfo.province || ''),
+        canton: isPickup ? '' : (orderInfo.customerInfo.canton || ''),
+        district: isPickup ? '' : (orderInfo.customerInfo.district || ''),
+        courier: isPickup ? '' : orderInfo.orderShippingMethod,
         funnel: orderInfo.customerInfo.funnel || '',
         seller: orderInfo.products.length > 0 ? orderInfo.products[0].vendedor || user?.username || '' : '',
         expectedDate: resolveExpectedDate() || '',
@@ -421,9 +392,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         })),
         timestamp: new Date(),
         saleDate: new Date().toISOString(),
-        contraEntrega: orderInfo.contraEntrega || false,
-        // Custom fields object for server-side storage in customFields JSON column
-        customFields: Object.keys(customFieldsToSend).length > 0 ? customFieldsToSend : undefined
+        contraEntrega: paymentFields.contraEntrega,
+        customFields: customFieldsToSend,
       };
 
       if (process.env.NODE_ENV === 'development') {
@@ -442,7 +412,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Error al guardar el pedido');
+        throw new Error(errorData.error || errorData.message || 'Error al guardar el pedido');
       }
 
       const result = await response.json();
@@ -547,7 +517,9 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       orderSubtotal: 0,
       orderShipping: 0,
       contraEntrega: false,
+      paymentChoice: 'pendiente_pago',
     });
+    setFieldErrors({});
 
     setRawCustomerText('');
     setAutoSaveStatus('saved');
@@ -617,13 +589,13 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
   return (
     <>
-      <Card role="main" aria-label="Formulario de Ventas Optimizado">
+      <Card role="main" aria-label="Nuevo pedido">
         <CardHeader>
           <div className="flex justify-between items-start">
             <div className="flex-1">
               <div className="flex items-center gap-3">
                 <CardTitle className="flex items-center gap-2">
-                  Betsy - Sistema de Ventas Optimizado
+                  Nuevo pedido
                   {autoSaveStatus === 'saving' && (
                     <Clock className="h-4 w-4 text-blue-500 dark:text-blue-400 animate-spin" />
                   )}
@@ -656,7 +628,15 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               onOrderTypeChange={(type) =>
                 setOrderInfo(prev => ({
                   ...prev,
-                  customerInfo: { ...prev.customerInfo, orderType: type }
+                  orderShippingMethod: type === 'RA' ? '' : prev.orderShippingMethod,
+                  orderShipping: type === 'RA' ? 0 : prev.orderShipping,
+                  customerInfo: {
+                    ...prev.customerInfo,
+                    orderType: type,
+                    ...(type === 'RA'
+                      ? { province: '', canton: '', district: '', address: '' }
+                      : {}),
+                  },
                 }))
               }
             />
@@ -670,13 +650,20 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                 }`}
             >
               <AlertTitle className={submitStatus.type === 'success' ? 'text-green-800 dark:text-green-400' : 'text-red-800 dark:text-red-400'}>
-                {submitStatus.type === 'success' ? 'Éxito' : 'Error'}
+                {submitStatus.type === 'success' ? 'Éxito' : 'Revisa estos campos'}
               </AlertTitle>
               <AlertDescription className={submitStatus.type === 'success' ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}>
-                {submitStatus.message}
+                {submitStatus.type === 'error' && Object.keys(fieldErrors).length > 0 ? (
+                  <ul className="list-disc pl-4 space-y-1">
+                    {Object.values(fieldErrors).map((message) => (
+                      <li key={message}>{message}</li>
+                    ))}
+                  </ul>
+                ) : submitStatus.message}
               </AlertDescription>
             </Alert>
           )}
+          <p className="text-xs text-muted-foreground mb-4">Los campos con <span className="text-red-500">*</span> son obligatorios.</p>
 
           <form onSubmit={handleSubmit} className="space-y-8">
             {/* Customer Information */}
@@ -698,7 +685,23 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                 onRawCustomerTextChange={setRawCustomerText}
                 orderType={orderInfo.customerInfo.orderType}
                 onAiReviewPendingChange={setAiPasteReviewPending}
+                fieldErrors={fieldErrors}
               />
+              {orderInfo.customerInfo.orderType === 'EA' && (
+                <div className="mt-4 rounded-lg border border-blue-200 dark:border-blue-800 bg-card p-4">
+                  <ShippingMethodSelector
+                    selectedMethod={orderInfo.orderShippingMethod}
+                    error={fieldErrors.orderShippingMethod}
+                    onMethodChange={(method, cost) => {
+                      setOrderInfo(prev => ({
+                        ...prev,
+                        orderShippingMethod: method,
+                        orderShipping: cost,
+                      }));
+                    }}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Business Info Fields */}
@@ -709,7 +712,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {businessInfoFields.map((field) => (
-                    <div key={field.id} className="space-y-2">
+                    <div key={field.id} className="space-y-2" data-field={field.name}>
                       <label className="block text-sm font-medium text-muted-foreground">
                         {field.label}
                         {field.required && <span className="text-red-500 ml-1">*</span>}
@@ -785,7 +788,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
             </div>
 
             {/* Products Section */}
-            <div className="bg-green-50 dark:bg-green-950/30 p-4 rounded-lg">
+            <div className="bg-green-50 dark:bg-green-950/30 p-4 rounded-lg" data-field="products">
               <ProductList
                 orderInfo={orderInfo}
                 onOrderInfoChange={handleOrderInfoChange}
@@ -793,39 +796,51 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               />
             </div>
 
-            {/* Contra Entrega Toggle */}
-            <button
-              type="button"
-              className={`w-full p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 text-left ${
-                orderInfo.contraEntrega
-                  ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-400 dark:border-amber-600'
-                  : 'bg-muted border-border hover:border-muted-foreground/30'
-              }`}
-              onClick={() => setOrderInfo(prev => ({ ...prev, contraEntrega: !prev.contraEntrega }))}
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className={`h-5 w-5 shrink-0 rounded-sm border flex items-center justify-center transition-colors ${
-                    orderInfo.contraEntrega
-                      ? 'bg-amber-500 border-amber-500 text-white'
-                      : 'border-muted-foreground/30 bg-background'
-                  }`}
-                >
-                  {orderInfo.contraEntrega && (
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><polyline points="20 6 9 17 4 12" /></svg>
-                  )}
-                </div>
-                <Banknote className={`h-5 w-5 ${orderInfo.contraEntrega ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`} />
-                <div>
-                  <span className={`font-semibold ${orderInfo.contraEntrega ? 'text-amber-800 dark:text-amber-400' : 'text-muted-foreground'}`}>
-                    Contra Entrega
-                  </span>
-                  <p className={`text-xs ${orderInfo.contraEntrega ? 'text-amber-600 dark:text-amber-300' : 'text-muted-foreground'}`}>
-                    El cliente paga al recibir el producto
-                  </p>
-                </div>
+            <fieldset className="rounded-lg border border-border p-4 space-y-3">
+              <legend className="text-sm font-semibold">Estado de pago</legend>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {([
+                  { value: 'pendiente_pago', label: 'Pendiente de pago', help: 'Aún no se ha cobrado. No cuenta como ingreso cobrado.' },
+                  { value: 'contra_entrega', label: 'Contra entrega', help: 'El cliente paga al recibir el producto' },
+                  { value: 'pagado', label: 'Pagado', help: 'El pago ya está confirmado' },
+                ] as const).map((option) => {
+                  const selected = (orderInfo.paymentChoice || 'pendiente_pago') === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setOrderInfo(prev => ({
+                        ...prev,
+                        paymentChoice: option.value,
+                        contraEntrega: option.value === 'contra_entrega',
+                      }))}
+                      className={`rounded-lg border-2 p-3 text-left transition-colors ${
+                        selected
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
+                          : 'border-border bg-muted/40 hover:border-muted-foreground/40'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 font-semibold">
+                        <Banknote className="h-4 w-4" />
+                        {option.label}
+                      </span>
+                      <p className="mt-1 text-xs text-muted-foreground">{option.help}</p>
+                    </button>
+                  );
+                })}
               </div>
-            </button>
+            </fieldset>
+
+            {Object.keys(fieldErrors).length > 0 && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                <p className="font-medium mb-1">No se pudo guardar. Faltan estos datos:</p>
+                <ul className="list-disc pl-4 space-y-1">
+                  {Object.values(fieldErrors).map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {/* Submit Button */}
             <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-4">

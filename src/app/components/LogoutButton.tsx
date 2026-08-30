@@ -37,7 +37,7 @@ export default function LogoutButton({
       aria-label="Cerrar sesión"
     >
       <LogOut className="w-4 h-4 mr-2" />
-      Cerrar Sesión
+      Cerrar sesión
     </button>
   );
 }

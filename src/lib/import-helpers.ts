@@ -1,3 +1,5 @@
+import { parseCrcAmount } from '@/lib/crc-money';
+
 // Normalize header keys: lowercase, no accents, underscores
 export function normalizeKey(key: string): string {
   if (!key) return '';
@@ -29,8 +31,8 @@ export function excelDateToISO(val: any): string {
 
 export function toNumber(val: any): number {
   if (val === null || val === undefined || val === '') return 0;
-  const n = Number(String(val).toString().replace(/[^0-9.-]/g, ''));
-  return isNaN(n) ? 0 : n;
+  const parsed = parseCrcAmount(val);
+  return parsed === undefined ? 0 : parsed;
 }
 
 export const MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024; // 10 MB

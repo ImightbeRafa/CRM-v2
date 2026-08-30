@@ -50,6 +50,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 const EXCLUDED_PATHS = ['/home', '/auth', '/terms', '/privacy', '/setup-wizard', '/setup-tenant', '/docs'];
+const DENSE_TABLE_PATHS = ['/ventas', '/produccion', '/estadisticas'];
 
 export function FeedbackWidget() {
   const { data: session, status: authStatus } = useSession();
@@ -65,7 +66,14 @@ export function FeedbackWidget() {
   const [loadingTickets, setLoadingTickets] = useState(false);
   const [expandedTicket, setExpandedTicket] = useState<string | null>(null);
 
+  useEffect(() => {
+    const onOpen = () => setIsOpen(true);
+    window.addEventListener('betsy:open-feedback', onOpen);
+    return () => window.removeEventListener('betsy:open-feedback', onOpen);
+  }, []);
+
   const isExcluded = EXCLUDED_PATHS.some(p => pathname?.startsWith(p));
+  const hideFab = DENSE_TABLE_PATHS.some(p => pathname?.startsWith(p));
   if (authStatus !== 'authenticated' || isExcluded) return null;
 
   const resetForm = () => {
@@ -112,10 +120,10 @@ export function FeedbackWidget() {
   return (
     <>
       {/* Floating button */}
-      {!isOpen && (
+      {!isOpen && !hideFab && (
         <button
           onClick={handleOpen}
-          className="fixed bottom-20 md:bottom-6 right-6 z-50 w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center group"
+          className="fixed bottom-20 md:bottom-6 z-50 w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center group left-4 md:left-6 right-auto"
           aria-label="Enviar feedback"
         >
           <MessageCircleQuestion className="h-5 w-5 group-hover:scale-110 transition-transform" />

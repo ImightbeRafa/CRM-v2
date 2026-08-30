@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
       where: { tenantId: auth.tenantId, ...buildStatsOrderDateWhere(startDate, endDate) },
       select: {
         id: true, orderId: true, orderType: true, status: true, customerName: true, total: true,
-        saleDate: true, timestamp: true, seller: true, salesChannel: true, contraEntrega: true, cePaymentConfirmed: true,
+        saleDate: true, timestamp: true, seller: true, salesChannel: true, contraEntrega: true, cePaymentConfirmed: true, customFields: true,
       },
       orderBy: [{ saleDate: 'desc' }, { timestamp: 'desc' }],
       take: 25_001,

@@ -270,17 +270,17 @@ export default function EstadisticasDashboard({ statisticsV2 }: { statisticsV2: 
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/20">
             <p className="text-xs font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Ingresos cobrados</p>
             <p className="mt-2 text-2xl font-bold text-emerald-700 dark:text-emerald-400">{formatCurrency(reconciliation.collectedRevenue)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">No-COD + contra entrega confirmada</p>
+            <p className="mt-1 text-xs text-muted-foreground">Pago confirmado o contra entrega confirmada. Pendiente no se cuenta.</p>
           </div>
           <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm dark:border-amber-900 dark:bg-amber-950/20">
-            <p className="text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">COD pendiente</p>
-            <p className="mt-2 text-2xl font-bold text-amber-700 dark:text-amber-400">{formatCurrency(reconciliation.pendingCod)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Reservado, todavía no confirmado</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">Pendiente de cobro</p>
+            <p className="mt-2 text-2xl font-bold text-amber-700 dark:text-amber-400">{formatCurrency(reconciliation.pendingCod + Math.max(0, reconciliation.bookedGross - reconciliation.collectedRevenue - reconciliation.pendingCod))}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Pedidos guardados que todavía no están cobrados</p>
           </div>
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Modo de observación</p>
-            <p className="mt-2 text-base font-semibold text-foreground">{statisticsV2.mode === 'primary' ? 'Cobrado principal' : 'Legacy principal'}</p>
-            <p className="mt-1 text-xs text-muted-foreground">COD cobrado se atribuye a la fecha de venta hasta guardar fecha de cobro.</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Vista de ingresos</p>
+            <p className="mt-2 text-base font-semibold text-foreground">{statisticsV2.mode === 'primary' ? 'Ingresos cobrados' : 'Ventas registradas'}</p>
+            <p className="mt-1 text-xs text-muted-foreground">El cobro de contra entrega se atribuye a la fecha de venta hasta guardar fecha de cobro.</p>
           </div>
         </section>
       )}

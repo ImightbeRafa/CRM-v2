@@ -184,7 +184,10 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
         {!showSuggestions && (
           <div className="text-center pt-4 border-t border-border">
             <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{inventoryItems.length}</div>
-            <div className="text-sm text-muted-foreground">Productos en Inventario</div>
+            <div className="text-sm text-muted-foreground">Productos en inventario</div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              El inventario es opcional. Si no hay productos guardados, puedes escribir uno a mano más abajo; no se agrega al inventario.
+            </p>
           </div>
         )}
       </div>

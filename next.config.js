@@ -102,6 +102,13 @@ const nextConfig = {
     ];
   },
 
+  async redirects() {
+    return [
+      { source: '/pedidos', destination: '/ventas', permanent: false },
+      { source: '/pedidos/:path*', destination: '/ventas/:path*', permanent: false },
+    ];
+  },
+
   webpack: (config, { dev, isServer, webpack }) => {
     // Temporarily disabled webpack configuration to fix build issues
     

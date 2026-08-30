@@ -434,7 +434,7 @@ export default function LandingPage() {
                 className="text-gray-300 hover:text-white hover:bg-white/10"
                 onClick={() => setIsAuthModalOpen(true)}
               >
-                Iniciar Sesión
+                Iniciar sesión
               </Button>
               <Button 
                 className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
@@ -464,7 +464,7 @@ export default function LandingPage() {
               <a href="#contact" onClick={() => setIsMenuOpen(false)} className="block text-gray-300 hover:text-white py-2 font-medium">Contacto</a>
               <div className="pt-4 flex gap-3">
                 <Button variant="outline" className="flex-1 border-white/20 text-gray-300 hover:bg-white/10 hover:text-white" onClick={() => { setIsMenuOpen(false); setIsAuthModalOpen(true); }}>
-                  Iniciar Sesión
+                  Iniciar sesión
                 </Button>
                 <Button className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600" onClick={() => { setIsMenuOpen(false); setIsAuthModalOpen(true); }}>
                   Empezar

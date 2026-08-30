@@ -202,17 +202,21 @@ const ProductForm: React.FC<ProductFormProps> = ({
             />
           </div>
           <div>
-            <label className="block font-medium text-sm text-muted-foreground mb-1">Costo unitario *</label>
+            <label className="block font-medium text-sm text-muted-foreground mb-1">Precio unitario *</label>
             <input
               type="number"
               name="productCost"
               className="w-full p-2 bg-background text-foreground border border-border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              value={productInfo.productCost}
+              value={productInfo.productCost || ''}
               onChange={handleInputChange}
-              min={0}
+              min={1}
               step="any"
               required
+              placeholder="Ej: 5000"
             />
+            {(!productInfo.productCost || productInfo.productCost <= 0) && (
+              <p className="mt-1 text-xs text-muted-foreground">El precio debe ser mayor a ₡0 para agregar el producto.</p>
+            )}
           </div>
           {/* Per-product shipping removed; handled at order level */}
         </div>

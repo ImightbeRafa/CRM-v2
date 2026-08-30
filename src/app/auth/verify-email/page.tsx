@@ -148,7 +148,7 @@ function VerifyEmailPageInner() {
             <Link href="/auth/signin" className="block">
               <Button variant="ghost" className="w-full text-muted-foreground">
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Volver a Iniciar Sesión
+                Volver a Iniciar sesión
               </Button>
             </Link>
           </CardContent>
@@ -225,7 +225,7 @@ function VerifyEmailPageInner() {
             <Link href="/auth/signin" className="block">
               <Button variant="ghost" className="w-full text-muted-foreground text-sm">
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Volver a Iniciar Sesión
+                Volver a Iniciar sesión
               </Button>
             </Link>
           </div>

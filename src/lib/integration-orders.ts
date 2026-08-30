@@ -2,6 +2,7 @@ import { getTenantPrisma } from './prisma-tenant';
 import { ExternalOrderData } from '@/types/integration';
 import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags';
 import { createLifecycleOrder } from '@/lib/order-lifecycle';
+import { parseCrcProductAmount, parseCrcShippingAmount } from '@/lib/crc-money';
 
 export async function createExternalOrder(tenantId: string, orderData: ExternalOrderData) {
   console.log(`[createExternalOrder] Starting for tenant ${tenantId}, order ${orderData.orderId}`);
@@ -36,9 +37,9 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
           email: orderData.customer.email || '',
           product: orderData.product.name,
           quantity: orderData.product.quantity,
-          productCost: parsePrice(orderData.product.unitPrice),
-          total: parsePrice(orderData.total),
-          shippingCost: parsePrice(orderData.shipping.cost),
+          productCost: parseCrcProductAmount(orderData.product.unitPrice, 'Precio unitario'),
+          total: parseCrcProductAmount(orderData.total, 'Total'),
+          shippingCost: parseCrcShippingAmount(orderData.shipping.cost, 'Costo de envío'),
           province: orderData.shipping.address.province,
           canton: orderData.shipping.address.canton,
           district: orderData.shipping.address.district,
@@ -70,9 +71,9 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
         email: orderData.customer.email,
         product: orderData.product.name,
         quantity: orderData.product.quantity,
-        productCost: parsePrice(orderData.product.unitPrice),
-        total: parsePrice(orderData.total),
-        shippingCost: parsePrice(orderData.shipping.cost),
+        productCost: parseCrcProductAmount(orderData.product.unitPrice, 'Precio unitario'),
+        total: parseCrcProductAmount(orderData.total, 'Total'),
+        shippingCost: parseCrcShippingAmount(orderData.shipping.cost, 'Costo de envío'),
         province: orderData.shipping.address.province,
         canton: orderData.shipping.address.canton,
         district: orderData.shipping.address.district,
@@ -80,7 +81,7 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
         courier: orderData.shipping.courier,
         salesChannel: orderData.salesChannel,
         seller: orderData.seller,
-        orderType: 'EA', // External orders are typically shipping orders
+        orderType: 'EA', // Website integrations always send shipping orders; pickup is CRM/import/bot only
         status: 'Pendiente', // Default status for new orders (order fulfillment status)
         saleDate: new Date().toISOString().split('T')[0],
         comments: comments,
@@ -187,19 +188,6 @@ export async function getExternalOrders(
     take: limit,
     skip: offset,
   });
-}
-
-// Helper function to parse price strings like "₡9.900" or "GRATIS"
-function parsePrice(priceStr: string): number {
-  if (priceStr.toLowerCase() === 'gratis' || priceStr.toLowerCase() === 'free') {
-    return 0;
-  }
-
-  // Remove currency symbols and spaces, then parse
-  const cleanPrice = priceStr.replace(/[₡$,\s]/g, '');
-  const parsed = parseFloat(cleanPrice);
-  
-  return isNaN(parsed) ? 0 : parsed;
 }
 
 export async function updateExternalOrderStatus(

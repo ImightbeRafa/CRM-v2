@@ -17,7 +17,7 @@ const OrderTypeToggle: React.FC<OrderTypeToggleProps> = ({ orderType, onOrderTyp
         }`}
         onClick={() => onOrderTypeChange('EA')}
       >
-        Envío (EA)
+        Envío
       </button>
       <button
         type="button"
@@ -28,7 +28,7 @@ const OrderTypeToggle: React.FC<OrderTypeToggleProps> = ({ orderType, onOrderTyp
         }`}
         onClick={() => onOrderTypeChange('RA')}
       >
-        Retiro (RA)
+        Retiro
       </button>
     </div>
   );

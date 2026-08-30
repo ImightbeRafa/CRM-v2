@@ -27,6 +27,7 @@ interface CustomerFormProps {
   orderType: 'EA' | 'RA';
   aiPasteEnabled?: boolean;
   onAiReviewPendingChange?: (pending: boolean) => void;
+  fieldErrors?: Record<string, string>;
 }
 
 const normalizeText = (value: string | undefined | null) => {
@@ -64,11 +65,15 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
   orderType,
   aiPasteEnabled: aiPasteEnabledProp,
   onAiReviewPendingChange,
+  fieldErrors = {},
 }) => {
   const [cantonSearch, setCantonSearch] = useState(customerInfo.canton || '');
   const [districtSearch, setDistrictSearch] = useState(customerInfo.district || '');
   const [cantonSuggestionsOpen, setCantonSuggestionsOpen] = useState(false);
   const [districtSuggestionsOpen, setDistrictSuggestionsOpen] = useState(false);
+  const [districtClearedNotice, setDistrictClearedNotice] = useState('');
+  const [cantonUnresolved, setCantonUnresolved] = useState(false);
+  const [districtUnresolved, setDistrictUnresolved] = useState(false);
   const [aiPasteEnabled, setAiPasteEnabled] = useState(Boolean(aiPasteEnabledProp));
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
@@ -329,20 +334,39 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
     setDistrictSuggestionsOpen(true);
   };
 
-  const applyCantonMatch = (match: CantonWithProvince) => {
+  const districtIsValidForCanton = (provinceName: string, cantonName: string, districtName: string) => {
+    const province = findProvince(provinceName);
+    const canton = findCanton(province, cantonName);
+    if (!canton || !districtName.trim()) return false;
+    return canton.distritos.some((district) => normalizeText(district) === normalizeText(districtName));
+  };
+
+  const applyCantonMatch = (match: CantonWithProvince, options?: { preserveDistrict?: boolean }) => {
+    const keepDistrict = options?.preserveDistrict
+      && districtIsValidForCanton(match.province, match.canton, customerInfo.district);
+    const nextDistrict = keepDistrict ? customerInfo.district : '';
     setCantonSearch(match.canton);
+    setCantonUnresolved(false);
     onCustomerInfoChange({
       ...customerInfo,
       province: match.province,
       canton: match.canton,
-      district: '',
+      district: nextDistrict,
     });
-    setDistrictSearch('');
+    if (!keepDistrict && customerInfo.district) {
+      setDistrictSearch('');
+      setDistrictClearedNotice('Selecciona nuevamente el distrito porque cambió el cantón.');
+    } else {
+      setDistrictSearch(nextDistrict);
+      setDistrictClearedNotice('');
+    }
     setCantonSuggestionsOpen(false);
   };
 
   const applyDistrictMatch = (match: DistrictWithHierarchy) => {
     setDistrictSearch(match.district);
+    setDistrictUnresolved(false);
+    setDistrictClearedNotice('');
     onCustomerInfoChange({
       ...customerInfo,
       province: match.province,
@@ -351,6 +375,70 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
     });
     setCantonSearch(match.canton);
     setDistrictSuggestionsOpen(false);
+  };
+
+  const commitCantonFromSearch = () => {
+    const search = normalizeText(cantonSearch);
+    if (!search) {
+      if (customerInfo.canton) {
+        onCustomerInfoChange({ ...customerInfo, canton: '', district: '' });
+        setDistrictSearch('');
+      }
+      setCantonUnresolved(false);
+      return;
+    }
+    if (normalizeText(customerInfo.canton) === search && customerInfo.canton) {
+      setCantonUnresolved(false);
+      return;
+    }
+    const inProvince = selectedProvince?.cantones.filter(
+      (canton) => normalizeText(canton.nombre) === search,
+    ) ?? [];
+    if (inProvince.length === 1 && selectedProvince) {
+      applyCantonMatch({ province: selectedProvince.nombre, canton: inProvince[0].nombre }, { preserveDistrict: true });
+      return;
+    }
+    const exact = allCantons.filter((item) => normalizeText(item.canton) === search);
+    const uniqueNames = new Set(exact.map((item) => `${item.province}:${item.canton}`));
+    if (uniqueNames.size === 1) {
+      applyCantonMatch(exact[0], { preserveDistrict: true });
+      return;
+    }
+    setCantonUnresolved(true);
+  };
+
+  const commitDistrictFromSearch = () => {
+    const search = normalizeText(districtSearch);
+    if (!search) {
+      if (customerInfo.district) {
+        onCustomerInfoChange({ ...customerInfo, district: '' });
+      }
+      setDistrictUnresolved(false);
+      return;
+    }
+    if (normalizeText(customerInfo.district) === search && customerInfo.district) {
+      setDistrictUnresolved(false);
+      return;
+    }
+    const scoped = selectedCanton && selectedProvince
+      ? selectedCanton.distritos
+        .filter((district) => normalizeText(district) === search)
+        .map((district) => ({
+          province: selectedProvince.nombre,
+          canton: selectedCanton.nombre,
+          district,
+        }))
+      : [];
+    if (scoped.length === 1) {
+      applyDistrictMatch(scoped[0]);
+      return;
+    }
+    const exact = allDistricts.filter((item) => normalizeText(item.district) === search);
+    if (exact.length === 1) {
+      applyDistrictMatch(exact[0]);
+      return;
+    }
+    setDistrictUnresolved(true);
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -426,29 +514,35 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
         <h3 className="font-medium text-lg">Info cliente:</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Common fields */}
-          <div>
+          <div data-field="name">
             <label className="block text-sm text-muted-foreground">
-              {customerInfo.orderType === 'EA' ? 'Cliente' : 'Nombre'}
+              {customerInfo.orderType === 'EA' ? 'Cliente' : 'Nombre'} <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               name="name"
-              className="w-full p-2 bg-card border rounded"
+              className={`w-full p-2 bg-card border rounded ${fieldErrors.name ? 'border-red-500' : ''}`}
               value={customerInfo.name}
               onChange={handleInputChange}
               placeholder="No detectado"
+              aria-required="true"
+              aria-invalid={Boolean(fieldErrors.name)}
             />
+            {fieldErrors.name && <p className="text-sm text-red-600 mt-1">{fieldErrors.name}</p>}
           </div>
-          <div>
-            <label className="block text-sm text-muted-foreground">Teléfono</label>
+          <div data-field="phone">
+            <label className="block text-sm text-muted-foreground">Teléfono <span className="text-red-500">*</span></label>
             <input
               type="text"
               name="phone"
-              className="w-full p-2 bg-card border rounded"
+              className={`w-full p-2 bg-card border rounded ${fieldErrors.phone ? 'border-red-500' : ''}`}
               value={customerInfo.phone}
               onChange={handleInputChange}
               placeholder="No detectado"
+              aria-required="true"
+              aria-invalid={Boolean(fieldErrors.phone)}
             />
+            {fieldErrors.phone && <p className="text-sm text-red-600 mt-1">{fieldErrors.phone}</p>}
           </div>
           <div>
             <label className="block text-sm text-muted-foreground">Email</label>
@@ -476,13 +570,15 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
           {/* Location fields only for EA (shipping) */}
           {customerInfo.orderType === 'EA' && (
             <>
-              <div>
-                <label className="block text-sm text-muted-foreground">Provincia</label>
+              <div data-field="province">
+                <label className="block text-sm text-muted-foreground">Provincia <span className="text-red-500">*</span></label>
                 <select
                   name="province"
-                  className="w-full p-2 bg-card border rounded"
+                  className={`w-full p-2 bg-card border rounded ${fieldErrors.province ? 'border-red-500' : ''}`}
                   value={selectedProvince?.nombre || customerInfo.province}
                   onChange={handleProvinceChange}
+                  aria-required="true"
+                  aria-invalid={Boolean(fieldErrors.province)}
                 >
                   <option value="">Seleccione provincia</option>
                   {provinceNames.map((province) => (
@@ -491,18 +587,31 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                     </option>
                   ))}
                 </select>
+                {fieldErrors.province && <p className="text-sm text-red-600 mt-1">{fieldErrors.province}</p>}
               </div>
-              <div>
-                <label className="block text-sm text-muted-foreground">Cantón</label>
+              <div data-field="canton">
+                <label className="block text-sm text-muted-foreground">Cantón <span className="text-red-500">*</span></label>
                 <div className="space-y-1">
                   <input
                     type="text"
                     value={cantonSearch}
                     onChange={(e) => handleCantonSearch(e.target.value)}
                     onFocus={() => setCantonSuggestionsOpen(true)}
-                    onBlur={() => setTimeout(() => setCantonSuggestionsOpen(false), 150)}
+                    onBlur={() => {
+                      commitCantonFromSearch();
+                      setTimeout(() => setCantonSuggestionsOpen(false), 150);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        commitCantonFromSearch();
+                        setCantonSuggestionsOpen(false);
+                      }
+                    }}
                     placeholder="Buscar cantón"
-                    className="w-full p-2 bg-card border rounded"
+                    className={`w-full p-2 bg-card border rounded ${fieldErrors.canton || cantonUnresolved ? 'border-red-500' : ''}`}
+                    aria-required="true"
+                    aria-invalid={Boolean(fieldErrors.canton || cantonUnresolved)}
                   />
                   {cantonSuggestionsOpen && (
                     <div className="max-h-48 overflow-y-auto border rounded bg-card shadow-sm">
@@ -532,18 +641,35 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                     </div>
                   )}
                 </div>
+                {(cantonUnresolved || fieldErrors.canton) && (
+                  <p className="text-sm text-red-600 mt-1">
+                    {fieldErrors.canton || 'Elige un cantón de la lista. El texto escrito no se guarda solo.'}
+                  </p>
+                )}
               </div>
-              <div>
-                <label className="block text-sm text-muted-foreground">Distrito</label>
+              <div data-field="district">
+                <label className="block text-sm text-muted-foreground">Distrito <span className="text-red-500">*</span></label>
                 <div className="space-y-1">
                   <input
                     type="text"
                     value={districtSearch}
                     onChange={(e) => handleDistrictSearch(e.target.value)}
                     onFocus={() => setDistrictSuggestionsOpen(true)}
-                    onBlur={() => setTimeout(() => setDistrictSuggestionsOpen(false), 150)}
+                    onBlur={() => {
+                      commitDistrictFromSearch();
+                      setTimeout(() => setDistrictSuggestionsOpen(false), 150);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        commitDistrictFromSearch();
+                        setDistrictSuggestionsOpen(false);
+                      }
+                    }}
                     placeholder="Buscar distrito"
-                    className="w-full p-2 bg-card border rounded"
+                    className={`w-full p-2 bg-card border rounded ${fieldErrors.district || districtUnresolved ? 'border-red-500' : ''}`}
+                    aria-required="true"
+                    aria-invalid={Boolean(fieldErrors.district || districtUnresolved)}
                   />
                   {districtSuggestionsOpen && (
                     <div className="max-h-48 overflow-y-auto border rounded bg-card shadow-sm">
@@ -572,17 +698,28 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                     </div>
                   )}
                 </div>
+                {districtClearedNotice && (
+                  <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">{districtClearedNotice}</p>
+                )}
+                {(districtUnresolved || fieldErrors.district) && (
+                  <p className="text-sm text-red-600 mt-1">
+                    {fieldErrors.district || 'Elige un distrito de la lista. El texto escrito no se guarda solo.'}
+                  </p>
+                )}
               </div>
-              <div className="col-span-1 sm:col-span-2">
-                <label className="block text-sm text-muted-foreground">Dirección</label>
+              <div className="col-span-1 sm:col-span-2" data-field="address">
+                <label className="block text-sm text-muted-foreground">Dirección <span className="text-red-500">*</span></label>
                 <textarea
                   name="address"
-                  className="w-full p-2 bg-card border rounded"
+                  className={`w-full p-2 bg-card border rounded ${fieldErrors.address ? 'border-red-500' : ''}`}
                   value={customerInfo.address}
                   onChange={handleInputChange}
                   placeholder="No detectado"
                   rows={2}
+                  aria-required="true"
+                  aria-invalid={Boolean(fieldErrors.address)}
                 />
+                {fieldErrors.address && <p className="text-sm text-red-600 mt-1">{fieldErrors.address}</p>}
               </div>
             </>
           )}

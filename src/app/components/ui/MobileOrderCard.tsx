@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Clock } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
+import { PaymentStatusBadge } from '@/app/components/orders/PaymentStatusBadge';
+import { formatDistanceToNow } from 'date-fns';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -18,6 +20,9 @@ interface OrderData {
   email?: string;
   address?: string;
   orderType?: 'EA' | 'RA';
+  contraEntrega?: boolean;
+  cePaymentConfirmed?: boolean;
+  customFields?: unknown;
 }
 
 interface MobileOrderCardProps {
@@ -52,7 +57,7 @@ export function MobileOrderCard({ order, formatCurrency, className = '' }: Mobil
               <span className="font-semibold text-sm text-foreground">#{order.orderId}</span>
               {order.orderType && (
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                  {order.orderType}
+                  {order.orderType === 'EA' ? 'Envío' : 'Retiro'}
                 </span>
               )}
             </div>
@@ -64,6 +69,7 @@ export function MobileOrderCard({ order, formatCurrency, className = '' }: Mobil
 
           <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
             <StatusBadge status={order.status} />
+            <PaymentStatusBadge order={order} className="text-[10px]" />
             {order.total != null && (
               <span className="text-sm font-bold text-foreground">{displayCurrency(order.total)}</span>
             )}
@@ -106,7 +112,7 @@ export function MobileOrderCard({ order, formatCurrency, className = '' }: Mobil
                   <span className="text-foreground truncate max-w-[200px]">{order.email}</span>
                 </div>
               )}
-              {order.address && (
+              {order.address && order.orderType !== 'RA' && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Dirección</span>
                   <span className="text-foreground truncate max-w-[200px]">{order.address}</span>

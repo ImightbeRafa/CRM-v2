@@ -300,7 +300,7 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
                     resetForm();
                   }}
                 >
-                  Iniciar Sesión
+                  Iniciar sesión
                 </button>
                 <button
                   className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
@@ -379,7 +379,7 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
               </div>
               
               <Button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700" disabled={isLoading}>
-                {isLoading ? 'Iniciando...' : 'Iniciar Sesión'}
+                {isLoading ? 'Iniciando...' : 'Iniciar sesión'}
               </Button>
             </form>
           )}

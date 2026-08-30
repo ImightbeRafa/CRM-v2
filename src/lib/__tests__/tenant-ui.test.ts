@@ -41,7 +41,7 @@ describe('Betsy v2 tenant UI', () => {
     assert.doesNotMatch(sql, /DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|lm_/i);
   });
 
-  it('separates booked COD from collected revenue without changing booked totals', () => {
+  it('does not count Pendiente unpaid orders as collected revenue', () => {
     const base = { orderType: 'EA', status: 'Pendiente', customerName: 'V2TEST Ana', saleDate: '2026-08-01', seller: null, salesChannel: null };
     const orders: StatisticsV2Order[] = [
       { ...base, id: '1', orderId: 'A', total: 100, timestamp: new Date('2026-08-01T12:00:00Z'), contraEntrega: false, cePaymentConfirmed: false },
@@ -53,8 +53,9 @@ describe('Betsy v2 tenant UI', () => {
     assert.equal(overview.revenue.bookedCodGross, 500);
     assert.equal(overview.revenue.collectedCod, 300);
     assert.equal(overview.revenue.pendingCod, 200);
-    assert.equal(overview.revenue.collectedRevenue, 400);
+    assert.equal(overview.revenue.collectedRevenue, 300);
     assert.equal(overview.summary.totalRevenue, 600);
+    assert.equal(overview.topCustomers.topCustomersByRevenue[0].customerStatus, 'Muy activo');
   });
 
   it('keeps AI enhancement non-writing, private, bounded, and human-reviewed', () => {
@@ -76,6 +77,19 @@ describe('Betsy v2 tenant UI', () => {
     assert.match(config, /'inventory'/);
     assert.match(config, /'shipping-config'/);
     assert.match(config, /router\.replace/);
+  });
+
+  it('uses Spanish order-form copy and a /pedidos redirect', () => {
+    const form = source('src/app/ventas/components/EnhancedSalesForm.tsx');
+    const toggle = source('src/app/ventas/components/OrderTypeToggle.tsx');
+    const config = source('next.config.js');
+    assert.match(form, /Nuevo pedido/);
+    assert.doesNotMatch(form, /Sistema de Ventas Optimizado/);
+    assert.match(toggle, />\s*Envío\s*</);
+    assert.match(toggle, />\s*Retiro\s*</);
+    assert.doesNotMatch(toggle, /Envío \(EA\)/);
+    assert.match(config, /source: '\/pedidos'/);
+    assert.match(config, /destination: '\/ventas'/);
   });
 
   it('uses one bounded v2 order read while leaving the legacy route fan-out off-path', () => {

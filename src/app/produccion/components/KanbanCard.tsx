@@ -4,7 +4,8 @@ import React, { useEffect, useState } from 'react';
 import type { Sale } from '../types/sales';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
-import { ArrowRight, Banknote, Calendar, MapPin, Package, Phone, User } from 'lucide-react';
+import { ArrowRight, Calendar, MapPin, Package, Phone, User } from 'lucide-react';
+import { PaymentStatusBadge } from '@/app/components/orders/PaymentStatusBadge';
 
 interface KanbanCardProps {
   order: Sale;
@@ -29,12 +30,15 @@ export function KanbanCard({ order, statuses, onClick, onMove, moving }: KanbanC
           <p className="font-semibold text-sm">#{order.orderId}</p>
           {highPriority && <Badge className="bg-red-500/15 text-red-400 text-[10px]">Urgente</Badge>}
         </div>
-        <div className="flex items-center text-[13px] font-medium"><User className="h-3 w-3 mr-1.5" /><span className="truncate">{order.customerName}</span></div>
-        {order.phone && <div className="flex items-center text-xs text-muted-foreground"><Phone className="h-3 w-3 mr-1.5" />{order.phone}</div>}
-        <div className="flex items-start text-xs"><Package className="h-3 w-3 mr-1.5 mt-0.5" /><span className="line-clamp-2">{order.product}</span></div>
-        {order.orderType === 'EA' && order.district && <div className="flex items-center text-xs text-muted-foreground"><MapPin className="h-3 w-3 mr-1.5" /><span className="truncate">{order.district}</span></div>}
+        <div className="flex items-center text-[13px] font-medium"><User className="h-3 w-3 mr-1.5 shrink-0" /><span className="break-words whitespace-normal">{order.customerName}</span></div>
+        {order.phone && <div className="flex items-center text-xs text-muted-foreground"><Phone className="h-3 w-3 mr-1.5 shrink-0" />{order.phone}</div>}
+        <div className="flex items-start text-xs"><Package className="h-3 w-3 mr-1.5 mt-0.5 shrink-0" /><span className="break-words whitespace-normal">{order.product}</span></div>
+        {order.orderType === 'EA' && order.district && <div className="flex items-center text-xs text-muted-foreground"><MapPin className="h-3 w-3 mr-1.5 shrink-0" /><span className="break-words whitespace-normal">{order.district}</span></div>}
         <div className="flex items-center justify-between border-t border-white/[0.04] pt-2">
-          <div className="flex gap-1"><Badge variant="outline">{order.orderType}</Badge>{order.contraEntrega && <Badge className="bg-amber-500/10 text-amber-400"><Banknote className="h-2.5 w-2.5 mr-0.5" />CE</Badge>}</div>
+          <div className="flex flex-wrap gap-1">
+            <Badge variant="outline">{order.orderType === 'EA' ? 'Envío' : 'Retiro'}</Badge>
+            <PaymentStatusBadge order={order} />
+          </div>
           <strong>₡{Number(order.total || 0).toLocaleString('es-CR')}</strong>
         </div>
         <div className="flex items-center text-[11px] text-muted-foreground"><Calendar className="h-3 w-3 mr-1.5" />{new Date(order.timestamp).toLocaleDateString('es-CR')}</div>

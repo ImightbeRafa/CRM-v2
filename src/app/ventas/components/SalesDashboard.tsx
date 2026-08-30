@@ -15,12 +15,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/app/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/app/components/ui/dialog";
 import { Input } from "@/app/components/ui/input";
 import { Button } from "@/app/components/ui/button";
 import {
@@ -39,19 +33,10 @@ import { Loader2, TrendingUp, Package, DollarSign, Clock, CheckCircle, Edit3 } f
 import { MobileOrderCard } from '@/app/components/ui/MobileOrderCard';
 import { SwipeableRow } from '@/app/components/ui/SwipeableRow';
 import { useUpdateOrderStatus } from '@/app/hooks/useOrderMutations';
-
-interface Sale {
-  orderId: string;
-  status: string;
-  customerName: string;
-  phone: string;
-  email: string;
-  address: string;
-  product: string;
-  total: number;
-  timestamp: string;
-  orderType: 'EA' | 'RA';
-}
+import { OrderDetails } from '@/app/produccion/components/OrderDetail';
+import type { Sale } from '@/app/produccion/types/sales';
+import { PaymentStatusBadge } from '@/app/components/orders/PaymentStatusBadge';
+import { useToast } from '@/app/hooks/use-toast';
 
 const CR_TZ = 'America/Costa_Rica';
 const getTodayRangeCR = () => {
@@ -66,6 +51,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
   const [orderTypeFilter, setOrderTypeFilter] = useState<'ALL' | 'EA' | 'RA'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const { formatCurrency } = useTenantSettings();
+  const { toast } = useToast();
   const kpiScrollRef = useRef<HTMLDivElement>(null);
   const [activeKpiCard, setActiveKpiCard] = useState(0);
 
@@ -90,6 +76,27 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
     pollingInterval: 30000, // 30 seconds
     filters: todayRange,
   });
+
+  const handleOrderUpdate = async (orderId: string, updatedData: Partial<Sale>): Promise<Sale> => {
+    const response = await fetch('/api/orders/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ orderId, ...updatedData }),
+    });
+    const errorData = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(errorData.error || 'No se pudo actualizar el pedido');
+    }
+    refresh();
+    toast({ title: 'Pedido actualizado', description: 'Los cambios se guardaron.' });
+    return errorData.data || errorData;
+  };
+
+  const handleStatusUpdate = async (newStatus: string) => {
+    if (!selectedSale) return;
+    await handleOrderUpdate(selectedSale.orderId, { status: newStatus } as Partial<Sale>);
+  };
 
   const filteredSales = sales
     .filter(sale => {
@@ -327,7 +334,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                             variant={sale.orderType === 'EA' ? 'default' : 'secondary'} 
                             className="relative z-10 text-xs"
                           >
-                            {sale.orderType === 'EA' ? '🚚 EA' : '🏪 RA'}
+                            {sale.orderType === 'EA' ? 'Envío' : 'Retiro'}
                           </Badge>
                         </div>
                       </TableCell>
@@ -348,16 +355,19 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge 
-                          variant={
-                            sale.status === 'Pendiente' ? 'warning' :
-                            sale.status === 'Completado' ? 'success' : 'default'
-                          }
-                          className="font-medium"
-                        >
-                          {sale.status === 'Pendiente' ? '⏳' : 
-                           sale.status === 'Completado' ? '✅' : '📋'} {sale.status}
-                        </Badge>
+                        <div className="flex flex-col gap-1">
+                          <Badge 
+                            variant={
+                              sale.status === 'Pendiente' ? 'warning' :
+                              sale.status === 'Completado' ? 'success' : 'default'
+                            }
+                            className="font-medium"
+                          >
+                            {sale.status === 'Pendiente' ? '⏳' : 
+                             sale.status === 'Completado' ? '✅' : '📋'} {sale.status}
+                          </Badge>
+                          <PaymentStatusBadge order={sale} className="w-fit" />
+                        </div>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {(() => {
@@ -389,101 +399,14 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
         </CardContent>
       </Card>
 
-      <Dialog open={!!selectedSale} onOpenChange={() => setSelectedSale(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>
-              <div className="flex items-center gap-3">
-                <span className="text-xl">📋 Detalles de Orden</span>
-                {selectedSale && (
-                  <Badge 
-                    variant={selectedSale.orderType === 'EA' ? 'default' : 'secondary'}
-                    className="text-sm"
-                  >
-                    {selectedSale.orderType === 'EA' ? '🚚 Envío' : '🏪 Retiro'}
-                  </Badge>
-                )}
-              </div>
-            </DialogTitle>
-          </DialogHeader>
-          {selectedSale && (
-            <div className="space-y-4">
-              {/* Order ID Card */}
-              <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-                <p className="text-xs text-blue-600 dark:text-blue-400 font-semibold mb-1">ID DE ORDEN</p>
-                <p className="text-lg font-mono font-bold text-blue-900 dark:text-blue-300">{selectedSale.orderId}</p>
-              </div>
-
-              {/* Customer Info */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">👤 Cliente</h4>
-                  <p className="font-medium text-foreground">{selectedSale.customerName}</p>
-                </div>
-                <div className="space-y-1">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">📞 Teléfono</h4>
-                  <p className="font-medium text-foreground">{selectedSale.phone}</p>
-                </div>
-                <div className="space-y-1 col-span-2">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">📧 Email</h4>
-                  <p className="font-medium text-foreground">{selectedSale.email || 'No especificado'}</p>
-                </div>
-              </div>
-
-              {/* Address */}
-              <div className="space-y-1">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase">📍 Dirección</h4>
-                <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg border">
-                  {selectedSale.address || 'No especificada'}
-                </p>
-              </div>
-
-              {/* Product & Price */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">📦 Producto</h4>
-                  <p className="text-sm text-foreground">{selectedSale.product}</p>
-                </div>
-                <div className="space-y-1">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">💰 Total</h4>
-                  <p className="text-2xl font-bold text-green-600">₡{selectedSale.total.toLocaleString()}</p>
-                </div>
-              </div>
-
-              {/* Status & Time */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">📊 Estado</h4>
-                  <Badge 
-                    variant={
-                      selectedSale.status === 'Pendiente' ? 'warning' :
-                      selectedSale.status === 'Completado' ? 'success' : 'default'
-                    }
-                    className="text-sm font-medium"
-                  >
-                    {selectedSale.status === 'Pendiente' ? '⏳' : 
-                     selectedSale.status === 'Completado' ? '✅' : '📋'} {selectedSale.status}
-                  </Badge>
-                </div>
-                <div className="space-y-1">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase">🕐 Creada</h4>
-                  <p className="text-sm text-muted-foreground">
-                    {(() => {
-                      const date = new Date(selectedSale.timestamp);
-                      return isNaN(date.getTime())
-                        ? 'Fecha inválida'
-                        : formatDistanceToNow(date, { 
-                            addSuffix: true,
-                            locale: es 
-                          });
-                    })()}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {selectedSale && (
+        <OrderDetails
+          order={selectedSale}
+          onClose={() => setSelectedSale(null)}
+          onUpdateStatus={handleStatusUpdate}
+          onUpdateOrder={handleOrderUpdate}
+        />
+      )}
     </div>
   );
 });

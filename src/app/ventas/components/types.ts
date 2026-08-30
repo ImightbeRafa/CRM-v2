@@ -46,6 +46,7 @@ export interface OrderInfo {
   applyOrderIVA?: boolean;
   orderShippingMethod?: string;
   contraEntrega?: boolean;
+  paymentChoice?: 'pagado' | 'contra_entrega' | 'pendiente_pago';
 }
 
 export interface SubmitStatus {

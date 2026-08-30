@@ -32,6 +32,7 @@ import {
   type NormalizedFunctionCall,
   type ResponsesFunctionTool,
 } from './xai-responses';
+import { parseCrcAmount } from '@/lib/crc-money';
 
 export type { ToolAttachment };
 
@@ -947,23 +948,6 @@ function normalizeCostaRicaPhone(value: unknown): string | undefined {
   }
 
   return undefined;
-}
-
-function parseCrcAmount(value: unknown): number | undefined {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) && value >= 0 ? Math.round(value) : undefined;
-  }
-  if (value === undefined || value === null) return undefined;
-  const raw = String(value).trim();
-  if (!raw) return undefined;
-  const numberText = raw
-    .replace(/\s+/g, '')
-    .replace(/[^\d,.-]/g, '')
-    .replace(/[.,](?=\d{3}(?:\D|$))/g, '')
-    .replace(',', '.');
-  const parsed = Number(numberText);
-  if (!Number.isFinite(parsed) || parsed < 0) return undefined;
-  return Math.round(parsed);
 }
 
 /**

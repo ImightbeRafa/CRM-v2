@@ -64,7 +64,7 @@ class SalesErrorBoundary extends React.Component<
           <CardHeader>
             <CardTitle className="text-red-800 flex items-center gap-2">
               <AlertTriangle className="h-5 w-5" />
-              Error en el Sistema de Ventas
+              Error en Ventas
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">

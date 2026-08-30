@@ -88,9 +88,13 @@ export default function TopCustomersChart({ startDate, endDate, prefetchedData }
 
   const getStatusColor = (status: string) => {
     switch (status) {
+      case 'Muy activo':
       case 'Very Active': return 'bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-400';
+      case 'Activo':
       case 'Active': return 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400';
+      case 'Moderado':
       case 'Moderate': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-400';
+      case 'Inactivo':
       case 'Inactive': return 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-400';
       default: return 'bg-muted text-muted-foreground';
     }
@@ -98,9 +102,13 @@ export default function TopCustomersChart({ startDate, endDate, prefetchedData }
 
   const getStatusIcon = (status: string) => {
     switch (status) {
+      case 'Muy activo':
       case 'Very Active': return <Activity className="w-4 h-4" />;
+      case 'Activo':
       case 'Active': return <TrendingUp className="w-4 h-4" />;
+      case 'Moderado':
       case 'Moderate': return <Clock className="w-4 h-4" />;
+      case 'Inactivo':
       case 'Inactive': return <Users className="w-4 h-4" />;
       default: return <Users className="w-4 h-4" />;
     }

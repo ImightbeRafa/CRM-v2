@@ -2,6 +2,25 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-30 — Preview QA: orders form, stats cobrado, copy
+
+- Ventas: cantón/distrito commit on blur/Enter, keep distrito when still
+  valid, show all validation errors with asterisks, scroll to the first
+  invalid field, mensajería is required and visible for envíos, pickup no
+  longer asks for street address, product Add explains why it stays grey.
+- Ventas detail reuses the Producción editor so status/fields can change
+  without hunting the card. `/pedidos` redirects to `/ventas`.
+- Estadísticas: Pendiente without paid evidence is not cobrado. Customer
+  activity labels are Spanish. Footer is v2. Buttons say Envío/Retiro.
+- Website ingest parses `₡3.000` as 3000 and rejects invalid money before
+  creating an order. Pickup from websites is still not supported (CRM only).
+- Feedback FAB no longer covers Ventas table actions; Comentarios lives in
+  the shell/nav. Did not merge, did not touch ORDER-1788038329933.
+- Prove: `npx tsx --test src/lib/__tests__/crc-money.test.ts
+  src/lib/__tests__/order-payment-status.test.ts
+  src/lib/__tests__/order-form-validation.test.ts`, `npm run test:tenant-ui`,
+  `npm run test:bot-grok`, `npx tsc --noEmit`.
+
 ## 2026-08-29 — Preview unlock and Vercel build repair
 
 - Preview (`VERCEL_ENV=preview`) and local `next dev` synthesize Betsy v2

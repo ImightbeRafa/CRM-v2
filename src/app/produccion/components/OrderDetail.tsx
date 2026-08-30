@@ -16,6 +16,7 @@ import {
   extractCustomFields,
   type CustomFieldsData
 } from "@/lib/customFields";
+import { PaymentStatusBadge } from '@/app/components/orders/PaymentStatusBadge';
 
 interface OrderDetailsProps {
   order: Sale;
@@ -407,19 +408,14 @@ export function OrderDetails({
             <div className="flex items-center space-x-3">
               <span className="text-lg font-semibold text-foreground">Orden {displayOrder.orderId}</span>
               <span className="px-2 py-1 text-xs font-medium rounded-full bg-muted text-muted-foreground">
-                {displayOrder.orderType}
+                {displayOrder.orderType === 'EA' ? 'Envío' : 'Retiro'}
               </span>
               {displayOrder.status && (
                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(displayOrder.status)}`}>
                   {displayOrder.status}
                 </span>
               )}
-              {displayOrder.contraEntrega && (
-                <span className="px-2 py-1 text-xs font-medium rounded-full bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-300 dark:border-amber-800 flex items-center gap-1">
-                  <Banknote className="h-3 w-3" />
-                  Contra Entrega
-                </span>
-              )}
+              <PaymentStatusBadge order={displayOrder} />
             </div>
             <div className="flex items-center space-x-2">
               <Button
@@ -506,7 +502,6 @@ export function OrderDetails({
                 const pickupFields: Array<[string, SaleKeys, string?]> = [];
                 
                 const pickupMappings: Array<{ label: string; field: SaleKeys; type?: string }> = [
-                  { label: 'Dirección', field: 'address' },
                   { label: 'Fecha Acordada', field: 'agreedDate' },
                   { label: 'Fecha de Retiro', field: 'pickupDate' },
                   { label: 'Costo de Producto', field: 'productCost', type: 'number' },

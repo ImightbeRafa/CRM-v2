@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { validateApiKey, updateApiKeyLastUsed, hashApiKey } from '@/lib/integration-auth';
 import { countRecentExternalOrders, createExternalOrder, findExternalOrderByOrderId } from '@/lib/integration-orders';
 import { logIntegrationActivity } from '@/lib/integration-logs';
+import { CrcMoneyError } from '@/lib/crc-money';
 import { createIdentifierRateLimit, getClientIP } from '@/lib/rate-limit';
 import { evaluateTenantAccess, markRestrictedBacklog, type TenantAccessEvaluation } from '@/lib/billing-access';
 
@@ -153,6 +154,9 @@ export async function POST(req: NextRequest) {
           });
         }
       }
+      if (error instanceof CrcMoneyError) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
       throw error;
     }
     // Log successful integration
@@ -201,10 +205,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(
       { 
-        error: 'Internal server error',
+        error: error instanceof CrcMoneyError ? error.message : 'Internal server error',
         processingTime
       },
-      { status: 500 }
+      { status: error instanceof CrcMoneyError ? 400 : 500 }
     );
   }
 }

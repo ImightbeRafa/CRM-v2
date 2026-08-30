@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAPI } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { buildStatsOrderDateWhere } from '@/lib/statistics-dates';
+import { customerActivityStatus } from '@/lib/order-payment-status';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -93,10 +94,7 @@ export async function GET(req: NextRequest) {
         firstOrderDate: firstOrder,
         lastOrderDate: lastOrder,
         daysSinceLastOrder: daysSinceLastOrder,
-        customerStatus: daysSinceLastOrder === null ? 'No orders' :
-                       daysSinceLastOrder <= 7 ? 'Very Active' :
-                       daysSinceLastOrder <= 30 ? 'Active' :
-                       daysSinceLastOrder <= 90 ? 'Moderate' : 'Inactive'
+        customerStatus: customerActivityStatus(daysSinceLastOrder),
       };
     });
 

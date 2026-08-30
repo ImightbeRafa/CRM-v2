@@ -39,11 +39,11 @@ export function ProductionWorkflowGuide({ onClose }: ProductionWorkflowGuideProp
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="p-3 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg">
-              <h4 className="font-semibold text-green-800 dark:text-green-300 mb-2">Órdenes de Envío (EA)</h4>
+              <h4 className="font-semibold text-green-800 dark:text-green-300 mb-2">Órdenes de Envío</h4>
               <p className="text-sm text-green-700 dark:text-green-400">Productos que se envían a los clientes</p>
             </div>
             <div className="p-3 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-lg">
-              <h4 className="font-semibold text-purple-800 dark:text-purple-300 mb-2">Órdenes de Retiro (RA)</h4>
+              <h4 className="font-semibold text-purple-800 dark:text-purple-300 mb-2">Órdenes de Retiro</h4>
               <p className="text-sm text-purple-700 dark:text-purple-400">Productos que los clientes recogen</p>
             </div>
           </div>

@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Card,
@@ -357,6 +357,8 @@ export function EnhancedProductionDashboard({
   const [showStats, setShowStats] = useState(false);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'mobile' | 'kanban'>('table');
+  const [orderTypeTab, setOrderTypeTab] = useState<'EA' | 'RA'>('EA');
+  const userPickedTypeTab = useRef(false);
   const [showGuide, setShowGuide] = useState(false);
   const [lastSync, setLastSync] = useState<Date>(new Date());
   const { toast } = useToast();
@@ -453,6 +455,15 @@ export function EnhancedProductionDashboard({
     EA: filteredOrders.filter(order => order.orderType === 'EA'),
     RA: filteredOrders.filter(order => order.orderType === 'RA')
   }), [filteredOrders]);
+
+  useEffect(() => {
+    if (userPickedTypeTab.current) return;
+    if (groupedOrders.EA.length === 0 && groupedOrders.RA.length > 0) {
+      setOrderTypeTab('RA');
+    } else if (groupedOrders.EA.length > 0) {
+      setOrderTypeTab('EA');
+    }
+  }, [groupedOrders.EA.length, groupedOrders.RA.length]);
 
   const handleStatusUpdate = async (newStatus: string) => {
     if (selectedOrder) {
@@ -735,7 +746,14 @@ export function EnhancedProductionDashboard({
               onOrderClick={setSelectedOrder}
             />
           ) : (
-            <Tabs defaultValue="EA" className="w-full">
+            <Tabs
+              value={orderTypeTab}
+              onValueChange={(value) => {
+                userPickedTypeTab.current = true;
+                setOrderTypeTab(value === 'RA' ? 'RA' : 'EA');
+              }}
+              className="w-full"
+            >
               <TabsList className="grid w-full grid-cols-2 mb-4">
                 <TabsTrigger value="EA" className="flex items-center gap-1 text-sm">
                   <Truck className="h-3 w-3" />

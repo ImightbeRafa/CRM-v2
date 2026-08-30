@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Badge } from '@/app/components/ui/badge';
 import { Checkbox } from '@/app/components/ui/checkbox';
 import ProductForm from './productForm';
-import { ShippingMethodSelector } from './ShippingMethodSelector';
+import { draftProductAddBlockedReason } from './orderFormValidation';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 
@@ -207,7 +207,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
             Productos del Pedido ({orderInfo.products.length})
           </h3>
           <p className="text-sm text-muted-foreground">
-            Agregue productos individualmente al pedido
+            Agregue productos individualmente al pedido. También puedes escribir un producto a mano aunque el inventario esté vacío.
           </p>
         </div>
         <Button
@@ -412,20 +412,6 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                   </label>
                 </div>
               </div>
-
-              {/* Shipping Method Selector - Only for EA orders */}
-              {orderType === 'EA' && (
-                <ShippingMethodSelector 
-                  selectedMethod={orderInfo.orderShippingMethod}
-                  onMethodChange={(method, cost) => {
-                    onOrderInfoChange({
-                      ...orderInfo,
-                      orderShippingMethod: method,
-                      orderShipping: cost
-                    });
-                  }}
-                />
-              )}
             </div>
 
             {/* Order Totals */}
@@ -516,12 +502,17 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                   type="button"
                   onClick={confirmAddDraftProduct}
                   className="bg-blue-500 hover:bg-blue-600"
-                  disabled={!draftProduct || !(draftProduct.type && draftProduct.type.trim().length > 0)}
+                  disabled={Boolean(draftProductAddBlockedReason(draftProduct))}
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   Agregar Producto
                 </Button>
               </div>
+              {draftProductAddBlockedReason(draftProduct) && (
+                <p className="mt-2 text-sm text-muted-foreground text-right">
+                  {draftProductAddBlockedReason(draftProduct)}
+                </p>
+              )}
             </div>
           </div>
         </div>

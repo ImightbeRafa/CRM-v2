@@ -70,7 +70,7 @@ export default function EnhancedHomeContent() {
             href="/auth/signin"
             className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
           >
-            Iniciar Sesión
+            Iniciar sesión
           </Link>
         </div>
       </div>
@@ -444,8 +444,8 @@ export default function EnhancedHomeContent() {
         </div>
 
         <footer className="mt-8 md:mt-12 text-center text-muted-foreground text-sm">
-          <p>© 2024 Betsy CRM</p>
-          <p className="mt-1">v1.0.1</p>
+          <p>© {new Date().getFullYear()} Betsy CRM</p>
+          <p className="mt-1">v2</p>
         </footer>
       </motion.main>
 

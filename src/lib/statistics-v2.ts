@@ -1,4 +1,5 @@
 import { getOrderStatsDateKey } from '@/lib/statistics-dates';
+import { customerActivityStatus, isCollectedRevenue } from '@/lib/order-payment-status';
 
 export interface StatisticsV2Order {
   id: string;
@@ -13,6 +14,7 @@ export interface StatisticsV2Order {
   salesChannel: string | null;
   contraEntrega: boolean;
   cePaymentConfirmed: boolean;
+  customFields?: unknown;
 }
 
 export function buildStatisticsV2Overview(
@@ -24,6 +26,7 @@ export function buildStatisticsV2Overview(
   let bookedCodGross = 0;
   let collectedCod = 0;
   let nonCodBooked = 0;
+  let collectedRevenue = 0;
   const days = new Map<string, { date: string; revenue: number; bookedGross: number; collectedRevenue: number; pendingCod: number; orderCount: number }>();
   const types = { EA: { count: 0, revenue: 0 }, RA: { count: 0, revenue: 0 } };
   const statuses = new Map<string, number>();
@@ -32,13 +35,14 @@ export function buildStatisticsV2Overview(
   for (const order of orders) {
     const total = Number(order.total || 0);
     bookedGross += total;
+    const collected = isCollectedRevenue(order) ? total : 0;
+    collectedRevenue += collected;
     if (order.contraEntrega) {
       bookedCodGross += total;
       if (order.cePaymentConfirmed) collectedCod += total;
     } else {
       nonCodBooked += total;
     }
-    const collected = !order.contraEntrega || order.cePaymentConfirmed ? total : 0;
     const pending = order.contraEntrega && !order.cePaymentConfirmed ? total : 0;
     const date = getOrderStatsDateKey(order);
     if (date) {
@@ -52,18 +56,17 @@ export function buildStatisticsV2Overview(
     }
     const type = order.orderType === 'RA' ? 'RA' : 'EA';
     types[type].count += 1;
-    types[type].revenue += total;
+    types[type].revenue += collected;
     statuses.set(order.status || 'Pendiente', (statuses.get(order.status || 'Pendiente') || 0) + 1);
     const name = order.customerName?.trim() || 'Sin nombre';
     const customer = customers.get(name) || { customerName: name, totalRevenue: 0, orderCount: 0, first: order.timestamp, last: order.timestamp };
-    customer.totalRevenue += total;
+    customer.totalRevenue += collected;
     customer.orderCount += 1;
     if (order.timestamp < customer.first) customer.first = order.timestamp;
     if (order.timestamp > customer.last) customer.last = order.timestamp;
     customers.set(name, customer);
   }
 
-  const collectedRevenue = nonCodBooked + collectedCod;
   const pendingCod = bookedCodGross - collectedCod;
   const customerRows = [...customers.values()].map(customer => {
     const daysSinceLastOrder = Math.floor((now.getTime() - customer.last.getTime()) / 86_400_000);
@@ -75,7 +78,7 @@ export function buildStatisticsV2Overview(
       firstOrderDate: customer.first.toISOString(),
       lastOrderDate: customer.last.toISOString(),
       daysSinceLastOrder,
-      customerStatus: daysSinceLastOrder <= 7 ? 'Very Active' : daysSinceLastOrder <= 30 ? 'Active' : daysSinceLastOrder <= 90 ? 'Moderate' : 'Inactive',
+      customerStatus: customerActivityStatus(daysSinceLastOrder),
     };
   });
   const statusDistribution = customerRows.reduce<Record<string, number>>((result, customer) => {
@@ -85,8 +88,8 @@ export function buildStatisticsV2Overview(
 
   return {
     definitions: {
-      bookedGross: 'All saved order totals in the selected sale-date period.',
-      collectedRevenue: 'Non-COD booked total plus confirmed COD. COD confirmation is attributed to the order sale date because no collection timestamp exists.',
+      bookedGross: 'Todos los totales de pedidos guardados en el período.',
+      collectedRevenue: 'Solo dinero cobrado: pago confirmado, contra entrega confirmada, o pedidos no pendientes con evidencia de cobro. Pendiente no se cuenta como cobrado.',
     },
     revenue: { bookedGross, bookedCodGross, collectedCod, nonCodBooked, collectedRevenue, pendingCod },
     summary: {

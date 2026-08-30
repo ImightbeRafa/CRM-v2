@@ -166,7 +166,7 @@ function SignInPageInner() {
             />
           </div>
           <h2 className="mt-2 text-3xl font-bold text-foreground">
-            {isRegistering ? 'Crear Cuenta' : 'Iniciar Sesión'}
+            {isRegistering ? 'Crear cuenta' : 'Iniciar sesión'}
           </h2>
           <p className="mt-2 text-muted-foreground">
             {isRegistering 

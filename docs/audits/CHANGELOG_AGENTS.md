@@ -7,6 +7,8 @@ Append-only. Newest entries at the top.
 - Removed "Mejorar con Grok" from Nuevo pedido. Local paste-to-fill stays.
 - Preview no longer synthesizes `ai_customer_paste_v2`. The enhance API
   remains flag-gated and off. No order data rewritten.
+- Follow-up: dropped leftover `setAiPasteReviewPending` in `resetForm` that
+  failed the production Vercel `next build`.
 
 ## 2026-08-30 — Preview v2 for real tenants; website pickup on new orders
 

@@ -2,6 +2,12 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-30 — Remove Grok enhance bar from Ventas form
+
+- Removed "Mejorar con Grok" from Nuevo pedido. Local paste-to-fill stays.
+- Preview no longer synthesizes `ai_customer_paste_v2`. The enhance API
+  remains flag-gated and off. No order data rewritten.
+
 ## 2026-08-30 — Preview v2 for real tenants; website pickup on new orders
 
 - Preview / local `next dev` unlocks v2 for **every tenant** so reviewers can

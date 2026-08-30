@@ -25,8 +25,6 @@ interface CustomerFormProps {
   rawCustomerText: string;
   onRawCustomerTextChange: (text: string) => void;
   orderType: 'EA' | 'RA';
-  aiPasteEnabled?: boolean;
-  onAiReviewPendingChange?: (pending: boolean) => void;
   fieldErrors?: Record<string, string>;
 }
 
@@ -63,8 +61,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
   rawCustomerText,
   onRawCustomerTextChange,
   orderType,
-  aiPasteEnabled: aiPasteEnabledProp,
-  onAiReviewPendingChange,
   fieldErrors = {},
 }) => {
   const [cantonSearch, setCantonSearch] = useState(customerInfo.canton || '');
@@ -74,32 +70,11 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
   const [districtClearedNotice, setDistrictClearedNotice] = useState('');
   const [cantonUnresolved, setCantonUnresolved] = useState(false);
   const [districtUnresolved, setDistrictUnresolved] = useState(false);
-  const [aiPasteEnabled, setAiPasteEnabled] = useState(Boolean(aiPasteEnabledProp));
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState('');
-  const [aiSuggestion, setAiSuggestion] = useState<CustomerInfo | null>(null);
-  const [aiSourceText, setAiSourceText] = useState('');
-  const [aiSelectedFields, setAiSelectedFields] = useState<string[]>([]);
   const rawCustomerTextRef = useRef(rawCustomerText);
 
   useEffect(() => {
     rawCustomerTextRef.current = rawCustomerText;
-    if (aiSuggestion && rawCustomerText !== aiSourceText) {
-      setAiSuggestion(null);
-      setAiSelectedFields([]);
-      onAiReviewPendingChange?.(false);
-    }
-  }, [aiSourceText, aiSuggestion, onAiReviewPendingChange, rawCustomerText]);
-
-  useEffect(() => {
-    if (aiPasteEnabledProp !== undefined) return;
-    const controller = new AbortController();
-    fetch('/api/ventas/customer-paste/enhance', { signal: controller.signal })
-      .then(response => response.ok ? response.json() : null)
-      .then(data => setAiPasteEnabled(data?.enabled === true))
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [aiPasteEnabledProp]);
+  }, [rawCustomerText]);
 
   const selectedProvince = useMemo(
     () => findProvince(customerInfo.province),
@@ -248,57 +223,8 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
   const parseCustomerText = (text: string) => {
     rawCustomerTextRef.current = text;
     onRawCustomerTextChange(text);
-    if (aiSuggestion && text !== aiSourceText) {
-      setAiSuggestion(null);
-      setAiSelectedFields([]);
-      onAiReviewPendingChange?.(false);
-    }
     if (!text.trim()) return;
     onCustomerInfoChange(parseCustomerPaste(text, customerInfo));
-  };
-
-  const requestAiEnhancement = async () => {
-    if (!rawCustomerText.trim() || aiLoading) return;
-    const submittedText = rawCustomerText;
-    setAiLoading(true);
-    setAiError('');
-    setAiSuggestion(null);
-    onAiReviewPendingChange?.(true);
-    try {
-      const response = await fetch('/api/ventas/customer-paste/enhance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawText: submittedText, heuristic: customerInfo }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || 'No se pudo mejorar el texto');
-      if (rawCustomerTextRef.current !== submittedText) {
-        onAiReviewPendingChange?.(false);
-        return;
-      }
-      const suggestion = { ...customerInfo, ...data.suggestion } as CustomerInfo;
-      const changed = ['name', 'phone', 'email', 'username', 'province', 'canton', 'district', 'address']
-        .filter(field => String(suggestion[field] || '') !== String(customerInfo[field] || ''));
-      setAiSourceText(submittedText);
-      setAiSuggestion(suggestion);
-      setAiSelectedFields(changed);
-    } catch (error) {
-      setAiError(error instanceof Error ? error.message : 'No se pudo mejorar el texto');
-      onAiReviewPendingChange?.(false);
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
-  const finishAiReview = (accept: boolean) => {
-    if (accept && aiSuggestion) {
-      const next = { ...customerInfo };
-      for (const field of aiSelectedFields) next[field] = aiSuggestion[field];
-      onCustomerInfoChange(next);
-    }
-    setAiSuggestion(null);
-    setAiSelectedFields([]);
-    onAiReviewPendingChange?.(false);
   };
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -461,52 +387,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
           onPaste={handlePaste}
           placeholder="📋 Pegar información del cliente aquí...&#10;&#10;✅ Acepta múltiples formatos:&#10;• Con etiquetas: Nombre: Carlos | Tel: 88979856 | Email: test@mail.com&#10;• Con emojis: 📍 Nombre - Juan | ☎️ Teléfono: 88887777&#10;• Ubicación: Provincia/Cantón/Distrito: Alajuela, Alajuela, Carrizal&#10;• Sin etiquetas: Detecta emails (@), teléfonos (8+ dígitos), direcciones&#10;• Separadores flexibles: : - = | ~&#10;&#10;💡 Inteligente: Si no encuentra etiquetas, analiza el contenido automáticamente"
         />
-        {aiPasteEnabled && (
-          <div className="rounded-lg border border-violet-200 bg-violet-50/70 p-3 dark:border-violet-800 dark:bg-violet-950/20">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">
-                Opcional: envía este texto de cliente a Grok para sugerir correcciones. Nunca crea ni modifica pedidos.
-              </p>
-              <button
-                type="button"
-                disabled={aiLoading || rawCustomerText.trim().length < 3}
-                onClick={requestAiEnhancement}
-                className="rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-              >
-                {aiLoading ? 'Analizando…' : 'Mejorar con Grok'}
-              </button>
-            </div>
-            {aiError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{aiError}</p>}
-            {aiSuggestion && (
-              <div className="mt-3 space-y-3 border-t border-violet-200 pt-3 dark:border-violet-800">
-                <p className="text-sm font-medium">Revisa cada cambio antes de continuar</p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {['name', 'phone', 'email', 'username', 'province', 'canton', 'district', 'address'].map(field => {
-                    const before = String(customerInfo[field] || '');
-                    const after = String(aiSuggestion[field] || '');
-                    if (before === after) return null;
-                    return (
-                      <label key={field} className="flex gap-2 rounded border border-border bg-card p-2 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={aiSelectedFields.includes(field)}
-                          onChange={(event) => setAiSelectedFields(current => event.target.checked
-                            ? [...current, field]
-                            : current.filter(value => value !== field))}
-                        />
-                        <span><strong>{field}</strong><br /><span className="text-muted-foreground">{before || 'Vacío'} →</span> {after || 'Vacío'}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => finishAiReview(true)} className="rounded bg-violet-600 px-3 py-2 text-sm text-white">Aplicar seleccionados</button>
-                  <button type="button" onClick={() => finishAiReview(false)} className="rounded border border-border px-3 py-2 text-sm">Descartar</button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Customer Information Display */}

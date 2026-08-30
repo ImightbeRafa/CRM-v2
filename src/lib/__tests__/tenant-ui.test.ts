@@ -58,18 +58,19 @@ describe('Betsy v2 tenant UI', () => {
     assert.equal(overview.topCustomers.topCustomersByRevenue[0].customerStatus, 'Muy activo');
   });
 
-  it('keeps AI enhancement non-writing, private, bounded, and human-reviewed', () => {
+  it('keeps AI enhancement off the order form and non-writing if the API is called', () => {
     const server = source('src/lib/customer-paste-grok.ts');
     const route = source('src/app/api/ventas/customer-paste/enhance/route.ts');
     const form = source('src/app/ventas/components/EnhancedSalesForm.tsx');
+    const customerForm = source('src/app/ventas/components/customerForm.tsx');
     assert.match(server, /buildXaiResponseBody/);
     assert.match(source('src/lib/bot/xai-responses.ts'), /store:\s*false/);
     assert.match(server, /maxRetries:\s*0/);
     assert.doesNotMatch(server + route, /from ['"][^'"]*(order-lifecycle|\/db|prisma|inventory|invoice)/i);
     assert.match(route, /createIdentifierRateLimit/);
     assert.match(route, /readTenantUiReadiness/);
-    assert.match(form, /aiPasteReviewPending/);
-    assert.match(form, /Revisa o descarta/);
+    assert.doesNotMatch(form + customerForm, /Mejorar con Grok/);
+    assert.doesNotMatch(form, /Revisa o descarta la sugerencia de Grok/);
   });
 
   it('resolves real config tab IDs instead of stale aliases', () => {

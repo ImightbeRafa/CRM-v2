@@ -19,7 +19,6 @@ const PREVIEW_UNLOCKED_KEYS = new Set([
   BOT_INBOX_V2_FLAG,
   BOT_LIFECYCLE_V2_FLAG,
   SOFT_DELETE_RESTORE_V2_FLAG,
-  AI_CUSTOMER_PASTE_V2_FLAG,
   SETUP_GUIDE_V2_FLAG,
   STATISTICS_REVENUE_V2_FLAG,
 ]);
@@ -158,7 +157,7 @@ export async function readTenantUiReadiness(tenantId: string) {
       ? statistics.config as Record<string, unknown>
       : {};
     return {
-      aiCustomerPaste: byKey.get(AI_CUSTOMER_PASTE_V2_FLAG)?.enabled === true || previewUnlocksV2(tenantId, AI_CUSTOMER_PASTE_V2_FLAG),
+      aiCustomerPaste: byKey.get(AI_CUSTOMER_PASTE_V2_FLAG)?.enabled === true,
       setupGuide: byKey.get(SETUP_GUIDE_V2_FLAG)?.enabled === true || previewUnlocksV2(tenantId, SETUP_GUIDE_V2_FLAG),
       statistics: {
         enabled: statistics?.enabled === true || previewUnlocksV2(tenantId, STATISTICS_REVENUE_V2_FLAG),
@@ -169,7 +168,7 @@ export async function readTenantUiReadiness(tenantId: string) {
     if (isMissingFeatureFlagTable(error)) {
       if (previewUnlocksV2(tenantId)) {
         return {
-          aiCustomerPaste: true,
+          aiCustomerPaste: false,
           setupGuide: true,
           statistics: { enabled: true, mode: 'primary' as const },
         };

@@ -27,6 +27,22 @@ like a failed login. Keep `NEXTAUTH_URL` on the same host you open in the browse
 Standalone Playwright uses port **3106** and needs
 `NEXTAUTH_URL=http://127.0.0.1:3106` for that process.
 
+## Preview vs production unlock
+
+Production (`VERCEL_ENV=production`) never synthesizes v2 flags. Ordinary
+tenants stay on `TenantFeatureFlag.enabled` (first deploy: all off).
+
+Vercel Preview and local `next dev` show the shared-DB warning for everyone,
+but v2 product flags unlock **only** when `tenantId` exactly matches
+`BETSY_V2_TEST_TENANT_ID`. If that env is unset, no tenant is unlocked.
+Set it on Vercel Preview (not Production) to
+`cmteijij70000jsoyedmtfnl1`. Do not set it on the production project env.
+
+First production deploy: `npm run betsyv2:verify-production` must report
+zero enabled flags. If isolated-tenant flags were left on from local
+testing, run gated `scripts/disable-betsy-v2-flags.mjs` (sets `enabled=false`
+only; does not delete rows or rewrite orders).
+
 Do not run `npm run build` while `npm run dev` is serving: the production `.next`
 output overwrites unhashed `main-app.js`, the browser then 404s client JS, and
 the sign-in form native-submits without hydrating. Restart `npm run dev` after a
@@ -100,9 +116,12 @@ table (match existing Prisma tables). Indexes stayed in-transaction with
 4. **Apply-script verify is a subset** (tables/RLS + a few columns). It does not
    assert every column/index. Catalog SQL in this Cloud Agent run is the
    fuller check.
-5. **Flags stay off for real tenants.** Only tenant
-   `cmteijij70000jsoyedmtfnl1` has v2 flags enabled. Other-tenant `Order` rows
-   stay on v1 (`lifecycleVersion` 1, `clientId` null) until a later rollout.
+5. **Flags stay off for real tenants.** First production deploy requires
+   zero enabled `TenantFeatureFlag` rows (`npm run betsyv2:verify-production`).
+   Isolated tenant `cmteijij70000jsoyedmtfnl1` gets Preview/local v2 through
+   `BETSY_V2_TEST_TENANT_ID`, not through production DB flags. Other-tenant
+   `Order` rows stay on v1 (`lifecycleVersion` 1, `clientId` null) until a
+   later rollout.
 6. **Never `prisma db push` / `prisma migrate`.** That would try to drop `lm_*`
    logistics tables. `npm run db:push` is gated; do not pass
    `--accept-data-loss`.

@@ -92,6 +92,21 @@ describe('Betsy v2 tenant UI', () => {
     assert.match(config, /destination: '\/ventas'/);
   });
 
+  it('scopes Preview v2 unlock to the isolated tenant and never uses a global unlock', () => {
+    const env = source('src/lib/review-environment.ts');
+    const flags = source('src/lib/feature-flags.ts');
+    const billing = source('src/lib/billing-access.ts');
+    const layout = source('src/app/layout.tsx');
+    assert.match(env, /arePreviewFeaturesUnlockedForTenant/);
+    assert.match(env, /BETSY_V2_TEST_TENANT_ID/);
+    assert.match(flags, /arePreviewFeaturesUnlockedForTenant/);
+    assert.match(billing, /arePreviewFeaturesUnlockedForTenant/);
+    assert.match(layout, /shouldShowPreviewDataWarning/);
+    assert.doesNotMatch(flags, /arePreviewFeaturesUnlocked\(\)/);
+    assert.doesNotMatch(billing, /arePreviewFeaturesUnlocked\(\)/);
+    assert.doesNotMatch(layout, /arePreviewFeaturesUnlocked\(\)/);
+  });
+
   it('uses one bounded v2 order read while leaving the legacy route fan-out off-path', () => {
     const route = source('src/app/api/estadisticas/v2/overview/route.ts');
     const dashboard = source('src/app/estadisticas/components/EstadisticasDashboard.tsx');

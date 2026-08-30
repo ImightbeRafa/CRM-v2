@@ -1,10 +1,5 @@
 {
   "version": 2,
-  "git": {
-    "deploymentEnabled": {
-      "codex/betsyv2-review": false
-    }
-  },
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "installCommand": "npm install",

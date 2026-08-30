@@ -38,7 +38,7 @@ Status legend: `REMOVED` | `QUARANTINE` | `KEEP` | `PENDING_KNIP`
 | `/home` | Canonical public landing (`/` redirects here) |
 | `@sentry/nextjs`, instrumentation | Real error monitoring |
 | `sharp` | Next image optimization |
-| `db:push` / `safe-db-push.mjs` / `db:push:unsafe` | DB tooling (unsafe = break-glass, not Phase 0 removal) |
+| `db:push` / `safe-db-push.mjs` | DB tooling (`prisma db push` is gated; `db:push:unsafe` was removed) |
 | Live `src/lib/correos/`, auth-helpers, auth-options, bot submodules | Actively used |
 | shadcn/ui unused named exports | Design-system barrels until deliberate UI prune |
 

@@ -34,7 +34,8 @@ Organize unfinished work so Phase 2 can finish items deliberately. Seeded at kic
 
 ### W7 — Safety follow-up (not a removal)
 - **Item:** `db:push:unsafe` script
-- **Action:** Document risk; consider renaming or extra guard later — out of Phase 0 delete scope
+- **Status:** DONE (removed 2026-08-30)
+- **Resolution:** Deleted the `package.json` alias. `npm run db:push` remains `scripts/safe-db-push.mjs` only.
 
 ### W8 — Knip unused-file triage
 - **Status:** DONE for verified orphan files (human OK 2026-07-30)

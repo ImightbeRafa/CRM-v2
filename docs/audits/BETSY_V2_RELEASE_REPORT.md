@@ -2,9 +2,26 @@
 
 Date: 2026-08-29
 
-Branch: `codex/betsyv2-local`
+## Production candidate (2026-08-30)
 
-Remote status: **local only — not pushed or deployed**
+Branch: `cursor/order-qa-feedback-fixes-6cf1` (v2 + QA + production-cut).
+Target: `origin/dev`. **Do not merge until Vercel is green and a human
+approves.** The agent does not push or merge `origin/dev`.
+
+- Additive SQL **018–023 is already applied** on shared Supabase. Do not
+  re-apply. Do not `prisma db push` / `prisma migrate`.
+- First production deploy: **all `TenantFeatureFlag.enabled` rows off**.
+  Production never synthesizes v2 flags.
+- Vercel Preview unlocks v2 only for `BETSY_V2_TEST_TENANT_ID`
+  (`cmteijij70000jsoyedmtfnl1`). Other tenants on Preview keep production
+  flag state. The amber banner is env-only and does not unlock flags.
+- No historical order rewrite, no website pickup, no `lm_*` changes, no
+  payment DB column.
+
+The 2026-08-29 local report below is historical (it recorded SQL as
+unexecuted before apply). Catalog truth is
+`docs/audits/BETSY_V2_PROD_SQL_REVIEW.md` plus
+`npm run betsyv2:verify-sql`.
 
 ## Release contents
 

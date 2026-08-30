@@ -2,6 +2,21 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-30 — Production candidate: tenant-scoped Preview, flags off
+
+- Preview v2 product flags unlock only when `VERCEL_ENV` is non-production
+  **and** `tenantId === BETSY_V2_TEST_TENANT_ID`. Production never unlocks.
+  The shared-DB banner stays env-only (`shouldShowPreviewDataWarning`).
+- Ordinary store owners on a Vercel Preview keep production flag state.
+- Removed `db:push:unsafe`. Verify script `--production-release` requires
+  zero enabled `TenantFeatureFlag` rows. Gated disable script sets
+  `enabled=false` only (no deletes, no order rewrites).
+- Fixed duplicate `date-fns` import in `MobileOrderCard` that failed Vercel
+  `next build`. No Prisma schema / `lm_*` / historical order changes.
+- Prove: `npx tsx --test src/lib/__tests__/review-environment.test.ts`,
+  `npm run test:tenant-ui`, `npm run test:correos-credentials`,
+  `npm run lint`, `npm run build`. Do not merge `origin/dev` from the agent.
+
 ## 2026-08-30 — Preview QA: orders form, stats cobrado, copy
 
 - Ventas: cantón/distrito commit on blur/Enter, keep distrito when still

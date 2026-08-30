@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
-import { arePreviewFeaturesUnlocked } from '@/lib/review-environment';
+import { arePreviewFeaturesUnlockedForTenant } from '@/lib/review-environment';
 
 export const ORDER_LIFECYCLE_V2_FLAG = 'order_lifecycle_v2';
 export const PRODUCTION_SERVER_V2_FLAG = 'production_server_v2';
@@ -30,13 +30,18 @@ function isMissingFeatureFlagTable(error: unknown) {
     : String((error as { code?: unknown })?.code || '') === '42P01';
 }
 
+function previewUnlocksV2(tenantId: string, key?: string): boolean {
+  if (key !== undefined && !PREVIEW_UNLOCKED_KEYS.has(key)) return false;
+  return arePreviewFeaturesUnlockedForTenant(tenantId);
+}
+
 /**
  * Reads a tenant flag from Postgres on every decision. Missing additive schema
  * is deliberately fail-safe: the feature remains off and the legacy adapter
  * set continues unchanged.
  */
 export async function isTenantFeatureEnabled(tenantId: string, key: string): Promise<boolean> {
-  if (arePreviewFeaturesUnlocked() && PREVIEW_UNLOCKED_KEYS.has(key)) return true;
+  if (previewUnlocksV2(tenantId, key)) return true;
   try {
     const flag = await prisma.tenantFeatureFlag.findFirst({
       where: {
@@ -69,12 +74,11 @@ async function readTenantFlag(tenantId: string, key: string): Promise<TenantFeat
     const config = flag?.config && typeof flag.config === 'object' && !Array.isArray(flag.config)
       ? flag.config as FeatureFlagConfig
       : {};
-    const enabled = flag?.enabled === true
-      || (arePreviewFeaturesUnlocked() && PREVIEW_UNLOCKED_KEYS.has(key));
+    const enabled = flag?.enabled === true || previewUnlocksV2(tenantId, key);
     return { enabled, config };
   } catch (error) {
     if (isMissingFeatureFlagTable(error)) {
-      if (arePreviewFeaturesUnlocked() && PREVIEW_UNLOCKED_KEYS.has(key)) {
+      if (previewUnlocksV2(tenantId, key)) {
         return { enabled: true, config: {} };
       }
       return { enabled: false, config: {} };
@@ -107,8 +111,8 @@ export async function readClientsServerReadiness(tenantId: string) {
     ? lifecycleFlag.config.clientBackfillCompletedAt
     : null;
   return {
-    enabled: (clientsFlag.enabled && backfillCompletedAt !== null) || arePreviewFeaturesUnlocked(),
-    requested: clientsFlag.enabled || arePreviewFeaturesUnlocked(),
+    enabled: (clientsFlag.enabled && backfillCompletedAt !== null) || previewUnlocksV2(tenantId),
+    requested: clientsFlag.enabled || previewUnlocksV2(tenantId),
     backfillCompletedAt,
   };
 }
@@ -154,16 +158,16 @@ export async function readTenantUiReadiness(tenantId: string) {
       ? statistics.config as Record<string, unknown>
       : {};
     return {
-      aiCustomerPaste: byKey.get(AI_CUSTOMER_PASTE_V2_FLAG)?.enabled === true || arePreviewFeaturesUnlocked(),
-      setupGuide: byKey.get(SETUP_GUIDE_V2_FLAG)?.enabled === true || arePreviewFeaturesUnlocked(),
+      aiCustomerPaste: byKey.get(AI_CUSTOMER_PASTE_V2_FLAG)?.enabled === true || previewUnlocksV2(tenantId, AI_CUSTOMER_PASTE_V2_FLAG),
+      setupGuide: byKey.get(SETUP_GUIDE_V2_FLAG)?.enabled === true || previewUnlocksV2(tenantId, SETUP_GUIDE_V2_FLAG),
       statistics: {
-        enabled: statistics?.enabled === true || arePreviewFeaturesUnlocked(),
-        mode: arePreviewFeaturesUnlocked() || statisticsConfig.mode === 'primary' ? 'primary' as const : 'observe' as const,
+        enabled: statistics?.enabled === true || previewUnlocksV2(tenantId, STATISTICS_REVENUE_V2_FLAG),
+        mode: previewUnlocksV2(tenantId, STATISTICS_REVENUE_V2_FLAG) || statisticsConfig.mode === 'primary' ? 'primary' as const : 'observe' as const,
       },
     };
   } catch (error) {
     if (isMissingFeatureFlagTable(error)) {
-      if (arePreviewFeaturesUnlocked()) {
+      if (previewUnlocksV2(tenantId)) {
         return {
           aiCustomerPaste: true,
           setupGuide: true,
@@ -207,11 +211,12 @@ async function readLifecycleReadiness(tenantId: string) {
       : {};
     // Enabling the switch without recording reconciliation readiness must not
     // create duplicate clients for a legacy tenant. Preview unlocks the adapter
-    // so reviewers can exercise the full Ventas/Producción path.
+    // only for the isolated test tenant so reviewers can exercise the full
+    // Ventas/Producción path without flipping production stores.
     return (flag?.enabled === true && typeof config.clientBackfillCompletedAt === 'string')
-      || arePreviewFeaturesUnlocked();
+      || previewUnlocksV2(tenantId, ORDER_LIFECYCLE_V2_FLAG);
   } catch (error) {
-    if (isMissingFeatureFlagTable(error)) return arePreviewFeaturesUnlocked();
+    if (isMissingFeatureFlagTable(error)) return previewUnlocksV2(tenantId, ORDER_LIFECYCLE_V2_FLAG);
     throw error;
   }
 }

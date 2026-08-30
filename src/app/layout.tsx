@@ -10,7 +10,7 @@ import { ClientProviders } from "./components/ClientProviders"
 import { ThemeProvider } from "./components/ThemeProvider"
 import MetaPixel from "./components/MetaPixel"
 import { PreviewDataWarning } from "./components/PreviewDataWarning"
-import { arePreviewFeaturesUnlocked } from "@/lib/review-environment"
+import { shouldShowPreviewDataWarning } from "@/lib/review-environment"
 import type { Metadata, Viewport } from 'next'
 
 const jakarta = Plus_Jakarta_Sans({
@@ -57,7 +57,7 @@ export default async function RootLayout({
                 <ConfigProvider>
                   <ClientProviders>
                     <SubscriptionBanner />
-                    {arePreviewFeaturesUnlocked() ? <PreviewDataWarning /> : null}
+                    {shouldShowPreviewDataWarning() ? <PreviewDataWarning /> : null}
                     {children}
                   </ClientProviders>
                 </ConfigProvider>

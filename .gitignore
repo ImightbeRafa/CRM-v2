@@ -20,6 +20,7 @@ scripts/*
 !scripts/betsy-v2-terminal-statuses.ts
 !scripts/apply-betsy-v2-additive-sql.mjs
 !scripts/verify-betsy-v2-additive-sql.mjs
+!scripts/disable-betsy-v2-flags.mjs
 SDK_V2_FINAL_CONFIGURATION.txt
 SDK_V2_IMPLEMENTATION.txt
 # Documentation and Notes (local only)

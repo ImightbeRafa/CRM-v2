@@ -356,14 +356,14 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
-                          <Badge 
+                          <Badge
                             variant={
                               sale.status === 'Pendiente' ? 'warning' :
                               sale.status === 'Completado' ? 'success' : 'default'
                             }
                             className="font-medium"
                           >
-                            {sale.status === 'Pendiente' ? '⏳' : 
+                            {sale.status === 'Pendiente' ? '⏳' :
                              sale.status === 'Completado' ? '✅' : '📋'} {sale.status}
                           </Badge>
                           <PaymentStatusBadge order={sale} className="w-fit" />

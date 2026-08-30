@@ -3,11 +3,18 @@
  * Does not apply DDL. Safe against shared Supabase.
  *
  *   node --env-file=.env.local scripts/verify-betsy-v2-additive-sql.mjs
+ *   node --env-file=.env.local scripts/verify-betsy-v2-additive-sql.mjs --production-release
+ *
+ * `--production-release` (or BETSY_V2_PRODUCTION_RELEASE=1) requires zero
+ * enabled TenantFeatureFlag rows globally. Isolated-tenant flags must also
+ * be off before the first production deploy.
  */
 import postgres from 'postgres';
 
 const url = process.env.DIRECT_URL || process.env.DATABASE_URL;
 const tenantId = process.env.BETSY_V2_TEST_TENANT_ID;
+const productionRelease = process.argv.includes('--production-release')
+  || process.env.BETSY_V2_PRODUCTION_RELEASE === '1';
 if (!url) {
   console.error('ERROR: DIRECT_URL / DATABASE_URL is missing.');
   process.exit(1);
@@ -92,6 +99,7 @@ const counts = tenantId
         (SELECT COUNT(*)::int FROM public."Order") AS orders,
         (SELECT COUNT(*)::int FROM public."Order" WHERE "tenantId" <> ${tenantId}) AS other_tenant_orders,
         (SELECT COUNT(*)::int FROM public."Order" WHERE "tenantId" = ${tenantId}) AS isolated_orders,
+        (SELECT COUNT(*)::int FROM public."TenantFeatureFlag" WHERE enabled) AS enabled_flags,
         (SELECT COUNT(*)::int FROM public."TenantFeatureFlag" WHERE enabled AND "tenantId" = ${tenantId}) AS isolated_enabled_flags,
         (SELECT COUNT(*)::int FROM public."TenantFeatureFlag" WHERE enabled AND "tenantId" <> ${tenantId}) AS other_enabled_flags,
         (SELECT COUNT(*)::int FROM public."TenantFeatureFlag" WHERE "scope" IS NULL OR "scope" = '') AS global_flags
@@ -100,6 +108,7 @@ const counts = tenantId
       SELECT
         (SELECT COUNT(*)::int FROM public."Order") AS orders,
         (SELECT COUNT(*)::int FROM public."TenantFeatureFlag" WHERE enabled) AS enabled_flags,
+        (SELECT COUNT(*)::int FROM public."TenantFeatureFlag" WHERE enabled) AS other_enabled_flags,
         (SELECT COUNT(*)::int FROM public."TenantFeatureFlag" WHERE "scope" IS NULL OR "scope" = '') AS global_flags
     `;
 
@@ -111,6 +120,13 @@ const flags = tenantId
       ORDER BY key
     `
   : [];
+
+const enabledFlagRows = await sql`
+  SELECT "tenantId", key, enabled, "scope"
+  FROM public."TenantFeatureFlag"
+  WHERE enabled
+  ORDER BY "tenantId", key
+`;
 
 const errors = [];
 if (tables.length !== expectedTables.length) {
@@ -128,15 +144,20 @@ if (invalidIndexes.length > 0) {
   errors.push(`invalid indexes: ${invalidIndexes.map((row) => row.name).join(', ')}`);
 }
 const snapshot = counts[0];
-if (Number(snapshot.other_enabled_flags || 0) !== 0) {
-  errors.push('v2 flags are enabled on a tenant other than the isolated test tenant');
-}
 if (Number(snapshot.global_flags || 0) !== 0) {
   errors.push('global v2 flags are present');
+}
+if (productionRelease) {
+  if (Number(snapshot.enabled_flags || 0) !== 0) {
+    errors.push('production release requires zero enabled v2 flags globally');
+  }
+} else if (Number(snapshot.other_enabled_flags || 0) !== 0) {
+  errors.push('v2 flags are enabled on a tenant other than the isolated test tenant');
 }
 
 const report = {
   ok: errors.length === 0,
+  productionRelease,
   errors,
   tables,
   columns,
@@ -144,6 +165,7 @@ const report = {
   invalidIndexes,
   counts: snapshot,
   isolatedFlags: flags,
+  enabledFlagRows,
   migrationLedgers: ledger,
 };
 

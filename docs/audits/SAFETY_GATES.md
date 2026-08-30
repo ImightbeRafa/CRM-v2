@@ -47,4 +47,4 @@ Only `SAFE_DELETE` may be applied without human OK.
 
 ## Database reminder
 
-`DATABASE_URL` / `DIRECT_URL` point at shared Supabase. Use `npm run db:push` only via `scripts/safe-db-push.mjs` on disposable local DBs. Prefer never running DB push in audit phases. `db:push:unsafe` exists but must not be used against shared Supabase — track as safety follow-up, not a Phase 0 removal.
+`DATABASE_URL` / `DIRECT_URL` point at shared Supabase. Use `npm run db:push` only via `scripts/safe-db-push.mjs` on disposable local DBs. There is no `db:push:unsafe` script; `prisma db push` must not be run against shared Supabase.

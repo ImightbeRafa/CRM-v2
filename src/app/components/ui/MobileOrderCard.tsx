@@ -6,7 +6,6 @@ import { ChevronDown, Clock } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import { PaymentStatusBadge } from '@/app/components/orders/PaymentStatusBadge';
 import { formatDistanceToNow } from 'date-fns';
-import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 interface OrderData {

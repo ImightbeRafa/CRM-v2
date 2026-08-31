@@ -435,8 +435,12 @@ WHATSAPP_VERIFY_TOKEN=your_verify_token
 |------------|---------|
 | `instagram_basic` | Access basic account info |
 | `instagram_manage_messages` | Read/send DMs |
-| `pages_show_list` | List linked FB pages |
-| `business_management` | Access business settings |
+| `pages_show_list` | List linked FB pages (`GET /me/accounts`) |
+| `pages_manage_metadata` | Subscribe the Page to app webhooks |
+| `pages_messaging` | Send replies through the Page token |
+| `business_management` | Access business settings / Embedded Signup |
+| `whatsapp_business_management` | Manage WABA + phone numbers |
+| `whatsapp_business_messaging` | Send/receive Cloud API messages |
 
 ### Demo Video Requirements
 

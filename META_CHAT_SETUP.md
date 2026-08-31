@@ -5,15 +5,30 @@ This app uses the official Meta Graph API path for both customer-facing channels
 - WhatsApp: WhatsApp Cloud API, routed by `phone_number_id`.
 - Instagram: Messenger API support for Instagram, routed by the Instagram Business account id.
 
+**Two products, two webhooks.** Do not point the CRM inbox at the staff bot.
+
+| Product | Callback | Audience |
+|---|---|---|
+| CRM inbox (`/chats`) | `https://betsycrm.com/api/chat/webhook` | Customers on Instagram / WhatsApp |
+| Staff AI assistant | `https://betsycrm.com/api/bot/whatsapp/webhook` | Internal team |
+
+Owner diagnostic: `GET /api/chat/meta-status` (also rendered on `/config/social`). It reports which env vars are set without leaking secrets.
+
 ## Betsy URLs
 
-Replace `https://YOUR_DOMAIN` with the production domain in `NEXTAUTH_URL`.
+Production origin is `https://betsycrm.com` (`NEXTAUTH_URL` must match this, or OAuth redirect_uri checks fail).
 
-- Unified chat webhook callback: `https://YOUR_DOMAIN/api/chat/webhook`
-- Instagram OAuth redirect: `https://YOUR_DOMAIN/api/auth/instagram/callback`
-- Instagram data deletion callback: `https://YOUR_DOMAIN/api/auth/instagram/data-deletion`
-- Social account configuration: `https://YOUR_DOMAIN/config/social`
-- Chat inbox: `https://YOUR_DOMAIN/chats`
+- Unified chat webhook callback: `https://betsycrm.com/api/chat/webhook`
+- Instagram OAuth redirect: `https://betsycrm.com/api/auth/instagram/callback`
+- Instagram data deletion callback: `https://betsycrm.com/api/auth/instagram/data-deletion`
+- Data deletion instructions: `https://betsycrm.com/data-deletion`
+- Privacy / Terms: `https://betsycrm.com/privacy` · `https://betsycrm.com/terms`
+- Social account configuration: `https://betsycrm.com/config/social`
+- Chat inbox: `https://betsycrm.com/chats`
+
+Instagram Login scopes requested by Betsy (needed because the callback calls `GET /me/accounts` then subscribes the Page):
+
+`instagram_basic`, `instagram_manage_messages`, `pages_show_list`, `pages_manage_metadata`, `pages_messaging`, `business_management`
 
 ## Environment Variables
 
@@ -92,9 +107,8 @@ The bot webhook and the CRM inbox webhook are separate products:
 
 Expected permissions for the CRM inbox:
 
-- WhatsApp: `whatsapp_business_management`, `whatsapp_business_messaging`
-- Instagram: `instagram_manage_messages`
-- Depending on Meta's current review flow, Page/Messenger permissions may also be requested for the Instagram Page subscription path.
+- WhatsApp: `whatsapp_business_management`, `whatsapp_business_messaging`, `business_management`
+- Instagram: `instagram_basic`, `instagram_manage_messages`, `pages_show_list`, `pages_manage_metadata`, `pages_messaging`, `business_management`
 
 For review, prepare a short screen recording that shows:
 

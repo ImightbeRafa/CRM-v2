@@ -2,6 +2,14 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-31 — Betsy Chat Meta readiness + dedicated Notion board
+
+- Canonical Meta inbox config in `src/lib/meta-chat-config.ts` (IG OAuth scopes, public URLs, env presence checks).
+- Instagram Login now requests Page scopes (`pages_show_list`, `pages_manage_metadata`, `pages_messaging`, …) so `/me/accounts` in the callback can actually find the IG Business account.
+- Owner diagnostic: `GET /api/chat/meta-status` + **Estado de Meta** card on `/config/social`. No secrets returned.
+- Runbook `META_CHAT_SETUP.md` uses production `betsycrm.com` URLs and the two-webhook split (CRM inbox vs staff bot).
+- Implementation board lives in Notion under the Betsy project (not the general Tasks board).
+
 ## 2026-08-30 — Remove Grok enhance bar from Ventas form
 
 - Removed "Mejorar con Grok" from Nuevo pedido. Local paste-to-fill stays.

@@ -14,10 +14,10 @@ test('Instagram OAuth scopes include Page listing required by the callback', () 
 })
 
 test('public Meta URLs point at the CRM inbox webhook, not the staff bot', () => {
-  const urls = getMetaChatPublicUrls('https://betsycrm.com')
-  assert.equal(urls.inboxWebhook, 'https://betsycrm.com/api/chat/webhook')
-  assert.equal(urls.instagramOAuthRedirect, 'https://betsycrm.com/api/auth/instagram/callback')
-  assert.equal(urls.staffBotWebhook, 'https://betsycrm.com/api/bot/whatsapp/webhook')
+  const urls = getMetaChatPublicUrls('https://crm.example')
+  assert.equal(urls.inboxWebhook, 'https://crm.example/api/chat/webhook')
+  assert.equal(urls.instagramOAuthRedirect, 'https://crm.example/api/auth/instagram/callback')
+  assert.equal(urls.staffBotWebhook, 'https://crm.example/api/bot/whatsapp/webhook')
   assert.notEqual(urls.inboxWebhook, urls.staffBotWebhook)
 })
 
@@ -31,4 +31,10 @@ test('readiness reports missing inbox env without leaking values', () => {
   assert.equal(secretFlag?.set, false)
   if (previous === undefined) delete process.env.META_APP_SECRET
   else process.env.META_APP_SECRET = previous
+})
+
+test('readiness notes warn about www origin and verify-token fallback', () => {
+  const readiness = getMetaChatReadiness()
+  assert.ok(readiness.notes.some((note) => note.includes('NEXTAUTH_URL origin')))
+  assert.ok(readiness.notes.some((note) => note.includes('META_WEBHOOK_VERIFY_TOKEN')))
 })

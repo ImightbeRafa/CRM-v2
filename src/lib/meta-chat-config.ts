@@ -103,6 +103,8 @@ export function getMetaChatReadiness() {
       'CRM inbox webhook is /api/chat/webhook. Do not point Meta inbox subscriptions at /api/bot/whatsapp/webhook.',
       'WHATSAPP_ACCESS_TOKEN / PHONE_NUMBER_ID / VERIFY_TOKEN belong to the staff AI bot, not tenant inboxes.',
       'Instagram requires a Professional Business account linked to a Facebook Page. Creator accounts cannot receive DMs via this API.',
+      'Paste the NEXTAUTH_URL origin (www host) in Meta. Apex betsycrm.com 307s to www, which often breaks webhook GET verification.',
+      'GET /api/chat/webhook can succeed using WHATSAPP_VERIFY_TOKEN as a fallback. Confirm META_WEBHOOK_VERIFY_TOKEN itself is set.',
     ],
   }
 }

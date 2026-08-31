@@ -9,22 +9,22 @@ This app uses the official Meta Graph API path for both customer-facing channels
 
 | Product | Callback | Audience |
 |---|---|---|
-| CRM inbox (`/chats`) | `https://betsycrm.com/api/chat/webhook` | Customers on Instagram / WhatsApp |
-| Staff AI assistant | `https://betsycrm.com/api/bot/whatsapp/webhook` | Internal team |
+| CRM inbox (`/chats`) | `{NEXTAUTH_URL}/api/chat/webhook` | Customers on Instagram / WhatsApp |
+| Staff AI assistant | `{NEXTAUTH_URL}/api/bot/whatsapp/webhook` | Internal team |
 
 Owner diagnostic: `GET /api/chat/meta-status` (also rendered on `/config/social`). It reports which env vars are set without leaking secrets.
 
 ## Betsy URLs
 
-Production origin is `https://betsycrm.com` (`NEXTAUTH_URL` must match this, or OAuth redirect_uri checks fail).
+Production `NEXTAUTH_URL` is the **www** host (apex `betsycrm.com` 307s to www). Use that exact origin in Meta, not the apex.
 
-- Unified chat webhook callback: `https://betsycrm.com/api/chat/webhook`
-- Instagram OAuth redirect: `https://betsycrm.com/api/auth/instagram/callback`
-- Instagram data deletion callback: `https://betsycrm.com/api/auth/instagram/data-deletion`
-- Data deletion instructions: `https://betsycrm.com/data-deletion`
-- Privacy / Terms: `https://betsycrm.com/privacy` · `https://betsycrm.com/terms`
-- Social account configuration: `https://betsycrm.com/config/social`
-- Chat inbox: `https://betsycrm.com/chats`
+- Unified chat webhook callback: `{NEXTAUTH_URL}/api/chat/webhook`
+- Instagram OAuth redirect: `{NEXTAUTH_URL}/api/auth/instagram/callback`
+- Instagram data deletion callback: `{NEXTAUTH_URL}/api/auth/instagram/data-deletion`
+- Data deletion instructions: `{NEXTAUTH_URL}/data-deletion`
+- Privacy / Terms: `{NEXTAUTH_URL}/privacy` · `{NEXTAUTH_URL}/terms`
+- Social account configuration: `{NEXTAUTH_URL}/config/social`
+- Chat inbox: `{NEXTAUTH_URL}/chats`
 
 Instagram Login scopes requested by Betsy (needed because the callback calls `GET /me/accounts` then subscribes the Page):
 
@@ -45,7 +45,10 @@ NEXT_PUBLIC_FB_LOGIN_CONFIG_ID=
 ```
 
 Backward-compatible verify token names still work, but new installs should use
-`META_WEBHOOK_VERIFY_TOKEN` for the unified `/api/chat/webhook`.
+`META_WEBHOOK_VERIFY_TOKEN` for the unified `/api/chat/webhook`. A live GET
+verify on that route can succeed using the staff-bot `WHATSAPP_VERIFY_TOKEN`
+fallback, so seeing a configured webhook does not prove the inbox-specific
+token is set.
 
 For the separate Betsy AI WhatsApp assistant bot, keep using:
 

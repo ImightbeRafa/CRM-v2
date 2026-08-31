@@ -2,6 +2,16 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-08-31 — Production Meta env audit (www, not apex)
+
+- Probed live Production (www host) without printing secrets.
+  `META_APP_ID` and both verify tokens are present; Instagram OAuth `client_id`
+  is 1514613536240301 (Graph name BetsyCRM). Apex `betsycrm.com` 307s to www.
+- Runbook now tells Meta to use `NEXTAUTH_URL` (www), not the apex, so webhook
+  GET verify does not fail on the 307. `dashboard.betsycrm.com` does not resolve.
+- Production Instagram Login still requests only `instagram_manage_messages`
+  until this branch is on Production.
+
 ## 2026-08-31 — Betsy Chat Meta readiness + dedicated Notion board
 
 - Canonical Meta inbox config in `src/lib/meta-chat-config.ts` (IG OAuth scopes, public URLs, env presence checks).

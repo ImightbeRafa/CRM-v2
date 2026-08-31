@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { WHATSAPP_OAUTH_SCOPES } from '@/lib/meta-chat-config'
 
 /**
  * Direct OAuth URL Generator (Fallback Method)
@@ -24,10 +25,7 @@ export async function GET(request: NextRequest) {
   
   // Build OAuth URL with explicit redirect_uri
   const redirectUri = `${baseUrl}/config/social`
-  const scopes = [
-    'whatsapp_business_management',
-    'whatsapp_business_messaging'
-  ].join(',')
+  const scopes = WHATSAPP_OAUTH_SCOPES.join(',')
   
   const oauthUrl = new URL('https://www.facebook.com/v24.0/dialog/oauth')
   oauthUrl.searchParams.set('client_id', appId)

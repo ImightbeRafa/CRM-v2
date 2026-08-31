@@ -12,6 +12,34 @@ interface SocialAccount {
   isActive: boolean
 }
 
+interface MetaEnvFlag {
+  key: string
+  set: boolean
+}
+
+interface MetaStatus {
+  success: boolean
+  blockers: string[]
+  warnings: string[]
+  notes: string[]
+  instagramOAuthScopes: string[]
+  urls: {
+    inboxWebhook: string
+    instagramOAuthRedirect: string
+    socialConfig: string
+    staffBotWebhook: string
+  }
+  env: {
+    inboxRequired: MetaEnvFlag[]
+    inboxRecommended: MetaEnvFlag[]
+    staffBot: MetaEnvFlag[]
+  }
+  tenant: {
+    linkedAccounts: Array<{ platform: string; count: number }>
+    readyToReceive: boolean
+  }
+}
+
 export default function SocialConfigPage() {
   const { data: session } = useSession()
   const router = useRouter()
@@ -29,6 +57,8 @@ export default function SocialConfigPage() {
   const [unlinking, setUnlinking] = useState<string | null>(null)
   const [resubscribing, setResubscribing] = useState<string | null>(null)
   const [fbReady, setFbReady] = useState(false)
+  const [metaStatus, setMetaStatus] = useState<MetaStatus | null>(null)
+  const [metaStatusError, setMetaStatusError] = useState('')
   const META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID as string | undefined
   const FB_LOGIN_CONFIG_ID = process.env.NEXT_PUBLIC_FB_LOGIN_CONFIG_ID as string | undefined
   const META_GRAPH_API_VERSION = (process.env.NEXT_PUBLIC_META_GRAPH_API_VERSION as string | undefined) || 'v24.0'
@@ -44,6 +74,7 @@ export default function SocialConfigPage() {
       return
     }
     fetchAccounts()
+    fetchMetaStatus()
   }, [session, isOwnerOrMaster, router])
 
   // Load Facebook JS SDK once for Embedded Signup
@@ -234,6 +265,18 @@ export default function SocialConfigPage() {
     })
   }
 
+  async function fetchMetaStatus() {
+    try {
+      const res = await fetch('/api/chat/meta-status')
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'No se pudo leer el estado de Meta')
+      setMetaStatus(json)
+      setMetaStatusError('')
+    } catch (e: unknown) {
+      setMetaStatusError(e instanceof Error ? e.message : 'No se pudo leer el estado de Meta')
+    }
+  }
+
   async function fetchAccounts() {
     try {
       const res = await fetch('/api/chat/accounts')
@@ -377,6 +420,53 @@ export default function SocialConfigPage() {
       <div>
         <h1 className="text-2xl font-bold">Configuración de Cuentas Sociales</h1>
         <p className="text-muted-foreground">Aquí puedes vincular WhatsApp e Instagram para gestionar chats desde Betsy.</p>
+      </div>
+
+      <div className="border rounded-lg p-6 bg-card shadow-sm">
+        <h2 className="text-lg font-semibold mb-1">Estado de Meta (inbox CRM)</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Esto revisa si Betsy tiene las variables y URLs correctas para el inbox de clientes.
+          El bot interno de WhatsApp es un producto aparte.
+        </p>
+        {metaStatusError ? (
+          <p className="text-sm text-red-700">{metaStatusError}</p>
+        ) : !metaStatus ? (
+          <p className="text-sm text-muted-foreground">Revisando configuración…</p>
+        ) : (
+          <div className="space-y-4">
+            {metaStatus.blockers.length > 0 ? (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-800">
+                Faltan variables obligatorias en Vercel: {metaStatus.blockers.join(', ')}
+              </div>
+            ) : (
+              <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm text-green-800">
+                Variables obligatorias del inbox están presentes. Sigue el checklist de Meta for Developers.
+              </div>
+            )}
+            {metaStatus.warnings.length > 0 && (
+              <p className="text-sm text-amber-800">
+                Recomendadas: {metaStatus.warnings.join(', ')}
+                {metaStatus.warnings.includes('NEXT_PUBLIC_FB_LOGIN_CONFIG_ID')
+                  ? ' — sin CONFIG_ID el botón azul de WhatsApp Embedded Signup no funciona.'
+                  : ''}
+              </p>
+            )}
+            <div className="grid gap-2 text-xs font-mono text-muted-foreground">
+              <div>Webhook inbox: {metaStatus.urls.inboxWebhook}</div>
+              <div>OAuth Instagram: {metaStatus.urls.instagramOAuthRedirect}</div>
+              <div>Bot interno (no uses este para el inbox): {metaStatus.urls.staffBotWebhook}</div>
+              <div>
+                Cuentas vinculadas:{' '}
+                {metaStatus.tenant.linkedAccounts.length === 0
+                  ? 'ninguna'
+                  : metaStatus.tenant.linkedAccounts.map((row) => `${row.platform} (${row.count})`).join(', ')}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Permisos Instagram que Betsy pide ahora: {metaStatus.instagramOAuthScopes.join(', ')}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Instagram Setup */}

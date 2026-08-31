@@ -5,15 +5,30 @@ This app uses the official Meta Graph API path for both customer-facing channels
 - WhatsApp: WhatsApp Cloud API, routed by `phone_number_id`.
 - Instagram: Messenger API support for Instagram, routed by the Instagram Business account id.
 
+**Two products, two webhooks.** Do not point the CRM inbox at the staff bot.
+
+| Product | Callback | Audience |
+|---|---|---|
+| CRM inbox (`/chats`) | `{NEXTAUTH_URL}/api/chat/webhook` | Customers on Instagram / WhatsApp |
+| Staff AI assistant | `{NEXTAUTH_URL}/api/bot/whatsapp/webhook` | Internal team |
+
+Owner diagnostic: `GET /api/chat/meta-status` (also rendered on `/config/social`). It reports which env vars are set without leaking secrets.
+
 ## Betsy URLs
 
-Replace `https://YOUR_DOMAIN` with the production domain in `NEXTAUTH_URL`.
+Production `NEXTAUTH_URL` is the **www** host (apex `betsycrm.com` 307s to www). Use that exact origin in Meta, not the apex.
 
-- Unified chat webhook callback: `https://YOUR_DOMAIN/api/chat/webhook`
-- Instagram OAuth redirect: `https://YOUR_DOMAIN/api/auth/instagram/callback`
-- Instagram data deletion callback: `https://YOUR_DOMAIN/api/auth/instagram/data-deletion`
-- Social account configuration: `https://YOUR_DOMAIN/config/social`
-- Chat inbox: `https://YOUR_DOMAIN/chats`
+- Unified chat webhook callback: `{NEXTAUTH_URL}/api/chat/webhook`
+- Instagram OAuth redirect: `{NEXTAUTH_URL}/api/auth/instagram/callback`
+- Instagram data deletion callback: `{NEXTAUTH_URL}/api/auth/instagram/data-deletion`
+- Data deletion instructions: `{NEXTAUTH_URL}/data-deletion`
+- Privacy / Terms: `{NEXTAUTH_URL}/privacy` · `{NEXTAUTH_URL}/terms`
+- Social account configuration: `{NEXTAUTH_URL}/config/social`
+- Chat inbox: `{NEXTAUTH_URL}/chats`
+
+Instagram Login scopes requested by Betsy (needed because the callback calls `GET /me/accounts` then subscribes the Page):
+
+`instagram_basic`, `instagram_manage_messages`, `pages_show_list`, `pages_manage_metadata`, `pages_messaging`, `business_management`
 
 ## Environment Variables
 
@@ -30,7 +45,10 @@ NEXT_PUBLIC_FB_LOGIN_CONFIG_ID=
 ```
 
 Backward-compatible verify token names still work, but new installs should use
-`META_WEBHOOK_VERIFY_TOKEN` for the unified `/api/chat/webhook`.
+`META_WEBHOOK_VERIFY_TOKEN` for the unified `/api/chat/webhook`. A live GET
+verify on that route can succeed using the staff-bot `WHATSAPP_VERIFY_TOKEN`
+fallback, so seeing a configured webhook does not prove the inbox-specific
+token is set.
 
 For the separate Betsy AI WhatsApp assistant bot, keep using:
 
@@ -92,9 +110,8 @@ The bot webhook and the CRM inbox webhook are separate products:
 
 Expected permissions for the CRM inbox:
 
-- WhatsApp: `whatsapp_business_management`, `whatsapp_business_messaging`
-- Instagram: `instagram_manage_messages`
-- Depending on Meta's current review flow, Page/Messenger permissions may also be requested for the Instagram Page subscription path.
+- WhatsApp: `whatsapp_business_management`, `whatsapp_business_messaging`, `business_management`
+- Instagram: `instagram_basic`, `instagram_manage_messages`, `pages_show_list`, `pages_manage_metadata`, `pages_messaging`, `business_management`
 
 For review, prepare a short screen recording that shows:
 

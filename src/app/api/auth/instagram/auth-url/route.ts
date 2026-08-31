@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
 import { getMetaGraphApiVersion } from '@/lib/meta-api'
+import { INSTAGRAM_OAUTH_SCOPES } from '@/lib/meta-chat-config'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -38,9 +39,7 @@ export async function GET() {
     redirect_uri: redirectUri,
     response_type: 'code',
     auth_type: 'rerequest',
-    scope: [
-      'instagram_manage_messages',
-    ].join(','),
+    scope: INSTAGRAM_OAUTH_SCOPES.join(','),
     state: oauthState,
   })
   

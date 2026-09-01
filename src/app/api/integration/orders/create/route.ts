@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { validateApiKey, updateApiKeyLastUsed, hashApiKey } from '@/lib/integration-auth';
 import { countRecentExternalOrders, createExternalOrder, findExternalOrderByOrderId } from '@/lib/integration-orders';
+import { ExternalOrderDeletedError, findDeletedExternalOrderAudit } from '@/lib/external-order-tombstone';
 import { logIntegrationActivity } from '@/lib/integration-logs';
 import { CrcMoneyError } from '@/lib/crc-money';
 import { createIdentifierRateLimit, getClientIP } from '@/lib/rate-limit';
@@ -93,6 +94,25 @@ export async function POST(req: NextRequest) {
         orderId: existingOrder.orderId,
       });
     }
+
+    // Staff may hard-delete a website order (e.g. convert Envío → Retiro).
+    // The storefront retries the same orderId; without a tombstone that
+    // recreates the deleted EA row. Audit snapshots are the durable record.
+    const deletedAudit = await findDeletedExternalOrderAudit(tenantId, orderData.orderId);
+    if (deletedAudit) {
+      await logIntegrationActivity(tenantId, 'ORDER_SKIPPED_DELETED', {
+        source: orderData.source,
+        orderId: orderData.orderId,
+        auditId: deletedAudit.id,
+        processingTime: Date.now() - startTime,
+      });
+      return NextResponse.json({
+        success: true,
+        idempotentReplay: true,
+        skippedDeleted: true,
+        orderId: orderData.orderId,
+      });
+    }
     const recentExternalOrders = await countRecentExternalOrders(
       tenantId,
       new Date(Date.now() - 15 * 60 * 1000),
@@ -107,6 +127,19 @@ export async function POST(req: NextRequest) {
     try {
       createdOrder = await createExternalOrder(tenantId, orderData);
     } catch (error) {
+      if (error instanceof ExternalOrderDeletedError) {
+        await logIntegrationActivity(tenantId, 'ORDER_SKIPPED_DELETED', {
+          source: orderData.source,
+          orderId: orderData.orderId,
+          processingTime: Date.now() - startTime,
+        });
+        return NextResponse.json({
+          success: true,
+          idempotentReplay: true,
+          skippedDeleted: true,
+          orderId: orderData.orderId,
+        });
+      }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         const racedOrder = await findExternalOrderByOrderId(tenantId, orderData.orderId);
         if (racedOrder) {

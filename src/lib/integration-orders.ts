@@ -134,7 +134,7 @@ export async function findExternalOrderByOrderId(tenantId: string, orderId: stri
   const tenantPrisma = getTenantPrisma(tenantId);
   return tenantPrisma.order.findFirst({
     where: { tenantId, orderId },
-    select: { id: true, orderId: true },
+    select: { id: true, orderId: true, timestamp: true },
   });
 }
 

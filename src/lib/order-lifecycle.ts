@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
+import { ExternalOrderDeletedError } from '@/lib/external-order-tombstone';
 import type { OrderLifecycleAdapter } from '@/lib/feature-flags';
 
 type Tx = Prisma.TransactionClient;
@@ -349,6 +350,9 @@ export async function createLifecycleOrder(input: {
     include: { order: true },
   });
   if (replay?.order) return { order: replay.order, idempotentReplay: true, unresolvedInventory: [] as string[] };
+  if (replay && !replay.order) {
+    throw new ExternalOrderDeletedError(String(input.data.orderId || input.idempotencyKey));
+  }
 
   try {
     return await prisma.$transaction(async tx => {
@@ -411,6 +415,9 @@ export async function createLifecycleOrder(input: {
         include: { order: true },
       });
       if (raced?.order) return { order: raced.order, idempotentReplay: true, unresolvedInventory: [] as string[] };
+      if (raced && !raced.order) {
+        throw new ExternalOrderDeletedError(String(input.data.orderId || input.idempotencyKey));
+      }
     }
     throw error;
   }

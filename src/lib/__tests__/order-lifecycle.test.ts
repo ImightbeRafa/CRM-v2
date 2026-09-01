@@ -47,6 +47,12 @@ test('IVA is extracted from gross and never added to Order.total', () => {
   assert.equal(invoiceGrossFromItems([{ quantity: 2, unitPrice: 10_000 }]), 20_000);
 });
 
+test('lifecycle create does not recreate an order after its row was deleted', () => {
+  const lifecycle = source('src/lib/order-lifecycle.ts');
+  assert.match(lifecycle, /ExternalOrderDeletedError/);
+  assert.match(lifecycle, /if \(replay && !replay\.order\)/);
+});
+
 test('all non-bot adapters use the one tenant lifecycle flag', () => {
   const files = [
     'src/app/api/orders/route.ts',

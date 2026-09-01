@@ -7,11 +7,13 @@ Append-only. Newest entries at the top.
 - Hard-deleted PatchHouse/website `orderId`s were recreated as EA when the
   storefront retried `POST /api/integration/orders/create` after staff mass
   deleted the row (e.g. ORD-1788129833824-8741, reason "pasa a RA").
-- Intake now treats AuditLog DELETE/BULK_DELETE snapshots as tombstones and
-  returns `skippedDeleted` instead of inserting a new Envío. Lifecycle v2
-  leftover idempotency keys with a null order do the same.
-- No Prisma schema / `lm_*` / historical order rewrites. Ghost EA still live
-  in CRM until staff deletes it again after this ships.
+- Intake treats AuditLog DELETE/BULK_DELETE snapshots as tombstones. A live
+  row created *after* that delete is a resurrection and returns
+  `skippedDeleted` instead of idempotent replay. Soft-restored originals
+  (created before the delete) stay. Lifecycle v2 leftover idempotency keys
+  with a null order also skip recreate.
+- No Prisma schema / `lm_*` / historical order rewrites. The ghost EA
+  `ORD-1788129833824-8741` stays in CRM until staff deletes it after deploy.
 
 ## 2026-08-30 — Remove Grok enhance bar from Ventas form
 

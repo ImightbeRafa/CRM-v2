@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { validateApiKey, updateApiKeyLastUsed, hashApiKey } from '@/lib/integration-auth';
 import { countRecentExternalOrders, createExternalOrder, findExternalOrderByOrderId } from '@/lib/integration-orders';
-import { ExternalOrderDeletedError, findDeletedExternalOrderAudit } from '@/lib/external-order-tombstone';
+import { ExternalOrderDeletedError, findDeletedExternalOrderAudit, shouldSkipDeletedExternalOrder } from '@/lib/external-order-tombstone';
 import { logIntegrationActivity } from '@/lib/integration-logs';
 import { CrcMoneyError } from '@/lib/crc-money';
 import { createIdentifierRateLimit, getClientIP } from '@/lib/rate-limit';
@@ -84,26 +84,20 @@ export async function POST(req: NextRequest) {
 
     const orderData = validationResult.data;
 
-    // Check for duplicate order ID
     const existingOrder = await findExternalOrderByOrderId(tenantId, orderData.orderId);
-    if (existingOrder) {
-      return NextResponse.json({
-        success: true,
-        idempotentReplay: true,
-        crmOrderId: existingOrder.id,
-        orderId: existingOrder.orderId,
-      });
-    }
+    const deletedAudit = await findDeletedExternalOrderAudit(tenantId, orderData.orderId);
 
     // Staff may hard-delete a website order (e.g. convert Envío → Retiro).
-    // The storefront retries the same orderId; without a tombstone that
-    // recreates the deleted EA row. Audit snapshots are the durable record.
-    const deletedAudit = await findDeletedExternalOrderAudit(tenantId, orderData.orderId);
-    if (deletedAudit) {
+    // The storefront retries the same orderId. A live row created *after*
+    // that delete is a resurrection, not a valid idempotent replay.
+    if (shouldSkipDeletedExternalOrder({
+      liveCreatedAt: existingOrder?.timestamp,
+      deletedAt: deletedAudit?.timestamp,
+    })) {
       await logIntegrationActivity(tenantId, 'ORDER_SKIPPED_DELETED', {
         source: orderData.source,
         orderId: orderData.orderId,
-        auditId: deletedAudit.id,
+        auditId: deletedAudit?.id,
         processingTime: Date.now() - startTime,
       });
       return NextResponse.json({
@@ -111,6 +105,15 @@ export async function POST(req: NextRequest) {
         idempotentReplay: true,
         skippedDeleted: true,
         orderId: orderData.orderId,
+      });
+    }
+
+    if (existingOrder) {
+      return NextResponse.json({
+        success: true,
+        idempotentReplay: true,
+        crmOrderId: existingOrder.id,
+        orderId: existingOrder.orderId,
       });
     }
     const recentExternalOrders = await countRecentExternalOrders(

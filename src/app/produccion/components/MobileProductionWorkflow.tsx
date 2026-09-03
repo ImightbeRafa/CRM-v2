@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui/ca
 import { Button } from "@/app/components/ui/button";
 import { Badge } from "@/app/components/ui/badge";
 import { Sale } from '../types/sales';
+import { ProductionOrderWindow } from './ProductionOrderWindow';
 import { 
   ChevronRight, 
   ChevronDown,
@@ -24,12 +25,20 @@ interface MobileProductionWorkflowProps {
   orders: Sale[];
   onOrderSelect: (order: Sale) => void;
   onStatusUpdate: (orderId: string, newStatus: string) => Promise<void>;
+  resetKey?: string;
+  hasMoreRemote?: boolean;
+  loadingMore?: boolean;
+  onLoadMoreRemote?: () => void;
 }
 
 export function MobileProductionWorkflow({ 
   orders, 
   onOrderSelect, 
-  onStatusUpdate 
+  onStatusUpdate,
+  resetKey = 'mobile',
+  hasMoreRemote = false,
+  loadingMore = false,
+  onLoadMoreRemote,
 }: MobileProductionWorkflowProps) {
   const [availableStatuses, setAvailableStatuses] = useState<Array<{key: string; label: string; color?: string}>>([]);
   
@@ -410,20 +419,26 @@ export function MobileProductionWorkflow({
       </div>
 
       {/* Orders List */}
-      <div className="space-y-3">
-        {filteredOrders.length === 0 ? (
+      <ProductionOrderWindow
+        items={filteredOrders}
+        getItemKey={(order) => order.orderId}
+        resetKey={`${resetKey}:${selectedTab}`}
+        hasMoreRemote={hasMoreRemote}
+        loadingMore={loadingMore}
+        onLoadMoreRemote={onLoadMoreRemote}
+        className="space-y-3"
+        empty={
           <Card className="p-8 text-center">
             <div className="text-muted-foreground">
               <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No hay órdenes en esta categoría</p>
             </div>
           </Card>
-        ) : (
-          filteredOrders.map((order) => (
-            <MobileOrderCard key={order.orderId} order={order} />
-          ))
+        }
+        renderItem={(order) => (
+          <MobileOrderCard key={order.orderId} order={order} />
         )}
-      </div>
+      />
 
       {/* Quick Stats */}
       <Card className="p-4">

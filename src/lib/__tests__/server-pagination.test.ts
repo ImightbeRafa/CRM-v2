@@ -89,6 +89,34 @@ test('approved terminal Kanban columns are also limited to 30 days', () => {
   assert.match(JSON.stringify(where), /2026-07-28/);
 });
 
+test('contra entrega toggle is optional, includes collected COD, and is cursor-bound', () => {
+  const off = parseProductionQuery(new URLSearchParams({ view: 'list' }));
+  assert.equal(off.contraEntrega, false);
+  const on = parseProductionQuery(new URLSearchParams({ view: 'list', contraEntrega: '1' }));
+  assert.equal(on.contraEntrega, true);
+  assert.equal(parseProductionQuery(new URLSearchParams({ contraEntrega: 'true' })).contraEntrega, true);
+  assert.equal(parseProductionQuery(new URLSearchParams({ contraEntrega: '0' })).contraEntrega, false);
+  assert.throws(() => parseProductionQuery(new URLSearchParams({ contraEntrega: 'maybe' })), /Invalid contraEntrega/);
+
+  const where = buildProductionWhere({
+    input: on,
+    configuredStatuses: [{ id: 'pending', label: 'Pendiente' }],
+    selectedStatus: null,
+    terminalClassifications: [],
+    terminalFilteringEnabled: false,
+  });
+  assert.match(JSON.stringify(where), /"contraEntrega":true/);
+  const offWhere = buildProductionWhere({
+    input: off,
+    configuredStatuses: [{ id: 'pending', label: 'Pendiente' }],
+    selectedStatus: null,
+    terminalClassifications: [],
+    terminalFilteringEnabled: false,
+  });
+  assert.doesNotMatch(JSON.stringify(offWhere), /contraEntrega/);
+  assert.notEqual(productionCursorScope(on, null, null), productionCursorScope(off, null, null));
+});
+
 test('client filters and cursors are server-scoped', () => {
   const input = parseClientQuery(new URLSearchParams({ search: 'Ana', province: 'San José', state: 'inactive' }));
   const where = buildClientWhere(input);

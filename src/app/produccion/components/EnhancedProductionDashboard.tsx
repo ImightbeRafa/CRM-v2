@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Card,
@@ -17,7 +17,8 @@ import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 import { useConfig } from '@/app/contexts/ConfigContext';
 import { OrderStatus } from '@/app/config/components/StatusManager';
 import { Sale } from '../types/sales';
-import { Loader2, Search, Filter, Download, Printer, Eye, Edit, CheckCircle, Clock, AlertCircle, Truck, Package, Users, TrendingUp, LayoutGrid, List, Kanban, FileText, RefreshCw } from 'lucide-react';
+import { Loader2, Search, Filter, Download, Printer, Eye, Edit, CheckCircle, Clock, AlertCircle, Truck, Package, Users, TrendingUp, LayoutGrid, List, Kanban, FileText, RefreshCw, Banknote } from 'lucide-react';
+import { ProductionOrderWindow } from './ProductionOrderWindow';
 import { useToast } from "@/app/hooks/use-toast";
 import { EnhancedOrderCard } from './EnhancedOrderCard';
 import { ProductionStats } from './ProductionStats';
@@ -75,10 +76,15 @@ const filterOrders = (
   searchTerm: string,
   dateRange: { from: string; to: string },
   priorityFilter: string,
-  courierFilter: string
+  courierFilter: string,
+  contraEntregaOnly: boolean,
 ) => {
   const searchLower = searchTerm.toLowerCase();
   return orders.filter(order => {
+    if (contraEntregaOnly && order.contraEntrega !== true) {
+      return false;
+    }
+
     // Status filter
     if (statusFilter !== 'all' && order.status.toLowerCase() !== statusFilter.toLowerCase()) {
       return false;
@@ -195,7 +201,9 @@ const EnhancedHeader = React.memo(({
   viewMode,
   onViewModeChange,
   totalOrders,
-  filteredCount
+  filteredCount,
+  contraEntregaOnly,
+  onToggleContraEntrega,
 }: {
   loading: boolean;
   searchTerm: string;
@@ -214,6 +222,8 @@ const EnhancedHeader = React.memo(({
   onViewModeChange: (mode: 'table' | 'mobile' | 'kanban') => void;
   totalOrders: number;
   filteredCount: number;
+  contraEntregaOnly: boolean;
+  onToggleContraEntrega: () => void;
 }) => (
   <div className="space-y-3">
     {/* Compact Header */}
@@ -245,6 +255,22 @@ const EnhancedHeader = React.memo(({
         <Button onClick={onExport} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-[36px]">
           <Download className="h-4 w-4 mr-1" />
           Exportar
+        </Button>
+        <Button
+          type="button"
+          onClick={onToggleContraEntrega}
+          variant="outline"
+          size="sm"
+          aria-pressed={contraEntregaOnly}
+          title={contraEntregaOnly ? 'Ver todos los pedidos' : 'Ver solo contra entrega, incluyendo cobradas'}
+          className={`text-xs px-3 py-1.5 min-h-[36px] ${
+            contraEntregaOnly
+              ? 'bg-amber-500/20 border-amber-500/50 text-amber-800 dark:text-amber-200 hover:bg-amber-500/30'
+              : ''
+          }`}
+        >
+          <Banknote className="h-4 w-4 mr-1" />
+          Contra entrega
         </Button>
       </div>
     </div>
@@ -358,6 +384,7 @@ export function EnhancedProductionDashboard({
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'mobile' | 'kanban'>('table');
   const [orderTypeTab, setOrderTypeTab] = useState<'EA' | 'RA'>('EA');
+  const [contraEntregaOnly, setContraEntregaOnly] = useState(false);
   const userPickedTypeTab = useRef(false);
   const [showGuide, setShowGuide] = useState(false);
   const [lastSync, setLastSync] = useState<Date>(new Date());
@@ -379,7 +406,8 @@ export function EnhancedProductionDashboard({
     dateTo: dateRange.to,
     courier: courierFilter,
     priority: orderTypeFilter === 'urgent' ? 'urgent' : priorityFilter === 'all' ? '' : priorityFilter as ProductionFilters['priority'],
-  }), [debouncedSearch, orderTypeFilter, dateRange, courierFilter, priorityFilter]);
+    contraEntrega: contraEntregaOnly,
+  }), [debouncedSearch, orderTypeFilter, dateRange, courierFilter, priorityFilter, contraEntregaOnly]);
   const productionOrders = useProductionOrders({
     enabled: serverDriven,
     view: 'list',
@@ -405,13 +433,13 @@ export function EnhancedProductionDashboard({
   const orders = serverDriven ? productionOrders.orders : legacySales.sales;
   const loading = metadataQuery.isLoading || (serverDriven ? productionOrders.isLoading : legacySales.isLoading);
   const error = serverDriven ? productionOrders.error?.message || null : legacySales.error;
-  const refresh = () => {
+  const refresh = useCallback(() => {
     if (serverDriven) {
       void Promise.all([productionOrders.refetch(), productionSummary.refetch(), metadataQuery.refetch()]);
     } else {
       legacySales.refresh();
     }
-  };
+  }, [legacySales, metadataQuery, productionOrders, productionSummary, serverDriven]);
 
   // Config data now comes from global context - no need to load separately
 
@@ -425,7 +453,7 @@ export function EnhancedProductionDashboard({
   const filteredOrders = useMemo(() => {
     if (serverDriven) return orders;
     const effectiveStatusFilter = statusFilter === '__unconfigured__' ? 'all' : statusFilter;
-    let filtered = filterOrders(orders, effectiveStatusFilter, searchTerm, dateRange, priorityFilter, courierFilter);
+    let filtered = filterOrders(orders, effectiveStatusFilter, searchTerm, dateRange, priorityFilter, courierFilter, contraEntregaOnly);
     if (statusFilter === '__unconfigured__') {
       filtered = filtered.filter(order => !activeStatuses.some(status => status.label.toLowerCase() === order.status.toLowerCase()));
     }
@@ -449,7 +477,7 @@ export function EnhancedProductionDashboard({
     }
 
     return filtered;
-  }, [orders, statusFilter, searchTerm, dateRange, priorityFilter, courierFilter, orderTypeFilter, serverDriven, activeStatuses]);
+  }, [orders, statusFilter, searchTerm, dateRange, priorityFilter, courierFilter, orderTypeFilter, serverDriven, activeStatuses, contraEntregaOnly]);
 
   const groupedOrders = useMemo(() => ({
     EA: filteredOrders.filter(order => order.orderType === 'EA'),
@@ -465,13 +493,24 @@ export function EnhancedProductionDashboard({
     }
   }, [groupedOrders.EA.length, groupedOrders.RA.length]);
 
-  const handleStatusUpdate = async (newStatus: string) => {
-    if (selectedOrder) {
-      await updateOrderStatus(selectedOrder.orderId, newStatus);
-    }
-  };
+  const handleToggleContraEntrega = useCallback(() => {
+    setContraEntregaOnly((current) => !current);
+    setSelectedOrders([]);
+  }, []);
 
-  const updateOrderStatus = async (orderId: string, newStatus: string, skipRefresh = false) => {
+  const handleToggleSelection = useCallback((orderId: string) => {
+    setSelectedOrders((prev) => (
+      prev.includes(orderId)
+        ? prev.filter((id) => id !== orderId)
+        : [...prev, orderId]
+    ));
+  }, []);
+
+  const handleSelectOrder = useCallback((order: Sale) => {
+    setSelectedOrder(order);
+  }, []);
+
+  const updateOrderStatus = useCallback(async (orderId: string, newStatus: string, skipRefresh = false) => {
     try {
       if (serverDriven) {
         const current = orders.find(order => order.orderId === orderId);
@@ -516,7 +555,13 @@ export function EnhancedProductionDashboard({
       }
       throw error; // Re-throw for bulk operations to count failures
     }
-  };
+  }, [moveProductionStatus, orders, refresh, serverDriven, toast]);
+
+  const handleStatusUpdate = useCallback(async (newStatus: string) => {
+    if (selectedOrder) {
+      await updateOrderStatus(selectedOrder.orderId, newStatus);
+    }
+  }, [selectedOrder, updateOrderStatus]);
 
   const handleOrderUpdate = async (orderId: string, updatedData: Partial<Sale>): Promise<Sale> => {
     try {
@@ -560,7 +605,7 @@ export function EnhancedProductionDashboard({
     }
   };
 
-  const handleConfirmPayment = async (orderId: string) => {
+  const handleConfirmPayment = useCallback(async (orderId: string) => {
     try {
       const response = await fetch('/api/orders/confirm-payment', {
         method: 'POST',
@@ -586,7 +631,7 @@ export function EnhancedProductionDashboard({
         description: `No se pudo confirmar el pago: ${error instanceof Error ? error.message : 'Error desconocido'}`,
       });
     }
-  };
+  }, [refresh, toast]);
 
   const handleBulkStatusUpdate = async (orderIds: string[], newStatus: string) => {
     let successCount = 0;
@@ -697,7 +742,7 @@ export function EnhancedProductionDashboard({
 
       {/* Stats Overview */}
       <ProductionStats
-        orders={orders}
+        orders={contraEntregaOnly ? filteredOrders : orders}
         onFilterChange={handleStatsFilter}
         serverSummary={serverDriven ? productionSummary.data : undefined}
         availableStatuses={activeStatuses}
@@ -724,14 +769,34 @@ export function EnhancedProductionDashboard({
             onViewModeChange={setViewMode}
             totalOrders={serverDriven ? productionOrders.totalCount : orders.length}
             filteredCount={filteredOrders.length}
+            contraEntregaOnly={contraEntregaOnly}
+            onToggleContraEntrega={handleToggleContraEntrega}
           />
+          {contraEntregaOnly && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
+              <span>Mostrando solo contra entrega en Envíos y Retiros, incluyendo cobradas.</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-amber-900 dark:text-amber-100 hover:bg-amber-500/20"
+                onClick={handleToggleContraEntrega}
+              >
+                Ver todos
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {viewMode === 'mobile' ? (
             <MobileProductionWorkflow
               orders={filteredOrders}
-              onOrderSelect={setSelectedOrder}
+              onOrderSelect={handleSelectOrder}
               onStatusUpdate={handleStatusUpdate}
+              resetKey={`${contraEntregaOnly}:${statusFilter}:${debouncedSearch}`}
+              hasMoreRemote={serverDriven && productionOrders.hasNextPage}
+              loadingMore={productionOrders.isFetchingNextPage}
+              onLoadMoreRemote={() => void productionOrders.fetchNextPage()}
             />
           ) : viewMode === 'kanban' ? (
             <KanbanBoard
@@ -771,53 +836,43 @@ export function EnhancedProductionDashboard({
                 </TabsTrigger>
               </TabsList>
 
-              {['EA', 'RA'].map((type) => (
+              {(['EA', 'RA'] as const).map((type) => (
                 <TabsContent key={type} value={type} className="mt-2">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-                    {groupedOrders[type as keyof typeof groupedOrders].map((order) => (
+                  <ProductionOrderWindow<Sale>
+                    items={groupedOrders[type]}
+                    getItemKey={(order) => order.orderId}
+                    resetKey={`${type}:${contraEntregaOnly}:${statusFilter}:${debouncedSearch}:${orderTypeFilter}`}
+                    hasMoreRemote={serverDriven && productionOrders.hasNextPage}
+                    loadingMore={productionOrders.isFetchingNextPage}
+                    onLoadMoreRemote={() => void productionOrders.fetchNextPage()}
+                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3"
+                    empty={
+                      <div className="text-center py-12 text-muted-foreground">
+                        <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p>
+                          {contraEntregaOnly
+                            ? `No hay órdenes ${type === 'EA' ? 'de envío' : 'de retiro'} contra entrega`
+                            : `No hay órdenes ${type === 'EA' ? 'de envío' : 'de retiro'} que coincidan con los filtros`}
+                        </p>
+                      </div>
+                    }
+                    renderItem={(order) => (
                       <EnhancedOrderCard
-                        key={order.orderId}
                         order={order}
-                        onSelectOrder={setSelectedOrder}
+                        onSelectOrder={handleSelectOrder}
                         onStatusUpdate={updateOrderStatus}
                         isSelected={selectedOrders.includes(order.orderId)}
-                        onToggleSelection={(orderId: string) => {
-                          setSelectedOrders(prev =>
-                            prev.includes(orderId)
-                              ? prev.filter(id => id !== orderId)
-                              : [...prev, orderId]
-                          );
-                        }}
+                        onToggleSelection={handleToggleSelection}
                         availableStatuses={activeStatuses}
                         businessInfoFields={businessInfoFields}
                         productFieldConfigs={productFieldConfigs}
                         onConfirmPayment={handleConfirmPayment}
                       />
-                    ))}
-                  </div>
-
-                  {groupedOrders[type as keyof typeof groupedOrders].length === 0 && (
-                    <div className="text-center py-12 text-muted-foreground">
-                      <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>No hay órdenes {type === 'EA' ? 'de envío' : 'de retiro'} que coincidan con los filtros</p>
-                    </div>
-                  )}
+                    )}
+                  />
                 </TabsContent>
               ))}
             </Tabs>
-          )}
-          {serverDriven && viewMode !== 'kanban' && productionOrders.hasNextPage && (
-            <div className="flex justify-center pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={productionOrders.isFetchingNextPage}
-                onClick={() => void productionOrders.fetchNextPage()}
-              >
-                {productionOrders.isFetchingNextPage ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Cargar más pedidos
-              </Button>
-            </div>
           )}
         </CardContent>
       </Card>

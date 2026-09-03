@@ -14,6 +14,7 @@ export interface ProductionQueryInput {
   dateTo: string | null;
   courier: string | null;
   priority: string | null;
+  contraEntrega: boolean;
 }
 
 export interface ProductionStatusReference {
@@ -24,6 +25,14 @@ export interface ProductionStatusReference {
 export interface TerminalClassificationReference {
   statusValue: string;
   isTerminal: boolean;
+}
+
+function parseContraEntregaFlag(value: string | null): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true') return true;
+  if (normalized === '0' || normalized === 'false') return false;
+  throw new Error('Invalid contraEntrega');
 }
 
 export function parseProductionQuery(searchParams: URLSearchParams): ProductionQueryInput {
@@ -44,6 +53,7 @@ export function parseProductionQuery(searchParams: URLSearchParams): ProductionQ
     dateTo: searchParams.get('dateTo'),
     courier: searchParams.get('courier'),
     priority,
+    contraEntrega: parseContraEntregaFlag(searchParams.get('contraEntrega')),
   };
 }
 
@@ -96,6 +106,7 @@ export function buildProductionWhere(args: {
     });
   }
   if (input.orderType) and.push({ orderType: input.orderType });
+  if (input.contraEntrega) and.push({ contraEntrega: true });
   if (input.courier) and.push({ courier: { contains: input.courier, mode: 'insensitive' } });
   const dateFrom = parseOptionalDate(input.dateFrom, 'dateFrom');
   const dateTo = parseOptionalDate(input.dateTo, 'dateTo');
@@ -150,6 +161,7 @@ export function productionCursorScope(
     dateTo: input.dateTo || '',
     courier: input.courier?.toLowerCase() || '',
     priority: input.priority || '',
+    contraEntrega: input.contraEntrega ? '1' : '',
     mappingRevision: mappingRevision || '',
   });
 }

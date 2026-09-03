@@ -11,6 +11,7 @@ export interface ProductionFilters {
   dateTo?: string;
   courier?: string;
   priority?: 'urgent' | 'high' | 'normal' | '';
+  contraEntrega?: boolean;
 }
 
 export interface ProductionStatusMetadata {
@@ -47,6 +48,7 @@ function appendFilters(params: URLSearchParams, filters: ProductionFilters) {
   if (filters.dateTo) params.set('dateTo', filters.dateTo);
   if (filters.courier && filters.courier !== 'all') params.set('courier', filters.courier);
   if (filters.priority && filters.priority !== 'normal') params.set('priority', filters.priority);
+  if (filters.contraEntrega) params.set('contraEntrega', '1');
 }
 
 async function fetchJson(url: string) {

@@ -2,6 +2,17 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-03 — Producción Contra entrega toggle and grid windowing
+
+- Added a **Contra entrega** toggle next to Masivas/Guías/Facturas/Exportar.
+  On: Envíos (EA) and Retiros (RA) show only `contraEntrega === true`, including
+  collected COD. Off: full catalog again. Server-driven path filters in
+  `/api/production/orders` (`contraEntrega=1`); legacy stream filters client-side.
+- Producción no longer mounts every loaded card. `ProductionOrderWindow` paints
+  40 cards first, expands on scroll/click, and remote "Cargar más" stays explicit.
+  Cards are memoized; BackupPage is a dynamic chunk.
+- Prove: `npm run test:pagination`, `npx tsc --noEmit`, `npm run lint`.
+
 ## 2026-08-30 — Remove Grok enhance bar from Ventas form
 
 - Removed "Mejorar con Grok" from Nuevo pedido. Local paste-to-fill stays.

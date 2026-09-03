@@ -53,6 +53,8 @@ Organize unfinished work so Phase 2 can finish items deliberately. Seeded at kic
   statistics overview behind tenant flags.
 - **Still open:** approved SQL/test-tenant activation and observation before replacing
   legacy read paths; config tab split and middleware auth reuse remain later work.
+- **2026-09-03:** Producción grid windows cards (40 at a time) and Contra entrega is a
+  server-side toggle so tenants with thousands of orders do not mount every card.
 - **Phase:** activate bounded paths tenant-by-tenant without hiding active orders.
 
 ## Phase 2 queue (finish)

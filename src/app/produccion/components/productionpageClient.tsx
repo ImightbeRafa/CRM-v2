@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import BackupPage from './BackupPage';
-import { EnhancedProductionDashboard } from './EnhancedProductionDashboard';
+import dynamic from 'next/dynamic';
 import { ProductionErrorBoundary } from './ProductionErrorBoundary';
 import { AppShell } from '@/app/components/AppShell';
+import { EnhancedProductionDashboard } from './EnhancedProductionDashboard';
+
+const BackupPage = dynamic(() => import('./BackupPage'), { ssr: false });
 
 export function ProductionPageClient() {
   const [isGuiaGeneratorOpen, setIsGuiaGeneratorOpen] = useState(false);

@@ -34,7 +34,7 @@ interface EnhancedOrderCardProps {
   onConfirmPayment?: (orderId: string) => Promise<void>;
 }
 
-export function EnhancedOrderCard({
+function EnhancedOrderCardComponent({
   order,
   onSelectOrder,
   onStatusUpdate,
@@ -567,3 +567,21 @@ export function EnhancedOrderCard({
     </div>
   );
 }
+
+function areOrderCardsEqual(prev: EnhancedOrderCardProps, next: EnhancedOrderCardProps) {
+  return (
+    prev.order === next.order
+    && prev.isSelected === next.isSelected
+    && prev.onSelectOrder === next.onSelectOrder
+    && prev.onStatusUpdate === next.onStatusUpdate
+    && prev.onToggleSelection === next.onToggleSelection
+    && prev.onConfirmPayment === next.onConfirmPayment
+    && prev.availableStatuses === next.availableStatuses
+    && prev.businessInfoFields === next.businessInfoFields
+    && prev.productFieldConfigs === next.productFieldConfigs
+  );
+}
+
+export const EnhancedOrderCard = React.memo(EnhancedOrderCardComponent, areOrderCardsEqual);
+EnhancedOrderCard.displayName = 'EnhancedOrderCard';
+

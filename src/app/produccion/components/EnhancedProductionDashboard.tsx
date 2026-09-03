@@ -836,10 +836,10 @@ export function EnhancedProductionDashboard({
                 </TabsTrigger>
               </TabsList>
 
-              {['EA', 'RA'].map((type) => (
+              {(['EA', 'RA'] as const).map((type) => (
                 <TabsContent key={type} value={type} className="mt-2">
-                  <ProductionOrderWindow
-                    items={groupedOrders[type as keyof typeof groupedOrders]}
+                  <ProductionOrderWindow<Sale>
+                    items={groupedOrders[type]}
                     getItemKey={(order) => order.orderId}
                     resetKey={`${type}:${contraEntregaOnly}:${statusFilter}:${debouncedSearch}:${orderTypeFilter}`}
                     hasMoreRemote={serverDriven && productionOrders.hasNextPage}

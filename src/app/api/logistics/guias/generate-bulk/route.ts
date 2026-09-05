@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
-import { CorreosWebService, buildGuiaDescription, buildFullAddress } from '@/lib/correos';
+import { CorreosWebService, buildGuiaDescription, buildFullAddress, formatLogisticsGuiaError } from '@/lib/correos';
 import type { CorreosWSCredentials } from '@/lib/correos';
 
 export const maxDuration = 300;
@@ -43,11 +43,6 @@ type DbOrder = {
     address: string | null;
     comments: string | null;
 };
-
-/** Messages from the Correos API are safe to surface to admin users. */
-function isCorreosError(msg: string): boolean {
-    return /^ccr(GenerarGuia|RegistroEnvio|Tarifa) failed:/.test(msg);
-}
 
 /**
  * POST /api/logistics/guias/generate-bulk
@@ -205,9 +200,7 @@ export async function POST(req: NextRequest) {
                     pdfBuffer: result.pdfBuffer,
                 });
             } catch (err: any) {
-                const safeMsg = isCorreosError(err.message)
-                    ? err.message
-                    : 'Guia generation failed due to a connection or service error';
+                const safeMsg = formatLogisticsGuiaError(err);
                 results.push({
                     success: false,
                     orderId: dbOrder.orderId,

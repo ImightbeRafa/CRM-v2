@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const guard = await guardLogisticsApi(req);
     if (guard) return guard;
 
-    const results: { step: string; ok: boolean; ms: number; detail?: string }[] = [];
+    const results: { step: string; ok: boolean; ms: number; detail?: string; diagnosis?: string }[] = [];
 
     try {
         const proxyConfigured = isProxyConfigured();
@@ -94,7 +94,11 @@ export async function GET(req: NextRequest) {
         } catch (e: any) {
             const elapsed = Date.now() - tToken;
             console.error(`[correos-test] Token: FAILED (${elapsed}ms): ${e.message}`);
-            results.push({ step: 'token', ok: false, ms: elapsed, detail: e.message });
+            const detail = String(e.message || e);
+            const diagnosis = /502|503|504|unavailable/i.test(detail)
+                ? 'Proxy health is up but token failed. Origin logs show connect ECONNREFUSED to servicios.correos.go.cr:447 (181.193.34.233 / 201.203.145.9). Not a bad X-Correos-Secret. Check Jetson public IP whitelist and whether :444 is also refused.'
+                : undefined;
+            results.push({ step: 'token', ok: false, ms: elapsed, detail, diagnosis });
         }
 
         console.log('[correos-test] Step: calling SOAP ccrCodProvincia...');

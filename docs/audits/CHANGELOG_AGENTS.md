@@ -2,6 +2,28 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-05 — Correos 502 diagnostics (proxy/token)
+
+- Production guías fail with `Correos token auth failed (502)` after
+  `POST …/token/authenticate` via `proxy.betsycrm-proxyaproximado.com`.
+  Public probes: `/health` 200, missing/wrong `X-Correos-Secret` → 401.
+- Jetson journal (Peters): valid-secret POSTs reach
+  `servicios.correos.go.cr:447` then `connect ECONNREFUSED` on both A
+  records (`181.193.34.233`, `201.203.145.9`). Direct curl from the
+  Jetson: `Failed to connect … port 447 … Connection refused`.
+  `correos-proxy` + `cloudflared` are healthy. REJECTED/bad-secret lines
+  are public probes, not Vercel.
+- CRM: log `cf-ray` + sanitized 502 body; retry 502/503/504; do not treat
+  502 as credential rejection; UI says proxy/token unavailable and
+  ECONNREFUSED on `:447`.
+- Prove: `npm run test:correos-credentials`. Live fix is Correos :447
+  (outage or Jetson public-IP whitelist), not a CRM SOAP client change.
+- Follow-up from Peters `nc`: production `:447`/`:444`/`:88` closed, but
+  test `:84` (amistad) and `:442` (servicios) are OPEN from the same
+  Claro IP `186.151.100.155`. That weakens a blanket whitelist theory —
+  the host can reach Correos; production listeners are what refuse.
+  Probe script: `scripts/correos-ws-probe.sh` (run on the Jetson).
+
 ## 2026-09-03 — Producción Contra entrega toggle and grid windowing
 
 - Added a **Contra entrega** toggle next to Masivas/Guías/Facturas/Exportar.

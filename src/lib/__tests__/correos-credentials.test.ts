@@ -4,7 +4,15 @@ import {
   credentialTokenCacheKey,
   selectCorreosWSCredentials,
 } from '../correos/credential-select';
-import { formatGuiaFailureDetail, formatGuiaFailureLabel } from '../correos/auth-error';
+import {
+  CorreosAuthError,
+  formatGuiaFailureDetail,
+  formatGuiaFailureLabel,
+  formatLogisticsGuiaError,
+  isCorreosCredentialRejection,
+  isCorreosProxyUnavailable,
+} from '../correos/auth-error';
+import { getProxyUrl, getTokenUrl } from '../correos/proxy';
 
 describe('Correos credential selection', () => {
   it('prefers a complete logistics DB set over environment variables', () => {
@@ -95,5 +103,42 @@ describe('Correos guía failure copy', () => {
     assert.equal(formatGuiaFailureLabel('Correos token auth failed (401)'), 'Correos rechazó las credenciales');
     assert.equal(formatGuiaFailureDetail('Correos token auth failed (401)'), 'Correos rechazó las credenciales');
     assert.equal(formatGuiaFailureLabel('timeout'), 'Fallida');
+  });
+
+  it('does not treat proxy 502 as a credential rejection', () => {
+    assert.equal(isCorreosCredentialRejection('Correos token auth failed (502)'), false);
+    assert.equal(isCorreosProxyUnavailable('Correos token auth failed (502)'), true);
+    assert.equal(formatGuiaFailureLabel('Correos token auth failed (502)'), 'Correos no disponible');
+    assert.match(formatGuiaFailureDetail('Correos token auth failed (502)') || '', /ECONNREFUSED|:447/);
+  });
+
+  it('strips a trailing slash from CORREOS_PROXY_URL', () => {
+    const prevUrl = process.env.CORREOS_PROXY_URL;
+    const prevSecret = process.env.CORREOS_PROXY_SECRET;
+    process.env.CORREOS_PROXY_URL = 'https://proxy.example.test/';
+    process.env.CORREOS_PROXY_SECRET = 'x';
+    try {
+      assert.equal(getProxyUrl(), 'https://proxy.example.test');
+      assert.equal(getTokenUrl(), 'https://proxy.example.test/token/authenticate');
+    } finally {
+      if (prevUrl === undefined) delete process.env.CORREOS_PROXY_URL;
+      else process.env.CORREOS_PROXY_URL = prevUrl;
+      if (prevSecret === undefined) delete process.env.CORREOS_PROXY_SECRET;
+      else process.env.CORREOS_PROXY_SECRET = prevSecret;
+    }
+  });
+
+  it('surfaces admin-safe 502 copy from CorreosAuthError', () => {
+    const err = new CorreosAuthError(502);
+    assert.equal(err.message, 'Correos proxy/token unavailable (502)');
+    assert.equal(formatLogisticsGuiaError(err), 'Correos proxy/token unavailable (502)');
+    assert.equal(
+      formatLogisticsGuiaError(new Error('socket hang up')),
+      'Guia generation failed due to a connection or service error',
+    );
+    assert.equal(
+      formatLogisticsGuiaError(new Error('ccrGenerarGuia failed: peso invalido')),
+      'ccrGenerarGuia failed: peso invalido',
+    );
   });
 });

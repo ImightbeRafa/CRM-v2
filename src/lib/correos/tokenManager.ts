@@ -5,6 +5,22 @@ import { getTokenUrl, getProxySecret, isProxyConfigured } from './proxy';
 
 const TOKEN_TTL_MS = 4 * 60 * 1000; // 4 minutes (tokens expire at 5 min)
 const REQUEST_TIMEOUT_MS = 30_000;
+const TOKEN_RETRY_STATUSES = new Set([502, 503, 504]);
+const TOKEN_MAX_ATTEMPTS = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sanitizeTokenBody(body: string): string {
+  return body
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[redacted-email]')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
+    .replace(/"(token|Token|access_token|password|Password|Username)"\s*:\s*"[^"]*"/g, '"$1":"[redacted]"')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 280);
+}
 
 // Per-username token cache so different tenants/credentials don't share tokens
 const tokenCache = new Map<string, { token: string; exp: number }>();
@@ -52,7 +68,14 @@ async function tokenPost(body: string): Promise<{ statusCode: number; body: stri
     });
 
     const text = await res.text();
-    console.log(`[CorreosToken] Response status: ${res.status}`);
+    const cfRay = res.headers.get('cf-ray') || '-';
+    const contentType = res.headers.get('content-type') || '-';
+    console.log(`[CorreosToken] Response status: ${res.status} cf-ray=${cfRay} content-type=${contentType}`);
+    if (res.status < 200 || res.status >= 300) {
+      console.warn(
+        `[CorreosToken] Non-OK body (${text.length}b): ${sanitizeTokenBody(text) || '[empty]'}`,
+      );
+    }
 
     return { statusCode: res.status, body: text };
   } catch (err: any) {
@@ -87,14 +110,25 @@ export class CorreosTokenManager {
       Sistema: this.credentials.sistema,
     };
 
-    const res = await withTimeout(
-      tokenPost(JSON.stringify(payload)),
-      REQUEST_TIMEOUT_MS + 5_000,
-      'Correos token request',
-    );
+    let res: { statusCode: number; body: string } | undefined;
+    for (let attempt = 1; attempt <= TOKEN_MAX_ATTEMPTS; attempt++) {
+      res = await withTimeout(
+        tokenPost(JSON.stringify(payload)),
+        REQUEST_TIMEOUT_MS + 5_000,
+        'Correos token request',
+      );
+      if (!TOKEN_RETRY_STATUSES.has(res.statusCode) || attempt === TOKEN_MAX_ATTEMPTS) {
+        break;
+      }
+      const delay = 1_000 * attempt;
+      console.warn(
+        `[CorreosToken] Retrying after ${res.statusCode} (attempt ${attempt}/${TOKEN_MAX_ATTEMPTS}) in ${delay}ms`,
+      );
+      await sleep(delay);
+    }
 
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw new CorreosAuthError(res.statusCode);
+    if (!res || res.statusCode < 200 || res.statusCode >= 300) {
+      throw new CorreosAuthError(res?.statusCode ?? 0);
     }
 
     let token: string | undefined;

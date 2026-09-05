@@ -2,6 +2,19 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-05 — Correos 502 diagnostics (proxy/token)
+
+- Production guías fail with `Correos token auth failed (502)` after
+  `POST …/token/authenticate` via `proxy.betsycrm-proxyaproximado.com`.
+  Public probes: `/health` 200 (process uptime ~6 min at incident),
+  missing/wrong `X-Correos-Secret` → 401. Direct Correos `:447` times out
+  from outside CR. Break is Jetson→Correos after a valid proxy secret, not PCD.
+- CRM: log `cf-ray` + sanitized 502 body; retry 502/503/504 up to 3 times;
+  stop treating 502 as a credential rejection; logistics UI shows
+  `Correos proxy/token unavailable (502)`.
+- Prove: `npm run test:correos-credentials`. Jetson/cloudflared still required
+  to restore live token auth.
+
 ## 2026-09-03 — Producción Contra entrega toggle and grid windowing
 
 - Added a **Contra entrega** toggle next to Masivas/Guías/Facturas/Exportar.

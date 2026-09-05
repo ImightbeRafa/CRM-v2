@@ -14,7 +14,7 @@ const DIRECT_TOKEN_URL = 'https://servicios.correos.go.cr:447';
 const DIRECT_SOAP_URL = 'https://amistadpro.correos.go.cr:444';
 
 export function getProxyUrl(): string {
-  return process.env.CORREOS_PROXY_URL || '';
+  return (process.env.CORREOS_PROXY_URL || '').replace(/\/+$/, '');
 }
 
 export function getProxySecret(): string {

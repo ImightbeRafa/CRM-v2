@@ -11,6 +11,13 @@ export {
   credentialTokenCacheKey,
 } from './credentials';
 export type { CorreosCredentialSource, ResolvedCorreosCredentials } from './credentials';
-export { CorreosAuthError, formatGuiaFailureDetail, formatGuiaFailureLabel } from './auth-error';
+export {
+  CorreosAuthError,
+  formatGuiaFailureDetail,
+  formatGuiaFailureLabel,
+  formatLogisticsGuiaError,
+  isCorreosCredentialRejection,
+  isCorreosProxyUnavailable,
+} from './auth-error';
 export { buildGuiaDescription, buildFullAddress } from './utils';
 export type * from './types';

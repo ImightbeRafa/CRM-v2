@@ -18,6 +18,11 @@ Append-only. Newest entries at the top.
   ECONNREFUSED on `:447`.
 - Prove: `npm run test:correos-credentials`. Live fix is Correos :447
   (outage or Jetson public-IP whitelist), not a CRM SOAP client change.
+- Follow-up from Peters `nc`: production `:447`/`:444`/`:88` closed, but
+  test `:84` (amistad) and `:442` (servicios) are OPEN from the same
+  Claro IP `186.151.100.155`. That weakens a blanket whitelist theory —
+  the host can reach Correos; production listeners are what refuse.
+  Probe script: `scripts/correos-ws-probe.sh` (run on the Jetson).
 
 ## 2026-09-03 — Producción Contra entrega toggle and grid windowing
 

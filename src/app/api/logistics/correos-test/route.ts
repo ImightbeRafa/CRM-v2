@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
             console.error(`[correos-test] Token: FAILED (${elapsed}ms): ${e.message}`);
             const detail = String(e.message || e);
             const diagnosis = /502|503|504|unavailable/i.test(detail)
-                ? 'Health is up but token failed. The Jetson proxy is reachable; the hop to servicios.correos.go.cr:447 (or cloudflared) is the likely break.'
+                ? 'Proxy health is up but token failed. Origin logs show connect ECONNREFUSED to servicios.correos.go.cr:447 (181.193.34.233 / 201.203.145.9). Not a bad X-Correos-Secret. Check Jetson public IP whitelist and whether :444 is also refused.'
                 : undefined;
             results.push({ step: 'token', ok: false, ms: elapsed, detail, diagnosis });
         }

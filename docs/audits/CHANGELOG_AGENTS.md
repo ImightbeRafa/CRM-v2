@@ -6,14 +6,18 @@ Append-only. Newest entries at the top.
 
 - Production guías fail with `Correos token auth failed (502)` after
   `POST …/token/authenticate` via `proxy.betsycrm-proxyaproximado.com`.
-  Public probes: `/health` 200 (process uptime ~6 min at incident),
-  missing/wrong `X-Correos-Secret` → 401. Direct Correos `:447` times out
-  from outside CR. Break is Jetson→Correos after a valid proxy secret, not PCD.
-- CRM: log `cf-ray` + sanitized 502 body; retry 502/503/504 up to 3 times;
-  stop treating 502 as a credential rejection; logistics UI shows
-  `Correos proxy/token unavailable (502)`.
-- Prove: `npm run test:correos-credentials`. Jetson/cloudflared still required
-  to restore live token auth.
+  Public probes: `/health` 200, missing/wrong `X-Correos-Secret` → 401.
+- Jetson journal (Peters): valid-secret POSTs reach
+  `servicios.correos.go.cr:447` then `connect ECONNREFUSED` on both A
+  records (`181.193.34.233`, `201.203.145.9`). Direct curl from the
+  Jetson: `Failed to connect … port 447 … Connection refused`.
+  `correos-proxy` + `cloudflared` are healthy. REJECTED/bad-secret lines
+  are public probes, not Vercel.
+- CRM: log `cf-ray` + sanitized 502 body; retry 502/503/504; do not treat
+  502 as credential rejection; UI says proxy/token unavailable and
+  ECONNREFUSED on `:447`.
+- Prove: `npm run test:correos-credentials`. Live fix is Correos :447
+  (outage or Jetson public-IP whitelist), not a CRM SOAP client change.
 
 ## 2026-09-03 — Producción Contra entrega toggle and grid windowing
 

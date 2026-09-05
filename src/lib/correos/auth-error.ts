@@ -48,7 +48,7 @@ export function formatGuiaFailureDetail(error: string | null | undefined): strin
   if (!error) return null;
   if (isCorreosCredentialRejection(error)) return 'Correos rechazó las credenciales';
   if (isCorreosProxyUnavailable(error)) {
-    return 'El proxy de Correos no pudo autenticar (502/503/504). Revisa Jetson correos-proxy y el túnel Cloudflare.';
+    return 'Correos :447 rechazó la conexión (ECONNREFUSED). El proxy y Cloudflare están bien; el token service de Correos no acepta TCP desde el Jetson.';
   }
   return error;
 }

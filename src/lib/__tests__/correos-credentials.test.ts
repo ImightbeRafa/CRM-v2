@@ -109,7 +109,7 @@ describe('Correos guía failure copy', () => {
     assert.equal(isCorreosCredentialRejection('Correos token auth failed (502)'), false);
     assert.equal(isCorreosProxyUnavailable('Correos token auth failed (502)'), true);
     assert.equal(formatGuiaFailureLabel('Correos token auth failed (502)'), 'Correos no disponible');
-    assert.match(formatGuiaFailureDetail('Correos token auth failed (502)') || '', /proxy de Correos/);
+    assert.match(formatGuiaFailureDetail('Correos token auth failed (502)') || '', /ECONNREFUSED|:447/);
   });
 
   it('strips a trailing slash from CORREOS_PROXY_URL', () => {

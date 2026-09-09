@@ -272,7 +272,15 @@ export function buildNoInstagramHtml(params: {
 </html>`
 }
 
-export function buildInstagramPickerHtml(matches: InstagramPageMatch[], completePath = '/api/auth/instagram/complete'): string {
+export function buildInstagramPickerHtml(
+  matches: Array<{
+    pageId: string
+    pageName: string
+    igBusinessAccountId: string
+    igUsername?: string | null
+  }>,
+  completePath = '/api/auth/instagram/complete',
+): string {
   const options = matches
     .map((match, index) => {
       const label = match.igUsername
@@ -281,6 +289,7 @@ export function buildInstagramPickerHtml(matches: InstagramPageMatch[], complete
       return `<label style="display:block;padding:12px;border:1px solid #e5e7eb;border-radius:8px;margin:8px 0;cursor:pointer;">
         <input type="radio" name="selection" value="${index}" ${index === 0 ? 'checked' : ''} />
         <span style="margin-left:8px;">${escHtml(label)}</span>
+        <input type="hidden" name="pageId_${index}" value="${escHtml(match.pageId)}" />
       </label>`
     })
     .join('')

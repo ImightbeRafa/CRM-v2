@@ -128,6 +128,116 @@ export async function resolveWhatsAppBusinessAccountId(phoneNumberId: string, ac
   }
 }
 
+/**
+ * Prove phone_number_id (and optional WABA) are reachable with this access token
+ * before trusting client Embedded Signup message fields.
+ */
+export function interpretWhatsAppOwnershipGraphData(params: {
+  graphOk: boolean
+  data: any
+  claimedPhoneNumberId: string
+  claimedWabaId?: string | null
+}): {
+  ok: boolean
+  phoneNumberId: string | null
+  whatsappBusinessAccountId: string | null
+  reason?: string
+} {
+  if (!params.graphOk) {
+    return {
+      ok: false,
+      phoneNumberId: null,
+      whatsappBusinessAccountId: null,
+      reason: params.data?.error?.message || 'graph_not_ok',
+    }
+  }
+
+  const resolvedPhoneId = params.data?.id ? String(params.data.id) : null
+  if (!resolvedPhoneId || resolvedPhoneId !== params.claimedPhoneNumberId) {
+    return {
+      ok: false,
+      phoneNumberId: null,
+      whatsappBusinessAccountId: null,
+      reason: 'phone_id_mismatch',
+    }
+  }
+
+  const resolvedWaba = params.data?.whatsapp_business_account?.id
+    ? String(params.data.whatsapp_business_account.id)
+    : null
+
+  const claimedWaba = (params.claimedWabaId || '').trim()
+  if (claimedWaba) {
+    if (!resolvedWaba || claimedWaba !== resolvedWaba) {
+      return {
+        ok: false,
+        phoneNumberId: resolvedPhoneId,
+        whatsappBusinessAccountId: resolvedWaba,
+        reason: 'waba_mismatch',
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    phoneNumberId: resolvedPhoneId,
+    whatsappBusinessAccountId: resolvedWaba,
+  }
+}
+
+export async function verifyWhatsAppAssetsForToken(params: {
+  accessToken: string
+  phoneNumberId: string
+  whatsappBusinessAccountId?: string | null
+}): Promise<{
+  ok: boolean
+  phoneNumberId: string | null
+  whatsappBusinessAccountId: string | null
+  reason?: string
+}> {
+  const phoneNumberId = String(params.phoneNumberId || '').trim()
+  if (!phoneNumberId || !params.accessToken) {
+    return { ok: false, phoneNumberId: null, whatsappBusinessAccountId: null, reason: 'missing_phone_or_token' }
+  }
+
+  const fields = encodeURIComponent('id,display_phone_number,verified_name,whatsapp_business_account{id}')
+  const url = addAppSecretProofToUrl(
+    buildMetaGraphUrl(`${encodeURIComponent(phoneNumberId)}?fields=${fields}`),
+    params.accessToken,
+  )
+
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${params.accessToken}` },
+    })
+    const data = await readMetaJson(response)
+    const interpreted = interpretWhatsAppOwnershipGraphData({
+      graphOk: response.ok,
+      data,
+      claimedPhoneNumberId: phoneNumberId,
+      claimedWabaId: params.whatsappBusinessAccountId,
+    })
+
+    if (interpreted.ok && !interpreted.whatsappBusinessAccountId) {
+      const resolvedWaba = await resolveWhatsAppBusinessAccountId(phoneNumberId, params.accessToken)
+      return {
+        ...interpreted,
+        whatsappBusinessAccountId: resolvedWaba,
+      }
+    }
+
+    return interpreted
+  } catch (error) {
+    console.warn('[meta-api] WhatsApp asset verification failed', error)
+    return {
+      ok: false,
+      phoneNumberId: null,
+      whatsappBusinessAccountId: null,
+      reason: 'verification_exception',
+    }
+  }
+}
+
 export async function subscribeWhatsAppApp(params: {
   accessToken: string
   phoneNumberId: string

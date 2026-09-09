@@ -16,7 +16,7 @@ import {
 import {
   getInstagramPendingCookieName,
   INSTAGRAM_PENDING_COOKIE_MAX_AGE,
-  signInstagramPendingConnect,
+  createInstagramPendingConnect,
 } from '@/lib/instagram-pending-connect'
 import { encodeInstagramRefreshToken } from '@/lib/social-account-meta'
 import { buildMetaGraphUrl } from '@/lib/meta-api'
@@ -226,13 +226,13 @@ export async function GET(request: NextRequest) {
     }
 
     if (matches.length > 1) {
-      const pending = await signInstagramPendingConnect({
+      const pending = await createInstagramPendingConnect({
         tenantId,
         userId,
         matches,
       })
-      const response = html(buildInstagramPickerHtml(matches))
-      response.cookies.set(getInstagramPendingCookieName(), pending, {
+      const response = html(buildInstagramPickerHtml(pending.publicMatches))
+      response.cookies.set(getInstagramPendingCookieName(), pending.cookieToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',

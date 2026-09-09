@@ -4,8 +4,9 @@ import { prisma } from '@/lib/db'
 import { subscribePageToInstagramMessages } from '@/lib/meta-api'
 import { buildInstagramSuccessHtml } from '@/lib/instagram-connect'
 import {
+  clearInstagramPending,
   getInstagramPendingCookieName,
-  verifyInstagramPendingConnect,
+  loadInstagramPendingRecord,
 } from '@/lib/instagram-pending-connect'
 import { encodeInstagramRefreshToken } from '@/lib/social-account-meta'
 
@@ -63,19 +64,41 @@ export async function POST(request: NextRequest) {
     }
 
     const pendingRaw = request.cookies.get(getInstagramPendingCookieName())?.value || ''
-    const pending = pendingRaw ? await verifyInstagramPendingConnect(pendingRaw) : null
-    if (!pending || pending.tenantId !== token.tenantId || pending.userId !== token.sub) {
+    const loaded = pendingRaw
+      ? await loadInstagramPendingRecord(pendingRaw, {
+          tenantId: String(token.tenantId),
+          userId: String(token.sub),
+        })
+      : null
+    if (!loaded) {
       return new NextResponse('Sesión de conexión expirada. Vuelve a intentar desde /config/social.', {
         status: 400,
+      })
+    }
+
+    // Bind cookie claims to the active session (SD-01).
+    if (
+      loaded.cookie.tenantId !== token.tenantId ||
+      loaded.cookie.userId !== token.sub ||
+      loaded.record.tenantId !== token.tenantId ||
+      loaded.record.userId !== token.sub
+    ) {
+      return new NextResponse('Sesión de conexión no coincide con el usuario autenticado.', {
+        status: 403,
       })
     }
 
     const form = await request.formData().catch(() => null)
     const selectionRaw = form?.get('selection')
     const index = Number(selectionRaw)
-    const match = pending.matches[index]
+    const match = loaded.record.matches[index]
     if (!match) {
       return new NextResponse('Selección inválida', { status: 400 })
+    }
+
+    // Cookie only listed page ids — ensure selection is one of them.
+    if (!loaded.cookie.pageIds.includes(match.pageId)) {
+      return new NextResponse('Selección no autorizada', { status: 403 })
     }
 
     try {
@@ -88,12 +111,14 @@ export async function POST(request: NextRequest) {
     }
 
     await upsertInstagramAccount({
-      tenantId: pending.tenantId,
-      userId: pending.userId,
+      tenantId: loaded.record.tenantId,
+      userId: loaded.record.userId,
       igBusinessAccountId: match.igBusinessAccountId,
       pageAccessToken: match.pageAccessToken,
       pageId: match.pageId,
     })
+
+    await clearInstagramPending(loaded.cookie.pendingId)
 
     const response = new NextResponse(
       buildInstagramSuccessHtml({

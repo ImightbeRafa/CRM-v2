@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
+import { getToken } from 'next-auth/jwt'
 import { getMetaGraphApiVersion } from '@/lib/meta-api'
 import { INSTAGRAM_OAUTH_SCOPES, getInstagramLoginConfigId } from '@/lib/meta-chat-config'
 
@@ -9,8 +10,16 @@ export const dynamic = 'force-dynamic'
 /**
  * Generate Instagram OAuth URL (Facebook Login for Business when config_id is set)
  * GET /api/auth/instagram/auth-url
+ *
+ * Requires an authenticated session (SD-04). The callback also requires JWT;
+ * gating here avoids issuing oauth state cookies to anonymous callers.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
+  if (!session?.tenantId || !session?.sub) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const baseUrl = `https://www.facebook.com/${getMetaGraphApiVersion()}/dialog/oauth`
 
   const appId = process.env.META_APP_ID

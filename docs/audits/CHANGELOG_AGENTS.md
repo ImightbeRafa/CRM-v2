@@ -2,6 +2,15 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-09 — SecureDog tip on IG+WA connect (#28)
+
+- SD-01: `ig_connect_pending` cookie is opaque JWT (pendingId + page ids only);
+  page access tokens live in encrypted Redis/memory server store.
+- SD-02: WA `/exchange` Graph-verifies phone/WABA ownership before upsert/subscribe.
+- SD-03/04: dropped `tokenPrefix` logs; IG `auth-url` requires session.
+- Prove: `npx tsx --test src/lib/__tests__/ig-wa-connect-security.test.ts`
+  `src/lib/__tests__/meta-chat-config.test.ts`, `npm run build`.
+
 ## 2026-09-09 — Respond.io-like IG + WA connect (CRM inbox)
 
 - Instagram: Login for Business `config_id` via `NEXT_PUBLIC_IG_LOGIN_CONFIG_ID`;

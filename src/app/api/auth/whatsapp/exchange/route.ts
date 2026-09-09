@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { prisma } from '@/lib/db'
-import { buildMetaGraphUrl, subscribeWhatsAppApp } from '@/lib/meta-api'
+import { buildMetaGraphUrl, subscribeWhatsAppApp, verifyWhatsAppAssetsForToken } from '@/lib/meta-api'
 import { encodeWhatsAppRefreshToken } from '@/lib/social-account-meta'
 
 export const runtime = 'nodejs'
@@ -9,10 +9,10 @@ export const dynamic = 'force-dynamic'
 
 /**
  * POST /api/auth/whatsapp/exchange
- * Body: { code?: string, message?: any }
+ * Body: { code?: string, accessToken?: string, message?: any }
  * - Exchanges Embedded Signup 'code' for a business token
  * - Reads phone_number_id from message event if provided
- * - Stores/updates SocialAccount (platform='whatsapp') and auto-subscribes webhooks
+ * - Graph-verifies phone/WABA ownership with the token before upsert/subscribe
  */
 export async function POST(request: NextRequest) {
   try {
@@ -28,44 +28,40 @@ export async function POST(request: NextRequest) {
     const accessToken: string | undefined = body?.accessToken
     const message = body?.message
 
-    // phone_number_id may come in the message event payload
-    const phoneNumberId: string | null =
+    // Client-supplied ids are untrusted until Graph-verified below.
+    const claimedPhoneNumberId: string | null =
       message?.data?.phone_number_id ||
       message?.phone_number_id ||
+      body?.phoneNumberId ||
       null
-    const whatsappBusinessAccountId: string | null =
+    const claimedWabaId: string | null =
       message?.data?.waba_id ||
       message?.data?.whatsapp_business_account_id ||
       message?.waba_id ||
       message?.whatsapp_business_account_id ||
+      body?.whatsappBusinessAccountId ||
       null
 
-    // Exchange code for business token (Embedded Signup)
-    // OR use direct access token if provided (response_type=token)
     let businessToken: string | null = accessToken || null
     let exchangeError: any = null
-    
+
     if (accessToken) {
-      console.log('[wa/exchange] ✅ Access token provided directly (response_type=token)', {
-        tokenPrefix: accessToken.substring(0, 20) + '...'
-      })
-      // Skip code exchange - we already have the token
+      console.log('[wa/exchange] Access token provided directly (response_type=token)')
     } else if (code) {
       const appId = process.env.META_APP_ID || ''
       const appSecret = process.env.META_APP_SECRET || ''
-      
+
       if (!appId || !appSecret) {
         console.error('[wa/exchange] Missing META_APP_ID or META_APP_SECRET')
         return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
       }
-      
+
       console.log('[wa/exchange] Exchanging Embedded Signup code', {
         codeLength: code.length,
         hasConfigId: Boolean(process.env.NEXT_PUBLIC_FB_LOGIN_CONFIG_ID),
         hasNextAuthUrl: Boolean(process.env.NEXTAUTH_URL),
       })
 
-      // FB JS SDK Embedded Signup typically uses xd_arbiter as redirect_uri.
       const redirectUriCandidates = [
         'https://staticxx.facebook.com/x/connect/xd_arbiter/?version=46',
         'https://staticxx.facebook.com/x/connect/xd_arbiter/',
@@ -119,110 +115,135 @@ export async function POST(request: NextRequest) {
           }
           console.error(`[wa/exchange] Attempt ${i + 1} failed`, exchangeError)
         } catch (fetchErr: any) {
-          exchangeError = { message: fetchErr.message, type: 'network_error', attemptedRedirectUri: redirectUri || 'none' }
+          exchangeError = {
+            message: fetchErr.message,
+            type: 'network_error',
+            attemptedRedirectUri: redirectUri || 'none',
+          }
         }
       }
     }
 
     if (!businessToken) {
-      return NextResponse.json({ 
-        success: false, 
-        message: 'Failed to obtain access token',
-        exchangeError: exchangeError || 'No error details available',
-        debugInfo: {
-          codeProvided: !!code,
-          accessTokenProvided: !!accessToken,
-          messageProvided: !!message,
-          hint: 'Check server logs for detailed error information'
-        }
-      }, { status: 400 })
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Failed to obtain access token',
+          exchangeError: exchangeError || 'No error details available',
+          debugInfo: {
+            codeProvided: !!code,
+            accessTokenProvided: !!accessToken,
+            messageProvided: !!message,
+            hint: 'Check server logs for detailed error information',
+          },
+        },
+        { status: 400 },
+      )
     }
-    
-    // If we have token but no phone number ID yet, return success and wait for message event
-    if (!phoneNumberId) {
-      console.log('[wa/exchange] ✅ Token obtained, waiting for phone_number_id from message event')
-      return NextResponse.json({ 
-        success: true, 
+
+    if (!claimedPhoneNumberId) {
+      console.log('[wa/exchange] Token obtained, waiting for phone_number_id from message event')
+      return NextResponse.json({
+        success: true,
         tokenReceived: true,
         waitingForPhoneNumber: true,
-        message: 'Token received, waiting for WhatsApp phone number from setup completion'
+        message: 'Token received, waiting for WhatsApp phone number from setup completion',
       })
     }
 
-    const db = prisma as any
+    // SD-02: never upsert/subscribe on client-claimed ids alone.
+    const ownership = await verifyWhatsAppAssetsForToken({
+      accessToken: businessToken,
+      phoneNumberId: String(claimedPhoneNumberId),
+      whatsappBusinessAccountId: claimedWabaId,
+    })
 
-    // If we have phone number id and token, subscribe first
-    if (phoneNumberId && businessToken) {
-      try {
-        const sub = await subscribeWhatsAppApp({
-          accessToken: businessToken,
-          phoneNumberId,
-          whatsappBusinessAccountId,
-        })
-
-        if (!sub.ok) {
-          console.warn('[wa/exchange] subscribed_apps failed', { 
-            phoneNumberId, 
-            targetId: sub.targetId,
-            status: sub.status, 
-            data: sub.data,
-            hasAppSecret: Boolean(process.env.META_APP_SECRET),
-          })
-        } else {
-          console.log('[wa/exchange] subscribed_apps success', { phoneNumberId, targetId: sub.targetId })
-        }
-      } catch (e) {
-        console.warn('[wa/exchange] subscribed_apps error', e)
-      }
+    if (!ownership.ok || !ownership.phoneNumberId) {
+      console.warn('[wa/exchange] Graph ownership check failed', {
+        reason: ownership.reason,
+        claimedPhone: Boolean(claimedPhoneNumberId),
+        claimedWaba: Boolean(claimedWabaId),
+      })
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'WhatsApp phone/WABA could not be verified for this token',
+          reason: ownership.reason || 'ownership_failed',
+        },
+        { status: 403 },
+      )
     }
 
-    // Upsert SocialAccount when we have phone number id (accountId = phone, refreshToken = WABA)
-    let saved: any = null
-    if (phoneNumberId) {
-      const refreshToken = encodeWhatsAppRefreshToken(whatsappBusinessAccountId)
-      const existing = await db.socialAccount.findFirst({ where: { tenantId, platform: 'whatsapp', accountId: String(phoneNumberId) } })
-      if (existing) {
-        saved = await db.socialAccount.update({
-          where: { id: existing.id },
-          data: {
-            userId,
-            isActive: true,
-            accessToken: businessToken ?? existing.accessToken ?? undefined,
-            refreshToken: refreshToken ?? existing.refreshToken ?? undefined,
-          },
-          select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true, refreshToken: true },
+    const phoneNumberId = ownership.phoneNumberId
+    const whatsappBusinessAccountId = ownership.whatsappBusinessAccountId
+
+    const db = prisma as any
+
+    try {
+      const sub = await subscribeWhatsAppApp({
+        accessToken: businessToken,
+        phoneNumberId,
+        whatsappBusinessAccountId,
+      })
+
+      if (!sub.ok) {
+        console.warn('[wa/exchange] subscribed_apps failed', {
+          phoneNumberId,
+          targetId: sub.targetId,
+          status: sub.status,
+          hasAppSecret: Boolean(process.env.META_APP_SECRET),
         })
       } else {
-        saved = await db.socialAccount.create({
-          data: {
-            tenantId,
-            userId,
-            platform: 'whatsapp',
-            accountId: String(phoneNumberId),
-            accessToken: businessToken ?? undefined,
-            refreshToken: refreshToken ?? undefined,
-            isActive: true,
-          },
-          select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true, refreshToken: true },
-        })
+        console.log('[wa/exchange] subscribed_apps success', { phoneNumberId, targetId: sub.targetId })
       }
+    } catch (e) {
+      console.warn('[wa/exchange] subscribed_apps error', e)
+    }
+
+    const refreshToken = encodeWhatsAppRefreshToken(whatsappBusinessAccountId)
+    const existing = await db.socialAccount.findFirst({
+      where: { tenantId, platform: 'whatsapp', accountId: String(phoneNumberId) },
+    })
+    let saved: any
+    if (existing) {
+      saved = await db.socialAccount.update({
+        where: { id: existing.id },
+        data: {
+          userId,
+          isActive: true,
+          accessToken: businessToken ?? existing.accessToken ?? undefined,
+          refreshToken: refreshToken ?? existing.refreshToken ?? undefined,
+        },
+        select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true, refreshToken: true },
+      })
+    } else {
+      saved = await db.socialAccount.create({
+        data: {
+          tenantId,
+          userId,
+          platform: 'whatsapp',
+          accountId: String(phoneNumberId),
+          accessToken: businessToken ?? undefined,
+          refreshToken: refreshToken ?? undefined,
+          isActive: true,
+        },
+        select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true, refreshToken: true },
+      })
     }
 
     return NextResponse.json({
       success: true,
-      account: saved
-        ? {
-            id: saved.id,
-            platform: saved.platform,
-            accountId: saved.accountId,
-            isActive: saved.isActive,
-            linkedAt: saved.linkedAt,
-            whatsappBusinessAccountId: whatsappBusinessAccountId || null,
-            phoneNumberId: phoneNumberId || null,
-          }
-        : null,
+      account: {
+        id: saved.id,
+        platform: saved.platform,
+        accountId: saved.accountId,
+        isActive: saved.isActive,
+        linkedAt: saved.linkedAt,
+        whatsappBusinessAccountId: whatsappBusinessAccountId || null,
+        phoneNumberId: phoneNumberId || null,
+      },
       tokenExchanged: Boolean(businessToken),
-      phoneNumberId: phoneNumberId || null,
+      phoneNumberId,
       whatsappBusinessAccountId: whatsappBusinessAccountId || null,
     })
   } catch (e: any) {

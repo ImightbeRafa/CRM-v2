@@ -16,7 +16,7 @@ Owner diagnostic: `GET /api/chat/meta-status` (also rendered on `/config/social`
 
 ## Betsy URLs
 
-Production `NEXTAUTH_URL` is the **www** host (apex `betsycrm.com` 307s to www). Use that exact origin in Meta, not the apex.
+Production `NEXTAUTH_URL` must be the **www** host (the apex hostname 307s to www). Use that exact origin in Meta, not the apex. Canonical readiness URLs default to the www production origin when `NEXTAUTH_URL` is unset.
 
 - Unified chat webhook callback: `{NEXTAUTH_URL}/api/chat/webhook`
 - Instagram OAuth redirect: `{NEXTAUTH_URL}/api/auth/instagram/callback`
@@ -41,7 +41,8 @@ META_APP_SECRET=
 META_WEBHOOK_VERIFY_TOKEN=
 NEXT_PUBLIC_META_GRAPH_API_VERSION=v24.0
 META_GRAPH_API_VERSION=v24.0
-NEXT_PUBLIC_FB_LOGIN_CONFIG_ID=
+NEXT_PUBLIC_FB_LOGIN_CONFIG_ID=   # WhatsApp Embedded Signup config
+NEXT_PUBLIC_IG_LOGIN_CONFIG_ID=   # optional Instagram Login for Business config
 ```
 
 Backward-compatible verify token names still work, but new installs should use
@@ -98,13 +99,15 @@ The bot webhook and the CRM inbox webhook are separate products:
 
 ## Instagram Setup
 
-1. Convert the Instagram account to a professional Business account.
+1. Convert the Instagram account to a professional Business account (**Empresa**, not Creator).
 2. Link that Instagram account to a Facebook Page.
-3. Make sure the Meta user connecting from Betsy has admin access to the Page.
-4. In Betsy, go to `/config/social` and connect Instagram.
-5. Complete Facebook Login and grant messaging permissions.
-6. Send a DM from another Instagram account to the Business account.
-7. Confirm it appears in `/chats`.
+3. Make sure the Meta user connecting from Betsy has **admin** access to the Page.
+4. If the Meta app is in Development mode, that user must be app Admin/Developer/Tester.
+5. Optional: create a Facebook Login for Business configuration and set `NEXT_PUBLIC_IG_LOGIN_CONFIG_ID` so the OAuth dialog shows Meta’s Page + IG asset picker.
+6. In Betsy, go to `/config/social` and click **Conectar Instagram**.
+7. If Meta returns zero Pages, follow the Spanish troubleshooting on the callback page (wrong FB user, missing Page admin, IG not Empresa-linked, Dev-mode tester).
+8. Send a DM from another Instagram account to the Business account.
+9. Confirm the linked account on `/config/social` and that it appears in `/chats`.
 
 ## App Review Notes
 

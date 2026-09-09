@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { prisma } from '@/lib/db'
 import { buildMetaGraphUrl, subscribeWhatsAppApp } from '@/lib/meta-api'
+import { encodeWhatsAppRefreshToken } from '@/lib/social-account-meta'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -58,131 +59,67 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
       }
       
-      console.log('[wa/exchange] 🔍 DIAGNOSTIC INFO:', {
-        '1. Code length': code.length,
-        '2. Code prefix': code.substring(0, 15) + '...',
-        '3. App ID': appId,
-        '4. Config ID from env': process.env.NEXT_PUBLIC_FB_LOGIN_CONFIG_ID,
-        '5. NEXTAUTH_URL': process.env.NEXTAUTH_URL
+      console.log('[wa/exchange] Exchanging Embedded Signup code', {
+        codeLength: code.length,
+        hasConfigId: Boolean(process.env.NEXT_PUBLIC_FB_LOGIN_CONFIG_ID),
+        hasNextAuthUrl: Boolean(process.env.NEXTAUTH_URL),
       })
-      
-      // Note: debug_token API only works with access tokens, not authorization codes
-      // The authorization code will be exchanged for a token in the attempts below
-      
-      // CRITICAL: Found the actual redirect_uri from OAuth dialog URL!
-      // The SDK uses staticxx.facebook.com/x/connect/xd_arbiter/ WITH version parameter
+
+      // FB JS SDK Embedded Signup typically uses xd_arbiter as redirect_uri.
       const redirectUriCandidates = [
-        // 1. ACTUAL redirect_uri from OAuth dialog (with version=46)
         'https://staticxx.facebook.com/x/connect/xd_arbiter/?version=46',
-        // 2. Without hash fragment (Meta might strip it)
         'https://staticxx.facebook.com/x/connect/xd_arbiter/',
-        // 3. Fallback redirect_uri from OAuth dialog
-        process.env.NEXTAUTH_URL + '/config/social',
-        // 4. Root domain with trailing slash
-        process.env.NEXTAUTH_URL + '/',
-        // 5. Root domain without trailing slash
-        process.env.NEXTAUTH_URL,
-        // 6. No redirect_uri
+        process.env.NEXTAUTH_URL ? `${process.env.NEXTAUTH_URL}/config/social` : null,
+        process.env.FB_LOGIN_REDIRECT_URI || null,
         null,
-        // 7. Custom callback from env
-        process.env.FB_LOGIN_REDIRECT_URI,
-        // 8. Facebook's internal success page
-        'https://www.facebook.com/platform/app-login-success/',
-        // 9. Common Facebook defaults
-        'https://www.facebook.com/connect/login_success.html',
-      ].filter(uri => uri !== undefined) // Keep null, but remove undefined
-      
+      ].filter((uri, index, arr) => arr.indexOf(uri) === index)
+
       const url = buildMetaGraphUrl('oauth/access_token')
-      
-      // Try each redirect_uri candidate until one works
+
       for (let i = 0; i < redirectUriCandidates.length; i++) {
         const redirectUri = redirectUriCandidates[i]
-        
         try {
           const params = new URLSearchParams({
             client_id: appId,
             client_secret: appSecret,
             code,
           })
-          
-          if (redirectUri) {
-            params.append('redirect_uri', redirectUri as string)
-            console.log(`[wa/exchange] Attempt ${i + 1}/${redirectUriCandidates.length}: redirect_uri="${redirectUri}"`)
-            console.log(`[wa/exchange] Full request params:`, params.toString())
-          } else {
-            console.log(`[wa/exchange] Attempt ${i + 1}/${redirectUriCandidates.length}: NO redirect_uri`)
-            console.log(`[wa/exchange] Full request params:`, params.toString())
-          }
-          
+          if (redirectUri) params.append('redirect_uri', redirectUri)
+
           const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: params.toString(),
           })
-          
           const txt = await res.text()
-          console.log('[wa/exchange] Response status:', res.status)
-          
           let json: any
           try {
             json = JSON.parse(txt)
-          } catch (parseErr) {
-            console.error('[wa/exchange] Failed to parse response as JSON:', txt)
-            exchangeError = { message: 'Invalid JSON response', raw: txt, attemptedRedirectUri: redirectUri }
-            continue // Try next candidate
+          } catch {
+            exchangeError = { message: 'Invalid JSON response', attemptedRedirectUri: redirectUri || 'none' }
+            continue
           }
-          
+
           if (res.ok && json?.access_token) {
             businessToken = json.access_token
-            console.log('[wa/exchange] ✅ SUCCESS - Token obtained', {
+            console.log('[wa/exchange] Token obtained', {
               tokenType: json.token_type,
               expiresIn: json.expires_in,
-              tokenPrefix: json.access_token.substring(0, 20) + '...',
-              usedRedirectUri: redirectUri || 'none'
+              usedRedirectUri: redirectUri || 'none',
             })
-            break // Success! Exit the loop
-          } else {
-            // Log detailed error information
-            const errorDetails = {
-              status: res.status,
-              statusText: res.statusText,
-              error: json?.error,
-              errorCode: json?.error?.code,
-              errorSubcode: json?.error?.error_subcode,
-              errorMessage: json?.error?.message,
-              errorType: json?.error?.type,
-              fbTraceId: json?.error?.fbtrace_id,
-              rawResponse: txt,
-              attemptedRedirectUri: redirectUri || 'none'
-            }
-            
-            console.error(`[wa/exchange] ❌ Attempt ${i + 1} FAILED`, errorDetails)
-            exchangeError = errorDetails
-            
-            // Provide helpful debugging info for common errors
-            if (json?.error?.code === 100) {
-              if (json?.error?.error_subcode === 36008) {
-                console.error('[wa/exchange] ERROR 36008: Redirect URI mismatch')
-                console.error('[wa/exchange] Tried redirect_uri:', redirectUri || 'none')
-              }
-            } else if (json?.error?.code === 190) {
-              console.error('[wa/exchange] ERROR 190: Invalid OAuth 2.0 Access Token')
-              console.error('[wa/exchange] The authorization code may have expired (30 sec TTL)')
-            } else if (json?.error?.code === 191) {
-              console.error('[wa/exchange] ERROR 191: Domain not allowed for this redirect_uri')
-            }
-            
-            // Try next candidate if not the last attempt
-            if (i < redirectUriCandidates.length - 1) {
-              console.log(`[wa/exchange] Trying next redirect_uri candidate (${i + 2}/${redirectUriCandidates.length})...`)
-              continue
-            }
+            break
           }
+
+          exchangeError = {
+            status: res.status,
+            errorCode: json?.error?.code,
+            errorSubcode: json?.error?.error_subcode,
+            errorMessage: json?.error?.message,
+            attemptedRedirectUri: redirectUri || 'none',
+          }
+          console.error(`[wa/exchange] Attempt ${i + 1} failed`, exchangeError)
         } catch (fetchErr: any) {
-          console.error('[wa/exchange] Network error during token exchange:', fetchErr)
-          exchangeError = { message: fetchErr.message, type: 'network_error', attemptedRedirectUri: redirectUri }
-          // Try next candidate on network error
-          if (i < redirectUriCandidates.length - 1) continue
+          exchangeError = { message: fetchErr.message, type: 'network_error', attemptedRedirectUri: redirectUri || 'none' }
         }
       }
     }
@@ -239,9 +176,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Upsert SocialAccount when we have phone number id
+    // Upsert SocialAccount when we have phone number id (accountId = phone, refreshToken = WABA)
     let saved: any = null
     if (phoneNumberId) {
+      const refreshToken = encodeWhatsAppRefreshToken(whatsappBusinessAccountId)
       const existing = await db.socialAccount.findFirst({ where: { tenantId, platform: 'whatsapp', accountId: String(phoneNumberId) } })
       if (existing) {
         saved = await db.socialAccount.update({
@@ -250,8 +188,9 @@ export async function POST(request: NextRequest) {
             userId,
             isActive: true,
             accessToken: businessToken ?? existing.accessToken ?? undefined,
+            refreshToken: refreshToken ?? existing.refreshToken ?? undefined,
           },
-          select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true },
+          select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true, refreshToken: true },
         })
       } else {
         saved = await db.socialAccount.create({
@@ -261,14 +200,31 @@ export async function POST(request: NextRequest) {
             platform: 'whatsapp',
             accountId: String(phoneNumberId),
             accessToken: businessToken ?? undefined,
+            refreshToken: refreshToken ?? undefined,
             isActive: true,
           },
-          select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true },
+          select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true, refreshToken: true },
         })
       }
     }
 
-    return NextResponse.json({ success: true, account: saved, tokenExchanged: Boolean(businessToken), phoneNumberId: phoneNumberId || null })
+    return NextResponse.json({
+      success: true,
+      account: saved
+        ? {
+            id: saved.id,
+            platform: saved.platform,
+            accountId: saved.accountId,
+            isActive: saved.isActive,
+            linkedAt: saved.linkedAt,
+            whatsappBusinessAccountId: whatsappBusinessAccountId || null,
+            phoneNumberId: phoneNumberId || null,
+          }
+        : null,
+      tokenExchanged: Boolean(businessToken),
+      phoneNumberId: phoneNumberId || null,
+      whatsappBusinessAccountId: whatsappBusinessAccountId || null,
+    })
   } catch (e: any) {
     console.error('[wa/exchange] Error', e)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

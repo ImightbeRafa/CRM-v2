@@ -2,6 +2,17 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-09 — Respond.io-like IG + WA connect (CRM inbox)
+
+- Instagram: Login for Business `config_id` via `NEXT_PUBLIC_IG_LOGIN_CONFIG_ID`;
+  Business Manager page fallbacks when `me/accounts` is empty; multi-asset picker;
+  Spanish empty-pages troubleshooting; safe page-count logs (no tokens).
+- WhatsApp: single primary Embedded Signup CTA; manual link collapsed; store WABA
+  on `SocialAccount.refreshToken` (`waba:`) and Page id for IG (`page:`).
+- meta-status / readiness canonical origin defaults to the www production host
+  and prefers `NEXTAUTH_URL`. Re-enabled `/chats` route so linked accounts appear.
+- Prove: `npx tsx --test src/lib/__tests__/meta-chat-config.test.ts`, `npm run build`.
+
 ## 2026-09-03 — Producción Contra entrega toggle and grid windowing
 
 - Added a **Contra entrega** toggle next to Masivas/Guías/Facturas/Exportar.

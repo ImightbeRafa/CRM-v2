@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { subscribeWhatsAppApp } from '@/lib/meta-api'
+import { subscribePageToInstagramMessages, subscribeWhatsAppApp } from '@/lib/meta-api'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -9,8 +10,8 @@ export const dynamic = 'force-dynamic'
 /**
  * POST /api/social/subscribe
  * Body: { id: string }
- * For WhatsApp numbers: re-call /{phone_number_id}/subscribed_apps to ensure webhook delivery.
- * Instagram re-subscribe requires Page ID and user/page token; we instruct to reconnect via OAuth.
+ * WhatsApp: /{waba_or_phone}/subscribed_apps
+ * Instagram: /{pageId}/subscribed_apps when page id was stored at connect time
  */
 export async function POST(request: NextRequest) {
   try {
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     const db = prisma as any
     const rows = await db.$queryRaw<any[]>`
-      SELECT id, "tenantId", platform, "accountId", "accessToken"
+      SELECT id, "tenantId", platform, "accountId", "accessToken", "refreshToken"
       FROM "SocialAccount"
       WHERE id = ${id}
     `
@@ -32,11 +33,15 @@ export async function POST(request: NextRequest) {
     if (acc.tenantId !== tenantId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     if (acc.platform === 'whatsapp') {
-      if (!acc.accessToken) return NextResponse.json({ error: 'Missing access token for WhatsApp account' }, { status: 400 })
+      if (!acc.accessToken) {
+        return NextResponse.json({ error: 'Missing access token for WhatsApp account' }, { status: 400 })
+      }
+      const meta = parseSocialRefreshToken(acc.refreshToken)
       try {
         const sub = await subscribeWhatsAppApp({
           accessToken: acc.accessToken,
           phoneNumberId: acc.accountId,
+          whatsappBusinessAccountId: meta.whatsappBusinessAccountId,
         })
 
         if (!sub.ok) {
@@ -44,7 +49,6 @@ export async function POST(request: NextRequest) {
             id,
             targetId: sub.targetId,
             status: sub.status,
-            data: sub.data,
           })
           return NextResponse.json({
             success: false,
@@ -54,7 +58,6 @@ export async function POST(request: NextRequest) {
           })
         }
 
-        console.log('[social/subscribe] WhatsApp subscribed_apps success', { id, targetId: sub.targetId })
         return NextResponse.json({ success: true, targetId: sub.targetId })
       } catch (e: any) {
         console.warn('[social/subscribe] WhatsApp subscribed_apps error', e)
@@ -62,8 +65,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Instagram: needs page context; advise reconnect
-    return NextResponse.json({ success: false, message: 'Instagram re-subscribe requires reconnect via OAuth' })
+    if (acc.platform === 'instagram') {
+      if (!acc.accessToken) {
+        return NextResponse.json({ error: 'Missing access token for Instagram account' }, { status: 400 })
+      }
+      const meta = parseSocialRefreshToken(acc.refreshToken)
+      if (!meta.pageId) {
+        return NextResponse.json({
+          success: false,
+          message: 'Falta Page ID guardado. Vuelve a conectar Instagram desde /config/social.',
+        })
+      }
+      try {
+        const sub = await subscribePageToInstagramMessages(meta.pageId, acc.accessToken)
+        if (!sub.ok) {
+          return NextResponse.json({
+            success: false,
+            status: sub.status,
+            message: 'Subscribe failed',
+            details: sub.data,
+          })
+        }
+        return NextResponse.json({ success: true, pageId: meta.pageId })
+      } catch (e: any) {
+        return NextResponse.json({ error: e.message || 'Subscribe error' }, { status: 500 })
+      }
+    }
+
+    return NextResponse.json({ error: 'Unsupported platform' }, { status: 400 })
   } catch (e: any) {
     console.error('[social/subscribe] Error', e)
     return NextResponse.json({ error: e.message || 'Internal error' }, { status: 500 })

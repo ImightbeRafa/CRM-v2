@@ -187,10 +187,8 @@ export default async function middleware(request: Request) {
       return NextResponse.next({ request: { headers: requestHeaders } });
     }
 
-    // Redirect disabled features to dashboard
-    if (pathname === '/chats' || pathname.startsWith('/chats/')) {
-      return NextResponse.redirect(new URL('/dashboard', url.origin));
-    }
+    // /chats is enabled for Meta inbox (Instagram + WhatsApp SocialAccount).
+    // Do not redirect it away — connected accounts must appear after /config/social link.
 
     // Handle tenant-specific routes
     if (pathname.startsWith('/api/')) {

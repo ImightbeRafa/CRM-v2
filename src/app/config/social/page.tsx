@@ -10,6 +10,9 @@ interface SocialAccount {
   accountId: string
   linkedAt: string
   isActive: boolean
+  phoneNumberId?: string | null
+  whatsappBusinessAccountId?: string | null
+  pageId?: string | null
 }
 
 interface MetaEnvFlag {
@@ -28,6 +31,7 @@ interface MetaStatus {
     instagramOAuthRedirect: string
     socialConfig: string
     staffBotWebhook: string
+    inbox?: string
   }
   env: {
     inboxRequired: MetaEnvFlag[]
@@ -40,35 +44,47 @@ interface MetaStatus {
   }
 }
 
+declare global {
+  interface Window {
+    FB?: {
+      init: (options: Record<string, unknown>) => void
+      login: (callback: (response: any) => void, options: Record<string, unknown>) => void
+    }
+    fbAsyncInit?: () => void
+  }
+}
+
 export default function SocialConfigPage() {
   const { data: session } = useSession()
   const router = useRouter()
   const [accounts, setAccounts] = useState<SocialAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [linking, setLinking] = useState(false)
+  const [connectingInstagram, setConnectingInstagram] = useState(false)
+  const [connectingWhatsApp, setConnectingWhatsApp] = useState(false)
 
-  // WhatsApp manual link form
-  const [platform, setPlatform] = useState<'whatsapp' | 'instagram'>('whatsapp')
   const [accountId, setAccountId] = useState('')
   const [whatsappBusinessAccountId, setWhatsappBusinessAccountId] = useState('')
   const [accessToken, setAccessToken] = useState('')
-  const [showWhatsAppGuide, setShowWhatsAppGuide] = useState(false)
+  const [showManualWhatsApp, setShowManualWhatsApp] = useState(false)
   const [validationError, setValidationError] = useState('')
+  const [statusMessage, setStatusMessage] = useState('')
   const [unlinking, setUnlinking] = useState<string | null>(null)
   const [resubscribing, setResubscribing] = useState<string | null>(null)
   const [fbReady, setFbReady] = useState(false)
   const [metaStatus, setMetaStatus] = useState<MetaStatus | null>(null)
   const [metaStatusError, setMetaStatusError] = useState('')
+
   const META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID as string | undefined
   const FB_LOGIN_CONFIG_ID = process.env.NEXT_PUBLIC_FB_LOGIN_CONFIG_ID as string | undefined
-  const META_GRAPH_API_VERSION = (process.env.NEXT_PUBLIC_META_GRAPH_API_VERSION as string | undefined) || 'v24.0'
+  const META_GRAPH_API_VERSION =
+    (process.env.NEXT_PUBLIC_META_GRAPH_API_VERSION as string | undefined) || 'v24.0'
 
-  const isOwnerOrMaster = session?.user?.membershipRole === 'OWNER' || session?.user?.role === 'MASTER'
+  const isOwnerOrMaster =
+    session?.user?.membershipRole === 'OWNER' || session?.user?.role === 'MASTER'
 
   useEffect(() => {
-    // Wait for session to load before checking permissions
     if (!session) return
-    
     if (!isOwnerOrMaster) {
       router.push('/')
       return
@@ -77,47 +93,69 @@ export default function SocialConfigPage() {
     fetchMetaStatus()
   }, [session, isOwnerOrMaster, router])
 
-  // Load Facebook JS SDK once for Embedded Signup
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if ((window as any).FB) { setFbReady(true); return }
+    if (window.FB) {
+      setFbReady(true)
+      return
+    }
+    window.fbAsyncInit = function () {
+      window.FB?.init({
+        appId: META_APP_ID || '',
+        autoLogAppEvents: true,
+        xfbml: true,
+        version: META_GRAPH_API_VERSION,
+      })
+      setFbReady(true)
+    }
     const script = document.createElement('script')
     script.async = true
     script.defer = true
     script.crossOrigin = 'anonymous'
-    script.src = 'https://connect.facebook.net/en_US/sdk.js'
-    script.onload = () => {
-      ;(window as any).fbAsyncInit = function () {
-        ;(window as any).FB.init({
-          appId: META_APP_ID || '',
-          autoLogAppEvents: true,
-          xfbml: true,
-          version: META_GRAPH_API_VERSION,
-        })
-        setFbReady(true)
-      }
-    }
+    script.src = 'https://connect.facebook.net/es_LA/sdk.js'
     document.body.appendChild(script)
   }, [META_APP_ID, META_GRAPH_API_VERSION])
 
-  // Capture WA Embedded Signup message events (IDs + signals)
-  // Per Meta guidelines: parse JSON and check for WA_EMBEDDED_SIGNUP type
   useEffect(() => {
     function onMessage(event: MessageEvent) {
+      if (event.origin === window.location.origin) {
+        const data = event.data
+        if (data?.type === 'ig_oauth_complete') {
+          setConnectingInstagram(false)
+          if (data.success) {
+            setStatusMessage('Instagram conectado. Actualizando cuentas…')
+            fetchAccounts()
+            fetchMetaStatus()
+          } else if (data.reason === 'no_pages') {
+            setStatusMessage(
+              'Meta no devolvió Páginas. Revisa el mensaje en la ventana emergente (admin de Página + IG Empresa).',
+            )
+          }
+        }
+        return
+      }
+
       if (!String(event.origin).endsWith('facebook.com')) return
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
         if (data?.type === 'WA_EMBEDDED_SIGNUP') {
-          console.log('[WA Embedded Signup] Message event:', data)
-          // Send to backend for processing
           fetch('/api/auth/whatsapp/exchange', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: data }),
-          }).catch(() => {})
+          })
+            .then(async (res) => {
+              const json = await res.json().catch(() => ({}))
+              if (res.ok && json.success && json.account) {
+                setStatusMessage('WhatsApp conectado correctamente.')
+                fetchAccounts()
+                fetchMetaStatus()
+              }
+            })
+            .catch(() => {})
         }
-      } catch (err) {
-        console.log('[WA Embedded Signup] Message parse error:', err)
+      } catch {
+        // ignore non-JSON SDK noise
       }
     }
     window.addEventListener('message', onMessage)
@@ -125,144 +163,84 @@ export default function SocialConfigPage() {
   }, [])
 
   function launchWhatsAppEmbeddedSignup() {
-    const FB = (window as any).FB
+    const FB = window.FB
     if (!FB || !FB_LOGIN_CONFIG_ID) {
-      alert('⚠️ Configuración de Facebook incompleta. Falta FB SDK o CONFIG_ID.\n\nVerifica que NEXT_PUBLIC_META_APP_ID y NEXT_PUBLIC_FB_LOGIN_CONFIG_ID estén configurados.')
+      setStatusMessage(
+        'Falta configuración de Embedded Signup. Verifica NEXT_PUBLIC_META_APP_ID y NEXT_PUBLIC_FB_LOGIN_CONFIG_ID.',
+      )
       return
     }
-    
-    // DIAGNOSTIC: Intercept Facebook postMessages to see OAuth details
-    const messageListener = (event: MessageEvent) => {
-      if (event.origin.includes('facebook.com')) {
-        console.log('🔍 [DIAGNOSTIC] Facebook postMessage:', {
-          origin: event.origin,
-          data: event.data,
-          fullEvent: JSON.stringify(event.data, null, 2)
-        })
-      }
-    }
-    window.addEventListener('message', messageListener, false)
-    
-    // DIAGNOSTIC: Log fetch requests without intercepting (to avoid CSP issues)
-    if (!(window as any).__fbFetchLogged) {
-      const originalFetch = window.fetch
-      window.fetch = function(...args: any[]) {
-        const url = typeof args[0] === 'string' ? args[0] : args[0]?.url
-        if (url && (url.includes('facebook.com') || url.includes('oauth'))) {
-          // Log but don't interfere
-          setTimeout(() => {
-            console.log('🔍 [DIAGNOSTIC] OAuth Request detected:', url)
-          }, 0)
-        }
-        return originalFetch.apply(this, args as any)
-      }
-      ;(window as any).__fbFetchLogged = true
-    }
-    
-    console.log('[WA Embedded Signup] Launching FB.login', {
-      configId: FB_LOGIN_CONFIG_ID,
-      appId: META_APP_ID
-    })
-    
-    const cb = (response: any) => {
-      console.log('[WA Embedded Signup] FB.login callback received', response)
-      
-      // Handle response asynchronously but don't make the callback itself async
-      const handleResponse = async () => {
-        try {
-          // Check for user cancellation or errors
-          if (!response || response.status === 'unknown') {
-            console.warn('[WA Embedded Signup] User closed dialog or not logged in')
-            alert('⚠️ Proceso cancelado. Por favor, intenta nuevamente.')
-            return
-          }
-          
-          if (response.error) {
-            console.error('[WA Embedded Signup] FB.login error:', response.error)
-            alert(`❌ Error de Facebook: ${response.error.message || 'Error desconocido'}`)
-            return
-          }
-          
-          // Check if we got a token directly or a code
-          const accessToken = response?.authResponse?.accessToken
-          const code = response?.authResponse?.code
-          
-          if (!accessToken && !code) {
-            console.error('[WA Embedded Signup] No token or code received', response)
-            alert('❌ No se recibió token ni código de autorización.')
-            return
-          }
-          
-          if (accessToken) {
-            console.log('[WA Embedded Signup] Access token received directly!', {
-              tokenPrefix: accessToken.substring(0, 20) + '...',
-              expiresIn: response.authResponse.expiresIn
-            })
-          } else {
-            console.log('[WA Embedded Signup] Authorization code received', {
-              codeLength: code.length,
-              codePrefix: code.substring(0, 10) + '...'
-            })
-          }
-          
-          // Send to backend (works with both token and code)
-          const exchangeRes = await fetch('/api/auth/whatsapp/exchange', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              code: code || undefined,
-              accessToken: accessToken || undefined
-            }),
-          })
-          
-          const exchangeData = await exchangeRes.json()
-          console.log('[WA Embedded Signup] Exchange response:', exchangeData)
-          
-          if (!exchangeRes.ok || !exchangeData.success) {
-            console.error('[WA Embedded Signup] Token exchange failed', exchangeData)
-            const errorMsg = exchangeData.exchangeError?.errorMessage || exchangeData.message || 'Error desconocido'
-            const errorCode = exchangeData.exchangeError?.errorCode
-            const errorSubcode = exchangeData.exchangeError?.errorSubcode
-            
-            let userMessage = `❌ Error al conectar WhatsApp:\n${errorMsg}`
-            
-            if (errorCode === 100 && errorSubcode === 36008) {
-              userMessage += '\n\n🔍 Error de configuración: Redirect URI mismatch.\nContacta al administrador del sistema.'
-            } else if (errorCode === 190) {
-              userMessage += '\n\n⏱️ El código de autorización expiró (30 segundos).\nIntenta nuevamente más rápido.'
-            } else if (errorCode === 191) {
-              userMessage += '\n\n🌐 Dominio no autorizado.\nVerifica la configuración en Meta Dashboard.'
+
+    setConnectingWhatsApp(true)
+    setStatusMessage('')
+
+    FB.login(
+      (response: any) => {
+        const handleResponse = async () => {
+          try {
+            if (!response || response.status === 'unknown') {
+              setStatusMessage('Conexión de WhatsApp cancelada.')
+              return
             }
-            
-            alert(userMessage)
-            return
+            if (response.error) {
+              setStatusMessage(`Error de Facebook: ${response.error.message || 'desconocido'}`)
+              return
+            }
+
+            const token = response?.authResponse?.accessToken
+            const code = response?.authResponse?.code
+            if (!token && !code) {
+              setStatusMessage('No se recibió código de autorización de WhatsApp.')
+              return
+            }
+
+            const exchangeRes = await fetch('/api/auth/whatsapp/exchange', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                code: code || undefined,
+                accessToken: token || undefined,
+              }),
+            })
+            const exchangeData = await exchangeRes.json()
+
+            if (!exchangeRes.ok || !exchangeData.success) {
+              const errorMsg =
+                exchangeData.exchangeError?.errorMessage ||
+                exchangeData.message ||
+                'Error al conectar WhatsApp'
+              setStatusMessage(errorMsg)
+              return
+            }
+
+            if (exchangeData.waitingForPhoneNumber) {
+              setStatusMessage(
+                'Token recibido. Completa el registro en la ventana de Meta para guardar el número.',
+              )
+              return
+            }
+
+            setStatusMessage('WhatsApp conectado. Ya aparece en cuentas vinculadas y en /chats.')
+            fetchAccounts()
+            fetchMetaStatus()
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Error inesperado'
+            setStatusMessage(message)
+          } finally {
+            setConnectingWhatsApp(false)
           }
-          
-          console.log('[WA Embedded Signup] ✅ Success!', exchangeData)
-          alert('✅ WhatsApp conectado exitosamente!')
-          fetchAccounts()
-          
-        } catch (err: any) {
-          console.error('[WA Embedded Signup] Unexpected error:', err)
-          alert(`❌ Error inesperado: ${err.message || 'Error desconocido'}\n\nRevisa la consola para más detalles.`)
         }
-      }
-      
-      // Execute the async handler without making the callback async
-      handleResponse()
-    }
-    
-    // Launch FB.login with Embedded Signup configuration
-    // EXPERT RECOMMENDATION: Add auth_type and return_scopes
-    console.log('[WA Embedded Signup] Calling FB.login with enhanced options')
-    FB.login(cb, {
-      config_id: FB_LOGIN_CONFIG_ID,
-      response_type: 'code',
-      override_default_response_type: true,
-      auth_type: 'rerequest', // Force re-authentication to get fresh code
-      return_scopes: true, // Return granted scopes in response
-      extras: { setup: {} },
-    })
+        void handleResponse()
+      },
+      {
+        config_id: FB_LOGIN_CONFIG_ID,
+        response_type: 'code',
+        override_default_response_type: true,
+        auth_type: 'rerequest',
+        return_scopes: true,
+        extras: { setup: {} },
+      },
+    )
   }
 
   async function fetchMetaStatus() {
@@ -284,46 +262,52 @@ export default function SocialConfigPage() {
       if (json.success) setAccounts(json.accounts)
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Error al cargar cuentas sociales'
-      alert(message)
+      setStatusMessage(message)
     } finally {
       setLoading(false)
     }
   }
 
   async function handleLinkInstagram() {
+    setConnectingInstagram(true)
+    setStatusMessage('')
     try {
-      // Fetch auth URL from server (to access environment variables)
       const res = await fetch('/api/auth/instagram/auth-url')
-      if (!res.ok) {
-        throw new Error('Failed to get Instagram auth URL')
-      }
-      const { authUrl } = await res.json()
-      
-      // Open popup
-      const popup = window.open(authUrl, 'instagram_oauth', 'width=600,height=700')
+      if (!res.ok) throw new Error('No se pudo generar el enlace de Instagram')
+      const { authUrl, loginForBusiness } = await res.json()
+
+      const popup = window.open(authUrl, 'instagram_oauth', 'width=640,height=760')
       if (!popup) {
-        alert('No se pudo abrir la ventana de inicio de sesión')
+        setStatusMessage('El navegador bloqueó la ventana emergente. Permite popups e intenta de nuevo.')
+        setConnectingInstagram(false)
         return
       }
-      // Poll for closure (simple approach)
+
+      setStatusMessage(
+        loginForBusiness
+          ? 'Elige Página + Instagram Business en el selector de Meta…'
+          : 'Autoriza Facebook y selecciona la Página con Instagram Business…',
+      )
+
       const checkClosed = setInterval(() => {
         if (popup.closed) {
           clearInterval(checkClosed)
+          setConnectingInstagram(false)
           fetchAccounts()
-          alert('Recargando cuentas...')
+          fetchMetaStatus()
         }
       }, 1000)
     } catch (error) {
       console.error('Error launching Instagram OAuth:', error)
-      alert('Error al iniciar sesión con Instagram')
+      setStatusMessage('Error al iniciar la conexión con Instagram')
+      setConnectingInstagram(false)
     }
   }
 
   async function handleLinkWhatsApp(e: React.FormEvent) {
     e.preventDefault()
     setValidationError('')
-    
-    // Validation
+
     if (!accountId.trim()) {
       setValidationError('El Phone Number ID es requerido')
       return
@@ -336,27 +320,28 @@ export default function SocialConfigPage() {
       setValidationError('El Phone Number ID debe tener al menos 10 caracteres')
       return
     }
-    
+
     setLinking(true)
     try {
       const res = await fetch('/api/social/link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          platform,
+          platform: 'whatsapp',
           accountId: accountId.trim(),
           whatsappBusinessAccountId: whatsappBusinessAccountId.trim() || undefined,
-          accessToken: accessToken.trim()
-        })
+          accessToken: accessToken.trim(),
+        }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Error desconocido')
-      alert('✅ Cuenta de WhatsApp vinculada exitosamente')
+      setStatusMessage('WhatsApp vinculado manualmente.')
       setAccountId('')
       setWhatsappBusinessAccountId('')
       setAccessToken('')
       setValidationError('')
       fetchAccounts()
+      fetchMetaStatus()
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Error al vincular WhatsApp'
       setValidationError(message)
@@ -365,46 +350,46 @@ export default function SocialConfigPage() {
     }
   }
 
-  async function handleUnlinkAccount(accountId: string, platform: string) {
-    if (!confirm(`¿Estás seguro de que deseas desvincular esta cuenta de ${platform}? Se eliminarán todos los mensajes asociados.`)) {
+  async function handleUnlinkAccount(id: string, platform: string) {
+    if (
+      !confirm(
+        `¿Desvincular esta cuenta de ${platform}? Se eliminarán los mensajes asociados en el inbox.`,
+      )
+    ) {
       return
     }
-    
-    setUnlinking(accountId)
+
+    setUnlinking(id)
     try {
-      const res = await fetch(`/api/social/unlink?id=${accountId}`, {
-        method: 'DELETE'
-      })
+      const res = await fetch(`/api/social/unlink?id=${id}`, { method: 'DELETE' })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Error desconocido')
-      alert('✅ Cuenta desvinculada exitosamente')
+      setStatusMessage('Cuenta desvinculada.')
       fetchAccounts()
+      fetchMetaStatus()
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Error al desvincular cuenta'
-      alert(message)
+      setStatusMessage(e instanceof Error ? e.message : 'Error al desvincular')
     } finally {
       setUnlinking(null)
     }
   }
 
-  async function handleResubscribe(accountId: string) {
-    setResubscribing(accountId)
+  async function handleResubscribe(id: string) {
+    setResubscribing(id)
     try {
       const res = await fetch('/api/social/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: accountId })
+        body: JSON.stringify({ id }),
       })
       const json = await res.json()
       if (!res.ok || json.success === false) {
-        const msg = json?.message || json?.error || 'No se pudo re-suscribir'
-        alert(`⚠️ ${msg}`)
+        setStatusMessage(json?.message || json?.error || 'No se pudo re-suscribir')
       } else {
-        alert('✅ Re-suscripción realizada')
+        setStatusMessage('Re-suscripción realizada.')
       }
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Error al re-suscribir'
-      alert(message)
+      setStatusMessage(e instanceof Error ? e.message : 'Error al re-suscribir')
     } finally {
       setResubscribing(null)
     }
@@ -412,21 +397,39 @@ export default function SocialConfigPage() {
 
   if (!session) return null
   if (!isOwnerOrMaster) {
-    return <div className="p-8 text-center text-muted-foreground">No tienes permisos para configurar cuentas sociales.</div>
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        No tienes permisos para configurar cuentas sociales.
+      </div>
+    )
   }
+
+  const igAccounts = accounts.filter((a) => a.platform === 'instagram')
+  const waAccounts = accounts.filter((a) => a.platform === 'whatsapp')
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Configuración de Cuentas Sociales</h1>
-        <p className="text-muted-foreground">Aquí puedes vincular WhatsApp e Instagram para gestionar chats desde Betsy.</p>
+        <h1 className="text-2xl font-bold">Cuentas sociales</h1>
+        <p className="text-muted-foreground">
+          Conecta Instagram Business y WhatsApp Business para el inbox de clientes en{' '}
+          <a className="underline" href="/chats">
+            /chats
+          </a>
+          .
+        </p>
       </div>
+
+      {statusMessage && (
+        <div className="p-3 rounded-lg border bg-amber-50 border-amber-200 text-sm text-amber-900">
+          {statusMessage}
+        </div>
+      )}
 
       <div className="border rounded-lg p-6 bg-card shadow-sm">
         <h2 className="text-lg font-semibold mb-1">Estado de Meta (inbox CRM)</h2>
         <p className="text-sm text-muted-foreground mb-4">
-          Esto revisa si Betsy tiene las variables y URLs correctas para el inbox de clientes.
-          El bot interno de WhatsApp es un producto aparte.
+          Variables y URLs del inbox. El bot interno de WhatsApp es otro producto.
         </p>
         {metaStatusError ? (
           <p className="text-sm text-red-700">{metaStatusError}</p>
@@ -436,266 +439,169 @@ export default function SocialConfigPage() {
           <div className="space-y-4">
             {metaStatus.blockers.length > 0 ? (
               <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-800">
-                Faltan variables obligatorias en Vercel: {metaStatus.blockers.join(', ')}
+                Faltan variables obligatorias: {metaStatus.blockers.join(', ')}
               </div>
             ) : (
               <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm text-green-800">
-                Variables obligatorias del inbox están presentes. Sigue el checklist de Meta for Developers.
+                Variables obligatorias del inbox presentes
+                {metaStatus.env.inboxRequired.find((item) => item.key === 'META_WEBHOOK_VERIFY_TOKEN')
+                  ?.set
+                  ? ' (incluye META_WEBHOOK_VERIFY_TOKEN).'
+                  : '.'}
               </div>
             )}
             {metaStatus.warnings.length > 0 && (
               <p className="text-sm text-amber-800">
                 Recomendadas: {metaStatus.warnings.join(', ')}
-                {metaStatus.warnings.includes('NEXT_PUBLIC_FB_LOGIN_CONFIG_ID')
-                  ? ' — sin CONFIG_ID el botón azul de WhatsApp Embedded Signup no funciona.'
-                  : ''}
               </p>
             )}
             <div className="grid gap-2 text-xs font-mono text-muted-foreground">
               <div>Webhook inbox: {metaStatus.urls.inboxWebhook}</div>
               <div>OAuth Instagram: {metaStatus.urls.instagramOAuthRedirect}</div>
-              <div>Bot interno (no uses este para el inbox): {metaStatus.urls.staffBotWebhook}</div>
+              <div>Inbox: {metaStatus.urls.inbox || '/chats'}</div>
+              <div>Bot interno (no inbox): {metaStatus.urls.staffBotWebhook}</div>
               <div>
                 Cuentas vinculadas:{' '}
                 {metaStatus.tenant.linkedAccounts.length === 0
                   ? 'ninguna'
-                  : metaStatus.tenant.linkedAccounts.map((row) => `${row.platform} (${row.count})`).join(', ')}
+                  : metaStatus.tenant.linkedAccounts
+                      .map((row) => `${row.platform} (${row.count})`)
+                      .join(', ')}
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Permisos Instagram que Betsy pide ahora: {metaStatus.instagramOAuthScopes.join(', ')}
-            </p>
           </div>
         )}
       </div>
 
-      {/* Instagram Setup */}
-      <div className="border rounded-lg p-6 bg-card shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-semibold flex items-center gap-2">
-              <span className="text-2xl">📸</span>
-              Instagram Business
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">Conecta tu cuenta de Instagram Business para gestionar DMs</p>
-          </div>
-        </div>
-
-        <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-200">
-          <h3 className="font-semibold text-purple-900 mb-3">📋 Requisitos previos:</h3>
-          <ul className="space-y-2 text-sm text-purple-900">
-            <li className="flex gap-2">
-              <span>✓</span>
-              <span>Cuenta de <strong>Instagram Business</strong> (no personal)</span>
-            </li>
-            <li className="flex gap-2">
-              <span>✓</span>
-              <span>Página de Facebook vinculada a tu Instagram</span>
-            </li>
-            <li className="flex gap-2">
-              <span>✓</span>
-              <span>Permisos de administrador en la página de Facebook</span>
-            </li>
-          </ul>
-          <div className="mt-3 pt-3 border-t border-purple-200">
-            <p className="text-xs text-purple-800">
-              💡 <strong>Tip:</strong> Si no tienes una cuenta Business, ve a tu perfil de Instagram → Configuración → Cambiar a cuenta profesional
-            </p>
-          </div>
-        </div>
-
-        <button
-          onClick={handleLinkInstagram}
-          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-lg hover:from-purple-700 hover:to-pink-700 font-medium transition-all flex items-center justify-center gap-2"
-        >
-          <span>🔗</span>
-          Conectar con Facebook/Instagram
-        </button>
-        <p className="text-xs text-muted-foreground mt-2 text-center">
-          Se abrirá una ventana para iniciar sesión con Facebook y autorizar el acceso a Instagram
-        </p>
-      </div>
-
-      {/* WhatsApp Setup */}
-      <div className="border rounded-lg p-6 bg-card shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-semibold flex items-center gap-2">
-              <span className="text-2xl">💬</span>
-              WhatsApp Business API
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">Conecta tu número de WhatsApp Business para recibir y enviar mensajes</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={launchWhatsAppEmbeddedSignup}
-              disabled={!fbReady || !FB_LOGIN_CONFIG_ID}
-              className={`text-white text-sm font-medium px-4 py-2 rounded-lg ${(!fbReady || !FB_LOGIN_CONFIG_ID) ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
-            >
-              Conectar con Facebook (WhatsApp)
-            </button>
-            {(!fbReady || !FB_LOGIN_CONFIG_ID) && (
-              <span className="text-xs text-muted-foreground">{!FB_LOGIN_CONFIG_ID ? 'Falta CONFIG_ID' : 'Cargando SDK...'}</span>
-            )}
-          </div>
-          <button
-            onClick={() => setShowWhatsAppGuide(!showWhatsAppGuide)}
-            className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-          >
-            {showWhatsAppGuide ? '✕ Cerrar guía' : '📖 Ver guía de configuración'}
-          </button>
-        </div>
-
-        {showWhatsAppGuide && (
-          <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h3 className="font-semibold text-blue-900 mb-3">📋 Guía paso a paso:</h3>
-            <ol className="space-y-3 text-sm text-blue-900">
-              <li className="flex gap-2">
-                <span className="font-bold min-w-[20px]">1.</span>
-                <div>
-                  <div>Ve a <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener" className="underline font-semibold">Meta for Developers</a></div>
-                </div>
-              </li>
-              <li className="flex gap-2">
-                <span className="font-bold min-w-[20px]">2.</span>
-                <div>
-                  <div className="font-semibold mb-1">Obtener Phone Number ID:</div>
-                  <ul className="ml-4 space-y-1 text-xs">
-                    <li>• Selecciona tu app → <strong>WhatsApp</strong> → <strong>API Setup</strong></li>
-                    <li>• En la sección &quot;Send and receive messages&quot;, verás tu número de prueba</li>
-                    <li>• Debajo del número, copia el <strong>Phone number ID</strong> (empieza con números largos)</li>
-                    <li>• <span className="bg-yellow-100 px-1">Ejemplo: 123456789012345</span></li>
-                  </ul>
-                </div>
-              </li>
-              <li className="flex gap-2">
-                <span className="font-bold min-w-[20px]">3.</span>
-                <div>
-                  <div className="font-semibold mb-1">Obtener Access Token:</div>
-                  <ul className="ml-4 space-y-1 text-xs">
-                    <li>• En la misma página, busca &quot;Temporary access token&quot;</li>
-                    <li>• Click en <strong>Copy</strong> para copiar el token</li>
-                    <li>• <span className="text-orange-700">⚠️ Este token expira en 24 horas (solo para pruebas)</span></li>
-                    <li>• Para producción: Ve a <strong>Business Settings</strong> → <strong>System Users</strong> → Crea un token permanente</li>
-                  </ul>
-                </div>
-              </li>
-              <li className="flex gap-2">
-                <span className="font-bold min-w-[20px]">4.</span>
-                <span>Pega los valores en el formulario abajo y haz click en <strong>Vincular</strong></span>
-              </li>
-            </ol>
-            <div className="mt-4 pt-3 border-t border-blue-200">
-              <p className="text-xs text-blue-800 mb-2">
-                💡 <strong>Tips importantes:</strong>
-              </p>
-              <ul className="text-xs text-blue-800 space-y-1 ml-4">
-                <li>• El Phone Number ID NO es tu número de teléfono, es un ID único de Meta</li>
-                <li>• Para producción, usa un System User Token (no expira)</li>
-                <li>• Puedes agregar múltiples números de WhatsApp creando tokens para cada uno</li>
-              </ul>
-            </div>
-          </div>
-        )}
-
-        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-          <p className="text-sm text-amber-800">
-            <strong>💡 Nota:</strong> Por ahora necesitas el Phone Number ID de Meta. Una vez que tu app esté verificada y en modo Live, podrás usar solo el número de teléfono.
+      <div className="border rounded-lg p-6 bg-card shadow-sm space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">Instagram Business</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Facebook Login for Business: elige la Página y el Instagram Empresa en el selector de
+            Meta.
           </p>
         </div>
-
-        <form onSubmit={handleLinkWhatsApp} className="space-y-4">
-          <div>
-            <label htmlFor="accountId" className="block text-sm font-semibold mb-2">
-              Phone Number ID <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="accountId"
-              type="text"
-              value={accountId}
-              onChange={(e) => {
-                setAccountId(e.target.value)
-                setValidationError('')
-              }}
-              className="border border-border rounded-lg px-4 py-3 w-full focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="123456789012345"
-              disabled={linking}
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              Copia esto de Meta Dashboard → WhatsApp → API Setup (debajo de tu número de prueba)
-            </p>
-          </div>
-
-          <div>
-            <label htmlFor="whatsappBusinessAccountId" className="block text-sm font-semibold mb-2">
-              WhatsApp Business Account ID <span className="text-muted-foreground font-normal">(opcional, recomendado)</span>
-            </label>
-            <input
-              id="whatsappBusinessAccountId"
-              type="text"
-              value={whatsappBusinessAccountId}
-              onChange={(e) => setWhatsappBusinessAccountId(e.target.value)}
-              className="border border-border rounded-lg px-4 py-3 w-full focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="123456789012345"
-              disabled={linking}
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              En Meta aparece como WhatsApp Business Account ID. Ayuda a suscribir correctamente los webhooks.
-            </p>
-          </div>
-
-          <div>
-            <label htmlFor="accessToken" className="block text-sm font-semibold mb-2">
-              Access Token <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="accessToken"
-              type="password"
-              value={accessToken}
-              onChange={(e) => {
-                setAccessToken(e.target.value)
-                setValidationError('')
-              }}
-              className="border border-border rounded-lg px-4 py-3 w-full focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono text-sm"
-              placeholder="EAAxxxxxxxxxxxxxxxxxxxxxxxxx"
-              disabled={linking}
-            />
-            <p className="text-xs text-muted-foreground mt-1">Token de acceso permanente de Meta (System User Token recomendado)</p>
-          </div>
-
-          {validationError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-700 flex items-center gap-2">
-                <span>⚠️</span>
-                {validationError}
-              </p>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={linking}
-            className="w-full bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors flex items-center justify-center gap-2"
-          >
-            {linking ? (
-              <>
-                <span className="animate-spin">⏳</span>
-                Vinculando...
-              </>
-            ) : (
-              <>
-                <span>✓</span>
-                Vincular WhatsApp Business
-              </>
-            )}
-          </button>
-        </form>
+        <ul className="text-sm text-muted-foreground space-y-1 list-disc pl-5">
+          <li>Usuario Facebook administrador de la Página</li>
+          <li>Instagram Profesional → Empresa vinculado a esa Página</li>
+          <li>En modo Development, el usuario debe ser admin/tester de la app Meta</li>
+        </ul>
+        <button
+          onClick={handleLinkInstagram}
+          disabled={connectingInstagram}
+          className="w-full bg-zinc-900 text-white px-6 py-3 rounded-lg hover:bg-zinc-800 font-medium disabled:opacity-50"
+        >
+          {connectingInstagram ? 'Conectando Instagram…' : 'Conectar Instagram'}
+        </button>
+        {igAccounts.length > 0 && (
+          <p className="text-sm text-green-700">
+            {igAccounts.length} cuenta(s) de Instagram activa(s) en este tenant.
+          </p>
+        )}
       </div>
 
-      {/* Linked Accounts */}
+      <div className="border rounded-lg p-6 bg-card shadow-sm space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">WhatsApp Business</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Un solo paso con Embedded Signup de Meta. Guarda Phone Number ID y WABA en la cuenta
+            social.
+          </p>
+        </div>
+        <button
+          onClick={launchWhatsAppEmbeddedSignup}
+          disabled={!fbReady || !FB_LOGIN_CONFIG_ID || connectingWhatsApp}
+          className="w-full bg-emerald-600 text-white px-6 py-3 rounded-lg hover:bg-emerald-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {connectingWhatsApp
+            ? 'Conectando WhatsApp…'
+            : !FB_LOGIN_CONFIG_ID
+              ? 'Falta NEXT_PUBLIC_FB_LOGIN_CONFIG_ID'
+              : !fbReady
+                ? 'Cargando Facebook SDK…'
+                : 'Conectar WhatsApp'}
+        </button>
+        {waAccounts.length > 0 && (
+          <p className="text-sm text-green-700">
+            {waAccounts.length} número(s) de WhatsApp activo(s) en este tenant.
+          </p>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowManualWhatsApp((value) => !value)}
+          className="text-sm text-muted-foreground underline"
+        >
+          {showManualWhatsApp ? 'Ocultar vínculo manual' : 'Usar vínculo manual (avanzado)'}
+        </button>
+
+        {showManualWhatsApp && (
+          <form onSubmit={handleLinkWhatsApp} className="space-y-4 pt-2 border-t">
+            <div>
+              <label htmlFor="accountId" className="block text-sm font-semibold mb-2">
+                Phone Number ID
+              </label>
+              <input
+                id="accountId"
+                type="text"
+                value={accountId}
+                onChange={(e) => {
+                  setAccountId(e.target.value)
+                  setValidationError('')
+                }}
+                className="border border-border rounded-lg px-4 py-3 w-full"
+                placeholder="Phone Number ID de Meta"
+                disabled={linking}
+              />
+            </div>
+            <div>
+              <label htmlFor="whatsappBusinessAccountId" className="block text-sm font-semibold mb-2">
+                WhatsApp Business Account ID
+              </label>
+              <input
+                id="whatsappBusinessAccountId"
+                type="text"
+                value={whatsappBusinessAccountId}
+                onChange={(e) => setWhatsappBusinessAccountId(e.target.value)}
+                className="border border-border rounded-lg px-4 py-3 w-full"
+                placeholder="WABA ID"
+                disabled={linking}
+              />
+            </div>
+            <div>
+              <label htmlFor="accessToken" className="block text-sm font-semibold mb-2">
+                Access Token
+              </label>
+              <input
+                id="accessToken"
+                type="password"
+                value={accessToken}
+                onChange={(e) => {
+                  setAccessToken(e.target.value)
+                  setValidationError('')
+                }}
+                className="border border-border rounded-lg px-4 py-3 w-full font-mono text-sm"
+                placeholder="Token permanente de System User"
+                disabled={linking}
+              />
+            </div>
+            {validationError && <p className="text-sm text-red-700">{validationError}</p>}
+            <button
+              type="submit"
+              disabled={linking}
+              className="w-full border border-border px-6 py-3 rounded-lg font-medium disabled:opacity-50"
+            >
+              {linking ? 'Vinculando…' : 'Vincular manualmente'}
+            </button>
+          </form>
+        )}
+      </div>
+
       <div className="border rounded p-4">
         <h2 className="text-lg font-semibold mb-2">Cuentas vinculadas</h2>
-        <p className="text-sm text-muted-foreground mb-4">Lista de cuentas sociales conectadas a este tenant.</p>
+        <p className="text-sm text-muted-foreground mb-4">
+          Estas cuentas alimentan el inbox en /chats.
+        </p>
         {loading ? (
           <div className="text-muted-foreground">Cargando...</div>
         ) : accounts.length === 0 ? (
@@ -703,34 +609,50 @@ export default function SocialConfigPage() {
         ) : (
           <div className="space-y-3">
             {accounts.map((acc) => (
-              <div key={acc.id} className="flex items-center justify-between p-4 border rounded-lg bg-card shadow-sm">
-                <div className="flex items-center gap-4">
-                  <div className="text-3xl">
-                    {acc.platform === 'whatsapp' ? '💬' : '📸'}
+              <div
+                key={acc.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border rounded-lg bg-card"
+              >
+                <div>
+                  <div className="font-semibold capitalize text-lg">{acc.platform}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {acc.platform === 'whatsapp'
+                      ? `Phone Number ID: ${acc.phoneNumberId || acc.accountId}`
+                      : `IG Business ID: ${acc.accountId}`}
                   </div>
-                  <div>
-                    <div className="font-semibold capitalize text-lg">{acc.platform}</div>
-                    <div className="text-sm text-muted-foreground">ID: {acc.accountId}</div>
-                    <div className="text-xs text-muted-foreground">Vinculada: {new Date(acc.linkedAt).toLocaleDateString('es')}</div>
+                  {acc.platform === 'whatsapp' && acc.whatsappBusinessAccountId && (
+                    <div className="text-xs text-muted-foreground">
+                      WABA: {acc.whatsappBusinessAccountId}
+                    </div>
+                  )}
+                  {acc.platform === 'instagram' && acc.pageId && (
+                    <div className="text-xs text-muted-foreground">Page ID: {acc.pageId}</div>
+                  )}
+                  <div className="text-xs text-muted-foreground">
+                    Vinculada: {new Date(acc.linkedAt).toLocaleDateString('es')}
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className={`text-xs px-3 py-1 rounded-full font-medium ${acc.isActive ? 'bg-green-100 text-green-800' : 'bg-muted text-foreground'}`}>
-                    {acc.isActive ? '✓ Activa' : 'Inactiva'}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div
+                    className={`text-xs px-3 py-1 rounded-full font-medium ${
+                      acc.isActive ? 'bg-green-100 text-green-800' : 'bg-muted text-foreground'
+                    }`}
+                  >
+                    {acc.isActive ? 'Activa' : 'Inactiva'}
                   </div>
                   <button
                     onClick={() => handleResubscribe(acc.id)}
                     disabled={resubscribing === acc.id}
-                    className="px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg disabled:opacity-50"
                   >
-                    {resubscribing === acc.id ? 'Re-suscribiendo...' : '🔄 Re-suscribir'}
+                    {resubscribing === acc.id ? 'Re-suscribiendo…' : 'Re-suscribir'}
                   </button>
                   <button
                     onClick={() => handleUnlinkAccount(acc.id, acc.platform)}
                     disabled={unlinking === acc.id}
-                    className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 border border-red-200 rounded-lg disabled:opacity-50"
                   >
-                    {unlinking === acc.id ? 'Desvinculando...' : '🗑️ Desvincular'}
+                    {unlinking === acc.id ? 'Desvinculando…' : 'Desvincular'}
                   </button>
                 </div>
               </div>

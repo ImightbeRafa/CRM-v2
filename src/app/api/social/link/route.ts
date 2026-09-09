@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { subscribeWhatsAppApp } from '@/lib/meta-api'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { encodeWhatsAppRefreshToken } from '@/lib/social-account-meta'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -55,6 +56,10 @@ export async function POST(request: NextRequest) {
     }
 
     const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null
+    const storedRefreshToken =
+      platform === 'whatsapp'
+        ? encodeWhatsAppRefreshToken(whatsappBusinessAccountId) || refreshToken
+        : refreshToken
 
     const existing = await db.socialAccount.findFirst({
       where: { tenantId, platform, accountId }
@@ -68,7 +73,7 @@ export async function POST(request: NextRequest) {
           userId,
           isActive: true,
           accessToken: accessToken ?? undefined,
-          refreshToken: refreshToken ?? undefined,
+          refreshToken: storedRefreshToken ?? undefined,
           expiresAt: expiresAt ?? undefined,
         },
         select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true }
@@ -82,7 +87,7 @@ export async function POST(request: NextRequest) {
           accountId,
           isActive: true,
           accessToken: accessToken ?? undefined,
-          refreshToken: refreshToken ?? undefined,
+          refreshToken: storedRefreshToken ?? undefined,
           expiresAt: expiresAt ?? undefined,
         },
         select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true }

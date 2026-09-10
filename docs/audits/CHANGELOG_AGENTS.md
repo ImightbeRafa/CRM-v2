@@ -2,6 +2,17 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-10 — IG connect: pages_read_engagement + me/accounts IG fields
+
+- Added `pages_read_engagement` to `INSTAGRAM_OAUTH_SCOPES` so Graph can return
+  Page `instagram_business_account` (fixes production #100 on page GET).
+- `listFacebookPages` requests
+  `instagram_business_account{id,username},connected_instagram_account{id,username}`
+  on `me/accounts` and BM owned/client pages; `findInstagramBusinessOnPages`
+  prefers embedded IG and only falls back to per-page GET when missing.
+- Docs: `META_CHAT_SETUP.md`, `DOCUMENTATION.md` permissions table.
+- Prove: `npx tsx --test src/lib/__tests__/meta-chat-config.test.ts`, `npm run build`.
+
 ## 2026-09-09 — SecureDog tip on IG+WA connect (#28)
 
 - SD-01: `ig_connect_pending` cookie is opaque JWT (pendingId + page ids only);

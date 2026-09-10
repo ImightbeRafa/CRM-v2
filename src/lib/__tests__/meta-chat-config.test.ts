@@ -10,6 +10,7 @@ import {
 } from '../meta-chat-config'
 import {
   buildNoPagesHtml,
+  findInstagramBusinessOnPages,
   logInstagramPageDiscovery,
 } from '../instagram-connect'
 import {
@@ -21,6 +22,7 @@ import {
 test('Instagram OAuth scopes include Page listing required by the callback', () => {
   assert.ok(INSTAGRAM_OAUTH_SCOPES.includes('instagram_manage_messages'))
   assert.ok(INSTAGRAM_OAUTH_SCOPES.includes('pages_show_list'))
+  assert.ok(INSTAGRAM_OAUTH_SCOPES.includes('pages_read_engagement'))
   assert.ok(INSTAGRAM_OAUTH_SCOPES.includes('pages_manage_metadata'))
   assert.ok(INSTAGRAM_OAUTH_SCOPES.includes('pages_messaging'))
 })
@@ -134,4 +136,55 @@ test('page discovery logger accepts zero page count without throwing', () => {
       facebookUserId: 'user-1',
     }),
   )
+})
+
+test('findInstagramBusinessOnPages prefers embedded IG from me/accounts without page GET', async () => {
+  const originalFetch = globalThis.fetch
+  let fetchCalls = 0
+  globalThis.fetch = (async () => {
+    fetchCalls += 1
+    throw new Error('page GET should not run when IG is embedded')
+  }) as typeof fetch
+
+  try {
+    const { matches, pagesWithoutIg } = await findInstagramBusinessOnPages([
+      {
+        id: 'page-1',
+        name: 'Betsy Page',
+        accessToken: 'PAGE_TOKEN',
+        instagramBusinessAccount: { id: 'ig-99', username: 'betsy_ig' },
+      },
+    ])
+    assert.equal(fetchCalls, 0)
+    assert.equal(matches.length, 1)
+    assert.equal(matches[0]?.igBusinessAccountId, 'ig-99')
+    assert.equal(matches[0]?.igUsername, 'betsy_ig')
+    assert.equal(matches[0]?.pageId, 'page-1')
+    assert.deepEqual(pagesWithoutIg, [])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('findInstagramBusinessOnPages falls back to connected_instagram_account when business missing', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async () => {
+    throw new Error('page GET should not run when connected IG is embedded')
+  }) as typeof fetch
+
+  try {
+    const { matches } = await findInstagramBusinessOnPages([
+      {
+        id: 'page-2',
+        name: 'Alt Page',
+        accessToken: 'PAGE_TOKEN',
+        connectedInstagramAccount: { id: 'ig-conn', username: 'alt_ig' },
+      },
+    ])
+    assert.equal(matches.length, 1)
+    assert.equal(matches[0]?.igBusinessAccountId, 'ig-conn')
+    assert.equal(matches[0]?.igUsername, 'alt_ig')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })

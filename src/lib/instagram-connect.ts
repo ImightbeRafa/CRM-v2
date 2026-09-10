@@ -1,9 +1,18 @@
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 
+/** Nested IG account shape returned by Graph on Page nodes. */
+export type InstagramAccountRef = {
+  id: string
+  username?: string | null
+}
+
 export type FacebookPageCandidate = {
   id: string
   name: string
   accessToken: string
+  /** Present when list edges already returned nested IG fields (prefer over page GET). */
+  instagramBusinessAccount?: InstagramAccountRef | null
+  connectedInstagramAccount?: InstagramAccountRef | null
 }
 
 export type InstagramPageMatch = {
@@ -19,6 +28,10 @@ export type FacebookUserSummary = {
   name: string | null
 }
 
+/** Meta-recommended Page list fields: discover IG without a separate page GET. */
+const FACEBOOK_PAGE_LIST_FIELDS =
+  'id,name,access_token,instagram_business_account{id,username},connected_instagram_account{id,username}'
+
 function escHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -33,6 +46,50 @@ async function readJson(response: Response) {
     return text ? JSON.parse(text) : {}
   } catch {
     return { raw: text }
+  }
+}
+
+function parseInstagramAccountRef(value: unknown): InstagramAccountRef | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as { id?: unknown; username?: unknown }
+  if (!record.id) return null
+  return {
+    id: String(record.id),
+    username: record.username != null ? String(record.username) : null,
+  }
+}
+
+type GraphPageNode = {
+  id?: string
+  name?: string
+  access_token?: string
+  instagram_business_account?: unknown
+  connected_instagram_account?: unknown
+}
+
+function mapPageNode(page: GraphPageNode): FacebookPageCandidate | null {
+  if (!page?.id || !page?.access_token) return null
+  return {
+    id: String(page.id),
+    name: String(page.name || page.id),
+    accessToken: String(page.access_token),
+    instagramBusinessAccount: parseInstagramAccountRef(page.instagram_business_account),
+    connectedInstagramAccount: parseInstagramAccountRef(page.connected_instagram_account),
+  }
+}
+
+function matchFromEmbeddedIg(page: FacebookPageCandidate): InstagramPageMatch | null {
+  const ig =
+    page.instagramBusinessAccount ||
+    page.connectedInstagramAccount ||
+    null
+  if (!ig?.id) return null
+  return {
+    pageId: page.id,
+    pageName: page.name,
+    pageAccessToken: page.accessToken,
+    igBusinessAccountId: String(ig.id),
+    igUsername: ig.username ? String(ig.username) : null,
   }
 }
 
@@ -59,19 +116,15 @@ export async function listFacebookPages(userAccessToken: string): Promise<{
   source: 'me/accounts' | 'business_owned_pages' | 'business_client_pages' | 'none'
 }> {
   const accountsUrl = addAppSecretProofToUrl(
-    `${buildMetaGraphUrl('me/accounts')}?fields=id,name,access_token&access_token=${encodeURIComponent(userAccessToken)}`,
+    `${buildMetaGraphUrl('me/accounts')}?fields=${FACEBOOK_PAGE_LIST_FIELDS}&access_token=${encodeURIComponent(userAccessToken)}`,
     userAccessToken,
   )
   const accountsRes = await fetch(accountsUrl)
   const accountsData = await readJson(accountsRes)
   const fromAccounts: FacebookPageCandidate[] = Array.isArray(accountsData?.data)
     ? accountsData.data
-        .filter((page: { id?: string; access_token?: string }) => page?.id && page?.access_token)
-        .map((page: { id: string; name?: string; access_token: string }) => ({
-          id: String(page.id),
-          name: String(page.name || page.id),
-          accessToken: String(page.access_token),
-        }))
+        .map((page: GraphPageNode) => mapPageNode(page))
+        .filter((page: FacebookPageCandidate | null): page is FacebookPageCandidate => page != null)
     : []
 
   if (fromAccounts.length > 0) {
@@ -94,19 +147,15 @@ export async function listFacebookPages(userAccessToken: string): Promise<{
       const collected: FacebookPageCandidate[] = []
       for (const business of businesses) {
         const pagesUrl = addAppSecretProofToUrl(
-          `${buildMetaGraphUrl(`${business.id}/${edge}`)}?fields=id,name,access_token&access_token=${encodeURIComponent(userAccessToken)}`,
+          `${buildMetaGraphUrl(`${business.id}/${edge}`)}?fields=${FACEBOOK_PAGE_LIST_FIELDS}&access_token=${encodeURIComponent(userAccessToken)}`,
           userAccessToken,
         )
         const pagesRes = await fetch(pagesUrl)
         const pagesData = await readJson(pagesRes)
         if (!pagesRes.ok || !Array.isArray(pagesData?.data)) continue
         for (const page of pagesData.data) {
-          if (!page?.id || !page?.access_token) continue
-          collected.push({
-            id: String(page.id),
-            name: String(page.name || page.id),
-            accessToken: String(page.access_token),
-          })
+          const mapped = mapPageNode(page)
+          if (mapped) collected.push(mapped)
         }
       }
       if (collected.length > 0) {
@@ -130,6 +179,13 @@ export async function findInstagramBusinessOnPages(
   const pagesWithoutIg: string[] = []
 
   for (const page of pages) {
+    // Prefer IG already returned on me/accounts / BM page edges (avoids #100 on page GET).
+    const embedded = matchFromEmbeddedIg(page)
+    if (embedded) {
+      matches.push(embedded)
+      continue
+    }
+
     const igAccountUrl = addAppSecretProofToUrl(
       `${buildMetaGraphUrl(page.id)}?fields=instagram_business_account{id,username},connected_instagram_account{id,username},name&access_token=${encodeURIComponent(page.accessToken)}`,
       page.accessToken,

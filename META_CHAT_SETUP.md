@@ -28,7 +28,7 @@ Production `NEXTAUTH_URL` must be the **www** host (the apex hostname 307s to ww
 
 Instagram Login scopes requested by Betsy (needed because the callback calls `GET /me/accounts` then subscribes the Page):
 
-`instagram_basic`, `instagram_manage_messages`, `pages_show_list`, `pages_manage_metadata`, `pages_messaging`, `business_management`
+`instagram_basic`, `instagram_manage_messages`, `pages_show_list`, `pages_read_engagement`, `pages_manage_metadata`, `pages_messaging`, `business_management`
 
 ## Environment Variables
 
@@ -114,7 +114,7 @@ The bot webhook and the CRM inbox webhook are separate products:
 Expected permissions for the CRM inbox:
 
 - WhatsApp: `whatsapp_business_management`, `whatsapp_business_messaging`, `business_management`
-- Instagram: `instagram_basic`, `instagram_manage_messages`, `pages_show_list`, `pages_manage_metadata`, `pages_messaging`, `business_management`
+- Instagram: `instagram_basic`, `instagram_manage_messages`, `pages_show_list`, `pages_read_engagement`, `pages_manage_metadata`, `pages_messaging`, `business_management`
 
 For review, prepare a short screen recording that shows:
 

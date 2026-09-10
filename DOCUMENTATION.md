@@ -436,6 +436,7 @@ WHATSAPP_VERIFY_TOKEN=your_verify_token
 | `instagram_basic` | Access basic account info |
 | `instagram_manage_messages` | Read/send DMs |
 | `pages_show_list` | List linked FB pages (`GET /me/accounts`) |
+| `pages_read_engagement` | Read Page `instagram_business_account` on `/me/accounts` (avoids Graph #100 on page GET) |
 | `pages_manage_metadata` | Subscribe the Page to app webhooks |
 | `pages_messaging` | Send replies through the Page token |
 | `business_management` | Access business settings / Embedded Signup |

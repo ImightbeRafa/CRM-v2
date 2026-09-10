@@ -17,6 +17,7 @@ export const INSTAGRAM_OAUTH_SCOPES = [
   'instagram_basic',
   'instagram_manage_messages',
   'pages_show_list',
+  'pages_read_engagement',
   'pages_manage_metadata',
   'pages_messaging',
   'business_management',

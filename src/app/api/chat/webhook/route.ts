@@ -167,9 +167,9 @@ export async function POST(request: NextRequest) {
   try {
     const raw = await request.text()
     const signatureHeader = request.headers.get('x-hub-signature-256')
-    const signatureValid = verifyMetaWebhookSignature(raw, signatureHeader)
+    const signatureResult = verifyMetaWebhookSignature(raw, signatureHeader)
 
-    if (process.env.NODE_ENV === 'production' && !signatureValid) {
+    if (process.env.NODE_ENV === 'production' && !signatureResult.valid) {
       const signatureDiag = describeMetaSignatureHeader(signatureHeader)
       console.warn('[chat/webhook][POST] Invalid signature', {
         signaturePresent: signatureDiag.signaturePresent,
@@ -177,8 +177,18 @@ export async function POST(request: NextRequest) {
         bodyLen: raw.length,
         contentType: request.headers.get('content-type'),
         host: request.headers.get('host'),
+        triedMeta: signatureResult.triedMeta,
+        triedInstagram: signatureResult.triedInstagram,
       })
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+
+    if (signatureResult.valid && signatureResult.matchedSecret === 'instagram') {
+      console.info('[chat/webhook][POST] Signature matched INSTAGRAM_APP_SECRET fallback', {
+        matchedSecret: 'instagram',
+        triedMeta: signatureResult.triedMeta,
+        triedInstagram: signatureResult.triedInstagram,
+      })
     }
 
     let payload: any
@@ -191,7 +201,8 @@ export async function POST(request: NextRequest) {
     const parsed = parseMetaChatPayload(payload)
     console.log('[chat/webhook][POST] Incoming Meta event', {
       object: payload?.object,
-      signatureValid,
+      signatureValid: signatureResult.valid,
+      matchedSecret: signatureResult.matchedSecret,
       parsedMessages: parsed.messages.length,
       ignoredReasons: parsed.ignoredReasons,
       entryCount: payload?.entry?.length || 0,

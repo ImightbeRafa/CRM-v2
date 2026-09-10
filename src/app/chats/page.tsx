@@ -1,8 +1,16 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { useSession } from 'next-auth/react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
+import {
+  CHAT_POLL_INTERVAL_MS,
+  groupMessagesByRecipient,
+  humanizeChatSendError,
+  messagesFingerprint,
+  parseApiJson,
+  type ChatConversation,
+  type ChatInboxMessage,
+} from '@/lib/chat-inbox'
 
 interface SocialAccount {
   id: string
@@ -11,186 +19,190 @@ interface SocialAccount {
   isActive: boolean
 }
 
-interface ChatMessage {
-  id: string
-  direction: 'inbound' | 'outbound'
-  content: string
-  sentAt: string
-  receivedAt: string | null
-  metadata?: any
-  clientId?: string
-  orderId?: string
-}
-
-interface Conversation {
-  recipientId: string
-  recipientName?: string
-  lastMessage?: string
-  lastMessageAt?: string
-  unreadCount?: number
-  messages: ChatMessage[]
-}
+type ChatMessage = ChatInboxMessage
+type Conversation = ChatConversation
 
 export default function ChatsPage() {
-  const { data: session } = useSession()
   const [accounts, setAccounts] = useState<SocialAccount[]>([])
   const [selectedPlatform, setSelectedPlatform] = useState<'instagram' | 'whatsapp'>('whatsapp')
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [messageInput, setMessageInput] = useState('')
-  const [replyingTo, setReplyingTo] = useState<string | null>(null)
+  const [sendError, setSendError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesFingerprintRef = useRef('')
+  const nearBottomRef = useRef(true)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
-  const platformAccounts = accounts.filter(a => a.platform === selectedPlatform)
-  const instagramCount = accounts.filter(a => a.platform === 'instagram').length
-  const whatsappCount = accounts.filter(a => a.platform === 'whatsapp').length
+  const platformAccounts = accounts.filter((a) => a.platform === selectedPlatform)
+  const instagramCount = accounts.filter((a) => a.platform === 'instagram').length
+  const whatsappCount = accounts.filter((a) => a.platform === 'whatsapp').length
 
   useEffect(() => {
-    fetchAccounts()
+    void fetchAccounts()
   }, [])
 
+  const applyMessages = useCallback(
+    (nextMessages: ChatMessage[], opts?: { forceScroll?: boolean }) => {
+      const nextFp = messagesFingerprint(nextMessages)
+      const changed = nextFp !== messagesFingerprintRef.current
+      if (!changed) return false
+
+      const prevCount = messagesFingerprintRef.current
+        ? messagesFingerprintRef.current.split('|').filter(Boolean).length
+        : 0
+      messagesFingerprintRef.current = nextFp
+      setConversations(groupMessagesByRecipient(nextMessages, selectedPlatform))
+
+      const grew = nextMessages.length > prevCount
+      if (opts?.forceScroll || (grew && nearBottomRef.current)) {
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        })
+      }
+      return true
+    },
+    [selectedPlatform],
+  )
+
+  const fetchMessages = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!selectedAccountId) return
+      if (!opts?.silent) setLoading(true)
+      try {
+        const res = await fetch(
+          `/api/chat/messages?socialAccountId=${encodeURIComponent(selectedAccountId)}&limit=100`,
+          { credentials: 'same-origin', cache: 'no-store' },
+        )
+        const parsed = await parseApiJson<{ success?: boolean; messages?: ChatMessage[]; error?: string }>(res)
+        if (!parsed.ok) {
+          if (!opts?.silent) console.error(parsed.error)
+          return
+        }
+        if (!res.ok || !parsed.data.success || !Array.isArray(parsed.data.messages)) {
+          if (!opts?.silent) console.error(parsed.data.error || 'Error al cargar mensajes')
+          return
+        }
+        applyMessages(parsed.data.messages)
+      } catch (e: unknown) {
+        if (!opts?.silent) {
+          const message = e instanceof Error ? e.message : 'Error al cargar mensajes'
+          console.error(message)
+        }
+      } finally {
+        if (!opts?.silent) setLoading(false)
+      }
+    },
+    [selectedAccountId, applyMessages],
+  )
+
   useEffect(() => {
-    if (selectedAccountId) {
-      fetchMessages()
+    if (!selectedAccountId) {
+      setConversations([])
+      messagesFingerprintRef.current = ''
+      return
     }
-  }, [selectedAccountId])
+    void fetchMessages()
+  }, [selectedAccountId, fetchMessages])
 
+  // Short polling while the tab is visible — pause when hidden.
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+    if (!selectedAccountId) return
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+    const poll = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      void fetchMessages({ silent: true })
+    }
+
+    const intervalId = window.setInterval(poll, CHAT_POLL_INTERVAL_MS)
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') poll()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [selectedAccountId, fetchMessages])
 
   async function fetchAccounts() {
     try {
-      const res = await fetch('/api/chat/accounts')
-      const json = await res.json()
-      if (json.success) setAccounts(json.accounts)
+      const res = await fetch('/api/chat/accounts', { credentials: 'same-origin' })
+      const parsed = await parseApiJson<{ success?: boolean; accounts?: SocialAccount[]; error?: string }>(res)
+      if (!parsed.ok) {
+        console.error(parsed.error)
+        return
+      }
+      if (parsed.data.success && Array.isArray(parsed.data.accounts)) {
+        setAccounts(parsed.data.accounts)
+      }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Error al cargar cuentas'
       console.error(message)
     }
   }
 
-  async function fetchMessages() {
-    if (!selectedAccountId) return
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/chat/messages?socialAccountId=${selectedAccountId}&limit=100`)
-      const json = await res.json()
-      if (json.success) {
-        setMessages(json.messages)
-        // Group messages by recipient to create conversations
-        groupMessagesByRecipient(json.messages)
-      }
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Error al cargar mensajes'
-      console.error(message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  function groupMessagesByRecipient(msgs: ChatMessage[]) {
-    const grouped: Record<string, Conversation> = {}
-    
-    msgs.forEach(msg => {
-      // Extract recipient from metadata or use a placeholder
-      const recipientId = msg.metadata?.from || msg.metadata?.to || 'unknown'
-      
-      // Get display name - prefer username, fallback to name, then format ID nicely
-      let displayName = msg.metadata?.name || msg.metadata?.username || null
-      if (!displayName || displayName === recipientId) {
-        // If we only have the ID, make it look nicer
-        const platform = msg.metadata?.platform || selectedPlatform
-        if (platform === 'instagram') {
-          displayName = `IG User ${recipientId.slice(-6)}`
-        } else if (platform === 'whatsapp') {
-          displayName = `+${recipientId}`
-        } else {
-          displayName = `User ${recipientId.slice(-6)}`
-        }
-      }
-      
-      if (!grouped[recipientId]) {
-        grouped[recipientId] = {
-          recipientId,
-          recipientName: displayName,
-          messages: [],
-          lastMessageAt: msg.sentAt || msg.receivedAt || undefined,
-          lastMessage: msg.content.substring(0, 50) || '(mensaje vacío)',
-        }
-      } else {
-        // Update name if we found a better one (with username vs just ID)
-        if (msg.metadata?.name && msg.metadata.name !== recipientId) {
-          grouped[recipientId].recipientName = msg.metadata.name
-        }
-      }
-      
-      grouped[recipientId].messages.push(msg)
-      
-      // Update last message if this one is newer
-      const currentLast = grouped[recipientId].lastMessageAt
-      const thisTime = msg.sentAt || msg.receivedAt
-      if (!currentLast || (thisTime && thisTime > currentLast)) {
-        grouped[recipientId].lastMessageAt = thisTime || undefined
-        grouped[recipientId].lastMessage = msg.content.substring(0, 50) || '(mensaje vacío)'
-      }
-    })
-    
-    const convs = Object.values(grouped).sort((a, b) => {
-      const aTime = a.lastMessageAt || '0'
-      const bTime = b.lastMessageAt || '0'
-      return bTime.localeCompare(aTime)
-    })
-    
-    setConversations(convs)
+  function handleMessagesScroll() {
+    const el = messagesContainerRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    nearBottomRef.current = distanceFromBottom < 80
   }
 
   async function handleSendMessage(e: React.FormEvent) {
     e.preventDefault()
     if (!messageInput.trim() || !selectedAccountId) return
 
-    if (!selectedConversation) {
-      alert('Selecciona una conversación para responder')
+    if (!selectedConversation || selectedConversation === 'unknown') {
+      setSendError('Selecciona una conversación para responder')
       return
     }
 
     const recipient = selectedConversation
-
     setSending(true)
+    setSendError(null)
+
     try {
       const res = await fetch('/api/chat/send', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           socialAccountId: selectedAccountId,
           recipient,
-          content: messageInput.trim()
-        })
+          content: messageInput.trim(),
+        }),
       })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Error desconocido')
-      
+
+      const parsed = await parseApiJson<{ success?: boolean; error?: string; message?: string }>(res)
+
+      if (!parsed.ok) {
+        setSendError(humanizeChatSendError(parsed.error, parsed.status))
+        return
+      }
+
+      if (!res.ok || !parsed.data.success) {
+        setSendError(humanizeChatSendError(parsed.data.error, res.status))
+        return
+      }
+
       setMessageInput('')
-      setReplyingTo(null)
-      fetchMessages() // Refresh messages
+      nearBottomRef.current = true
+      await fetchMessages({ silent: true })
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Error al enviar'
-      alert(message)
+      setSendError(humanizeChatSendError(message))
     } finally {
       setSending(false)
     }
   }
 
-  const selectedAccount = accounts.find((a) => a.id === selectedAccountId)
-  const currentConversation = conversations.find(c => c.recipientId === selectedConversation)
+  const currentConversation = conversations.find((c) => c.recipientId === selectedConversation)
   const displayMessages = currentConversation?.messages || []
 
   return (
@@ -226,8 +238,9 @@ export default function ChatsPage() {
             setSelectedPlatform('whatsapp')
             setSelectedAccountId(null)
             setSelectedConversation(null)
-            setMessages([])
             setConversations([])
+            setSendError(null)
+            messagesFingerprintRef.current = ''
           }}
           className={`px-6 py-3 font-medium transition-colors border-b-2 ${
             selectedPlatform === 'whatsapp'
@@ -242,8 +255,9 @@ export default function ChatsPage() {
             setSelectedPlatform('instagram')
             setSelectedAccountId(null)
             setSelectedConversation(null)
-            setMessages([])
             setConversations([])
+            setSendError(null)
+            messagesFingerprintRef.current = ''
           }}
           className={`px-6 py-3 font-medium transition-colors border-b-2 ${
             selectedPlatform === 'instagram'
@@ -275,12 +289,13 @@ export default function ChatsPage() {
               </div>
             ) : (
               <div className="space-y-2">
-                {platformAccounts.map(acc => (
+                {platformAccounts.map((acc) => (
                   <button
                     key={acc.id}
                     onClick={() => {
                       setSelectedAccountId(acc.id)
                       setSelectedConversation(null)
+                      setSendError(null)
                     }}
                     className={`w-full text-left p-3 rounded-lg border transition-all ${
                       selectedAccountId === acc.id
@@ -303,9 +318,9 @@ export default function ChatsPage() {
             <div className="flex-1 overflow-y-auto">
               <div className="p-4 border-b">
                 <h3 className="font-semibold text-sm text-gray-700">Conversaciones Entrantes</h3>
-                <p className="text-xs text-gray-500 mt-1">Clientes que te han contactado</p>
+                <p className="text-xs text-gray-500 mt-1">Se actualiza automáticamente</p>
               </div>
-              {loading ? (
+              {loading && conversations.length === 0 ? (
                 <div className="p-4 text-center text-gray-500 text-sm">Cargando...</div>
               ) : conversations.length === 0 ? (
                 <div className="p-4 text-center text-gray-500 text-sm">
@@ -313,10 +328,14 @@ export default function ChatsPage() {
                 </div>
               ) : (
                 <div className="divide-y">
-                  {conversations.map(conv => (
+                  {conversations.map((conv) => (
                     <button
                       key={conv.recipientId}
-                      onClick={() => setSelectedConversation(conv.recipientId)}
+                      onClick={() => {
+                        setSelectedConversation(conv.recipientId)
+                        setSendError(null)
+                        nearBottomRef.current = true
+                      }}
                       className={`w-full text-left p-4 hover:bg-gray-50 transition-colors ${
                         selectedConversation === conv.recipientId ? 'bg-blue-50' : ''
                       }`}
@@ -324,7 +343,12 @@ export default function ChatsPage() {
                       <div className="flex items-start justify-between mb-1">
                         <div className="font-medium text-sm">{conv.recipientName}</div>
                         <div className="text-xs text-gray-500">
-                          {conv.lastMessageAt ? new Date(conv.lastMessageAt).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' }) : ''}
+                          {conv.lastMessageAt
+                            ? new Date(conv.lastMessageAt).toLocaleTimeString('es', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : ''}
                         </div>
                       </div>
                       <div className="text-xs text-gray-600 truncate">{conv.lastMessage}</div>
@@ -350,7 +374,9 @@ export default function ChatsPage() {
               <div className="text-center max-w-md">
                 <div className="text-6xl mb-4">💬</div>
                 <p className="text-lg font-medium mb-2">Selecciona una conversación</p>
-                <p className="text-sm text-gray-500">Elige una conversación de la lista para ver los mensajes y responder a tus clientes</p>
+                <p className="text-sm text-gray-500">
+                  Elige una conversación de la lista para ver los mensajes y responder a tus clientes
+                </p>
               </div>
             </div>
           ) : (
@@ -366,27 +392,31 @@ export default function ChatsPage() {
                       <h2 className="font-semibold text-lg">
                         {currentConversation?.recipientName || 'Cliente'}
                       </h2>
-                      <p className="text-xs text-gray-500">
-                        {currentConversation?.recipientId}
-                      </p>
+                      <p className="text-xs text-gray-500">{currentConversation?.recipientId}</p>
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="text-xs text-gray-500">Última actividad</div>
                     <div className="text-sm font-medium">
-                      {currentConversation?.lastMessageAt ? new Date(currentConversation.lastMessageAt).toLocaleString('es', { 
-                        month: 'short', 
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      }) : '-'}
+                      {currentConversation?.lastMessageAt
+                        ? new Date(currentConversation.lastMessageAt).toLocaleString('es', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : '-'}
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
+              <div
+                ref={messagesContainerRef}
+                onScroll={handleMessagesScroll}
+                className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50"
+              >
                 {displayMessages.length === 0 ? (
                   <div className="flex items-center justify-center h-full">
                     <div className="text-center text-gray-500">
@@ -408,8 +438,15 @@ export default function ChatsPage() {
                       }`}
                     >
                       <p className="text-sm">{msg.content}</p>
-                      <p className={`text-xs mt-1 ${msg.direction === 'outbound' ? 'text-blue-100' : 'text-gray-500'}`}>
-                        {new Date(msg.sentAt || msg.receivedAt || '').toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}
+                      <p
+                        className={`text-xs mt-1 ${
+                          msg.direction === 'outbound' ? 'text-blue-100' : 'text-gray-500'
+                        }`}
+                      >
+                        {new Date(msg.sentAt || msg.receivedAt || '').toLocaleTimeString('es', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
                       </p>
                     </div>
                   </div>
@@ -421,15 +458,27 @@ export default function ChatsPage() {
               <div className="bg-white border-t p-4">
                 <div className="mb-2 text-xs text-gray-500 flex items-center justify-between">
                   <span>Respondiendo a {currentConversation?.recipientName || 'cliente'}</span>
-                  {displayMessages.length > 0 && displayMessages[displayMessages.length - 1].direction === 'inbound' && (
-                    <span className="text-orange-600 font-medium">⚠️ Mensaje sin responder</span>
-                  )}
+                  {displayMessages.length > 0 &&
+                    displayMessages[displayMessages.length - 1].direction === 'inbound' && (
+                      <span className="text-orange-600 font-medium">⚠️ Mensaje sin responder</span>
+                    )}
                 </div>
+                {sendError ? (
+                  <div
+                    role="alert"
+                    className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                  >
+                    {sendError}
+                  </div>
+                ) : null}
                 <form onSubmit={handleSendMessage} className="flex gap-3">
                   <input
                     type="text"
                     value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
+                    onChange={(e) => {
+                      setMessageInput(e.target.value)
+                      if (sendError) setSendError(null)
+                    }}
                     placeholder="Escribe tu respuesta..."
                     className="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     disabled={sending}
@@ -453,7 +502,9 @@ export default function ChatsPage() {
                     )}
                   </button>
                 </form>
-                <p className="text-xs text-gray-400 mt-2">💡 Tip: Responde de forma personalizada para brindar mejor servicio</p>
+                <p className="text-xs text-gray-400 mt-2">
+                  💡 Tip: Responde de forma personalizada para brindar mejor servicio
+                </p>
               </div>
             </>
           )}

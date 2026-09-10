@@ -9,7 +9,8 @@ Append-only. Newest entries at the top.
   fingerprint skip avoids list flicker.
 - Send path no longer `alert()`s raw `res.json()` failures: `parseApiJson`
   detects HTML/`<!DOCTYPE` and shows Spanish inline errors.
-- `/api/chat/send` always returns JSON; safe Meta response parse; IG prefers
+- `/api/chat/send` always returns JSON; safe Meta response parse; 15s Meta
+  fetch timeout (avoids hanging → HTML gateway pages); IG prefers
   `{pageId}/messages` when `refreshToken` encodes `page:`; Spanish error copy.
 - Prove: `npx tsx --test src/lib/__tests__/chat-inbox.test.ts`, lint/build.
 

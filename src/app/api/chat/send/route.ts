@@ -26,6 +26,18 @@ function jsonError(error: string, status: number, extra?: Record<string, unknown
   return NextResponse.json({ error, ...extra }, { status })
 }
 
+const META_SEND_TIMEOUT_MS = 15_000
+
+function metaFetchSignal() {
+  return AbortSignal.timeout(META_SEND_TIMEOUT_MS)
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const name = (error as { name?: string }).name
+  return name === 'AbortError' || name === 'TimeoutError'
+}
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_sales')
@@ -116,6 +128,7 @@ export async function POST(request: NextRequest) {
             recipient: { id: recipient },
             message: { text: content },
           }),
+          signal: metaFetchSignal(),
         })
         providerResponse = await readProviderJson(igRes)
         if (!igRes.ok) {
@@ -133,6 +146,9 @@ export async function POST(request: NextRequest) {
         providerMessageId = providerResponse?.message_id || providerResponse?.messages?.[0]?.id
       } catch (e: any) {
         console.error('[chat/send] Instagram send error', e)
+        if (isAbortError(e)) {
+          return jsonError('Tiempo de espera agotado al contactar Instagram. Intenta de nuevo.', 504)
+        }
         return jsonError(e?.message || 'Error al enviar por Instagram', 502)
       }
     } else if (account.platform === 'whatsapp') {
@@ -157,6 +173,7 @@ export async function POST(request: NextRequest) {
               body: content,
             },
           }),
+          signal: metaFetchSignal(),
         })
 
         const waData = await readProviderJson(waRes)
@@ -175,6 +192,9 @@ export async function POST(request: NextRequest) {
         console.log('[chat/send] WhatsApp message sent', { messageId: providerMessageId, to: recipient })
       } catch (e: any) {
         console.error('[chat/send] WhatsApp send error', e)
+        if (isAbortError(e)) {
+          return jsonError('Tiempo de espera agotado al contactar WhatsApp. Intenta de nuevo.', 504)
+        }
         return jsonError(e?.message || 'Error al enviar por WhatsApp', 502)
       }
     } else {

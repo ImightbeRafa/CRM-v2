@@ -378,8 +378,9 @@ curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://yourdomain.com/
 > **Do not use this section for the CRM customer inbox (`/chats`).**
 > Customer WhatsApp Business inbox uses per-tenant tokens from Config → Social and the
 > **CRM webhook**: `https://DOMAIN/api/chat/webhook` (see §9 and `META_CHAT_SETUP.md`).
-> Never point customer WABA / inbox subscriptions at `/api/bot/whatsapp/webhook`.
-> `WHATSAPP_*` env vars belong **only** to the staff AI assistant bot below.
+> Prefer a **dedicated Meta app** via `META_WA_APP_ID` / `META_WA_APP_SECRET` / `NEXT_PUBLIC_META_WA_APP_ID`
+> (falls back to `META_APP_*` if unset). Never point customer WABA at `/api/bot/whatsapp/webhook`.
+> `WHATSAPP_*` env vars belong **only** to the staff AI assistant bot (separate Meta app).
 
 #### Prerequisites
 - Meta Business Account

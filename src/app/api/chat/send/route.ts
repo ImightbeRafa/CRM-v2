@@ -156,6 +156,7 @@ export async function POST(request: NextRequest) {
         const sendUrl = addAppSecretProofToUrl(
           buildMetaGraphUrl(`${account.accountId}/messages`),
           account.accessToken,
+          { purpose: 'whatsapp' },
         )
         const waRes = await fetch(sendUrl, {
           method: 'POST',

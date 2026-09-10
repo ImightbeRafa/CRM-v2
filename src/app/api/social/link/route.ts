@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { subscribeWhatsAppApp, verifyWhatsAppAssetsForToken } from '@/lib/meta-api'
+import { subscribeWhatsAppApp, verifyWhatsAppAssetsForToken, getMetaWhatsAppAppSecret } from '@/lib/meta-api'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { encodeWhatsAppRefreshToken } from '@/lib/social-account-meta'
 
@@ -93,7 +93,8 @@ export async function POST(request: NextRequest) {
             targetId: sub.targetId,
             status: sub.status,
             data: sub.data,
-            hasAppSecret: Boolean(process.env.META_APP_SECRET),
+            hasAppSecret: Boolean(getMetaWhatsAppAppSecret()),
+            usingDedicatedWaApp: Boolean((process.env.META_WA_APP_ID || '').trim()),
           })
         } else {
           console.log('[social/link] WhatsApp subscribed_apps success', {

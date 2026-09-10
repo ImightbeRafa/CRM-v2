@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { prisma } from '@/lib/db'
-import { buildMetaGraphUrl, subscribeWhatsAppApp, verifyWhatsAppAssetsForToken } from '@/lib/meta-api'
+import { buildMetaGraphUrl, subscribeWhatsAppApp, verifyWhatsAppAssetsForToken, getMetaWhatsAppAppId, getMetaWhatsAppAppSecret } from '@/lib/meta-api'
 import { encodeWhatsAppRefreshToken } from '@/lib/social-account-meta'
 
 export const runtime = 'nodejs'
@@ -48,11 +48,11 @@ export async function POST(request: NextRequest) {
     if (accessToken) {
       console.log('[wa/exchange] Access token provided directly (response_type=token)')
     } else if (code) {
-      const appId = process.env.META_APP_ID || ''
-      const appSecret = process.env.META_APP_SECRET || ''
+      const appId = getMetaWhatsAppAppId()
+      const appSecret = getMetaWhatsAppAppSecret()
 
       if (!appId || !appSecret) {
-        console.error('[wa/exchange] Missing META_APP_ID or META_APP_SECRET')
+        console.error('[wa/exchange] Missing META_WA_APP_ID/META_APP_ID or META_WA_APP_SECRET/META_APP_SECRET')
         return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
       }
 
@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
         codeLength: code.length,
         hasConfigId: Boolean(process.env.NEXT_PUBLIC_FB_LOGIN_CONFIG_ID),
         hasNextAuthUrl: Boolean(process.env.NEXTAUTH_URL),
+        usingDedicatedWaApp: Boolean((process.env.META_WA_APP_ID || '').trim()),
       })
 
       const redirectUriCandidates = [
@@ -201,7 +202,8 @@ export async function POST(request: NextRequest) {
           phoneNumberId,
           targetId: sub.targetId,
           status: sub.status,
-          hasAppSecret: Boolean(process.env.META_APP_SECRET),
+          hasAppSecret: Boolean(getMetaWhatsAppAppSecret()),
+          usingDedicatedWaApp: Boolean((process.env.META_WA_APP_ID || '').trim()),
         })
       } else {
         console.log('[wa/exchange] subscribed_apps success', { phoneNumberId, targetId: sub.targetId })

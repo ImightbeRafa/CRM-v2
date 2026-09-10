@@ -89,6 +89,7 @@ export function groupMessagesByRecipient(
         messages: [],
         lastMessageAt: msg.sentAt || msg.receivedAt || undefined,
         lastMessage: msg.content.substring(0, 50) || '(mensaje vacío)',
+        unreadCount: 0,
       }
     } else {
       const meta = msg.metadata || {}
@@ -107,11 +108,20 @@ export function groupMessagesByRecipient(
     }
   }
 
-  return Object.values(grouped).sort((a, b) => {
-    const aTime = a.lastMessageAt || '0'
-    const bTime = b.lastMessageAt || '0'
-    return bTime.localeCompare(aTime)
-  })
+  return Object.values(grouped)
+    .map((conv) => {
+      let unread = 0
+      for (let i = conv.messages.length - 1; i >= 0; i--) {
+        if (conv.messages[i].direction === 'inbound') unread += 1
+        else break
+      }
+      return { ...conv, unreadCount: unread }
+    })
+    .sort((a, b) => {
+      const aTime = a.lastMessageAt || '0'
+      const bTime = b.lastMessageAt || '0'
+      return bTime.localeCompare(aTime)
+    })
 }
 
 /** Stable fingerprint so silent polls can skip setState when nothing changed. */

@@ -2,6 +2,30 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-10 — CRM WA dedicated Meta app env + Soft Copilot UI
+
+- CRM WhatsApp connect (exchange / link / subscribe / appsecret_proof / FB SDK)
+  prefers `META_WA_APP_ID`, `NEXT_PUBLIC_META_WA_APP_ID`, `META_WA_APP_SECRET`
+  with fallback to `META_APP_*`. Instagram stays on `META_APP_*`.
+- `/api/chat/webhook` HMAC tries META_APP_SECRET, META_WA_APP_SECRET, then
+  INSTAGRAM_APP_SECRET (deduped). No dual-router; staff bot `/api/bot/**` untouched.
+- Soft Copilot `/chats` + Connect Soft UI (LOCKED Figma) in same fat PR.
+- Docs: staff app vs CRM Inbox WA app; Vercel env list.
+- Prove: meta-wa-app-env, meta-chat-webhook HMAC, chat-soft-copilot, chat-inbox tests.
+
+## 2026-09-10 — Soft Copilot `/chats` + Connect UI (LOCKED Figma)
+
+- Soft Copilot shell for customer inbox `/chats`: slim nav, inbox buckets,
+  WA/IG/Todos chips, cuenta filter, unread badges, sync cue, yellow Resumen IA
+  stub, composer Sugerir/Usar/Descartar stubs, right rail Detalle|Copilot,
+  mobile list/thread + WA 24h closed CTA + empty states.
+- Connect Soft Copilot on `/config/social`: multi IG/WA cards, Conectado only
+  when subscribed/`isActive`, subscribe-fail toast, staff bot explicitly out;
+  `GET /api/chat/accounts?includeInactive=1` for inactive/error rows.
+- AI hooks are visual/heuristic stubs only — no AI engine. Staff bot
+  (`/api/bot/**`) untouched. No dual-router / shared Meta callback.
+- Prove: chat-soft-copilot + chat-inbox unit tests; lint/build.
+
 ## 2026-09-10 — PR-A: WA customer inbox connect = subscribed
 
 - Soft-fail `subscribed_apps` removed from WA OAuth exchange + manual link:

@@ -305,14 +305,18 @@ function signBody(secret: string, body: string): string {
 }
 
 function withWebhookSecrets(
-  values: { meta?: string | null; instagram?: string | null },
+  values: { meta?: string | null; whatsapp?: string | null; instagram?: string | null },
   run: () => void
 ) {
   const previousMeta = process.env.META_APP_SECRET
+  const previousWhatsApp = process.env.META_WA_APP_SECRET
   const previousInstagram = process.env.INSTAGRAM_APP_SECRET
 
   if (values.meta === null) delete process.env.META_APP_SECRET
   else if (values.meta !== undefined) process.env.META_APP_SECRET = values.meta
+
+  if (values.whatsapp === null) delete process.env.META_WA_APP_SECRET
+  else if (values.whatsapp !== undefined) process.env.META_WA_APP_SECRET = values.whatsapp
 
   if (values.instagram === null) delete process.env.INSTAGRAM_APP_SECRET
   else if (values.instagram !== undefined) process.env.INSTAGRAM_APP_SECRET = values.instagram
@@ -322,6 +326,8 @@ function withWebhookSecrets(
   } finally {
     if (previousMeta === undefined) delete process.env.META_APP_SECRET
     else process.env.META_APP_SECRET = previousMeta
+    if (previousWhatsApp === undefined) delete process.env.META_WA_APP_SECRET
+    else process.env.META_WA_APP_SECRET = previousWhatsApp
     if (previousInstagram === undefined) delete process.env.INSTAGRAM_APP_SECRET
     else process.env.INSTAGRAM_APP_SECRET = previousInstagram
   }
@@ -329,64 +335,108 @@ function withWebhookSecrets(
 
 test('verifyMetaWebhookSignature accepts META_APP_SECRET match', () => {
   const body = '{"object":"instagram","entry":[]}'
-  withWebhookSecrets({ meta: 'meta-secret-value', instagram: 'ig-secret-value' }, () => {
-    const result = verifyMetaWebhookSignature(body, signBody('meta-secret-value', body))
-    assert.equal(result.valid, true)
-    assert.equal(result.matchedSecret, 'meta')
-    assert.equal(result.triedMeta, true)
-    assert.equal(result.triedInstagram, true)
-  })
+  withWebhookSecrets(
+    { meta: 'meta-secret-value', whatsapp: 'wa-secret-value', instagram: 'ig-secret-value' },
+    () => {
+      const result = verifyMetaWebhookSignature(body, signBody('meta-secret-value', body))
+      assert.equal(result.valid, true)
+      assert.equal(result.matchedSecret, 'meta')
+      assert.equal(result.triedMeta, true)
+      assert.equal(result.triedWhatsApp, true)
+      assert.equal(result.triedInstagram, true)
+    },
+  )
+})
+
+test('verifyMetaWebhookSignature accepts META_WA_APP_SECRET match for CRM WA app', () => {
+  const body = '{"object":"whatsapp_business_account","entry":[]}'
+  withWebhookSecrets(
+    { meta: 'meta-secret-value', whatsapp: 'wa-secret-value', instagram: 'ig-secret-value' },
+    () => {
+      const result = verifyMetaWebhookSignature(body, signBody('wa-secret-value', body))
+      assert.equal(result.valid, true)
+      assert.equal(result.matchedSecret, 'whatsapp')
+      assert.equal(result.triedMeta, true)
+      assert.equal(result.triedWhatsApp, true)
+      assert.equal(result.triedInstagram, true)
+    },
+  )
 })
 
 test('verifyMetaWebhookSignature accepts INSTAGRAM_APP_SECRET-only match', () => {
   const body = '{"object":"page","entry":[{"id":"1"}]}'
-  withWebhookSecrets({ meta: 'meta-secret-value', instagram: 'ig-secret-value' }, () => {
-    const result = verifyMetaWebhookSignature(body, signBody('ig-secret-value', body))
-    assert.equal(result.valid, true)
-    assert.equal(result.matchedSecret, 'instagram')
-    assert.equal(result.triedMeta, true)
-    assert.equal(result.triedInstagram, true)
-  })
+  withWebhookSecrets(
+    { meta: 'meta-secret-value', whatsapp: 'wa-secret-value', instagram: 'ig-secret-value' },
+    () => {
+      const result = verifyMetaWebhookSignature(body, signBody('ig-secret-value', body))
+      assert.equal(result.valid, true)
+      assert.equal(result.matchedSecret, 'instagram')
+      assert.equal(result.triedMeta, true)
+      assert.equal(result.triedWhatsApp, true)
+      assert.equal(result.triedInstagram, true)
+    },
+  )
 })
 
 test('verifyMetaWebhookSignature rejects when neither secret matches', () => {
   const body = '{"object":"instagram"}'
-  withWebhookSecrets({ meta: 'meta-secret-value', instagram: 'ig-secret-value' }, () => {
-    const result = verifyMetaWebhookSignature(body, signBody('wrong-secret', body))
-    assert.equal(result.valid, false)
-    assert.equal(result.matchedSecret, null)
-    assert.equal(result.triedMeta, true)
-    assert.equal(result.triedInstagram, true)
-  })
+  withWebhookSecrets(
+    { meta: 'meta-secret-value', whatsapp: 'wa-secret-value', instagram: 'ig-secret-value' },
+    () => {
+      const result = verifyMetaWebhookSignature(body, signBody('wrong-secret', body))
+      assert.equal(result.valid, false)
+      assert.equal(result.matchedSecret, null)
+      assert.equal(result.triedMeta, true)
+      assert.equal(result.triedWhatsApp, true)
+      assert.equal(result.triedInstagram, true)
+    },
+  )
 })
 
 test('verifyMetaWebhookSignature fails closed when secrets are missing', () => {
   const body = '{"object":"instagram"}'
-  withWebhookSecrets({ meta: null, instagram: null }, () => {
+  withWebhookSecrets({ meta: null, whatsapp: null, instagram: null }, () => {
     const result = verifyMetaWebhookSignature(body, signBody('any-secret', body))
     assert.equal(result.valid, false)
     assert.equal(result.matchedSecret, null)
     assert.equal(result.triedMeta, false)
+    assert.equal(result.triedWhatsApp, false)
+    assert.equal(result.triedInstagram, false)
+  })
+})
+
+test('verifyMetaWebhookSignature skips duplicate META_WA_APP_SECRET equal to META_APP_SECRET', () => {
+  const body = '{"object":"whatsapp_business_account"}'
+  withWebhookSecrets({ meta: 'same-secret', whatsapp: 'same-secret', instagram: null }, () => {
+    const result = verifyMetaWebhookSignature(body, signBody('same-secret', body))
+    assert.equal(result.valid, true)
+    assert.equal(result.matchedSecret, 'meta')
+    assert.equal(result.triedMeta, true)
+    assert.equal(result.triedWhatsApp, false)
     assert.equal(result.triedInstagram, false)
   })
 })
 
 test('verifyMetaWebhookSignature skips duplicate INSTAGRAM_APP_SECRET', () => {
   const body = '{"object":"instagram"}'
-  withWebhookSecrets({ meta: 'same-secret', instagram: 'same-secret' }, () => {
+  withWebhookSecrets({ meta: 'same-secret', whatsapp: null, instagram: 'same-secret' }, () => {
     const result = verifyMetaWebhookSignature(body, signBody('same-secret', body))
     assert.equal(result.valid, true)
     assert.equal(result.matchedSecret, 'meta')
     assert.equal(result.triedMeta, true)
+    assert.equal(result.triedWhatsApp, false)
     assert.equal(result.triedInstagram, false)
   })
 })
 
 test('verifyMetaWebhookSignature rejects unsigned or non-sha256 headers', () => {
   const body = '{"object":"instagram"}'
-  withWebhookSecrets({ meta: 'meta-secret-value', instagram: 'ig-secret-value' }, () => {
-    assert.equal(verifyMetaWebhookSignature(body, null).valid, false)
-    assert.equal(verifyMetaWebhookSignature(body, '').valid, false)
-    assert.equal(verifyMetaWebhookSignature(body, 'sha1=deadbeef').valid, false)
-  })
+  withWebhookSecrets(
+    { meta: 'meta-secret-value', whatsapp: 'wa-secret-value', instagram: 'ig-secret-value' },
+    () => {
+      assert.equal(verifyMetaWebhookSignature(body, null).valid, false)
+      assert.equal(verifyMetaWebhookSignature(body, '').valid, false)
+      assert.equal(verifyMetaWebhookSignature(body, 'sha1=deadbeef').valid, false)
+    },
+  )
 })

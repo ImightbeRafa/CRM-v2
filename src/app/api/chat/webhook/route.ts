@@ -178,6 +178,7 @@ export async function POST(request: NextRequest) {
         contentType: request.headers.get('content-type'),
         host: request.headers.get('host'),
         triedMeta: signatureResult.triedMeta,
+        triedWhatsApp: signatureResult.triedWhatsApp,
         triedInstagram: signatureResult.triedInstagram,
       })
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
@@ -187,6 +188,16 @@ export async function POST(request: NextRequest) {
       console.info('[chat/webhook][POST] Signature matched INSTAGRAM_APP_SECRET fallback', {
         matchedSecret: 'instagram',
         triedMeta: signatureResult.triedMeta,
+        triedWhatsApp: signatureResult.triedWhatsApp,
+        triedInstagram: signatureResult.triedInstagram,
+      })
+    }
+
+    if (signatureResult.valid && signatureResult.matchedSecret === 'whatsapp') {
+      console.info('[chat/webhook][POST] Signature matched META_WA_APP_SECRET', {
+        matchedSecret: 'whatsapp',
+        triedMeta: signatureResult.triedMeta,
+        triedWhatsApp: signatureResult.triedWhatsApp,
         triedInstagram: signatureResult.triedInstagram,
       })
     }

@@ -2,6 +2,18 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-10 — /chats live poll + send JSON harden
+
+- `/chats` short-polls `/api/chat/messages` every 4s while the tab is visible
+  (`visibilityState`); pauses when hidden; merges without clearing selection;
+  fingerprint skip avoids list flicker.
+- Send path no longer `alert()`s raw `res.json()` failures: `parseApiJson`
+  detects HTML/`<!DOCTYPE` and shows Spanish inline errors.
+- `/api/chat/send` always returns JSON; safe Meta response parse; 15s Meta
+  fetch timeout (avoids hanging → HTML gateway pages); IG prefers
+  `{pageId}/messages` when `refreshToken` encodes `page:`; Spanish error copy.
+- Prove: `npx tsx --test src/lib/__tests__/chat-inbox.test.ts`, lint/build.
+
 ## 2026-09-10 — Chat webhook: dual Meta/Instagram HMAC secrets
 
 - `verifyMetaWebhookSignature` tries `META_APP_SECRET` then distinct

@@ -1,25 +1,27 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getToken } from 'next-auth/jwt'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { chatMessagesWhereForPeer } from '@/lib/chat-message-query'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
- * GET /api/chat/messages?socialAccountId=...&limit=50&cursor=
+ * GET /api/chat/messages?socialAccountId=...&limit=50&cursor=&recipientId=
  * Fetch paginated messages for a given social account (tenant-scoped).
+ * Optional recipientId scopes to one Soft Copilot thread for “cargar anteriores”.
  */
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const tenantId = (token as any).tenantId as string
-    if (!tenantId) return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
+    const auth = await authenticateAPIWithPermission(request, 'update_sales')
+    if (!auth.ok) return auth.response
+    const { tenantId } = auth
 
     const url = new URL(request.url)
     const socialAccountId = url.searchParams.get('socialAccountId')
     const limit = Math.min(Number(url.searchParams.get('limit')) || 50, 200)
     const cursor = url.searchParams.get('cursor') || undefined
+    const recipientId = url.searchParams.get('recipientId') || undefined
 
     if (!socialAccountId) {
       return NextResponse.json({ error: 'Missing socialAccountId' }, { status: 400 })
@@ -30,14 +32,13 @@ export async function GET(request: Request) {
     // Verify the account belongs to the tenant
     const account = await db.socialAccount.findFirst({
       where: { id: socialAccountId, tenantId, isActive: true },
-      select: { id: true, platform: true, accountId: true }
+      select: { id: true, platform: true, accountId: true },
     })
     if (!account) {
       return NextResponse.json({ error: 'Social account not found' }, { status: 404 })
     }
 
-    // Fetch messages, newest first
-    const where = { socialAccountId }
+    const where = chatMessagesWhereForPeer({ socialAccountId, recipientId })
     const messages = await db.chatMessage.findMany({
       where,
       orderBy: { sentAt: 'desc' },
@@ -52,7 +53,7 @@ export async function GET(request: Request) {
         receivedAt: true,
         clientId: true,
         orderId: true,
-      }
+      },
     })
 
     const hasMore = messages.length > limit

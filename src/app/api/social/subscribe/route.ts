@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { subscribePageToInstagramMessages, subscribeWhatsAppApp } from '@/lib/meta-api'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
+import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -32,14 +33,16 @@ export async function POST(request: NextRequest) {
     const acc = rows[0]
     if (acc.tenantId !== tenantId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
+    const accessToken = decryptSocialAccessToken(acc.accessToken) || null
+
     if (acc.platform === 'whatsapp') {
-      if (!acc.accessToken) {
+      if (!accessToken) {
         return NextResponse.json({ error: 'Missing access token for WhatsApp account' }, { status: 400 })
       }
       const meta = parseSocialRefreshToken(acc.refreshToken)
       try {
         const sub = await subscribeWhatsAppApp({
-          accessToken: acc.accessToken,
+          accessToken,
           phoneNumberId: acc.accountId,
           whatsappBusinessAccountId: meta.whatsappBusinessAccountId,
         })
@@ -73,7 +76,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (acc.platform === 'instagram') {
-      if (!acc.accessToken) {
+      if (!accessToken) {
         return NextResponse.json({ error: 'Missing access token for Instagram account' }, { status: 400 })
       }
       const meta = parseSocialRefreshToken(acc.refreshToken)
@@ -84,7 +87,7 @@ export async function POST(request: NextRequest) {
         })
       }
       try {
-        const sub = await subscribePageToInstagramMessages(meta.pageId, acc.accessToken)
+        const sub = await subscribePageToInstagramMessages(meta.pageId, accessToken)
         if (!sub.ok) {
           return NextResponse.json({
             success: false,

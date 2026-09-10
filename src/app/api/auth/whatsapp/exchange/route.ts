@@ -3,6 +3,7 @@ import { getToken } from 'next-auth/jwt'
 import { prisma } from '@/lib/db'
 import { buildMetaGraphUrl, subscribeWhatsAppApp, verifyWhatsAppAssetsForToken, getMetaWhatsAppAppId, getMetaWhatsAppAppSecret } from '@/lib/meta-api'
 import { encodeWhatsAppRefreshToken } from '@/lib/social-account-meta'
+import { encryptSocialAccessToken } from '@/lib/social-account-crypto'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -216,6 +217,9 @@ export async function POST(request: NextRequest) {
     // Persist token even on subscribe failure so Re-suscribir can retry, but
     // isActive (and success) only when webhooks are subscribed — "conectado" ⇒ subscribed.
     const refreshToken = encodeWhatsAppRefreshToken(whatsappBusinessAccountId)
+    const encryptedToken = businessToken
+      ? encryptSocialAccessToken(businessToken)
+      : undefined
     const existing = await db.socialAccount.findFirst({
       where: { tenantId, platform: 'whatsapp', accountId: String(phoneNumberId) },
     })
@@ -226,7 +230,7 @@ export async function POST(request: NextRequest) {
         data: {
           userId,
           isActive: subscribeOk,
-          accessToken: businessToken ?? existing.accessToken ?? undefined,
+          accessToken: encryptedToken ?? existing.accessToken ?? undefined,
           refreshToken: refreshToken ?? existing.refreshToken ?? undefined,
         },
         select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true, refreshToken: true },
@@ -238,7 +242,7 @@ export async function POST(request: NextRequest) {
           userId,
           platform: 'whatsapp',
           accountId: String(phoneNumberId),
-          accessToken: businessToken ?? undefined,
+          accessToken: encryptedToken ?? undefined,
           refreshToken: refreshToken ?? undefined,
           isActive: subscribeOk,
         },

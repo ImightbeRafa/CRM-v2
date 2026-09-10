@@ -1,6 +1,6 @@
 'use client'
 
-import type { FormEvent, Ref, RefObject } from 'react'
+import { useState, type FormEvent, type Ref } from 'react'
 import {
   buildAiSummary,
   isWhatsAppWindowOpen,
@@ -9,6 +9,12 @@ import {
   type SoftConversation,
   type SoftTag,
 } from '@/lib/chat-soft-copilot'
+
+export type SoftWaTemplateOption = {
+  name: string
+  language: string
+  category?: string
+}
 
 interface SoftThreadPaneProps {
   conversation: SoftConversation | null
@@ -31,6 +37,16 @@ interface SoftThreadPaneProps {
   draftHint?: string | null
   onUseDraft?: () => void
   onDiscardDraft?: () => void
+  hasMoreMessages?: boolean
+  loadingOlder?: boolean
+  onLoadOlder?: () => void
+  templates?: SoftWaTemplateOption[]
+  templatesLoading?: boolean
+  templatesError?: string | null
+  showTemplatePicker?: boolean
+  onOpenTemplatePicker?: () => void
+  onCloseTemplatePicker?: () => void
+  onSendTemplate?: (template: SoftWaTemplateOption) => void
 }
 
 function statusLabel(status: ConversationStatus) {
@@ -77,7 +93,20 @@ export function SoftThreadPane({
   draftHint,
   onUseDraft,
   onDiscardDraft,
+  hasMoreMessages,
+  loadingOlder,
+  onLoadOlder,
+  templates = [],
+  templatesLoading,
+  templatesError,
+  showTemplatePicker,
+  onOpenTemplatePicker,
+  onCloseTemplatePicker,
+  onSendTemplate,
 }: SoftThreadPaneProps) {
+  const [pickerOpenLocal, setPickerOpenLocal] = useState(false)
+  const pickerOpen = showTemplatePicker ?? pickerOpenLocal
+
   if (!conversation) {
     return (
       <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white px-6 text-center">
@@ -108,6 +137,17 @@ export function SoftThreadPane({
     .join(' · ')
 
   const closedWindow = conversation.platform === 'whatsapp' && !windowOpen
+
+  function openPicker() {
+    onClearError()
+    if (onOpenTemplatePicker) onOpenTemplatePicker()
+    else setPickerOpenLocal(true)
+  }
+
+  function closePicker() {
+    if (onCloseTemplatePicker) onCloseTemplatePicker()
+    else setPickerOpenLocal(false)
+  }
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
@@ -161,6 +201,19 @@ export function SoftThreadPane({
         onScroll={onMessagesScroll}
         className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-5"
       >
+        {hasMoreMessages && onLoadOlder ? (
+          <div className="flex justify-center pb-1">
+            <button
+              type="button"
+              onClick={onLoadOlder}
+              disabled={loadingOlder}
+              className="rounded-lg bg-slate-50 px-3 py-1.5 text-[11px] font-medium text-slate-600 ring-1 ring-slate-100 hover:bg-slate-100 disabled:opacity-50"
+            >
+              {loadingOlder ? 'Cargando…' : 'Cargar anteriores'}
+            </button>
+          </div>
+        ) : null}
+
         {conversation.messages.length === 0 ? (
           <p className="py-12 text-center text-sm text-slate-400">Sin mensajes en este chat</p>
         ) : (
@@ -253,16 +306,59 @@ export function SoftThreadPane({
             <button
               type="button"
               className="mt-3 rounded-xl bg-[#5b6cff] px-4 py-2.5 text-sm font-medium text-white"
-              onClick={() => {
-                onClearError()
-              }}
+              onClick={openPicker}
             >
               Elegir plantilla…
             </button>
-            <p className="mt-2 text-[11px] text-red-600/80">
-              Catálogo de plantillas Meta: próximo PR. Pedile al cliente que escriba de nuevo, o
-              usá una plantilla aprobada desde Business Manager.
-            </p>
+
+            {pickerOpen ? (
+              <div className="mt-3 rounded-xl bg-white px-3 py-3 text-left ring-1 ring-red-100">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-[12px] font-semibold text-slate-800">Plantillas aprobadas</p>
+                  <button
+                    type="button"
+                    onClick={closePicker}
+                    className="text-[11px] text-slate-500 hover:text-slate-700"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+                {templatesLoading ? (
+                  <p className="text-[12px] text-slate-500">Cargando catálogo…</p>
+                ) : null}
+                {templatesError ? (
+                  <p className="text-[12px] text-red-600">{templatesError}</p>
+                ) : null}
+                {!templatesLoading && !templatesError && templates.length === 0 ? (
+                  <p className="text-[12px] text-slate-500">
+                    No hay plantillas APPROVED en esta WABA.
+                  </p>
+                ) : null}
+                <ul className="max-h-40 space-y-1.5 overflow-y-auto">
+                  {templates.map((tpl) => (
+                    <li key={`${tpl.name}:${tpl.language}`}>
+                      <button
+                        type="button"
+                        disabled={sending}
+                        onClick={() => onSendTemplate?.(tpl)}
+                        className="flex w-full items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-left text-[12px] text-slate-800 hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        <span className="font-medium">{tpl.name}</span>
+                        <span className="text-[10px] uppercase text-slate-400">
+                          {tpl.language}
+                          {tpl.category ? ` · ${tpl.category}` : ''}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="mt-2 text-[11px] text-red-600/80">
+                Elegí una plantilla aprobada de Meta para reabrir el chat, o pedile al cliente que
+                escriba de nuevo.
+              </p>
+            )}
           </div>
           {sendError ? (
             <div

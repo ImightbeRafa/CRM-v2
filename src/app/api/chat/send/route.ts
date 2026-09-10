@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
+import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
+import { chatSendRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -47,7 +49,15 @@ export async function POST(request: NextRequest) {
     }
 
     const db = prisma as any
-    const { tenantId } = auth
+    const { tenantId, userId } = auth
+
+    const rate = await chatSendRateLimit(`${tenantId}:${userId}`)
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: 'Demasiados envíos. Esperá un momento e intentá de nuevo.' },
+        { status: 429, headers: rate.headers },
+      )
+    }
 
     let body: any
     try {
@@ -63,9 +73,21 @@ export async function POST(request: NextRequest) {
     const content = body.content ? String(body.content) : ''
     const orderId = body.orderId ? String(body.orderId) : null
     const clientId = body.clientId ? String(body.clientId) : null
+    const messageType = body.type ? String(body.type).toLowerCase() : 'text'
+    const templateName = body.templateName ? String(body.templateName).trim() : ''
+    const templateLanguage = body.templateLanguage
+      ? String(body.templateLanguage).trim()
+      : 'es'
 
-    if (!recipient || !content) {
+    const isTemplate = messageType === 'template'
+    if (!recipient) {
+      return jsonError('Falta destinatario del mensaje', 400)
+    }
+    if (!isTemplate && !content) {
       return jsonError('Falta destinatario o contenido del mensaje', 400)
+    }
+    if (isTemplate && !templateName) {
+      return jsonError('Falta el nombre de la plantilla aprobada', 400)
     }
 
     if (recipient === 'unknown') {
@@ -87,7 +109,7 @@ export async function POST(request: NextRequest) {
         id: found.id,
         platform: found.platform,
         accountId: found.accountId,
-        accessToken: found.accessToken,
+        accessToken: decryptSocialAccessToken(found.accessToken),
         refreshToken: found.refreshToken,
       }
     } else if (platform && accountId) {
@@ -97,7 +119,7 @@ export async function POST(request: NextRequest) {
         id: found.id,
         platform: found.platform,
         accountId: found.accountId,
-        accessToken: found.accessToken,
+        accessToken: decryptSocialAccessToken(found.accessToken),
         refreshToken: found.refreshToken,
       }
     } else {
@@ -111,8 +133,12 @@ export async function POST(request: NextRequest) {
     let dispatchResult = 'sent'
     let providerMessageId: string | undefined
     let providerResponse: any = null
+    let storedContent = content
 
     if (account.platform === 'instagram') {
+      if (isTemplate) {
+        return jsonError('Las plantillas Meta solo están disponibles para WhatsApp', 400)
+      }
       try {
         const pageId = parseSocialRefreshToken(account.refreshToken).pageId
         const sendPath = pageId ? `${encodeURIComponent(pageId)}/messages` : 'me/messages'
@@ -158,22 +184,35 @@ export async function POST(request: NextRequest) {
           account.accessToken,
           { purpose: 'whatsapp' },
         )
+        const waBody = isTemplate
+          ? {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: recipient,
+              type: 'template',
+              template: {
+                name: templateName,
+                language: { code: templateLanguage || 'es' },
+              },
+            }
+          : {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: recipient,
+              type: 'text',
+              text: {
+                preview_url: false,
+                body: content,
+              },
+            }
+
         const waRes = await fetch(sendUrl, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${account.accessToken}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            recipient_type: 'individual',
-            to: recipient,
-            type: 'text',
-            text: {
-              preview_url: false,
-              body: content,
-            },
-          }),
+          body: JSON.stringify(waBody),
           signal: metaFetchSignal(),
         })
 
@@ -190,7 +229,14 @@ export async function POST(request: NextRequest) {
         }
 
         providerMessageId = waData.messages?.[0]?.id
-        console.log('[chat/send] WhatsApp message sent', { messageId: providerMessageId, to: recipient })
+        if (isTemplate) {
+          storedContent = `[Plantilla] ${templateName}`
+        }
+        console.log('[chat/send] WhatsApp message sent', {
+          messageId: providerMessageId,
+          to: recipient,
+          type: isTemplate ? 'template' : 'text',
+        })
       } catch (e: any) {
         console.error('[chat/send] WhatsApp send error', e)
         if (isAbortError(e)) {
@@ -210,7 +256,7 @@ export async function POST(request: NextRequest) {
         clientId: clientId ?? undefined,
         orderId: orderId ?? undefined,
         direction: 'outbound',
-        content,
+        content: storedContent,
         metadata: {
           to: recipient,
           provider: account.platform,
@@ -218,6 +264,13 @@ export async function POST(request: NextRequest) {
           providerMessageId,
           providerDispatch: dispatchResult,
           providerResponse,
+          ...(isTemplate
+            ? {
+                messageType: 'template',
+                templateName,
+                templateLanguage,
+              }
+            : {}),
         },
         sentAt: now,
         receivedAt: null,

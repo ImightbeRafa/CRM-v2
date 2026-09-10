@@ -9,6 +9,7 @@ import {
   loadInstagramPendingRecord,
 } from '@/lib/instagram-pending-connect'
 import { encodeInstagramRefreshToken } from '@/lib/social-account-meta'
+import { encryptSocialAccessToken } from '@/lib/social-account-crypto'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -30,11 +31,12 @@ async function upsertInstagramAccount(params: {
       accountId: String(params.igBusinessAccountId),
     },
   })
+  const encryptedToken = encryptSocialAccessToken(params.pageAccessToken)
   if (existing) {
     return db.socialAccount.update({
       where: { id: existing.id },
       data: {
-        accessToken: params.pageAccessToken,
+        accessToken: encryptedToken,
         refreshToken: refreshToken ?? undefined,
         expiresAt,
         isActive: true,
@@ -48,7 +50,7 @@ async function upsertInstagramAccount(params: {
       userId: params.userId,
       platform: 'instagram',
       accountId: String(params.igBusinessAccountId),
-      accessToken: params.pageAccessToken,
+      accessToken: encryptedToken,
       refreshToken: refreshToken ?? undefined,
       expiresAt,
       isActive: true,

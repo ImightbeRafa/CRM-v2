@@ -452,8 +452,12 @@ export function SoftCopilotInbox() {
         error?: string
       }>(res)
 
-      if (!parsed.ok || !res.ok || !parsed.data.success || !Array.isArray(parsed.data.messages)) {
-        setSendError(humanizeChatSendError(parsed.data?.error || parsed.error, res.status))
+      if (!parsed.ok) {
+        setSendError(humanizeChatSendError(parsed.error, parsed.status))
+        return
+      }
+      if (!res.ok || !parsed.data.success || !Array.isArray(parsed.data.messages)) {
+        setSendError(humanizeChatSendError(parsed.data.error, res.status))
         return
       }
 
@@ -491,10 +495,13 @@ export function SoftCopilotInbox() {
         templates?: SoftWaTemplateOption[]
         error?: string
       }>(res)
-      if (!parsed.ok || !res.ok || !parsed.data.success) {
-        setTemplatesError(
-          humanizeChatSendError(parsed.data?.error || parsed.error, res.status),
-        )
+      if (!parsed.ok) {
+        setTemplatesError(humanizeChatSendError(parsed.error, parsed.status))
+        setTemplates([])
+        return
+      }
+      if (!res.ok || !parsed.data.success) {
+        setTemplatesError(humanizeChatSendError(parsed.data.error, res.status))
         setTemplates([])
         return
       }

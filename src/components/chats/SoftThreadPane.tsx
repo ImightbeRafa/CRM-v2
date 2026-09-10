@@ -1,0 +1,346 @@
+'use client'
+
+import type { FormEvent, Ref, RefObject } from 'react'
+import {
+  buildAiSummary,
+  isWhatsAppWindowOpen,
+  platformShort,
+  type ConversationStatus,
+  type SoftConversation,
+  type SoftTag,
+} from '@/lib/chat-soft-copilot'
+
+interface SoftThreadPaneProps {
+  conversation: SoftConversation | null
+  messageInput: string
+  onMessageInput: (value: string) => void
+  onSend: (e: FormEvent) => void
+  sending: boolean
+  sendError: string | null
+  onClearError: () => void
+  onRetry?: () => void
+  failedOutboundId?: string | null
+  onSuggest: () => void
+  onClose: () => void
+  onBack?: () => void
+  messagesEndRef: Ref<HTMLDivElement>
+  messagesContainerRef: Ref<HTMLDivElement>
+  onMessagesScroll: () => void
+  showTemplateCta: boolean
+  compact?: boolean
+  draftHint?: string | null
+  onUseDraft?: () => void
+  onDiscardDraft?: () => void
+}
+
+function statusLabel(status: ConversationStatus) {
+  if (status === 'nuevo') return 'Nuevo'
+  if (status === 'hecho') return 'Hecho'
+  return 'En curso'
+}
+
+function statusChipClass(status: ConversationStatus) {
+  if (status === 'nuevo') return 'bg-slate-100 text-slate-600'
+  if (status === 'hecho') return 'bg-emerald-50 text-emerald-800'
+  return 'bg-blue-100 text-blue-800'
+}
+
+function tagChip(tag: SoftTag) {
+  return (
+    <span
+      key={tag}
+      className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900"
+    >
+      {tag}
+    </span>
+  )
+}
+
+export function SoftThreadPane({
+  conversation,
+  messageInput,
+  onMessageInput,
+  onSend,
+  sending,
+  sendError,
+  onClearError,
+  onRetry,
+  failedOutboundId,
+  onSuggest,
+  onClose,
+  onBack,
+  messagesEndRef,
+  messagesContainerRef,
+  onMessagesScroll,
+  showTemplateCta,
+  compact,
+  draftHint,
+  onUseDraft,
+  onDiscardDraft,
+}: SoftThreadPaneProps) {
+  if (!conversation) {
+    return (
+      <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white px-6 text-center">
+        <p className="text-base font-medium text-slate-700">Seleccioná un chat</p>
+        <p className="mt-1 max-w-sm text-sm text-slate-500">
+          Elegí una conversación de la lista para ver mensajes, el resumen IA y responder.
+        </p>
+      </section>
+    )
+  }
+
+  const windowOpen = isWhatsAppWindowOpen(conversation.messages, conversation.platform)
+  const windowLabel =
+    conversation.platform === 'whatsapp'
+      ? windowOpen
+        ? 'ventana 24h OK'
+        : 'ventana 24h CERRADA'
+      : null
+  const summary = buildAiSummary(conversation)
+  const channelName = conversation.platform === 'whatsapp' ? 'WhatsApp' : 'Instagram'
+  const metaLine = [
+    channelName,
+    conversation.accountLabel.replace(/^(WA|IG)\s·\s/, ''),
+    statusLabel(conversation.status),
+    windowLabel,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  const closedWindow = conversation.platform === 'whatsapp' && !windowOpen
+
+  return (
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+      <header className="shrink-0 border-b border-slate-100 px-4 py-3 sm:px-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            {onBack ? (
+              <button
+                type="button"
+                onClick={onBack}
+                className="mb-1 text-xs font-medium text-[#5b6cff]"
+              >
+                ← Chats
+              </button>
+            ) : null}
+            <h2 className="truncate text-base font-semibold text-slate-900">
+              {conversation.recipientName || conversation.recipientId}
+            </h2>
+            <p
+              className={`mt-0.5 truncate text-[11px] ${
+                closedWindow ? 'font-medium text-red-600' : 'text-slate-500'
+              }`}
+            >
+              {compact && closedWindow
+                ? `${platformShort(conversation.platform)} · ventana 24h CERRADA`
+                : metaLine}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span
+                className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${statusChipClass(conversation.status)}`}
+              >
+                {statusLabel(conversation.status)}
+              </span>
+              {conversation.tags.map(tagChip)}
+            </div>
+          </div>
+          {!compact ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200"
+            >
+              Cerrar
+            </button>
+          ) : null}
+        </div>
+      </header>
+
+      <div
+        ref={messagesContainerRef}
+        onScroll={onMessagesScroll}
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-5"
+      >
+        {conversation.messages.length === 0 ? (
+          <p className="py-12 text-center text-sm text-slate-400">Sin mensajes en este chat</p>
+        ) : (
+          conversation.messages.map((msg) => {
+            const outbound = msg.direction === 'outbound'
+            const failed = failedOutboundId === msg.id
+            return (
+              <div
+                key={msg.id}
+                className={`flex ${outbound ? 'justify-end' : 'justify-start'}`}
+              >
+                <div className="max-w-[85%] sm:max-w-md">
+                  <div
+                    className={`rounded-[14px] px-3.5 py-2.5 text-[13px] ${
+                      outbound
+                        ? 'bg-blue-100 text-blue-950'
+                        : 'bg-slate-100 text-slate-900'
+                    }`}
+                  >
+                    {msg.content}
+                  </div>
+                  {outbound ? (
+                    <p
+                      className={`mt-1 text-right text-[10px] ${
+                        failed ? 'font-medium text-red-600' : 'text-slate-500'
+                      }`}
+                    >
+                      {failed ? (
+                        <>
+                          Falló ✕{' '}
+                          {onRetry ? (
+                            <button
+                              type="button"
+                              onClick={onRetry}
+                              className="underline underline-offset-2"
+                            >
+                              Reintentar
+                            </button>
+                          ) : null}
+                        </>
+                      ) : (
+                        'Enviado ✓'
+                      )}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            )
+          })
+        )}
+
+        <div className="rounded-[14px] bg-yellow-100/90 px-4 py-3 text-[12px] text-yellow-950">
+          <p className="font-semibold text-yellow-800">Resumen IA</p>
+          <p className="mt-1 leading-relaxed text-yellow-950/90">{summary}</p>
+        </div>
+
+        {compact && draftHint ? (
+          <div className="rounded-[14px] bg-indigo-50 px-4 py-3">
+            <p className="text-[11px] font-semibold text-indigo-700">Copilot</p>
+            <p className="mt-1 text-[12px] text-slate-700">“{draftHint}”</p>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={onUseDraft}
+                className="rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[11px] font-medium text-white"
+              >
+                Agregar al composer
+              </button>
+              <button
+                type="button"
+                onClick={onDiscardDraft}
+                className="rounded-lg px-3 py-1.5 text-[11px] text-slate-500 hover:bg-white"
+              >
+                Descartar
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div ref={messagesEndRef} />
+      </div>
+
+      {closedWindow || showTemplateCta ? (
+        <div className="shrink-0 border-t border-slate-100 px-4 py-4 sm:px-5">
+          <div className="rounded-2xl bg-red-50 px-4 py-4 text-center">
+            <p className="text-sm font-semibold text-red-800">Ventana de 24h cerrada</p>
+            <p className="mt-1 text-xs text-red-700">
+              Solo plantilla aprobada hasta que escriba de nuevo.
+            </p>
+            <button
+              type="button"
+              className="mt-3 rounded-xl bg-[#5b6cff] px-4 py-2.5 text-sm font-medium text-white"
+              onClick={() => {
+                onClearError()
+              }}
+            >
+              Elegir plantilla…
+            </button>
+            <p className="mt-2 text-[11px] text-red-600/80">
+              Catálogo de plantillas Meta: próximo PR. Pedile al cliente que escriba de nuevo, o
+              usá una plantilla aprobada desde Business Manager.
+            </p>
+          </div>
+          {sendError ? (
+            <div
+              role="alert"
+              className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-center text-sm text-red-700"
+            >
+              {sendError.includes('plantilla') || sendError.includes('24')
+                ? 'No se pudo enviar. Usá plantilla.'
+                : sendError}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="shrink-0 border-t border-slate-100 px-4 py-3 sm:px-5">
+          <div className="mb-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onSuggest}
+              className="rounded-lg bg-indigo-50 px-2.5 py-1.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100"
+            >
+              ✨ {compact ? 'Sugerir' : 'Sugerir respuesta'}
+            </button>
+            {draftHint && !compact ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onUseDraft}
+                  className="text-[11px] font-medium text-[#5b6cff]"
+                >
+                  Usar
+                </button>
+                <button
+                  type="button"
+                  onClick={onDiscardDraft}
+                  className="text-[11px] text-slate-400"
+                >
+                  Descartar
+                </button>
+              </>
+            ) : null}
+          </div>
+
+          {sendError ? (
+            <div
+              role="alert"
+              className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+            >
+              {sendError}
+            </div>
+          ) : null}
+
+          <form onSubmit={onSend} className="flex gap-2">
+            <input
+              type="text"
+              value={messageInput}
+              onChange={(e) => {
+                onMessageInput(e.target.value)
+                if (sendError) onClearError()
+              }}
+              placeholder={compact ? 'Mensaje…' : 'Escribí un mensaje…  ⌘K'}
+              disabled={sending}
+              className="min-w-0 flex-1 rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5b6cff]/35"
+            />
+            <button
+              type="submit"
+              disabled={sending || !messageInput.trim()}
+              className="shrink-0 rounded-xl bg-[#5b6cff] px-4 py-3 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {sending ? '…' : 'Enviar'}
+            </button>
+          </form>
+          {!compact ? (
+            <p className="mt-2 text-[11px] text-slate-400">
+              Macros · Adjunto · Emoji · espacio error Meta
+            </p>
+          ) : null}
+        </div>
+      )}
+    </section>
+  )
+}

@@ -14,8 +14,11 @@ export async function GET(request: Request) {
     const tenantId = (token as any).tenantId as string
     if (!tenantId) return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
 
+    const url = new URL(request.url)
+    const includeInactive = url.searchParams.get('includeInactive') === '1'
+
     const rows = await db.socialAccount.findMany({
-      where: { tenantId, isActive: true },
+      where: includeInactive ? { tenantId } : { tenantId, isActive: true },
       select: {
         id: true,
         platform: true,

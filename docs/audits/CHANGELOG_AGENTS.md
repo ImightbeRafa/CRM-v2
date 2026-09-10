@@ -2,6 +2,19 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-10 — Soft Copilot `/chats` + Connect UI (LOCKED Figma)
+
+- Soft Copilot shell for customer inbox `/chats`: slim nav, inbox buckets,
+  WA/IG/Todos chips, cuenta filter, unread badges, sync cue, yellow Resumen IA
+  stub, composer Sugerir/Usar/Descartar stubs, right rail Detalle|Copilot,
+  mobile list/thread + WA 24h closed CTA + empty states.
+- Connect Soft Copilot on `/config/social`: multi IG/WA cards, Conectado only
+  when subscribed/`isActive`, subscribe-fail toast, staff bot explicitly out;
+  `GET /api/chat/accounts?includeInactive=1` for inactive/error rows.
+- AI hooks are visual/heuristic stubs only — no AI engine. Staff bot
+  (`/api/bot/**`) untouched. No dual-router / shared Meta callback.
+- Prove: chat-soft-copilot + chat-inbox unit tests; lint/build.
+
 ## 2026-09-10 — PR-A: WA customer inbox connect = subscribed
 
 - Soft-fail `subscribed_apps` removed from WA OAuth exchange + manual link:

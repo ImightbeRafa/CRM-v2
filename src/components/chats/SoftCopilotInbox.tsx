@@ -10,6 +10,11 @@ import {
   type ChatInboxMessage,
 } from '@/lib/chat-inbox'
 import {
+  mergeChatMessagesById,
+  nextThreadPager,
+  type ThreadPagerState,
+} from '@/lib/chat-message-query'
+import {
   accountDisplayLabel,
   buildAgentChecklist,
   buildSuggestedReply,
@@ -32,10 +37,15 @@ import {
 import { SoftSlimNav } from '@/components/chats/SoftSlimNav'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
-import { SoftThreadPane } from '@/components/chats/SoftThreadPane'
+import {
+  SoftThreadPane,
+  type SoftWaTemplateOption,
+} from '@/components/chats/SoftThreadPane'
 import { SoftCopilotRail } from '@/components/chats/SoftCopilotRail'
 
 const TAG_FILTERS: SoftTag[] = ['Envío', 'VIP', 'Nuevo']
+const POLL_LIMIT = 100
+const OLDER_PAGE_LIMIT = 50
 
 function softKey(c: SoftConversation) {
   return conversationStorageKey(c.socialAccountId, c.recipientId)
@@ -63,6 +73,12 @@ export function SoftCopilotInbox() {
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list')
   const [statusMap, setStatusMap] = useState<Record<string, ConversationStatus>>({})
   const [tagsMap, setTagsMap] = useState<Record<string, SoftTag[]>>({})
+  const [threadPagers, setThreadPagers] = useState<Record<string, ThreadPagerState>>({})
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
+  const [templates, setTemplates] = useState<SoftWaTemplateOption[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templatesError, setTemplatesError] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -70,6 +86,7 @@ export function SoftCopilotInbox() {
   const nearBottomRef = useRef(true)
   const statusMapRef = useRef(statusMap)
   const tagsMapRef = useRef(tagsMap)
+  const accountMessagesRef = useRef<Record<string, ChatInboxMessage[]>>({})
 
   useEffect(() => {
     statusMapRef.current = statusMap
@@ -101,19 +118,21 @@ export function SoftCopilotInbox() {
     return filteredAccounts.map((a) => a.id)
   }, [filteredAccounts, accountFilter])
 
-  const applyFetchedMessages = useCallback(
-    (
-      byAccount: Array<{
-        account: SoftSocialAccount
-        messages: ChatInboxMessage[]
-      }>,
-      opts?: { forceScroll?: boolean },
-    ) => {
+  const rebuildConversations = useCallback(
+    (opts?: { forceScroll?: boolean }) => {
+      const byAccount = Object.entries(accountMessagesRef.current)
+        .map(([accountId, messages]) => {
+          const account = accounts.find((a) => a.id === accountId)
+          if (!account) return null
+          return { account, messages }
+        })
+        .filter(Boolean) as Array<{ account: SoftSocialAccount; messages: ChatInboxMessage[] }>
+
       const fp = byAccount
         .map(({ account, messages }) => `${account.id}:${messagesFingerprint(messages)}`)
         .join('||')
       const changed = fp !== messagesFingerprintRef.current
-      if (!changed) return false
+      if (!changed && !opts?.forceScroll) return false
 
       const prevLen = messagesFingerprintRef.current
         ? messagesFingerprintRef.current.split('|').filter(Boolean).length
@@ -146,12 +165,13 @@ export function SoftCopilotInbox() {
       }
       return true
     },
-    [],
+    [accounts],
   )
 
   const fetchMessages = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (pollAccountIds.length === 0) {
+        accountMessagesRef.current = {}
         setAllConversations([])
         messagesFingerprintRef.current = ''
         return
@@ -162,12 +182,14 @@ export function SoftCopilotInbox() {
         const results = await Promise.all(
           pollAccountIds.map(async (id) => {
             const res = await fetch(
-              `/api/chat/messages?socialAccountId=${encodeURIComponent(id)}&limit=100`,
+              `/api/chat/messages?socialAccountId=${encodeURIComponent(id)}&limit=${POLL_LIMIT}`,
               { credentials: 'same-origin', cache: 'no-store' },
             )
             const parsed = await parseApiJson<{
               success?: boolean
               messages?: ChatInboxMessage[]
+              nextCursor?: string
+              hasMore?: boolean
               error?: string
             }>(res)
             if (!parsed.ok || !res.ok || !parsed.data.success || !Array.isArray(parsed.data.messages)) {
@@ -175,14 +197,48 @@ export function SoftCopilotInbox() {
             }
             const account = accountById.get(id)
             if (!account) return null
-            return { account, messages: parsed.data.messages }
+            return {
+              account,
+              messages: parsed.data.messages,
+              hasMore: Boolean(parsed.data.hasMore),
+              nextCursor: parsed.data.nextCursor,
+            }
           }),
         )
         const ok = results.filter(Boolean) as Array<{
           account: SoftSocialAccount
           messages: ChatInboxMessage[]
+          hasMore: boolean
+          nextCursor?: string
         }>
-        applyFetchedMessages(ok)
+
+        for (const row of ok) {
+          const prev = accountMessagesRef.current[row.account.id] || []
+          accountMessagesRef.current[row.account.id] = mergeChatMessagesById(prev, row.messages)
+        }
+
+        // Seed per-thread hasMore from account-level page when unknown
+        setThreadPagers((prev) => {
+          const next = { ...prev }
+          for (const row of ok) {
+            const grouped = groupMessagesByRecipient(row.messages, row.account.platform)
+            for (const conv of grouped) {
+              const key = conversationStorageKey(row.account.id, conv.recipientId)
+              if (next[key]) continue
+              if (row.hasMore && conv.messages.length > 0) {
+                next[key] = {
+                  hasMore: true,
+                  nextCursor: conv.messages[0]?.id,
+                }
+              } else {
+                next[key] = { hasMore: false }
+              }
+            }
+          }
+          return next
+        })
+
+        rebuildConversations()
       } catch (e: unknown) {
         if (!opts?.silent) {
           console.error(e instanceof Error ? e.message : 'Error al cargar mensajes')
@@ -191,7 +247,7 @@ export function SoftCopilotInbox() {
         if (!opts?.silent) setLoading(false)
       }
     },
-    [pollAccountIds, accounts, applyFetchedMessages],
+    [pollAccountIds, accounts, rebuildConversations],
   )
 
   async function fetchAccounts() {
@@ -293,6 +349,8 @@ export function SoftCopilotInbox() {
   const selectedConversation =
     conversationsWithLocalState.find((c) => softKey(c) === selectedKey) || null
 
+  const selectedPager = selectedKey ? threadPagers[selectedKey] : undefined
+
   const checklist = buildAgentChecklist({
     hasConversation: Boolean(selectedConversation),
     hasSummary: Boolean(selectedConversation?.messages.length),
@@ -324,6 +382,9 @@ export function SoftCopilotInbox() {
     setFailedOutboundId(null)
     setDraftHint(null)
     setMessageInput('')
+    setTemplatePickerOpen(false)
+    setTemplates([])
+    setTemplatesError(null)
     nearBottomRef.current = true
     setMobileView('thread')
   }
@@ -360,6 +421,146 @@ export function SoftCopilotInbox() {
     if (!text) return
     setMessageInput(text)
     setDraftHint(null)
+  }
+
+  async function handleLoadOlder() {
+    if (!selectedConversation || loadingOlder) return
+    const key = softKey(selectedConversation)
+    const pager = threadPagers[key]
+    const cursor =
+      pager?.nextCursor || selectedConversation.messages[0]?.id || undefined
+    if (!cursor && pager?.hasMore === false) return
+
+    setLoadingOlder(true)
+    try {
+      const params = new URLSearchParams({
+        socialAccountId: selectedConversation.socialAccountId,
+        recipientId: selectedConversation.recipientId,
+        limit: String(OLDER_PAGE_LIMIT),
+      })
+      if (cursor) params.set('cursor', cursor)
+
+      const res = await fetch(`/api/chat/messages?${params.toString()}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      })
+      const parsed = await parseApiJson<{
+        success?: boolean
+        messages?: ChatInboxMessage[]
+        nextCursor?: string
+        hasMore?: boolean
+        error?: string
+      }>(res)
+
+      if (!parsed.ok) {
+        setSendError(humanizeChatSendError(parsed.error, parsed.status))
+        return
+      }
+      if (!res.ok || !parsed.data.success || !Array.isArray(parsed.data.messages)) {
+        setSendError(humanizeChatSendError(parsed.data.error, res.status))
+        return
+      }
+
+      const accountId = selectedConversation.socialAccountId
+      const prev = accountMessagesRef.current[accountId] || []
+      accountMessagesRef.current[accountId] = mergeChatMessagesById(prev, parsed.data.messages)
+      setThreadPagers((state) => ({
+        ...state,
+        [key]: nextThreadPager({
+          nextCursor: parsed.data.nextCursor,
+          hasMore: parsed.data.hasMore,
+        }),
+      }))
+      rebuildConversations({ forceScroll: false })
+    } catch (e: unknown) {
+      setSendError(e instanceof Error ? e.message : 'Error al cargar mensajes anteriores')
+    } finally {
+      setLoadingOlder(false)
+    }
+  }
+
+  async function openTemplatePicker() {
+    if (!selectedConversation) return
+    setSendError(null)
+    setTemplatePickerOpen(true)
+    setTemplatesLoading(true)
+    setTemplatesError(null)
+    try {
+      const res = await fetch(
+        `/api/chat/templates?socialAccountId=${encodeURIComponent(selectedConversation.socialAccountId)}`,
+        { credentials: 'same-origin', cache: 'no-store' },
+      )
+      const parsed = await parseApiJson<{
+        success?: boolean
+        templates?: SoftWaTemplateOption[]
+        error?: string
+      }>(res)
+      if (!parsed.ok) {
+        setTemplatesError(humanizeChatSendError(parsed.error, parsed.status))
+        setTemplates([])
+        return
+      }
+      if (!res.ok || !parsed.data.success) {
+        setTemplatesError(humanizeChatSendError(parsed.data.error, res.status))
+        setTemplates([])
+        return
+      }
+      setTemplates(Array.isArray(parsed.data.templates) ? parsed.data.templates : [])
+    } catch (e: unknown) {
+      setTemplatesError(e instanceof Error ? e.message : 'Error al cargar plantillas')
+      setTemplates([])
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }
+
+  async function handleSendTemplate(template: SoftWaTemplateOption) {
+    if (!selectedConversation) return
+    if (selectedConversation.recipientId === 'unknown') {
+      setSendError('Selecciona una conversación para responder')
+      return
+    }
+
+    setSending(true)
+    setSendError(null)
+    setFailedOutboundId(null)
+    try {
+      const res = await fetch('/api/chat/send', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          socialAccountId: selectedConversation.socialAccountId,
+          recipient: selectedConversation.recipientId,
+          type: 'template',
+          templateName: template.name,
+          templateLanguage: template.language,
+          content: `[Plantilla] ${template.name}`,
+        }),
+      })
+      const parsed = await parseApiJson<{ success?: boolean; error?: string }>(res)
+      if (!parsed.ok) {
+        setSendError(humanizeChatSendError(parsed.error, parsed.status))
+        setFailedOutboundId('pending-fail')
+        return
+      }
+      if (!res.ok || !parsed.data.success) {
+        setSendError(humanizeChatSendError(parsed.data.error, res.status))
+        setFailedOutboundId('pending-fail')
+        return
+      }
+      setTemplatePickerOpen(false)
+      if (selectedConversation.status === 'nuevo') {
+        updateStatus('en_curso')
+      }
+      await fetchMessages({ silent: true })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al enviar plantilla'
+      setSendError(humanizeChatSendError(message))
+      setFailedOutboundId('pending-fail')
+    } finally {
+      setSending(false)
+    }
   }
 
   async function handleSendMessage(e: FormEvent) {
@@ -418,7 +619,6 @@ export function SoftCopilotInbox() {
 
   async function handleRetry() {
     if (!messageInput.trim()) {
-      // retry last failed by re-focusing composer — user may need to retype
       setSendError('Reescribí el mensaje y enviá de nuevo.')
       return
     }
@@ -430,6 +630,39 @@ export function SoftCopilotInbox() {
     selectedConversation!.platform === 'whatsapp' &&
     (!isWhatsAppWindowOpen(selectedConversation!.messages, 'whatsapp') ||
       isWhatsAppWindowClosedError(sendError))
+
+  const threadSharedProps = {
+    conversation: selectedConversation,
+    messageInput,
+    onMessageInput: setMessageInput,
+    onSend: handleSendMessage,
+    sending,
+    sendError,
+    onClearError: () => setSendError(null),
+    onRetry: handleRetry,
+    onSuggest: handleSuggest,
+    messagesEndRef,
+    messagesContainerRef,
+    onMessagesScroll: handleMessagesScroll,
+    showTemplateCta,
+    draftHint,
+    onUseDraft: () => applyDraft(),
+    onDiscardDraft: () => setDraftHint(null),
+    hasMoreMessages: Boolean(selectedPager?.hasMore),
+    loadingOlder,
+    onLoadOlder: handleLoadOlder,
+    templates,
+    templatesLoading,
+    templatesError,
+    showTemplatePicker: templatePickerOpen,
+    onOpenTemplatePicker: () => {
+      void openTemplatePicker()
+    },
+    onCloseTemplatePicker: () => setTemplatePickerOpen(false),
+    onSendTemplate: (tpl: SoftWaTemplateOption) => {
+      void handleSendTemplate(tpl)
+    },
+  }
 
   const listPane = (
     <SoftConversationList
@@ -457,31 +690,16 @@ export function SoftCopilotInbox() {
 
   const threadPane = (
     <SoftThreadPane
-      conversation={selectedConversation}
-      messageInput={messageInput}
-      onMessageInput={setMessageInput}
-      onSend={handleSendMessage}
-      sending={sending}
-      sendError={sendError}
-      onClearError={() => setSendError(null)}
-      onRetry={handleRetry}
+      {...threadSharedProps}
       failedOutboundId={
         failedOutboundId && selectedConversation?.messages.length
           ? selectedConversation.messages[selectedConversation.messages.length - 1]?.id
           : failedOutboundId
       }
-      onSuggest={handleSuggest}
       onClose={() => {
         setSelectedKey(null)
         setMobileView('list')
       }}
-      messagesEndRef={messagesEndRef}
-      messagesContainerRef={messagesContainerRef}
-      onMessagesScroll={handleMessagesScroll}
-      showTemplateCta={showTemplateCta}
-      draftHint={draftHint}
-      onUseDraft={() => applyDraft()}
-      onDiscardDraft={() => setDraftHint(null)}
     />
   )
 
@@ -538,26 +756,11 @@ export function SoftCopilotInbox() {
             />
           ) : (
             <SoftThreadPane
-              conversation={selectedConversation}
-              messageInput={messageInput}
-              onMessageInput={setMessageInput}
-              onSend={handleSendMessage}
-              sending={sending}
-              sendError={sendError}
-              onClearError={() => setSendError(null)}
-              onRetry={handleRetry}
+              {...threadSharedProps}
               failedOutboundId={failedOutboundId}
-              onSuggest={handleSuggest}
               onClose={() => setMobileView('list')}
               onBack={() => setMobileView('list')}
-              messagesEndRef={messagesEndRef}
-              messagesContainerRef={messagesContainerRef}
-              onMessagesScroll={handleMessagesScroll}
-              showTemplateCta={showTemplateCta}
               compact
-              draftHint={draftHint}
-              onUseDraft={() => applyDraft()}
-              onDiscardDraft={() => setDraftHint(null)}
             />
           )}
         </div>

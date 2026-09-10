@@ -115,6 +115,9 @@ export function canAccessRoute(role: Role, route: string): boolean {
   const routePermissions: Record<string, Permission> = {
     '/home': 'view_dashboard',
     '/ventas': 'view_sales',
+    // Soft Copilot inbox: same gate as chat send (update_sales), not view_sales —
+    // VIEWER/PRODUCTION must not read or reply in /chats.
+    '/chats': 'update_sales',
     '/produccion': 'view_production',
     '/estadisticas': 'view_statistics',
     '/config': 'view_config',
@@ -223,6 +226,12 @@ export const apiPermissions: Record<string, Permission> = {
   'POST /api/orders': 'create_sales',
   'PUT /api/orders': 'update_sales',
   'DELETE /api/orders': 'delete_sales',
+
+  // Soft Copilot chat (aligned with send → update_sales)
+  'GET /api/chat/accounts': 'update_sales',
+  'GET /api/chat/messages': 'update_sales',
+  'GET /api/chat/templates': 'update_sales',
+  'POST /api/chat/send': 'update_sales',
 
   // Users
   'GET /api/users': 'manage_users',

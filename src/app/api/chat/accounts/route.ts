@@ -1,19 +1,18 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getToken } from 'next-auth/jwt'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const db = prisma as any
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const tenantId = (token as any).tenantId as string
-    if (!tenantId) return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
+    const auth = await authenticateAPIWithPermission(request, 'update_sales')
+    if (!auth.ok) return auth.response
+    const { tenantId } = auth
 
+    const db = prisma as any
     const url = new URL(request.url)
     const includeInactive = url.searchParams.get('includeInactive') === '1'
 

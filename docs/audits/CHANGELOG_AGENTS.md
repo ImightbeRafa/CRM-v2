@@ -2,6 +2,20 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-10 — Soft Copilot Phase 1 HARDEN
+
+- Encrypt `SocialAccount.accessToken` via `encryption.ts` on all write paths
+  (link, WA exchange, IG callback/complete); decrypt on send/subscribe/templates.
+  Legacy plaintext passthrough until next write.
+- Webhook Meta account resolve tenant-safe (`resolveWebhookSocialAccount`):
+  refuse ambiguous multi-tenant `findMany`; IG page match by encoded refreshToken only.
+- RBAC: `/chats` + GET accounts/messages/templates use `update_sales` (same as send).
+- Rate limit: `chatWebhookRateLimit` (IP) + `chatSendRateLimit` (tenant:user).
+- Soft thread “Cargar anteriores” via `nextCursor`/`hasMore` + recipientId filter.
+- WA approved-templates picker MVP behind existing Soft CTA (`/api/chat/templates`).
+- No Soft restyle; `/api/bot/**` and staff `WHATSAPP_*` untouched; no prisma push.
+- Prove: `npm run test:chat-harden` + build.
+
 ## 2026-09-10 — CRM WA dedicated Meta app env + Soft Copilot UI
 
 - CRM WhatsApp connect (exchange / link / subscribe / appsecret_proof / FB SDK)

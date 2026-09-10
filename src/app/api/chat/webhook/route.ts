@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { parseMetaChatPayload, type ParsedMetaChatMessage } from '@/lib/meta-chat'
 import {
   describeMetaSignatureHeader,
   getMetaWebhookVerifyTokens,
   maskMetaSecret,
   verifyMetaWebhookSignature,
 } from '@/lib/meta-api'
-import { parseMetaChatPayload, type ParsedMetaChatMessage } from '@/lib/meta-chat'
-import {
-  getPageIdFromMetaChatMetadata,
-  matchAccountByEncodedPageId,
-} from '@/lib/social-account-meta'
+import { getPageIdFromMetaChatMetadata } from '@/lib/social-account-meta'
+import { resolveWebhookSocialAccount } from '@/lib/chat-webhook-account'
+import { chatWebhookRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -74,48 +73,23 @@ async function alreadyStored(db: any, accountId: string, providerMessageId?: str
   return Boolean(existing)
 }
 
-async function findActiveSocialAccount(db: any, event: ParsedMetaChatMessage) {
-  const byAccountId = await db.socialAccount.findFirst({
-    where: {
-      platform: event.platform,
-      accountId: event.accountId,
-      isActive: true,
-    },
-    select: { id: true, tenantId: true, refreshToken: true },
-  })
-
-  if (byAccountId) return byAccountId
-
-  if (event.platform !== 'instagram') return null
-
-  const pageId = getPageIdFromMetaChatMetadata(event.metadata)
-  if (!pageId) return null
-
-  const candidates = await db.socialAccount.findMany({
-    where: {
-      platform: 'instagram',
-      isActive: true,
-    },
-    select: { id: true, tenantId: true, refreshToken: true },
-  })
-
-  return matchAccountByEncodedPageId(candidates, pageId) || null
-}
-
 async function storeMessage(db: any, event: ParsedMetaChatMessage) {
-  const account = await findActiveSocialAccount(db, event)
+  const resolved = await resolveWebhookSocialAccount(db, event)
 
-  if (!account) {
-    console.warn('[chat/webhook][POST] No active SocialAccount found for Meta event', {
+  if (!resolved.ok) {
+    console.warn('[chat/webhook][POST] No resolvable SocialAccount for Meta event', {
       platform: event.platform,
       accountId: event.accountId,
       pageId: getPageIdFromMetaChatMetadata(event.metadata),
       webhookObject: event.metadata?.webhookObject,
       senderId: event.senderId,
       providerMessageId: event.providerMessageId,
+      reason: resolved.reason,
     })
-    return { stored: false, reason: 'account_not_found' }
+    return { stored: false, reason: resolved.reason }
   }
+
+  const account = resolved.account
 
   if (await alreadyStored(db, account.id, event.providerMessageId)) {
     console.log('[chat/webhook][POST] Duplicate Meta message skipped', {
@@ -165,6 +139,11 @@ async function storeMessage(db: any, event: ParsedMetaChatMessage) {
 
 export async function POST(request: NextRequest) {
   try {
+    const rateLimited = await chatWebhookRateLimit(request)
+    if (rateLimited instanceof Response) {
+      return rateLimited
+    }
+
     const raw = await request.text()
     const signatureHeader = request.headers.get('x-hub-signature-256')
     const signatureResult = verifyMetaWebhookSignature(raw, signatureHeader)

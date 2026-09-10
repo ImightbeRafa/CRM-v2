@@ -183,3 +183,17 @@ export const workClockPunchRateLimit = createRateLimit({
   maxRequests: 120,
   identifier: 'work-clock-punch',
 });
+
+/** Soft Copilot / chats outbound send — per tenant:user. */
+export const chatSendRateLimit = createIdentifierRateLimit({
+  windowMs: 60 * 1000,
+  maxRequests: 30,
+  identifier: 'chat-send',
+});
+
+/** Public Meta chat webhook — per client IP. */
+export const chatWebhookRateLimit = createRateLimit({
+  windowMs: 60 * 1000,
+  maxRequests: 120,
+  identifier: 'chat-webhook',
+});

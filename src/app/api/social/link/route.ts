@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { subscribeWhatsAppApp, verifyWhatsAppAssetsForToken, getMetaWhatsAppAppSecret } from '@/lib/meta-api'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { encodeWhatsAppRefreshToken } from '@/lib/social-account-meta'
+import { encryptSocialAccessToken } from '@/lib/social-account-crypto'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -115,6 +116,8 @@ export async function POST(request: NextRequest) {
         where: { tenantId, platform, accountId: resolvedAccountId },
       })
 
+      const encryptedToken = encryptSocialAccessToken(accessToken) ?? undefined
+
       let result
       if (existing) {
         result = await db.socialAccount.update({
@@ -122,7 +125,7 @@ export async function POST(request: NextRequest) {
           data: {
             userId,
             isActive: subscribeOk,
-            accessToken: accessToken ?? undefined,
+            accessToken: encryptedToken,
             refreshToken: storedRefreshToken ?? undefined,
             expiresAt: expiresAt ?? undefined,
           },
@@ -136,7 +139,7 @@ export async function POST(request: NextRequest) {
             platform,
             accountId: resolvedAccountId,
             isActive: subscribeOk,
-            accessToken: accessToken ?? undefined,
+            accessToken: encryptedToken,
             refreshToken: storedRefreshToken ?? undefined,
             expiresAt: expiresAt ?? undefined,
           },
@@ -173,6 +176,8 @@ export async function POST(request: NextRequest) {
       where: { tenantId, platform, accountId },
     })
 
+    const encryptedToken = encryptSocialAccessToken(accessToken) ?? undefined
+
     let result
     if (existing) {
       result = await db.socialAccount.update({
@@ -180,7 +185,7 @@ export async function POST(request: NextRequest) {
         data: {
           userId,
           isActive: true,
-          accessToken: accessToken ?? undefined,
+          accessToken: encryptedToken,
           refreshToken: refreshToken ?? undefined,
           expiresAt: expiresAt ?? undefined,
         },
@@ -194,7 +199,7 @@ export async function POST(request: NextRequest) {
           platform,
           accountId,
           isActive: true,
-          accessToken: accessToken ?? undefined,
+          accessToken: encryptedToken,
           refreshToken: refreshToken ?? undefined,
           expiresAt: expiresAt ?? undefined,
         },

@@ -77,7 +77,9 @@ export default function SocialConfigPage() {
   const [accountSearch, setAccountSearch] = useState('')
   const [subscribeFailToast, setSubscribeFailToast] = useState('')
 
-  const META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID as string | undefined
+  const META_WA_APP_ID =
+    (process.env.NEXT_PUBLIC_META_WA_APP_ID as string | undefined) ||
+    (process.env.NEXT_PUBLIC_META_APP_ID as string | undefined)
   const FB_LOGIN_CONFIG_ID = process.env.NEXT_PUBLIC_FB_LOGIN_CONFIG_ID as string | undefined
   const META_GRAPH_API_VERSION =
     (process.env.NEXT_PUBLIC_META_GRAPH_API_VERSION as string | undefined) || 'v24.0'
@@ -103,7 +105,7 @@ export default function SocialConfigPage() {
     }
     window.fbAsyncInit = function () {
       window.FB?.init({
-        appId: META_APP_ID || '',
+        appId: META_WA_APP_ID || '',
         autoLogAppEvents: true,
         xfbml: true,
         version: META_GRAPH_API_VERSION,
@@ -116,7 +118,7 @@ export default function SocialConfigPage() {
     script.crossOrigin = 'anonymous'
     script.src = 'https://connect.facebook.net/es_LA/sdk.js'
     document.body.appendChild(script)
-  }, [META_APP_ID, META_GRAPH_API_VERSION])
+  }, [META_WA_APP_ID, META_GRAPH_API_VERSION])
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -192,7 +194,7 @@ export default function SocialConfigPage() {
     const FB = window.FB
     if (!FB || !FB_LOGIN_CONFIG_ID) {
       setStatusMessage(
-        'Falta configuración de Embedded Signup. Verifica NEXT_PUBLIC_META_APP_ID y NEXT_PUBLIC_FB_LOGIN_CONFIG_ID.',
+        'Falta configuración de Embedded Signup. Verifica NEXT_PUBLIC_META_WA_APP_ID (o NEXT_PUBLIC_META_APP_ID) y NEXT_PUBLIC_FB_LOGIN_CONFIG_ID.',
       )
       return
     }

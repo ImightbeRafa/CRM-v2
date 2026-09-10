@@ -12,21 +12,72 @@ export function buildMetaGraphUrl(path: string): string {
 }
 
 /**
- * Generate appsecret_proof for Meta API calls
- * This is required when app secret proof is enabled in Meta app settings
+ * CRM WhatsApp Meta app id (dedicated Inbox WA app).
+ * Falls back to META_APP_ID when unset (dev / single-app setups).
+ * Production should set META_WA_APP_ID to the customer-inbox WA app.
  */
-export function generateAppSecretProof(accessToken: string): string {
-  const appSecret = (process.env.META_APP_SECRET || '').trim()
+export function getMetaWhatsAppAppId(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return (env.META_WA_APP_ID || env.META_APP_ID || '').trim()
+}
+
+/** Browser-facing WA app id for FB.login Embedded Signup. */
+export function getPublicMetaWhatsAppAppId(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return (
+    env.NEXT_PUBLIC_META_WA_APP_ID ||
+    env.META_WA_APP_ID ||
+    env.NEXT_PUBLIC_META_APP_ID ||
+    env.META_APP_ID ||
+    ''
+  ).trim()
+}
+
+/**
+ * CRM WhatsApp Meta app secret (HMAC + appsecret_proof for WA Graph).
+ * Falls back to META_APP_SECRET when unset.
+ */
+export function getMetaWhatsAppAppSecret(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return (env.META_WA_APP_SECRET || env.META_APP_SECRET || '').trim()
+}
+
+export type MetaAppSecretProofPurpose = 'default' | 'whatsapp'
+
+function resolveAppSecretForProof(
+  purpose: MetaAppSecretProofPurpose,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  if (purpose === 'whatsapp') return getMetaWhatsAppAppSecret(env)
+  return (env.META_APP_SECRET || '').trim()
+}
+
+/**
+ * Generate appsecret_proof for Meta API calls.
+ * Use purpose `'whatsapp'` for CRM WA Graph (subscribe / send / ownership).
+ * Default keeps Instagram / shared META_APP_SECRET behavior.
+ */
+export function generateAppSecretProof(
+  accessToken: string,
+  options?: { purpose?: MetaAppSecretProofPurpose; appSecret?: string },
+): string {
+  const purpose = options?.purpose || 'default'
+  const appSecret = (options?.appSecret || resolveAppSecretForProof(purpose)).trim()
   if (!appSecret) {
-    console.warn('[meta-api] META_APP_SECRET not configured, skipping appsecret_proof')
+    console.warn(
+      `[meta-api] ${purpose === 'whatsapp' ? 'META_WA_APP_SECRET/META_APP_SECRET' : 'META_APP_SECRET'} not configured, skipping appsecret_proof`,
+    )
     return ''
   }
-  
+
   if (!accessToken) {
     console.warn('[meta-api] No access token provided for appsecret_proof generation')
     return ''
   }
-  
+
   try {
     return crypto.createHmac('sha256', appSecret).update(accessToken).digest('hex')
   } catch (error) {
@@ -35,46 +86,62 @@ export function generateAppSecretProof(accessToken: string): string {
   }
 }
 
-export type MetaWebhookMatchedSecret = 'meta' | 'instagram'
+export type MetaWebhookMatchedSecret = 'meta' | 'whatsapp' | 'instagram'
 
 export type MetaWebhookSignatureResult = {
   valid: boolean
   matchedSecret: MetaWebhookMatchedSecret | null
   triedMeta: boolean
+  triedWhatsApp: boolean
   triedInstagram: boolean
 }
 
 /**
- * Candidate app secrets for Meta/Instagram webhook HMAC verification.
- * Order: META_APP_SECRET first, then INSTAGRAM_APP_SECRET if present and different.
+ * Candidate app secrets for CRM inbox webhook HMAC.
+ * Order: META_APP_SECRET (IG/shared), META_WA_APP_SECRET (CRM WA app),
+ * then INSTAGRAM_APP_SECRET if distinct. Dedupes identical values.
  */
-export function getMetaWebhookAppSecrets(): Array<{
+export function getMetaWebhookAppSecrets(
+  env: Record<string, string | undefined> = process.env,
+): Array<{
   name: MetaWebhookMatchedSecret
   secret: string
 }> {
-  const meta = (process.env.META_APP_SECRET || '').trim()
-  const instagram = (process.env.INSTAGRAM_APP_SECRET || '').trim()
+  const meta = (env.META_APP_SECRET || '').trim()
+  const whatsapp = (env.META_WA_APP_SECRET || '').trim()
+  const instagram = (env.INSTAGRAM_APP_SECRET || '').trim()
   const secrets: Array<{ name: MetaWebhookMatchedSecret; secret: string }> = []
-  if (meta) secrets.push({ name: 'meta', secret: meta })
-  if (instagram && instagram !== meta) secrets.push({ name: 'instagram', secret: instagram })
+  const seen = new Set<string>()
+
+  const push = (name: MetaWebhookMatchedSecret, secret: string) => {
+    if (!secret || seen.has(secret)) return
+    seen.add(secret)
+    secrets.push({ name, secret })
+  }
+
+  push('meta', meta)
+  push('whatsapp', whatsapp)
+  push('instagram', instagram)
   return secrets
 }
 
 /**
- * Verify X-Hub-Signature-256 against META_APP_SECRET and/or INSTAGRAM_APP_SECRET.
- * Returns which secrets were attempted and which matched (never logs secret values).
+ * Verify X-Hub-Signature-256 against META_APP_SECRET, META_WA_APP_SECRET,
+ * and/or INSTAGRAM_APP_SECRET. Never logs secret values.
  */
 export function verifyMetaWebhookSignature(
   rawBody: string,
-  signatureHeader: string | null
+  signatureHeader: string | null,
+  env: Record<string, string | undefined> = process.env,
 ): MetaWebhookSignatureResult {
-  const secrets = getMetaWebhookAppSecrets()
+  const secrets = getMetaWebhookAppSecrets(env)
   const triedMeta = secrets.some((entry) => entry.name === 'meta')
+  const triedWhatsApp = secrets.some((entry) => entry.name === 'whatsapp')
   const triedInstagram = secrets.some((entry) => entry.name === 'instagram')
   const signature = (signatureHeader || '').trim()
 
   if (secrets.length === 0 || !signature.startsWith('sha256=')) {
-    return { valid: false, matchedSecret: null, triedMeta, triedInstagram }
+    return { valid: false, matchedSecret: null, triedMeta, triedWhatsApp, triedInstagram }
   }
 
   const providedBuffer = Buffer.from(signature)
@@ -86,11 +153,11 @@ export function verifyMetaWebhookSignature(
       expectedBuffer.length === providedBuffer.length &&
       crypto.timingSafeEqual(expectedBuffer, providedBuffer)
     ) {
-      return { valid: true, matchedSecret: name, triedMeta, triedInstagram }
+      return { valid: true, matchedSecret: name, triedMeta, triedWhatsApp, triedInstagram }
     }
   }
 
-  return { valid: false, matchedSecret: null, triedMeta, triedInstagram }
+  return { valid: false, matchedSecret: null, triedMeta, triedWhatsApp, triedInstagram }
 }
 
 /**
@@ -137,12 +204,17 @@ export function maskMetaSecret(secret?: string | null): string {
 }
 
 /**
- * Add appsecret_proof to a Meta API URL if required
+ * Add appsecret_proof to a Meta API URL if required.
+ * Pass purpose `'whatsapp'` for CRM WhatsApp Graph calls (uses META_WA_APP_SECRET).
  */
-export function addAppSecretProofToUrl(baseUrl: string, accessToken: string): string {
-  const proof = generateAppSecretProof(accessToken)
+export function addAppSecretProofToUrl(
+  baseUrl: string,
+  accessToken: string,
+  options?: { purpose?: MetaAppSecretProofPurpose },
+): string {
+  const proof = generateAppSecretProof(accessToken, { purpose: options?.purpose || 'default' })
   if (!proof) return baseUrl
-  
+
   const separator = baseUrl.includes('?') ? '&' : '?'
   return `${baseUrl}${separator}appsecret_proof=${proof}`
 }
@@ -169,7 +241,11 @@ async function readMetaJson(response: Response) {
 
 export async function resolveWhatsAppBusinessAccountId(phoneNumberId: string, accessToken: string): Promise<string | null> {
   const fields = encodeURIComponent('whatsapp_business_account')
-  const url = addAppSecretProofToUrl(buildMetaGraphUrl(`${encodeURIComponent(phoneNumberId)}?fields=${fields}`), accessToken)
+  const url = addAppSecretProofToUrl(
+    buildMetaGraphUrl(`${encodeURIComponent(phoneNumberId)}?fields=${fields}`),
+    accessToken,
+    { purpose: 'whatsapp' },
+  )
 
   try {
     const response = await fetch(url, {
@@ -271,6 +347,7 @@ export async function verifyWhatsAppAssetsForToken(params: {
   const url = addAppSecretProofToUrl(
     buildMetaGraphUrl(`${encodeURIComponent(phoneNumberId)}?fields=${fields}`),
     params.accessToken,
+    { purpose: 'whatsapp' },
   )
 
   try {
@@ -315,7 +392,11 @@ export async function subscribeWhatsAppApp(params: {
     (await resolveWhatsAppBusinessAccountId(params.phoneNumberId, params.accessToken)) ||
     params.phoneNumberId
 
-  const url = addAppSecretProofToUrl(buildMetaGraphUrl(`${encodeURIComponent(targetId)}/subscribed_apps`), params.accessToken)
+  const url = addAppSecretProofToUrl(
+    buildMetaGraphUrl(`${encodeURIComponent(targetId)}/subscribed_apps`),
+    params.accessToken,
+    { purpose: 'whatsapp' },
+  )
   const body = new URLSearchParams({
     access_token: params.accessToken,
     subscribed_fields: 'messages',

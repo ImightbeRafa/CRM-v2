@@ -33,6 +33,9 @@ export type MetaChatEnvKey =
   | 'META_APP_ID'
   | 'NEXT_PUBLIC_META_APP_ID'
   | 'META_APP_SECRET'
+  | 'META_WA_APP_ID'
+  | 'NEXT_PUBLIC_META_WA_APP_ID'
+  | 'META_WA_APP_SECRET'
   | 'META_WEBHOOK_VERIFY_TOKEN'
   | 'NEXT_PUBLIC_FB_LOGIN_CONFIG_ID'
   | 'NEXT_PUBLIC_IG_LOGIN_CONFIG_ID'
@@ -53,6 +56,9 @@ const INBOX_REQUIRED_ENV: MetaChatEnvKey[] = [
 ]
 
 const INBOX_RECOMMENDED_ENV: MetaChatEnvKey[] = [
+  'META_WA_APP_ID',
+  'NEXT_PUBLIC_META_WA_APP_ID',
+  'META_WA_APP_SECRET',
   'NEXT_PUBLIC_FB_LOGIN_CONFIG_ID',
   'NEXT_PUBLIC_IG_LOGIN_CONFIG_ID',
   'META_GRAPH_API_VERSION',
@@ -114,12 +120,15 @@ export function getMetaChatReadiness() {
   const missingRecommended = inboxRecommended.filter((item) => !item.set).map((item) => item.key)
 
   const notes = [
-    'CRM inbox webhook is /api/chat/webhook. Do not point Meta inbox subscriptions at /api/bot/whatsapp/webhook.',
-    'WHATSAPP_ACCESS_TOKEN / PHONE_NUMBER_ID / VERIFY_TOKEN belong to the staff AI bot, not tenant inboxes.',
+    'CRM inbox webhook is /api/chat/webhook. Staff AI bot is /api/bot/whatsapp/webhook on its own Meta app — never share callbacks.',
+    'Instagram inbox uses META_APP_ID / META_APP_SECRET (and optional INSTAGRAM_APP_SECRET for HMAC).',
+    'CRM WhatsApp customer connect prefers META_WA_APP_ID / META_WA_APP_SECRET / NEXT_PUBLIC_META_WA_APP_ID (falls back to META_APP_* if unset). Production should set the dedicated WA Inbox app.',
+    'POST /api/chat/webhook HMAC tries META_APP_SECRET, then META_WA_APP_SECRET, then INSTAGRAM_APP_SECRET.',
+    'WHATSAPP_ACCESS_TOKEN / PHONE_NUMBER_ID / VERIFY_TOKEN belong to the staff AI bot only — never copy into SocialAccount.',
     'Instagram requires a Professional Business account linked to a Facebook Page. Creator accounts cannot receive DMs via this API.',
     'Paste the NEXTAUTH_URL origin (www host) in Meta. The apex hostname 307s to www, which often breaks webhook GET verification.',
     'GET /api/chat/webhook can succeed using WHATSAPP_VERIFY_TOKEN as a fallback. Confirm META_WEBHOOK_VERIFY_TOKEN itself is set.',
-    'WhatsApp Embedded Signup uses NEXT_PUBLIC_FB_LOGIN_CONFIG_ID. Instagram Login for Business uses NEXT_PUBLIC_IG_LOGIN_CONFIG_ID when set.',
+    'WhatsApp Embedded Signup uses NEXT_PUBLIC_FB_LOGIN_CONFIG_ID (config on the CRM WA Meta app). Instagram Login for Business uses NEXT_PUBLIC_IG_LOGIN_CONFIG_ID when set.',
   ]
 
   const hostname = (() => {

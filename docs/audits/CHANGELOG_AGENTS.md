@@ -2,6 +2,17 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-10 — CRM WA dedicated Meta app env + Soft Copilot UI
+
+- CRM WhatsApp connect (exchange / link / subscribe / appsecret_proof / FB SDK)
+  prefers `META_WA_APP_ID`, `NEXT_PUBLIC_META_WA_APP_ID`, `META_WA_APP_SECRET`
+  with fallback to `META_APP_*`. Instagram stays on `META_APP_*`.
+- `/api/chat/webhook` HMAC tries META_APP_SECRET, META_WA_APP_SECRET, then
+  INSTAGRAM_APP_SECRET (deduped). No dual-router; staff bot `/api/bot/**` untouched.
+- Soft Copilot `/chats` + Connect Soft UI (LOCKED Figma) in same fat PR.
+- Docs: staff app vs CRM Inbox WA app; Vercel env list.
+- Prove: meta-wa-app-env, meta-chat-webhook HMAC, chat-soft-copilot, chat-inbox tests.
+
 ## 2026-09-10 — Soft Copilot `/chats` + Connect UI (LOCKED Figma)
 
 - Soft Copilot shell for customer inbox `/chats`: slim nav, inbox buckets,

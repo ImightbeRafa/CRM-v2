@@ -5,12 +5,15 @@ This app uses the official Meta Graph API path for both customer-facing channels
 - WhatsApp: WhatsApp Cloud API, routed by `phone_number_id`.
 - Instagram: Messenger API support for Instagram, routed by the Instagram Business account id.
 
-**Two products, two webhooks.** Do not point the CRM inbox at the staff bot.
+**Two products, two Meta apps, two webhooks.** Never share callbacks.
 
-| Product | Callback | Audience |
-|---|---|---|
-| CRM inbox (`/chats`) | `{NEXTAUTH_URL}/api/chat/webhook` | Customers on Instagram / WhatsApp |
-| Staff AI assistant | `{NEXTAUTH_URL}/api/bot/whatsapp/webhook` | Internal team |
+| Product | Meta app | Callback | Audience |
+|---|---|---|---|
+| CRM inbox IG | Existing `META_APP_ID` app | `{NEXTAUTH_URL}/api/chat/webhook` | Instagram customers |
+| CRM inbox WA | Dedicated Inbox WA app (`META_WA_APP_ID`) | same `{NEXTAUTH_URL}/api/chat/webhook` | WhatsApp customers (Forge, etc.) |
+| Staff AI assistant | Staff app (e.g. live `1514613536240301`) + `WHATSAPP_*` | `{NEXTAUTH_URL}/api/bot/whatsapp/webhook` | Internal team |
+
+HMAC on `/api/chat/webhook` accepts `META_APP_SECRET`, `META_WA_APP_SECRET`, and optional `INSTAGRAM_APP_SECRET`.
 
 Owner diagnostic: `GET /api/chat/meta-status` (also rendered on `/config/social`). It reports which env vars are set without leaking secrets.
 
@@ -41,9 +44,16 @@ META_APP_SECRET=
 META_WEBHOOK_VERIFY_TOKEN=
 NEXT_PUBLIC_META_GRAPH_API_VERSION=v24.0
 META_GRAPH_API_VERSION=v24.0
-NEXT_PUBLIC_FB_LOGIN_CONFIG_ID=   # WhatsApp Embedded Signup config
+NEXT_PUBLIC_FB_LOGIN_CONFIG_ID=   # WhatsApp Embedded Signup config (on CRM WA Meta app)
 NEXT_PUBLIC_IG_LOGIN_CONFIG_ID=   # optional Instagram Login for Business config
+
+# Dedicated CRM WhatsApp Inbox Meta app (recommended in production)
+META_WA_APP_ID=
+NEXT_PUBLIC_META_WA_APP_ID=
+META_WA_APP_SECRET=
 ```
+
+If `META_WA_*` are unset, WA connect falls back to `META_APP_*` (single-app / local). Production should set the dedicated WA Inbox app so staff app `1514613536240301` stays isolated.
 
 Backward-compatible verify token names still work, but new installs should use
 `META_WEBHOOK_VERIFY_TOKEN` for the unified `/api/chat/webhook`. A live GET
@@ -59,10 +69,10 @@ WHATSAPP_PHONE_NUMBER_ID=
 WHATSAPP_VERIFY_TOKEN=
 ```
 
-The bot webhook and the CRM inbox webhook are separate products:
+The bot webhook and the CRM inbox webhook are separate products on **separate Meta apps**:
 
-- `/api/chat/webhook` receives client messages for the CRM inbox.
-- `/api/bot/whatsapp/webhook` receives internal team assistant messages.
+- `/api/chat/webhook` receives client IG + CRM WA messages (HMAC: META_APP_SECRET + META_WA_APP_SECRET + optional INSTAGRAM_APP_SECRET).
+- `/api/bot/whatsapp/webhook` receives internal staff assistant messages via staff `WHATSAPP_*` env — never point CRM WA at this callback, and never point staff at `/api/chat/webhook`.
 
 ## Meta App Checklist
 

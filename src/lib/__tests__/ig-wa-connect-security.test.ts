@@ -143,6 +143,9 @@ test('WA exchange route Graph-verifies ownership and drops tokenPrefix logs (SD-
   assert.match(source, /status: 422/)
   assert.match(source, /isActive: subscribeOk/)
   assert.match(source, /subscribed: true/)
+  // Dedicated CRM WA Meta app helpers (fallback to META_APP_*).
+  assert.match(source, /getMetaWhatsAppAppId/)
+  assert.match(source, /getMetaWhatsAppAppSecret/)
 })
 
 test('WA manual link Graph-verifies ownership like exchange and fails loud on subscribe', async () => {

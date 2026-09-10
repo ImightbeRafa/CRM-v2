@@ -1,22 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { WHATSAPP_OAUTH_SCOPES } from '@/lib/meta-chat-config'
+import { getMetaWhatsAppAppId } from '@/lib/meta-api'
 
 /**
  * Direct OAuth URL Generator (Fallback Method)
- * 
+ *
  * This endpoint generates a direct OAuth URL that bypasses FB.login()
  * and gives us full control over the redirect_uri parameter.
- * 
+ *
  * Use this if FB.login() continues to fail with error 36008.
+ * Uses CRM WhatsApp Meta app id (META_WA_APP_ID → META_APP_ID fallback).
  */
 export async function GET(request: NextRequest) {
-  const appId = process.env.META_APP_ID
+  const appId = getMetaWhatsAppAppId()
   const baseUrl = process.env.NEXTAUTH_URL
-  
+
   if (!appId || !baseUrl) {
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Missing configuration',
-      details: 'META_APP_ID or NEXTAUTH_URL not set'
+      details: 'META_WA_APP_ID/META_APP_ID or NEXTAUTH_URL not set',
     }, { status: 500 })
   }
   

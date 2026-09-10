@@ -115,6 +115,153 @@ test('parseMetaChatPayload ignores page payloads without messaging', () => {
   assert.deepEqual(parsed.ignoredReasons, ['page_without_messaging'])
 })
 
+const WA_PHONE_NUMBER_ID = '109876543210987'
+const WA_WABA_ID = '102938475610293'
+const WA_SENDER = '50688887777'
+
+test('parseMetaChatPayload parses WhatsApp text messages', () => {
+  const parsed = parseMetaChatPayload({
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: WA_WABA_ID,
+        changes: [
+          {
+            value: {
+              messaging_product: 'whatsapp',
+              metadata: {
+                display_phone_number: '50622223333',
+                phone_number_id: WA_PHONE_NUMBER_ID,
+              },
+              contacts: [{ profile: { name: 'Ana' }, wa_id: WA_SENDER }],
+              messages: [
+                {
+                  from: WA_SENDER,
+                  id: 'wamid.HBgLNTA2ODg4ODc3Nzc',
+                  timestamp: '1700000000',
+                  type: 'text',
+                  text: { body: 'hola desde wa' },
+                },
+              ],
+            },
+            field: 'messages',
+          },
+        ],
+      },
+    ],
+  })
+
+  assert.equal(parsed.messages.length, 1)
+  const message = parsed.messages[0]!
+  assert.equal(message.platform, 'whatsapp')
+  assert.equal(message.accountId, WA_PHONE_NUMBER_ID)
+  assert.equal(message.senderId, WA_SENDER)
+  assert.equal(message.senderName, 'Ana')
+  assert.equal(message.content, 'hola desde wa')
+  assert.equal(message.messageType, 'text')
+  assert.equal(message.providerMessageId, 'wamid.HBgLNTA2ODg4ODc3Nzc')
+  assert.equal(message.metadata.whatsappBusinessAccountId, WA_WABA_ID)
+  assert.equal(message.metadata.displayPhoneNumber, '50622223333')
+  assert.equal(message.sentAt.toISOString(), new Date(1700000000 * 1000).toISOString())
+})
+
+test('parseMetaChatPayload WhatsApp button + image content helpers', () => {
+  const parsed = parseMetaChatPayload({
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: WA_WABA_ID,
+        changes: [
+          {
+            value: {
+              metadata: { phone_number_id: WA_PHONE_NUMBER_ID },
+              messages: [
+                {
+                  from: WA_SENDER,
+                  id: 'wamid.btn',
+                  timestamp: '1700000001',
+                  type: 'button',
+                  button: { text: 'Sí', payload: 'YES' },
+                },
+                {
+                  from: WA_SENDER,
+                  id: 'wamid.img',
+                  timestamp: '1700000002',
+                  type: 'image',
+                  image: { caption: 'foto' },
+                },
+              ],
+            },
+            field: 'messages',
+          },
+        ],
+      },
+    ],
+  })
+
+  assert.equal(parsed.messages.length, 2)
+  assert.equal(parsed.messages[0]?.content, 'Sí')
+  assert.equal(parsed.messages[0]?.messageType, 'button')
+  assert.equal(parsed.messages[1]?.content, 'foto')
+  assert.equal(parsed.messages[1]?.messageType, 'image')
+})
+
+test('parseMetaChatPayload WhatsApp status-only updates are ignored (no messages)', () => {
+  const parsed = parseMetaChatPayload({
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: WA_WABA_ID,
+        changes: [
+          {
+            value: {
+              metadata: { phone_number_id: WA_PHONE_NUMBER_ID },
+              statuses: [{ id: 'wamid.x', status: 'delivered', timestamp: '1700000003' }],
+            },
+            field: 'messages',
+          },
+        ],
+      },
+    ],
+  })
+
+  assert.equal(parsed.messages.length, 0)
+  assert.ok(parsed.ignoredReasons.includes('whatsapp_status_update'))
+})
+
+test('parseMetaChatPayload WhatsApp skips messages missing phone_number_id or from', () => {
+  const parsed = parseMetaChatPayload({
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: WA_WABA_ID,
+        changes: [
+          {
+            value: {
+              metadata: {},
+              messages: [{ from: WA_SENDER, id: 'wamid.a', type: 'text', text: { body: 'x' } }],
+            },
+            field: 'messages',
+          },
+          {
+            value: {
+              metadata: { phone_number_id: WA_PHONE_NUMBER_ID },
+              messages: [{ id: 'wamid.b', type: 'text', text: { body: 'y' } }],
+            },
+            field: 'messages',
+          },
+        ],
+      },
+    ],
+  })
+
+  assert.equal(parsed.messages.length, 0)
+  assert.equal(
+    parsed.ignoredReasons.filter((r) => r === 'whatsapp_missing_account_or_sender').length,
+    2,
+  )
+})
+
 test('matchAccountByEncodedPageId resolves SocialAccount via page: refreshToken', () => {
   const accounts = [
     { id: 'a1', refreshToken: encodeInstagramRefreshToken('999') },

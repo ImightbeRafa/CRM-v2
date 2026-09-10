@@ -185,6 +185,17 @@ export function humanizeChatSendError(raw: string | undefined | null, status?: n
     return 'No tienes permiso para enviar mensajes.'
   }
 
+  // Meta WhatsApp customer-care window (CSW) / #131047 — outside 24h free-form replies.
+  if (
+    /#?131047\b/.test(message) ||
+    /outside (of )?the (allowed )?messaging window/i.test(message) ||
+    /more than 24 hours/i.test(message) ||
+    /24[\s-]?hour(s)? (window|customer care)/i.test(message) ||
+    /re-engagement message/i.test(message)
+  ) {
+    return 'La ventana de 24 horas ya cerró. El cliente debe escribir primero, o envía una plantilla aprobada por Meta.'
+  }
+
   // Already Spanish-ish or Meta provider message — surface as-is
   return message
 }

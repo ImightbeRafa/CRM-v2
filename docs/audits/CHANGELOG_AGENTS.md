@@ -2,6 +2,24 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-10 — PR-A: WA customer inbox connect = subscribed
+
+- Soft-fail `subscribed_apps` removed from WA OAuth exchange + manual link:
+  failures return `422` with Spanish copy; `SocialAccount.isActive` only when
+  subscribe succeeds (token still saved inactive for Re-suscribir).
+- Manual `/api/social/link` WhatsApp path Graph-verifies via
+  `verifyWhatsAppAssetsForToken` (same as exchange). Re-suscribir activates
+  `isActive` on success.
+- UI (`/config/social`) never claims "conectado" unless subscribe succeeded;
+  Embedded Signup postMessage no longer swallows errors.
+- `DOCUMENTATION.md`: staff `WHATSAPP_*` + `/api/bot/whatsapp/webhook` labeled
+  staff-only; customer inbox → `/api/chat/webhook`.
+- Spanish Meta 24h/CSW send errors in `humanizeChatSendError`; WA parse unit
+  tests in `meta-chat-webhook.test.ts`.
+- Hard lock: staff bot routes / `WHATSAPP_*` untouched.
+- Prove: `npx tsx --test` ig-wa-connect-security, meta-chat-webhook,
+  chat-inbox; `npm run lint`; `npm run build`.
+
 ## 2026-09-10 — /chats live poll + send JSON harden
 
 - `/chats` short-polls `/api/chat/messages` every 4s while the tab is visible

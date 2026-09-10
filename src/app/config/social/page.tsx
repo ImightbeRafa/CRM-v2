@@ -146,13 +146,32 @@ export default function SocialConfigPage() {
           })
             .then(async (res) => {
               const json = await res.json().catch(() => ({}))
-              if (res.ok && json.success && json.account) {
-                setStatusMessage('WhatsApp conectado correctamente.')
+              if (res.ok && json.success && json.subscribed !== false && json.account) {
+                setStatusMessage('WhatsApp conectado y suscrito a webhooks.')
+                fetchAccounts()
+                fetchMetaStatus()
+                return
+              }
+              if (json.waitingForPhoneNumber) {
+                setStatusMessage(
+                  'Token recibido. Completa el registro en la ventana de Meta para guardar el número.',
+                )
+                return
+              }
+              const errorMsg =
+                json.message ||
+                json.error ||
+                json.exchangeError?.errorMessage ||
+                'No se pudo conectar WhatsApp (revisa suscripción a webhooks).'
+              setStatusMessage(errorMsg)
+              if (json.account) {
                 fetchAccounts()
                 fetchMetaStatus()
               }
             })
-            .catch(() => {})
+            .catch(() => {
+              setStatusMessage('Error de red al conectar WhatsApp.')
+            })
         }
       } catch {
         // ignore non-JSON SDK noise
@@ -204,12 +223,17 @@ export default function SocialConfigPage() {
             })
             const exchangeData = await exchangeRes.json()
 
-            if (!exchangeRes.ok || !exchangeData.success) {
+            if (!exchangeRes.ok || !exchangeData.success || exchangeData.subscribed === false) {
               const errorMsg =
-                exchangeData.exchangeError?.errorMessage ||
                 exchangeData.message ||
+                exchangeData.exchangeError?.errorMessage ||
+                exchangeData.error ||
                 'Error al conectar WhatsApp'
               setStatusMessage(errorMsg)
+              if (exchangeData.account) {
+                fetchAccounts()
+                fetchMetaStatus()
+              }
               return
             }
 
@@ -220,7 +244,7 @@ export default function SocialConfigPage() {
               return
             }
 
-            setStatusMessage('WhatsApp conectado. Ya aparece en cuentas vinculadas y en /chats.')
+            setStatusMessage('WhatsApp conectado y suscrito a webhooks. Ya aparece en /chats.')
             fetchAccounts()
             fetchMetaStatus()
           } catch (err: unknown) {
@@ -334,8 +358,18 @@ export default function SocialConfigPage() {
         }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Error desconocido')
-      setStatusMessage('WhatsApp vinculado manualmente.')
+      if (!res.ok || !json.success || json.subscribed === false) {
+        if (json.account) {
+          fetchAccounts()
+          fetchMetaStatus()
+        }
+        throw new Error(
+          json.message ||
+            json.error ||
+            'WhatsApp no quedó suscrito a webhooks. Revisa el token o usa Re-suscribir.',
+        )
+      }
+      setStatusMessage('WhatsApp vinculado y suscrito a webhooks.')
       setAccountId('')
       setWhatsappBusinessAccountId('')
       setAccessToken('')
@@ -345,6 +379,7 @@ export default function SocialConfigPage() {
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Error al vincular WhatsApp'
       setValidationError(message)
+      setStatusMessage(message)
     } finally {
       setLinking(false)
     }
@@ -386,7 +421,9 @@ export default function SocialConfigPage() {
       if (!res.ok || json.success === false) {
         setStatusMessage(json?.message || json?.error || 'No se pudo re-suscribir')
       } else {
-        setStatusMessage('Re-suscripción realizada.')
+        setStatusMessage('Re-suscripción realizada. La cuenta quedó activa para /chats.')
+        fetchAccounts()
+        fetchMetaStatus()
       }
     } catch (e: unknown) {
       setStatusMessage(e instanceof Error ? e.message : 'Error al re-suscribir')

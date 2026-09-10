@@ -373,7 +373,13 @@ curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://yourdomain.com/
 3. User enters 12-character code
 4. Session is created
 
-### WhatsApp Setup
+### WhatsApp Setup (staff AI bot only)
+
+> **Do not use this section for the CRM customer inbox (`/chats`).**
+> Customer WhatsApp Business inbox uses per-tenant tokens from Config → Social and the
+> **CRM webhook**: `https://DOMAIN/api/chat/webhook` (see §9 and `META_CHAT_SETUP.md`).
+> Never point customer WABA / inbox subscriptions at `/api/bot/whatsapp/webhook`.
+> `WHATSAPP_*` env vars belong **only** to the staff AI assistant bot below.
 
 #### Prerequisites
 - Meta Business Account
@@ -385,17 +391,22 @@ curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://yourdomain.com/
 2. Create Business app
 3. Add WhatsApp product
 
-#### Step 2: Environment Variables
+#### Step 2: Environment Variables (staff bot)
 ```env
 WHATSAPP_ACCESS_TOKEN=your_access_token
 WHATSAPP_PHONE_NUMBER_ID=your_phone_number_id
 WHATSAPP_VERIFY_TOKEN=your_verify_token
 ```
 
-#### Step 3: Configure Webhook
+#### Step 3: Configure Webhook (staff bot)
 - Callback URL: `https://yourdomain.com/api/bot/whatsapp/webhook`
 - Verify Token: Same as `WHATSAPP_VERIFY_TOKEN`
 - Subscribe to: `messages`
+
+#### Customer inbox webhook (CRM `/chats`)
+- Callback URL: `https://DOMAIN/api/chat/webhook`
+- Verify Token: `META_WEBHOOK_VERIFY_TOKEN` (shared Meta app for tenant inboxes)
+- Connect numbers via Config → Social (Embedded Signup or manual link); "conectado" requires a successful `subscribed_apps` call
 
 ### AI Commands
 
@@ -426,7 +437,8 @@ WHATSAPP_VERIFY_TOKEN=your_verify_token
 | Privacy Policy | `https://DOMAIN/privacy` |
 | Terms of Service | `https://DOMAIN/terms` |
 | Data Deletion Request | `https://DOMAIN/api/auth/instagram/data-deletion` |
-| Webhook Callback | `https://DOMAIN/api/chat/webhook` |
+| Webhook Callback (CRM inbox IG + WA) | `https://DOMAIN/api/chat/webhook` |
+| Webhook Callback (staff AI WhatsApp bot) | `https://DOMAIN/api/bot/whatsapp/webhook` — **not** for customer inbox |
 | OAuth Redirect URI | `https://DOMAIN/api/auth/instagram/callback` |
 
 ### Required Permissions
@@ -541,7 +553,7 @@ Betsy/
 ## Support
 
 - **Email:** support@betsycrm.com
-- **Website:** https://www.betsycrm.com
+- **Website:** https://DOMAIN
 
 ---
 

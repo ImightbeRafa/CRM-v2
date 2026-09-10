@@ -179,12 +179,22 @@ export async function POST(request: NextRequest) {
 
     const db = prisma as any
 
+    let subscribeOk = false
+    let subscribeStatus: number | null = null
+    let subscribeTargetId: string | null = null
+    let subscribeDetails: unknown = null
+    let subscribeErrorMessage: string | null = null
+
     try {
       const sub = await subscribeWhatsAppApp({
         accessToken: businessToken,
         phoneNumberId,
         whatsappBusinessAccountId,
       })
+      subscribeOk = sub.ok
+      subscribeStatus = sub.status
+      subscribeTargetId = sub.targetId
+      subscribeDetails = sub.data
 
       if (!sub.ok) {
         console.warn('[wa/exchange] subscribed_apps failed', {
@@ -197,9 +207,12 @@ export async function POST(request: NextRequest) {
         console.log('[wa/exchange] subscribed_apps success', { phoneNumberId, targetId: sub.targetId })
       }
     } catch (e) {
+      subscribeErrorMessage = e instanceof Error ? e.message : 'Subscribe error'
       console.warn('[wa/exchange] subscribed_apps error', e)
     }
 
+    // Persist token even on subscribe failure so Re-suscribir can retry, but
+    // isActive (and success) only when webhooks are subscribed — "conectado" ⇒ subscribed.
     const refreshToken = encodeWhatsAppRefreshToken(whatsappBusinessAccountId)
     const existing = await db.socialAccount.findFirst({
       where: { tenantId, platform: 'whatsapp', accountId: String(phoneNumberId) },
@@ -210,7 +223,7 @@ export async function POST(request: NextRequest) {
         where: { id: existing.id },
         data: {
           userId,
-          isActive: true,
+          isActive: subscribeOk,
           accessToken: businessToken ?? existing.accessToken ?? undefined,
           refreshToken: refreshToken ?? existing.refreshToken ?? undefined,
         },
@@ -225,23 +238,47 @@ export async function POST(request: NextRequest) {
           accountId: String(phoneNumberId),
           accessToken: businessToken ?? undefined,
           refreshToken: refreshToken ?? undefined,
-          isActive: true,
+          isActive: subscribeOk,
         },
         select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true, refreshToken: true },
       })
     }
 
+    const accountPayload = {
+      id: saved.id,
+      platform: saved.platform,
+      accountId: saved.accountId,
+      isActive: saved.isActive,
+      linkedAt: saved.linkedAt,
+      whatsappBusinessAccountId: whatsappBusinessAccountId || null,
+      phoneNumberId: phoneNumberId || null,
+    }
+
+    if (!subscribeOk) {
+      return NextResponse.json(
+        {
+          success: false,
+          subscribed: false,
+          message:
+            'WhatsApp no quedó suscrito a webhooks (subscribed_apps falló). Sin esto no recibirás mensajes en /chats. Revisa permisos del token o usa Re-suscribir.',
+          reason: 'subscribe_failed',
+          status: subscribeStatus,
+          targetId: subscribeTargetId,
+          details: subscribeDetails,
+          error: subscribeErrorMessage,
+          account: accountPayload,
+          tokenExchanged: Boolean(businessToken),
+          phoneNumberId,
+          whatsappBusinessAccountId: whatsappBusinessAccountId || null,
+        },
+        { status: 422 },
+      )
+    }
+
     return NextResponse.json({
       success: true,
-      account: {
-        id: saved.id,
-        platform: saved.platform,
-        accountId: saved.accountId,
-        isActive: saved.isActive,
-        linkedAt: saved.linkedAt,
-        whatsappBusinessAccountId: whatsappBusinessAccountId || null,
-        phoneNumberId: phoneNumberId || null,
-      },
+      subscribed: true,
+      account: accountPayload,
       tokenExchanged: Boolean(businessToken),
       phoneNumberId,
       whatsappBusinessAccountId: whatsappBusinessAccountId || null,

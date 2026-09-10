@@ -53,12 +53,19 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({
             success: false,
             status: sub.status,
-            message: 'Subscribe failed',
+            message:
+              'WhatsApp no quedó suscrito a webhooks (subscribed_apps falló). Sin esto no recibirás mensajes en /chats.',
             details: sub.data,
           })
         }
 
-        return NextResponse.json({ success: true, targetId: sub.targetId })
+        // Activate only after a successful subscribe (aligns with connect contract).
+        await db.socialAccount.update({
+          where: { id: acc.id },
+          data: { isActive: true },
+        })
+
+        return NextResponse.json({ success: true, subscribed: true, targetId: sub.targetId })
       } catch (e: any) {
         console.warn('[social/subscribe] WhatsApp subscribed_apps error', e)
         return NextResponse.json({ error: e.message || 'Subscribe error' }, { status: 500 })

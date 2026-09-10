@@ -109,4 +109,21 @@ describe('chat-inbox helpers', () => {
     assert.match(msg, /HTML|Recarga/i)
     assert.equal(humanizeChatSendError(null, 403), 'No tienes permiso para enviar mensajes.')
   })
+
+  it('humanizeChatSendError maps Meta 24h window failures to Spanish', () => {
+    assert.match(
+      humanizeChatSendError(
+        '(#131047) Message failed to send because more than 24 hours have passed since the customer last replied to this number',
+      ),
+      /ventana de 24 horas/i,
+    )
+    assert.match(
+      humanizeChatSendError('Message is outside of the allowed messaging window'),
+      /ventana de 24 horas/i,
+    )
+    assert.match(
+      humanizeChatSendError('This message was not delivered because it is a re-engagement message'),
+      /ventana de 24 horas|plantilla/i,
+    )
+  })
 })

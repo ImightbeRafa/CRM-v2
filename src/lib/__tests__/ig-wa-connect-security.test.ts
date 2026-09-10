@@ -138,6 +138,22 @@ test('WA exchange route Graph-verifies ownership and drops tokenPrefix logs (SD-
   assert.match(source, /ownership\.ok/)
   assert.doesNotMatch(source, /tokenPrefix/)
   assert.match(source, /status: 403/)
+  // Soft-fail subscribe is gone: failures must be loud (422) and isActive follows subscribeOk.
+  assert.match(source, /subscribe_failed/)
+  assert.match(source, /status: 422/)
+  assert.match(source, /isActive: subscribeOk/)
+  assert.match(source, /subscribed: true/)
+})
+
+test('WA manual link Graph-verifies ownership like exchange and fails loud on subscribe', async () => {
+  const source = await readFile('src/app/api/social/link/route.ts', 'utf8')
+  assert.match(source, /verifyWhatsAppAssetsForToken/)
+  assert.match(source, /ownership\.ok/)
+  assert.match(source, /status: 403/)
+  assert.match(source, /subscribe_failed/)
+  assert.match(source, /status: 422/)
+  assert.match(source, /isActive: subscribeOk/)
+  assert.match(source, /subscribed: true/)
 })
 
 test('IG auth-url requires session (SD-04)', async () => {

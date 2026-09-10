@@ -35,19 +35,62 @@ export function generateAppSecretProof(accessToken: string): string {
   }
 }
 
-export function verifyMetaWebhookSignature(rawBody: string, signatureHeader: string | null): boolean {
-  const appSecret = (process.env.META_APP_SECRET || '').trim()
+export type MetaWebhookMatchedSecret = 'meta' | 'instagram'
+
+export type MetaWebhookSignatureResult = {
+  valid: boolean
+  matchedSecret: MetaWebhookMatchedSecret | null
+  triedMeta: boolean
+  triedInstagram: boolean
+}
+
+/**
+ * Candidate app secrets for Meta/Instagram webhook HMAC verification.
+ * Order: META_APP_SECRET first, then INSTAGRAM_APP_SECRET if present and different.
+ */
+export function getMetaWebhookAppSecrets(): Array<{
+  name: MetaWebhookMatchedSecret
+  secret: string
+}> {
+  const meta = (process.env.META_APP_SECRET || '').trim()
+  const instagram = (process.env.INSTAGRAM_APP_SECRET || '').trim()
+  const secrets: Array<{ name: MetaWebhookMatchedSecret; secret: string }> = []
+  if (meta) secrets.push({ name: 'meta', secret: meta })
+  if (instagram && instagram !== meta) secrets.push({ name: 'instagram', secret: instagram })
+  return secrets
+}
+
+/**
+ * Verify X-Hub-Signature-256 against META_APP_SECRET and/or INSTAGRAM_APP_SECRET.
+ * Returns which secrets were attempted and which matched (never logs secret values).
+ */
+export function verifyMetaWebhookSignature(
+  rawBody: string,
+  signatureHeader: string | null
+): MetaWebhookSignatureResult {
+  const secrets = getMetaWebhookAppSecrets()
+  const triedMeta = secrets.some((entry) => entry.name === 'meta')
+  const triedInstagram = secrets.some((entry) => entry.name === 'instagram')
   const signature = (signatureHeader || '').trim()
 
-  if (!appSecret || !signature.startsWith('sha256=')) {
-    return false
+  if (secrets.length === 0 || !signature.startsWith('sha256=')) {
+    return { valid: false, matchedSecret: null, triedMeta, triedInstagram }
   }
 
-  const expected = `sha256=${crypto.createHmac('sha256', appSecret).update(rawBody, 'utf8').digest('hex')}`
-  const expectedBuffer = Buffer.from(expected)
   const providedBuffer = Buffer.from(signature)
 
-  return expectedBuffer.length === providedBuffer.length && crypto.timingSafeEqual(expectedBuffer, providedBuffer)
+  for (const { name, secret } of secrets) {
+    const expected = `sha256=${crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex')}`
+    const expectedBuffer = Buffer.from(expected)
+    if (
+      expectedBuffer.length === providedBuffer.length &&
+      crypto.timingSafeEqual(expectedBuffer, providedBuffer)
+    ) {
+      return { valid: true, matchedSecret: name, triedMeta, triedInstagram }
+    }
+  }
+
+  return { valid: false, matchedSecret: null, triedMeta, triedInstagram }
 }
 
 /**

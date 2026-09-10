@@ -2,6 +2,17 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-10 — Chat webhook: dual Meta/Instagram HMAC secrets
+
+- `verifyMetaWebhookSignature` tries `META_APP_SECRET` then distinct
+  `INSTAGRAM_APP_SECRET` with timing-safe compare; returns
+  `triedMeta` / `triedInstagram` / `matchedSecret`.
+- Production 401 diagnostics include which secrets were attempted (never
+  secret values / raw body / full signatures). Info log when Instagram
+  fallback matches.
+- Prove: `npx tsx --test src/lib/__tests__/meta-chat-webhook.test.ts`,
+  `npm run build`.
+
 ## 2026-09-10 — Chat webhook: page-object IG + safe signature diagnostics
 
 - Production signature failures on `/api/chat/webhook` now log safe diagnostics

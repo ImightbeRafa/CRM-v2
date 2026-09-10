@@ -127,12 +127,37 @@ function getInstagramContent(message: any): string {
   return ''
 }
 
-function parseInstagram(payload: any): ParsedMetaChatPayload {
+/**
+ * Instagram Business Account ids from Meta commonly start with 178414.
+ * Page webhooks use Facebook Page ids on entry.id; recipient.id may be the IG id.
+ */
+export function looksLikeInstagramBusinessId(id: string): boolean {
+  return /^178414\d+$/.test(id.trim())
+}
+
+type InstagramMessagingSource = 'instagram' | 'page'
+
+function resolveInstagramAccountId(params: {
+  source: InstagramMessagingSource
+  entryId: string
+  recipientId: string
+}): string {
+  const { source, entryId, recipientId } = params
+  if (source === 'page' && recipientId && looksLikeInstagramBusinessId(recipientId)) {
+    return recipientId
+  }
+  return entryId
+}
+
+function parseInstagramMessaging(
+  payload: any,
+  source: InstagramMessagingSource,
+): ParsedMetaChatPayload {
   const messages: ParsedMetaChatMessage[] = []
   const ignoredReasons: string[] = []
 
   for (const entry of payload?.entry || []) {
-    const igAccountId = entry?.id
+    const entryId = entry?.id ? String(entry.id) : ''
 
     for (const event of entry?.messaging || []) {
       if (event?.read) {
@@ -162,25 +187,37 @@ function parseInstagram(payload: any): ParsedMetaChatPayload {
       }
 
       const senderId = event?.sender?.id
-      if (!igAccountId || !senderId) {
+      if (!entryId || !senderId) {
         ignoredReasons.push('instagram_missing_account_or_sender')
         continue
       }
 
+      const recipientId = event?.recipient?.id ? String(event.recipient.id) : ''
+      const accountId = resolveInstagramAccountId({ source, entryId, recipientId })
+      const messageType = message.attachments?.[0]?.type || (message.text ? 'text' : 'unknown')
+
       messages.push({
         platform: 'instagram',
-        accountId: String(igAccountId),
+        accountId,
         senderId: String(senderId),
         senderName: senderId ? `Instagram User ${String(senderId).slice(-6)}` : undefined,
         content: getInstagramContent(message),
         providerMessageId: message.mid ? String(message.mid) : undefined,
-        messageType: message.attachments?.[0]?.type || (message.text ? 'text' : 'unknown'),
+        messageType,
         sentAt: toDateFromMetaTimestamp(event.timestamp),
         metadata: compactObject({
           providerMessageId: message.mid,
           providerTimestamp: event.timestamp,
-          messageType: message.attachments?.[0]?.type || (message.text ? 'text' : 'unknown'),
-          instagramAccountId: igAccountId,
+          messageType,
+          instagramAccountId:
+            source === 'instagram'
+              ? accountId
+              : looksLikeInstagramBusinessId(accountId)
+                ? accountId
+                : undefined,
+          recipientId: recipientId || undefined,
+          webhookObject: source === 'page' ? 'page' : undefined,
+          pageId: source === 'page' ? entryId : undefined,
           rawMessage: message,
         }),
       })
@@ -190,13 +227,29 @@ function parseInstagram(payload: any): ParsedMetaChatPayload {
   return { messages, ignoredReasons }
 }
 
+function pagePayloadHasMessaging(payload: any): boolean {
+  return (payload?.entry || []).some(
+    (entry: any) => Array.isArray(entry?.messaging) && entry.messaging.length > 0,
+  )
+}
+
 export function parseMetaChatPayload(payload: any): ParsedMetaChatPayload {
   if (payload?.object === 'whatsapp_business_account') {
     return parseWhatsApp(payload)
   }
 
   if (payload?.object === 'instagram') {
-    return parseInstagram(payload)
+    return parseInstagramMessaging(payload, 'instagram')
+  }
+
+  if (payload?.object === 'page') {
+    if (!pagePayloadHasMessaging(payload)) {
+      return {
+        messages: [],
+        ignoredReasons: ['page_without_messaging'],
+      }
+    }
+    return parseInstagramMessaging(payload, 'page')
   }
 
   return {

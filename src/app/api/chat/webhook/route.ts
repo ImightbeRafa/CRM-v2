@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import {
+  describeMetaSignatureHeader,
   getMetaWebhookVerifyTokens,
   maskMetaSecret,
   verifyMetaWebhookSignature,
 } from '@/lib/meta-api'
 import { parseMetaChatPayload, type ParsedMetaChatMessage } from '@/lib/meta-chat'
+import {
+  getPageIdFromMetaChatMetadata,
+  matchAccountByEncodedPageId,
+} from '@/lib/social-account-meta'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -69,20 +74,43 @@ async function alreadyStored(db: any, accountId: string, providerMessageId?: str
   return Boolean(existing)
 }
 
-async function storeMessage(db: any, event: ParsedMetaChatMessage) {
-  const account = await db.socialAccount.findFirst({
+async function findActiveSocialAccount(db: any, event: ParsedMetaChatMessage) {
+  const byAccountId = await db.socialAccount.findFirst({
     where: {
       platform: event.platform,
       accountId: event.accountId,
       isActive: true,
     },
-    select: { id: true, tenantId: true },
+    select: { id: true, tenantId: true, refreshToken: true },
   })
+
+  if (byAccountId) return byAccountId
+
+  if (event.platform !== 'instagram') return null
+
+  const pageId = getPageIdFromMetaChatMetadata(event.metadata)
+  if (!pageId) return null
+
+  const candidates = await db.socialAccount.findMany({
+    where: {
+      platform: 'instagram',
+      isActive: true,
+    },
+    select: { id: true, tenantId: true, refreshToken: true },
+  })
+
+  return matchAccountByEncodedPageId(candidates, pageId) || null
+}
+
+async function storeMessage(db: any, event: ParsedMetaChatMessage) {
+  const account = await findActiveSocialAccount(db, event)
 
   if (!account) {
     console.warn('[chat/webhook][POST] No active SocialAccount found for Meta event', {
       platform: event.platform,
       accountId: event.accountId,
+      pageId: getPageIdFromMetaChatMetadata(event.metadata),
+      webhookObject: event.metadata?.webhookObject,
       senderId: event.senderId,
       providerMessageId: event.providerMessageId,
     })
@@ -124,6 +152,7 @@ async function storeMessage(db: any, event: ParsedMetaChatMessage) {
       data: JSON.stringify({
         platform: event.platform,
         accountId: event.accountId,
+        pageId: getPageIdFromMetaChatMetadata(event.metadata),
         senderId: event.senderId,
         providerMessageId: event.providerMessageId,
         messageType: event.messageType,
@@ -137,9 +166,18 @@ async function storeMessage(db: any, event: ParsedMetaChatMessage) {
 export async function POST(request: NextRequest) {
   try {
     const raw = await request.text()
-    const signatureValid = verifyMetaWebhookSignature(raw, request.headers.get('x-hub-signature-256'))
+    const signatureHeader = request.headers.get('x-hub-signature-256')
+    const signatureValid = verifyMetaWebhookSignature(raw, signatureHeader)
 
     if (process.env.NODE_ENV === 'production' && !signatureValid) {
+      const signatureDiag = describeMetaSignatureHeader(signatureHeader)
+      console.warn('[chat/webhook][POST] Invalid signature', {
+        signaturePresent: signatureDiag.signaturePresent,
+        signaturePrefix: signatureDiag.signaturePrefix,
+        bodyLen: raw.length,
+        contentType: request.headers.get('content-type'),
+        host: request.headers.get('host'),
+      })
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
 

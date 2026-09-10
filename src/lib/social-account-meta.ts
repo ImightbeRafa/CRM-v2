@@ -39,3 +39,21 @@ export function parseSocialRefreshToken(refreshToken?: string | null): {
   }
   return { whatsappBusinessAccountId: null, pageId: null }
 }
+
+/** Match an account whose refreshToken encodes `page:<pageId>`. */
+export function matchAccountByEncodedPageId<T extends { refreshToken?: string | null }>(
+  accounts: T[],
+  pageId: string,
+): T | undefined {
+  const target = pageId.trim()
+  if (!target) return undefined
+  return accounts.find((account) => parseSocialRefreshToken(account.refreshToken).pageId === target)
+}
+
+/** Page id carried on parsed Meta chat metadata for `object: page` webhooks. */
+export function getPageIdFromMetaChatMetadata(metadata?: Record<string, unknown> | null): string | null {
+  const pageId = metadata?.pageId
+  if (typeof pageId !== 'string') return null
+  const trimmed = pageId.trim()
+  return trimmed || null
+}

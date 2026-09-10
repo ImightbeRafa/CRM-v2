@@ -2,6 +2,19 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-10 — Chat webhook: page-object IG + safe signature diagnostics
+
+- Production signature failures on `/api/chat/webhook` now log safe diagnostics
+  only (`signaturePresent`, `signaturePrefix`, `bodyLen`, `contentType`, `host`);
+  still return 401 (auth not weakened).
+- `parseMetaChatPayload` accepts Meta `object: page` messaging (platform stays
+  `instagram`); prefers IG-shaped `recipient.id`, else `entry.id`, with
+  `webhookObject`/`pageId` metadata.
+- Store path falls back to active Instagram `SocialAccount` whose
+  `refreshToken` encodes `page:<id>` when accountId lookup misses.
+- Prove: `npx tsx --test src/lib/__tests__/meta-chat-webhook.test.ts`
+  `src/lib/__tests__/meta-chat-config.test.ts`, `npm run build`.
+
 ## 2026-09-10 — IG connect: pages_read_engagement + me/accounts IG fields
 
 - Added `pages_read_engagement` to `INSTAGRAM_OAUTH_SCOPES` so Graph can return

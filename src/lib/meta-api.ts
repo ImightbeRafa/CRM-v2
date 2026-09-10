@@ -50,6 +50,30 @@ export function verifyMetaWebhookSignature(rawBody: string, signatureHeader: str
   return expectedBuffer.length === providedBuffer.length && crypto.timingSafeEqual(expectedBuffer, providedBuffer)
 }
 
+/**
+ * Safe signature header diagnostics for production 401 logs.
+ * Never includes the raw body, tokens, or full signature value.
+ */
+export function describeMetaSignatureHeader(signatureHeader: string | null): {
+  signaturePresent: boolean
+  signaturePrefix: 'sha256=' | 'sha1=' | 'other' | 'missing' | string
+} {
+  const stripped = (signatureHeader || '').trim()
+  if (!stripped) {
+    return { signaturePresent: false, signaturePrefix: 'missing' }
+  }
+  if (stripped.startsWith('sha256=')) {
+    return { signaturePresent: true, signaturePrefix: 'sha256=' }
+  }
+  if (stripped.startsWith('sha1=')) {
+    return { signaturePresent: true, signaturePrefix: 'sha1=' }
+  }
+  if (/^[A-Za-z0-9_+-]+=/.test(stripped)) {
+    return { signaturePresent: true, signaturePrefix: 'other' }
+  }
+  return { signaturePresent: true, signaturePrefix: stripped.slice(0, 8) }
+}
+
 export function getMetaWebhookVerifyTokens(): string[] {
   const tokens = [
     process.env.META_WEBHOOK_VERIFY_TOKEN,

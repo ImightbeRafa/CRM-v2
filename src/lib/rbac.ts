@@ -232,6 +232,10 @@ export const apiPermissions: Record<string, Permission> = {
   'GET /api/chat/messages': 'update_sales',
   'GET /api/chat/templates': 'update_sales',
   'POST /api/chat/send': 'update_sales',
+  'POST /api/chat/soft-ai/run': 'update_sales',
+  'GET /api/chat/soft-ai/config': 'update_sales',
+  'PATCH /api/chat/soft-ai/config': 'view_config',
+  'POST /api/chat/soft-ai/control': 'update_sales',
 
   // Users
   'GET /api/users': 'manage_users',

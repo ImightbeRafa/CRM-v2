@@ -1,6 +1,6 @@
 'use client'
 
-import type { AgentChecklistItem, InboxBucket, SoftTag } from '@/lib/chat-soft-copilot'
+import type { SoftAiMonitorStats, SoftTag, InboxBucket } from '@/lib/chat-soft-copilot'
 
 interface SoftInboxBucketsProps {
   bucket: InboxBucket
@@ -9,7 +9,7 @@ interface SoftInboxBucketsProps {
   onSearchChange: (value: string) => void
   whatsappCount: number
   instagramCount: number
-  checklist: AgentChecklistItem[]
+  monitor: SoftAiMonitorStats
   tags: SoftTag[]
   onTagClick?: (tag: SoftTag) => void
   activeTag?: SoftTag | null
@@ -18,15 +18,10 @@ interface SoftInboxBucketsProps {
 const BUCKETS: Array<{ id: InboxBucket; label: string }> = [
   { id: 'tus_chats', label: 'Tus chats' },
   { id: 'abiertos', label: 'Abiertos' },
+  { id: 'ia_manejando', label: 'IA manejando' },
   { id: 'sin_asignar', label: 'Sin asignar' },
   { id: 'hechos', label: 'Hechos' },
 ]
-
-function checklistMark(state: AgentChecklistItem['state']) {
-  if (state === 'done') return '✓'
-  if (state === 'progress') return '…'
-  return '○'
-}
 
 export function SoftInboxBuckets({
   bucket,
@@ -35,7 +30,7 @@ export function SoftInboxBuckets({
   onSearchChange,
   whatsappCount,
   instagramCount,
-  checklist,
+  monitor,
   tags,
   onTagClick,
   activeTag,
@@ -69,6 +64,9 @@ export function SoftInboxBuckets({
               }`}
             >
               {item.label}
+              {item.id === 'ia_manejando' && monitor.aiActive > 0 ? (
+                <span className="ml-1 text-[11px] text-indigo-500">· {monitor.aiActive}</span>
+              ) : null}
             </button>
           )
         })}
@@ -104,14 +102,24 @@ export function SoftInboxBuckets({
       </div>
 
       <div className="mt-6 rounded-xl bg-[#f8faff] p-3">
-        <p className="text-[11px] font-semibold text-[#5b6cff]">✦ Checklist agente</p>
+        <p className="text-[11px] font-semibold text-[#5b6cff]">✦ Monitor agente</p>
         <ul className="mt-2 space-y-1 text-[11px] text-slate-600">
-          {checklist.map((item) => (
-            <li key={item.id}>
-              <span className="mr-1 inline-block w-3">{checklistMark(item.state)}</span>
-              {item.label}
-            </li>
-          ))}
+          <li>
+            <span className="mr-1 inline-block w-3">●</span>
+            IA activa · {monitor.aiActive}
+          </li>
+          <li>
+            <span className="mr-1 inline-block w-3">❚❚</span>
+            Pausada · {monitor.paused}
+          </li>
+          <li>
+            <span className="mr-1 inline-block w-3">👤</span>
+            Humano · {monitor.human}
+          </li>
+          <li>
+            <span className="mr-1 inline-block w-3">⚒</span>
+            Acciones tool · {monitor.toolActions}
+          </li>
         </ul>
       </div>
     </aside>

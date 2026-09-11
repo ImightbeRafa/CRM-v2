@@ -2,6 +2,19 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-11 — Soft Tenant AI full package (monitor + tools + DEMO)
+
+- Tenant AI worker (`src/lib/soft-ai/`): inbound → KB/config → tools → full reply.
+  Feature flag `soft_tenant_ai_v1` (default off). Soft DEMO forces on client-side.
+- Tools: create/link order, order status, Correos guía (DB or honest stub), tag,
+  escalate_to_human. Payment/SINPE always-human via config skeleton.
+- Soft UI shift (chrome language): monitor queue “IA manejando”, tool log rail,
+  Take over / Pause / Resume AI — not suggest-first.
+- APIs: `/api/chat/soft-ai/{run,config,control}`; webhook hooks Soft AI when flagged
+  (never staff bot / no dual-router). No prisma push.
+- Soft DEMO e2e without Meta: `runSoftDemoAiPass` + localStorage agent state.
+- Prove: `npm run test:soft-ai` / `test:chat-harden` + build.
+
 ## 2026-09-11 — Rafael GO Soft 9.5 + multi-connect + WA APPROVED gate
 
 - Soft 9.5 polish inside Soft chrome: empty states, sticky Resumen IA stub,

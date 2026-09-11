@@ -16,8 +16,6 @@ import {
 } from '@/lib/chat-message-query'
 import {
   accountDisplayLabel,
-  buildAgentChecklist,
-  buildSuggestedReply,
   conversationStorageKey,
   enrichConversations,
   filterSoftConversations,
@@ -30,6 +28,7 @@ import {
   type ChannelFilter,
   type ConversationStatus,
   type InboxBucket,
+  type SoftAiMonitorStats,
   type SoftConversation,
   type SoftSocialAccount,
   type SoftTag,
@@ -43,6 +42,14 @@ import {
   writeSoftDemoMode,
   type SoftDemoMode,
 } from '@/lib/soft-demo-chats'
+import {
+  applyAgentControl,
+  getConversationAgentState,
+  readAgentStateMap,
+  writeAgentStateMap,
+  type SoftAiAgentStateMap,
+} from '@/lib/soft-ai'
+import { runSoftDemoAiPass } from '@/lib/soft-ai/demo-runner'
 import { SoftSlimNav } from '@/components/chats/SoftSlimNav'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
@@ -74,9 +81,7 @@ export function SoftCopilotInbox() {
   const [messageInput, setMessageInput] = useState('')
   const [sendError, setSendError] = useState<string | null>(null)
   const [failedOutboundId, setFailedOutboundId] = useState<string | null>(null)
-  const [draftHint, setDraftHint] = useState<string | null>(null)
   const [railTab, setRailTab] = useState<'detalle' | 'copilot'>('copilot')
-  const [askValue, setAskValue] = useState('')
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null)
   const [syncAgeSeconds, setSyncAgeSeconds] = useState<number | null>(null)
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list')
@@ -90,6 +95,10 @@ export function SoftCopilotInbox() {
   const [templatesError, setTemplatesError] = useState<string | null>(null)
   const [demoMode, setDemoMode] = useState<SoftDemoMode>('off')
   const [demoHydrated, setDemoHydrated] = useState(false)
+  const [demoConversationsLive, setDemoConversationsLive] = useState<SoftConversation[]>([])
+  const [agentStateMap, setAgentStateMap] = useState<SoftAiAgentStateMap>({})
+  const [aiBusy, setAiBusy] = useState(false)
+  const demoAiRanRef = useRef(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -109,14 +118,48 @@ export function SoftCopilotInbox() {
   useEffect(() => {
     setStatusMap(readStatusMap())
     setTagsMap(readTagsMap())
+    setAgentStateMap(readAgentStateMap())
     setDemoMode(readSoftDemoMode())
     setDemoHydrated(true)
   }, [])
 
-  const demoConversations = useMemo(
-    () => (demoHydrated && demoMode === 'on' ? buildSoftDemoConversations() : []),
-    [demoHydrated, demoMode],
-  )
+  const demoConversations = useMemo(() => {
+    if (!demoHydrated || demoMode !== 'on') return []
+    return demoConversationsLive.length > 0
+      ? demoConversationsLive
+      : buildSoftDemoConversations()
+  }, [demoHydrated, demoMode, demoConversationsLive])
+
+  // Soft DEMO e2e: AI answers alone without Meta
+  useEffect(() => {
+    if (!demoHydrated || demoMode !== 'on' || demoAiRanRef.current) return
+    demoAiRanRef.current = true
+    const seed = buildSoftDemoConversations()
+    setDemoConversationsLive(seed)
+    setAiBusy(true)
+    void runSoftDemoAiPass({
+      conversations: seed,
+      agentState: readAgentStateMap(),
+    })
+      .then((pass) => {
+        setDemoConversationsLive(pass.conversations)
+        setAgentStateMap(pass.agentState)
+        writeAgentStateMap(pass.agentState)
+        // Sync tags/status from AI results into maps
+        const nextTags = { ...readTagsMap() }
+        const nextStatus = { ...readStatusMap() }
+        for (const c of pass.conversations) {
+          const key = softKey(c)
+          nextTags[key] = c.tags
+          nextStatus[key] = c.status
+        }
+        setTagsMap(nextTags)
+        setStatusMap(nextStatus)
+        writeTagsMap(nextTags)
+        writeStatusMap(nextStatus)
+      })
+      .finally(() => setAiBusy(false))
+  }, [demoHydrated, demoMode])
   const demoAccounts = useMemo(
     () => (demoHydrated && demoMode === 'on' ? softDemoSocialAccounts() : []),
     [demoHydrated, demoMode],
@@ -421,25 +464,9 @@ export function SoftCopilotInbox() {
     )
   }, [allConversations, statusMap, tagsMap, demoConversations])
 
-  const visibleConversations = useMemo(() => {
-    let list = filterSoftConversations(conversationsWithLocalState, {
-      bucket,
-      channel: channelFilter,
-      accountId: accountFilter,
-      search,
-    })
-    if (activeTag) {
-      list = list.filter((c) => c.tags.includes(activeTag))
-    }
-    return list
-  }, [conversationsWithLocalState, bucket, channelFilter, accountFilter, search, activeTag])
-
-  const visibleConversationsRef = useRef(visibleConversations)
+  const visibleConversationsRef = useRef<SoftConversation[]>([])
   const selectedKeyRef = useRef(selectedKey)
   const selectConversationRef = useRef<(c: SoftConversation) => void>(() => {})
-  useEffect(() => {
-    visibleConversationsRef.current = visibleConversations
-  }, [visibleConversations])
   useEffect(() => {
     selectedKeyRef.current = selectedKey
   }, [selectedKey])
@@ -454,19 +481,68 @@ export function SoftCopilotInbox() {
 
   const selectedPager = selectedKey ? threadPagers[selectedKey] : undefined
 
-  const checklist = buildAgentChecklist({
-    hasConversation: Boolean(selectedConversation),
-    hasSummary: Boolean(selectedConversation?.messages.length),
-    hasDraft: Boolean(draftHint),
-    windowOpen: selectedConversation
-      ? isWhatsAppWindowOpen(selectedConversation.messages, selectedConversation.platform)
-      : true,
-  })
+  const selectedAgentState = selectedKey
+    ? getConversationAgentState(
+        agentStateMap,
+        selectedKey,
+        Boolean(selectedConversation?.isDemo),
+      )
+    : getConversationAgentState(agentStateMap, '__none__', false)
+
+  const monitorStats: SoftAiMonitorStats = useMemo(() => {
+    let aiActive = 0
+    let paused = 0
+    let human = 0
+    let toolActions = 0
+    for (const c of conversationsWithLocalState) {
+      if (c.status === 'hecho') continue
+      const st = getConversationAgentState(agentStateMap, softKey(c), Boolean(c.isDemo))
+      if (st.mode === 'ai_active') aiActive += 1
+      else if (st.mode === 'paused') paused += 1
+      else human += 1
+      toolActions += st.toolLog.length
+    }
+    return { aiActive, paused, human, toolActions }
+  }, [conversationsWithLocalState, agentStateMap])
+
+  const visibleConversations = useMemo(() => {
+    let list = filterSoftConversations(conversationsWithLocalState, {
+      bucket,
+      channel: channelFilter,
+      accountId: accountFilter,
+      search,
+    })
+    if (bucket === 'ia_manejando') {
+      list = list.filter((c) => {
+        const st = getConversationAgentState(agentStateMap, softKey(c), Boolean(c.isDemo))
+        return st.mode === 'ai_active' && c.status !== 'hecho'
+      })
+    }
+    if (activeTag) {
+      list = list.filter((c) => c.tags.includes(activeTag))
+    }
+    return list
+  }, [
+    conversationsWithLocalState,
+    bucket,
+    channelFilter,
+    accountFilter,
+    search,
+    activeTag,
+    agentStateMap,
+  ])
+
+  useEffect(() => {
+    visibleConversationsRef.current = visibleConversations
+  }, [visibleConversations])
 
   const emptyReason = (() => {
     if (accounts.length === 0 && demoMode !== 'on') return 'no-channels' as const
     if (conversationsWithLocalState.length === 0 && !loading) return 'no-chats' as const
-    if (visibleConversations.length === 0 && (search || activeTag || bucket === 'hechos')) {
+    if (
+      visibleConversations.length === 0 &&
+      (search || activeTag || bucket === 'hechos' || bucket === 'ia_manejando')
+    ) {
       return 'no-results' as const
     }
     if (visibleConversations.length === 0 && !loading) return 'no-chats' as const
@@ -483,7 +559,6 @@ export function SoftCopilotInbox() {
     setSelectedKey(softKey(conv))
     setSendError(null)
     setFailedOutboundId(null)
-    setDraftHint(null)
     setMessageInput('')
     setTemplatePickerOpen(false)
     setTemplates([])
@@ -494,13 +569,41 @@ export function SoftCopilotInbox() {
   selectConversationRef.current = selectConversation
 
   function enableDemoChats() {
+    demoAiRanRef.current = false
+    const seed = buildSoftDemoConversations()
+    setDemoConversationsLive(seed)
     writeSoftDemoMode('on')
     setDemoMode('on')
+    setAiBusy(true)
+    void runSoftDemoAiPass({
+      conversations: seed,
+      agentState: readAgentStateMap(),
+    })
+      .then((pass) => {
+        demoAiRanRef.current = true
+        setDemoConversationsLive(pass.conversations)
+        setAgentStateMap(pass.agentState)
+        writeAgentStateMap(pass.agentState)
+        const nextTags = { ...readTagsMap() }
+        const nextStatus = { ...readStatusMap() }
+        for (const c of pass.conversations) {
+          const key = softKey(c)
+          nextTags[key] = c.tags
+          nextStatus[key] = c.status
+        }
+        setTagsMap(nextTags)
+        setStatusMap(nextStatus)
+        writeTagsMap(nextTags)
+        writeStatusMap(nextStatus)
+      })
+      .finally(() => setAiBusy(false))
   }
 
   function removeDemoChats() {
     writeSoftDemoMode('off')
     setDemoMode('off')
+    setDemoConversationsLive([])
+    demoAiRanRef.current = false
     if (selectedConversation && isSoftDemoConversation(selectedConversation)) {
       setSelectedKey(null)
       setMobileView('list')
@@ -527,18 +630,21 @@ export function SoftCopilotInbox() {
     writeTagsMap(next)
   }
 
-  function handleSuggest() {
+  function setAgentControl(action: 'take_over' | 'pause' | 'resume') {
     if (!selectedConversation) return
-    const { draft } = buildSuggestedReply(selectedConversation)
-    setDraftHint(draft)
-    setRailTab('copilot')
-  }
-
-  function applyDraft(draft?: string) {
-    const text = draft || draftHint
-    if (!text) return
-    setMessageInput(text)
-    setDraftHint(null)
+    const key = softKey(selectedConversation)
+    const next = applyAgentControl(agentStateMap, key, action, Boolean(selectedConversation.isDemo))
+    setAgentStateMap(next)
+    writeAgentStateMap(next)
+    // Best-effort server mirror for real (non-demo) chats
+    if (!selectedConversation.isDemo) {
+      void fetch('/api/chat/soft-ai/control', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, conversationKey: key }),
+      }).catch(() => {})
+    }
   }
 
   async function handleLoadOlder() {
@@ -770,14 +876,10 @@ export function SoftCopilotInbox() {
     sendError,
     onClearError: () => setSendError(null),
     onRetry: handleRetry,
-    onSuggest: handleSuggest,
     messagesEndRef,
     messagesContainerRef,
     onMessagesScroll: handleMessagesScroll,
     showTemplateCta,
-    draftHint,
-    onUseDraft: () => applyDraft(),
-    onDiscardDraft: () => setDraftHint(null),
     hasMoreMessages: Boolean(selectedPager?.hasMore),
     loadingOlder,
     onLoadOlder: handleLoadOlder,
@@ -792,6 +894,11 @@ export function SoftCopilotInbox() {
     onSendTemplate: (tpl: SoftWaTemplateOption) => {
       void handleSendTemplate(tpl)
     },
+    agentMode: selectedAgentState.mode,
+    onTakeOver: () => setAgentControl('take_over'),
+    onPauseAi: () => setAgentControl('pause'),
+    onResumeAi: () => setAgentControl('resume'),
+    aiBusy,
   }
 
   const listPane = (
@@ -848,7 +955,7 @@ export function SoftCopilotInbox() {
           onSearchChange={setSearch}
           whatsappCount={whatsappCount}
           instagramCount={instagramCount}
-          checklist={checklist}
+          monitor={monitorStats}
           tags={TAG_FILTERS}
           activeTag={activeTag}
           onTagClick={(tag) => setActiveTag((prev) => (prev === tag ? null : tag))}
@@ -862,11 +969,13 @@ export function SoftCopilotInbox() {
             conversation={selectedConversation}
             tab={railTab}
             onTabChange={setRailTab}
-            onAddToComposer={(draft) => applyDraft(draft)}
             onStatusChange={updateStatus}
             onToggleTag={toggleTag}
-            askValue={askValue}
-            onAskChange={setAskValue}
+            agentMode={selectedAgentState.mode}
+            toolLog={selectedAgentState.toolLog}
+            onTakeOver={() => setAgentControl('take_over')}
+            onPauseAi={() => setAgentControl('pause')}
+            onResumeAi={() => setAgentControl('resume')}
           />
         </div>
 

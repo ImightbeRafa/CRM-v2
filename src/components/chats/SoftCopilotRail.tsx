@@ -1,12 +1,11 @@
 'use client'
 
 import {
-  buildSuggestedReply,
-  stubSources,
-  type ConversationStatus,
-  type SoftConversation,
-  type SoftTag,
-} from '@/lib/chat-soft-copilot'
+  agentModeLabel,
+  type SoftAiAgentMode,
+  type SoftAiToolLogEntry,
+} from '@/lib/soft-ai'
+import type { ConversationStatus, SoftConversation, SoftTag } from '@/lib/chat-soft-copilot'
 
 type RailTab = 'detalle' | 'copilot'
 
@@ -14,11 +13,13 @@ interface SoftCopilotRailProps {
   conversation: SoftConversation | null
   tab: RailTab
   onTabChange: (tab: RailTab) => void
-  onAddToComposer: (draft: string) => void
   onStatusChange: (status: ConversationStatus) => void
   onToggleTag: (tag: SoftTag) => void
-  askValue: string
-  onAskChange: (value: string) => void
+  agentMode: SoftAiAgentMode
+  toolLog: SoftAiToolLogEntry[]
+  onTakeOver: () => void
+  onPauseAi: () => void
+  onResumeAi: () => void
 }
 
 const ALL_TAGS: SoftTag[] = ['Envío', 'VIP', 'Nuevo']
@@ -34,21 +35,28 @@ function statusLabel(status: ConversationStatus) {
   return 'En curso'
 }
 
+function toolLabel(tool: SoftAiToolLogEntry['tool']): string {
+  if (tool === 'create_or_link_order') return 'Crear/vincular pedido'
+  if (tool === 'get_order_status') return 'Estado pedido'
+  if (tool === 'correos_guia') return 'Guía Correos'
+  if (tool === 'tag_chat') return 'Etiqueta'
+  if (tool === 'escalate_to_human') return 'Escalar a humano'
+  const _exhaustive: never = tool
+  return _exhaustive
+}
+
 export function SoftCopilotRail({
   conversation,
   tab,
   onTabChange,
-  onAddToComposer,
   onStatusChange,
   onToggleTag,
-  askValue,
-  onAskChange,
+  agentMode,
+  toolLog,
+  onTakeOver,
+  onPauseAi,
+  onResumeAi,
 }: SoftCopilotRailProps) {
-  const suggestion = conversation
-    ? buildSuggestedReply(conversation)
-    : { title: 'Sugerencia', draft: 'Seleccioná un chat para ver una sugerencia.' }
-  const sources = stubSources(conversation)
-
   return (
     <aside className="hidden h-full w-[268px] shrink-0 flex-col overflow-hidden border-l border-slate-100 bg-[#fafbfd] xl:flex">
       <div className="p-3">
@@ -73,7 +81,7 @@ export function SoftCopilotRail({
                 : 'text-slate-400'
             }`}
           >
-            Copilot
+            Agente
           </button>
         </div>
       </div>
@@ -81,44 +89,72 @@ export function SoftCopilotRail({
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         {tab === 'copilot' ? (
           <div className="space-y-4">
-            <div>
-              <p className="text-[11px] font-medium text-slate-400">Sugerencia</p>
-              <div className="mt-2 rounded-[14px] bg-white p-3 shadow-sm ring-1 ring-slate-100">
-                <p className="text-xs font-semibold text-slate-900">{suggestion.title}</p>
-                <p className="mt-2 text-xs leading-relaxed text-slate-600">
-                  “{suggestion.draft}”
-                </p>
+            <div className="rounded-[14px] bg-white p-3 shadow-sm ring-1 ring-slate-100">
+              <p className="text-[11px] font-medium text-slate-400">Estado agente</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {agentModeLabel(agentMode)}
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                La IA responde sola. Vos monitoreás, pausás o tomás el control.
+              </p>
+              <div className="mt-3 flex flex-col gap-1.5">
                 <button
                   type="button"
-                  disabled={!conversation}
-                  onClick={() => onAddToComposer(suggestion.draft)}
-                  className="mt-3 w-full rounded-lg bg-[#5b6cff] py-2.5 text-xs font-medium text-white disabled:opacity-40"
+                  disabled={!conversation || agentMode === 'human'}
+                  onClick={onTakeOver}
+                  className="w-full rounded-lg bg-[#5b6cff] py-2 text-xs font-medium text-white disabled:opacity-40"
                 >
-                  Agregar al composer
+                  Tomar control
+                </button>
+                <button
+                  type="button"
+                  disabled={!conversation || agentMode === 'paused'}
+                  onClick={onPauseAi}
+                  className="w-full rounded-lg bg-slate-100 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-40"
+                >
+                  Pausar IA
+                </button>
+                <button
+                  type="button"
+                  disabled={!conversation || agentMode === 'ai_active'}
+                  onClick={onResumeAi}
+                  className="w-full rounded-lg bg-emerald-50 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-40"
+                >
+                  Reanudar IA
                 </button>
               </div>
             </div>
 
             <div>
-              <p className="text-[11px] font-medium text-slate-400">Fuentes relevantes</p>
-              <ul className="mt-2 space-y-1.5">
-                {sources.map((src) => (
-                  <li key={src.label}>
-                    {src.href ? (
-                      <a
-                        href={src.href}
-                        className="block rounded-lg bg-white px-3 py-2.5 text-xs text-indigo-700 ring-1 ring-slate-100 hover:bg-indigo-50"
-                      >
-                        {src.label}
-                      </a>
-                    ) : (
-                      <span className="block rounded-lg bg-white px-3 py-2.5 text-xs text-indigo-700 ring-1 ring-slate-100">
-                        {src.label}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <p className="text-[11px] font-medium text-slate-400">Log de herramientas</p>
+              {toolLog.length === 0 ? (
+                <p className="mt-2 rounded-lg bg-white px-3 py-3 text-xs text-slate-400 ring-1 ring-slate-100">
+                  Sin acciones aún. La IA registra tools acá.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-1.5">
+                  {[...toolLog].reverse().slice(0, 12).map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="rounded-lg bg-white px-3 py-2 text-[11px] ring-1 ring-slate-100"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-slate-800">{toolLabel(entry.tool)}</span>
+                        <span
+                          className={
+                            entry.ok ? 'text-emerald-600' : 'text-amber-700'
+                          }
+                        >
+                          {entry.ok ? 'ok' : 'stub'}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 truncate text-slate-500">
+                        {JSON.stringify(entry.result).slice(0, 90)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             {conversation ? (
@@ -133,6 +169,9 @@ export function SoftCopilotRail({
                   </p>
                   <p>Estado: {statusLabel(conversation.status)}</p>
                   <p>Etiquetas: {conversation.tags.join(', ') || '—'}</p>
+                  {conversation.orderId ? (
+                    <p className="text-indigo-700">Pedido: {conversation.orderId}</p>
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -159,7 +198,7 @@ export function SoftCopilotRail({
                         </a>
                       </p>
                     ) : (
-                      <p className="text-slate-400">Pedido: — (stub si hay orderId)</p>
+                      <p className="text-slate-400">Pedido: —</p>
                     )}
                   </div>
                 </div>
@@ -220,47 +259,6 @@ export function SoftCopilotRail({
             )}
           </div>
         )}
-      </div>
-
-      <div className="shrink-0 border-t border-slate-100 p-3">
-        {conversation && tab === 'copilot' ? (
-          <div className="mb-3">
-            <p className="mb-1.5 text-[11px] font-medium text-slate-400">Estado rápido</p>
-            <div className="flex flex-wrap gap-1">
-              {STATUSES.map((s) => {
-                const active = conversation.status === s.id
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => onStatusChange(s.id)}
-                    className={`rounded-lg px-2 py-1 text-[11px] font-medium transition-colors ${
-                      active ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                    }`}
-                  >
-                    {s.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        ) : null}
-        <input
-          value={askValue}
-          onChange={(e) => onAskChange(e.target.value)}
-          placeholder="Preguntá a Betsy… (próx.)"
-          aria-label="Preguntar a Betsy (próximamente)"
-          className="w-full rounded-[10px] border-0 bg-white px-3 py-2.5 text-xs text-slate-800 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5b6cff]/30"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && askValue.trim()) {
-              e.preventDefault()
-              onAskChange('')
-            }
-          }}
-        />
-        <p className="mt-1.5 text-[10px] text-slate-400">
-          Enter limpia el borrador · respuesta con IA aún no conectada
-        </p>
       </div>
     </aside>
   )

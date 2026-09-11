@@ -10,6 +10,7 @@ import {
 import { getPageIdFromMetaChatMetadata } from '@/lib/social-account-meta'
 import { resolveWebhookSocialAccount } from '@/lib/chat-webhook-account'
 import { chatWebhookRateLimit } from '@/lib/rate-limit'
+import { maybeRunSoftAiAfterInbound } from '@/lib/soft-ai/inbound-hook'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -134,7 +135,15 @@ async function storeMessage(db: any, event: ParsedMetaChatMessage) {
     },
   })
 
-  return { stored: true }
+  return {
+    stored: true,
+    tenantId: account.tenantId as string,
+    socialAccountId: account.id as string,
+    senderId: event.senderId as string,
+    senderName: (event.senderName as string | undefined) || null,
+    platform: event.platform as string,
+    content: event.content as string,
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -213,6 +222,20 @@ export async function POST(request: NextRequest) {
     }
 
     const stored = results.filter((result) => result.stored).length
+
+    // Soft Tenant AI (feature-flagged): full reply after inbound — never blocks Meta ACK.
+    for (const result of results) {
+      if (!result.stored || !('tenantId' in result) || !result.tenantId) continue
+      void maybeRunSoftAiAfterInbound({
+        tenantId: result.tenantId,
+        socialAccountId: result.socialAccountId,
+        senderId: result.senderId,
+        senderName: result.senderName,
+        platform: result.platform,
+        content: result.content,
+      })
+    }
+
     return NextResponse.json({
       ok: true,
       stored,

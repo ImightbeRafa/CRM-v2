@@ -110,3 +110,12 @@ export function agentModeLabel(mode: SoftAiAgentMode): string {
   const _exhaustive: never = mode
   return _exhaustive
 }
+
+/**
+ * F37-03 — Human composer/Enviar whenever staff paused or took over.
+ * Not only when "AI off" as a product concept — paused + human both unlock typing.
+ * (Server `human_takeover` alias maps to `human` before UI.)
+ */
+export function isSoftHumanComposerEnabled(mode: SoftAiAgentMode): boolean {
+  return mode === 'paused' || mode === 'human'
+}

@@ -30,6 +30,7 @@ export {
   appendToolLog,
   agentModeLabel,
   defaultAgentMode,
+  isSoftHumanComposerEnabled,
   type SoftAiConversationState,
   type SoftAiAgentStateMap,
 } from '@/lib/soft-ai/agent-state'

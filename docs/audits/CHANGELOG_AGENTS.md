@@ -2,6 +2,14 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-11 — F37-03 Soft human composer after Pausar / Tomar control
+
+- SoftThreadPane: unlock input/Enviar whenever agent mode is `paused` or `human`
+  (incl. Soft DEMO — removed blanket `isDemo` disable).
+- SoftCopilotInbox: DEMO human send appends locally (never Meta) after pause/takeover.
+- Helper `isSoftHumanComposerEnabled`. Does not regress F37-01/F37-02.
+- Prove: `npm run test:soft-ai` + build. Same draft #37.
+
 ## 2026-09-11 — F37-02 Soft AI server-truth pause/takeover (blocks Meta)
 
 - SoftCopilotInbox: await `/api/chat/soft-ai/control` success **before** committing

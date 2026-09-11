@@ -829,10 +829,49 @@ export function SoftCopilotInbox() {
   async function handleSendMessage(e: FormEvent) {
     e.preventDefault()
     if (!messageInput.trim() || !selectedConversation) return
+
+    // Soft DEMO: F37-03 — human may write after Pausar / Tomar control (local only, never Meta).
     if (isSoftDemoConversation(selectedConversation)) {
-      setSendError('Chat DEMO — no se envía a Meta. Quitá el demo o usá un chat real.')
+      const mode = selectedAgentState.mode
+      if (mode !== 'paused' && mode !== 'human') {
+        setSendError('Tomá control o pausá la IA para escribir en DEMO.')
+        return
+      }
+      const content = messageInput.trim()
+      const key = softKey(selectedConversation)
+      const sentAt = new Date().toISOString()
+      const outbound = {
+        id: `demo-human-${key}-${Date.now()}`,
+        direction: 'outbound' as const,
+        content,
+        sentAt,
+        receivedAt: null as string | null,
+      }
+      setDemoConversationsLive((prev) => {
+        const base = prev.length > 0 ? prev : buildSoftDemoConversations()
+        return base.map((c) => {
+          if (softKey(c) !== key) return c
+          const messages = [...c.messages, outbound]
+          return {
+            ...c,
+            messages,
+            lastMessage: content,
+            lastMessageAt: sentAt,
+            unreadCount: 0,
+            isDemo: true as const,
+          }
+        })
+      })
+      setMessageInput('')
+      setSendError(null)
+      setFailedOutboundId(null)
+      nearBottomRef.current = true
+      if (selectedConversation.status === 'nuevo') {
+        updateStatus('en_curso')
+      }
       return
     }
+
     if (selectedConversation.recipientId === 'unknown') {
       setSendError('Selecciona una conversación para responder')
       return

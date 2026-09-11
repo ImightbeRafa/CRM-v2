@@ -8,7 +8,7 @@ import {
   type SoftConversation,
   type SoftTag,
 } from '@/lib/chat-soft-copilot'
-import { agentModeLabel, type SoftAiAgentMode } from '@/lib/soft-ai'
+import { agentModeLabel, isSoftHumanComposerEnabled, type SoftAiAgentMode } from '@/lib/soft-ai'
 
 export type SoftWaTemplateOption = {
   name: string
@@ -144,8 +144,8 @@ export function SoftThreadPane({
     .join(' · ')
 
   const closedWindow = conversation.platform === 'whatsapp' && !windowOpen
-  const humanMode = agentMode === 'human'
-  const composerEnabled = humanMode || agentMode === 'paused'
+  // F37-03: unlock composer whenever paused / human takeover (incl. Soft DEMO).
+  const composerEnabled = isSoftHumanComposerEnabled(agentMode)
 
   function openPicker() {
     onClearError()
@@ -446,17 +446,12 @@ export function SoftThreadPane({
                     : 'Escribí un mensaje…  Enter envía'
                   : 'Tomá control o pausá la IA para escribir'
               }
-              disabled={sending || Boolean(conversation.isDemo) || !composerEnabled}
+              disabled={sending || !composerEnabled}
               className="min-w-0 flex-1 rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5b6cff]/35 disabled:opacity-60"
             />
             <button
               type="submit"
-              disabled={
-                sending ||
-                !messageInput.trim() ||
-                Boolean(conversation.isDemo) ||
-                !composerEnabled
-              }
+              disabled={sending || !messageInput.trim() || !composerEnabled}
               className="shrink-0 rounded-xl bg-[#5b6cff] px-4 py-3 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
             >
               {sending ? '…' : 'Enviar'}

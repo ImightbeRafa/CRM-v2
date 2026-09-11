@@ -43,7 +43,9 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'view_config')
+    // F37-01: only OWNER/ADMIN (update_config) may enable AI or flip paymentAlwaysHuman.
+    // SALES/MANAGER have view_config but must not mutate Soft AI gates.
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
     if (!auth.ok) return auth.response
 
     const { tenantId } = auth

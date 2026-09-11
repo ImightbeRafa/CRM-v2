@@ -2,6 +2,13 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-11 — F37-01 Soft AI config PATCH RBAC (SecureDog WARN)
+
+- `PATCH /api/chat/soft-ai/config` now requires `update_config` (OWNER/ADMIN only).
+  SALES/MANAGER keep `view_config` but cannot enable Soft AI or flip
+  `paymentAlwaysHuman` off. Flag still defaults off. Same draft PR #37.
+- Prove: `npm run test:soft-ai` (+ soft-ai-config-rbac) + build.
+
 ## 2026-09-11 — Soft Tenant AI full package (monitor + tools + DEMO)
 
 - Tenant AI worker (`src/lib/soft-ai/`): inbound → KB/config → tools → full reply.

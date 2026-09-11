@@ -4,16 +4,16 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
+import {
+  filterApprovedWhatsAppTemplates,
+  normalizeWhatsAppTemplateRows,
+  type WhatsAppTemplateStatusRow,
+} from '@/lib/wa-template-approval'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export type WhatsAppApprovedTemplate = {
-  name: string
-  language: string
-  status: string
-  category?: string
-}
+export type WhatsAppApprovedTemplate = WhatsAppTemplateStatusRow
 
 /**
  * GET /api/chat/templates?socialAccountId=...
@@ -96,18 +96,9 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const rawList = Array.isArray(data?.data) ? data.data : []
-    const templates: WhatsAppApprovedTemplate[] = rawList
-      .map((row: any) => ({
-        name: String(row?.name || '').trim(),
-        language: String(row?.language || 'es').trim() || 'es',
-        status: String(row?.status || '').toUpperCase(),
-        category: row?.category ? String(row.category) : undefined,
-      }))
-      .filter(
-        (t: WhatsAppApprovedTemplate) =>
-          Boolean(t.name) && (t.status === 'APPROVED' || t.status === 'ACTIVE'),
-      )
+    const templates: WhatsAppApprovedTemplate[] = filterApprovedWhatsAppTemplates(
+      normalizeWhatsAppTemplateRows(data?.data),
+    )
 
     return NextResponse.json({ success: true, templates, wabaId })
   } catch (error) {

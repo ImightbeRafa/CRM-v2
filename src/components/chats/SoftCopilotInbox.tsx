@@ -34,6 +34,15 @@ import {
   type SoftSocialAccount,
   type SoftTag,
 } from '@/lib/chat-soft-copilot'
+import {
+  buildSoftDemoConversations,
+  isSoftDemoAccountId,
+  isSoftDemoConversation,
+  readSoftDemoMode,
+  softDemoSocialAccounts,
+  writeSoftDemoMode,
+  type SoftDemoMode,
+} from '@/lib/soft-demo-chats'
 import { SoftSlimNav } from '@/components/chats/SoftSlimNav'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
@@ -79,6 +88,8 @@ export function SoftCopilotInbox() {
   const [templates, setTemplates] = useState<SoftWaTemplateOption[]>([])
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [templatesError, setTemplatesError] = useState<string | null>(null)
+  const [demoMode, setDemoMode] = useState<SoftDemoMode>('off')
+  const [demoHydrated, setDemoHydrated] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -98,25 +109,47 @@ export function SoftCopilotInbox() {
   useEffect(() => {
     setStatusMap(readStatusMap())
     setTagsMap(readTagsMap())
+    setDemoMode(readSoftDemoMode())
+    setDemoHydrated(true)
   }, [])
 
-  const whatsappCount = accounts.filter((a) => a.platform === 'whatsapp').length
-  const instagramCount = accounts.filter((a) => a.platform === 'instagram').length
+  const demoConversations = useMemo(
+    () => (demoHydrated && demoMode === 'on' ? buildSoftDemoConversations() : []),
+    [demoHydrated, demoMode],
+  )
+  const demoAccounts = useMemo(
+    () => (demoHydrated && demoMode === 'on' ? softDemoSocialAccounts() : []),
+    [demoHydrated, demoMode],
+  )
+  const accountsForUi = useMemo(() => {
+    if (demoAccounts.length === 0) return accounts
+    const ids = new Set(accounts.map((a) => a.id))
+    return [...accounts, ...demoAccounts.filter((a) => !ids.has(a.id))]
+  }, [accounts, demoAccounts])
+  const whatsappCount = accountsForUi.filter((a) => a.platform === 'whatsapp').length
+  const instagramCount = accountsForUi.filter((a) => a.platform === 'instagram').length
 
   const filteredAccounts = useMemo(() => {
-    return accounts.filter((a) => {
+    return accountsForUi.filter((a) => {
       if (channelFilter === 'whatsapp') return a.platform === 'whatsapp'
       if (channelFilter === 'instagram') return a.platform === 'instagram'
       return true
     })
-  }, [accounts, channelFilter])
+  }, [accountsForUi, channelFilter])
 
   const pollAccountIds = useMemo(() => {
+    // Never poll Meta for demo account ids
+    const realFiltered = accounts.filter((a) => {
+      if (channelFilter === 'whatsapp') return a.platform === 'whatsapp'
+      if (channelFilter === 'instagram') return a.platform === 'instagram'
+      return true
+    })
     if (accountFilter !== 'all') {
-      return filteredAccounts.some((a) => a.id === accountFilter) ? [accountFilter] : []
+      if (isSoftDemoAccountId(accountFilter)) return []
+      return realFiltered.some((a) => a.id === accountFilter) ? [accountFilter] : []
     }
-    return filteredAccounts.map((a) => a.id)
-  }, [filteredAccounts, accountFilter])
+    return realFiltered.map((a) => a.id)
+  }, [accounts, channelFilter, accountFilter])
 
   const rebuildConversations = useCallback(
     (opts?: { forceScroll?: boolean }) => {
@@ -302,31 +335,91 @@ export function SoftCopilotInbox() {
     return () => window.clearInterval(id)
   }, [lastSyncAt])
 
-  // ⌘K focuses search
+  // Soft keyboard feel: ⌘K search, Esc back, ↑↓ list nav
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName?.toLowerCase()
+      const typing =
+        tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable
+
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         const input = document.querySelector<HTMLInputElement>('input[placeholder*="Buscar"]')
         input?.focus()
+        input?.select()
+        return
+      }
+
+      if (e.key === 'Escape') {
+        if (typing && target) {
+          ;(target as HTMLInputElement).blur?.()
+        }
+        setSelectedKey(null)
+        setMobileView('list')
+        setTemplatePickerOpen(false)
+        return
+      }
+
+      if (typing) return
+
+      if (e.key === '/' ) {
+        e.preventDefault()
+        const input = document.querySelector<HTMLInputElement>('input[placeholder*="Buscar"]')
+        input?.focus()
+        return
+      }
+
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') return
+
+      const list = visibleConversationsRef.current
+      if (!list.length) return
+
+      const currentIdx = list.findIndex((c) => softKey(c) === selectedKeyRef.current)
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        const next = list[Math.min(list.length - 1, Math.max(0, currentIdx) + 1)] || list[0]
+        if (next) selectConversationRef.current(next)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        const prev =
+          list[Math.max(0, (currentIdx < 0 ? 0 : currentIdx) - 1)] || list[list.length - 1]
+        if (prev) selectConversationRef.current(prev)
+        return
+      }
+      if (e.key === 'Enter' && currentIdx >= 0) {
+        e.preventDefault()
+        setMobileView('thread')
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const conversationsWithLocalState = useMemo(
-    () =>
-      allConversations.map((c) => {
-        const key = softKey(c)
-        return {
-          ...c,
-          status: statusMap[key] || c.status,
-          tags: tagsMap[key] || c.tags,
-        }
-      }),
-    [allConversations, statusMap, tagsMap],
-  )
+  const conversationsWithLocalState = useMemo(() => {
+    const real = allConversations.map((c) => {
+      const key = softKey(c)
+      return {
+        ...c,
+        status: statusMap[key] || c.status,
+        tags: tagsMap[key] || c.tags,
+      }
+    })
+    const demos = demoConversations.map((c) => {
+      const key = softKey(c)
+      return {
+        ...c,
+        status: statusMap[key] || c.status,
+        tags: tagsMap[key] || c.tags,
+        isDemo: true as const,
+      }
+    })
+    return [...demos, ...real].sort((a, b) =>
+      (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''),
+    )
+  }, [allConversations, statusMap, tagsMap, demoConversations])
 
   const visibleConversations = useMemo(() => {
     let list = filterSoftConversations(conversationsWithLocalState, {
@@ -340,6 +433,16 @@ export function SoftCopilotInbox() {
     }
     return list
   }, [conversationsWithLocalState, bucket, channelFilter, accountFilter, search, activeTag])
+
+  const visibleConversationsRef = useRef(visibleConversations)
+  const selectedKeyRef = useRef(selectedKey)
+  const selectConversationRef = useRef<(c: SoftConversation) => void>(() => {})
+  useEffect(() => {
+    visibleConversationsRef.current = visibleConversations
+  }, [visibleConversations])
+  useEffect(() => {
+    selectedKeyRef.current = selectedKey
+  }, [selectedKey])
 
   const openCount = useMemo(
     () => conversationsWithLocalState.filter((c) => c.status !== 'hecho').length,
@@ -361,8 +464,8 @@ export function SoftCopilotInbox() {
   })
 
   const emptyReason = (() => {
-    if (accounts.length === 0) return 'no-channels' as const
-    if (allConversations.length === 0 && !loading) return 'no-chats' as const
+    if (accounts.length === 0 && demoMode !== 'on') return 'no-channels' as const
+    if (conversationsWithLocalState.length === 0 && !loading) return 'no-chats' as const
     if (visibleConversations.length === 0 && (search || activeTag || bucket === 'hechos')) {
       return 'no-results' as const
     }
@@ -387,6 +490,21 @@ export function SoftCopilotInbox() {
     setTemplatesError(null)
     nearBottomRef.current = true
     setMobileView('thread')
+  }
+  selectConversationRef.current = selectConversation
+
+  function enableDemoChats() {
+    writeSoftDemoMode('on')
+    setDemoMode('on')
+  }
+
+  function removeDemoChats() {
+    writeSoftDemoMode('off')
+    setDemoMode('off')
+    if (selectedConversation && isSoftDemoConversation(selectedConversation)) {
+      setSelectedKey(null)
+      setMobileView('list')
+    }
   }
 
   function updateStatus(status: ConversationStatus) {
@@ -481,6 +599,10 @@ export function SoftCopilotInbox() {
 
   async function openTemplatePicker() {
     if (!selectedConversation) return
+    if (isSoftDemoConversation(selectedConversation)) {
+      setSendError('Chat DEMO — no se envían plantillas a Meta.')
+      return
+    }
     setSendError(null)
     setTemplatePickerOpen(true)
     setTemplatesLoading(true)
@@ -516,6 +638,10 @@ export function SoftCopilotInbox() {
 
   async function handleSendTemplate(template: SoftWaTemplateOption) {
     if (!selectedConversation) return
+    if (isSoftDemoConversation(selectedConversation)) {
+      setSendError('Chat DEMO — no se envía a Meta. Quitá el demo o usá un chat real.')
+      return
+    }
     if (selectedConversation.recipientId === 'unknown') {
       setSendError('Selecciona una conversación para responder')
       return
@@ -566,6 +692,10 @@ export function SoftCopilotInbox() {
   async function handleSendMessage(e: FormEvent) {
     e.preventDefault()
     if (!messageInput.trim() || !selectedConversation) return
+    if (isSoftDemoConversation(selectedConversation)) {
+      setSendError('Chat DEMO — no se envía a Meta. Quitá el demo o usá un chat real.')
+      return
+    }
     if (selectedConversation.recipientId === 'unknown') {
       setSendError('Selecciona una conversación para responder')
       return
@@ -685,6 +815,10 @@ export function SoftCopilotInbox() {
       syncAgeSeconds={syncAgeSeconds}
       loading={loading}
       emptyReason={emptyReason}
+      demoMode={demoMode === 'on'}
+      hasDemoInList={demoMode === 'on' && demoConversations.length > 0}
+      onLoadDemo={enableDemoChats}
+      onRemoveDemo={removeDemoChats}
     />
   )
 
@@ -753,6 +887,10 @@ export function SoftCopilotInbox() {
               loading={loading}
               emptyReason={emptyReason}
               compact
+              demoMode={demoMode === 'on'}
+              hasDemoInList={demoMode === 'on' && demoConversations.length > 0}
+              onLoadDemo={enableDemoChats}
+              onRemoveDemo={removeDemoChats}
             />
           ) : (
             <SoftThreadPane

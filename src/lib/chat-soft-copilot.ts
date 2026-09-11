@@ -20,6 +20,8 @@ export interface SoftConversation extends ChatConversation {
   status: ConversationStatus
   tags: SoftTag[]
   orderId?: string | null
+  /** Local Soft demo seed only — never persisted to ChatMessage. */
+  isDemo?: boolean
 }
 
 export interface SoftSocialAccount {

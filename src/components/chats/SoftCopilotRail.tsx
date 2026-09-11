@@ -211,9 +211,12 @@ export function SoftCopilotRail({
                 </div>
               </>
             ) : (
-              <p className="px-1 py-8 text-center text-xs text-slate-400">
-                Seleccioná un chat para ver el detalle.
-              </p>
+              <div className="px-1 py-8 text-center">
+                <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-[#e8ecff] text-sm font-semibold text-[#5b6cff]">
+                  i
+                </div>
+                <p className="text-xs text-slate-400">Seleccioná un chat para ver el detalle.</p>
+              </div>
             )}
           </div>
         )}
@@ -222,7 +225,7 @@ export function SoftCopilotRail({
       <div className="shrink-0 border-t border-slate-100 p-3">
         {conversation && tab === 'copilot' ? (
           <div className="mb-3">
-            <p className="mb-1.5 text-[11px] font-medium text-slate-400">Estado (picker)</p>
+            <p className="mb-1.5 text-[11px] font-medium text-slate-400">Estado rápido</p>
             <div className="flex flex-wrap gap-1">
               {STATUSES.map((s) => {
                 const active = conversation.status === s.id
@@ -231,8 +234,8 @@ export function SoftCopilotRail({
                     key={s.id}
                     type="button"
                     onClick={() => onStatusChange(s.id)}
-                    className={`rounded-lg px-2 py-1 text-[11px] font-medium ${
-                      active ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-500'
+                    className={`rounded-lg px-2 py-1 text-[11px] font-medium transition-colors ${
+                      active ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                     }`}
                   >
                     {s.label}
@@ -245,7 +248,8 @@ export function SoftCopilotRail({
         <input
           value={askValue}
           onChange={(e) => onAskChange(e.target.value)}
-          placeholder="Preguntá a Betsy…"
+          placeholder="Preguntá a Betsy… (próx.)"
+          aria-label="Preguntar a Betsy (próximamente)"
           className="w-full rounded-[10px] border-0 bg-white px-3 py-2.5 text-xs text-slate-800 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5b6cff]/30"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && askValue.trim()) {
@@ -254,6 +258,9 @@ export function SoftCopilotRail({
             }
           }}
         />
+        <p className="mt-1.5 text-[10px] text-slate-400">
+          Enter limpia el borrador · respuesta con IA aún no conectada
+        </p>
       </div>
     </aside>
   )

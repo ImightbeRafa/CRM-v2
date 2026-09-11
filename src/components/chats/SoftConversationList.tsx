@@ -24,14 +24,28 @@ interface SoftConversationListProps {
   loading: boolean
   emptyReason: 'no-channels' | 'no-chats' | 'no-results' | null
   compact?: boolean
+  demoMode?: boolean
+  onLoadDemo?: () => void
+  onRemoveDemo?: () => void
+  hasDemoInList?: boolean
 }
 
 function conversationKey(c: SoftConversation) {
   return `${c.socialAccountId}::${c.recipientId}`
 }
 
-function avatarClass(platform: string) {
+function avatarClass(platform: string, isDemo?: boolean) {
+  if (isDemo) return 'bg-slate-400'
   return platform === 'instagram' ? 'bg-pink-500' : 'bg-green-500'
+}
+
+function EmptyGlyph({ kind }: { kind: 'channels' | 'chats' | 'results' }) {
+  const label = kind === 'channels' ? '∅' : kind === 'results' ? '⌕' : '…'
+  return (
+    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8ecff] text-lg font-semibold text-[#5b6cff]">
+      {label}
+    </div>
+  )
 }
 
 export function SoftConversationList({
@@ -48,6 +62,10 @@ export function SoftConversationList({
   loading,
   emptyReason,
   compact,
+  demoMode,
+  onLoadDemo,
+  onRemoveDemo,
+  hasDemoInList,
 }: SoftConversationListProps) {
   const chips: Array<{ id: ChannelFilter; label: string; activeClass: string; idleClass: string }> = [
     {
@@ -94,6 +112,26 @@ export function SoftConversationList({
         )}
       </div>
 
+      {hasDemoInList ? (
+        <div className="mx-4 mt-3 flex items-start justify-between gap-2 rounded-[10px] bg-amber-50 px-3 py-2 ring-1 ring-amber-100">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold text-amber-900">Chats DEMO</p>
+            <p className="text-[10px] leading-snug text-amber-800/90">
+              Solo local · no son clientes reales · se pueden quitar
+            </p>
+          </div>
+          {onRemoveDemo ? (
+            <button
+              type="button"
+              onClick={onRemoveDemo}
+              className="shrink-0 rounded-lg bg-white px-2 py-1 text-[10px] font-medium text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100"
+            >
+              Quitar demo
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="mt-3 flex flex-wrap gap-1.5 px-4">
         {chips.map((chip) => {
           const active = channelFilter === chip.id
@@ -137,28 +175,52 @@ export function SoftConversationList({
           <p className="px-4 py-8 text-center text-sm text-slate-400">Cargando…</p>
         ) : emptyReason === 'no-channels' ? (
           <div className="px-4 py-10 text-center">
+            <EmptyGlyph kind="channels" />
             <p className="text-sm font-medium text-slate-700">No hay canales conectados</p>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
               Conectá WhatsApp o Instagram en Cuentas para ver chats de clientes.
             </p>
             <a
               href="/config/social"
-              className="mt-3 inline-block text-sm font-medium text-[#5b6cff] hover:underline"
+              className="mt-3 inline-block rounded-lg bg-[#5b6cff] px-3 py-2 text-[12px] font-medium text-white hover:opacity-95"
             >
-              Ir a Cuentas →
+              Ir a Cuentas
             </a>
+            {!demoMode && onLoadDemo ? (
+              <button
+                type="button"
+                onClick={onLoadDemo}
+                className="mt-3 block w-full text-[11px] font-medium text-[#5b6cff] hover:underline"
+              >
+                O cargar chats DEMO (locales)
+              </button>
+            ) : null}
           </div>
         ) : emptyReason === 'no-results' ? (
           <div className="px-4 py-10 text-center">
+            <EmptyGlyph kind="results" />
             <p className="text-sm font-medium text-slate-700">Sin resultados</p>
-            <p className="mt-1 text-xs text-slate-500">Probá otra búsqueda o quitá filtros.</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Probá otra búsqueda, quitá etiquetas o cambiá el bucket.
+            </p>
+            <p className="mt-2 text-[10px] text-slate-400">Esc limpia el foco · ⌘K busca</p>
           </div>
         ) : emptyReason === 'no-chats' ? (
           <div className="px-4 py-10 text-center">
+            <EmptyGlyph kind="chats" />
             <p className="text-sm font-medium text-slate-700">Todavía no hay chats</p>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
               Cuando un cliente escriba por WA o IG, aparece acá.
             </p>
+            {!demoMode && onLoadDemo ? (
+              <button
+                type="button"
+                onClick={onLoadDemo}
+                className="mt-4 rounded-lg bg-[#e8ecff] px-3 py-2 text-[12px] font-medium text-[#5b6cff] hover:bg-[#dde3ff]"
+              >
+                Cargar chats DEMO
+              </button>
+            ) : null}
           </div>
         ) : (
           <ul className="divide-y divide-slate-50">
@@ -166,24 +228,26 @@ export function SoftConversationList({
               const key = conversationKey(conv)
               const selected = selectedKey === key
               const unread = conv.unreadCount || 0
+              const isDemo = Boolean(conv.isDemo)
               return (
                 <li key={key}>
                   <button
                     type="button"
+                    data-soft-conv-key={key}
                     onClick={() => onSelect(conv)}
                     className={`flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors ${
-                      selected ? 'bg-[#f8faff]' : 'hover:bg-slate-50/80'
+                      selected ? 'bg-[#f8faff] ring-1 ring-inset ring-[#5b6cff]/15' : 'hover:bg-slate-50/80'
                     }`}
                   >
                     <div
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarClass(conv.platform)}`}
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarClass(conv.platform, isDemo)}`}
                     >
                       {initialsFromName(conv.recipientName)}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <p className="truncate text-[13px] font-semibold text-slate-900">
-                          {conv.recipientName || conv.recipientId}
+                          {conversationDisplayName(conv)}
                         </p>
                         <span className="shrink-0 text-[11px] text-slate-400">
                           {formatRelativeEs(conv.lastMessageAt)}
@@ -194,6 +258,11 @@ export function SoftConversationList({
                       </p>
                       <div className="mt-1 flex items-center justify-between gap-2">
                         <p className="truncate text-[11px] text-slate-400">
+                          {isDemo ? (
+                            <span className="mr-1 rounded bg-amber-100 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-amber-900">
+                              Demo
+                            </span>
+                          ) : null}
                           {platformShort(conv.platform)} ·{' '}
                           {conv.accountLabel.replace(/^(WA|IG)\s·\s/, '')}
                         </p>
@@ -213,4 +282,8 @@ export function SoftConversationList({
       </div>
     </section>
   )
+}
+
+function conversationDisplayName(conv: SoftConversation) {
+  return conv.recipientName || conv.recipientId
 }

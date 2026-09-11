@@ -110,9 +110,15 @@ export function SoftThreadPane({
   if (!conversation) {
     return (
       <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white px-6 text-center">
+        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8ecff] text-lg font-semibold text-[#5b6cff]">
+          ⌘
+        </div>
         <p className="text-base font-medium text-slate-700">Seleccioná un chat</p>
         <p className="mt-1 max-w-sm text-sm text-slate-500">
           Elegí una conversación de la lista para ver mensajes, el resumen IA y responder.
+        </p>
+        <p className="mt-3 text-[11px] text-slate-400">
+          ↑↓ navegar · Enter abrir · Esc volver · ⌘K buscar
         </p>
       </section>
     )
@@ -215,7 +221,10 @@ export function SoftThreadPane({
         ) : null}
 
         {conversation.messages.length === 0 ? (
-          <p className="py-12 text-center text-sm text-slate-400">Sin mensajes en este chat</p>
+          <div className="py-12 text-center">
+            <p className="text-sm text-slate-400">Sin mensajes en este chat</p>
+            <p className="mt-1 text-[11px] text-slate-400">El resumen IA aparece cuando haya actividad.</p>
+          </div>
         ) : (
           conversation.messages.map((msg) => {
             const outbound = msg.direction === 'outbound'
@@ -265,8 +274,20 @@ export function SoftThreadPane({
           })
         )}
 
-        <div className="rounded-[14px] bg-yellow-100/90 px-4 py-3 text-[12px] text-yellow-950">
-          <p className="font-semibold text-yellow-800">Resumen IA</p>
+        {conversation.isDemo ? (
+          <div className="rounded-[14px] bg-amber-50 px-4 py-2.5 text-[11px] text-amber-900 ring-1 ring-amber-100">
+            Chat <span className="font-semibold">DEMO</span> · local · no se envía a Meta · quitalo
+            desde la lista
+          </div>
+        ) : null}
+
+        <div className="sticky bottom-0 rounded-[14px] bg-yellow-100/95 px-4 py-3 text-[12px] text-yellow-950 shadow-[0_-6px_16px_rgba(255,251,235,0.85)] ring-1 ring-yellow-200/60 backdrop-blur-[2px]">
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-semibold text-yellow-800">Resumen IA</p>
+            <span className="rounded bg-yellow-200/70 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-yellow-900/80">
+              stub
+            </span>
+          </div>
           <p className="mt-1 leading-relaxed text-yellow-950/90">{summary}</p>
         </div>
 
@@ -418,13 +439,13 @@ export function SoftThreadPane({
                 onMessageInput(e.target.value)
                 if (sendError) onClearError()
               }}
-              placeholder={compact ? 'Mensaje…' : 'Escribí un mensaje…  ⌘K'}
-              disabled={sending}
-              className="min-w-0 flex-1 rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5b6cff]/35"
+              placeholder={compact ? 'Mensaje… Enter envía' : 'Escribí un mensaje…  Enter envía'}
+              disabled={sending || Boolean(conversation.isDemo)}
+              className="min-w-0 flex-1 rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5b6cff]/35 disabled:opacity-60"
             />
             <button
               type="submit"
-              disabled={sending || !messageInput.trim()}
+              disabled={sending || !messageInput.trim() || Boolean(conversation.isDemo)}
               className="shrink-0 rounded-xl bg-[#5b6cff] px-4 py-3 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
             >
               {sending ? '…' : 'Enviar'}
@@ -432,7 +453,7 @@ export function SoftThreadPane({
           </form>
           {!compact ? (
             <p className="mt-2 text-[11px] text-slate-400">
-              Macros · Adjunto · Emoji · espacio error Meta
+              Enter envía · ⌘K busca · Esc cierra · ↑↓ lista
             </p>
           ) : null}
         </div>

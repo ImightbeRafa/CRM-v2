@@ -2,6 +2,14 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-11 — F37-01 Soft AI config PATCH exact orch RBAC stamp
+
+- PATCH `/api/chat/soft-ai/config`: outer `update_config` + `decideSoftAiConfigPatch`:
+  - `enabled:true` requires `update_config` (SALES/MANAGER view_config-only denied)
+  - `paymentAlwaysHuman:false` fail-closed OWNER/ADMIN only
+- Soft AI WA outbound `appsecret_proof` uses `purpose:'whatsapp'` (tiny). TOCTOU parked.
+- Prove: `npm run test:soft-ai` + build. Same draft #37.
+
 ## 2026-09-11 — F37-01 Soft AI config PATCH RBAC (SecureDog WARN)
 
 - `PATCH /api/chat/soft-ai/config` now requires `update_config` (OWNER/ADMIN only).

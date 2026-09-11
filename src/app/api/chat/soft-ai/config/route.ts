@@ -2,6 +2,8 @@
  * Soft Tenant AI config skeleton — GET/PATCH personality, KB, allowlist, payment gate.
  * Persists on TenantFeatureFlag.config for soft_tenant_ai_v1 (creates flag row if missing).
  * Enabling the worker remains a separate `enabled` flip (default off).
+ *
+ * F37-01: PATCH requires update_config; paymentAlwaysHuman:false fail-closed OWNER/ADMIN only.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -13,6 +15,12 @@ import {
   parseSoftAiConfig,
   softAiConfigToJson,
 } from '@/lib/soft-ai/config'
+import {
+  decideSoftAiConfigPatch,
+  wantsEnabledTrueFromBody,
+  wantsPaymentAlwaysHumanFalseFromBody,
+} from '@/lib/soft-ai/config-rbac'
+import type { Role } from '@/lib/rbac'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -43,12 +51,11 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    // F37-01: only OWNER/ADMIN (update_config) may enable AI or flip paymentAlwaysHuman.
-    // SALES/MANAGER have view_config but must not mutate Soft AI gates.
+    // Outer gate: update_config (OWNER/ADMIN). SALES/MANAGER view_config-only cannot PATCH.
     const auth = await authenticateAPIWithPermission(request, 'update_config')
     if (!auth.ok) return auth.response
 
-    const { tenantId } = auth
+    const { tenantId, role } = auth
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ success: false, error: 'JSON requerido' }, { status: 400 })
@@ -60,12 +67,28 @@ export async function PATCH(request: NextRequest) {
       select: { id: true, enabled: true, config: true },
     })
 
+    const bodyRec = body as Record<string, unknown>
+    const existingEnabled = existing?.enabled === true
+    const wantsEnabledTrue = wantsEnabledTrueFromBody(bodyRec, existingEnabled)
+    const wantsPaymentFalse = wantsPaymentAlwaysHumanFalseFromBody(bodyRec)
+
+    // Exact orch gates (defense in depth beyond update_config).
+    const decision = decideSoftAiConfigPatch({
+      role: role as Role,
+      wantsEnabledTrue,
+      wantsPaymentAlwaysHumanFalse: wantsPaymentFalse,
+    })
+    if (!decision.ok) {
+      return NextResponse.json({ success: false, error: decision.error }, { status: decision.status })
+    }
+
     const merged = parseSoftAiConfig({
       ...(existing?.config && typeof existing.config === 'object' ? existing.config : {}),
       ...(body.config && typeof body.config === 'object' ? body.config : body),
     })
-    // Force payment gate on unless explicit false is sent via config.paymentAlwaysHuman
-    if (body.config?.paymentAlwaysHuman === false || body.paymentAlwaysHuman === false) {
+
+    // Fail closed on payment gate: only OWNER/ADMIN path above may set false.
+    if (wantsPaymentFalse) {
       merged.paymentAlwaysHuman = false
     } else {
       merged.paymentAlwaysHuman = true
@@ -82,6 +105,7 @@ export async function PATCH(request: NextRequest) {
         data: { enabled, config: configJson },
       })
     } else {
+      // New rows stay disabled unless an authorized caller sets enabled:true.
       await db.tenantFeatureFlag.create({
         data: {
           scope: tenantId,

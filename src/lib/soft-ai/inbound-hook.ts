@@ -54,6 +54,7 @@ async function sendMetaText(opts: {
       const url = addAppSecretProofToUrl(
         buildMetaGraphUrl(`${opts.phoneNumberId}/messages`),
         token,
+        { purpose: 'whatsapp' },
       )
       const res = await fetch(url, {
         method: 'POST',

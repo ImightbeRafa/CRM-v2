@@ -42,3 +42,12 @@ export {
   runEscalateToHuman,
   type SoftAiToolDeps,
 } from '@/lib/soft-ai/tools'
+export {
+  canEnableSoftTenantAi,
+  canDisablePaymentAlwaysHuman,
+  decideSoftAiConfigPatch,
+  wantsEnabledTrueFromBody,
+  wantsPaymentAlwaysHumanFalseFromBody,
+  SOFT_AI_CONFIG_FORBIDDEN,
+  SOFT_AI_PAYMENT_GATE_FORBIDDEN,
+} from '@/lib/soft-ai/config-rbac'

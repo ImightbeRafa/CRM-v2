@@ -489,6 +489,27 @@ export default function SocialConfigPage() {
     return `WA ${short}`
   }
 
+  function confirmAddAnother(platform: 'instagram' | 'whatsapp', existingCount: number): boolean {
+    if (existingCount <= 0) return true
+    const label = platform === 'instagram' ? 'Instagram' : 'WhatsApp'
+    return confirm(
+      `Ya tenés ${existingCount} cuenta${existingCount === 1 ? '' : 's'} de ${label} conectada${existingCount === 1 ? '' : 's'}.\n\n` +
+        `¿Agregar otra ${label}?\n\n` +
+        `• Un ID distinto se suma como cuenta nueva.\n` +
+        `• El mismo ID se actualiza (no duplica).`,
+    )
+  }
+
+  async function handleAddInstagram() {
+    if (!confirmAddAnother('instagram', igAccounts.length)) return
+    await handleLinkInstagram()
+  }
+
+  function handleAddWhatsApp() {
+    if (!confirmAddAnother('whatsapp', waAccounts.length)) return
+    launchWhatsAppEmbeddedSignup()
+  }
+
   return (
     <div className="min-h-[100dvh] bg-[#dde7f5] px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl overflow-hidden rounded-[20px] bg-white p-6 shadow-sm sm:p-8">
@@ -496,14 +517,14 @@ export default function SocialConfigPage() {
           <div>
             <h1 className="text-[22px] font-semibold text-slate-900">Canales conectados</h1>
             <p className="mt-1 text-[13px] text-slate-500">
-              Multi IG + multi WA. El bot staff NO aparece aquí.
+              Multi IG + multi WA. Podés agregar otra cuenta sin reemplazar las ya conectadas.
             </p>
             <p className="mt-1 text-xs text-slate-400">
               Inbox de clientes en{' '}
               <a className="text-[#5b6cff] underline" href="/chats">
                 /chats
               </a>
-              . Webhook staff: no listado.
+              . El bot staff NO aparece aquí.
             </p>
           </div>
           <label className="block w-full sm:max-w-xs">
@@ -538,10 +559,14 @@ export default function SocialConfigPage() {
                 <p className="text-sm text-slate-400">Cargando…</p>
               ) : igVisible.length === 0 ? (
                 <p className="rounded-xl bg-white px-4 py-3 text-sm text-slate-500">
-                  Ninguna cuenta de Instagram todavía.
+                  Ninguna cuenta de Instagram todavía. Conectá la primera para empezar.
                 </p>
               ) : (
-                igVisible.map((acc) => (
+                <>
+                  <p className="text-[11px] font-medium text-slate-500">
+                    {igAccounts.length} conectada{igAccounts.length === 1 ? '' : 's'} · podés sumar otra
+                  </p>
+                  {igVisible.map((acc) => (
                   <div
                     key={acc.id}
                     className={`flex flex-col gap-2 rounded-xl px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${
@@ -577,18 +602,30 @@ export default function SocialConfigPage() {
                       </button>
                     </div>
                   </div>
-                ))
+                ))}
+                </>
               )}
             </div>
 
             <button
               type="button"
-              onClick={handleLinkInstagram}
+              onClick={() => {
+                void handleAddInstagram()
+              }}
               disabled={connectingInstagram}
               className="mt-5 rounded-[10px] bg-[#5b6cff] px-4 py-2.5 text-[13px] font-medium text-white disabled:opacity-50"
             >
-              {connectingInstagram ? 'Conectando…' : '+ Agregar Instagram'}
+              {connectingInstagram
+                ? 'Conectando…'
+                : igAccounts.length > 0
+                  ? '+ Agregar otra Instagram'
+                  : '+ Conectar Instagram'}
             </button>
+            {igAccounts.length > 0 ? (
+              <p className="mt-2 text-[11px] text-slate-500">
+                Misma cuenta IG = actualizar. Otra Página/IG = se suma al inbox.
+              </p>
+            ) : null}
           </section>
 
           {/* WhatsApp card */}
@@ -605,10 +642,14 @@ export default function SocialConfigPage() {
                 <p className="text-sm text-slate-400">Cargando…</p>
               ) : waVisible.length === 0 ? (
                 <p className="rounded-xl bg-white px-4 py-3 text-sm text-slate-500">
-                  Ningún número de WhatsApp todavía.
+                  Ningún número de WhatsApp todavía. Conectá el primero para el inbox.
                 </p>
               ) : (
-                waVisible.map((acc) => (
+                <>
+                  <p className="text-[11px] font-medium text-slate-500">
+                    {waAccounts.length} número{waAccounts.length === 1 ? '' : 's'} · podés sumar otro
+                  </p>
+                  {waVisible.map((acc) => (
                   <div
                     key={acc.id}
                     className={`flex flex-col gap-2 rounded-xl px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${
@@ -647,24 +688,34 @@ export default function SocialConfigPage() {
                       </button>
                     </div>
                   </div>
-                ))
+                ))}
+                </>
               )}
             </div>
 
             <button
               type="button"
-              onClick={launchWhatsAppEmbeddedSignup}
+              onClick={handleAddWhatsApp}
               disabled={!fbReady || !FB_LOGIN_CONFIG_ID || connectingWhatsApp}
               className="mt-5 rounded-[10px] bg-[#5b6cff] px-4 py-2.5 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {connectingWhatsApp
                 ? 'Conectando…'
                 : !FB_LOGIN_CONFIG_ID
-                  ? 'Falta FB_LOGIN_CONFIG_ID'
+                  ? waAccounts.length > 0
+                    ? '+ Agregar otro WA (falta config)'
+                    : '+ Conectar WA (falta config)'
                   : !fbReady
                     ? 'Cargando SDK…'
-                    : '+ Agregar WhatsApp'}
+                    : waAccounts.length > 0
+                      ? '+ Agregar otro WhatsApp'
+                      : '+ Conectar WhatsApp'}
             </button>
+            {waAccounts.length > 0 ? (
+              <p className="mt-2 text-[11px] text-slate-500">
+                Mismo Phone Number ID = actualizar. Otro número = se suma al inbox.
+              </p>
+            ) : null}
 
             <button
               type="button"
@@ -739,7 +790,8 @@ export default function SocialConfigPage() {
         ) : null}
 
         <p className="mt-5 text-[12px] text-[#5b6cff]">
-          ✦ Tip: después de OAuth, Betsy verifica subscribed_apps antes de marcar Conectado.
+          ✦ Tip: “Agregar otra/otro” suma un canal al inbox. OAuth verifica subscribed_apps antes de
+          marcar Conectado.
         </p>
 
         {/* Collapsible Meta diagnostics */}

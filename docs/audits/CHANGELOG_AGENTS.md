@@ -2,6 +2,20 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-11 — Rafael GO Soft 9.5 + multi-connect + WA APPROVED gate
+
+- Soft 9.5 polish inside Soft chrome: empty states, sticky Resumen IA stub,
+  rail ask hint, keyboard (⌘K / Esc / ↑↓ / Enter / `/`).
+- Soft demo chats: localStorage seed clearly marked DEMO + removable; never
+  writes ChatMessage / tenant production chat data.
+- `/config/social` multi-connect: “Agregar otra/otro” copy + confirm when
+  accounts already exist; upsert vs new-id explained.
+- `POST /api/chat/send` server-side APPROVED/ACTIVE re-check via Graph
+  `message_templates` before WA template send (`wa-template-approval.ts`).
+- Hard locks: Soft chrome language only; `/api/bot/**` + staff `WHATSAPP_*` +
+  `lib/bot/whatsapp` untouched; no dual-router; no prisma push.
+- Prove: `npm run test:chat-harden` (+ soft-meta-wait-iron) + build.
+
 ## 2026-09-10 — Soft Copilot Phase 1 HARDEN
 
 - Encrypt `SocialAccount.accessToken` via `encryption.ts` on all write paths

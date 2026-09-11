@@ -5,6 +5,11 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { chatSendRateLimit } from '@/lib/rate-limit'
+import {
+  findApprovedWhatsAppTemplate,
+  normalizeWhatsAppTemplateRows,
+  templateNotApprovedErrorMessage,
+} from '@/lib/wa-template-approval'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -179,6 +184,62 @@ export async function POST(request: NextRequest) {
       }
     } else if (account.platform === 'whatsapp') {
       try {
+        // Server-side APPROVED gate — never trust the client picker alone.
+        if (isTemplate) {
+          const wabaId = parseSocialRefreshToken(account.refreshToken).whatsappBusinessAccountId
+          if (!wabaId) {
+            return jsonError(
+              'Falta WhatsApp Business Account ID. Reconectá WhatsApp desde Configuración Social.',
+              400,
+            )
+          }
+
+          const templatesUrl = addAppSecretProofToUrl(
+            buildMetaGraphUrl(
+              `${encodeURIComponent(wabaId)}/message_templates?limit=100&fields=${encodeURIComponent('name,status,language,category')}`,
+            ),
+            account.accessToken,
+            { purpose: 'whatsapp' },
+          )
+          const templatesRes = await fetch(templatesUrl, {
+            headers: { Authorization: `Bearer ${account.accessToken}` },
+            signal: metaFetchSignal(),
+          })
+          const templatesData = await readProviderJson(templatesRes)
+          if (!templatesRes.ok) {
+            console.warn('[chat/send] Template status lookup failed', {
+              status: templatesRes.status,
+              error: templatesData?.error?.message,
+            })
+            return jsonError(
+              templatesData?.error?.message ||
+                'No se pudo verificar el estado APPROVED de la plantilla en Meta',
+              502,
+              { providerResponse: templatesData },
+            )
+          }
+
+          const rows = normalizeWhatsAppTemplateRows(templatesData?.data)
+          const approved = findApprovedWhatsAppTemplate(rows, templateName, templateLanguage)
+          if (!approved) {
+            const sameName = rows.find(
+              (t) =>
+                t.name === templateName.trim() &&
+                t.language.toLowerCase() === (templateLanguage || 'es').trim().toLowerCase(),
+            )
+            console.warn('[chat/send] Rejected non-APPROVED template', {
+              templateName,
+              templateLanguage,
+              status: sameName?.status || null,
+            })
+            return jsonError(templateNotApprovedErrorMessage(templateName, sameName?.status), 400, {
+              templateStatus: sameName?.status || null,
+              templateName,
+              templateLanguage,
+            })
+          }
+        }
+
         const sendUrl = addAppSecretProofToUrl(
           buildMetaGraphUrl(`${account.accountId}/messages`),
           account.accessToken,

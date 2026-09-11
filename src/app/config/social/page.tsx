@@ -702,7 +702,9 @@ export default function SocialConfigPage() {
               {connectingWhatsApp
                 ? 'Conectando…'
                 : !FB_LOGIN_CONFIG_ID
-                  ? 'Falta FB_LOGIN_CONFIG_ID'
+                  ? waAccounts.length > 0
+                    ? '+ Agregar otro WA (falta config)'
+                    : '+ Conectar WA (falta config)'
                   : !fbReady
                     ? 'Cargando SDK…'
                     : waAccounts.length > 0

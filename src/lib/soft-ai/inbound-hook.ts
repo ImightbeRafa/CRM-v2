@@ -2,6 +2,9 @@
  * Soft Tenant AI inbound hook — after CRM chat webhook stores an inbound,
  * optionally run the tenant AI worker and send a full reply.
  * Feature-flagged (soft_tenant_ai_v1). Never touches staff bot routes.
+ *
+ * F37-02: agent mode is server-truth. Missing agentState key does NOT default to
+ * ai_active. Re-read mode immediately before Meta send; fail-closed if paused/human.
  */
 
 import { prisma } from '@/lib/db'
@@ -9,10 +12,15 @@ import { shouldUseSoftTenantAiV1, readSoftTenantAiConfig } from '@/lib/feature-f
 import { parseSoftAiConfig } from '@/lib/soft-ai/config'
 import { runSoftAiTurn } from '@/lib/soft-ai/worker'
 import { buildSoftAiServerDeps } from '@/lib/soft-ai/server-deps'
-import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
+import {
+  maySoftAiMetaReply,
+  resolvePersistedAgentMode,
+  softAiConversationKey,
+} from '@/lib/soft-ai/agent-mode-server'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
+import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 
 type InboundHookArgs = {
   tenantId: string
@@ -23,20 +31,11 @@ type InboundHookArgs = {
   content: string
 }
 
-function conversationKey(socialAccountId: string, recipientId: string) {
-  return `${socialAccountId}::${recipientId}`
-}
-
-function readAgentModeFromConfig(
-  config: Record<string, unknown>,
-  key: string,
-): SoftAiAgentMode {
-  const agentState = config.agentState
-  if (!agentState || typeof agentState !== 'object') return 'ai_active'
-  const row = (agentState as Record<string, { mode?: string }>)[key]
-  const mode = row?.mode
-  if (mode === 'paused' || mode === 'human' || mode === 'ai_active') return mode
-  return 'ai_active'
+async function loadSoftAiFlagConfig(tenantId: string): Promise<Record<string, unknown>> {
+  const flag = await readSoftTenantAiConfig(tenantId)
+  return flag.config && typeof flag.config === 'object' && !Array.isArray(flag.config)
+    ? (flag.config as Record<string, unknown>)
+    : {}
 }
 
 async function sendMetaText(opts: {
@@ -111,18 +110,33 @@ async function sendMetaText(opts: {
 
 /**
  * Fire-and-forget safe: never throws to webhook caller.
+ * Returns status for tests / diagnostics.
  */
-export async function maybeRunSoftAiAfterInbound(args: InboundHookArgs): Promise<void> {
+export async function maybeRunSoftAiAfterInbound(
+  args: InboundHookArgs,
+): Promise<{ ran: boolean; skippedReason?: string; metaSent?: boolean }> {
   try {
     const enabled = await shouldUseSoftTenantAiV1(args.tenantId)
-    if (!enabled) return
+    if (!enabled) return { ran: false, skippedReason: 'flag_off' }
 
-    const flag = await readSoftTenantAiConfig(args.tenantId)
-    const config = parseSoftAiConfig(flag.config)
-    const key = conversationKey(args.socialAccountId, args.senderId)
-    const agentMode = readAgentModeFromConfig(flag.config, key)
-    if (agentMode !== 'ai_active') return
+    const key = softAiConversationKey(args.socialAccountId, args.senderId)
+    let flagConfig = await loadSoftAiFlagConfig(args.tenantId)
+    const agentMode = resolvePersistedAgentMode(flagConfig, key)
 
+    // F37-02: missing key / non-explicit mode → fail closed (no Meta auto-reply)
+    if (!maySoftAiMetaReply(agentMode)) {
+      return {
+        ran: false,
+        skippedReason:
+          agentMode === 'paused'
+            ? 'paused'
+            : agentMode === 'human'
+              ? 'human'
+              : 'missing_or_non_explicit_mode',
+      }
+    }
+
+    const config = parseSoftAiConfig(flagConfig)
     const db = prisma as any
     const recent = await db.chatMessage.findMany({
       where: { socialAccountId: args.socialAccountId },
@@ -141,9 +155,7 @@ export async function maybeRunSoftAiAfterInbound(args: InboundHookArgs): Promise
     const thread = recent
       .filter((m: { metadata?: { from?: string; to?: string } }) => {
         const meta = m.metadata || {}
-        const peer =
-          // inbound from sender or outbound to sender
-          meta.from === args.senderId || meta.to === args.senderId
+        const peer = meta.from === args.senderId || meta.to === args.senderId
         return peer
       })
       .reverse()
@@ -175,7 +187,7 @@ export async function maybeRunSoftAiAfterInbound(args: InboundHookArgs): Promise
         platform: args.platform,
         messages,
         inboundText: args.content,
-        agentMode,
+        agentMode: 'ai_active',
         config,
         tags: [],
         orderId,
@@ -184,7 +196,29 @@ export async function maybeRunSoftAiAfterInbound(args: InboundHookArgs): Promise
       buildSoftAiServerDeps(args.tenantId),
     )
 
-    if (result.skipped || !result.reply) return
+    if (result.skipped || !result.reply) {
+      return { ran: false, skippedReason: result.skipReason || 'no_reply' }
+    }
+
+    // F37-02: re-read mode immediately before Meta send — fail closed if paused/human/missing
+    flagConfig = await loadSoftAiFlagConfig(args.tenantId)
+    const modeBeforeSend = resolvePersistedAgentMode(flagConfig, key)
+    if (!maySoftAiMetaReply(modeBeforeSend)) {
+      console.info('[soft-ai/inbound-hook] Meta send blocked — mode not ai_active', {
+        conversationKey: key,
+        modeBeforeSend,
+      })
+      return {
+        ran: true,
+        skippedReason:
+          modeBeforeSend === 'paused'
+            ? 'paused_before_send'
+            : modeBeforeSend === 'human'
+              ? 'human_before_send'
+              : 'missing_mode_before_send',
+        metaSent: false,
+      }
+    }
 
     const account = await db.socialAccount.findFirst({
       where: { id: args.socialAccountId, tenantId: args.tenantId },
@@ -196,10 +230,10 @@ export async function maybeRunSoftAiAfterInbound(args: InboundHookArgs): Promise
         accountId: true,
       },
     })
-    if (!account?.accessToken) return
+    if (!account?.accessToken) return { ran: true, skippedReason: 'no_account', metaSent: false }
 
     const token = decryptSocialAccessToken(account.accessToken)
-    if (!token) return
+    if (!token) return { ran: true, skippedReason: 'no_token', metaSent: false }
     const parsed = parseSocialRefreshToken(account.refreshToken)
     const send = await sendMetaText({
       platform: args.platform,
@@ -231,13 +265,13 @@ export async function maybeRunSoftAiAfterInbound(args: InboundHookArgs): Promise
       },
     })
 
-    // Persist escalated mode into flag.config.agentState
+    // Persist escalated mode into flag.config.agentState (server truth)
     if (result.agentMode !== 'ai_active') {
       const existing = await db.tenantFeatureFlag.findFirst({
         where: {
           tenantId: args.tenantId,
           scope: args.tenantId,
-          key: 'soft_tenant_ai_v1',
+          key: SOFT_TENANT_AI_V1_FLAG,
         },
         select: { id: true, config: true },
       })
@@ -250,6 +284,7 @@ export async function maybeRunSoftAiAfterInbound(args: InboundHookArgs): Promise
           mode: result.agentMode,
           updatedAt: new Date().toISOString(),
           action: 'escalate',
+          staffControlled: result.agentMode === 'human',
         }
         await db.tenantFeatureFlag.update({
           where: { id: existing.id },
@@ -257,7 +292,10 @@ export async function maybeRunSoftAiAfterInbound(args: InboundHookArgs): Promise
         })
       }
     }
+
+    return { ran: true, metaSent: send.ok }
   } catch (error) {
     console.error('[soft-ai/inbound-hook]', error)
+    return { ran: false, skippedReason: 'error' }
   }
 }

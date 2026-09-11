@@ -2,6 +2,15 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-11 — F37-02 Soft AI server-truth pause/takeover (blocks Meta)
+
+- SoftCopilotInbox: await `/api/chat/soft-ai/control` success **before** committing
+  UI mode (DEMO stays localStorage-only).
+- Inbound hook: `resolvePersistedAgentMode` — missing agentState/key is **not**
+  `ai_active`; re-read mode immediately before Meta send; fail-closed if
+  paused/human/missing. Control API persists `staffControlled` on agentState.
+- Prove: `npm run test:soft-ai` (+ soft-ai-server-truth) + build. Same draft #37.
+
 ## 2026-09-11 — F37-01 Soft AI config PATCH exact orch RBAC stamp
 
 - PATCH `/api/chat/soft-ai/config`: outer `update_config` + `decideSoftAiConfigPatch`:

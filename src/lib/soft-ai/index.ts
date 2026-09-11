@@ -51,3 +51,8 @@ export {
   SOFT_AI_CONFIG_FORBIDDEN,
   SOFT_AI_PAYMENT_GATE_FORBIDDEN,
 } from '@/lib/soft-ai/config-rbac'
+export {
+  resolvePersistedAgentMode,
+  maySoftAiMetaReply,
+  softAiConversationKey,
+} from '@/lib/soft-ai/agent-mode-server'

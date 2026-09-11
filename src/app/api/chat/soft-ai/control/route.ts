@@ -60,6 +60,8 @@ export async function POST(request: NextRequest) {
       mode,
       updatedAt: new Date().toISOString(),
       action,
+      // Staff-driven controls must be visible to inbound (F37-02 server truth)
+      staffControlled: action === 'take_over' || action === 'pause' || action === 'resume',
     }
 
     const nextConfig = { ...prevConfig, agentState }

@@ -98,6 +98,7 @@ export function SoftCopilotInbox() {
   const [demoConversationsLive, setDemoConversationsLive] = useState<SoftConversation[]>([])
   const [agentStateMap, setAgentStateMap] = useState<SoftAiAgentStateMap>({})
   const [aiBusy, setAiBusy] = useState(false)
+  const [controlBusy, setControlBusy] = useState(false)
   const demoAiRanRef = useRef(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -630,20 +631,50 @@ export function SoftCopilotInbox() {
     writeTagsMap(next)
   }
 
-  function setAgentControl(action: 'take_over' | 'pause' | 'resume') {
-    if (!selectedConversation) return
+  async function setAgentControl(action: 'take_over' | 'pause' | 'resume') {
+    if (!selectedConversation || controlBusy) return
     const key = softKey(selectedConversation)
-    const next = applyAgentControl(agentStateMap, key, action, Boolean(selectedConversation.isDemo))
-    setAgentStateMap(next)
-    writeAgentStateMap(next)
-    // Best-effort server mirror for real (non-demo) chats
-    if (!selectedConversation.isDemo) {
-      void fetch('/api/chat/soft-ai/control', {
+    const isDemo = Boolean(selectedConversation.isDemo)
+
+    // Soft DEMO: local-only is OK (no Meta / no tenant flag row required).
+    if (isDemo) {
+      const next = applyAgentControl(agentStateMap, key, action, true)
+      setAgentStateMap(next)
+      writeAgentStateMap(next)
+      return
+    }
+
+    // F37-02: await server control success BEFORE committing UI mode (server truth).
+    setControlBusy(true)
+    try {
+      const res = await fetch('/api/chat/soft-ai/control', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, conversationKey: key }),
-      }).catch(() => {})
+      })
+      const parsed = await parseApiJson<{
+        success?: boolean
+        mode?: string
+        error?: string
+      }>(res)
+      if (!parsed.ok || !res.ok || !parsed.data.success) {
+        const err =
+          humanizeChatSendError(
+            parsed.ok ? parsed.data.error : parsed.error,
+            parsed.ok ? res.status : parsed.status,
+          ) || 'No se pudo actualizar el control de IA'
+        setSendError(err)
+        return
+      }
+      const next = applyAgentControl(agentStateMap, key, action, false)
+      setAgentStateMap(next)
+      writeAgentStateMap(next)
+    } catch (e: unknown) {
+      const err = e instanceof Error ? e.message : 'No se pudo actualizar el control de IA'
+      setSendError(err)
+    } finally {
+      setControlBusy(false)
     }
   }
 
@@ -895,10 +926,16 @@ export function SoftCopilotInbox() {
       void handleSendTemplate(tpl)
     },
     agentMode: selectedAgentState.mode,
-    onTakeOver: () => setAgentControl('take_over'),
-    onPauseAi: () => setAgentControl('pause'),
-    onResumeAi: () => setAgentControl('resume'),
-    aiBusy,
+    onTakeOver: () => {
+      void setAgentControl('take_over')
+    },
+    onPauseAi: () => {
+      void setAgentControl('pause')
+    },
+    onResumeAi: () => {
+      void setAgentControl('resume')
+    },
+    aiBusy: aiBusy || controlBusy,
   }
 
   const listPane = (
@@ -973,9 +1010,15 @@ export function SoftCopilotInbox() {
             onToggleTag={toggleTag}
             agentMode={selectedAgentState.mode}
             toolLog={selectedAgentState.toolLog}
-            onTakeOver={() => setAgentControl('take_over')}
-            onPauseAi={() => setAgentControl('pause')}
-            onResumeAi={() => setAgentControl('resume')}
+            onTakeOver={() => {
+              void setAgentControl('take_over')
+            }}
+            onPauseAi={() => {
+              void setAgentControl('pause')
+            }}
+            onResumeAi={() => {
+              void setAgentControl('resume')
+            }}
           />
         </div>
 

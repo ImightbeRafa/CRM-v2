@@ -7,7 +7,7 @@ import type { ChatConversation, ChatInboxMessage } from '@/lib/chat-inbox'
 
 export type ConversationStatus = 'nuevo' | 'en_curso' | 'hecho'
 export type ChannelFilter = 'todos' | 'whatsapp' | 'instagram'
-export type InboxBucket = 'tus_chats' | 'abiertos' | 'sin_asignar' | 'hechos'
+export type InboxBucket = 'tus_chats' | 'abiertos' | 'sin_asignar' | 'ia_manejando' | 'hechos'
 export type SoftTag = 'Envío' | 'VIP' | 'Nuevo'
 
 export const SOFT_COPILOT_STATUS_KEY = 'betsy.softCopilot.conversationStatus.v1'
@@ -306,6 +306,8 @@ export function filterSoftConversations(
     if (opts.bucket === 'tus_chats' && c.status === 'hecho') return false
     // Sin asignar chrome: treat as open/new without inventing staffing product
     if (opts.bucket === 'sin_asignar' && c.status !== 'nuevo') return false
+    // IA manejando filtered by SoftCopilotInbox via agentMode map (status still open)
+    if (opts.bucket === 'ia_manejando' && c.status === 'hecho') return false
     if (!q) return true
     const hay = `${c.recipientName || ''} ${c.lastMessage || ''} ${c.accountLabel} ${c.recipientId}`.toLowerCase()
     return hay.includes(q)
@@ -341,6 +343,14 @@ export type AgentChecklistItem = {
   state: 'done' | 'progress' | 'todo'
 }
 
+/** Monitor queue stats for Soft inbox (replaces suggest-first checklist). */
+export type SoftAiMonitorStats = {
+  aiActive: number
+  paused: number
+  human: number
+  toolActions: number
+}
+
 export function buildAgentChecklist(opts: {
   hasConversation: boolean
   hasSummary: boolean
@@ -354,18 +364,18 @@ export function buildAgentChecklist(opts: {
       state: opts.hasConversation ? 'done' : 'todo',
     },
     {
-      id: 'summary',
-      label: 'Resumen listo',
+      id: 'monitor',
+      label: 'Monitor IA listo',
       state: opts.hasSummary ? 'done' : opts.hasConversation ? 'progress' : 'todo',
     },
     {
-      id: 'draft',
-      label: 'Borrador sugerido',
+      id: 'tools',
+      label: 'Herramientas',
       state: opts.hasDraft ? 'done' : opts.hasConversation ? 'progress' : 'todo',
     },
     {
-      id: 'send',
-      label: opts.windowOpen ? 'Enviar / plantilla' : 'Elegir plantilla',
+      id: 'control',
+      label: opts.windowOpen ? 'Tomar / Pausar / Reanudar' : 'Elegir plantilla',
       state: 'todo',
     },
   ]

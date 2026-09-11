@@ -2,6 +2,51 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-11 — F37-03 Soft human composer after Pausar / Tomar control
+
+- SoftThreadPane: unlock input/Enviar whenever agent mode is `paused` or `human`
+  (incl. Soft DEMO — removed blanket `isDemo` disable).
+- SoftCopilotInbox: DEMO human send appends locally (never Meta) after pause/takeover.
+- Helper `isSoftHumanComposerEnabled`. Does not regress F37-01/F37-02.
+- Prove: `npm run test:soft-ai` + build. Same draft #37.
+
+## 2026-09-11 — F37-02 Soft AI server-truth pause/takeover (blocks Meta)
+
+- SoftCopilotInbox: await `/api/chat/soft-ai/control` success **before** committing
+  UI mode (DEMO stays localStorage-only).
+- Inbound hook: `resolvePersistedAgentMode` — missing agentState/key is **not**
+  `ai_active`; re-read mode immediately before Meta send; fail-closed if
+  paused/human/missing. Control API persists `staffControlled` on agentState.
+- Prove: `npm run test:soft-ai` (+ soft-ai-server-truth) + build. Same draft #37.
+
+## 2026-09-11 — F37-01 Soft AI config PATCH exact orch RBAC stamp
+
+- PATCH `/api/chat/soft-ai/config`: outer `update_config` + `decideSoftAiConfigPatch`:
+  - `enabled:true` requires `update_config` (SALES/MANAGER view_config-only denied)
+  - `paymentAlwaysHuman:false` fail-closed OWNER/ADMIN only
+- Soft AI WA outbound `appsecret_proof` uses `purpose:'whatsapp'` (tiny). TOCTOU parked.
+- Prove: `npm run test:soft-ai` + build. Same draft #37.
+
+## 2026-09-11 — F37-01 Soft AI config PATCH RBAC (SecureDog WARN)
+
+- `PATCH /api/chat/soft-ai/config` now requires `update_config` (OWNER/ADMIN only).
+  SALES/MANAGER keep `view_config` but cannot enable Soft AI or flip
+  `paymentAlwaysHuman` off. Flag still defaults off. Same draft PR #37.
+- Prove: `npm run test:soft-ai` (+ soft-ai-config-rbac) + build.
+
+## 2026-09-11 — Soft Tenant AI full package (monitor + tools + DEMO)
+
+- Tenant AI worker (`src/lib/soft-ai/`): inbound → KB/config → tools → full reply.
+  Feature flag `soft_tenant_ai_v1` (default off). Soft DEMO forces on client-side.
+- Tools: create/link order, order status, Correos guía (DB or honest stub), tag,
+  escalate_to_human. Payment/SINPE always-human via config skeleton.
+- Soft UI shift (chrome language): monitor queue “IA manejando”, tool log rail,
+  Take over / Pause / Resume AI — not suggest-first.
+- APIs: `/api/chat/soft-ai/{run,config,control}`; webhook hooks Soft AI when flagged
+  (never staff bot / no dual-router). No prisma push.
+- Soft DEMO e2e without Meta: `runSoftDemoAiPass` + localStorage agent state.
+- Prove: `npm run test:soft-ai` / `test:chat-harden` + build.
+
 ## 2026-09-11 — Rafael GO Soft 9.5 + multi-connect + WA APPROVED gate
 
 - Soft 9.5 polish inside Soft chrome: empty states, sticky Resumen IA stub,

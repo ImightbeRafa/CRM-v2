@@ -11,6 +11,8 @@ export const SOFT_DELETE_RESTORE_V2_FLAG = 'soft_delete_restore_v2';
 export const AI_CUSTOMER_PASTE_V2_FLAG = 'ai_customer_paste_v2';
 export const SETUP_GUIDE_V2_FLAG = 'setup_guide_v2';
 export const STATISTICS_REVENUE_V2_FLAG = 'statistics_revenue_v2';
+/** Soft tenant AI worker for /chats — default off in prod; Soft DEMO forces on client-side. */
+export const SOFT_TENANT_AI_V1_FLAG = 'soft_tenant_ai_v1';
 
 const PREVIEW_UNLOCKED_KEYS = new Set([
   ORDER_LIFECYCLE_V2_FLAG,
@@ -139,6 +141,19 @@ export async function shouldUseBotLifecycleV2(tenantId: string) {
 
 export async function shouldUseSoftDeleteRestoreV2(tenantId: string) {
   return isTenantFeatureEnabled(tenantId, SOFT_DELETE_RESTORE_V2_FLAG);
+}
+
+/** Soft Tenant AI full-reply worker. Default off — never preview-unlocked. */
+export async function shouldUseSoftTenantAiV1(tenantId: string) {
+  return isTenantFeatureEnabled(tenantId, SOFT_TENANT_AI_V1_FLAG);
+}
+
+export async function readSoftTenantAiConfig(tenantId: string) {
+  const flag = await readTenantFlag(tenantId, SOFT_TENANT_AI_V1_FLAG);
+  return {
+    enabled: flag.enabled,
+    config: flag.config,
+  };
 }
 
 export async function readTenantUiReadiness(tenantId: string) {

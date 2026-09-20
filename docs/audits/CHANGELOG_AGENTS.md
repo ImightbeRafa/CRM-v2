@@ -1,3 +1,102 @@
+## 2026-09-21 — Bugbot follow-up for #38 (coexistence)
+
+- Rebased onto `dev` `4561866` after [#74](https://github.com/ImightbeRafa/CRM-v2/pull/74)
+  (Instagram reconnect updates SocialAccount instead of P2002 500; parent
+  [#72](https://github.com/ImightbeRafa/CRM-v2/pull/72) `0df02d3` P4 agent-sent
+  label from send snapshot).
+  Textual conflict: `docs/audits/CHANGELOG_AGENTS.md` only. Restored one heading;
+  #39 follow-up (+ rebase-onto-#74/`4561866` note), then #74 Instagram reconnect
+  P2002, then #72 P4 agent-sent label, then #71 P3 audited unlock gate, then #70
+  P2 Probar ↔ live runtime parity, then #69 P0+P1 Soft agent Grok 4.7 allowlist
+  + guardrails, then #68 Forge WA Probar↔live + Grok 4.7, then #67 sales-agent
+  pipeline SoT, then #66 UX redo, then #65 UX redo plan, then #64 AL2-A1, then
+  #63 verify-betsy skill, then #62 Arc 2 plan, then #61 HOTFIX contrast +
+  reload-feel, then A2, then older.
+  No product-file overlap with #74 (instagram-social-account + callback/complete
+  routes + `instagram-social-account.test.ts` + `package.json` `test:security`
+  — no #39 product diff). Did not take the #74 writer; kept merged #74 Instagram
+  reconnect intact. Did not apply SQL or flip flags.
+  No product-file overlap with #72 (soft-ai agent-turn snapshot /
+  agent-inbox-projection / SoftThreadPane footer / soft-ai-agent-layer tests
+  — no #39 product diff). Did not take the #72 writer; kept merged #72 P4
+  intact. Did not implement P5+ or remaining #68 packs. Did not PATCH the
+  Forge agent or write `aiFullUnlock`.
+  No product-file overlap with #71 (soft-ai unlock / layer-config-mutate /
+  replay / resolver / agentes Aprobar envío real / unlock tests / package.json
+  — no #39 product diff). Did not take the #71 writer; kept merged #71 P3
+  unlock intact.
+  No product-file overlap with #70 (soft-ai turn inputs/outcome/parity tests /
+  agentes Probar sandbox / railway preview note / package.json — no #39 product
+  diff). Did not take the #70 writer; kept merged #70 P2 intact.
+  No product-file overlap with #69 (soft-ai allowlist / agentes Modelo PATCH /
+  locked-path tests — no #39 product diff). Did not take the #69 writer; kept
+  merged #69 intact.
+  No product-file overlap with #68 (docs-only plan + changelog — no #39 product
+  diff). Did not take the #68 writer; kept merged #68 intact. Did not implement
+  the Forge WA plan.
+  No product-file overlap with #67 (docs-only plan + changelog — no #39 product
+  diff). Did not take the #67 writer; kept merged #67 intact. Did not implement
+  the sales-agent pipeline.
+  No product-file overlap with #66 (agentes paste-import / atajos / Probar UX —
+  no #39 product diff). Did not take the #66 writer; kept merged #66 intact.
+  No product-file overlap with #65 (docs-only plan + changelog — no #39 product
+  diff). Did not implement extra UX beyond the rebase.
+  No product-file overlap with #64 (agent text layer / `029` proposed / agentes
+  Probar + brand facts + shortcuts — no #39 diff).
+  Prior #59 overlap in `chat-inbox.ts` + `chat-inbox.test.ts`
+  still held: #39 `isLegacyCoexistenceOutboundPeer` tagged outbound fallback plus
+  #59 `deliveryStatus` / `clientRequestId` / optimistic send helpers and tests.
+  `page.tsx` replayed clean: kept #55 `session-permissions` (no Prisma in the social
+  client bundle) plus #39 `waSignupReadyToExchange` / `retryAfter` / `current()`
+  (never `forceTokenOnly`). Kept #74 Instagram reconnect
+  (no #39 diff). Kept #72 P4 agent-sent label
+  (no #39 diff). Kept #71 P3 audited unlock gate
+  (no #39 diff). Kept #70 P2 Probar ↔ live runtime parity
+  (no #39 diff). Kept #69 Soft agent Grok 4.7 allowlist + guardrails
+  (no #39 diff). Kept #68 Forge WA Probar↔live + Grok 4.7 docs
+  (no #39 diff). Kept #67 sales-agent pipeline SoT docs (no #39 diff).
+  Kept #66 agentes UX redo (no #39 diff).
+  Kept #65 UX redo plan docs (no #39 diff). Kept #64 AL2-A1 text agent layer
+  (`029` gated; flag off; no #39 diff). Kept #63 verify-betsy skill (no #39
+  diff). Kept #62 Arc 2 plan docs (no #39 diff). Kept #61 agentes contrast /
+  in-page conocimiento / empty `config/loading.tsx` (no #39 diff).
+  Kept #60 conocimiento type (no #39 diff).
+  Kept #59 desk polish (`SoftCopilotInboxV2` /
+  `SoftThreadPane` / send route / `chat-inbox-v2-client` — no #39 diff).
+  Kept #58 A2 knowledge (028 gated; no file overlap).
+  Kept #57 `introductionNames` + agentes Identidad/Voz
+  sections (no file overlap). Kept #56 agentes single-write + audit-after-commit
+  (no file overlap). Kept #54 Agent Layer runtime (flag off;
+  `aiFullUnlock` empty; 027 / 027b / 028 / 029 / 030 not applied). Kept #51 `disconnectedAt` /
+  `tokenStatus: 'revoked'` / `lastErrorCode: 'PARTNER_REMOVED'` on offboard,
+  plus `update_config` RBAC, `reconnectLifecycleData` / `expiresAtFromExpiresIn`,
+  soft-unlink copy, and Reconectar banners. `exchange/route.ts`, `webhook/route.ts`,
+  `meta-chat.ts` replayed clean. Did not
+  import #47 about:blank-on-click. Did not undo #74 Instagram reconnect, #72 P4
+  agent-sent label, #71 P3 unlock, #70 P2 Probar↔live parity, #69 Soft agent
+  allowlist, #68 Forge WA plan, #67 pipeline SoT, #66 UX redo, #65 UX redo plan,
+  #64 AL2-A1, #63 verify-betsy skill, #62 Arc 2 plan, #61 agentes
+  contrast/reload-feel, #60 conocimiento type, #59 desk polish, #58 A2 knowledge,
+  #57 introductionNames, #56 agentes txn/audit, #55 session-permissions, #54
+  Agent Layer, #51 self-serve, #50 media/Soft-AI queue, #46 identity, or #45
+  send/echo.
+  Did not apply `024`/`025`/`026`/`027`/`027b`/`028`/`029`/`030`. `chat_inbox_v2` / `chat_agent_layer_v1` not toggled.
+  Prior rebases after #72/#71/#70/#69/#68/#67/#66/#65/#64/#63/#62/#61/#60/#59/#58/#57/#56/#55/#54/#51/#50/#46/#45/#44/#42/#40 kept.
+- All three post-merge Bugbot notes on `c112e85` / `dev` `e81587aa` were **real**.
+- Outbound SMB echoes/history persist customer in `metadata.to` (direction-aware
+  `buildWebhookStoredMetadata`). Inbox grouping + peer query keep a tagged
+  fallback for already-stored `from`-only coexistence rows; untagged outbound
+  does not fall back.
+- Embedded Signup no longer spends a single-use `code` on the 800ms
+  `forceTokenOnly` path. `waSignupReadyToExchange` requires phone/WABA assets;
+  exchange route defers Graph token exchange via `shouldDeferWhatsAppCodeExchange`.
+  In-flight `exchanging` now queues a retry instead of dropping FINISH.
+- `PARTNER_REMOVED` deactivates exact `waba:<id>` and legacy numeric WABA tokens
+  (`in`), not `startsWith`.
+- Hard locks: `/api/bot/**` + staff `WHATSAPP_*` untouched; Soft Copilot chrome
+  HOLD (Rail untouched); no prisma push; 024/025/026/027/027b/028/029/030 SQL not applied; `chat_inbox_v2` and
+  `chat_agent_layer_v1` stay off; `aiFullUnlock` not written.
+
 ## 2026-09-23 — Instagram reconnect no longer 500s on SocialAccount P2002
 
 - `upsertInstagramSocialAccount` updates the same-tenant Instagram row (active or
@@ -132,6 +231,7 @@
 - No product code, no schema. Implementer model lock: grok-4.7 high fast only.
 - Prove: docs only — `git diff --stat` = `docs/**`. PR stays draft.
 
+
 ## 2026-09-21 — AL2-A1 UX redo: paste-import, plain atajos, WhatsApp Probar
 
 - Owner flow on `/config/agentes`: paste "Cargar desde mis atajos" → review checklist → one Guardar (`import/extract` does not write config; `import/apply` bumps agent version once and writes one audit). Soft LLM via `llm/client.ts` when `XAI_API_KEY` is set; heuristic mapping covers the same facts for review. Confirmation wording stays a red row. Tokens for a model call go to `testDailyTokenCap`.
@@ -152,6 +252,7 @@
 - Out: Soft chrome, staff bot, SINPE queue / orders / Correos, image upload beyond disabled note,
   any schema change. Implementer model lock: grok-4.7 high fast only, never grok-4.5.
 - Prove: docs only — `git diff --stat` = `docs/**`. PR stays draft; no merge without Rafael GO.
+
 
 ## 2026-09-21 — AL2-A1 agent text layer (SQL 029 proposed, not applied)
 
@@ -205,12 +306,13 @@
   while agentes pages force light surfaces (`bg-white` / slate-50) without
   explicit control colors → light-on-white inputs, Probar textarea/result,
   selects, and wizard fields.
-- Fix: route `text-slate-900 [color-scheme:light]` + shared FIELD/TEXTAREA/
+- Fix: route `text-slate-900 [color-scheme:light]` + FIELD/TEXTAREA/
   SELECT classes (`text-slate-900`, readable placeholders, solid disabled).
   Bumped meta `text-slate-400` → `slate-600`. Silent `load({ silent })` after
   mutations so edits no longer flash “Cargando…”. Config hub “Abrir Agentes”
   uses `next/link` (cheap soft-nav). Soft chrome / staff bot untouched.
 - Prove: screenshots of Probar + conocimiento; `npm run build`.
+
 
 ## 2026-09-21 — A2 Soft Agent knowledge (028 gated, flag off)
 
@@ -325,10 +427,6 @@
 - Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; `src/lib/bot/**` untouched.
 - Bench numbers left **pending local postgres** in this Cloud Agent (no Docker).
 
-# Agent Changelog
-
-Append-only. Newest entries at the top.
-
 ## 2026-09-21 — PR-3 channel identity (names / logos / Connect naming)
 
 - Persist WA/IG provider identity at connect (`exchange`, IG complete/callback shared upsert).
@@ -338,10 +436,6 @@ Append-only. Newest entries at the top.
 - Soft AI `canalContext` line `Canal: WhatsApp · {displayName}`; fallback never blank; IG numeric-id `@handle` bug fixed.
 - Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; bot paths untouched.
 - One-off: `scripts/chat-account-identity-backfill.ts` (dry-run default).
-
-# Agent Changelog
-
-Append-only. Newest entries at the top.
 
 ## 2026-09-21 — PR-2 Bugbot follow-up (send/echo + Soft AI + OAuth)
 
@@ -368,10 +462,6 @@ Append-only. Newest entries at the top.
 - Conversation API + SoftCopilotInbox v2 behind `chat_inbox_v2` (default off)
 - Shipped gated `025_chat_inbox_uniques.sql` (NOT applied; not in default apply)
 - Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; bot paths untouched
-
-# Agent Changelog
-
-Append-only. Newest entries at the top.
 
 ## 2026-09-21 — Respond.io PR-1: chat inbox schema foundation (024)
 

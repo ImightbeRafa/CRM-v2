@@ -244,6 +244,8 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
                   providerMediaId: media.providerMediaId,
                   mediaMimeType: media.mediaMimeType,
                   mediaFilename: media.mediaFilename,
+                  from: finalDirection === 'inbound' ? peerId : from || undefined,
+                  to: finalDirection === 'outbound' ? peerId : to || undefined,
                   rawMessage: message,
                 }),
               })
@@ -261,11 +263,13 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
           }
           const content = getWhatsAppContent(message)
           const media = extractWhatsAppMediaFields(message)
+          const customerId = String(message.to)
+          const businessId = message.from ? String(message.from) : ''
           messages.push({
             platform: 'whatsapp',
             accountId: phoneNumberId,
-            senderId: String(message.to),
-            senderName: message.to ? `+${message.to}` : undefined,
+            senderId: customerId,
+            senderName: customerId ? `+${customerId}` : undefined,
             content,
             providerMessageId: message.id ? String(message.id) : undefined,
             messageType: message.type || 'unknown',
@@ -284,6 +288,8 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
               providerMediaId: media.providerMediaId,
               mediaMimeType: media.mediaMimeType,
               mediaFilename: media.mediaFilename,
+              from: businessId || undefined,
+              to: customerId,
               rawMessage: message,
             }),
           })
@@ -325,6 +331,7 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
             providerMediaId: media.providerMediaId,
             mediaMimeType: media.mediaMimeType,
             mediaFilename: media.mediaFilename,
+            from: String(message.from),
             rawMessage: message,
           }),
         })
@@ -545,4 +552,47 @@ export function parseMetaChatPayload(payload: any): ParsedMetaChatPayload {
     ignoredReasons: payload?.object ? [`unsupported_object:${payload.object}`] : ['missing_object'],
     receipts: [],
   }
+}
+
+/**
+ * Persist direction-aware peer ids for inbox grouping.
+ * Inbound customer → `from`; outbound customer → `to`. Never copy the peer into
+ * the opposite field.
+ */
+export function buildWebhookStoredMetadata(
+  event: ParsedMetaChatMessage,
+): Record<string, unknown> {
+  const direction: MetaChatMessageDirection = event.direction || 'inbound'
+  const parsedFrom =
+    typeof event.metadata.from === 'string' && event.metadata.from ? event.metadata.from : ''
+  const parsedTo =
+    typeof event.metadata.to === 'string' && event.metadata.to ? event.metadata.to : ''
+
+  let from: string | undefined
+  let to: string | undefined
+
+  switch (direction) {
+    case 'inbound':
+      from = parsedFrom || event.senderId
+      to = parsedTo || undefined
+      break
+    case 'outbound':
+      to = parsedTo || event.senderId
+      from = parsedFrom || undefined
+      break
+    default: {
+      const _exhaustive: never = direction
+      throw new Error(`Unhandled chat direction: ${String(_exhaustive)}`)
+    }
+  }
+
+  return compactObject({
+    ...event.metadata,
+    from,
+    to,
+    name: event.senderName,
+    platform: event.platform,
+    providerMessageId: event.providerMessageId,
+    direction,
+  })
 }

@@ -152,14 +152,23 @@ export function waSignupReadyToExchange(parts: WaSignupPendingParts): boolean {
   const assets = extractWaEmbeddedSignupAssets(parts.message || undefined)
   if (assets.phoneNumberId) return true
   // Coexistence FINISH often returns waba_id only — server resolves phone via Graph.
-  if (assets.wabaId && (assets.coexistence || assets.event === 'FINISH_ONLY_WABA')) return true
-  // Classic FINISH without ids yet — keep waiting for session payload.
-  if (parts.message && isWaEmbeddedSignupFinishEvent(assets.event) && !assets.phoneNumberId && !assets.wabaId) {
-    return false
-  }
-  // Token alone (no session yet): allow a soft exchange that returns waitingForPhoneNumber.
-  // Callers that want strict correlation should require message.
-  return !parts.message
+  if (assets.wabaId) return true
+  return false
+}
+
+/**
+ * Embedded Signup `code` is single-use. Never call Graph oauth/access_token until
+ * the session has a phone_number_id or waba_id to finish the upsert.
+ */
+export function shouldDeferWhatsAppCodeExchange(parts: {
+  code?: string | null
+  accessToken?: string | null
+  phoneNumberId?: string | null
+  wabaId?: string | null
+}): boolean {
+  if (!parts.code) return false
+  if (parts.accessToken) return false
+  return !parts.phoneNumberId && !parts.wabaId
 }
 
 export function shouldIgnoreWaSessionEvent(event: unknown): boolean {

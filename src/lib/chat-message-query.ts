@@ -34,6 +34,20 @@ export function chatMessagesWhereForPeer(params: {
           { metadata: { path: ['waId'], equals: peer } },
         ],
       },
+      {
+        AND: [
+          { direction: 'outbound' },
+          { metadata: { path: ['from'], equals: peer } },
+          {
+            OR: [
+              { metadata: { path: ['smbEcho'], equals: true } },
+              { metadata: { path: ['historical'], equals: true } },
+              { metadata: { path: ['webhookField'], equals: 'history' } },
+              { metadata: { path: ['webhookField'], equals: 'smb_message_echoes' } },
+            ],
+          },
+        ],
+      },
     ],
   }
 }

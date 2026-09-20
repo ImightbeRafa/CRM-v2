@@ -56,13 +56,18 @@ export async function GET(request: NextRequest) {
   return new NextResponse(challenge, { status: 200, headers: { 'Content-Type': 'text/plain' } })
 }
 
-async function alreadyStored(db: any, accountId: string, providerMessageId?: string) {
+async function alreadyStored(
+  db: any,
+  accountId: string,
+  providerMessageId: string | undefined,
+  direction: string,
+) {
   if (!providerMessageId) return false
 
   const existing = await db.chatMessage.findFirst({
     where: {
       socialAccountId: accountId,
-      direction: 'inbound',
+      direction,
       metadata: {
         path: ['providerMessageId'],
         equals: providerMessageId,
@@ -91,11 +96,13 @@ async function storeMessage(db: any, event: ParsedMetaChatMessage) {
   }
 
   const account = resolved.account
+  const direction = event.direction || 'inbound'
 
-  if (await alreadyStored(db, account.id, event.providerMessageId)) {
+  if (await alreadyStored(db, account.id, event.providerMessageId, direction)) {
     console.log('[chat/webhook][POST] Duplicate Meta message skipped', {
       socialAccountId: account.id,
       providerMessageId: event.providerMessageId,
+      direction,
     })
     return { stored: false, reason: 'duplicate' }
   }
@@ -104,7 +111,7 @@ async function storeMessage(db: any, event: ParsedMetaChatMessage) {
     data: {
       tenantId: account.tenantId,
       socialAccountId: account.id,
-      direction: 'inbound',
+      direction,
       content: event.content,
       metadata: {
         ...event.metadata,
@@ -112,6 +119,7 @@ async function storeMessage(db: any, event: ParsedMetaChatMessage) {
         name: event.senderName,
         platform: event.platform,
         providerMessageId: event.providerMessageId,
+        direction,
       },
       sentAt: event.sentAt,
       receivedAt: new Date(),
@@ -131,6 +139,8 @@ async function storeMessage(db: any, event: ParsedMetaChatMessage) {
         senderId: event.senderId,
         providerMessageId: event.providerMessageId,
         messageType: event.messageType,
+        direction,
+        suppressSoftAi: event.suppressSoftAi,
       }),
     },
   })
@@ -143,6 +153,7 @@ async function storeMessage(db: any, event: ParsedMetaChatMessage) {
     senderName: (event.senderName as string | undefined) || null,
     platform: event.platform as string,
     content: event.content as string,
+    suppressSoftAi: Boolean(event.suppressSoftAi) || direction !== 'inbound',
   }
 }
 
@@ -204,18 +215,47 @@ export async function POST(request: NextRequest) {
       matchedSecret: signatureResult.matchedSecret,
       parsedMessages: parsed.messages.length,
       ignoredReasons: parsed.ignoredReasons,
+      accountEvents: parsed.accountEvents?.length || 0,
       entryCount: payload?.entry?.length || 0,
     })
+
+    const db = prisma as any
+
+    // Coexistence offboarding: Meta account_update PARTNER_REMOVED → deactivate WA accounts on that WABA.
+    if (parsed.accountEvents?.length) {
+      for (const ev of parsed.accountEvents) {
+        if (ev.event !== 'PARTNER_REMOVED' || !ev.wabaId) continue
+        try {
+          const wabaPrefix = `waba:${ev.wabaId}`
+          const updated = await db.socialAccount.updateMany({
+            where: {
+              platform: 'whatsapp',
+              isActive: true,
+              refreshToken: { startsWith: wabaPrefix },
+            },
+            data: { isActive: false },
+          })
+          console.warn('[chat/webhook][POST] PARTNER_REMOVED deactivated WhatsApp accounts', {
+            wabaId: ev.wabaId,
+            reason: ev.reason,
+            initiatedBy: ev.initiatedBy,
+            count: updated.count,
+          })
+        } catch (e) {
+          console.warn('[chat/webhook][POST] PARTNER_REMOVED handling failed', e)
+        }
+      }
+    }
 
     if (parsed.messages.length === 0) {
       return NextResponse.json({
         ok: true,
         stored: 0,
         ignoredReasons: parsed.ignoredReasons,
+        accountEvents: parsed.accountEvents?.length || 0,
       })
     }
 
-    const db = prisma as any
     const results = []
     for (const event of parsed.messages) {
       results.push(await storeMessage(db, event))
@@ -223,9 +263,10 @@ export async function POST(request: NextRequest) {
 
     const stored = results.filter((result) => result.stored).length
 
-    // Soft Tenant AI (feature-flagged): full reply after inbound — never blocks Meta ACK.
+    // Soft Tenant AI (feature-flagged): full reply after live inbound — never for echoes/history.
     for (const result of results) {
       if (!result.stored || !('tenantId' in result) || !result.tenantId) continue
+      if ('suppressSoftAi' in result && result.suppressSoftAi) continue
       void maybeRunSoftAiAfterInbound({
         tenantId: result.tenantId,
         socialAccountId: result.socialAccountId,

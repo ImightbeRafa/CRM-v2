@@ -14,6 +14,8 @@ function waEvent(accountId: string): ParsedMetaChatMessage {
     messageType: 'text',
     providerMessageId: 'wamid.1',
     sentAt: new Date('2026-09-10T12:00:00.000Z'),
+    direction: 'inbound',
+    suppressSoftAi: false,
     metadata: {},
   }
 }
@@ -28,6 +30,8 @@ function igEvent(accountId: string, pageId?: string): ParsedMetaChatMessage {
     messageType: 'text',
     providerMessageId: 'mid.1',
     sentAt: new Date('2026-09-10T12:00:00.000Z'),
+    direction: 'inbound',
+    suppressSoftAi: false,
     metadata: pageId ? { webhookObject: 'page', pageId } : {},
   }
 }

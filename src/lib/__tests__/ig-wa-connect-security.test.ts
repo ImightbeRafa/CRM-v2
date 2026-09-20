@@ -8,7 +8,12 @@ import {
   decryptPendingRecord,
   loadInstagramPendingRecord,
 } from '../instagram-pending-connect'
-import { interpretWhatsAppOwnershipGraphData } from '../meta-api'
+import {
+  interpretWhatsAppOwnershipGraphData,
+  isMetaNonexistingFieldError,
+  verifyWhatsAppAssetsForToken,
+  WHATSAPP_OWNERSHIP_PHONE_FIELDS,
+} from '../meta-api'
 
 test('ig pending cookie JWT never embeds pageAccessToken (SD-01)', async () => {
   const previous = process.env.NEXTAUTH_SECRET
@@ -132,6 +137,170 @@ test('WA ownership interpreter rejects mismatched phone/WABA before upsert (SD-0
   assert.match(String(graphDenied.reason), /unsupported get request/)
 })
 
+test('WA ownership interpreter tolerates missing nested WABA field (coexistence)', () => {
+  const phoneOnly = interpretWhatsAppOwnershipGraphData({
+    graphOk: true,
+    claimedPhoneNumberId: '111',
+    claimedWabaId: 'waba-coexist',
+    data: { id: '111', display_phone_number: '+506…', verified_name: 'Store' },
+  })
+  assert.equal(phoneOnly.ok, true)
+  assert.equal(phoneOnly.phoneNumberId, '111')
+  assert.equal(phoneOnly.whatsappBusinessAccountId, null)
+
+  const nestedFieldMissing = interpretWhatsAppOwnershipGraphData({
+    graphOk: false,
+    claimedPhoneNumberId: '111',
+    claimedWabaId: 'waba-coexist',
+    data: {
+      error: {
+        code: 100,
+        message: '(#100) Tried accessing nonexisting field (whatsapp_business_account)',
+      },
+    },
+  })
+  assert.equal(nestedFieldMissing.ok, false)
+  assert.equal(nestedFieldMissing.reason, 'nonexisting_waba_field')
+  assert.equal(
+    isMetaNonexistingFieldError(
+      {
+        error: {
+          code: 100,
+          message: '(#100) Tried accessing nonexisting field (whatsapp_business_account)',
+        },
+      },
+      'whatsapp_business_account',
+    ),
+    true,
+  )
+})
+
+test('verifyWhatsAppAssetsForToken: claimed WABA + safe phone GET succeeds (Forge coexistence)', async () => {
+  const originalFetch = globalThis.fetch
+  const requestedUrls: string[] = []
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input)
+    requestedUrls.push(url)
+
+    if (url.includes('/phone_numbers')) {
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'phone-coexist-1',
+              display_phone_number: '+506 8888 0000',
+              is_on_biz_app: true,
+              platform_type: 'CLOUD_API',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+
+    // Phone node GET — must use safe fields only (no nested whatsapp_business_account).
+    assert.match(url, /phone-coexist-1/)
+    assert.equal(decodeURIComponent(url).includes(WHATSAPP_OWNERSHIP_PHONE_FIELDS), true)
+    assert.equal(url.includes('whatsapp_business_account'), false)
+
+    return new Response(
+      JSON.stringify({
+        id: 'phone-coexist-1',
+        display_phone_number: '+506 8888 0000',
+        verified_name: 'Forge Store',
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )
+  }) as typeof fetch
+
+  try {
+    const ownership = await verifyWhatsAppAssetsForToken({
+      accessToken: 'EAA_TEST_TOKEN',
+      phoneNumberId: 'phone-coexist-1',
+      whatsappBusinessAccountId: 'waba-coexist-9',
+    })
+    assert.equal(ownership.ok, true)
+    assert.equal(ownership.phoneNumberId, 'phone-coexist-1')
+    assert.equal(ownership.whatsappBusinessAccountId, 'waba-coexist-9')
+    assert.equal(
+      requestedUrls.some((u) => u.includes('whatsapp_business_account')),
+      false,
+      'claimed-WABA verify must never request nested whatsapp_business_account',
+    )
+    assert.equal(requestedUrls.some((u) => u.includes('/phone_numbers')), true)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('verifyWhatsAppAssetsForToken: phone on wrong WABA list → waba_mismatch', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes('/phone_numbers')) {
+      return new Response(
+        JSON.stringify({
+          data: [{ id: 'other-phone', display_phone_number: '+1' }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+    return new Response(JSON.stringify({ id: 'phone-1', verified_name: 'X' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }) as typeof fetch
+
+  try {
+    const ownership = await verifyWhatsAppAssetsForToken({
+      accessToken: 'tok',
+      phoneNumberId: 'phone-1',
+      whatsappBusinessAccountId: 'waba-x',
+    })
+    assert.equal(ownership.ok, false)
+    assert.equal(ownership.reason, 'waba_mismatch')
+    assert.equal(ownership.phoneNumberId, 'phone-1')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('verifyWhatsAppAssetsForToken: no claimed WABA + nested #100 still owns phone', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input)
+    // resolveWhatsAppBusinessAccountId may still probe nested field — return #100.
+    if (url.includes('whatsapp_business_account') && !url.includes('{')) {
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: 100,
+            message: '(#100) Tried accessing nonexisting field (whatsapp_business_account)',
+          },
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+    return new Response(JSON.stringify({ id: 'phone-solo', verified_name: 'Solo' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }) as typeof fetch
+
+  try {
+    const ownership = await verifyWhatsAppAssetsForToken({
+      accessToken: 'tok',
+      phoneNumberId: 'phone-solo',
+    })
+    assert.equal(ownership.ok, true)
+    assert.equal(ownership.phoneNumberId, 'phone-solo')
+    assert.equal(ownership.whatsappBusinessAccountId, null)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('WA exchange route Graph-verifies ownership and drops tokenPrefix logs (SD-02/03)', async () => {
   const source = await readFile('src/app/api/auth/whatsapp/exchange/route.ts', 'utf8')
   assert.match(source, /verifyWhatsAppAssetsForToken/)
@@ -164,4 +333,16 @@ test('IG auth-url requires session (SD-04)', async () => {
   assert.match(source, /getToken/)
   assert.match(source, /Unauthorized/)
   assert.match(source, /status: 401/)
+})
+
+test('meta-api ownership verify never hard-codes nested whatsapp_business_account in verify fields', async () => {
+  const source = await readFile('src/lib/meta-api.ts', 'utf8')
+  assert.match(source, /WHATSAPP_OWNERSHIP_PHONE_FIELDS/)
+  assert.match(source, /listWhatsAppPhoneNumbersForWaba/)
+  assert.match(source, /isMetaNonexistingFieldError/)
+  // Safe constant must not include the nested edge.
+  assert.doesNotMatch(
+    source.match(/WHATSAPP_OWNERSHIP_PHONE_FIELDS\s*=\s*'([^']+)'/)?.[1] || '',
+    /whatsapp_business_account/,
+  )
 })

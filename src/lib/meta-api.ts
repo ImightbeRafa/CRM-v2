@@ -271,6 +271,221 @@ export async function resolveWhatsAppBusinessAccountId(phoneNumberId: string, ac
   }
 }
 
+export type WhatsAppWabaPhoneNumber = {
+  id: string
+  displayPhoneNumber: string | null
+  isOnBizApp: boolean | null
+  platformType: string | null
+}
+
+/**
+ * List phone numbers on a WABA (used when coexistence FINISH returns waba_id only).
+ */
+export async function listWhatsAppPhoneNumbersForWaba(params: {
+  wabaId: string
+  accessToken: string
+}): Promise<{ ok: boolean; phones: WhatsAppWabaPhoneNumber[]; reason?: string }> {
+  const wabaId = String(params.wabaId || '').trim()
+  if (!wabaId || !params.accessToken) {
+    return { ok: false, phones: [], reason: 'missing_waba_or_token' }
+  }
+
+  const fields = encodeURIComponent('id,display_phone_number,is_on_biz_app,platform_type')
+  const url = addAppSecretProofToUrl(
+    buildMetaGraphUrl(`${encodeURIComponent(wabaId)}/phone_numbers?fields=${fields}`),
+    params.accessToken,
+    { purpose: 'whatsapp' },
+  )
+
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${params.accessToken}` },
+    })
+    const data = await readMetaJson(response)
+    if (!response.ok) {
+      return {
+        ok: false,
+        phones: [],
+        reason: data?.error?.message || `graph_${response.status}`,
+      }
+    }
+
+    const phones: WhatsAppWabaPhoneNumber[] = (data?.data || []).map((row: any) => ({
+      id: String(row.id),
+      displayPhoneNumber: row.display_phone_number ? String(row.display_phone_number) : null,
+      isOnBizApp: typeof row.is_on_biz_app === 'boolean' ? row.is_on_biz_app : null,
+      platformType: row.platform_type ? String(row.platform_type) : null,
+    }))
+
+    return { ok: true, phones }
+  } catch (error) {
+    console.warn('[meta-api] WABA phone_numbers listing failed', error)
+    return { ok: false, phones: [], reason: 'list_exception' }
+  }
+}
+
+/**
+ * Pick the coexistence phone on a WABA: prefer is_on_biz_app + CLOUD_API,
+ * else a single unambiguous phone.
+ */
+export function selectCoexistencePhoneNumber(
+  phones: WhatsAppWabaPhoneNumber[],
+): { ok: true; phone: WhatsAppWabaPhoneNumber } | { ok: false; reason: string } {
+  if (!phones.length) return { ok: false, reason: 'no_phones_on_waba' }
+
+  const coexistenceMatches = phones.filter(
+    (p) => p.isOnBizApp === true && (p.platformType === 'CLOUD_API' || !p.platformType),
+  )
+  if (coexistenceMatches.length === 1) {
+    return { ok: true, phone: coexistenceMatches[0]! }
+  }
+  if (coexistenceMatches.length > 1) {
+    return { ok: false, reason: 'ambiguous_coexistence_phones' }
+  }
+
+  const onBizApp = phones.filter((p) => p.isOnBizApp === true)
+  if (onBizApp.length === 1) return { ok: true, phone: onBizApp[0]! }
+  if (onBizApp.length > 1) return { ok: false, reason: 'ambiguous_biz_app_phones' }
+
+  if (phones.length === 1) return { ok: true, phone: phones[0]! }
+  return { ok: false, reason: 'ambiguous_phones_on_waba' }
+}
+
+export async function resolvePhoneNumberIdFromWaba(params: {
+  wabaId: string
+  accessToken: string
+}): Promise<{
+  ok: boolean
+  phoneNumberId: string | null
+  whatsappBusinessAccountId: string | null
+  coexistence?: boolean
+  reason?: string
+  phones?: WhatsAppWabaPhoneNumber[]
+}> {
+  const listed = await listWhatsAppPhoneNumbersForWaba(params)
+  if (!listed.ok) {
+    return {
+      ok: false,
+      phoneNumberId: null,
+      whatsappBusinessAccountId: params.wabaId,
+      reason: listed.reason || 'waba_phone_list_failed',
+      phones: listed.phones,
+    }
+  }
+
+  const selected = selectCoexistencePhoneNumber(listed.phones)
+  if (!selected.ok) {
+    return {
+      ok: false,
+      phoneNumberId: null,
+      whatsappBusinessAccountId: params.wabaId,
+      reason: selected.reason,
+      phones: listed.phones,
+    }
+  }
+
+  return {
+    ok: true,
+    phoneNumberId: selected.phone.id,
+    whatsappBusinessAccountId: params.wabaId,
+    coexistence: selected.phone.isOnBizApp === true,
+    phones: listed.phones,
+  }
+}
+
+/** Optional check that a phone is registered for Cloud API + WA Business app. */
+export async function verifyWhatsAppCoexistenceStatus(params: {
+  phoneNumberId: string
+  accessToken: string
+}): Promise<{
+  ok: boolean
+  isOnBizApp: boolean | null
+  platformType: string | null
+  reason?: string
+}> {
+  const phoneNumberId = String(params.phoneNumberId || '').trim()
+  if (!phoneNumberId || !params.accessToken) {
+    return { ok: false, isOnBizApp: null, platformType: null, reason: 'missing_phone_or_token' }
+  }
+
+  const fields = encodeURIComponent('is_on_biz_app,platform_type')
+  const url = addAppSecretProofToUrl(
+    buildMetaGraphUrl(`${encodeURIComponent(phoneNumberId)}?fields=${fields}`),
+    params.accessToken,
+    { purpose: 'whatsapp' },
+  )
+
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${params.accessToken}` },
+    })
+    const data = await readMetaJson(response)
+    if (!response.ok) {
+      return {
+        ok: false,
+        isOnBizApp: null,
+        platformType: null,
+        reason: data?.error?.message || `graph_${response.status}`,
+      }
+    }
+    return {
+      ok: true,
+      isOnBizApp: typeof data?.is_on_biz_app === 'boolean' ? data.is_on_biz_app : null,
+      platformType: data?.platform_type ? String(data.platform_type) : null,
+    }
+  } catch (error) {
+    console.warn('[meta-api] coexistence status check failed', error)
+    return { ok: false, isOnBizApp: null, platformType: null, reason: 'coexistence_check_exception' }
+  }
+}
+
+/** Webhook fields for Cloud API + coexistence (history / SMB sync / echoes). */
+export const WHATSAPP_SUBSCRIBED_FIELDS_DEFAULT =
+  'messages,history,smb_app_state_sync,smb_message_echoes,account_update'
+
+export type WhatsAppSmbSyncType = 'smb_app_state_sync' | 'history'
+
+/**
+ * Kick off one-shot SMB contacts or history sync after coexistence onboard.
+ * Must run within 24h of Embedded Signup completion.
+ */
+export async function initiateWhatsAppSmbAppDataSync(params: {
+  phoneNumberId: string
+  accessToken: string
+  syncType: WhatsAppSmbSyncType
+}): Promise<{ ok: boolean; status: number; requestId: string | null; data: unknown }> {
+  const phoneNumberId = String(params.phoneNumberId || '').trim()
+  const url = addAppSecretProofToUrl(
+    buildMetaGraphUrl(`${encodeURIComponent(phoneNumberId)}/smb_app_data`),
+    params.accessToken,
+    { purpose: 'whatsapp' },
+  )
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      sync_type: params.syncType,
+    }),
+  })
+  const data = await readMetaJson(response)
+  const requestId =
+    data && typeof data === 'object' && 'request_id' in data && data.request_id
+      ? String(data.request_id)
+      : null
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    requestId,
+    data,
+  }
+}
+
 /**
  * Prove phone_number_id (and optional WABA) are reachable with this access token
  * before trusting client Embedded Signup message fields.
@@ -386,6 +601,8 @@ export async function subscribeWhatsAppApp(params: {
   accessToken: string
   phoneNumberId: string
   whatsappBusinessAccountId?: string | null
+  /** Defaults to Cloud API + coexistence fields (messages, history, SMB). */
+  subscribedFields?: string
 }) {
   const targetId =
     params.whatsappBusinessAccountId ||
@@ -399,7 +616,7 @@ export async function subscribeWhatsAppApp(params: {
   )
   const body = new URLSearchParams({
     access_token: params.accessToken,
-    subscribed_fields: 'messages',
+    subscribed_fields: params.subscribedFields || WHATSAPP_SUBSCRIBED_FIELDS_DEFAULT,
   })
 
   const response = await fetch(url, {
@@ -414,6 +631,7 @@ export async function subscribeWhatsAppApp(params: {
     status: response.status,
     targetId,
     data,
+    subscribedFields: params.subscribedFields || WHATSAPP_SUBSCRIBED_FIELDS_DEFAULT,
   }
 }
 

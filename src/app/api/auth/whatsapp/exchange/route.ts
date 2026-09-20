@@ -1,19 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { prisma } from '@/lib/db'
-import { buildMetaGraphUrl, subscribeWhatsAppApp, verifyWhatsAppAssetsForToken, getMetaWhatsAppAppId, getMetaWhatsAppAppSecret } from '@/lib/meta-api'
+import {
+  buildMetaGraphUrl,
+  subscribeWhatsAppApp,
+  verifyWhatsAppAssetsForToken,
+  verifyWhatsAppCoexistenceStatus,
+  resolvePhoneNumberIdFromWaba,
+  initiateWhatsAppSmbAppDataSync,
+  getMetaWhatsAppAppId,
+  getMetaWhatsAppAppSecret,
+} from '@/lib/meta-api'
 import { encodeWhatsAppRefreshToken } from '@/lib/social-account-meta'
 import { encryptSocialAccessToken } from '@/lib/social-account-crypto'
+import {
+  extractWaEmbeddedSignupAssets,
+  isWaEmbeddedSignupMessage,
+  shouldIgnoreWaSessionEvent,
+} from '@/lib/whatsapp-embedded-signup'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
  * POST /api/auth/whatsapp/exchange
- * Body: { code?: string, accessToken?: string, message?: any }
+ * Body: { code?: string, accessToken?: string, message?: WA_EMBEDDED_SIGNUP payload }
  * - Exchanges Embedded Signup 'code' for a business token
- * - Reads phone_number_id from message event if provided
- * - Graph-verifies phone/WABA ownership with the token before upsert/subscribe
+ * - Supports coexistence FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING (waba_id only)
+ * - Graph-verifies phone/WABA ownership before upsert/subscribe
+ * - Subscribes coexistence webhook fields and initiates SMB sync when applicable
  */
 export async function POST(request: NextRequest) {
   try {
@@ -27,21 +42,37 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     const code: string | undefined = body?.code
     const accessToken: string | undefined = body?.accessToken
-    const message = body?.message
+    const message = isWaEmbeddedSignupMessage(body?.message) ? body.message : body?.message
+
+    if (message?.event && shouldIgnoreWaSessionEvent(message.event)) {
+      return NextResponse.json({
+        success: false,
+        cancelled: true,
+        message: 'WhatsApp Embedded Signup cancelado o con error en Meta.',
+        event: message.event,
+      })
+    }
+
+    const sessionAssets = extractWaEmbeddedSignupAssets(
+      isWaEmbeddedSignupMessage(message) ? message : undefined,
+    )
 
     // Client-supplied ids are untrusted until Graph-verified below.
     const claimedPhoneNumberId: string | null =
+      sessionAssets.phoneNumberId ||
       message?.data?.phone_number_id ||
       message?.phone_number_id ||
       body?.phoneNumberId ||
       null
-    const claimedWabaId: string | null =
+    let claimedWabaId: string | null =
+      sessionAssets.wabaId ||
       message?.data?.waba_id ||
       message?.data?.whatsapp_business_account_id ||
       message?.waba_id ||
       message?.whatsapp_business_account_id ||
       body?.whatsappBusinessAccountId ||
       null
+    const coexistenceFinish = sessionAssets.coexistence
 
     let businessToken: string | null = accessToken || null
     let exchangeError: any = null
@@ -62,6 +93,8 @@ export async function POST(request: NextRequest) {
         hasConfigId: Boolean(process.env.NEXT_PUBLIC_FB_LOGIN_CONFIG_ID),
         hasNextAuthUrl: Boolean(process.env.NEXTAUTH_URL),
         usingDedicatedWaApp: Boolean((process.env.META_WA_APP_ID || '').trim()),
+        coexistenceFinish,
+        sessionEvent: sessionAssets.event,
       })
 
       const redirectUriCandidates = [
@@ -143,7 +176,46 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!claimedPhoneNumberId) {
+    let resolvedPhoneClaim = claimedPhoneNumberId ? String(claimedPhoneNumberId) : null
+
+    // Coexistence often returns only waba_id — resolve phone via Graph before waiting.
+    if (!resolvedPhoneClaim && claimedWabaId) {
+      const fromWaba = await resolvePhoneNumberIdFromWaba({
+        wabaId: String(claimedWabaId),
+        accessToken: businessToken,
+      })
+      if (fromWaba.ok && fromWaba.phoneNumberId) {
+        resolvedPhoneClaim = fromWaba.phoneNumberId
+        claimedWabaId = fromWaba.whatsappBusinessAccountId || claimedWabaId
+        console.log('[wa/exchange] Resolved phone from WABA (coexistence)', {
+          phoneNumberId: resolvedPhoneClaim,
+          wabaId: claimedWabaId,
+          coexistence: fromWaba.coexistence,
+        })
+      } else if (coexistenceFinish) {
+        console.warn('[wa/exchange] Coexistence finish but could not resolve phone from WABA', {
+          reason: fromWaba.reason,
+          phoneCount: fromWaba.phones?.length ?? 0,
+        })
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              fromWaba.reason === 'ambiguous_coexistence_phones' ||
+              fromWaba.reason === 'ambiguous_phones_on_waba' ||
+              fromWaba.reason === 'ambiguous_biz_app_phones'
+                ? 'La WABA tiene varios números; no se pudo elegir cuál conectar. Vinculá manualmente el Phone Number ID.'
+                : 'Coexistence completó en Meta pero no se encontró un número en la WABA. Verificá que el número esté en la app de WhatsApp Business (2.24.17+).',
+            reason: fromWaba.reason || 'coexistence_phone_resolve_failed',
+            whatsappBusinessAccountId: claimedWabaId,
+            phoneCount: fromWaba.phones?.length ?? 0,
+          },
+          { status: 422 },
+        )
+      }
+    }
+
+    if (!resolvedPhoneClaim) {
       console.log('[wa/exchange] Token obtained, waiting for phone_number_id from message event')
       return NextResponse.json({
         success: true,
@@ -156,14 +228,14 @@ export async function POST(request: NextRequest) {
     // SD-02: never upsert/subscribe on client-claimed ids alone.
     const ownership = await verifyWhatsAppAssetsForToken({
       accessToken: businessToken,
-      phoneNumberId: String(claimedPhoneNumberId),
+      phoneNumberId: String(resolvedPhoneClaim),
       whatsappBusinessAccountId: claimedWabaId,
     })
 
     if (!ownership.ok || !ownership.phoneNumberId) {
       console.warn('[wa/exchange] Graph ownership check failed', {
         reason: ownership.reason,
-        claimedPhone: Boolean(claimedPhoneNumberId),
+        claimedPhone: Boolean(resolvedPhoneClaim),
         claimedWaba: Boolean(claimedWabaId),
       })
       return NextResponse.json(
@@ -179,6 +251,22 @@ export async function POST(request: NextRequest) {
     const phoneNumberId = ownership.phoneNumberId
     const whatsappBusinessAccountId = ownership.whatsappBusinessAccountId
 
+    let coexistenceStatus: {
+      isOnBizApp: boolean | null
+      platformType: string | null
+    } | null = null
+    if (coexistenceFinish) {
+      const status = await verifyWhatsAppCoexistenceStatus({
+        phoneNumberId,
+        accessToken: businessToken,
+      })
+      coexistenceStatus = {
+        isOnBizApp: status.isOnBizApp,
+        platformType: status.platformType,
+      }
+      console.log('[wa/exchange] Coexistence status', coexistenceStatus)
+    }
+
     const db = prisma as any
 
     let subscribeOk = false
@@ -186,6 +274,7 @@ export async function POST(request: NextRequest) {
     let subscribeTargetId: string | null = null
     let subscribeDetails: unknown = null
     let subscribeErrorMessage: string | null = null
+    let subscribedFields: string | null = null
 
     try {
       const sub = await subscribeWhatsAppApp({
@@ -197,6 +286,7 @@ export async function POST(request: NextRequest) {
       subscribeStatus = sub.status
       subscribeTargetId = sub.targetId
       subscribeDetails = sub.data
+      subscribedFields = sub.subscribedFields
 
       if (!sub.ok) {
         console.warn('[wa/exchange] subscribed_apps failed', {
@@ -207,7 +297,11 @@ export async function POST(request: NextRequest) {
           usingDedicatedWaApp: Boolean((process.env.META_WA_APP_ID || '').trim()),
         })
       } else {
-        console.log('[wa/exchange] subscribed_apps success', { phoneNumberId, targetId: sub.targetId })
+        console.log('[wa/exchange] subscribed_apps success', {
+          phoneNumberId,
+          targetId: sub.targetId,
+          subscribedFields: sub.subscribedFields,
+        })
       }
     } catch (e) {
       subscribeErrorMessage = e instanceof Error ? e.message : 'Subscribe error'
@@ -276,18 +370,61 @@ export async function POST(request: NextRequest) {
           tokenExchanged: Boolean(businessToken),
           phoneNumberId,
           whatsappBusinessAccountId: whatsappBusinessAccountId || null,
+          coexistence: coexistenceFinish,
+          coexistenceStatus,
         },
         { status: 422 },
       )
     }
 
+    // Coexistence: initiate contacts + history sync within 24h (best-effort; log request ids).
+    let smbSync: {
+      contacts?: { ok: boolean; requestId: string | null }
+      history?: { ok: boolean; requestId: string | null }
+    } | null = null
+    if (coexistenceFinish || coexistenceStatus?.isOnBizApp === true) {
+      smbSync = {}
+      try {
+        const contacts = await initiateWhatsAppSmbAppDataSync({
+          phoneNumberId,
+          accessToken: businessToken,
+          syncType: 'smb_app_state_sync',
+        })
+        smbSync.contacts = { ok: contacts.ok, requestId: contacts.requestId }
+        console.log('[wa/exchange] SMB contacts sync', smbSync.contacts)
+      } catch (e) {
+        console.warn('[wa/exchange] SMB contacts sync error', e)
+        smbSync.contacts = { ok: false, requestId: null }
+      }
+      try {
+        const history = await initiateWhatsAppSmbAppDataSync({
+          phoneNumberId,
+          accessToken: businessToken,
+          syncType: 'history',
+        })
+        smbSync.history = { ok: history.ok, requestId: history.requestId }
+        console.log('[wa/exchange] SMB history sync', smbSync.history)
+      } catch (e) {
+        console.warn('[wa/exchange] SMB history sync error', e)
+        smbSync.history = { ok: false, requestId: null }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       subscribed: true,
+      subscribedFields,
       account: accountPayload,
       tokenExchanged: Boolean(businessToken),
       phoneNumberId,
       whatsappBusinessAccountId: whatsappBusinessAccountId || null,
+      coexistence: coexistenceFinish || coexistenceStatus?.isOnBizApp === true,
+      coexistenceStatus,
+      smbSync,
+      message:
+        coexistenceFinish || coexistenceStatus?.isOnBizApp === true
+          ? 'WhatsApp Business App conectado (coexistence). Sincronizando historial/contactos… Dejá la app abierta unos minutos.'
+          : undefined,
     })
   } catch (e: any) {
     console.error('[wa/exchange] Error', e)

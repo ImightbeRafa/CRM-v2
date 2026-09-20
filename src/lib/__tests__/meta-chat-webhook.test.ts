@@ -162,6 +162,8 @@ test('parseMetaChatPayload parses WhatsApp text messages', () => {
   assert.equal(message.providerMessageId, 'wamid.HBgLNTA2ODg4ODc3Nzc')
   assert.equal(message.metadata.whatsappBusinessAccountId, WA_WABA_ID)
   assert.equal(message.metadata.displayPhoneNumber, '50622223333')
+  assert.equal(message.direction, 'inbound')
+  assert.equal(message.suppressSoftAi, false)
   assert.equal(message.sentAt.toISOString(), new Date(1700000000 * 1000).toISOString())
 })
 

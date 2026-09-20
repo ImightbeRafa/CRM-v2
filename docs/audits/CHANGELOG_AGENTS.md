@@ -2,6 +2,20 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-20 — WhatsApp coexistence Embedded Signup (Business App numbers)
+
+- Launch extras: `featureType: whatsapp_business_app_onboarding` + `sessionInfoVersion: 3`
+  via `src/lib/whatsapp-embedded-signup.ts` and `/config/social` FB.login.
+- Correlate FB.login code with `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING` session
+  postMessage; exchange resolves phone from WABA when Meta returns waba_id only.
+- `subscribed_apps` now includes `history`, `smb_app_state_sync`, `smb_message_echoes`,
+  `account_update`; coexistence onboard kicks SMB contacts/history sync within 24h.
+- Webhook digests SMB echoes (outbound) + history (no Soft AI); PARTNER_REMOVED
+  deactivates WABA-linked SocialAccounts.
+- Docs: `META_CHAT_SETUP.md` store playbook; UI hint on `/config/social`.
+- Prove: `npx tsx --test src/lib/__tests__/whatsapp-coexistence.test.ts` +
+  `npm run test:chat-harden` + `npm run build`.
+
 ## 2026-09-11 — F37-03 Soft human composer after Pausar / Tomar control
 
 - SoftThreadPane: unlock input/Enviar whenever agent mode is `paused` or `human`

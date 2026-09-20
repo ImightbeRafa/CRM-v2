@@ -84,12 +84,29 @@ The bot webhook and the CRM inbox webhook are separate products on **separate Me
 6. Set the webhook callback URL to `https://YOUR_DOMAIN/api/chat/webhook`.
 7. Set the webhook verify token to the exact value in `META_WEBHOOK_VERIFY_TOKEN`.
 8. Subscribe webhook fields:
-   - WhatsApp: `messages`.
+   - WhatsApp: `messages`, plus for coexistence `history`, `smb_app_state_sync`, `smb_message_echoes`, `account_update`.
    - Instagram: `messages`, plus message reaction/read fields later if the CRM needs them.
 9. Enable App Secret Proof in Meta app settings after confirming `META_APP_SECRET` is configured.
 10. Put the app in Live mode only after business verification, permissions, and test messages pass.
 
 ## WhatsApp Setup
+
+### A) Connect an existing WhatsApp Business **App** number (coexistence) — preferred for stores
+
+Use this when the store already chats from the WhatsApp Business phone app (e.g. Forge +506 …). Those WABAs are type **“App de WhatsApp Business”**, have empty partners, and are **not** on the classic Business Platform partner-share path.
+
+1. Store owner updates **WhatsApp Business app to 2.24.17 or higher**.
+2. In Betsy, open `/config/social` → **Conectar WhatsApp**.
+3. Embedded Signup launches with coexistence extras (`featureType: whatsapp_business_app_onboarding`, `sessionInfoVersion: 3`). Meta should offer connecting the **existing** Business app account (not only “add a new number”).
+4. Owner confirms in the WhatsApp Business app (verification code + optional chat-history share) and finishes the Meta flow.
+5. Betsy exchanges the code, resolves the phone from the WABA if needed, subscribes webhooks (`messages`, `history`, `smb_app_state_sync`, `smb_message_echoes`, `account_update`), and starts one-shot contacts/history sync. Keep the WhatsApp Business app open for a few minutes.
+6. Confirm the number on `/config/social` and that customer messages appear in `/chats`. Messages sent from the phone app should also appear in the inbox (SMB echoes).
+
+**What “No cumple los requisitos” / error #2655115 meant:** classic Embedded Signup (`extras: { setup: {} }` only) tries **partner sharing** of a Cloud API WABA. App-type numbers do not support that (“este tipo de cuenta no admite el uso compartido con socios”). Coexistence is the supported path for those numbers.
+
+**Requirements on Meta’s side:** Betsy’s Inbox WA app must be a Tech Provider / Solution Partner; webhook fields above must be subscribed on the app; session logging enabled. Staff bot app `1514613536240301` / `/api/bot/whatsapp` must **never** be used for this flow.
+
+### B) Manual System User link (advanced / already-on-Cloud-API)
 
 1. In Meta Business Settings, create a System User.
 2. Assign the System User access to the WhatsApp Business Account.

@@ -1,8 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import {
+  buildWhatsAppEmbeddedSignupLoginOptions,
+  extractWaEmbeddedSignupAssets,
+  isWaEmbeddedSignupFinishEvent,
+  isWaEmbeddedSignupMessage,
+  shouldIgnoreWaSessionEvent,
+  type WaEmbeddedSignupMessage,
+} from '@/lib/whatsapp-embedded-signup'
 
 interface SocialAccount {
   id: string
@@ -76,6 +84,15 @@ export default function SocialConfigPage() {
   const [metaStatusError, setMetaStatusError] = useState('')
   const [accountSearch, setAccountSearch] = useState('')
   const [subscribeFailToast, setSubscribeFailToast] = useState('')
+  const waSignupPendingRef = useRef<{
+    code?: string | null
+    accessToken?: string | null
+    message?: WaEmbeddedSignupMessage | null
+    exchanging?: boolean
+  }>({})
+  const tryExchangeWhatsAppSignupRef = useRef<(forceTokenOnly?: boolean) => Promise<void>>(
+    async () => {},
+  )
 
   const META_WA_APP_ID =
     (process.env.NEXT_PUBLIC_META_WA_APP_ID as string | undefined) ||
@@ -86,6 +103,92 @@ export default function SocialConfigPage() {
 
   const isOwnerOrMaster =
     session?.user?.membershipRole === 'OWNER' || session?.user?.role === 'MASTER'
+
+  async function applyWhatsAppExchangeResult(res: Response, json: any) {
+    if (res.ok && json.success && json.subscribed !== false && json.account) {
+      setStatusMessage(
+        json.message ||
+          (json.coexistence
+            ? 'WhatsApp Business App conectado (coexistence). Sincronizando… Dejá la app abierta.'
+            : 'WhatsApp conectado y suscrito a webhooks.'),
+      )
+      fetchAccounts()
+      fetchMetaStatus()
+      return
+    }
+    if (json.waitingForPhoneNumber) {
+      setStatusMessage(
+        'Token recibido. Completa el registro en la ventana de Meta para guardar el número.',
+      )
+      return
+    }
+    if (json.cancelled) {
+      setStatusMessage('Conexión de WhatsApp cancelada en Meta.')
+      return
+    }
+    const errorMsg =
+      json.message ||
+      json.error ||
+      json.exchangeError?.errorMessage ||
+      'No se pudo conectar WhatsApp (revisa suscripción a webhooks).'
+    setStatusMessage(errorMsg)
+    if (json.subscribed === false || /suscri/i.test(errorMsg)) {
+      setSubscribeFailToast(
+        'No se pudo suscribir el webhook. La cuenta NO está conectada de verdad.',
+      )
+    }
+    if (json.account) {
+      fetchAccounts()
+      fetchMetaStatus()
+    }
+  }
+
+  async function tryExchangeWhatsAppSignup(forceTokenOnly = false) {
+    const pending = waSignupPendingRef.current
+    if (pending.exchanging) return
+
+    const hasCred = Boolean(pending.code || pending.accessToken)
+    if (!hasCred) return
+
+    const assets = extractWaEmbeddedSignupAssets(pending.message || undefined)
+    const hasAssets = Boolean(assets.phoneNumberId || assets.wabaId)
+    // Prefer correlated exchange (code + session). Token-only only when FB.login
+    // finished and we still have no session (legacy / waiting path).
+    if (!hasAssets && !forceTokenOnly) return
+    if (!hasAssets && forceTokenOnly && pending.message) return
+
+    pending.exchanging = true
+    try {
+      const exchangeRes = await fetch('/api/auth/whatsapp/exchange', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: pending.code || undefined,
+          accessToken: pending.accessToken || undefined,
+          message: pending.message || undefined,
+        }),
+      })
+      const exchangeData = await exchangeRes.json().catch(() => ({}))
+
+      if (exchangeData.waitingForPhoneNumber && !hasAssets) {
+        // Keep pending code; session postMessage may still arrive.
+        await applyWhatsAppExchangeResult(exchangeRes, exchangeData)
+        return
+      }
+
+      // Clear pending after a decisive response (success or hard failure).
+      if (!exchangeData.waitingForPhoneNumber) {
+        waSignupPendingRef.current = {}
+      }
+      await applyWhatsAppExchangeResult(exchangeRes, exchangeData)
+    } catch {
+      setStatusMessage('Error de red al conectar WhatsApp.')
+    } finally {
+      pending.exchanging = false
+      setConnectingWhatsApp(false)
+    }
+  }
+  tryExchangeWhatsAppSignupRef.current = tryExchangeWhatsAppSignup
 
   useEffect(() => {
     if (!session) return
@@ -142,46 +245,22 @@ export default function SocialConfigPage() {
       if (!String(event.origin).endsWith('facebook.com')) return
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
-        if (data?.type === 'WA_EMBEDDED_SIGNUP') {
-          fetch('/api/auth/whatsapp/exchange', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: data }),
-          })
-            .then(async (res) => {
-              const json = await res.json().catch(() => ({}))
-              if (res.ok && json.success && json.subscribed !== false && json.account) {
-                setStatusMessage('WhatsApp conectado y suscrito a webhooks.')
-                fetchAccounts()
-                fetchMetaStatus()
-                return
-              }
-              if (json.waitingForPhoneNumber) {
-                setStatusMessage(
-                  'Token recibido. Completa el registro en la ventana de Meta para guardar el número.',
-                )
-                return
-              }
-              const errorMsg =
-                json.message ||
-                json.error ||
-                json.exchangeError?.errorMessage ||
-                'No se pudo conectar WhatsApp (revisa suscripción a webhooks).'
-              setStatusMessage(errorMsg)
-              if (json.subscribed === false || /suscri/i.test(errorMsg)) {
-                setSubscribeFailToast(
-                  'No se pudo suscribir el webhook. La cuenta NO está conectada de verdad.',
-                )
-              }
-              if (json.account) {
-                fetchAccounts()
-                fetchMetaStatus()
-              }
-            })
-            .catch(() => {
-              setStatusMessage('Error de red al conectar WhatsApp.')
-            })
+        if (!isWaEmbeddedSignupMessage(data)) return
+
+        if (shouldIgnoreWaSessionEvent(data.event)) {
+          setConnectingWhatsApp(false)
+          setStatusMessage('Conexión de WhatsApp cancelada en Meta.')
+          waSignupPendingRef.current = {}
+          return
         }
+
+        // Ignore intermediate session steps; only FINISH* carries assets.
+        if (data.event && !isWaEmbeddedSignupFinishEvent(data.event)) {
+          return
+        }
+
+        waSignupPendingRef.current.message = data as WaEmbeddedSignupMessage
+        void tryExchangeWhatsAppSignupRef.current(false)
       } catch {
         // ignore non-JSON SDK noise
       }
@@ -201,6 +280,7 @@ export default function SocialConfigPage() {
 
     setConnectingWhatsApp(true)
     setStatusMessage('')
+    waSignupPendingRef.current = {}
 
     FB.login(
       (response: any) => {
@@ -208,10 +288,13 @@ export default function SocialConfigPage() {
           try {
             if (!response || response.status === 'unknown') {
               setStatusMessage('Conexión de WhatsApp cancelada.')
+              setConnectingWhatsApp(false)
+              waSignupPendingRef.current = {}
               return
             }
             if (response.error) {
               setStatusMessage(`Error de Facebook: ${response.error.message || 'desconocido'}`)
+              setConnectingWhatsApp(false)
               return
             }
 
@@ -219,65 +302,35 @@ export default function SocialConfigPage() {
             const code = response?.authResponse?.code
             if (!token && !code) {
               setStatusMessage('No se recibió código de autorización de WhatsApp.')
+              setConnectingWhatsApp(false)
               return
             }
 
-            const exchangeRes = await fetch('/api/auth/whatsapp/exchange', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                code: code || undefined,
-                accessToken: token || undefined,
-              }),
-            })
-            const exchangeData = await exchangeRes.json()
+            waSignupPendingRef.current.code = code || null
+            waSignupPendingRef.current.accessToken = token || null
 
-            if (!exchangeRes.ok || !exchangeData.success || exchangeData.subscribed === false) {
-              const errorMsg =
-                exchangeData.message ||
-                exchangeData.exchangeError?.errorMessage ||
-                exchangeData.error ||
-                'Error al conectar WhatsApp'
-              setStatusMessage(errorMsg)
-              if (exchangeData.subscribed === false || /suscri/i.test(errorMsg)) {
-                setSubscribeFailToast(
-                  'No se pudo suscribir el webhook. La cuenta NO está conectada de verdad.',
-                )
-              }
-              if (exchangeData.account) {
-                fetchAccounts()
-                fetchMetaStatus()
-              }
+            // If session postMessage already arrived, exchange now; else wait briefly
+            // then fall back to token-only (waitingForPhoneNumber) for classic flows.
+            if (waSignupPendingRef.current.message) {
+              await tryExchangeWhatsAppSignup(false)
               return
             }
 
-            if (exchangeData.waitingForPhoneNumber) {
-              setStatusMessage(
-                'Token recibido. Completa el registro en la ventana de Meta para guardar el número.',
-              )
+            await new Promise((r) => setTimeout(r, 800))
+            if (waSignupPendingRef.current.message) {
+              await tryExchangeWhatsAppSignup(false)
               return
             }
-
-            setStatusMessage('WhatsApp conectado y suscrito a webhooks. Ya aparece en /chats.')
-            fetchAccounts()
-            fetchMetaStatus()
+            await tryExchangeWhatsAppSignup(true)
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : 'Error inesperado'
             setStatusMessage(message)
-          } finally {
             setConnectingWhatsApp(false)
           }
         }
         void handleResponse()
       },
-      {
-        config_id: FB_LOGIN_CONFIG_ID,
-        response_type: 'code',
-        override_default_response_type: true,
-        auth_type: 'rerequest',
-        return_scopes: true,
-        extras: { setup: {} },
-      },
+      buildWhatsAppEmbeddedSignupLoginOptions(FB_LOGIN_CONFIG_ID),
     )
   }
 
@@ -711,8 +764,14 @@ export default function SocialConfigPage() {
                       ? '+ Agregar otro WhatsApp'
                       : '+ Conectar WhatsApp'}
             </button>
+            <p className="mt-2 text-[11px] text-slate-500">
+              Números ya activos en la app WhatsApp Business usan{' '}
+              <span className="font-medium text-slate-700">coexistence</span> (Embedded Signup).
+              Requiere WhatsApp Business app 2.24.17+. Si Meta dice “No cumple los requisitos”, el
+              número no admitía partner-share clásico — este flujo es el correcto.
+            </p>
             {waAccounts.length > 0 ? (
-              <p className="mt-2 text-[11px] text-slate-500">
+              <p className="mt-1 text-[11px] text-slate-500">
                 Mismo Phone Number ID = actualizar. Otro número = se suma al inbox.
               </p>
             ) : null}

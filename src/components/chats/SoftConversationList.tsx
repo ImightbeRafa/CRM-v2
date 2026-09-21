@@ -28,6 +28,9 @@ interface SoftConversationListProps {
   onLoadDemo?: () => void
   onRemoveDemo?: () => void
   hasDemoInList?: boolean
+  hasMoreConversations?: boolean
+  loadingMoreConversations?: boolean
+  onLoadMoreConversations?: () => void
 }
 
 function conversationKey(c: SoftConversation) {
@@ -66,6 +69,9 @@ export function SoftConversationList({
   onLoadDemo,
   onRemoveDemo,
   hasDemoInList,
+  hasMoreConversations,
+  loadingMoreConversations,
+  onLoadMoreConversations,
 }: SoftConversationListProps) {
   const chips: Array<{ id: ChannelFilter; label: string; activeClass: string; idleClass: string }> = [
     {
@@ -310,6 +316,18 @@ export function SoftConversationList({
             })}
           </ul>
         )}
+        {hasMoreConversations && onLoadMoreConversations && !emptyReason ? (
+          <div className="flex justify-center border-t border-slate-50 px-4 py-3">
+            <button
+              type="button"
+              onClick={onLoadMoreConversations}
+              disabled={loadingMoreConversations}
+              className="rounded-lg bg-slate-50 px-3 py-1.5 text-[11px] font-medium text-slate-600 ring-1 ring-slate-100 hover:bg-slate-100 disabled:opacity-50"
+            >
+              {loadingMoreConversations ? 'Cargando…' : 'Cargar más'}
+            </button>
+          </div>
+        ) : null}
       </div>
     </section>
   )

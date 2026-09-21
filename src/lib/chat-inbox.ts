@@ -14,6 +14,11 @@ export interface ChatInboxMessage {
   metadata?: Record<string, unknown> | null
   clientId?: string
   orderId?: string
+  messageType?: string
+  providerMediaId?: string
+  mediaMimeType?: string
+  mediaFilename?: string
+  mediaBlobPath?: string
 }
 
 export interface ChatConversation {

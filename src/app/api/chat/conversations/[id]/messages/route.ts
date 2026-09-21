@@ -54,6 +54,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
           clientId: true,
           orderId: true,
           metadata: true,
+          providerMediaId: true,
+          mediaMimeType: true,
+          mediaFilename: true,
         },
       })
       return NextResponse.json({
@@ -90,6 +93,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
         clientId: true,
         orderId: true,
         metadata: true,
+        providerMediaId: true,
+        mediaMimeType: true,
+        mediaFilename: true,
       },
     })
 

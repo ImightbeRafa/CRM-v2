@@ -9,6 +9,7 @@ import {
   normalizeWhatsAppTemplateRows,
   type WhatsAppTemplateStatusRow,
 } from '@/lib/wa-template-approval'
+import { getApprovedTemplates } from '@/lib/chat-template-cache'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -19,6 +20,7 @@ export type WhatsAppApprovedTemplate = WhatsAppTemplateStatusRow
  * GET /api/chat/templates?socialAccountId=...
  * Lists APPROVED WhatsApp message templates for the account's WABA
  * using the tenant SocialAccount token (not staff WHATSAPP_* env).
+ * Cached per WABA for 300s (Upstash or in-memory).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -68,39 +70,51 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const graphUrl = addAppSecretProofToUrl(
-      buildMetaGraphUrl(
-        `${encodeURIComponent(wabaId)}/message_templates?limit=50&fields=${encodeURIComponent('name,status,language,category')}`,
-      ),
-      accessToken,
-      { purpose: 'whatsapp' },
-    )
+    try {
+      const templates = await getApprovedTemplates(wabaId, async () => {
+        const graphUrl = addAppSecretProofToUrl(
+          buildMetaGraphUrl(
+            `${encodeURIComponent(wabaId)}/message_templates?limit=50&fields=${encodeURIComponent('name,status,language,category')}`,
+          ),
+          accessToken,
+          { purpose: 'whatsapp' },
+        )
 
-    const res = await fetch(graphUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      signal: AbortSignal.timeout(15_000),
-    })
-    const data = await res.json().catch(() => ({}))
+        const res = await fetch(graphUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: AbortSignal.timeout(15_000),
+        })
+        const data = await res.json().catch(() => ({}))
 
-    if (!res.ok) {
-      console.warn('[chat/templates] Graph fetch failed', {
-        status: res.status,
-        error: data?.error?.message,
+        if (!res.ok) {
+          console.warn('[chat/templates] Graph fetch failed', {
+            status: res.status,
+            error: data?.error?.message,
+          })
+          const err = new Error(
+            data?.error?.message || 'No se pudieron cargar las plantillas Meta',
+          ) as Error & { status: number; providerResponse: unknown }
+          err.status = 502
+          err.providerResponse = data
+          throw err
+        }
+
+        return filterApprovedWhatsAppTemplates(normalizeWhatsAppTemplateRows(data?.data))
       })
-      return NextResponse.json(
-        {
-          error: data?.error?.message || 'No se pudieron cargar las plantillas Meta',
-          providerResponse: data,
-        },
-        { status: 502 },
-      )
+
+      return NextResponse.json({ success: true, templates, wabaId })
+    } catch (error: any) {
+      if (error?.status === 502) {
+        return NextResponse.json(
+          {
+            error: error.message || 'No se pudieron cargar las plantillas Meta',
+            providerResponse: error.providerResponse,
+          },
+          { status: 502 },
+        )
+      }
+      throw error
     }
-
-    const templates: WhatsAppApprovedTemplate[] = filterApprovedWhatsAppTemplates(
-      normalizeWhatsAppTemplateRows(data?.data),
-    )
-
-    return NextResponse.json({ success: true, templates, wabaId })
   } catch (error) {
     console.error('[chat/templates] Internal error', error)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

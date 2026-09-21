@@ -30,14 +30,22 @@
 | **Bugbot #45** | Send/echo, Soft AI escalate, direct-oauth, cursor fixes |
 | **PR-3 #46** | `displayName`, `ChannelLogo`, Renombrar, IG numeric-id bugfix — Rafael eye OK |
 
-### STILL OPEN — Phases 4–5 GO’d 2026-09-20, not built yet
+### IN PROGRESS — Phase 4 scale tooling (2026-09-21)
 
-**P4 scale**
+**P4 scale — checklist**
 
-- Revision polling stress / 50k seed load-test
-- Template cache
-- `ChatAutomationJob` durable Soft AI
-- Media Blob cache
+| Item | Status |
+|---|---|
+| Local-only seed (`scripts/chat-scale-seed.ts`, 5 acct / 2k conv / 50k msg) | **Shipped** — requires `CHAT_SCALE_DATABASE_URL` loopback; refuses Supabase / 6543 |
+| Bench list + changes idle p50/p95 + EXPLAIN (`chat-scale-benchmark.ts`) | **Shipped** — report `docs/audits/chat-phase4-scale-report.md` |
+| Fill report numbers on local Postgres | **Pending** — Cloud Agent has no Docker/local Postgres; never seed shared Supabase |
+| Webhook burst 500/60s unit (`chat-webhook-burst.ts` + fixture) | **Shipped** (in-memory dual-write mock) |
+| Idle network ≤1 req/5s assert (`chat-idle-network-assert.ts`) | **Shipped** (validates `CHAT_INBOX_V2_POLL_MS`) |
+| Template cache | Still open |
+| `ChatAutomationJob` durable Soft AI (026) | Sibling / still open |
+| Media Blob cache | Still open |
+
+npm: `chat:scale:seed` · `chat:scale:bench` · `chat:webhook:burst` · `test:chat-scale`
 
 **P5 self-serve**
 

@@ -1,3 +1,62 @@
+## 2026-09-21 — Phase 4 scale bench numbers + seed fix + render ≤100
+
+- Fixed `scripts/chat-scale-seed.ts` message index double-count across batches
+  (duplicate `ChatMessage` PK on 50k seed).
+- Local Postgres seed+bench: 5 accounts / 2k conversations / 50k messages;
+  list p95 ~0.7 ms; changes idle p95 ~0.12 ms; indexes used (see
+  `docs/audits/chat-phase4-scale-report.md`).
+- `CHAT_INBOX_V2_THREAD_RENDER_WINDOW` tightened to **100** (acceptance 4.3).
+- Acceptance 4.1–4.7 marked PASS in scale report (4.3–4.7 via code/unit + seed).
+- Soft chrome + bot paths still untouched; 026 remains gated (not applied live).
+
+## 2026-09-21 — Phase 4 template cache / poll consolidate / media / windowing
+
+- `chat-template-cache.ts`: 300s per-WABA APPROVED templates (Upstash + memory);
+  wired into `/api/chat/templates` + send APPROVED gate (acceptance 4.6).
+- Poll: `CHAT_INBOX_V2_POLL_MS=5000`; SoftCopilotInboxV2 single scheduler +
+  `inFlight` + pause on `document.hidden`; changes piggybacks `threadTail`
+  (`threadId`/`threadAfter`); revision advances via `nextRevision` +
+  `hasMoreChanges` (no jump to tenant max); initial list = first page +
+  “Cargar más”; reconcile tick = one list page only (≤1 req/5s idle — 4.4).
+- Thread window: fetch ≤50; store cap 300; render window 200; SoftThreadPane
+  `data-testid="soft-thread-message"` + media via `/api/chat/media/[id]`.
+- `chat-media.ts` + GET media route: Graph resolve → 10MB-capped download →
+  private Blob `chat-media/{tenant}/{messageId}`; never persist Meta CDN URLs;
+  write `mediaBlobPath` columns when present (026) else metadata fallback.
+- Meta parser promotes `providerMediaId` / mime / filename; dual-write stores them.
+- `chat-webhook-observability.ts` structured Done logs (`socialAccountId`,
+  `durationMs`, `result`). Soft chrome + bot paths untouched.
+
+## 2026-09-21 — Phase 4 Soft AI durable ChatAutomationJob queue
+
+- Additive gated `026_chat_automation_jobs.sql`: `ChatAutomationJob` +
+  `ChatAutomationDelivery` + optional `ChatMessage` media cache columns.
+- Soft-only lease queue (`FOR UPDATE SKIP LOCKED`, 45s, per-conversation order)
+  copying BotInbox algorithms without importing bot modules/tables.
+- Webhook enqueues job after dual-write **before** 200; `void processJobById`
+  best-effort; cron `/api/cron/chat-automation` (`*/1`) is safety net.
+- Manifest registers 026; kept out of `DEFAULT_APPLY_FILES` (gated like 025).
+- Soft chrome + `/api/bot/**` + `src/lib/bot/**` untouched.
+
+## 2026-09-21 — Phase 4 scale tooling (seed / bench / burst / idle assert)
+
+- Local-only load-test scripts gated on `CHAT_SCALE_DATABASE_URL` (loopback;
+  refuse supabase hosts + pooler 6543). Never use shared `DATABASE_URL`.
+- `scripts/chat-scale-seed.ts`: 5 SocialAccounts / 2000 ChatConversations /
+  50000 ChatMessages (one 3000-msg thread); batched inserts; `--dry-run`.
+- `scripts/chat-scale-benchmark.ts`: list LIMIT 30 + changes idle p50/p95,
+  EXPLAIN (ANALYZE, BUFFERS) index asserts → `docs/audits/chat-phase4-scale-report.md`.
+- `scripts/chat-webhook-burst.ts` + `tests/fixtures/chat-webhook/`: 500 signed
+  events / 5 accounts unit-style (HMAC + parse + in-memory store).
+- `scripts/chat-idle-network-assert.ts`: ≤1 req/5s budget vs `CHAT_INBOX_V2_POLL_MS`.
+- npm: `chat:scale:seed` · `chat:scale:bench` · `chat:webhook:burst` · `test:chat-scale`.
+- Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; `src/lib/bot/**` untouched.
+- Bench numbers left **pending local postgres** in this Cloud Agent (no Docker).
+
+# Agent Changelog
+
+Append-only. Newest entries at the top.
+
 ## 2026-09-21 — PR-3 channel identity (names / logos / Connect naming)
 
 - Persist WA/IG provider identity at connect (`exchange`, IG complete/callback shared upsert).

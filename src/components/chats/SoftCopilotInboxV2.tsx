@@ -24,18 +24,22 @@ import {
 } from '@/lib/chat-soft-copilot'
 import type { ChatConversationListItemDto } from '@/lib/chat-conversation-api'
 import {
+  advanceRevisionCursor,
+  buildChangesPollQuery,
   buildChatTemplateSendBody,
   buildLocalImportPayload,
   CHAT_INBOX_V2_FULL_RECONCILE_MS,
   CHAT_INBOX_V2_IMPORTED_KEY,
   CHAT_INBOX_V2_LIST_PAGE_LIMIT,
   CHAT_INBOX_V2_POLL_MS,
+  CHAT_INBOX_V2_THREAD_FETCH_LIMIT,
+  decideInboxV2PollTick,
   listDtoToSoftConversation,
   mergeListDtoIntoMap,
+  mergeThreadMessageWindow,
   messageDtoToInbox,
   softConversationKeyFromDto,
   sortedConversationDtos,
-  walkConversationListPages,
 } from '@/lib/chat-inbox-v2-client'
 import {
   applyAgentControl,
@@ -86,13 +90,26 @@ export function SoftCopilotInboxV2() {
   const [templatesError, setTemplatesError] = useState<string | null>(null)
   const [agentStateMap, setAgentStateMap] = useState<SoftAiAgentStateMap>({})
   const [controlBusy, setControlBusy] = useState(false)
+  const [listNextCursor, setListNextCursor] = useState<string | null>(null)
+  const [loadingMoreConversations, setLoadingMoreConversations] = useState(false)
 
   const maxRevisionRef = useRef<bigint>(BigInt(0))
   const lastFullReconcileRef = useRef(0)
   const importStartedRef = useRef(false)
+  const pollInFlightRef = useRef(false)
+  const selectedConversationIdRef = useRef<string | null>(null)
+  const threadMessagesRef = useRef<Record<string, ChatInboxMessage[]>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
+
+  useEffect(() => {
+    selectedConversationIdRef.current = selectedConversationId
+  }, [selectedConversationId])
+
+  useEffect(() => {
+    threadMessagesRef.current = threadMessages
+  }, [threadMessages])
 
   useEffect(() => {
     setAgentStateMap(readAgentStateMap())
@@ -129,155 +146,220 @@ export function SoftCopilotInboxV2() {
     }
   }, [])
 
-  const fetchFullList = useCallback(async () => {
-    try {
-      const walked = await walkConversationListPages({
-        fetchPage: async (cursor) => {
-          const qs = new URLSearchParams({ limit: String(CHAT_INBOX_V2_LIST_PAGE_LIMIT) })
-          if (cursor) qs.set('cursor', cursor)
-          const res = await fetch(`/api/chat/conversations?${qs.toString()}`, {
-            credentials: 'same-origin',
-            cache: 'no-store',
-          })
-          const parsed = await parseApiJson<{
-            success?: boolean
-            conversations?: ChatConversationListItemDto[]
-            nextCursor?: string | null
-            maxRevision?: string
-          }>(res)
-          if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.conversations) {
-            throw new Error('list_failed')
-          }
-          return {
-            conversations: parsed.data.conversations,
-            nextCursor: parsed.data.nextCursor ?? null,
-            maxRevision: parsed.data.maxRevision ?? null,
-          }
-        },
-      })
-      if (!walked.complete) return
-      setDtoMap(mergeListDtoIntoMap(new Map(), walked.items))
-      if (walked.maxRevision) {
-        maxRevisionRef.current = BigInt(walked.maxRevision)
-      }
-      setLastSyncAt(Date.now())
-      lastFullReconcileRef.current = Date.now()
-    } catch {
-      // Keep the previous map if a mid-walk page fails.
+  /** First page only (or one more page for "cargar más") — never walk 40 pages on idle. */
+  const fetchListPage = useCallback(async (opts?: { cursor?: string | null; replace?: boolean }) => {
+    const qs = new URLSearchParams({ limit: String(CHAT_INBOX_V2_LIST_PAGE_LIMIT) })
+    if (opts?.cursor) qs.set('cursor', opts.cursor)
+    const res = await fetch(`/api/chat/conversations?${qs.toString()}`, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+    })
+    const parsed = await parseApiJson<{
+      success?: boolean
+      conversations?: ChatConversationListItemDto[]
+      nextCursor?: string | null
+      maxRevision?: string
+    }>(res)
+    if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.conversations) {
+      throw new Error('list_failed')
     }
+    setDtoMap((prev) =>
+      opts?.replace
+        ? mergeListDtoIntoMap(new Map(), parsed.data.conversations!)
+        : mergeListDtoIntoMap(prev, parsed.data.conversations!),
+    )
+    setListNextCursor(parsed.data.nextCursor ?? null)
+    if (parsed.data.maxRevision && opts?.replace) {
+      // Seed revision cursor from first page max so changes feed starts at head.
+      const head = BigInt(parsed.data.maxRevision)
+      if (head > maxRevisionRef.current) maxRevisionRef.current = head
+    }
+    setLastSyncAt(Date.now())
+    lastFullReconcileRef.current = Date.now()
   }, [])
 
+  const applyThreadTail = useCallback(
+    (conversationId: string, messages: Array<Parameters<typeof messageDtoToInbox>[0]>) => {
+      const incoming = messages.map(messageDtoToInbox)
+      setThreadMessages((prev) => ({
+        ...prev,
+        [conversationId]: mergeThreadMessageWindow({
+          existing: prev[conversationId] || [],
+          incoming,
+          mode: 'tail',
+        }),
+      }))
+    },
+    [],
+  )
+
   const fetchChanges = useCallback(async () => {
-    const after = maxRevisionRef.current.toString()
+    let guard = 0
+    while (guard < 20) {
+      guard += 1
+      const after = maxRevisionRef.current.toString()
+      const threadId = selectedConversationIdRef.current
+      const existing = threadId ? threadMessagesRef.current[threadId] : undefined
+      const threadAfter =
+        threadId && existing?.length
+          ? `${existing[existing.length - 1]!.sentAt},${existing[existing.length - 1]!.id}`
+          : null
+
+      const qs = buildChangesPollQuery({
+        afterRevision: after,
+        limit: 200,
+        // Piggyback thread tail only on the first page of a drain burst.
+        threadId: guard === 1 ? threadId : null,
+        threadAfter: guard === 1 ? threadAfter : null,
+      })
+      const res = await fetch(`/api/chat/conversations/changes?${qs}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      })
+      const parsed = await parseApiJson<{
+        success?: boolean
+        conversations?: ChatConversationListItemDto[]
+        nextRevision?: string
+        maxRevision?: string
+        hasMoreChanges?: boolean
+        threadTail?: {
+          conversationId: string
+          messages: Array<Parameters<typeof messageDtoToInbox>[0]>
+        } | null
+      }>(res)
+      if (!parsed.ok || !res.ok || !parsed.data.success) return
+
+      if (parsed.data.conversations?.length) {
+        setDtoMap((prev) => mergeListDtoIntoMap(prev, parsed.data.conversations!))
+      }
+
+      const advanced = advanceRevisionCursor({
+        current: maxRevisionRef.current,
+        nextRevision: parsed.data.nextRevision ?? parsed.data.maxRevision,
+        hasMoreChanges: parsed.data.hasMoreChanges,
+      })
+      maxRevisionRef.current = advanced.next
+
+      if (parsed.data.threadTail?.conversationId && parsed.data.threadTail.messages) {
+        applyThreadTail(parsed.data.threadTail.conversationId, parsed.data.threadTail.messages)
+      }
+
+      setLastSyncAt(Date.now())
+      if (!advanced.continueDrain) return
+    }
+  }, [applyThreadTail])
+
+  const loadThreadMessages = useCallback(async (conversationId: string) => {
+    const qs = `limit=${CHAT_INBOX_V2_THREAD_FETCH_LIMIT}`
     const res = await fetch(
-      `/api/chat/conversations/changes?afterRevision=${encodeURIComponent(after)}&limit=200`,
+      `/api/chat/conversations/${encodeURIComponent(conversationId)}/messages?${qs}`,
       { credentials: 'same-origin', cache: 'no-store' },
     )
     const parsed = await parseApiJson<{
       success?: boolean
-      conversations?: ChatConversationListItemDto[]
-      maxRevision?: string
+      messages?: Array<Parameters<typeof messageDtoToInbox>[0]>
+      nextBefore?: string | null
     }>(res)
-    if (!parsed.ok || !res.ok || !parsed.data.success) return
-    if (parsed.data.conversations?.length) {
-      setDtoMap((prev) => mergeListDtoIntoMap(prev, parsed.data.conversations!))
+    if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.messages) return
+    const incoming = parsed.data.messages.map(messageDtoToInbox)
+    setThreadMessages((prev) => ({
+      ...prev,
+      [conversationId]: mergeThreadMessageWindow({
+        existing: [],
+        incoming,
+        mode: 'replace',
+      }),
+    }))
+    if (parsed.data.nextBefore !== undefined) {
+      setThreadBeforeCursor((prev) => ({
+        ...prev,
+        [conversationId]: parsed.data.nextBefore ?? null,
+      }))
     }
-    if (parsed.data.maxRevision) {
-      maxRevisionRef.current = BigInt(parsed.data.maxRevision)
-    }
-    setLastSyncAt(Date.now())
-  }, [])
-
-  const loadThreadMessages = useCallback(
-    async (conversationId: string, opts?: { tailOnly?: boolean }) => {
-      const dto = dtoMap.get(conversationId)
-      const after =
-        opts?.tailOnly && threadMessages[conversationId]?.length
-          ? (() => {
-              const last = threadMessages[conversationId]![threadMessages[conversationId]!.length - 1]!
-              return `${last.sentAt},${last.id}`
-            })()
-          : null
-      const qs = after
-        ? `after=${encodeURIComponent(after)}&limit=50`
-        : 'limit=50'
-      const res = await fetch(
-        `/api/chat/conversations/${encodeURIComponent(conversationId)}/messages?${qs}`,
-        { credentials: 'same-origin', cache: 'no-store' },
-      )
-      const parsed = await parseApiJson<{
-        success?: boolean
-        messages?: Array<Parameters<typeof messageDtoToInbox>[0]>
-        nextBefore?: string | null
-      }>(res)
-      if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.messages) return
-      const incoming = parsed.data.messages.map(messageDtoToInbox)
-      setThreadMessages((prev) => {
-        const existing = prev[conversationId] || []
-        if (after) {
-          const byId = new Map(existing.map((m) => [m.id, m]))
-          for (const m of incoming) byId.set(m.id, m)
-          return { ...prev, [conversationId]: [...byId.values()].sort((a, b) => a.sentAt.localeCompare(b.sentAt)) }
-        }
-        return { ...prev, [conversationId]: incoming }
+    void fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}/read`, {
+      method: 'POST',
+      credentials: 'same-origin',
+    }).then(() => {
+      setDtoMap((prev) => {
+        const row = prev.get(conversationId)
+        if (!row) return prev
+        const next = new Map(prev)
+        next.set(conversationId, { ...row, unreadCount: 0 })
+        return next
       })
-      if (parsed.data.nextBefore !== undefined) {
-        setThreadBeforeCursor((prev) => ({
-          ...prev,
-          [conversationId]: parsed.data.nextBefore ?? null,
-        }))
-      }
-      if (dto && !after) {
-        void fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}/read`, {
-          method: 'POST',
-          credentials: 'same-origin',
-        }).then(() => {
-          setDtoMap((prev) => {
-            const row = prev.get(conversationId)
-            if (!row) return prev
-            const next = new Map(prev)
-            next.set(conversationId, { ...row, unreadCount: 0 })
-            return next
-          })
-        })
-      }
-    },
-    [dtoMap, threadMessages],
-  )
+    })
+  }, [])
 
   useEffect(() => {
     void (async () => {
       setLoading(true)
       await fetchAccounts()
       await runLocalImportOnce()
-      await fetchFullList()
+      try {
+        await fetchListPage({ replace: true })
+      } catch {
+        // keep empty map
+      }
       setLoading(false)
     })()
-  }, [fetchAccounts, fetchFullList, runLocalImportOnce])
+  }, [fetchAccounts, fetchListPage, runLocalImportOnce])
 
   useEffect(() => {
-    const id = window.setInterval(() => {
+    const tick = () => {
       void (async () => {
-        if (Date.now() - lastFullReconcileRef.current >= CHAT_INBOX_V2_FULL_RECONCILE_MS) {
-          await fetchFullList()
-        } else {
-          await fetchChanges()
-        }
-        if (selectedConversationId) {
-          await loadThreadMessages(selectedConversationId, { tailOnly: true })
+        const decision = decideInboxV2PollTick({
+          documentHidden: typeof document !== 'undefined' ? document.hidden : false,
+          inFlight: pollInFlightRef.current,
+          nowMs: Date.now(),
+          lastFullReconcileMs: lastFullReconcileRef.current,
+          fullReconcileEveryMs: CHAT_INBOX_V2_FULL_RECONCILE_MS,
+        })
+        if (decision.action === 'skip') return
+        pollInFlightRef.current = true
+        try {
+          if (decision.action === 'reconcile') {
+            // Option (2): reconcile tick = one list page only (no thread fetch).
+            await fetchListPage({ replace: true })
+          } else {
+            await fetchChanges()
+          }
+        } catch {
+          // swallow — next tick retries
+        } finally {
+          pollInFlightRef.current = false
         }
       })()
-    }, CHAT_INBOX_V2_POLL_MS)
-    return () => window.clearInterval(id)
-  }, [fetchChanges, fetchFullList, loadThreadMessages, selectedConversationId])
+    }
+    const id = window.setInterval(tick, CHAT_INBOX_V2_POLL_MS)
+    const onVisibility = () => {
+      if (!document.hidden) tick()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [fetchChanges, fetchListPage])
 
   useEffect(() => {
     if (!lastSyncAt) return
-    const tick = () => setSyncAgeSeconds(Math.floor((Date.now() - lastSyncAt) / 1000))
-    tick()
-    const id = window.setInterval(tick, 1000)
+    const ageTick = () => setSyncAgeSeconds(Math.floor((Date.now() - lastSyncAt) / 1000))
+    ageTick()
+    const id = window.setInterval(ageTick, 1000)
     return () => window.clearInterval(id)
   }, [lastSyncAt])
+
+  async function loadMoreConversations() {
+    if (!listNextCursor || loadingMoreConversations) return
+    setLoadingMoreConversations(true)
+    try {
+      await fetchListPage({ cursor: listNextCursor, replace: false })
+    } catch {
+      // keep cursor for retry
+    } finally {
+      setLoadingMoreConversations(false)
+    }
+  }
 
   const conversations = useMemo(() => {
     const dtos = sortedConversationDtos(dtoMap)
@@ -446,7 +528,7 @@ export function SoftCopilotInboxV2() {
     setLoadingOlder(true)
     try {
       const res = await fetch(
-        `/api/chat/conversations/${encodeURIComponent(selectedConversationId)}/messages?before=${encodeURIComponent(before)}&limit=50`,
+        `/api/chat/conversations/${encodeURIComponent(selectedConversationId)}/messages?before=${encodeURIComponent(before)}&limit=${CHAT_INBOX_V2_THREAD_FETCH_LIMIT}`,
         { credentials: 'same-origin', cache: 'no-store' },
       )
       const parsed = await parseApiJson<{
@@ -458,7 +540,11 @@ export function SoftCopilotInboxV2() {
       const older = parsed.data.messages.map(messageDtoToInbox)
       setThreadMessages((prev) => ({
         ...prev,
-        [selectedConversationId]: [...older, ...(prev[selectedConversationId] || [])],
+        [selectedConversationId]: mergeThreadMessageWindow({
+          existing: prev[selectedConversationId] || [],
+          incoming: older,
+          mode: 'older',
+        }),
       }))
       setThreadBeforeCursor((prev) => ({
         ...prev,
@@ -541,7 +627,7 @@ export function SoftCopilotInboxV2() {
       setTemplatePickerOpen(false)
       if (selectedConversation.status === 'nuevo') updateStatus('en_curso')
       if (selectedConversationId) {
-        await loadThreadMessages(selectedConversationId, { tailOnly: false })
+        await loadThreadMessages(selectedConversationId)
         await fetchChanges()
       }
     } catch (err: unknown) {
@@ -585,7 +671,7 @@ export function SoftCopilotInboxV2() {
       setMessageInput('')
       if (selectedConversation.status === 'nuevo') updateStatus('en_curso')
       if (selectedConversationId) {
-        await loadThreadMessages(selectedConversationId, { tailOnly: false })
+        await loadThreadMessages(selectedConversationId)
         await fetchChanges()
       }
     } catch (err: unknown) {
@@ -678,6 +764,9 @@ export function SoftCopilotInboxV2() {
             syncAgeSeconds={syncAgeSeconds}
             loading={loading}
             emptyReason={emptyReason}
+            hasMoreConversations={Boolean(listNextCursor)}
+            loadingMoreConversations={loadingMoreConversations}
+            onLoadMoreConversations={() => void loadMoreConversations()}
           />
           <SoftThreadPane
             {...threadSharedProps}
@@ -715,6 +804,9 @@ export function SoftCopilotInboxV2() {
               loading={loading}
               emptyReason={emptyReason}
               compact
+              hasMoreConversations={Boolean(listNextCursor)}
+              loadingMoreConversations={loadingMoreConversations}
+              onLoadMoreConversations={() => void loadMoreConversations()}
             />
           ) : (
             <SoftThreadPane

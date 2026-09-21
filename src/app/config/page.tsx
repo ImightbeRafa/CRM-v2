@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, Suspense, lazy } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useConfig } from '../contexts/ConfigContext'
 import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck, Bot, Building2, Sparkles } from 'lucide-react'
@@ -866,13 +867,13 @@ function ConfigPageInner() {
                 <p className="text-muted-foreground mb-6">
                   Configurá voz, tono, Probar y controles de pánico del Agent Layer
                 </p>
-                <a
+                <Link
                   href="/config/agentes"
                   className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium"
                 >
                   <Sparkles className="w-5 h-5" />
                   Abrir Agentes
-                </a>
+                </Link>
               </div>
             </div>
           )}

@@ -35,6 +35,16 @@ type AgentRow = {
 
 const TONES: ChatAgentTonePreset[] = ['warm_concise', 'formal', 'playful']
 
+/** Light-surface form controls: explicit foreground so dark theme cannot inherit pale text. */
+const FIELD_CLASS =
+  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600'
+const TEXTAREA_CLASS =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-base leading-relaxed text-slate-900 placeholder:text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600'
+const SELECT_CLASS =
+  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600'
+const META_CLASS = 'text-[11px] text-slate-600'
+const HINT_CLASS = 'text-[11px] text-slate-600'
+
 const TOOL_LABELS: Record<string, string> = {
   search_inventory: 'Buscar inventario (precios en vivo)',
   search_approved_knowledge: 'Buscar conocimiento aprobado',
@@ -85,8 +95,8 @@ export default function AgentesConfigPage() {
   const selected = agents.find((a) => a.id === selectedId) || null
   const isEmpty = !loading && agents.length === 0
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true)
     setError(null)
     try {
       const [res, kRes] = await Promise.all([
@@ -126,7 +136,7 @@ export default function AgentesConfigPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al cargar')
     } finally {
-      setLoading(false)
+      if (!opts?.silent) setLoading(false)
     }
   }, [])
 
@@ -160,7 +170,7 @@ export default function AgentesConfigPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(apiErrorMessage(data, 'Error al guardar'))
       if (data.schemaReady === false) setSchemaReady(false)
-      await load()
+      await load({ silent: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
     } finally {
@@ -182,7 +192,7 @@ export default function AgentesConfigPage() {
       if (!res.ok) throw new Error(apiErrorMessage(data, 'Error al crear agente'))
       if (data.schemaReady === false) setSchemaReady(false)
       if (data.agent?.id) setSelectedId(data.agent.id)
-      await load()
+      await load({ silent: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
     } finally {
@@ -205,7 +215,7 @@ export default function AgentesConfigPage() {
       if (data.schemaReady === false) setSchemaReady(false)
       if (data.forgeId) setSelectedId(data.forgeId)
       else if (data.predId) setSelectedId(data.predId)
-      await load()
+      await load({ silent: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
     } finally {
@@ -258,7 +268,7 @@ export default function AgentesConfigPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(apiErrorMessage(data, 'Error en control de pánico'))
-      await load()
+      await load({ silent: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
     } finally {
@@ -267,7 +277,7 @@ export default function AgentesConfigPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 text-slate-900 [color-scheme:light]">
       <div className="mx-auto max-w-5xl px-4 py-4 md:px-6 md:py-5">
         <button
           type="button"
@@ -292,7 +302,7 @@ export default function AgentesConfigPage() {
                 type="button"
                 onClick={() => void bootstrapPilot()}
                 disabled={saving || !schemaReady}
-                className="rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600"
               >
                 {saving ? 'Guardando…' : 'Sembrar piloto Forge'}
               </button>
@@ -300,7 +310,7 @@ export default function AgentesConfigPage() {
                 type="button"
                 onClick={() => void createAgent()}
                 disabled={saving || !schemaReady}
-                className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-400 disabled:text-white"
               >
                 {saving ? 'Guardando…' : 'Crear agente'}
               </button>
@@ -324,7 +334,7 @@ export default function AgentesConfigPage() {
         ) : null}
 
         {loading ? (
-          <p className="text-sm text-slate-500">Cargando…</p>
+          <p className="text-sm text-slate-600">Cargando…</p>
         ) : isEmpty ? (
           <div className="rounded-xl bg-white px-6 py-10 text-center ring-1 ring-slate-100">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50 text-2xl">
@@ -341,7 +351,7 @@ export default function AgentesConfigPage() {
                   type="button"
                   onClick={() => void bootstrapPilot()}
                   disabled={saving}
-                  className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-400 disabled:text-white"
                 >
                   {saving ? 'Sembrando…' : 'Sembrar piloto Forge'}
                 </button>
@@ -349,7 +359,7 @@ export default function AgentesConfigPage() {
                   type="button"
                   onClick={() => void createAgent()}
                   disabled={saving}
-                  className="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600"
                 >
                   {saving ? 'Creando…' : 'Crear agente'}
                 </button>
@@ -361,7 +371,7 @@ export default function AgentesConfigPage() {
               </p>
             ) : null}
             {!canEdit ? (
-              <p className="mt-4 text-xs text-slate-500">
+              <p className="mt-4 text-xs text-slate-600">
                 Necesitás permiso de configuración para crear agentes.
               </p>
             ) : null}
@@ -369,7 +379,7 @@ export default function AgentesConfigPage() {
         ) : (
           <div className="grid gap-3 md:grid-cols-[200px_1fr]">
             <aside className="rounded-xl bg-white p-2 ring-1 ring-slate-100">
-              <p className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              <p className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wide text-slate-600">
                 Agentes
               </p>
               <ul className="space-y-0.5">
@@ -379,7 +389,9 @@ export default function AgentesConfigPage() {
                       type="button"
                       onClick={() => setSelectedId(a.id)}
                       className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm ${
-                        selectedId === a.id ? 'bg-indigo-50 text-indigo-900' : 'hover:bg-slate-50'
+                        selectedId === a.id
+                          ? 'bg-indigo-50 text-indigo-900'
+                          : 'text-slate-800 hover:bg-slate-50'
                       }`}
                     >
                       <span>{a.emoji}</span>
@@ -392,20 +404,20 @@ export default function AgentesConfigPage() {
 
             <section className="rounded-xl bg-white p-4 ring-1 ring-slate-100 md:p-5">
               {!selected ? (
-                <p className="text-sm text-slate-500">Seleccioná un agente en la lista.</p>
+                <p className="text-sm text-slate-600">Seleccioná un agente en la lista.</p>
               ) : (
                 <div className="space-y-5">
                   {/* Identidad */}
                   <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
                     <div className="mb-3 flex items-baseline justify-between gap-2">
                       <h2 className="text-sm font-semibold text-slate-900">Identidad</h2>
-                      <span className="text-[11px] text-slate-400">v{selected.version}</span>
+                      <span className={META_CLASS}>v{selected.version}</span>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
                       <div>
-                        <label className="text-xs font-medium text-slate-600">Nombre interno</label>
+                        <label className="text-xs font-medium text-slate-700">Nombre interno</label>
                         <input
-                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:opacity-60"
+                          className={`mt-1 w-full ${FIELD_CLASS}`}
                           defaultValue={selected.name}
                           key={`name-${selected.id}-${selected.version}`}
                           disabled={!canEdit || saving}
@@ -413,9 +425,9 @@ export default function AgentesConfigPage() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-slate-600">Emoji</label>
+                        <label className="text-xs font-medium text-slate-700">Emoji</label>
                         <input
-                          className="mt-1 w-20 rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-sm disabled:opacity-60"
+                          className={`mt-1 w-20 text-center ${FIELD_CLASS}`}
                           defaultValue={selected.emoji}
                           key={`emoji-${selected.id}-${selected.version}`}
                           disabled={!canEdit || saving}
@@ -426,10 +438,10 @@ export default function AgentesConfigPage() {
                     </div>
 
                     <div className="mt-4">
-                      <label className="text-xs font-medium text-slate-600">
+                      <label className="text-xs font-medium text-slate-700">
                         Nombres de presentación
                       </label>
-                      <p className="mt-0.5 text-[11px] text-slate-500">
+                      <p className={`mt-0.5 ${HINT_CLASS}`}>
                         1–3 nombres con los que el agente se presenta en chats nuevos (ej. Sofía,
                         Forge). El primero es el preferido.
                       </p>
@@ -444,7 +456,7 @@ export default function AgentesConfigPage() {
                               <button
                                 type="button"
                                 disabled={saving}
-                                className="ml-0.5 text-indigo-500 hover:text-indigo-800 disabled:opacity-50"
+                                className="ml-0.5 text-indigo-700 hover:text-indigo-900 disabled:text-indigo-400"
                                 aria-label={`Quitar ${n}`}
                                 onClick={() => {
                                   const next = (selected.introductionNames || []).filter(
@@ -471,7 +483,7 @@ export default function AgentesConfigPage() {
                             }}
                           >
                             <input
-                              className="w-36 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm disabled:opacity-60"
+                              className={`w-36 ${FIELD_CLASS} px-2.5 py-1.5`}
                               placeholder="Agregar nombre"
                               value={introDraft}
                               disabled={saving}
@@ -481,7 +493,7 @@ export default function AgentesConfigPage() {
                             <button
                               type="submit"
                               disabled={saving || !introDraft.trim()}
-                              className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-50"
+                              className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-600"
                             >
                               Añadir
                             </button>
@@ -491,7 +503,7 @@ export default function AgentesConfigPage() {
                     </div>
 
                     <div className="mt-4">
-                      <p className="text-xs font-medium text-slate-600">Tono</p>
+                      <p className="text-xs font-medium text-slate-700">Tono</p>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {TONES.map((t) => (
                           <button
@@ -499,10 +511,10 @@ export default function AgentesConfigPage() {
                             type="button"
                             disabled={!canEdit || saving}
                             onClick={() => void patch({ tonePreset: t })}
-                            className={`rounded-full px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
+                            className={`rounded-full px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed ${
                               selected.tonePreset === t
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-white text-slate-700 ring-1 ring-slate-200'
+                                ? 'bg-indigo-600 text-white disabled:bg-indigo-400'
+                                : 'bg-white text-slate-800 ring-1 ring-slate-200 disabled:bg-slate-100 disabled:text-slate-600'
                             }`}
                           >
                             {TONE_PRESET_LABELS[t]}
@@ -515,11 +527,11 @@ export default function AgentesConfigPage() {
                   {/* Voz */}
                   <div className="rounded-xl border border-slate-200 p-4">
                     <h2 className="text-sm font-semibold text-slate-900">Voz</h2>
-                    <p className="mt-0.5 text-[11px] text-slate-500">
+                    <p className={`mt-0.5 ${HINT_CLASS}`}>
                       Instrucciones editables. Nunca anulan las reglas fijas de seguridad.
                     </p>
                     <textarea
-                      className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-3 text-base leading-relaxed disabled:opacity-60"
+                      className={`mt-3 ${TEXTAREA_CLASS}`}
                       rows={8}
                       maxLength={1200}
                       defaultValue={selected.systemInstructions}
@@ -527,7 +539,7 @@ export default function AgentesConfigPage() {
                       disabled={!canEdit || saving}
                       onBlur={(e) => void patch({ systemInstructions: e.target.value })}
                     />
-                    <p className="mt-1.5 text-[11px] text-slate-400">
+                    <p className={`mt-1.5 ${META_CLASS}`}>
                       No puede anular: dinero → humano, no inventar precios, no decir &quot;ya
                       creé&quot;.
                     </p>
@@ -540,7 +552,7 @@ export default function AgentesConfigPage() {
                       {AGENT_TOOL_NAMES.map((tool) => (
                         <label
                           key={tool}
-                          className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                          className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-900"
                         >
                           <input
                             type="checkbox"
@@ -555,10 +567,10 @@ export default function AgentesConfigPage() {
                             }}
                           />
                           <span>
-                            <span className="font-medium">
+                            <span className="font-medium text-slate-900">
                               {TOOL_LABELS[tool] || tool}
                             </span>
-                            <span className="mt-0.5 block text-[11px] text-slate-400">{tool}</span>
+                            <span className={`mt-0.5 block ${META_CLASS}`}>{tool}</span>
                           </span>
                         </label>
                       ))}
@@ -570,9 +582,9 @@ export default function AgentesConfigPage() {
                     <h2 className="text-sm font-semibold text-slate-900">Modo</h2>
                     <div className="mt-3 flex flex-wrap gap-3">
                       <div>
-                        <p className="text-xs font-medium text-slate-600">Operación</p>
+                        <p className="text-xs font-medium text-slate-700">Operación</p>
                         <select
-                          className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
+                          className={`mt-1 ${SELECT_CLASS}`}
                           value={selected.operationMode}
                           disabled={!canEdit || saving}
                           onChange={(e) => {
@@ -594,9 +606,9 @@ export default function AgentesConfigPage() {
                         </select>
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-slate-600">Estado</p>
+                        <p className="text-xs font-medium text-slate-700">Estado</p>
                         <select
-                          className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
+                          className={`mt-1 ${SELECT_CLASS}`}
                           value={selected.status}
                           disabled={!canEdit || saving}
                           onChange={(e) => {
@@ -624,7 +636,7 @@ export default function AgentesConfigPage() {
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
                         <h2 className="text-sm font-semibold text-slate-900">Conocimiento</h2>
-                        <p className="mt-0.5 text-[11px] text-slate-600">
+                        <p className={`mt-0.5 ${HINT_CLASS}`}>
                           Pegá y aprobá Brand Book / políticas / FAQ. Precios: inventario en vivo
                           manda.
                           {!knowledgeSchemaReady
@@ -677,7 +689,7 @@ export default function AgentesConfigPage() {
                           onClick={() =>
                             router.push(`/config/agentes/conocimiento?card=${card.id}`)
                           }
-                          className="rounded-lg bg-white px-3 py-2.5 text-left ring-1 ring-indigo-100 hover:ring-indigo-300"
+                          className="rounded-lg bg-white px-3 py-2.5 text-left text-slate-900 ring-1 ring-indigo-100 hover:ring-indigo-300"
                         >
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-sm font-medium text-slate-900">{card.title}</p>
@@ -694,7 +706,7 @@ export default function AgentesConfigPage() {
                               {card.statusLabel}
                             </span>
                           </div>
-                          <p className="mt-1 text-[11px] leading-snug text-slate-500">{card.hint}</p>
+                          <p className={`mt-1 leading-snug ${HINT_CLASS}`}>{card.hint}</p>
                         </button>
                       ))}
                     </div>
@@ -703,30 +715,31 @@ export default function AgentesConfigPage() {
                   {/* Probar */}
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <h2 className="text-sm font-semibold text-slate-900">Probar</h2>
-                    <p className="mt-0.5 text-[11px] text-slate-500">
+                    <p className={`mt-0.5 ${HINT_CLASS}`}>
                       Corre un turno de prueba sin enviar a Meta.
                     </p>
                     <textarea
-                      className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:opacity-60"
+                      className={`mt-3 ${TEXTAREA_CLASS} py-2 text-sm`}
                       rows={2}
                       value={testText}
                       onChange={(e) => setTestText(e.target.value)}
                       disabled={!canEdit || saving}
+                      placeholder="Escribí un mensaje de prueba…"
                     />
                     <button
                       type="button"
                       disabled={!canEdit || saving}
                       onClick={() => void runProbar()}
-                      className="mt-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      className="mt-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-indigo-400 disabled:text-white"
                     >
                       {saving ? 'Probando…' : 'Probar (sin Meta)'}
                     </button>
                     {testResult ? (
-                      <div className="mt-3 space-y-2 text-sm">
-                        <p className="whitespace-pre-wrap rounded-lg bg-white p-3 ring-1 ring-slate-100">
+                      <div className="mt-3 space-y-2 text-sm text-slate-900">
+                        <p className="whitespace-pre-wrap rounded-lg bg-white p-3 text-sm text-slate-900 ring-1 ring-slate-200">
                           {testResult.text}
                         </p>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-slate-600">
                           Tokens in {testResult.tokens.input} / out {testResult.tokens.output} /
                           cached {testResult.tokens.cached} · {testResult.latencyMs} ms
                         </p>
@@ -737,7 +750,7 @@ export default function AgentesConfigPage() {
                   {/* Pánico */}
                   <div className="rounded-xl border border-red-100 bg-red-50/40 p-4">
                     <h2 className="text-sm font-semibold text-slate-900">Pánico</h2>
-                    <p className="mt-0.5 text-[11px] text-slate-600">
+                    <p className={`mt-0.5 ${HINT_CLASS}`}>
                       Controles de emergencia para el piloto Forge WA.
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -745,7 +758,7 @@ export default function AgentesConfigPage() {
                         type="button"
                         disabled={!canEdit || saving}
                         onClick={() => void panic('pause_channel')}
-                        className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 ring-1 ring-amber-100 disabled:opacity-50"
+                        className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-950 ring-1 ring-amber-200 disabled:cursor-not-allowed disabled:bg-amber-50/70 disabled:text-amber-800"
                       >
                         Pausar canal
                       </button>
@@ -753,7 +766,7 @@ export default function AgentesConfigPage() {
                         type="button"
                         disabled={!canEdit || saving}
                         onClick={() => void panic('human_only')}
-                        className="rounded-lg bg-orange-50 px-3 py-2 text-xs font-medium text-orange-900 ring-1 ring-orange-100 disabled:opacity-50"
+                        className="rounded-lg bg-orange-50 px-3 py-2 text-xs font-medium text-orange-950 ring-1 ring-orange-200 disabled:cursor-not-allowed disabled:bg-orange-50/70 disabled:text-orange-800"
                       >
                         Solo humanos
                       </button>
@@ -761,7 +774,7 @@ export default function AgentesConfigPage() {
                         type="button"
                         disabled={!canEdit || saving}
                         onClick={() => void panic('remove_allowlist')}
-                        className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-900 ring-1 ring-red-100 disabled:opacity-50"
+                        className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-950 ring-1 ring-red-200 disabled:cursor-not-allowed disabled:bg-red-50/70 disabled:text-red-800"
                       >
                         Quitar de la lista
                       </button>
@@ -771,7 +784,7 @@ export default function AgentesConfigPage() {
                   {/* Historial */}
                   <div className="rounded-xl border border-slate-200 p-4">
                     <h2 className="text-sm font-semibold text-slate-900">Historial (últimos 20)</h2>
-                    <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto text-xs text-slate-600">
+                    <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto text-xs text-slate-700">
                       {history.map((h, i) => {
                         const row = h as {
                           id?: string

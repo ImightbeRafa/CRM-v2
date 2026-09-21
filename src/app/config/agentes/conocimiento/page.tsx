@@ -34,6 +34,13 @@ const KIND_LABELS: Record<KnowledgeKind, string> = {
 
 type Step = 'pegar' | 'revisar' | 'aprobar'
 
+/** Light-surface form controls: explicit foreground so dark theme cannot inherit pale text. */
+const FIELD_CLASS =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600'
+const TEXTAREA_CLASS =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900 placeholder:text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600'
+const HINT_CLASS = 'text-[11px] text-slate-600'
+
 function ConocimientoWizardInner() {
   const router = useRouter()
   const search = useSearchParams()
@@ -159,7 +166,7 @@ function ConocimientoWizardInner() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 text-slate-900 [color-scheme:light]">
       <div className="mx-auto max-w-3xl p-4 md:p-6">
         <button
           type="button"
@@ -206,7 +213,9 @@ function ConocimientoWizardInner() {
             <span
               key={s}
               className={`rounded-full px-3 py-1 ${
-                step === s ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 ring-1 ring-slate-200'
+                step === s
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-white text-slate-700 ring-1 ring-slate-200'
               }`}
             >
               {s === 'pegar' ? '1. Pegar texto' : s === 'revisar' ? '2. Revisar' : '3. Aprobar'}
@@ -216,9 +225,9 @@ function ConocimientoWizardInner() {
 
         {step === 'pegar' ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <label className="block text-xs font-medium text-slate-600">Tipo</label>
+            <label className="block text-xs font-medium text-slate-700">Tipo</label>
             <select
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
+              className={`mt-1 ${FIELD_CLASS}`}
               value={kind}
               disabled={!canEdit || saving}
               onChange={(e) => setKind(e.target.value as KnowledgeKind)}
@@ -230,9 +239,9 @@ function ConocimientoWizardInner() {
               ))}
             </select>
 
-            <label className="mt-3 block text-xs font-medium text-slate-600">Nombre</label>
+            <label className="mt-3 block text-xs font-medium text-slate-700">Nombre</label>
             <input
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
+              className={`mt-1 ${FIELD_CLASS}`}
               value={name}
               disabled={!canEdit || saving}
               onChange={(e) => setName(e.target.value)}
@@ -241,11 +250,11 @@ function ConocimientoWizardInner() {
 
             {kind === 'channel_overlay' ? (
               <>
-                <label className="mt-3 block text-xs font-medium text-slate-600">
+                <label className="mt-3 block text-xs font-medium text-slate-700">
                   Canal (SocialAccount)
                 </label>
                 <input
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
+                  className={`mt-1 ${FIELD_CLASS}`}
                   value={socialAccountId}
                   disabled={!canEdit || saving}
                   onChange={(e) => setSocialAccountId(e.target.value)}
@@ -253,18 +262,18 @@ function ConocimientoWizardInner() {
               </>
             ) : null}
 
-            <label className="mt-3 block text-xs font-medium text-slate-600">
+            <label className="mt-3 block text-xs font-medium text-slate-700">
               Texto (Markdown / plano, máx. 12 000)
             </label>
             <textarea
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm disabled:opacity-60"
+              className={`mt-1 ${TEXTAREA_CLASS}`}
               rows={12}
               value={body}
               disabled={!canEdit || saving}
               onChange={(e) => setBody(e.target.value)}
               placeholder="Pegá Brand Book, política, FAQ u overlay…"
             />
-            <p className="mt-1 text-[11px] text-slate-500">
+            <p className={`mt-1 ${HINT_CLASS}`}>
               {body.length.toLocaleString('es-CR')} / 12 000
               {review.inventoryWinsWarning
                 ? ' · Se detectaron cifras: el inventario en vivo manda'
@@ -282,7 +291,7 @@ function ConocimientoWizardInner() {
                 review.overLimit
               }
               onClick={() => void createDraft()}
-              className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-indigo-400 disabled:text-white"
               title={
                 !schemaReady
                   ? 'SQL 028 aún no aplicado — no se puede guardar'
@@ -299,13 +308,13 @@ function ConocimientoWizardInner() {
             <h2 className="text-sm font-semibold text-slate-900">
               Vista previa (como lo verá el agente — datos, no instrucciones)
             </h2>
-            <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-[12px] text-slate-800 ring-1 ring-slate-100">
+            <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-[12px] text-slate-900 ring-1 ring-slate-200">
               {body}
             </pre>
             {review.monetaryFigures.length > 0 ? (
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
                 <p className="font-medium">Cifras detectadas — el inventario en vivo manda</p>
-                <p className="mt-1 text-[12px]">
+                <p className="mt-1 text-[12px] text-amber-950">
                   {review.monetaryFigures.slice(0, 12).join(' · ')}
                 </p>
               </div>
@@ -317,7 +326,7 @@ function ConocimientoWizardInner() {
                   type="button"
                   disabled={!canEdit || saving}
                   onClick={() => void approve()}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-emerald-400 disabled:text-white"
                 >
                   Aprobar
                 </button>
@@ -325,7 +334,7 @@ function ConocimientoWizardInner() {
                   type="button"
                   disabled={!canEdit || saving}
                   onClick={() => void reject()}
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 disabled:opacity-50"
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600"
                 >
                   Rechazar
                 </button>
@@ -333,7 +342,7 @@ function ConocimientoWizardInner() {
                   type="button"
                   disabled={saving}
                   onClick={() => setStep('pegar')}
-                  className="rounded-lg px-4 py-2 text-sm text-slate-600"
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:text-slate-900"
                 >
                   Volver a editar
                 </button>
@@ -359,15 +368,15 @@ function ConocimientoWizardInner() {
           <h2 className="text-sm font-semibold text-slate-900">Fuentes del tenant</h2>
           <ul className="mt-2 space-y-2">
             {sources.length === 0 ? (
-              <li className="text-sm text-slate-500">Todavía no hay fuentes.</li>
+              <li className="text-sm text-slate-600">Todavía no hay fuentes.</li>
             ) : (
               sources.slice(0, 30).map((s) => (
                 <li
                   key={s.id}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
                 >
-                  <span className="font-medium">{s.name}</span>{' '}
-                  <span className="text-slate-500">
+                  <span className="font-medium text-slate-900">{s.name}</span>{' '}
+                  <span className="text-slate-600">
                     · {KIND_LABELS[s.kind]} · v{s.version} · {s.status}
                   </span>
                 </li>
@@ -384,7 +393,9 @@ export default function ConocimientoWizardPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-slate-50 p-6 text-sm text-slate-600">Cargando…</div>
+        <div className="min-h-screen bg-slate-50 p-6 text-sm text-slate-700 [color-scheme:light]">
+          Cargando…
+        </div>
       }
     >
       <ConocimientoWizardInner />

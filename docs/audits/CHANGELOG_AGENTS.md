@@ -1,3 +1,16 @@
+## 2026-09-21 — HOTFIX: `/config/agentes` contrast / readability
+
+- Root cause: ThemeProvider system dark set `body` near-white `text-foreground`
+  while agentes pages force light surfaces (`bg-white` / slate-50) without
+  explicit control colors → light-on-white inputs, Probar textarea/result,
+  selects, and wizard fields.
+- Fix: route `text-slate-900 [color-scheme:light]` + shared FIELD/TEXTAREA/
+  SELECT classes (`text-slate-900`, readable placeholders, solid disabled).
+  Bumped meta `text-slate-400` → `slate-600`. Silent `load({ silent })` after
+  mutations so edits no longer flash “Cargando…”. Config hub “Abrir Agentes”
+  uses `next/link` (cheap soft-nav). Soft chrome / staff bot untouched.
+- Prove: screenshots of Probar + conocimiento; `npm run build`.
+
 ## 2026-09-21 — A2 Soft Agent knowledge (028 gated, flag off)
 
 - Additive gated SQL `028_chat_agent_knowledge_actions.sql` (NOT applied live):

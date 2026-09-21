@@ -19,14 +19,14 @@ import {
   type ApprovedKnowledgeSlice,
   type KnowledgeSourceDto,
 } from '../soft-ai/knowledge-types'
-import { FORGE_WA_SOCIAL_ACCOUNT_ID } from '../soft-ai/agent-types'
+import { FIXTURE_SOCIAL_ACCOUNT_ID } from '../soft-ai/__fixtures__/forge-wa-v2'
 
 function makeSource(
   partial: Partial<KnowledgeSourceDto> & Pick<KnowledgeSourceDto, 'id' | 'kind' | 'name' | 'body' | 'status' | 'version'>,
 ): KnowledgeSourceDto {
   return {
     tenantId: 'tenant-a',
-    socialAccountId: partial.kind === 'channel_overlay' ? FORGE_WA_SOCIAL_ACCOUNT_ID : null,
+    socialAccountId: partial.kind === 'channel_overlay' ? FIXTURE_SOCIAL_ACCOUNT_ID : null,
     contentHash: `hash-${partial.id}`,
     metadata: null,
     approvedBy: partial.status === 'approved' ? 'owner' : null,
@@ -83,7 +83,7 @@ describe('A2 knowledge prompt assembly (2.1, 2.2)', () => {
       body: 'Overlay WhatsApp Forge',
       status: 'approved',
       version: 1,
-      socialAccountId: FORGE_WA_SOCIAL_ACCOUNT_ID,
+      socialAccountId: FIXTURE_SOCIAL_ACCOUNT_ID,
     })
     const sliceWa: ApprovedKnowledgeSlice = {
       brandBook: [],
@@ -280,7 +280,7 @@ describe('A2 wizard review + knowledgeVersions (2.9)', () => {
           body: 'overlay short',
           status: 'approved',
           version: 1,
-          socialAccountId: FORGE_WA_SOCIAL_ACCOUNT_ID,
+          socialAccountId: FIXTURE_SOCIAL_ACCOUNT_ID,
         }),
       ],
       versions: [],

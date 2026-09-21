@@ -11,14 +11,14 @@ import {
   type SoftAiToolName,
 } from '@/lib/soft-ai/types'
 
+import { classifyPaymentText } from '@/lib/soft-ai/payment-classifier'
+
 export { DEFAULT_SOFT_AI_CONFIG }
 export const SOFT_TENANT_AI_V1_FLAG = 'soft_tenant_ai_v1'
 
-const PAYMENT_RE =
-  /\b(sinpe|transferencia|pago|pagar|comprobante|ib[aá]n|cuenta\s*banc|deposit[oa]|efectivo\s*contra)\b/i
-
+/** Legacy worker gate: any payment class other than non_payment stays sensitive. */
 export function isPaymentSensitiveText(text: string): boolean {
-  return PAYMENT_RE.test(text || '')
+  return classifyPaymentText(text || '') !== 'non_payment'
 }
 
 export function parseSoftAiConfig(raw: unknown): SoftAiConfig {

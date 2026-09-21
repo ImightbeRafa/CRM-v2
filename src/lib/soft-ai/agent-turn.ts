@@ -3,6 +3,7 @@
  * Extends Phase 4 queue; never imports staff bot.
  */
 
+import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import {
@@ -11,7 +12,9 @@ import {
 } from '@/lib/soft-ai/automation-delivery'
 import type { ClaimedChatAutomationJob } from '@/lib/soft-ai/automation-queue'
 import {
+  collectDryRunBlockers,
   hashSoftAiOutput,
+  loadDailyTestTokens,
   runClaimGates,
   runPreModelGates,
   runPreSendGates,
@@ -23,10 +26,31 @@ import {
 import { softAiCanalContextLine } from '@/lib/soft-ai/channel-context'
 import { runSoftAiLlmRuntime } from '@/lib/soft-ai/llm/runtime'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
-import { HISTORY_WINDOW_MAX, AGENT_TOOL_NAMES } from '@/lib/soft-ai/agent-types'
+import {
+  AGENT_TOOL_NAMES,
+  CHAT_AGENT_LAYER_V1_FLAG,
+  HISTORY_WINDOW_MAX,
+} from '@/lib/soft-ai/agent-types'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
-import { routeInboundSafety } from '@/lib/soft-ai/llm/safety-router'
+import { decideInbound } from '@/lib/soft-ai/inbound-decision'
+import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
+import { applyFinalOutputPolicy, validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
+import {
+  formatBrandFactsForPrompt,
+  maskConfiguredPaymentSecrets,
+  parseBrandFactsSafe,
+  parseReplyStyleSafe,
+  replyStyleSnippet,
+  type BrandFacts,
+} from '@/lib/soft-ai/brand-facts'
+import { guideShortcutCatalog } from '@/lib/soft-ai/shortcuts'
+import { redactToolTrace } from '@/lib/soft-ai/llm/redact'
+import {
+  hasAiFullUnlock,
+  isAccountAllowlisted,
+  parseChatAgentLayerConfig,
+} from '@/lib/soft-ai/agent-config'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
@@ -341,7 +365,11 @@ export async function executeAgentLayerTurn(
       turnId: existing.id,
       outputText: existing.outputText,
       outputHash: existing.outputHash,
-      outputValidationOk: true,
+      outputValidationOk: validateAgentOutput({
+        text: existing.outputText,
+        citedToolNames: [],
+        shippingAmounts: [],
+      }).ok,
       toolTrace: existing.toolTrace,
       usage: {
         inputTokens: existing.inputTokens,
@@ -381,13 +409,19 @@ export async function executeAgentLayerTurn(
       })
 
   const history = await loadHistory(row.conversationId)
-
-  const safety = routeInboundSafety({
+  const shortcuts = await listRuntimeShortcuts(row.tenantId, resolved.agent.id)
+  const decision = decideInbound({
     inboundText: payload.content || '',
     messageType: trigger.messageType,
+    brandFacts: resolved.agent.brandFacts,
+    replyStyle: resolved.agent.replyStyle,
+    shortcuts,
   })
-  if (safety.escalate) {
-    const outputHash = hashSoftAiOutput(safety.handoffText)
+  decision.decisionTrace.historyCount = history.length
+
+  if (decision.handled) {
+    const outputHash = hashSoftAiOutput(decision.text)
+    const trace = redactAgentTrace(decision.decisionTrace, resolved.agent.brandFacts)
     const turn = await prisma.chatAgentTurn.upsert({
       where: { automationDeliveryKey: row.deliveryKey },
       create: {
@@ -407,12 +441,12 @@ export async function executeAgentLayerTurn(
         model: resolved.agent.model,
         agentVersion: resolved.agent.version,
         status: 'generated',
-        outputText: safety.handoffText,
+        outputText: decision.text,
         outputHash,
-        toolTrace: {
-          safetyRoute: safety.reason,
-          knowledgeVersions: [],
-        } as Prisma.InputJsonValue,
+        toolTrace: trace as Prisma.InputJsonValue,
+        decisionTrace: trace as Prisma.InputJsonValue,
+        shortcutKey: decision.shortcutKey,
+        intent: decision.intent,
         inputTokens: 0,
         cachedInputTokens: 0,
         outputTokens: 0,
@@ -421,23 +455,25 @@ export async function executeAgentLayerTurn(
         pricingVersion: 'xai-2026-09',
         latencyMs: 0,
         fallbackUsed: false,
-        errorCode: safety.reason,
+        errorCode: decision.escalate ? decision.shortcutKey : null,
       },
       update: {
         status: 'generated',
-        outputText: safety.handoffText,
+        outputText: decision.text,
         outputHash,
-        toolTrace: {
-          safetyRoute: safety.reason,
-          knowledgeVersions: [],
-        } as Prisma.InputJsonValue,
-        errorCode: safety.reason,
+        toolTrace: trace as Prisma.InputJsonValue,
+        decisionTrace: trace as Prisma.InputJsonValue,
+        shortcutKey: decision.shortcutKey,
+        intent: decision.intent,
+        errorCode: decision.escalate ? decision.shortcutKey : null,
       },
     })
-    await prisma.chatConversation.updateMany({
-      where: { id: row.conversationId, tenantId: row.tenantId },
-      data: { aiMode: 'human' },
-    })
+    if (decision.escalate) {
+      await prisma.chatConversation.updateMany({
+        where: { id: row.conversationId, tenantId: row.tenantId },
+        data: { aiMode: 'human' },
+      })
+    }
     return finishDeliveryOrSuggest({
       row,
       payload,
@@ -450,10 +486,10 @@ export async function executeAgentLayerTurn(
         resolved.effectiveBehavior === 'send' ? ('send' as const) : ('suggest' as const),
       unlockedForSend: resolved.unlockedForSend,
       turnId: turn.id,
-      outputText: safety.handoffText,
+      outputText: decision.text,
       outputHash,
-      outputValidationOk: true,
-      toolTrace: { safetyRoute: safety.reason },
+      outputValidationOk: !decision.needsHuman,
+      toolTrace: trace,
       usage: {
         inputTokens: 0,
         cachedInputTokens: 0,
@@ -463,10 +499,8 @@ export async function executeAgentLayerTurn(
         latencyMs: 0,
         fallbackUsed: false,
       },
-      // Never Meta-send a safety handoff automatically in suggest default; force suggest
-      // unless unlocked ai_full — still force suggest for opt-out/media/payment.
-      forceSuggest: true,
-      skipReasonIfSuggest: safety.reason,
+      forceSuggest: decision.escalate || decision.needsHuman,
+      skipReasonIfSuggest: decision.escalate ? decision.shortcutKey || undefined : undefined,
     })
   }
 
@@ -497,10 +531,13 @@ export async function executeAgentLayerTurn(
     knowledge,
     enabledTools,
     history,
-    inboundText: payload.content,
+    inboundText: payload.content || '',
     clientName: conversation.peerName,
     linkedOrderId: null,
     pricingVersion: 'xai-2026-09',
+    brandFactsBlock: formatBrandFactsForPrompt(resolved.agent.brandFacts),
+    shortcutCatalog: guideShortcutCatalog(shortcuts),
+    replyStyleSnippet: replyStyleSnippet(resolved.agent.replyStyle),
     toolCtx: {
       tenantId: row.tenantId,
       conversationId: row.conversationId,
@@ -508,12 +545,35 @@ export async function executeAgentLayerTurn(
       peerId: row.peerId,
       clientId: conversation.clientId,
       enabledTools,
-      inboundText: payload.content,
+      inboundText: payload.content || '',
       agentId: resolved.agent.id,
+      paymentClassification: decision.paymentClass,
+      shortcuts,
+      brandFacts: resolved.agent.brandFacts,
     },
   })
 
-  const outputHash = hashSoftAiOutput(llm.text)
+  const policy = applyFinalOutputPolicy({
+    text: llm.text,
+    intent: llm.intent || decision.intent,
+    citedToolNames: llm.citedToolNames,
+    inventoryPrices: llm.inventoryPrices,
+    brandFacts: resolved.agent.brandFacts,
+    replyStyle: resolved.agent.replyStyle,
+    shortcuts,
+  })
+  const finalText = policy.text
+  const needsHuman = policy.needsHuman || llm.needsHuman || llm.fallbackUsed
+  const modelTrace = redactAgentTrace(
+    {
+      ...decision.decisionTrace,
+      validator: policy.reasons,
+      highlightedAmounts: policy.highlightedAmounts,
+      purchaseSummaryAppended: policy.purchaseSummaryAppended,
+    },
+    resolved.agent.brandFacts,
+  )
+  const outputHash = hashSoftAiOutput(finalText)
   const turn = await prisma.chatAgentTurn.upsert({
     where: { automationDeliveryKey: row.deliveryKey },
     create: {
@@ -533,9 +593,14 @@ export async function executeAgentLayerTurn(
       model: resolved.agent.model,
       agentVersion: resolved.agent.version,
       status: 'generated',
-      outputText: llm.text,
+      outputText: finalText,
       outputHash,
-      toolTrace: llm.toolTrace as Prisma.InputJsonValue,
+      toolTrace: redactAgentTrace(llm.toolTrace, resolved.agent.brandFacts) as Prisma.InputJsonValue,
+      decisionTrace: modelTrace as Prisma.InputJsonValue,
+      shortcutKey: policy.purchaseSummaryAppended
+        ? 'sys_purchase_summary'
+        : llm.shortcutKey || null,
+      intent: policy.intent,
       inputTokens: llm.inputTokens,
       cachedInputTokens: llm.cachedInputTokens,
       outputTokens: llm.outputTokens,
@@ -544,13 +609,18 @@ export async function executeAgentLayerTurn(
       pricingVersion: 'xai-2026-09',
       latencyMs: llm.latencyMs,
       fallbackUsed: llm.fallbackUsed,
-      errorCode: llm.errorCode || null,
+      errorCode: llm.errorCode || (needsHuman ? policy.reasons[0] || null : null),
     },
     update: {
       status: 'generated',
-      outputText: llm.text,
+      outputText: finalText,
       outputHash,
-      toolTrace: llm.toolTrace as Prisma.InputJsonValue,
+      toolTrace: redactAgentTrace(llm.toolTrace, resolved.agent.brandFacts) as Prisma.InputJsonValue,
+      decisionTrace: modelTrace as Prisma.InputJsonValue,
+      shortcutKey: policy.purchaseSummaryAppended
+        ? 'sys_purchase_summary'
+        : llm.shortcutKey || null,
+      intent: policy.intent,
       inputTokens: llm.inputTokens,
       cachedInputTokens: llm.cachedInputTokens,
       outputTokens: llm.outputTokens,
@@ -581,10 +651,10 @@ export async function executeAgentLayerTurn(
       resolved.effectiveBehavior === 'send' ? ('send' as const) : ('suggest' as const),
     unlockedForSend: resolved.unlockedForSend,
     turnId: turn.id,
-    outputText: llm.text,
+    outputText: finalText,
     outputHash,
-    outputValidationOk: !llm.needsHuman || llm.status === 'fallback',
-    toolTrace: llm.toolTrace,
+    outputValidationOk: !needsHuman,
+    toolTrace: modelTrace,
     usage: {
       inputTokens: llm.inputTokens,
       cachedInputTokens: llm.cachedInputTokens,
@@ -595,7 +665,7 @@ export async function executeAgentLayerTurn(
       fallbackUsed: llm.fallbackUsed,
     },
     forceSuggest:
-      llm.needsHuman ||
+      needsHuman ||
       llm.fallbackUsed ||
       resolved.effectiveBehavior === 'suggest' ||
       !resolved.unlockedForSend,
@@ -831,178 +901,223 @@ async function finishDeliveryOrSuggest(input: {
   }
 }
 
-/** Probar — full pipeline, zero Meta, mode=test. */
+function redactAgentTrace(value: unknown, facts: BrandFacts): unknown {
+  try {
+    const masked = maskConfiguredPaymentSecrets(JSON.stringify(value ?? null), facts)
+    return redactToolTrace(JSON.parse(masked))
+  } catch {
+    return redactToolTrace(value)
+  }
+}
+
+/** Probar — isolated multi-turn sandbox. conversationId stays null. No Meta send. */
 export async function runAgentTestTurn(input: {
   tenantId: string
   agentId: string
   inboundText: string
-  socialAccountId?: string | null
+  socialAccountId: string
   actorUserId: string
+  testSessionId: string
+  messageType?: 'text' | 'image' | 'audio' | 'document' | 'video'
+  history?: Array<{ direction: 'inbound' | 'outbound'; content: string; sentAt: string }>
+  windowOpen?: boolean
 }): Promise<{
   text: string
   toolTrace: unknown
+  decisionTrace: unknown
   tokens: { input: number; output: number; cached: number }
   turnId: string
   latencyMs: number
+  wouldSend: boolean
+  blockedBy: string[]
+  highlightedAmounts: number[]
+  intent: string
+  shortcutKey: string | null
 }> {
   const agent = await prisma.chatAgent.findFirst({
     where: { id: input.agentId, tenantId: input.tenantId },
   })
   if (!agent) throw new Error('AGENT_NOT_FOUND')
-
-  const socialAccountId =
-    input.socialAccountId ||
-    (
-      await prisma.chatAgentBinding.findFirst({
-        where: {
-          tenantId: input.tenantId,
-          agentId: agent.id,
-          scope: 'social_account',
-          isActive: true,
-        },
-        select: { socialAccountId: true },
-      })
-    )?.socialAccountId
-
-  if (!socialAccountId) throw new Error('AGENT_NO_CHANNEL')
-
-  // Synthetic conversation id for test accounting — use a dedicated placeholder convo if present,
-  // else create an ephemeral turn without conversation FK by using first matching conversation,
-  // or fail closed with a clear error. Prefer an existing conversation on that account.
-  const conversation = await prisma.chatConversation.findFirst({
-    where: { tenantId: input.tenantId, socialAccountId },
-    orderBy: { lastMessageAt: 'desc' },
-    select: { id: true, clientId: true, peerId: true, peerName: true },
+  const account = await prisma.socialAccount.findFirst({
+    where: { id: input.socialAccountId, tenantId: input.tenantId },
+    select: { id: true, platform: true },
   })
-  if (!conversation) throw new Error('AGENT_TEST_NO_CONVERSATION')
+  if (!account) throw new Error('SOCIAL_ACCOUNT_NOT_FOUND')
 
-  const deliveryKey = `test:${agent.id}:${Date.now()}:${input.actorUserId}`
-  const knowledge = await loadApprovedKnowledgeForAgent({
-    tenantId: input.tenantId,
-    agentId: agent.id,
-    socialAccountId,
+  const facts = parseBrandFactsSafe(agent.brandFacts)
+  const style = parseReplyStyleSafe(agent.replyStyle)
+  const shortcuts = await listRuntimeShortcuts(input.tenantId, agent.id)
+  const history = (input.history || []).slice(-40)
+  const flag = await prisma.tenantFeatureFlag.findFirst({
+    where: { tenantId: input.tenantId, scope: input.tenantId, key: CHAT_AGENT_LAYER_V1_FLAG },
+    select: { enabled: true, config: true },
   })
-  const enabledTools = [
-    ...new Set([
-      ...agent.enabledTools,
-      ...AGENT_TOOL_NAMES.filter((t) => t === 'search_approved_knowledge'),
-    ]),
-  ]
-  const safety = routeInboundSafety({
+  const soft = await prisma.tenantFeatureFlag.findFirst({
+    where: { tenantId: input.tenantId, scope: input.tenantId, key: 'soft_tenant_ai_v1' },
+    select: { enabled: true },
+  })
+  const config = parseChatAgentLayerConfig(flag?.config)
+  const testTokens = await loadDailyTestTokens(input.tenantId)
+  const blockedBy = collectDryRunBlockers({
+    layerEnabled: Boolean(flag?.enabled),
+    softEnabled: Boolean(soft?.enabled),
+    allowlisted: isAccountAllowlisted(config, input.socialAccountId),
+    operationMode: agent.operationMode,
+    unlockedForSend: hasAiFullUnlock(config, input.socialAccountId),
+    windowOpen: input.windowOpen !== false,
+    agentStatus: agent.status,
+    conversationAiMode: 'ai_active',
+  })
+  if (testTokens >= config.testDailyTokenCap) blockedBy.push('test_budget_blocked')
+  const wouldSend = blockedBy.length === 0 && agent.operationMode === 'ai_full'
+
+  const decision = decideInbound({
     inboundText: input.inboundText,
-    messageType: 'text',
+    messageType: input.messageType || 'text',
+    brandFacts: facts,
+    replyStyle: style,
+    shortcuts,
   })
-  if (safety.escalate) {
-    const turn = await prisma.chatAgentTurn.create({
-      data: {
+  decision.decisionTrace.historyCount = history.length
+  decision.decisionTrace.wouldSend = wouldSend
+  decision.decisionTrace.blockedBy = blockedBy
+
+  let text = decision.text
+  let toolTrace: unknown = decision.decisionTrace
+  let tokens = { input: 0, output: 0, cached: 0 }
+  let latencyMs = 0
+  let intent = decision.intent
+  let shortcutKey = decision.shortcutKey
+  let highlightedAmounts = decision.highlightedAmounts
+  const needsModel = !decision.handled && !blockedBy.includes('test_budget_blocked')
+
+  if (needsModel) {
+    const knowledge = await loadApprovedKnowledgeForAgent({
+      tenantId: input.tenantId,
+      agentId: agent.id,
+      socialAccountId: input.socialAccountId,
+    })
+    const enabledTools = [
+      ...new Set([
+        ...agent.enabledTools,
+        ...AGENT_TOOL_NAMES.filter((name) => name === 'search_approved_knowledge' || name === 'use_shortcut'),
+      ]),
+    ]
+    const llm = await runSoftAiLlmRuntime({
+      tenantId: input.tenantId,
+      agentId: agent.id,
+      agentVersion: agent.version,
+      socialAccountId: input.socialAccountId,
+      model: agent.model,
+      systemInstructions: agent.systemInstructions,
+      tonePreset: agent.tonePreset as 'warm_concise' | 'formal' | 'playful',
+      description: agent.description,
+      introductionNames: agent.introductionNames,
+      canalContext: softAiCanalContextLine({
+        id: account.id,
+        platform: account.platform || 'whatsapp',
+        accountId: '',
+      }),
+      knowledge,
+      enabledTools,
+      history: history.map((message, index) => ({
+        id: `test-${index}`,
+        direction: message.direction,
+        content: message.content,
+        sentAt: message.sentAt,
+      })),
+      inboundText: input.inboundText,
+      clientName: null,
+      linkedOrderId: null,
+      pricingVersion: 'xai-2026-09',
+      brandFactsBlock: formatBrandFactsForPrompt(facts),
+      shortcutCatalog: guideShortcutCatalog(shortcuts),
+      replyStyleSnippet: replyStyleSnippet(style),
+      toolCtx: {
         tenantId: input.tenantId,
-        conversationId: conversation.id,
-        socialAccountId,
+        conversationId: 'sandbox',
+        socialAccountId: input.socialAccountId,
+        peerId: 'sandbox-peer',
+        clientId: null,
+        enabledTools,
+        inboundText: input.inboundText,
         agentId: agent.id,
-        triggerMessageId: null,
-        automationDeliveryKey: deliveryKey,
-        mode: 'test',
-        model: agent.model,
-        agentVersion: agent.version,
-        status: 'test',
-        outputText: safety.handoffText,
-        outputHash: hashSoftAiOutput(safety.handoffText),
-        toolTrace: {
-          safetyRoute: safety.reason,
-          knowledgeVersions: knowledge.versions,
-        } as Prisma.InputJsonValue,
-        inputTokens: 0,
-        cachedInputTokens: 0,
-        outputTokens: 0,
-        reasoningTokens: 0,
-        estimatedCostMicros: BigInt(0),
-        pricingVersion: 'xai-2026-09',
-        latencyMs: 0,
-        fallbackUsed: false,
-        errorCode: safety.reason,
-        completedAt: new Date(),
+        paymentClassification: decision.paymentClass,
+        shortcuts,
+        brandFacts: facts,
+        sandbox: true,
       },
     })
-    return {
-      text: safety.handoffText,
-      toolTrace: { safetyRoute: safety.reason, knowledgeVersions: knowledge.versions },
-      tokens: { input: 0, output: 0, cached: 0 },
-      turnId: turn.id,
-      latencyMs: 0,
-    }
+    const policy = applyFinalOutputPolicy({
+      text: llm.text,
+      intent: llm.intent || 'other',
+      citedToolNames: llm.citedToolNames,
+      inventoryPrices: llm.inventoryPrices,
+      brandFacts: facts,
+      replyStyle: style,
+      shortcuts,
+    })
+    text = policy.text
+    intent = policy.intent
+    shortcutKey = policy.purchaseSummaryAppended ? 'sys_purchase_summary' : llm.shortcutKey || null
+    highlightedAmounts = policy.highlightedAmounts
+    tokens = { input: llm.inputTokens, output: llm.outputTokens, cached: llm.cachedInputTokens }
+    latencyMs = llm.latencyMs
+    toolTrace = redactAgentTrace(
+      {
+        ...decision.decisionTrace,
+        validator: policy.reasons,
+        highlightedAmounts,
+        modelCalls: llm.fallbackUsed ? 0 : 1,
+      },
+      facts,
+    )
+  } else {
+    toolTrace = redactAgentTrace(decision.decisionTrace, facts)
   }
-
-  const llm = await runSoftAiLlmRuntime({
-    tenantId: input.tenantId,
-    agentId: agent.id,
-    agentVersion: agent.version,
-    socialAccountId,
-    model: agent.model,
-    systemInstructions: agent.systemInstructions,
-    tonePreset: agent.tonePreset as 'warm_concise' | 'formal' | 'playful',
-    description: agent.description,
-    introductionNames: agent.introductionNames,
-    canalContext: softAiCanalContextLine({
-      id: socialAccountId,
-      platform: 'whatsapp',
-      accountId: '',
-    }),
-    knowledge,
-    enabledTools,
-    history: [],
-    inboundText: input.inboundText,
-    clientName: conversation.peerName,
-    linkedOrderId: null,
-    pricingVersion: 'xai-2026-09',
-    toolCtx: {
-      tenantId: input.tenantId,
-      conversationId: conversation.id,
-      socialAccountId,
-      peerId: conversation.peerId,
-      clientId: conversation.clientId,
-      enabledTools,
-      inboundText: input.inboundText,
-      agentId: agent.id,
-    },
-  })
 
   const turn = await prisma.chatAgentTurn.create({
     data: {
       tenantId: input.tenantId,
-      conversationId: conversation.id,
-      socialAccountId,
+      conversationId: null,
+      socialAccountId: input.socialAccountId,
       agentId: agent.id,
       triggerMessageId: null,
-      automationDeliveryKey: deliveryKey,
+      automationDeliveryKey: `test:${agent.id}:${input.testSessionId}:${randomUUID()}`,
       mode: 'test',
       model: agent.model,
       agentVersion: agent.version,
       status: 'test',
-      outputText: llm.text,
-      outputHash: hashSoftAiOutput(llm.text),
-      toolTrace: llm.toolTrace as Prisma.InputJsonValue,
-      inputTokens: llm.inputTokens,
-      cachedInputTokens: llm.cachedInputTokens,
-      outputTokens: llm.outputTokens,
-      reasoningTokens: llm.reasoningTokens,
-      estimatedCostMicros: BigInt(llm.estimatedCostMicros),
+      outputText: text,
+      outputHash: hashSoftAiOutput(text || input.inboundText),
+      toolTrace: toolTrace as Prisma.InputJsonValue,
+      decisionTrace: toolTrace as Prisma.InputJsonValue,
+      shortcutKey,
+      intent,
+      testSessionId: input.testSessionId,
+      inputTokens: tokens.input,
+      cachedInputTokens: tokens.cached,
+      outputTokens: tokens.output,
+      estimatedCostMicros: BigInt(0),
       pricingVersion: 'xai-2026-09',
-      latencyMs: llm.latencyMs,
-      fallbackUsed: llm.fallbackUsed,
-      errorCode: llm.errorCode || null,
+      latencyMs,
+      fallbackUsed: false,
       completedAt: new Date(),
     },
   })
 
   return {
-    text: llm.text,
-    toolTrace: llm.toolTrace,
-    tokens: {
-      input: llm.inputTokens,
-      output: llm.outputTokens,
-      cached: llm.cachedInputTokens,
-    },
+    text,
+    toolTrace,
+    decisionTrace: toolTrace,
+    tokens,
     turnId: turn.id,
-    latencyMs: llm.latencyMs,
+    latencyMs,
+    wouldSend,
+    blockedBy,
+    highlightedAmounts,
+    intent,
+    shortcutKey,
   }
 }
+

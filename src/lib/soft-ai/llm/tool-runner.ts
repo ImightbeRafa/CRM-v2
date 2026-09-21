@@ -8,8 +8,11 @@ import {
   AGENT_TOOL_NAMES,
   type AgentToolName,
 } from '@/lib/soft-ai/agent-types'
-import { isPaymentSensitiveText } from '@/lib/soft-ai/config'
+import { classifyPaymentText, type PaymentClassification } from '@/lib/soft-ai/payment-classifier'
 import { searchApprovedKnowledge } from '@/lib/soft-ai/knowledge-repository'
+import { renderShortcutTemplate, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
+import type { BrandFacts } from '@/lib/soft-ai/brand-facts'
+import { SANDBOX_ORDERS, type SandboxOrder } from '@/lib/soft-ai/__fixtures__/sandbox'
 
 export type SoftAiToolRunContext = {
   tenantId: string
@@ -21,6 +24,11 @@ export type SoftAiToolRunContext = {
   enabledTools: readonly string[]
   inboundText?: string
   agentId?: string
+  paymentClassification?: PaymentClassification
+  shortcuts?: RuntimeShortcut[]
+  brandFacts?: BrandFacts | null
+  /** Probar: order/shipping tools read fixtures, never live Order/Client rows. */
+  sandbox?: boolean
 }
 
 export type SoftAiToolRunResult = {
@@ -154,6 +162,19 @@ async function runSearchApprovedKnowledge(
   }
 }
 
+function findSandboxOrder(hint: string | null | undefined): SandboxOrder | null {
+  const needle = (hint || '').trim().toLowerCase()
+  if (!needle) return SANDBOX_ORDERS[0] || null
+  return (
+    SANDBOX_ORDERS.find(
+      (order) =>
+        order.orderId.toLowerCase() === needle ||
+        order.id.toLowerCase() === needle ||
+        order.orderId.toLowerCase().includes(needle),
+    ) || null
+  )
+}
+
 async function findOwnedOrder(
   ctx: SoftAiToolRunContext,
   orderNumberHint?: string | null,
@@ -211,6 +232,26 @@ async function runGetOrderStatus(
   args: Record<string, unknown>,
 ): Promise<SoftAiToolRunResult> {
   const hint = typeof args.orderNumberHint === 'string' ? args.orderNumberHint : null
+  if (ctx.sandbox) {
+    const sandbox = findSandboxOrder(hint)
+    if (!sandbox) {
+      return {
+        ok: false,
+        name: 'get_order_status',
+        result: { error: 'not_shareable', message: 'no puedo compartir eso', sandbox: true },
+      }
+    }
+    return {
+      ok: true,
+      name: 'get_order_status',
+      result: {
+        orderNumber: sandbox.orderId,
+        status: sandbox.status,
+        customerName: sandbox.customerName,
+        sandbox: true,
+      },
+    }
+  }
   const order = await findOwnedOrder(ctx, hint)
   if (!order) {
     return {
@@ -241,6 +282,27 @@ async function runGetShippingStatus(
 ): Promise<SoftAiToolRunResult> {
   const hint = typeof args.orderNumberHint === 'string' ? args.orderNumberHint : null
   const guiaNumber = typeof args.guiaNumber === 'string' ? args.guiaNumber.trim() : null
+  if (ctx.sandbox) {
+    const sandbox = findSandboxOrder(hint)
+    if (!sandbox) {
+      return {
+        ok: false,
+        name: 'get_shipping_status',
+        result: { error: 'not_shareable', sandbox: true },
+      }
+    }
+    return {
+      ok: true,
+      name: 'get_shipping_status',
+      result: {
+        guiaNumber: sandbox.shipping.guiaNumber,
+        status: sandbox.shipping.status,
+        carrier: sandbox.shipping.carrier,
+        orderId: sandbox.orderId,
+        sandbox: true,
+      },
+    }
+  }
   const order = await findOwnedOrder(ctx, hint)
   if (!order && !guiaNumber) {
     return {
@@ -314,6 +376,36 @@ async function runEscalate(
   }
 }
 
+function runUseShortcut(
+  ctx: SoftAiToolRunContext,
+  args: Record<string, unknown>,
+): SoftAiToolRunResult {
+  const key = typeof args.key === 'string' ? args.key.trim() : ''
+  const shortcut = (ctx.shortcuts || []).find(
+    (row) => row.key === key && row.isActive && row.deliveryMode === 'guide',
+  )
+  if (!shortcut) {
+    return {
+      ok: false,
+      name: 'use_shortcut',
+      result: { error: 'shortcut_not_found', key },
+    }
+  }
+  const text = renderShortcutTemplate(shortcut.body, {
+    facts: ctx.brandFacts || { schemaVersion: 1 },
+  })
+  return {
+    ok: true,
+    name: 'use_shortcut',
+    result: {
+      key: shortcut.key,
+      title: shortcut.title,
+      text,
+      note: 'Dato de atajo. No confirma pagos ni anula las reglas fijas.',
+    },
+  }
+}
+
 export async function runA1Tool(
   ctx: SoftAiToolRunContext,
   name: string,
@@ -336,7 +428,10 @@ export async function runA1Tool(
       result: { error: 'tool_not_enabled' },
     }
   }
-  if (ctx.inboundText && isPaymentSensitiveText(ctx.inboundText) && tool !== 'escalate_to_human') {
+  const paymentClass =
+    ctx.paymentClassification ??
+    (ctx.inboundText ? classifyPaymentText(ctx.inboundText) : 'non_payment')
+  if (paymentClass === 'payment_proof_or_risk' && tool !== 'escalate_to_human') {
     return runEscalate(ctx, { reason: 'payment_or_sinpe' })
   }
   const args = parseArgs(argumentsJson)
@@ -349,6 +444,8 @@ export async function runA1Tool(
       return runGetOrderStatus(ctx, args)
     case 'get_shipping_status':
       return runGetShippingStatus(ctx, args)
+    case 'use_shortcut':
+      return runUseShortcut(ctx, args)
     case 'escalate_to_human':
       return runEscalate(ctx, args)
     default: {

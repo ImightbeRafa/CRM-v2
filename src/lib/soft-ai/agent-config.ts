@@ -7,7 +7,7 @@ import {
   DEFAULT_CHAT_AGENT_LAYER_CONFIG,
   DEFAULT_DAILY_TOKEN_CAP,
   DEFAULT_PRICING_VERSION,
-  FORGE_WA_SOCIAL_ACCOUNT_ID,
+  DEFAULT_TEST_DAILY_TOKEN_CAP,
   type AiFullUnlockRecord,
   type ChatAgentLayerConfig,
 } from '@/lib/soft-ai/agent-types'
@@ -46,10 +46,14 @@ export function parseChatAgentLayerConfig(raw: unknown): ChatAgentLayerConfig {
     typeof src.dailyTokenCap === 'number' && src.dailyTokenCap > 0
       ? Math.floor(src.dailyTokenCap)
       : DEFAULT_DAILY_TOKEN_CAP
+  const testDailyTokenCap =
+    typeof src.testDailyTokenCap === 'number' && src.testDailyTokenCap > 0
+      ? Math.floor(src.testDailyTokenCap)
+      : DEFAULT_TEST_DAILY_TOKEN_CAP
   return {
-    accountAllowlist:
-      allowlistRaw.length > 0 ? allowlistRaw : [FORGE_WA_SOCIAL_ACCOUNT_ID],
+    accountAllowlist: allowlistRaw,
     dailyTokenCap,
+    testDailyTokenCap,
     autoActivateNewConversations:
       typeof src.autoActivateNewConversations === 'boolean'
         ? src.autoActivateNewConversations
@@ -72,6 +76,7 @@ export function chatAgentLayerConfigToJson(
   return {
     accountAllowlist: [...config.accountAllowlist],
     dailyTokenCap: config.dailyTokenCap,
+    testDailyTokenCap: config.testDailyTokenCap,
     autoActivateNewConversations: config.autoActivateNewConversations,
     pricingVersion: config.pricingVersion,
     aiFullUnlock: { ...config.aiFullUnlock },

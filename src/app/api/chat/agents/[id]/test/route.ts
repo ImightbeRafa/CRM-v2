@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { probeAgent } from '@/lib/soft-ai/agent-admin'
+import { parseAgentTestRequest } from '@/lib/soft-ai/agent-test-schema'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -18,28 +19,24 @@ export async function POST(
     if (!auth.ok) return auth.response
     const { id } = await context.params
     const body = await request.json().catch(() => null)
-    const inboundText =
-      body && typeof body === 'object' && typeof (body as { inboundText?: unknown }).inboundText === 'string'
-        ? (body as { inboundText: string }).inboundText.trim()
-        : ''
-    if (!inboundText) {
-      return NextResponse.json({ success: false, error: 'inboundText requerido' }, { status: 400 })
-    }
-    const socialAccountId =
-      body && typeof body === 'object' && typeof (body as { socialAccountId?: unknown }).socialAccountId === 'string'
-        ? (body as { socialAccountId: string }).socialAccountId
-        : null
-
+    const parsed = parseAgentTestRequest(body)
     const result = await probeAgent({
       tenantId: auth.tenantId,
       agentId: id,
-      inboundText,
-      socialAccountId,
+      inboundText: parsed.inboundText,
+      socialAccountId: parsed.socialAccountId,
       actorUserId: auth.userId,
+      testSessionId: parsed.testSessionId,
+      messageType: parsed.messageType,
+      history: parsed.history,
+      windowOpen: parsed.windowOpen,
     })
     return NextResponse.json({ success: true, ...result })
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'error'
+    if (msg === 'TEST_REQUEST_INVALID') {
+      return NextResponse.json({ success: false, error: 'Solicitud de prueba inválida' }, { status: 400 })
+    }
     if (msg === 'AGENT_NOT_FOUND') {
       return NextResponse.json({ success: false, error: 'No encontrado' }, { status: 404 })
     }

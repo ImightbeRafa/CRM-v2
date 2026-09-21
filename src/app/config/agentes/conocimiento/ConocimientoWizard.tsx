@@ -5,7 +5,6 @@ import { ArrowLeft, BookOpen } from 'lucide-react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { hasSessionPermission } from '@/lib/session-permissions'
-import { FORGE_WA_SOCIAL_ACCOUNT_ID } from '@/lib/soft-ai/agent-types'
 import {
   KNOWLEDGE_CHECKLIST_CARDS,
   KNOWLEDGE_KINDS,
@@ -61,7 +60,7 @@ export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardPr
   const [kind, setKind] = useState<KnowledgeKind>(preset?.kind || 'policy')
   const [name, setName] = useState<string>(preset?.nameHint || 'Políticas')
   const [body, setBody] = useState('')
-  const [socialAccountId, setSocialAccountId] = useState<string>(FORGE_WA_SOCIAL_ACCOUNT_ID)
+  const [socialAccountId, setSocialAccountId] = useState<string>('')
   const [sourceId, setSourceId] = useState<string | null>(null)
   const [sources, setSources] = useState<SourceRow[]>([])
   const [schemaReady, setSchemaReady] = useState(true)

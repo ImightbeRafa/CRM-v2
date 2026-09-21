@@ -7,11 +7,14 @@ import { useSession } from 'next-auth/react'
 import { hasSessionPermission } from '@/lib/session-permissions'
 import {
   AGENT_TOOL_NAMES,
-  FORGE_WA_SOCIAL_ACCOUNT_ID,
   TONE_PRESET_LABELS,
   type ChatAgentTonePreset,
 } from '@/lib/soft-ai/agent-types'
 import { ConocimientoWizardInner } from '@/app/config/agentes/conocimiento/ConocimientoWizard'
+import { AgentTestSandbox } from '@/app/config/agentes/AgentTestSandbox'
+import { BrandFactsEditor } from '@/app/config/agentes/BrandFactsEditor'
+import { ChannelsEditor } from '@/app/config/agentes/ChannelsEditor'
+import { ShortcutsEditor } from '@/app/config/agentes/ShortcutsEditor'
 
 type AgentRow = {
   id: string
@@ -52,6 +55,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_order_status: 'Estado de pedido',
   get_shipping_status: 'Estado de envío',
   escalate_to_human: 'Escalar a humano',
+  use_shortcut: 'Usar atajo',
 }
 
 type ChecklistCard = {
@@ -80,13 +84,7 @@ export default function AgentesConfigPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [testText, setTestText] = useState('¿Tienen el kit en stock?')
-  const [testResult, setTestResult] = useState<{
-    text: string
-    tokens: { input: number; output: number; cached: number }
-    latencyMs: number
-    toolTrace: unknown
-  } | null>(null)
+  const [channelId, setChannelId] = useState<string | null>(null)
   const [history, setHistory] = useState<unknown[]>([])
   const [introDraft, setIntroDraft] = useState('')
   const [checklist, setChecklist] = useState<ChecklistCard[]>([])
@@ -227,38 +225,9 @@ export default function AgentesConfigPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(apiErrorMessage(data, 'Error al sembrar piloto'))
       if (data.schemaReady === false) setSchemaReady(false)
-      if (data.forgeId) setSelectedId(data.forgeId)
+      if (data.starterAgentId) setSelectedId(data.starterAgentId)
       else if (data.predId) setSelectedId(data.predId)
       await load({ silent: true })
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function runProbar() {
-    if (!selectedId || !canEdit || saving) return
-    setSaving(true)
-    setError(null)
-    setTestResult(null)
-    try {
-      const res = await fetch(`/api/chat/agents/${selectedId}/test`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          inboundText: testText,
-          socialAccountId: FORGE_WA_SOCIAL_ACCOUNT_ID,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(apiErrorMessage(data, 'Error en Probar'))
-      setTestResult({
-        text: data.text,
-        tokens: data.tokens,
-        latencyMs: data.latencyMs,
-        toolTrace: data.toolTrace,
-      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
     } finally {
@@ -277,7 +246,7 @@ export default function AgentesConfigPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action,
-          socialAccountId: FORGE_WA_SOCIAL_ACCOUNT_ID,
+          socialAccountId: channelId,
         }),
       })
       const data = await res.json()
@@ -316,7 +285,7 @@ export default function AgentesConfigPage() {
               <Sparkles className="h-5 w-5 text-indigo-600 md:h-6 md:w-6" /> Agentes de chat
             </h1>
             <p className="mt-0.5 text-sm text-slate-600">
-              Voz, tono, herramientas y canales del Soft Agent Layer (piloto Forge WA).
+              Voz, tono, herramientas, datos de marca y canales del Soft Agent Layer.
             </p>
           </div>
           {canEdit && !isEmpty ? (
@@ -327,7 +296,7 @@ export default function AgentesConfigPage() {
                 disabled={saving || !schemaReady}
                 className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600"
               >
-                {saving ? 'Guardando…' : 'Sembrar piloto Forge'}
+                {saving ? 'Guardando…' : 'Sembrar agentes iniciales'}
               </button>
               <button
                 type="button"
@@ -343,7 +312,7 @@ export default function AgentesConfigPage() {
 
         {!schemaReady ? (
           <div className="mb-3 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-100">
-            SQL 027/027b aún no aplicado — la UI es de solo lectura hasta el gated apply. No se pueden
+            SQL 027/027b/029 aún no aplicado — la UI es de solo lectura hasta el gated apply. No se pueden
             crear ni sembrar agentes.
           </div>
         ) : null}
@@ -365,7 +334,7 @@ export default function AgentesConfigPage() {
             </div>
             <h2 className="text-lg font-semibold text-slate-900">Todavía no hay agentes</h2>
             <p className="mx-auto mt-2 max-w-md text-sm text-slate-600">
-              Sembrá el piloto Forge (Predeterminado + Forge ventas) o creá un agente nuevo para
+              Sembrá los agentes iniciales (Predeterminado + Ventas) o creá un agente nuevo para
               configurar voz, tono y herramientas.
             </p>
             {canEdit && schemaReady ? (
@@ -376,7 +345,7 @@ export default function AgentesConfigPage() {
                   disabled={saving}
                   className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-400 disabled:text-white"
                 >
-                  {saving ? 'Sembrando…' : 'Sembrar piloto Forge'}
+                  {saving ? 'Sembrando…' : 'Sembrar agentes iniciales'}
                 </button>
                 <button
                   type="button"
@@ -390,7 +359,7 @@ export default function AgentesConfigPage() {
             ) : null}
             {canEdit && !schemaReady ? (
               <p className="mt-4 text-xs text-amber-800">
-                Aplicá SQL 027 + 027b para habilitar creación y siembra.
+                Aplicá SQL 027 + 027b + 029 para habilitar creación y siembra.
               </p>
             ) : null}
             {!canEdit ? (
@@ -466,7 +435,7 @@ export default function AgentesConfigPage() {
                       </label>
                       <p className={`mt-0.5 ${HINT_CLASS}`}>
                         1–3 nombres con los que el agente se presenta en chats nuevos (ej. Sofía,
-                        Forge). El primero es el preferido.
+                        Ana). El primero es el preferido.
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {(selected.introductionNames || []).map((n) => (
@@ -654,6 +623,18 @@ export default function AgentesConfigPage() {
                     </div>
                   </div>
 
+                  {selected ? (
+                    <>
+                      <ChannelsEditor
+                        agentId={selected.id}
+                        canEdit={canEdit}
+                        onUseForTest={setChannelId}
+                      />
+                      <BrandFactsEditor agentId={selected.id} canEdit={canEdit} />
+                      <ShortcutsEditor agentId={selected.id} canEdit={canEdit} />
+                    </>
+                  ) : null}
+
                   {/* Conocimiento A2 — live checklist + wizard */}
                   <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -733,46 +714,19 @@ export default function AgentesConfigPage() {
                     </div>
                   </div>
 
-                  {/* Probar */}
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <h2 className="text-sm font-semibold text-slate-900">Probar</h2>
-                    <p className={`mt-0.5 ${HINT_CLASS}`}>
-                      Corre un turno de prueba sin enviar a Meta.
-                    </p>
-                    <textarea
-                      className={`mt-3 ${TEXTAREA_CLASS} py-2 text-sm`}
-                      rows={2}
-                      value={testText}
-                      onChange={(e) => setTestText(e.target.value)}
-                      disabled={!canEdit || saving}
-                      placeholder="Escribí un mensaje de prueba…"
+                  {selected ? (
+                    <AgentTestSandbox
+                      agentId={selected.id}
+                      canEdit={canEdit}
+                      socialAccountId={channelId}
                     />
-                    <button
-                      type="button"
-                      disabled={!canEdit || saving}
-                      onClick={() => void runProbar()}
-                      className="mt-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-indigo-400 disabled:text-white"
-                    >
-                      {saving ? 'Probando…' : 'Probar (sin Meta)'}
-                    </button>
-                    {testResult ? (
-                      <div className="mt-3 space-y-2 text-sm text-slate-900">
-                        <p className="whitespace-pre-wrap rounded-lg bg-white p-3 text-sm !text-slate-900 ring-1 ring-slate-200">
-                          {testResult.text}
-                        </p>
-                        <p className="text-xs text-slate-600">
-                          Tokens in {testResult.tokens.input} / out {testResult.tokens.output} /
-                          cached {testResult.tokens.cached} · {testResult.latencyMs} ms
-                        </p>
-                      </div>
-                    ) : null}
-                  </div>
+                  ) : null}
 
                   {/* Pánico */}
                   <div className="rounded-xl border border-red-100 bg-red-50/40 p-4">
                     <h2 className="text-sm font-semibold text-slate-900">Pánico</h2>
                     <p className={`mt-0.5 ${HINT_CLASS}`}>
-                      Controles de emergencia para el piloto Forge WA.
+                      Controles de emergencia del canal elegido en Canales.
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button

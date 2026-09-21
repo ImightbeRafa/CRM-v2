@@ -81,6 +81,7 @@ export async function loadDailyBilledTokens(tenantId: string): Promise<number> {
       tenantId,
       createdAt: { gte: start },
       status: { notIn: ['skipped'] },
+      mode: { not: 'test' },
     },
     _sum: {
       inputTokens: true,
@@ -88,6 +89,47 @@ export async function loadDailyBilledTokens(tenantId: string): Promise<number> {
     },
   })
   return (rows._sum.inputTokens || 0) + (rows._sum.outputTokens || 0)
+}
+
+export async function loadDailyTestTokens(tenantId: string): Promise<number> {
+  const start = new Date()
+  start.setUTCHours(0, 0, 0, 0)
+  const rows = await prisma.chatAgentTurn.aggregate({
+    where: {
+      tenantId,
+      createdAt: { gte: start },
+      mode: 'test',
+      status: { notIn: ['skipped'] },
+    },
+    _sum: { inputTokens: true, outputTokens: true },
+  })
+  return (rows._sum.inputTokens || 0) + (rows._sum.outputTokens || 0)
+}
+
+/** Dry-run gate snapshot for Probar. Accumulates blockers; does not write. */
+export function collectDryRunBlockers(input: {
+  layerEnabled: boolean
+  softEnabled: boolean
+  allowlisted: boolean
+  operationMode: string
+  unlockedForSend: boolean
+  windowOpen: boolean
+  agentStatus: string
+  conversationAiMode?: string | null
+}): string[] {
+  const blocked: string[] = []
+  if (!input.layerEnabled || !input.softEnabled) blocked.push('flag_off')
+  if (!input.allowlisted) blocked.push('account_not_allowlisted')
+  if (input.agentStatus !== 'live') blocked.push('agent_not_live')
+  if (input.operationMode === 'human_only') blocked.push('human_only')
+  if (input.conversationAiMode === 'human' || input.conversationAiMode === 'paused') {
+    blocked.push('human_before_send')
+  }
+  if (input.operationMode === 'ai_full' && !input.unlockedForSend) {
+    blocked.push('ai_full_not_unlocked')
+  }
+  if (!input.windowOpen) blocked.push('window_closed')
+  return blocked
 }
 
 export async function runPreModelGates(input: {

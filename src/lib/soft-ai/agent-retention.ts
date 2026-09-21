@@ -4,6 +4,7 @@
  */
 
 import { prisma } from '@/lib/db'
+import { Prisma } from '@prisma/client'
 import { OUTPUT_RETENTION_DAYS } from '@/lib/soft-ai/agent-types'
 import { isChatAgentSchemaReady, isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { isChatSuggestionSchemaReady } from '@/lib/soft-ai/knowledge-schema'
@@ -42,6 +43,7 @@ export async function purgeChatAgentOutputs(input?: {
         where: { id: { in: ids.map((r) => r.id) }, outputText: { not: null } },
         data: {
           outputText: null,
+          decisionTrace: Prisma.DbNull,
           outputPurgedAt: now,
         },
       })

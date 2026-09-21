@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { composeEffectiveBehavior } from '../soft-ai/agent-resolver'
 import { hasAiFullUnlock, parseChatAgentLayerConfig } from '../soft-ai/agent-config'
-import { FORGE_WA_SOCIAL_ACCOUNT_ID } from '../soft-ai/agent-types'
+import { FIXTURE_SOCIAL_ACCOUNT_ID } from '../soft-ai/__fixtures__/forge-wa-v2'
 import { FORGE_WA_V1_FIXTURE_SET_HASH } from '../soft-ai/__fixtures__/forge-wa-v1'
 import { validateAgentOutput } from '../soft-ai/llm/output-validator'
 import { selectHistoryWindow, buildAgentUserPrompt } from '../soft-ai/llm/prompt'
@@ -53,16 +53,16 @@ describe('soft-ai agent resolver compose (1.9, 1.15, 1.22)', () => {
 describe('soft-ai aiFullUnlock (1.15)', () => {
   it('blocks send without unlock; unlock requires matching fixture hash', () => {
     const cfg = parseChatAgentLayerConfig({
-      accountAllowlist: [FORGE_WA_SOCIAL_ACCOUNT_ID],
+      accountAllowlist: [FIXTURE_SOCIAL_ACCOUNT_ID],
       fixtureSetHash: FORGE_WA_V1_FIXTURE_SET_HASH,
       aiFullUnlock: {},
     })
-    assert.equal(hasAiFullUnlock(cfg, FORGE_WA_SOCIAL_ACCOUNT_ID), false)
+    assert.equal(hasAiFullUnlock(cfg, FIXTURE_SOCIAL_ACCOUNT_ID), false)
 
     const unlocked = parseChatAgentLayerConfig({
       ...cfg,
       aiFullUnlock: {
-        [FORGE_WA_SOCIAL_ACCOUNT_ID]: {
+        [FIXTURE_SOCIAL_ACCOUNT_ID]: {
           passedAt: '2026-09-21T00:00:00.000Z',
           approvedBy: 'cos',
           fixtureSetHash: FORGE_WA_V1_FIXTURE_SET_HASH,
@@ -70,13 +70,13 @@ describe('soft-ai aiFullUnlock (1.15)', () => {
         },
       },
     })
-    assert.equal(hasAiFullUnlock(unlocked, FORGE_WA_SOCIAL_ACCOUNT_ID), true)
+    assert.equal(hasAiFullUnlock(unlocked, FIXTURE_SOCIAL_ACCOUNT_ID), true)
 
     const stale = parseChatAgentLayerConfig({
       ...unlocked,
       fixtureSetHash: 'other-hash',
     })
-    assert.equal(hasAiFullUnlock(stale, FORGE_WA_SOCIAL_ACCOUNT_ID), false)
+    assert.equal(hasAiFullUnlock(stale, FIXTURE_SOCIAL_ACCOUNT_ID), false)
   })
 })
 

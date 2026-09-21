@@ -11,8 +11,7 @@ import {
   AGENT_TOOL_NAMES,
   AGENT_INSTRUCTIONS_MAX,
   AGENT_NAME_MAX,
-  DEFAULT_FORGE_VOICE,
-  FORGE_WA_SOCIAL_ACCOUNT_ID,
+  DEFAULT_AGENT_VOICE,
   isAllowedChatAgentModel,
   isAgentToolName,
   normalizeIntroductionNames,
@@ -28,6 +27,8 @@ import {
 import { isChatAgentSchemaReady, isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { runAgentTestTurn } from '@/lib/soft-ai/agent-turn'
 import { logAuditEvent } from '@/lib/auditLogger'
+import { parseBrandFacts, parseReplyStyle } from '@/lib/soft-ai/brand-facts'
+import { ensureReservedShortcuts } from '@/lib/soft-ai/shortcut-admin'
 
 /** Interactive txn options if a multi-write admin path needs `$transaction` again. */
 export const CHAT_AGENT_ADMIN_TX = {
@@ -51,7 +52,7 @@ export function mapChatAgentAdminError(error: unknown): ChatAgentAdminHttpError 
       status: 503,
       body: {
         success: false,
-        error: 'SQL 027/027b aún no aplicado — no se pueden crear agentes todavía',
+        error: 'SQL 027/027b/029 aún no aplicado — no se pueden crear agentes todavía',
         schemaReady: false,
         code: 'SCHEMA_NOT_READY',
       },
@@ -90,6 +91,16 @@ export function mapChatAgentAdminError(error: unknown): ChatAgentAdminHttpError 
     return {
       status: 404,
       body: { success: false, error: 'Cuenta social no encontrada', code: 'SOCIAL_ACCOUNT_NOT_FOUND' },
+    }
+  }
+  if (msg === 'BRAND_FACTS_INVALID' || msg === 'REPLY_STYLE_INVALID') {
+    return {
+      status: 422,
+      body: {
+        success: false,
+        error: 'Datos de marca o estilo inválidos',
+        code: msg,
+      },
     }
   }
   if (msg === 'SOCIAL_ACCOUNT_ID_REQUIRED') {
@@ -171,6 +182,8 @@ function snapshotAgent(row: {
   introductionNames: string[]
   status: string
   version: number
+  brandFacts?: unknown
+  replyStyle?: unknown
 }) {
   return {
     id: row.id,
@@ -185,6 +198,8 @@ function snapshotAgent(row: {
     introductionNames: row.introductionNames || [],
     status: row.status,
     version: row.version,
+    brandFacts: row.brandFacts ?? {},
+    replyStyle: row.replyStyle ?? {},
   }
 }
 
@@ -234,7 +249,7 @@ export async function createChatAgent(input: {
   const name = input.name.trim().slice(0, AGENT_NAME_MAX)
   if (!name) throw new Error('NAME_REQUIRED')
   const systemInstructions = (
-    input.systemInstructions?.trim() || DEFAULT_FORGE_VOICE
+    input.systemInstructions?.trim() || DEFAULT_AGENT_VOICE
   ).slice(0, AGENT_INSTRUCTIONS_MAX)
   const enabledTools = (input.enabledTools || [...AGENT_TOOL_NAMES]).filter(isAgentToolName)
   let introductionNames: string[] = []
@@ -259,11 +274,18 @@ export async function createChatAgent(input: {
       enabledTools,
       introductionNames,
       paymentAlwaysHuman: true,
+      brandFacts: {},
+      replyStyle: {},
       status: 'draft',
       version: 1,
       createdBy: input.actorUserId,
       updatedBy: input.actorUserId,
     },
+  })
+  await ensureReservedShortcuts({
+    tenantId: input.tenantId,
+    agentId: row.id,
+    actorUserId: input.actorUserId,
   })
   await logAuditEvent({
     tenantId: input.tenantId,
@@ -298,6 +320,8 @@ export async function updateChatAgent(input: {
     introductionNames?: string[]
     status?: ChatAgentStatus
     model?: string
+    brandFacts?: unknown
+    replyStyle?: unknown
   }
 }) {
   if (!(await isChatAgentSchemaReady())) throw new Error('SCHEMA_NOT_READY')
@@ -354,6 +378,14 @@ export async function updateChatAgent(input: {
       throw new Error('MODEL_NOT_ALLOWED')
     }
     data.model = input.patch.model
+    bumpVersion = true
+  }
+  if (input.patch.brandFacts !== undefined) {
+    data.brandFacts = parseBrandFacts(input.patch.brandFacts) as Prisma.InputJsonValue
+    bumpVersion = true
+  }
+  if (input.patch.replyStyle !== undefined) {
+    data.replyStyle = parseReplyStyle(input.patch.replyStyle) as Prisma.InputJsonValue
     bumpVersion = true
   }
   if (bumpVersion) {
@@ -613,7 +645,7 @@ export async function panicRemoveAllowlist(input: {
 
 /**
  * Resolve panic/bind target account id: require client id, or (only when omitted)
- * the sole entry in this tenant's chat_agent_layer_v1 allowlist. Never a hardcoded Forge default.
+ * the sole entry in this tenant's chat_agent_layer_v1 allowlist. Never a hardcoded account id.
  */
 export async function resolvePanicSocialAccountId(input: {
   tenantId: string
@@ -645,13 +677,17 @@ export async function probeAgent(input: {
   tenantId: string
   agentId: string
   inboundText: string
-  socialAccountId?: string | null
+  socialAccountId: string
   actorUserId: string
+  testSessionId: string
+  messageType?: 'text' | 'image' | 'audio' | 'document' | 'video'
+  history?: Array<{ direction: 'inbound' | 'outbound'; content: string; sentAt: string }>
+  windowOpen?: boolean
 }) {
   return runAgentTestTurn(input)
 }
 
-export async function ensurePilotDefaults(input: {
+export async function ensureStarterDefaults(input: {
   tenantId: string
   actorUserId: string
 }) {
@@ -702,53 +738,177 @@ export async function ensurePilotDefaults(input: {
     })
   }
 
-  let forge = await prisma.chatAgent.findFirst({
-    where: { tenantId: input.tenantId, name: 'Forge ventas' },
+  let starter = await prisma.chatAgent.findFirst({
+    where: { tenantId: input.tenantId, name: 'Ventas' },
   })
-  if (!forge) {
-    forge = await prisma.chatAgent.create({
+  if (!starter) {
+    starter = await prisma.chatAgent.create({
       data: {
         tenantId: input.tenantId,
-        name: 'Forge ventas',
+        name: 'Ventas',
         emoji: '✨',
-        description: 'Ventas Forge WA',
-        systemInstructions: DEFAULT_FORGE_VOICE,
+        description: 'Agente de ventas',
+        systemInstructions: DEFAULT_AGENT_VOICE,
         tonePreset: 'warm_concise',
         model: 'grok-4.6',
         operationMode: 'ai_suggest',
         enabledTools: [...AGENT_TOOL_NAMES],
-        introductionNames: ['Forge'],
+        introductionNames: [],
         paymentAlwaysHuman: true,
+        brandFacts: {},
+        replyStyle: {},
         status: 'draft',
         version: 1,
         createdBy: input.actorUserId,
         updatedBy: input.actorUserId,
       },
     })
-  }
-
-  const forgeBinding = await prisma.chatAgentBinding.findFirst({
-    where: {
+    await ensureReservedShortcuts({
       tenantId: input.tenantId,
-      scope: 'social_account',
-      socialAccountId: FORGE_WA_SOCIAL_ACCOUNT_ID,
-      isActive: true,
-    },
-  })
-  if (!forgeBinding) {
-    await prisma.chatAgentBinding.create({
-      data: {
-        tenantId: input.tenantId,
-        agentId: forge.id,
-        scope: 'social_account',
-        socialAccountId: FORGE_WA_SOCIAL_ACCOUNT_ID,
-        isActive: true,
-        createdBy: input.actorUserId,
-      },
+      agentId: starter.id,
+      actorUserId: input.actorUserId,
     })
   }
 
-  return { ok: true, predId: pred.id, forgeId: forge.id }
+  return { ok: true, predId: pred.id, starterAgentId: starter.id }
 }
 
-export { FORGE_WA_SOCIAL_ACCOUNT_ID }
+export async function ensurePilotDefaults(input: {
+  tenantId: string
+  actorUserId: string
+}) {
+  return ensureStarterDefaults(input)
+}
+
+export async function listAgentChannels(tenantId: string, agentId: string) {
+  if (!(await isChatAgentSchemaReady())) {
+    return { schemaReady: false as const, channels: [] as const }
+  }
+  const agent = await prisma.chatAgent.findFirst({
+    where: { id: agentId, tenantId },
+    select: { id: true },
+  })
+  if (!agent) throw new Error('AGENT_NOT_FOUND')
+  const [accounts, bindings, flag] = await Promise.all([
+    prisma.socialAccount.findMany({
+      where: { tenantId },
+      select: {
+        id: true,
+        platform: true,
+        displayName: true,
+        displayPhoneNumber: true,
+        providerUsername: true,
+        tokenStatus: true,
+      },
+      orderBy: { displayName: 'asc' },
+    }),
+    prisma.chatAgentBinding.findMany({
+      where: { tenantId, scope: 'social_account', isActive: true },
+      select: { socialAccountId: true, agentId: true, agent: { select: { name: true } } },
+    }),
+    prisma.tenantFeatureFlag.findFirst({
+      where: { tenantId, scope: tenantId, key: CHAT_AGENT_LAYER_V1_FLAG },
+      select: { enabled: true, config: true },
+    }),
+  ])
+  const config = parseChatAgentLayerConfig(flag?.config)
+  const bindingByAccount = new Map(
+    bindings.filter((row) => row.socialAccountId).map((row) => [row.socialAccountId as string, row]),
+  )
+  return {
+    schemaReady: true as const,
+    channels: accounts.map((account) => {
+      const binding = bindingByAccount.get(account.id)
+      return {
+        id: account.id,
+        platform: account.platform,
+        displayName: account.displayName,
+        displayPhoneNumber: account.displayPhoneNumber,
+        providerUsername: account.providerUsername,
+        tokenStatus: account.tokenStatus,
+        attendedBy: binding?.agent.name || null,
+        attendedByAgentId: binding?.agentId || null,
+        attendedByThisAgent: binding?.agentId === agentId,
+        aiAllowed: config.accountAllowlist.includes(account.id),
+      }
+    }),
+  }
+}
+
+export async function setAgentChannelConfiguration(input: {
+  tenantId: string
+  agentId: string
+  socialAccountId: string
+  activeBinding: boolean
+  aiAllowed: boolean
+  actorUserId: string
+  actorName: string
+  actorRole: string
+}) {
+  if (!(await isChatAgentSchemaReady())) throw new Error('SCHEMA_NOT_READY')
+  const agent = await prisma.chatAgent.findFirst({
+    where: { id: input.agentId, tenantId: input.tenantId },
+    select: { id: true, name: true },
+  })
+  if (!agent) throw new Error('AGENT_NOT_FOUND')
+  await requireTenantSocialAccount(input.tenantId, input.socialAccountId)
+
+  await setAgentBinding({
+    tenantId: input.tenantId,
+    agentId: input.agentId,
+    socialAccountId: input.socialAccountId,
+    active: input.activeBinding,
+    actorUserId: input.actorUserId,
+    actorName: input.actorName,
+    actorRole: input.actorRole,
+  })
+
+  const flag = await prisma.tenantFeatureFlag.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      scope: input.tenantId,
+      key: CHAT_AGENT_LAYER_V1_FLAG,
+    },
+  })
+  const before = parseChatAgentLayerConfig(flag?.config)
+  const allow = new Set(before.accountAllowlist)
+  if (input.aiAllowed) allow.add(input.socialAccountId)
+  else allow.delete(input.socialAccountId)
+  const aiFullUnlock = { ...before.aiFullUnlock }
+  if (!input.aiAllowed) delete aiFullUnlock[input.socialAccountId]
+  const after = {
+    ...before,
+    accountAllowlist: [...allow],
+    aiFullUnlock,
+  }
+  await prisma.tenantFeatureFlag.upsert({
+    where: {
+      scope_key: { scope: input.tenantId, key: CHAT_AGENT_LAYER_V1_FLAG },
+    },
+    create: {
+      tenantId: input.tenantId,
+      scope: input.tenantId,
+      key: CHAT_AGENT_LAYER_V1_FLAG,
+      enabled: flag?.enabled ?? false,
+      config: chatAgentLayerConfigToJson(after) as Prisma.InputJsonValue,
+    },
+    update: {
+      enabled: flag?.enabled ?? false,
+      config: chatAgentLayerConfigToJson(after) as Prisma.InputJsonValue,
+    },
+  })
+  await logAuditEvent({
+    tenantId: input.tenantId,
+    action: 'UPDATE',
+    entityType: 'TenantFeatureFlag',
+    entityId: CHAT_AGENT_LAYER_V1_FLAG,
+    entityName: agent.name,
+    oldValues: chatAgentLayerConfigToJson(before),
+    newValues: chatAgentLayerConfigToJson(after),
+    userId: input.actorUserId,
+    userName: input.actorName,
+    userRole: input.actorRole,
+    reason: 'chat_agent_channel_allowlist',
+  })
+  return { ok: true as const, config: after }
+}

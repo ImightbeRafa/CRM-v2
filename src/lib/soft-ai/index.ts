@@ -59,7 +59,6 @@ export {
 } from '@/lib/soft-ai/agent-mode-server'
 export {
   CHAT_AGENT_LAYER_V1_FLAG,
-  FORGE_WA_SOCIAL_ACCOUNT_ID,
   A1_TOOL_NAMES,
 } from '@/lib/soft-ai/agent-types'
 // Do NOT re-export agent-resolver / agent-admin / agent-inbox-enrich here —

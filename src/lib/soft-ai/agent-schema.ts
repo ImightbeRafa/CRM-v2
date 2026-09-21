@@ -19,12 +19,42 @@ export async function isChatAgentSchemaReady(force = false): Promise<boolean> {
         to_regclass('public."ChatAgent"') IS NOT NULL
         AND to_regclass('public."ChatAgentBinding"') IS NOT NULL
         AND to_regclass('public."ChatAgentTurn"') IS NOT NULL
+        AND to_regclass('public."ChatAgentShortcut"') IS NOT NULL
+        AND to_regclass('public."ChatAgentAsset"') IS NOT NULL
+        AND to_regclass('public."ChatAgentShortcutAsset"') IS NOT NULL
         AND EXISTS (
           SELECT 1
           FROM information_schema.columns
           WHERE table_schema = 'public'
             AND table_name = 'ChatAgent'
             AND column_name = 'introductionNames'
+        )
+        AND EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'ChatAgent' AND column_name = 'brandFacts'
+        )
+        AND EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'ChatAgent' AND column_name = 'replyStyle'
+        )
+        AND EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'ChatAgent' AND column_name = 'activeHours'
+        )
+        AND EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'ChatAgentTurn'
+            AND column_name = 'decisionTrace'
+        )
+        AND EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'ChatAgentTurn'
+            AND column_name = 'conversationId' AND is_nullable = 'YES'
+        )
+        AND EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'ChatAgentSuggestion'
+            AND column_name = 'attachments'
         )
       ) AS ready
     `

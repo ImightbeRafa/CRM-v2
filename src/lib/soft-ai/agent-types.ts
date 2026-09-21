@@ -5,10 +5,6 @@
 
 export const CHAT_AGENT_LAYER_V1_FLAG = 'chat_agent_layer_v1' as const
 
-/** Forge Costa Rica WhatsApp pilot SocialAccount.id */
-export const FORGE_WA_SOCIAL_ACCOUNT_ID = 'cmuahn5y90001l504y6kksiek' as const
-export const FORGE_TENANT_ID = 'cmhsibjue0004js04gie724nx' as const
-
 /** v1 model allowlist — reject anything else. */
 export const CHAT_AGENT_MODEL_ALLOWLIST = ['grok-4.6'] as const
 export type ChatAgentModel = (typeof CHAT_AGENT_MODEL_ALLOWLIST)[number]
@@ -35,7 +31,10 @@ export type A1ToolName = (typeof A1_TOOL_NAMES)[number]
 export const A2_TOOL_NAMES = ['search_approved_knowledge'] as const
 export type A2ToolName = (typeof A2_TOOL_NAMES)[number]
 
-export const AGENT_TOOL_NAMES = [...A1_TOOL_NAMES, ...A2_TOOL_NAMES] as const
+export const AL2_TOOL_NAMES = ['use_shortcut'] as const
+export type Al2ToolName = (typeof AL2_TOOL_NAMES)[number]
+
+export const AGENT_TOOL_NAMES = [...A1_TOOL_NAMES, ...A2_TOOL_NAMES, ...AL2_TOOL_NAMES] as const
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number]
 
 export type ChatAgentTonePreset = 'warm_concise' | 'formal' | 'playful'
@@ -54,6 +53,7 @@ export type ChatAgentTurnStatus =
   | 'window_closed'
   | 'failed'
   | 'skipped'
+  | 'partially_delivered'
 
 export type ChatAgentSkipReason =
   | 'human_replied'
@@ -87,23 +87,28 @@ export type AiFullUnlockRecord = {
   passRate: number
 }
 
+export const DEFAULT_TEST_DAILY_TOKEN_CAP = 100_000
+export const FIXTURE_SET_HASH_V2 = 'forge-wa-v2-al2-a1-2026-09-21'
+
 export type ChatAgentLayerConfig = {
   accountAllowlist: string[]
   dailyTokenCap: number
+  testDailyTokenCap: number
   autoActivateNewConversations: boolean
   pricingVersion: string
   aiFullUnlock: Record<string, AiFullUnlockRecord>
-  /** Current Forge fixture set hash for unlock matching. */
+  /** Current fixture set hash for unlock matching. */
   fixtureSetHash: string
 }
 
 export const DEFAULT_CHAT_AGENT_LAYER_CONFIG: ChatAgentLayerConfig = {
-  accountAllowlist: [FORGE_WA_SOCIAL_ACCOUNT_ID],
+  accountAllowlist: [],
   dailyTokenCap: DEFAULT_DAILY_TOKEN_CAP,
+  testDailyTokenCap: DEFAULT_TEST_DAILY_TOKEN_CAP,
   autoActivateNewConversations: true,
   pricingVersion: DEFAULT_PRICING_VERSION,
   aiFullUnlock: {},
-  fixtureSetHash: 'forge-wa-v1-a1-2026-09-21',
+  fixtureSetHash: FIXTURE_SET_HASH_V2,
 }
 
 export const TONE_PRESET_LABELS: Record<ChatAgentTonePreset, string> = {
@@ -121,8 +126,8 @@ export const TONE_PRESET_SNIPPETS: Record<ChatAgentTonePreset, string> = {
     'Tono juguetón y amable en español de Costa Rica, sin perder claridad ni precisión.',
 }
 
-export const DEFAULT_FORGE_VOICE =
-  'Sos el agente de ventas de Forge Costa Rica por WhatsApp. Español CR, cálido y breve. Nunca inventés precios ni digas que ya creaste un pedido. Pagos y SINPE siempre a un humano.'
+export const DEFAULT_AGENT_VOICE =
+  'Sos el agente de ventas por WhatsApp. Español de Costa Rica, cálido y breve. Nunca inventés precios ni digas que ya creaste un pedido. Podés explicar formas de pago solo si están configuradas. Nunca confirmés un pago.'
 
 export function isAllowedChatAgentModel(model: string): model is ChatAgentModel {
   return (CHAT_AGENT_MODEL_ALLOWLIST as readonly string[]).includes(model)

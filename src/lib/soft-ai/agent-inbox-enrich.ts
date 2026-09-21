@@ -74,7 +74,8 @@ export async function enrichConversationDtosWithAgents(
     })
     const suggestionByConvo = new Map<string, string>()
     for (const s of suggestions) {
-      if (!suggestionByConvo.has(s.conversationId) && s.outputText) {
+      if (!s.conversationId || !s.outputText) continue
+      if (!suggestionByConvo.has(s.conversationId)) {
         suggestionByConvo.set(s.conversationId, s.outputText)
       }
     }

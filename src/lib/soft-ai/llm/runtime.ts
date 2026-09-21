@@ -24,6 +24,7 @@ import {
 } from '@/lib/soft-ai/llm/prompt'
 import type { ChatAgentTonePreset } from '@/lib/soft-ai/agent-types'
 import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
+import { isAgentIntent } from '@/lib/soft-ai/agent-intents'
 
 export type SoftAiLlmRuntimeInput = {
   tenantId: string
@@ -44,6 +45,9 @@ export type SoftAiLlmRuntimeInput = {
   linkedOrderId?: string | null
   toolCtx: SoftAiToolRunContext
   pricingVersion: string
+  brandFactsBlock?: string | null
+  shortcutCatalog?: string | null
+  replyStyleSnippet?: string | null
 }
 
 export type SoftAiLlmRuntimeResult = {
@@ -65,6 +69,9 @@ export type SoftAiLlmRuntimeResult = {
   fallbackUsed: boolean
   errorCode?: string
   validationReasons?: string[]
+  inventoryPrices?: number[]
+  intent?: string
+  shortcutKey?: string | null
 }
 
 export async function runSoftAiLlmRuntime(
@@ -88,6 +95,9 @@ export async function runSoftAiLlmRuntime(
     canalContext: input.canalContext,
     introductionNames: input.introductionNames,
     knowledge: input.knowledge,
+    brandFactsBlock: input.brandFactsBlock,
+    shortcutCatalog: input.shortcutCatalog,
+    replyStyleSnippet: input.replyStyleSnippet,
   })
   const instructions = built.instructions
   const knowledgeVersions = built.knowledgeVersions
@@ -251,12 +261,14 @@ export async function runSoftAiLlmRuntime(
       }
     }
 
+    const structured = parseStructuredAgentOutput(finalText)
+    finalText = structured.text
     const validation = validateAgentOutput({
       text: finalText,
       citedToolNames,
       inventoryPrices,
     })
-    if (validation.needsHuman) {
+    if (validation.needsHuman || structured.needsHuman) {
       escalate = true
       escalateReason = escalateReason || 'provenance'
     }
@@ -264,7 +276,10 @@ export async function runSoftAiLlmRuntime(
     return {
       text: finalText,
       status: 'generated',
-      needsHuman: validation.needsHuman || escalate,
+      needsHuman: validation.needsHuman || structured.needsHuman || escalate,
+      intent: structured.intent,
+      shortcutKey: structured.shortcutKey,
+      inventoryPrices,
       escalate,
       escalateReason,
       toolTrace: redactToolTrace([{ knowledgeVersions }, ...toolTrace]),
@@ -323,5 +338,29 @@ export async function runSoftAiLlmRuntime(
       fallbackUsed: true,
       errorCode,
     }
+  }
+}
+
+function parseStructuredAgentOutput(raw: string): {
+  text: string
+  intent?: string
+  shortcutKey?: string | null
+  needsHuman: boolean
+} {
+  const trimmed = (raw || '').trim()
+  if (!trimmed.startsWith('{')) return { text: raw, needsHuman: false }
+  try {
+    const value = JSON.parse(trimmed) as Record<string, unknown>
+    if (!value || typeof value.text !== 'string') return { text: raw, needsHuman: false }
+    const intent = typeof value.intent === 'string' && isAgentIntent(value.intent) ? value.intent : undefined
+    const shortcutKey = typeof value.shortcutKey === 'string' ? value.shortcutKey : null
+    return {
+      text: value.text,
+      intent,
+      shortcutKey,
+      needsHuman: value.needsHuman === true,
+    }
+  } catch {
+    return { text: raw, needsHuman: false }
   }
 }

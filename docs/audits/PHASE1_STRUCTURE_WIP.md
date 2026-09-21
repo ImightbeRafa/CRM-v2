@@ -4,6 +4,11 @@ Organize unfinished work so Phase 2 can finish items deliberately. Seeded at kic
 
 ## Workstreams
 
+### W9 — Agent Layer Arc 2 A1 (text)
+- **Status:** IN PR — SQL 029 proposed, not applied
+- **Path:** `docs/plans/betsy-agent-layer-arc2-fable-2026-09-21.md` Phase A1
+- **Next:** A2 images / suggestions. Do not merge until CoS applies 029.
+
 ### W1 — Landing / marketing dedupe
 - **Status:** DONE (orphan purge)
 - **Resolution:** Kept `/home`; deleted `/landing` tree and stale refs

@@ -275,3 +275,44 @@ node scripts/apply-betsy-v2-additive-sql.mjs
 
 **Do not** `prisma db push` / `prisma migrate`. **SQL 028 NOT applied — wait CoS gated apply after SecureDog + Rafael GO.**
 
+## 029 Soft Agent playbooks, brand facts, assets schema — PROPOSED (not applied)
+
+Date: 2026-09-21
+Branch: `cursor/al2-a1-agent-text-ea7a`
+Source: `supabase/migrations/029_chat_agent_playbooks_assets.sql`
+Review status: **source reviewed in PR — NOT APPLIED to shared Supabase**
+
+Until 029 is applied, `isChatAgentSchemaReady` is false. Agent readers return not ready and writers refuse. That is intentional: deploy-before-apply must not query the new columns.
+
+### What 029 adds (expand-only)
+
+| Object | Notes |
+|---|---|
+| `ChatAgent.brandFacts` / `replyStyle` | Structured store facts and reply style |
+| `ChatAgent.activeHours` / `replyDelay` | Phase D columns, schema only — no horario UX |
+| `ChatAgentShortcut` | Reserved `sys_*` plus editable playbooks |
+| `ChatAgentAsset` / `ChatAgentShortcutAsset` | Created now, used in A2 |
+| `ChatAgentTurn.conversationId` nullable | Probar rows use `mode=test` with null conversation |
+| `ChatAgentTurn.decisionTrace` / `outputManifest` / `shortcutKey` / `intent` / `testSessionId` | Trace and sandbox session |
+| `ChatAgentSuggestion.attachments` | Schema only for A2 |
+| `InventoryItem_tenantId_id_uidx` | Composite tenant FK target for assets |
+
+### Apply (human-gated only — CoS)
+
+1. Fresh Vercel Blob logical backup.
+2. Confirm 027, 027b, and 028 are already applied.
+3. Apply with the direct host (not the pooler):
+
+```bash
+BETSY_V2_APPLY_MIGRATIONS=1 \
+BETSY_V2_APPLY_CONFIRM_HOST=<direct-host> \
+BETSY_V2_APPLY_FILES=029 \
+node scripts/apply-betsy-v2-additive-sql.mjs
+```
+
+4. Verify `EXPECTED_TABLES` / `EXPECTED_COLUMNS` / `EXPECTED_INDEXES_029`.
+
+**Do not** `prisma db push` / `prisma migrate`. **Do not** pass `--accept-data-loss`. **SQL 029 NOT applied.**
+
+After apply, `aiFullUnlock` records must be re-approved against fixture hash `forge-wa-v2-al2-a1-2026-09-21` before any `ai_full` send. Replay in Probar does not burn the live token cap.
+

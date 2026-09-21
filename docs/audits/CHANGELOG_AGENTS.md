@@ -1,3 +1,10 @@
+## 2026-09-21 — AL2-A1 agent text layer (SQL 029 proposed, not applied)
+
+- Gated SQL `029_chat_agent_playbooks_assets.sql` + Prisma mirror. Not applied to shared Supabase.
+- Payment classifier, brand facts, editable shortcuts, Canales allowlist (empty = nobody), isolated Probar sandbox, validator v2.
+- Feature flag `chat_agent_layer_v1` still off by default. No Soft chrome redesign. No staff-bot mix.
+- CoS apply notes live in `docs/audits/BETSY_V2_PROD_SQL_REVIEW.md` (029 block).
+
 ## 2026-09-21 — skill: verify-betsy
 
 - Project-local verification skill `.cursor/skills/verify-betsy/` (pstack

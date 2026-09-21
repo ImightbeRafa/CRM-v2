@@ -347,7 +347,6 @@ export async function POST(request: NextRequest) {
         where: { id: existing.id },
         data: {
           userId,
-          isActive: subscribeOk,
           ...reconnectLifecycleData({
             isActive: subscribeOk,
             expiresAt: expiresAtFromExpiresIn(tokenExpiresIn),
@@ -378,7 +377,6 @@ export async function POST(request: NextRequest) {
           accountId: String(phoneNumberId),
           accessToken: encryptedToken ?? undefined,
           refreshToken: refreshToken ?? undefined,
-          isActive: subscribeOk,
           ...reconnectLifecycleData({
             isActive: subscribeOk,
             expiresAt: expiresAtFromExpiresIn(tokenExpiresIn),

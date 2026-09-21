@@ -29,8 +29,8 @@ export async function POST(request: NextRequest) {
     const pendingRaw = request.cookies.get(getInstagramPendingCookieName())?.value || ''
     const loaded = pendingRaw
       ? await loadInstagramPendingRecord(pendingRaw, {
-          tenantId: String(token.tenantId),
-          userId: String(token.sub),
+          tenantId: String(auth.tenantId),
+          userId: String(auth.userId),
         })
       : null
     if (!loaded) {

@@ -466,7 +466,7 @@ Recommended defaults in bold; a plain "GO with defaults" adopts all of them.
 
 **Where this plan follows Rafael GO over Advisor latitude:** Grok 4.6 is the sole v1 runtime model (Advisor left room for a cheap tier and a future hybrid; Rafael reconfirmed 2026-09-21 that this is one line in §5.2, not a phase, decision, or acceptance test); pilot = Forge **WhatsApp** only even though the schema supports IG from day one; "suggest" mode is deferred to A3 so A1 stays a small, flag-gated runtime swap.
 
-**Kept as Executor default with rationale:** `tonePreset` as a fixed enum of prompt snippets (free-text tone lives in `systemInstructions`); a minimal `/config/agentes` config page in A1 (agents need a place to be edited; it is config surface, not Soft chrome); illustrative cost math in §5.4 flagged as assumption, with `ChatAgentTurn` as the real meter.
+**Kept as Executor default with rationale:** `tonePreset` as a fixed enum of prompt snippets (free-text tone lives in `systemInstructions`); a minimal `/config/agentes` config page in A1 (agents need a place to be edited; it is config surface, not Soft chrome); illustrative cost math in §5.3 flagged as assumption, with `ChatAgentTurn` as the real meter.
 
 ---
 

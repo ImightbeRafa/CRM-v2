@@ -12,22 +12,23 @@ Append-only. Newest entries at the top.
   tenant-scoped count mismatch ∪ `touched`, even when the current run linked
   nothing. Report includes `aggregateRepair`.
 - Offline `node:test` in `chat-inbox-backfill-repair.test.ts` (added to
-  `test:chat-harden`). No 024/025/026/027/027b/028 apply, no shared `--apply`, staff bot untouched.
-- Rebased onto `dev` after #61 (`67fdb59` agentes contrast + no reload feel;
-  parent `4c493d5` #60). Resume-aggregate repair kept. #61 agentes contrast /
-  in-page conocimiento / empty `config/loading` left as on `dev` (no overlay).
-  #60 conocimiento page type left as on `dev`. #59 desk polish
-  (`SoftCopilotInboxV2` / `SoftThreadPane` / send route /
-  `chat-inbox-v2-client`) left as on `dev`. #58 knowledge layer (028 gated),
-  #57 introductionNames, #56 agentes single-write + audit-after-commit, #55
-  `session-permissions` / `server-only` browser hotfix, #54 Agent Layer
-  runtime (027 gated, `chat_agent_layer_v1` off, `aiFullUnlock` empty),
-  #51 self-serve, #50 media / Soft-AI queue / template cache / windowing,
-  #46 channel identity, #45 send/echo stamp, escalate `aiMode`, aggregate
-  monotonicity, and WA OAuth/36008 left as on `dev`. Did not import #47
-  about:blank or #49 charset/Graph cap. 024/025/026/027/027b/028 SQL still
-  not applied; `chat_inbox_v2` / `chat_agent_layer_v1` not toggled;
-  `aiFullUnlock` not written.
+  `test:chat-harden`). No 024/025/026/027/027b/028/029/030 apply, no shared `--apply`, staff bot untouched.
+- Rebased onto `dev` after #62 (`938f7bc` docs-only Agent Layer Arc 2 plan;
+  parent `67fdb59` #61). Resume-aggregate repair kept. #62 Arc 2 plan docs
+  left as on `dev` (no overlay). #61 agentes contrast / in-page conocimiento /
+  empty `config/loading` left as on `dev` (no overlay). #60 conocimiento page
+  type left as on `dev`. #59 desk polish (`SoftCopilotInboxV2` /
+  `SoftThreadPane` / send route / `chat-inbox-v2-client`) left as on `dev`.
+  #58 knowledge layer (028 gated), #57 introductionNames, #56 agentes
+  single-write + audit-after-commit, #55 `session-permissions` / `server-only`
+  browser hotfix, #54 Agent Layer runtime (027 gated, `chat_agent_layer_v1`
+  off, `aiFullUnlock` empty), #51 self-serve, #50 media / Soft-AI queue /
+  template cache / windowing, #46 channel identity, #45 send/echo stamp,
+  escalate `aiMode`, aggregate monotonicity, and WA OAuth/36008 left as on
+  `dev`. Did not import #47 about:blank or #49 charset/Graph cap.
+  024/025/026/027/027b/028/029/030 SQL still not applied;
+  `chat_inbox_v2` / `chat_agent_layer_v1` not toggled; `aiFullUnlock` not
+  written.
 - Prove (post-#61 rebase onto `67fdb59`): `npx tsx --test src/lib/__tests__/chat-inbox-backfill-repair.test.ts`
   (8 pass) + `npm run test:chat-harden` (209 pass; same as post-#60).
 

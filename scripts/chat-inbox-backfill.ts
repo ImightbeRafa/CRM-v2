@@ -15,6 +15,7 @@
  * duplicate providerMessageId rows (earliest wins); never deletes.
  */
 import { createHash, randomBytes } from 'node:crypto'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '../src/lib/db'
 import {
   compareMessageOrder,
@@ -30,6 +31,10 @@ import {
   type ChatInboxBackfillMessage,
   type ConversationNaturalKey,
 } from '../src/lib/chat-conversation-foundation'
+
+function asInputJson(value: Record<string, unknown>): Prisma.InputJsonValue {
+  return value as Prisma.InputJsonValue
+}
 
 function fail(message: string): never {
   console.error(`ERROR: ${message}`)
@@ -276,7 +281,7 @@ async function markDuplicates(tenantId: string | null) {
         data: {
           duplicateOfMessageId: patch.duplicateOfMessageId,
           providerMessageId: null,
-          metadata: patch.metadata,
+          metadata: asInputJson(patch.metadata),
         },
       })
       marked += 1
@@ -315,10 +320,12 @@ async function main() {
           await prisma.chatMessage.update({
             where: { id: message.id },
             data: {
-              metadata: mergeBackfillAuditMetadata(message.metadata, {
-                quarantineReason: peer.reason,
-                quarantinedAt: new Date().toISOString(),
-              }),
+              metadata: asInputJson(
+                mergeBackfillAuditMetadata(message.metadata, {
+                  quarantineReason: peer.reason,
+                  quarantinedAt: new Date().toISOString(),
+                }),
+              ),
               providerMessageId: extractProviderMessageId(message),
               messageType: extractMessageType(message),
             },

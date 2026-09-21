@@ -1,3 +1,13 @@
+## 2026-09-21 — HOTFIX: agentes create P2028 + empty UI polish
+
+- Root cause: `createChatAgent` / `updateChatAgent` nested `logAuditEvent` (global
+  prisma) inside interactive `$transaction` → held open past 5s under Supabase
+  latency → Prisma P2028 on POST `/api/chat/agents`.
+- Fix: single-write create/update; audit **after** commit. `mapChatAgentAdminError`
+  surfaces SCHEMA_NOT_READY / P2028 / name P2002 in Spanish. `/config/agentes`
+  empty state + disabled-while-saving + API `error` field. Soft chrome HOLD.
+- Prove: `npm run test:soft-ai-agent` (new `soft-ai-agent-admin-txn.test.ts`).
+
 ## 2026-09-21 — HOTFIX: Prisma out of browser client bundle (post-A1)
 
 - Root cause: `'use client'` `/config/agentes` imported `hasSessionPermission` from

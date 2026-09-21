@@ -1,3 +1,18 @@
+## 2026-09-21 — skill: verify-betsy
+
+- Project-local verification skill `.cursor/skills/verify-betsy/` (pstack
+  create-verification-skill shape): launch/doctor/drive/evidence/cleanup,
+  Playwright helpers, and five Soft feature maps (agentes contrast,
+  conocimiento in-page wizard, chats, social, ventas). Logistics omitted.
+  Evidence directory gitignored.
+- Prove on production (`BETSY_API_URL`, read-only): doctor `READY`, then
+  `drive-agentes-contrast.mjs` PASS. Sections and Probar textarea computed
+  `rgb(15, 23, 42)`. Abrir wizard kept path `/config/agentes` and the
+  document sentinel. Screenshots in the skill `evidence/` folder.
+- Isolated QA password (`betsy-preview` / `betsyv2.isolated@betsycrm.test`)
+  was not injected here; doctor without it is `AUTH_BLOCKED`. This pass used
+  the existing contrast QA user. No Probar click, no seed, no merge.
+
 ## 2026-09-21 — docs: Agent Layer Arc 2 plan (Fable, plan only)
 
 - New plan `docs/plans/betsy-agent-layer-arc2-fable-2026-09-21.md`: Phases A–D

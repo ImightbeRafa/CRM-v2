@@ -273,11 +273,23 @@ function ConocimientoWizardInner() {
 
             <button
               type="button"
-              disabled={!canEdit || saving || !body.trim() || !name.trim() || review.overLimit}
+              disabled={
+                !canEdit ||
+                saving ||
+                !schemaReady ||
+                !body.trim() ||
+                !name.trim() ||
+                review.overLimit
+              }
               onClick={() => void createDraft()}
               className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              title={
+                !schemaReady
+                  ? 'SQL 028 aún no aplicado — no se puede guardar'
+                  : undefined
+              }
             >
-              Guardar borrador y revisar
+              {schemaReady ? 'Guardar borrador y revisar' : 'Guardar (espera SQL 028)'}
             </button>
           </div>
         ) : null}

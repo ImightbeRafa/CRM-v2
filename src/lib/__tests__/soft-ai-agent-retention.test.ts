@@ -18,5 +18,6 @@ describe('soft-ai agent retention contract (1.18)', () => {
     )
     assert.match(src, /purgeChatAgentOutputs/)
     assert.match(src, /TODO/)
+    assert.match(src, /timingSafeEqualString/)
   })
 })

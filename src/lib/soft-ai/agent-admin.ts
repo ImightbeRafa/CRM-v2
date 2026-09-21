@@ -271,6 +271,33 @@ export async function listAgentAudit(tenantId: string, agentId: string, take = 2
   })
 }
 
+/**
+ * SD54-01 — SocialAccount must belong to the acting tenant before any bind/panic write.
+ * Throws SOCIAL_ACCOUNT_NOT_FOUND (map to HTTP 404; no existence leak across tenants).
+ */
+export async function requireTenantSocialAccount(
+  tenantId: string,
+  socialAccountId: string,
+  deps?: {
+    findFirst?: (args: {
+      where: { id: string; tenantId: string }
+      select: { id: true }
+    }) => Promise<{ id: string } | null>
+  },
+): Promise<{ id: string }> {
+  const id = socialAccountId.trim()
+  if (!id) throw new Error('SOCIAL_ACCOUNT_NOT_FOUND')
+  const findFirst =
+    deps?.findFirst ||
+    ((args) => prisma.socialAccount.findFirst(args))
+  const account = await findFirst({
+    where: { id, tenantId },
+    select: { id: true },
+  })
+  if (!account) throw new Error('SOCIAL_ACCOUNT_NOT_FOUND')
+  return account
+}
+
 export async function setAgentBinding(input: {
   tenantId: string
   agentId: string
@@ -285,6 +312,8 @@ export async function setAgentBinding(input: {
     where: { id: input.agentId, tenantId: input.tenantId },
   })
   if (!agent) throw new Error('AGENT_NOT_FOUND')
+
+  await requireTenantSocialAccount(input.tenantId, input.socialAccountId)
 
   if (!input.active) {
     await prisma.chatAgentBinding.updateMany({
@@ -346,6 +375,8 @@ export async function panicPauseChannel(input: {
   actorName: string
   actorRole: string
 }) {
+  await requireTenantSocialAccount(input.tenantId, input.socialAccountId)
+
   const result = await prisma.chatAgentBinding.updateMany({
     where: {
       tenantId: input.tenantId,
@@ -395,6 +426,8 @@ export async function panicRemoveAllowlist(input: {
   actorName: string
   actorRole: string
 }) {
+  await requireTenantSocialAccount(input.tenantId, input.socialAccountId)
+
   const flag = await prisma.tenantFeatureFlag.findFirst({
     where: {
       tenantId: input.tenantId,
@@ -443,6 +476,36 @@ export async function panicRemoveAllowlist(input: {
     reason: 'panic_remove_allowlist',
   })
   return after
+}
+
+/**
+ * Resolve panic/bind target account id: require client id, or (only when omitted)
+ * the sole entry in this tenant's chat_agent_layer_v1 allowlist. Never a hardcoded Forge default.
+ */
+export async function resolvePanicSocialAccountId(input: {
+  tenantId: string
+  socialAccountId?: string | null
+}): Promise<string> {
+  const explicit =
+    typeof input.socialAccountId === 'string' ? input.socialAccountId.trim() : ''
+  if (explicit) {
+    await requireTenantSocialAccount(input.tenantId, explicit)
+    return explicit
+  }
+  const flag = await prisma.tenantFeatureFlag.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      scope: input.tenantId,
+      key: CHAT_AGENT_LAYER_V1_FLAG,
+    },
+    select: { config: true },
+  })
+  const allowlist = parseChatAgentLayerConfig(flag?.config).accountAllowlist
+  if (allowlist.length === 1) {
+    await requireTenantSocialAccount(input.tenantId, allowlist[0])
+    return allowlist[0]
+  }
+  throw new Error('SOCIAL_ACCOUNT_ID_REQUIRED')
 }
 
 export async function probeAgent(input: {

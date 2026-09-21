@@ -38,7 +38,7 @@ export async function POST(
     return NextResponse.json({ success: true, result })
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'error'
-    if (msg === 'AGENT_NOT_FOUND') {
+    if (msg === 'AGENT_NOT_FOUND' || msg === 'SOCIAL_ACCOUNT_NOT_FOUND') {
       return NextResponse.json({ success: false, error: 'No encontrado' }, { status: 404 })
     }
     console.error('[chat/agents/:id/bindings]', error)

@@ -4,6 +4,9 @@ import { readFileSync } from 'node:fs'
 import {
   isDeliveryStatusMonotonicUpgrade,
   DELIVERY_STATUS_RANK,
+  isPersistedDualWrite,
+  shouldAdvanceConversationTimestamp,
+  shouldReplaceConversationPreview,
 } from '../chat-conversation-write'
 
 test('delivery status upgrades are monotonic (read never regresses)', () => {
@@ -31,11 +34,106 @@ test('webhook route verifies HMAC before any IP rate limit', () => {
   assert.match(source, /applyPeerReadWatermark/)
 })
 
-test('send route dual-writes conversation rows before/after Graph', () => {
+test('send route stamps providerMessageId on first dual-write and accepts echo-first', () => {
   const source = readFileSync('src/app/api/chat/send/route.ts', 'utf8')
   assert.match(source, /dualWriteChatMessage/)
   assert.match(source, /finalizeOutboundDelivery/)
+  assert.match(source, /isPersistedDualWrite/)
+  assert.match(source, /providerMessageId: providerMessageId \|\| null/)
+  assert.doesNotMatch(source, /providerMessageId:\s*null/)
   assert.doesNotMatch(source, /chatMessage\.create\(/)
+  assert.doesNotMatch(source, /write\.duplicate \|\| !write\.messageId/)
+})
+
+test('isPersistedDualWrite treats identified echo-first duplicate as success', () => {
+  assert.equal(
+    isPersistedDualWrite({
+      ok: true,
+      duplicate: true,
+      messageId: 'msg-echo',
+      conversationId: 'conv-1',
+      reason: 'duplicate',
+    }),
+    true,
+  )
+  assert.equal(
+    isPersistedDualWrite({
+      ok: true,
+      duplicate: false,
+      messageId: 'msg-new',
+      conversationId: 'conv-1',
+      tenantId: 't1',
+      socialAccountId: 'sa1',
+      peerId: '506',
+      direction: 'outbound',
+      content: 'hola',
+      peerName: null,
+      suppressSoftAi: true,
+    }),
+    true,
+  )
+  assert.equal(
+    isPersistedDualWrite({
+      ok: true,
+      duplicate: true,
+      messageId: null,
+      conversationId: null,
+      reason: 'duplicate',
+    }),
+    false,
+  )
+  assert.equal(isPersistedDualWrite({ ok: false, reason: 'error' }), false)
+})
+
+test('conversation aggregates keep newer (sentAt, id) preview and direction maxima', () => {
+  const newer = new Date('2026-09-21T12:00:00.000Z')
+  const older = new Date('2026-09-21T11:00:00.000Z')
+  assert.equal(
+    shouldReplaceConversationPreview(
+      { lastMessageAt: newer, lastMessageId: 'msg-new' },
+      { sentAt: older, messageId: 'msg-old' },
+    ),
+    false,
+  )
+  assert.equal(
+    shouldReplaceConversationPreview(
+      { lastMessageAt: older, lastMessageId: 'msg-old' },
+      { sentAt: newer, messageId: 'msg-new' },
+    ),
+    true,
+  )
+  assert.equal(
+    shouldReplaceConversationPreview(
+      { lastMessageAt: newer, lastMessageId: 'aaa' },
+      { sentAt: newer, messageId: 'zzz' },
+    ),
+    true,
+  )
+  assert.equal(
+    shouldReplaceConversationPreview(
+      { lastMessageAt: newer, lastMessageId: 'zzz' },
+      { sentAt: newer, messageId: 'aaa' },
+    ),
+    false,
+  )
+  assert.equal(
+    shouldReplaceConversationPreview(
+      { lastMessageAt: null, lastMessageId: null },
+      { sentAt: older, messageId: 'msg-old' },
+    ),
+    true,
+  )
+  assert.equal(shouldAdvanceConversationTimestamp(newer, older), false)
+  assert.equal(shouldAdvanceConversationTimestamp(older, newer), true)
+  assert.equal(shouldAdvanceConversationTimestamp(newer, newer), false)
+  assert.equal(shouldAdvanceConversationTimestamp(null, older), true)
+
+  const writeSrc = readFileSync('src/lib/chat-conversation-write.ts', 'utf8')
+  assert.match(writeSrc, /shouldReplaceConversationPreview/)
+  assert.match(writeSrc, /shouldAdvanceConversationTimestamp/)
+  assert.match(writeSrc, /FOR UPDATE/)
+  assert.match(writeSrc, /\$queryRaw/)
+  assert.match(writeSrc, /inboundCount = \{ increment: 1 \}/)
 })
 
 test('025 unique SQL ships gated and is not default-applied', () => {

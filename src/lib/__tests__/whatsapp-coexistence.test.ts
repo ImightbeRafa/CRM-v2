@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 import {
   buildWhatsAppCoexistenceLoginExtras,
+  buildWhatsAppDirectOauthDialogUrl,
   buildWhatsAppEmbeddedSignupLoginOptions,
   extractWaEmbeddedSignupAssets,
+  isFbSdkEmbeddedSignup36008,
   isWaCoexistenceFinishEvent,
   isWaEmbeddedSignupFinishEvent,
   isWaEmbeddedSignupMessage,
+  parseWaDirectOauthMessage,
   shouldIgnoreWaSessionEvent,
   waSignupReadyToExchange,
   WA_COEXISTENCE_FEATURE_TYPE,
+  WA_DIRECT_OAUTH_MESSAGE_TYPE,
   WA_SESSION_INFO_VERSION,
 } from '../whatsapp-embedded-signup'
 import { selectCoexistencePhoneNumber, WHATSAPP_SUBSCRIBED_FIELDS_DEFAULT } from '../meta-api'
@@ -292,3 +297,60 @@ test('live WhatsApp messages remain inbound Soft-AI eligible', () => {
   assert.equal(parsed.messages[0]!.direction, 'inbound')
   assert.equal(parsed.messages[0]!.suppressSoftAi, false)
 })
+
+test('direct OAuth dialog URL matches Embedded Signup FB.login extras', () => {
+  const url = new URL(
+    buildWhatsAppDirectOauthDialogUrl({
+      appId: 'app-1',
+      redirectUri: 'https://example.test/api/auth/whatsapp/callback',
+      state: 'csrf-state',
+      configId: 'cfg-123',
+      graphApiVersion: 'v24.0',
+    }),
+  )
+  assert.equal(url.origin + url.pathname, 'https://www.facebook.com/v24.0/dialog/oauth')
+  assert.equal(url.searchParams.get('client_id'), 'app-1')
+  assert.equal(url.searchParams.get('config_id'), 'cfg-123')
+  assert.equal(url.searchParams.get('response_type'), 'code')
+  assert.equal(url.searchParams.get('override_default_response_type'), 'true')
+  assert.equal(url.searchParams.get('state'), 'csrf-state')
+  assert.equal(url.searchParams.get('scope'), null)
+  const extras = JSON.parse(url.searchParams.get('extras') || '{}')
+  assert.equal(extras.featureType, WA_COEXISTENCE_FEATURE_TYPE)
+  assert.equal(extras.sessionInfoVersion, WA_SESSION_INFO_VERSION)
+})
+
+test('parseWaDirectOauthMessage and 36008 detection', () => {
+  assert.equal(parseWaDirectOauthMessage({ type: 'ig_oauth_complete' }), null)
+  assert.deepEqual(parseWaDirectOauthMessage({ type: WA_DIRECT_OAUTH_MESSAGE_TYPE, ok: true, code: 'AQB' }), {
+    type: WA_DIRECT_OAUTH_MESSAGE_TYPE,
+    ok: true,
+    code: 'AQB',
+    error: '',
+  })
+  assert.equal(isFbSdkEmbeddedSignup36008({ code: 36008 }), true)
+  assert.equal(isFbSdkEmbeddedSignup36008({ error: { code: '36008', message: 'popup' } }), true)
+  assert.equal(isFbSdkEmbeddedSignup36008({ status: 'unknown' }), false)
+  assert.equal(isFbSdkEmbeddedSignup36008(null), false)
+})
+
+test('social page consumes wa_direct_oauth and does not spend the code before assets', () => {
+  const page = readFileSync('src/app/config/social/page.tsx', 'utf8')
+  assert.match(page, /parseWaDirectOauthMessage/)
+  assert.match(page, /isFbSdkEmbeddedSignup36008/)
+  assert.match(page, /\/api\/auth\/whatsapp\/direct-oauth/)
+  assert.match(page, /launchWhatsAppDirectOauthFallback/)
+  const directAt = page.indexOf('parseWaDirectOauthMessage')
+  const forceAt = page.indexOf('tryExchangeWhatsAppSignupRef.current(false)', directAt)
+  assert.ok(directAt > 0)
+  assert.ok(forceAt > directAt)
+  assert.doesNotMatch(page.slice(directAt, forceAt + 80), /tryExchangeWhatsAppSignupRef\.current\(true\)/)
+})
+
+test('direct-oauth route requires config_id for Embedded Signup parity', () => {
+  const source = readFileSync('src/app/api/auth/whatsapp/direct-oauth/route.ts', 'utf8')
+  assert.match(source, /buildWhatsAppDirectOauthDialogUrl/)
+  assert.match(source, /NEXT_PUBLIC_FB_LOGIN_CONFIG_ID/)
+  assert.match(source, /getMetaGraphApiVersion/)
+})
+

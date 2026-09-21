@@ -8,6 +8,7 @@ import { chatSendRateLimit } from '@/lib/rate-limit'
 import {
   dualWriteChatMessage,
   finalizeOutboundDelivery,
+  isPersistedDualWrite,
 } from '@/lib/chat-conversation-write'
 import {
   findApprovedWhatsAppTemplate,
@@ -313,7 +314,7 @@ export async function POST(request: NextRequest) {
       return jsonError(`Plataforma no soportada: ${account.platform}`, 400)
     }
 
-        const now = new Date()
+    const now = new Date()
     const write = await dualWriteChatMessage({
       tenantId,
       socialAccountId: account.id,
@@ -322,7 +323,7 @@ export async function POST(request: NextRequest) {
       sentAt: now,
       receivedAt: null,
       peerId: recipient,
-      providerMessageId: null,
+      providerMessageId: providerMessageId || null,
       messageType: isTemplate ? 'template' : 'text',
       deliveryStatus: 'pending',
       platform: account.platform,
@@ -345,7 +346,7 @@ export async function POST(request: NextRequest) {
       suppressSoftAi: true,
     })
 
-    if (!write.ok || write.duplicate || !write.messageId || !write.conversationId) {
+    if (!isPersistedDualWrite(write)) {
       return jsonError('No se pudo guardar el mensaje enviado', 500, {
         reason: !write.ok ? write.reason : 'duplicate',
       })

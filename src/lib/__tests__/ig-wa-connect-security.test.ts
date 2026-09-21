@@ -354,11 +354,14 @@ test('WA direct-oauth requires update_config and persists CSRF state cookie (SD-
   assert.match(source, /update_config/)
   assert.match(source, /WA_DIRECT_OAUTH_STATE_COOKIE|wa_direct_oauth_state/)
   assert.match(source, /cookies\.set/)
+  assert.match(source, /buildWhatsAppDirectOauthDialogUrl/)
+  assert.match(source, /NEXT_PUBLIC_FB_LOGIN_CONFIG_ID/)
   assert.doesNotMatch(source, /console\.log\([^)]*state[^)]*\)/)
 
   const callback = await readFile('src/app/api/auth/whatsapp/callback/route.ts', 'utf8')
   assert.match(callback, /isValidWaDirectOauthState/)
   assert.match(callback, /status: 403/)
+  assert.match(callback, /type: 'wa_direct_oauth'/)
 
   const { isValidWaDirectOauthState } = await import('../wa-direct-oauth-state')
   assert.equal(isValidWaDirectOauthState('abc', 'abc'), true)

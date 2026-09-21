@@ -44,6 +44,40 @@ describe('F37-02 soft-ai server-truth agent mode', () => {
     assert.match(src, /aiMode: mode/)
   })
 
+  it('worker escalation writes ChatConversation.aiMode so column-first Soft AI stays fail-closed', () => {
+    const src = readFileSync(resolve('src/lib/soft-ai/inbound-hook.ts'), 'utf8')
+    const escalateAt = src.indexOf("result.agentMode !== 'ai_active'")
+    assert.ok(escalateAt > 0)
+    const slice = src.slice(escalateAt)
+    assert.match(slice, /chatConversation\.updateMany/)
+    assert.match(slice, /aiMode/)
+    assert.match(slice, /normalizeConversationAiMode/)
+    const columnAt = slice.indexOf('chatConversation.updateMany')
+    const flagAt = slice.indexOf('agentState[key]')
+    assert.ok(columnAt >= 0)
+    assert.ok(flagAt > columnAt, 'column write must happen before flag fallback')
+
+    const config = { agentState: { [key]: { mode: 'ai_active' } } }
+    assert.equal(
+      resolveSoftAiAgentMode({
+        conversationAiMode: 'human',
+        flagConfig: config,
+        conversationKey: key,
+      }),
+      'human',
+    )
+    assert.equal(
+      maySoftAiMetaReply(
+        resolveSoftAiAgentMode({
+          conversationAiMode: 'human',
+          flagConfig: config,
+          conversationKey: key,
+        }),
+      ),
+      false,
+    )
+  })
+
   it('missing agentState / missing key does NOT silently become ai_active', () => {
     assert.equal(resolvePersistedAgentMode({}, key), null)
     assert.equal(resolvePersistedAgentMode({ agentState: {} }, key), null)

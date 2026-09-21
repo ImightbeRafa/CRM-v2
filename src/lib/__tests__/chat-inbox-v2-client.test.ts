@@ -279,4 +279,48 @@ describe('chat-inbox-v2-client reducers', () => {
     assert.doesNotMatch(src, /walkConversationListPages/)
     assert.doesNotMatch(src, /onSendTemplate: \(\) => \{\}/)
   })
+
+  it('packs 1–6 SoftCopilot desk wire: optimistic, guard, poll, preview, focus/scroll', () => {
+    const src = readFileSync('src/components/chats/SoftCopilotInboxV2.tsx', 'utf8')
+    // Pack 1 — optimistic send + reconcile + fail/retry
+    assert.match(src, /createOptimisticOutboundMessage/)
+    assert.match(src, /appendOptimisticOutbound/)
+    assert.match(src, /reconcileOptimisticOutbound/)
+    assert.match(src, /markOptimisticOutboundFailed/)
+    assert.match(src, /newClientRequestId/)
+    assert.match(src, /clientRequestId/)
+    assert.match(src, /failedOutboundId/)
+    assert.match(src, /onRetryMessage/)
+    // Pack 2 — double-send guard
+    assert.match(src, /sendInFlightRef/)
+    assert.match(src, /if \(sendInFlightRef\.current\) return/)
+    // Pack 3 — live inbound poll + skip optimistic cursor
+    assert.match(src, /CHAT_INBOX_V2_POLL_MS/)
+    assert.match(src, /buildChangesPollQuery/)
+    assert.match(src, /optimistic:/)
+    assert.match(src, /visibilitychange/)
+    // Pack 4 — list preview after send
+    assert.match(src, /projectOptimisticListPreview/)
+    // Pack 5 — Spanish errors
+    assert.match(src, /humanizeChatSendError/)
+    // Pack 6 — focus + scroll
+    assert.match(src, /composerRef\.current\?\.focus\(\)/)
+    assert.match(src, /messagesEndRef\.current\?\.scrollIntoView/)
+  })
+
+  it('packs 2/5 SoftThreadPane: Enter/Shift+Enter + Spanish Reconectar', () => {
+    const src = readFileSync('src/components/chats/SoftThreadPane.tsx', 'utf8')
+    assert.match(src, /e\.key !== 'Enter' \|\| e\.shiftKey/)
+    assert.match(src, /chatSendErrorNeedsReconnect/)
+    assert.match(src, /outboundDeliveryLabel/)
+    assert.match(src, /Reconectar/)
+    assert.match(src, /href="\/config\/social"/)
+  })
+
+  it('pack 7 deferred: /api/chat/send rejects non text/template types', () => {
+    const src = readFileSync('src/app/api/chat/send/route.ts', 'utf8')
+    assert.match(src, /messageType !== 'text' && messageType !== 'template'/)
+    assert.match(src, /Solo se admiten mensajes de texto o plantillas/)
+    assert.match(src, /clientRequestId/)
+  })
 })

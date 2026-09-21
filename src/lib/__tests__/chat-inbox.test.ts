@@ -1,11 +1,20 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  appendOptimisticOutbound,
+  chatSendErrorNeedsReconnect,
+  createOptimisticOutboundMessage,
   getConversationPeerId,
   groupMessagesByRecipient,
   humanizeChatSendError,
+  markOptimisticOutboundFailed,
   messagesFingerprint,
+  newClientRequestId,
+  outboundDeliveryLabel,
   parseApiJson,
+  preferDeliveryStatus,
+  projectOptimisticListPreview,
+  reconcileOptimisticOutbound,
 } from '../chat-inbox'
 
 describe('chat-inbox helpers', () => {
@@ -125,5 +134,80 @@ describe('chat-inbox helpers', () => {
       humanizeChatSendError('This message was not delivered because it is a re-engagement message'),
       /ventana de 24 horas|plantilla/i,
     )
+  })
+
+  it('chatSendErrorNeedsReconnect detects token/oauth reconnect cases', () => {
+    assert.equal(chatSendErrorNeedsReconnect('Token de acceso expirado. Reconectá la cuenta.'), true)
+    assert.equal(chatSendErrorNeedsReconnect('(#190) Session has been invalidated'), true)
+    assert.equal(chatSendErrorNeedsReconnect('OAuthException: Error validating access token'), true)
+    assert.equal(chatSendErrorNeedsReconnect('La ventana de 24 horas ya cerró'), false)
+  })
+
+  it('outboundDeliveryLabel covers pending/sent/failed/delivered/read', () => {
+    assert.equal(outboundDeliveryLabel('pending'), 'Enviando…')
+    assert.equal(outboundDeliveryLabel('sent'), 'Enviado ✓')
+    assert.equal(outboundDeliveryLabel('failed'), 'Falló ✕')
+    assert.equal(outboundDeliveryLabel('delivered'), 'Entregado')
+    assert.equal(outboundDeliveryLabel('read'), 'Leído')
+  })
+
+  it('optimistic outbound create/append/reconcile/fail stays correlated by clientRequestId', () => {
+    const clientRequestId = newClientRequestId()
+    assert.ok(clientRequestId.length > 8)
+
+    const optimistic = createOptimisticOutboundMessage({
+      content: 'Hola desk',
+      clientRequestId,
+      to: '506888',
+      platform: 'whatsapp',
+      sentAt: '2026-09-21T12:00:00.000Z',
+    })
+    assert.equal(optimistic.id, `optimistic:${clientRequestId}`)
+    assert.equal(optimistic.direction, 'outbound')
+    assert.equal(optimistic.deliveryStatus, 'pending')
+    assert.equal(optimistic.clientRequestId, clientRequestId)
+    assert.equal(optimistic.metadata?.clientRequestId, clientRequestId)
+
+    const withOptimistic = appendOptimisticOutbound([], optimistic)
+    assert.equal(withOptimistic.length, 1)
+    assert.equal(appendOptimisticOutbound(withOptimistic, optimistic).length, 1)
+
+    const persisted = {
+      id: 'msg_server_1',
+      direction: 'outbound' as const,
+      content: 'Hola desk',
+      sentAt: '2026-09-21T12:00:01.000Z',
+      receivedAt: null,
+      deliveryStatus: 'sent',
+      clientRequestId,
+      metadata: { clientRequestId, to: '506888' },
+    }
+    const reconciled = reconcileOptimisticOutbound(withOptimistic, persisted)
+    assert.equal(reconciled.length, 1)
+    assert.equal(reconciled[0].id, 'msg_server_1')
+    assert.equal(reconciled[0].deliveryStatus, 'sent')
+    assert.equal(reconciled[0].clientRequestId, clientRequestId)
+
+    const failed = markOptimisticOutboundFailed(withOptimistic, clientRequestId)
+    assert.equal(failed[0].deliveryStatus, 'failed')
+    assert.equal(preferDeliveryStatus('failed', 'sent'), 'sent')
+    assert.equal(preferDeliveryStatus('sent', 'delivered'), 'delivered')
+  })
+
+  it('projectOptimisticListPreview updates last message preview fields', () => {
+    const row = projectOptimisticListPreview(
+      {
+        lastMessage: 'antes',
+        lastMessageAt: '2026-09-21T11:00:00.000Z',
+        lastMessageDirection: 'inbound',
+        unreadCount: 2,
+      },
+      'Nuevo outbound',
+      '2026-09-21T12:00:00.000Z',
+    )
+    assert.equal(row.lastMessage, 'Nuevo outbound')
+    assert.equal(row.lastMessageAt, '2026-09-21T12:00:00.000Z')
+    assert.equal(row.lastMessageDirection, 'outbound')
+    assert.equal(row.unreadCount, 2)
   })
 })

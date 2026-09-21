@@ -2,8 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
+  appendOptimisticOutbound,
+  createOptimisticOutboundMessage,
   humanizeChatSendError,
+  markOptimisticOutboundFailed,
+  newClientRequestId,
   parseApiJson,
+  projectOptimisticListPreview,
+  reconcileOptimisticOutbound,
   type ChatInboxMessage,
 } from '@/lib/chat-inbox'
 import {
@@ -103,6 +109,8 @@ export function SoftCopilotInboxV2() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+  const sendInFlightRef = useRef(false)
 
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId
@@ -182,6 +190,7 @@ export function SoftCopilotInboxV2() {
   const applyThreadTail = useCallback(
     (conversationId: string, messages: Array<Parameters<typeof messageDtoToInbox>[0]>) => {
       const incoming = messages.map(messageDtoToInbox)
+      const hadInbound = incoming.some((m) => m.direction === 'inbound')
       setThreadMessages((prev) => ({
         ...prev,
         [conversationId]: mergeThreadMessageWindow({
@@ -190,6 +199,15 @@ export function SoftCopilotInboxV2() {
           mode: 'tail',
         }),
       }))
+      if (
+        hadInbound &&
+        conversationId === selectedConversationIdRef.current &&
+        nearBottomRef.current
+      ) {
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        })
+      }
     },
     [],
   )
@@ -201,9 +219,12 @@ export function SoftCopilotInboxV2() {
       const after = maxRevisionRef.current.toString()
       const threadId = selectedConversationIdRef.current
       const existing = threadId ? threadMessagesRef.current[threadId] : undefined
+      const persistedTail = existing?.length
+        ? [...existing].reverse().find((m) => !m.id.startsWith('optimistic:'))
+        : undefined
       const threadAfter =
-        threadId && existing?.length
-          ? `${existing[existing.length - 1]!.sentAt},${existing[existing.length - 1]!.id}`
+        threadId && persistedTail
+          ? `${persistedTail.sentAt},${persistedTail.id}`
           : null
 
       const qs = buildChangesPollQuery({
@@ -335,10 +356,16 @@ export function SoftCopilotInboxV2() {
     const onVisibility = () => {
       if (!document.hidden) tick()
     }
+    const onFocus = () => tick()
+    const onOnline = () => tick()
     document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('online', onOnline)
     return () => {
       window.clearInterval(id)
       document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('online', onOnline)
     }
   }, [fetchChanges, fetchListPage])
 
@@ -461,7 +488,12 @@ export function SoftCopilotInboxV2() {
     setTemplatePickerOpen(false)
     nearBottomRef.current = true
     setMobileView('thread')
-    void loadThreadMessages(dto.id)
+    void loadThreadMessages(dto.id).then(() => {
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+        composerRef.current?.focus()
+      })
+    })
   }
 
   async function patchConversation(partial: {
@@ -638,48 +670,167 @@ export function SoftCopilotInboxV2() {
     }
   }
 
-  async function handleSendMessage(e: FormEvent) {
+  async function handleSendMessage(e: FormEvent, opts?: { retryClientRequestId?: string }) {
     e.preventDefault()
-    if (!selectedConversation || !messageInput.trim()) return
+    if (!selectedConversation || !selectedConversationId) return
+    if (sendInFlightRef.current) return
+
+    const conversationId = selectedConversationId
     const recipient = selectedConversation.recipientId
     const socialAccountId = selectedConversation.socialAccountId
-    const content = messageInput.trim()
+
+    let content = messageInput.trim()
+    let clientRequestId = opts?.retryClientRequestId
+
+    if (clientRequestId) {
+      const existing = threadMessagesRef.current[conversationId] || []
+      const failed = existing.find(
+        (m) =>
+          m.clientRequestId === clientRequestId ||
+          m.id === `optimistic:${clientRequestId}`,
+      )
+      if (!failed?.content?.trim()) return
+      content = failed.content.trim()
+    }
+
+    if (!content) return
+
+    sendInFlightRef.current = true
     setSending(true)
     setSendError(null)
+    setFailedOutboundId(null)
+
+    if (!clientRequestId) {
+      clientRequestId = newClientRequestId()
+      const optimistic = createOptimisticOutboundMessage({
+        content,
+        clientRequestId,
+        to: recipient,
+        platform: selectedConversation.platform,
+      })
+      setThreadMessages((prev) => ({
+        ...prev,
+        [conversationId]: appendOptimisticOutbound(prev[conversationId] || [], optimistic),
+      }))
+      setDtoMap((prev) => {
+        const row = prev.get(conversationId)
+        if (!row) return prev
+        const next = new Map(prev)
+        next.set(
+          conversationId,
+          projectOptimisticListPreview(row, content, optimistic.sentAt),
+        )
+        return next
+      })
+      setMessageInput('')
+      nearBottomRef.current = true
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        composerRef.current?.focus()
+      })
+    } else {
+      setThreadMessages((prev) => ({
+        ...prev,
+        [conversationId]: (prev[conversationId] || []).map((m) =>
+          m.clientRequestId === clientRequestId || m.id === `optimistic:${clientRequestId}`
+            ? { ...m, deliveryStatus: 'pending' }
+            : m,
+        ),
+      }))
+    }
+
     try {
       const res = await fetch('/api/chat/send', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ socialAccountId, recipient, content }),
+        body: JSON.stringify({
+          socialAccountId,
+          recipient,
+          content,
+          clientRequestId,
+        }),
       })
-      const parsed = await parseApiJson<{ success?: boolean; error?: string }>(res)
-      if (!parsed.ok) {
-        setSendError(humanizeChatSendError(parsed.error, parsed.status))
-        setFailedOutboundId('pending-fail')
+      const parsed = await parseApiJson<{
+        success?: boolean
+        error?: string
+        message?: Parameters<typeof messageDtoToInbox>[0]
+        conversationId?: string
+        clientRequestId?: string | null
+      }>(res)
+
+      // Thread may have changed while the request was in flight — only patch the origin conversation.
+      const stillOnSameThread = selectedConversationIdRef.current === conversationId
+
+      if (!parsed.ok || !res.ok || !parsed.data.success) {
+        const err = humanizeChatSendError(
+          !parsed.ok ? parsed.error : parsed.data.error,
+          !parsed.ok ? parsed.status : res.status,
+        )
+        setThreadMessages((prev) => ({
+          ...prev,
+          [conversationId]: markOptimisticOutboundFailed(
+            prev[conversationId] || [],
+            clientRequestId!,
+          ),
+        }))
+        if (stillOnSameThread) {
+          setSendError(err)
+          setFailedOutboundId(`optimistic:${clientRequestId}`)
+        }
         return
       }
-      if (!res.ok) {
-        setSendError(humanizeChatSendError(parsed.data.error, res.status))
-        setFailedOutboundId('pending-fail')
-        return
+
+      if (parsed.data.message) {
+        const persisted = messageDtoToInbox(parsed.data.message)
+        setThreadMessages((prev) => ({
+          ...prev,
+          [conversationId]: reconcileOptimisticOutbound(
+            prev[conversationId] || [],
+            persisted,
+          ),
+        }))
       }
-      if (!parsed.data.success) {
-        setSendError(humanizeChatSendError(parsed.data.error, res.status))
-        setFailedOutboundId('pending-fail')
-        return
-      }
-      setMessageInput('')
+
       if (selectedConversation.status === 'nuevo') updateStatus('en_curso')
-      if (selectedConversationId) {
-        await loadThreadMessages(selectedConversationId)
-        await fetchChanges()
+      // Live list/unread via changes poll — no hard thread reload (keeps optimistic UX).
+      await fetchChanges()
+      if (stillOnSameThread) {
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+          composerRef.current?.focus()
+        })
       }
     } catch (err: unknown) {
-      setSendError(humanizeChatSendError(err instanceof Error ? err.message : 'Error al enviar'))
+      setThreadMessages((prev) => ({
+        ...prev,
+        [conversationId]: markOptimisticOutboundFailed(
+          prev[conversationId] || [],
+          clientRequestId!,
+        ),
+      }))
+      if (selectedConversationIdRef.current === conversationId) {
+        setSendError(
+          humanizeChatSendError(err instanceof Error ? err.message : 'Error al enviar'),
+        )
+        setFailedOutboundId(`optimistic:${clientRequestId}`)
+      }
     } finally {
+      sendInFlightRef.current = false
       setSending(false)
     }
+  }
+
+  function handleRetryMessage(messageId: string) {
+    const crid = messageId.startsWith('optimistic:')
+      ? messageId.slice('optimistic:'.length)
+      : (threadMessagesRef.current[selectedConversationId || ''] || []).find(
+          (m) => m.id === messageId,
+        )?.clientRequestId
+    if (!crid) return
+    void handleSendMessage({ preventDefault() {} } as FormEvent, {
+      retryClientRequestId: crid,
+    })
   }
 
   const emptyReason = (() => {
@@ -700,7 +851,13 @@ export function SoftCopilotInboxV2() {
     sending,
     sendError,
     onClearError: () => setSendError(null),
-    onRetry: () => void handleSendMessage({ preventDefault() {} } as FormEvent),
+    onRetry: () => {
+      if (failedOutboundId) handleRetryMessage(failedOutboundId)
+      else void handleSendMessage({ preventDefault() {} } as FormEvent)
+    },
+    onRetryMessage: handleRetryMessage,
+    failedOutboundId,
+    composerRef,
     messagesEndRef,
     messagesContainerRef,
     onMessagesScroll: () => {

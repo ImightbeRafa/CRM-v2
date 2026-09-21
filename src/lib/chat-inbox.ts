@@ -12,6 +12,7 @@ export interface ChatInboxMessage {
   sentAt: string
   receivedAt: string | null
   metadata?: Record<string, unknown> | null
+  /** CRM Client row id — never reuse for optimistic send correlation. */
   clientId?: string
   orderId?: string
   messageType?: string
@@ -19,6 +20,10 @@ export interface ChatInboxMessage {
   mediaMimeType?: string
   mediaFilename?: string
   mediaBlobPath?: string
+  /** Provider/DB delivery tick: pending | sent | delivered | read | failed | … */
+  deliveryStatus?: string | null
+  /** Client-generated idempotency key for optimistic reconcile (metadata.clientRequestId). */
+  clientRequestId?: string
 }
 
 export interface ChatConversation {
@@ -213,4 +218,231 @@ export function humanizeChatSendError(raw: string | undefined | null, status?: n
 
   // Already Spanish-ish or Meta provider message — surface as-is
   return message
+}
+
+/** True when the send error means the social token must be reconnected. */
+export function chatSendErrorNeedsReconnect(raw: string | undefined | null): boolean {
+  const message = (raw || '').trim()
+  if (!message) return false
+  return (
+    /reconect/i.test(message) ||
+    /token (de .+ )?(expir|revoc)/i.test(message) ||
+    /cuenta .+ desvinculad/i.test(message) ||
+    /(#?190\b|#?102\b|#?463\b|#?467\b)/.test(message) ||
+    /session has (been )?invalidated/i.test(message) ||
+    /access token .+ (expired|invalid)/i.test(message) ||
+    /oauth.?exception/i.test(message)
+  )
+}
+
+/**
+ * Desk delivery footer label (Respond.io-style).
+ * Soft AI outbound keeps its own "IA envió" copy in the pane.
+ */
+export function outboundDeliveryLabel(
+  status: string | null | undefined,
+): 'Enviando…' | 'Enviado ✓' | 'Falló ✕' | 'Entregado' | 'Leído' {
+  const s = (status || '').toLowerCase()
+  if (s === 'failed' || s === 'error') return 'Falló ✕'
+  if (s === 'pending' || s === 'sending' || s === 'queued') return 'Enviando…'
+  if (s === 'delivered') return 'Entregado'
+  if (s === 'read') return 'Leído'
+  return 'Enviado ✓'
+}
+
+const DELIVERY_RANK: Record<string, number> = {
+  pending: 1,
+  sending: 1,
+  queued: 1,
+  sent: 2,
+  delivered: 3,
+  read: 4,
+  failed: 0,
+  error: 0,
+}
+
+function deliveryRank(status: string | null | undefined): number {
+  if (!status) return -1
+  return DELIVERY_RANK[status.toLowerCase()] ?? 1
+}
+
+/** Prefer the more advanced monotonic delivery status (failed loses to sent). */
+export function preferDeliveryStatus(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): string | null | undefined {
+  if (a == null || a === '') return b
+  if (b == null || b === '') return a
+  const aFailed = /^(failed|error)$/i.test(a)
+  const bFailed = /^(failed|error)$/i.test(b)
+  if (aFailed && !bFailed) return b
+  if (bFailed && !aFailed) return a
+  return deliveryRank(b) >= deliveryRank(a) ? b : a
+}
+
+export function newClientRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `crid-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+export function createOptimisticOutboundMessage(opts: {
+  content: string
+  clientRequestId: string
+  to?: string
+  platform?: string
+  sentAt?: string
+}): ChatInboxMessage {
+  const sentAt = opts.sentAt || new Date().toISOString()
+  const clientRequestId = opts.clientRequestId
+  return {
+    id: `optimistic:${clientRequestId}`,
+    direction: 'outbound',
+    content: opts.content,
+    sentAt,
+    receivedAt: null,
+    deliveryStatus: 'pending',
+    clientRequestId,
+    metadata: {
+      clientRequestId,
+      optimistic: true,
+      ...(opts.to ? { to: opts.to } : {}),
+      ...(opts.platform ? { platform: opts.platform } : {}),
+    },
+  }
+}
+
+export function appendOptimisticOutbound(
+  messages: ChatInboxMessage[],
+  optimistic: ChatInboxMessage,
+): ChatInboxMessage[] {
+  const crid = optimistic.clientRequestId
+  if (crid && messages.some((m) => m.clientRequestId === crid || m.id === optimistic.id)) {
+    return messages
+  }
+  return [...messages, optimistic]
+}
+
+export function reconcileOptimisticOutbound(
+  messages: ChatInboxMessage[],
+  persisted: ChatInboxMessage,
+): ChatInboxMessage[] {
+  const crid =
+    persisted.clientRequestId ||
+    (typeof persisted.metadata?.clientRequestId === 'string'
+      ? persisted.metadata.clientRequestId
+      : undefined)
+  let replaced = false
+  const next = messages.map((m) => {
+    const match =
+      (crid && (m.clientRequestId === crid || m.id === `optimistic:${crid}`)) ||
+      m.id === persisted.id
+    if (!match) return m
+    replaced = true
+    return {
+      ...persisted,
+      clientRequestId: crid || persisted.clientRequestId || m.clientRequestId,
+      deliveryStatus: preferDeliveryStatus(m.deliveryStatus, persisted.deliveryStatus) ?? 'sent',
+    }
+  })
+  if (!replaced) {
+    next.push({
+      ...persisted,
+      clientRequestId: crid || persisted.clientRequestId,
+      deliveryStatus: persisted.deliveryStatus ?? 'sent',
+    })
+  }
+  return next.sort((a, b) => a.sentAt.localeCompare(b.sentAt) || a.id.localeCompare(b.id))
+}
+
+export function markOptimisticOutboundFailed(
+  messages: ChatInboxMessage[],
+  clientRequestId: string,
+): ChatInboxMessage[] {
+  return messages.map((m) => {
+    if (m.clientRequestId === clientRequestId || m.id === `optimistic:${clientRequestId}`) {
+      return { ...m, deliveryStatus: 'failed' }
+    }
+    return m
+  })
+}
+
+/**
+ * Merge thread windows by server id, then by clientRequestId.
+ * Persisted rows win over optimistic; deliveryStatus prefers monotonic upgrade.
+ */
+export function mergeThreadMessagesPreferDelivery(
+  existing: ChatInboxMessage[],
+  incoming: ChatInboxMessage[],
+): ChatInboxMessage[] {
+  const byId = new Map<string, ChatInboxMessage>()
+  const cridToId = new Map<string, string>()
+
+  const upsert = (msg: ChatInboxMessage) => {
+    const crid =
+      msg.clientRequestId ||
+      (typeof msg.metadata?.clientRequestId === 'string'
+        ? msg.metadata.clientRequestId
+        : undefined)
+    const normalized: ChatInboxMessage = {
+      ...msg,
+      clientRequestId: crid || msg.clientRequestId,
+    }
+
+    if (crid && cridToId.has(crid)) {
+      const prevId = cridToId.get(crid)!
+      const prev = byId.get(prevId)
+      if (prev) {
+        const prevOptimistic = prev.id.startsWith('optimistic:')
+        const nextOptimistic = normalized.id.startsWith('optimistic:')
+        const winner = !nextOptimistic && prevOptimistic ? normalized : prevOptimistic && nextOptimistic ? normalized : {
+          ...prev,
+          ...normalized,
+          id: nextOptimistic ? prev.id : normalized.id,
+          deliveryStatus: preferDeliveryStatus(prev.deliveryStatus, normalized.deliveryStatus),
+          clientRequestId: crid,
+        }
+        if (winner.id !== prevId) byId.delete(prevId)
+        byId.set(winner.id, winner)
+        cridToId.set(crid, winner.id)
+        return
+      }
+    }
+
+    const prev = byId.get(normalized.id)
+    if (prev) {
+      byId.set(normalized.id, {
+        ...prev,
+        ...normalized,
+        deliveryStatus: preferDeliveryStatus(prev.deliveryStatus, normalized.deliveryStatus),
+        clientRequestId: crid || prev.clientRequestId || normalized.clientRequestId,
+      })
+    } else {
+      byId.set(normalized.id, normalized)
+    }
+    if (crid) cridToId.set(crid, normalized.id)
+  }
+
+  for (const m of existing) upsert(m)
+  for (const m of incoming) upsert(m)
+
+  return [...byId.values()].sort(
+    (a, b) => a.sentAt.localeCompare(b.sentAt) || a.id.localeCompare(b.id),
+  )
+}
+
+/** Patch list-row preview fields after an optimistic outbound send. */
+export function projectOptimisticListPreview<T extends {
+  lastMessage?: string | null
+  lastMessageAt?: string | null
+  lastMessageDirection?: string | null
+  unreadCount?: number
+}>(row: T, content: string, sentAt: string): T {
+  return {
+    ...row,
+    lastMessage: content.slice(0, 180),
+    lastMessageAt: sentAt,
+    lastMessageDirection: 'outbound',
+  }
 }

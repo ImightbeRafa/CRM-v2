@@ -34,6 +34,10 @@ export function messageDtoToInbox(row: ChatMessageItemDto): ChatInboxMessage {
   const mediaBlobPath =
     row.mediaBlobPath ??
     (typeof meta?.mediaBlobPath === 'string' ? meta.mediaBlobPath : undefined)
+  const clientRequestId =
+    typeof meta?.clientRequestId === 'string' && meta.clientRequestId
+      ? meta.clientRequestId
+      : undefined
   return {
     id: row.id,
     direction: row.direction,
@@ -48,6 +52,8 @@ export function messageDtoToInbox(row: ChatMessageItemDto): ChatInboxMessage {
     mediaMimeType: mediaMimeType || undefined,
     mediaFilename: mediaFilename || undefined,
     mediaBlobPath: mediaBlobPath || undefined,
+    deliveryStatus: row.deliveryStatus ?? undefined,
+    clientRequestId,
   }
 }
 
@@ -267,21 +273,91 @@ export function selectThreadRenderWindow<T extends { id: string; sentAt: string 
  * When over cap after loading older, drop from the newest end so older history stays;
  * otherwise (tail merge) keep the newest and drop oldest.
  */
-export function mergeThreadMessageWindow<T extends { id: string; sentAt: string }>(opts: {
+export function mergeThreadMessageWindow<
+  T extends {
+    id: string
+    sentAt: string
+    clientRequestId?: string
+    deliveryStatus?: string | null
+    metadata?: Record<string, unknown> | null
+  },
+>(opts: {
   existing: T[]
   incoming: T[]
   mode: 'replace' | 'tail' | 'older'
   storeCap?: number
 }): T[] {
   const cap = opts.storeCap ?? CHAT_INBOX_V2_THREAD_STORE_CAP
+
+  const cridOf = (m: T): string | undefined => {
+    if (typeof m.clientRequestId === 'string' && m.clientRequestId) return m.clientRequestId
+    const meta = m.metadata
+    return typeof meta?.clientRequestId === 'string' ? meta.clientRequestId : undefined
+  }
+
+  const preferDelivery = (a: T, b: T): T => {
+    const aStatus = a.deliveryStatus
+    const bStatus = b.deliveryStatus
+    if (aStatus == null && bStatus == null) return { ...a, ...b, id: b.id.startsWith('optimistic:') ? a.id : b.id }
+    const rank: Record<string, number> = {
+      failed: 0,
+      error: 0,
+      pending: 1,
+      sending: 1,
+      queued: 1,
+      sent: 2,
+      delivered: 3,
+      read: 4,
+    }
+    const aFailed = /^(failed|error)$/i.test(aStatus || '')
+    const bFailed = /^(failed|error)$/i.test(bStatus || '')
+    let deliveryStatus = bStatus ?? aStatus
+    if (aFailed && !bFailed) deliveryStatus = bStatus
+    else if (bFailed && !aFailed) deliveryStatus = aStatus
+    else if (aStatus && bStatus) {
+      deliveryStatus =
+        (rank[bStatus.toLowerCase()] ?? 1) >= (rank[aStatus.toLowerCase()] ?? 1) ? bStatus : aStatus
+    }
+    const preferPersisted = !b.id.startsWith('optimistic:')
+    return {
+      ...a,
+      ...b,
+      id: preferPersisted ? b.id : a.id.startsWith('optimistic:') ? a.id : b.id,
+      deliveryStatus,
+      clientRequestId: cridOf(b) || cridOf(a) || b.clientRequestId || a.clientRequestId,
+    }
+  }
+
+  const upsertAll = (rows: T[]): T[] => {
+    const byId = new Map<string, T>()
+    const cridToId = new Map<string, string>()
+    for (const row of rows) {
+      const crid = cridOf(row)
+      if (crid && cridToId.has(crid)) {
+        const prevId = cridToId.get(crid)!
+        const prev = byId.get(prevId)
+        if (prev) {
+          const merged = preferDelivery(prev, row)
+          if (merged.id !== prevId) byId.delete(prevId)
+          byId.set(merged.id, merged)
+          cridToId.set(crid, merged.id)
+          continue
+        }
+      }
+      const prev = byId.get(row.id)
+      const merged = prev ? preferDelivery(prev, row) : row
+      byId.set(merged.id, merged)
+      if (crid) cridToId.set(crid, merged.id)
+    }
+    return [...byId.values()].sort((a, b) => a.sentAt.localeCompare(b.sentAt) || a.id.localeCompare(b.id))
+  }
+
   if (opts.mode === 'replace') {
-    const sorted = [...opts.incoming].sort((a, b) => a.sentAt.localeCompare(b.sentAt))
+    const sorted = upsertAll(opts.incoming)
     return sorted.length > cap ? sorted.slice(sorted.length - cap) : sorted
   }
 
-  const byId = new Map(opts.existing.map((m) => [m.id, m]))
-  for (const m of opts.incoming) byId.set(m.id, m)
-  const sorted = [...byId.values()].sort((a, b) => a.sentAt.localeCompare(b.sentAt))
+  const sorted = upsertAll([...opts.existing, ...opts.incoming])
   if (sorted.length <= cap) return sorted
 
   if (opts.mode === 'older') {

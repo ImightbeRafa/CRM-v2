@@ -1,3 +1,16 @@
+## 2026-09-21 — Plan: AL2-A1 `/config/agentes` UX redo (Fable, docs only)
+
+- Added `docs/plans/betsy-al2-a1-ux-redo-fable-2026-09-21.md` after Rafael rejected the shipped
+  Atajos / Datos de la marca / Probar screens (#64) as engineer-facing and GO'd: paste-import
+  "Cargar desde mis atajos" (AI extract → review checklist → Guardar), plain atajo list with eng
+  keys / `sys_*` / `{{}}` behind Avanzado, Probar as a WhatsApp bubble thread with one Enviar and
+  channel auto-select, Replay / fixtures / passRate / hash under collapsed Pruebas internas.
+- 12 acceptance checkboxes (AT-1…AT-12) incl. the verify bar: three Preview screenshots
+  (paste→facts, plain atajo, Probar bubble for "precio con envío?") readable dark-on-white.
+- Out: Soft chrome, staff bot, SINPE queue / orders / Correos, image upload beyond disabled note,
+  any schema change. Implementer model lock: grok-4.7 high fast only, never grok-4.5.
+- Prove: docs only — `git diff --stat` = `docs/**`. PR stays draft; no merge without Rafael GO.
+
 ## 2026-09-21 — AL2-A1 agent text layer (SQL 029 proposed, not applied)
 
 - Gated SQL `029_chat_agent_playbooks_assets.sql` + Prisma mirror. Not applied to shared Supabase.

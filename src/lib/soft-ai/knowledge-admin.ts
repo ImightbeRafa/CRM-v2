@@ -6,6 +6,7 @@
 import 'server-only'
 import { prisma } from '@/lib/db'
 import { logAuditEvent } from '@/lib/auditLogger'
+import { requireTenantSocialAccount } from '@/lib/soft-ai/agent-admin'
 import { isChatKnowledgeSchemaReady } from '@/lib/soft-ai/knowledge-schema'
 import { hashKnowledgeBody } from '@/lib/soft-ai/knowledge-repository'
 import {
@@ -42,6 +43,26 @@ export function mapKnowledgeAdminError(error: unknown): KnowledgeAdminHttpError 
   }
   if (error.message === 'SOURCE_NOT_FOUND') {
     return { status: 404, body: { success: false, error: 'No encontrado', code: 'SOURCE_NOT_FOUND' } }
+  }
+  if (error.message === 'SOCIAL_ACCOUNT_NOT_FOUND') {
+    return {
+      status: 404,
+      body: {
+        success: false,
+        error: 'Cuenta social no encontrada',
+        code: 'SOCIAL_ACCOUNT_NOT_FOUND',
+      },
+    }
+  }
+  if (error.message === 'SOURCE_NOT_APPROVED') {
+    return {
+      status: 409,
+      body: {
+        success: false,
+        error: 'Solo se pueden vincular fuentes aprobadas',
+        code: 'SOURCE_NOT_APPROVED',
+      },
+    }
   }
   if (error.message === 'AGENT_NOT_FOUND') {
     return { status: 404, body: { success: false, error: 'Agente no encontrado', code: 'AGENT_NOT_FOUND' } }
@@ -208,6 +229,16 @@ export async function createKnowledgeSource(input: {
     throw new Error('OVERLAY_ACCOUNT_REQUIRED')
   }
 
+  // SD58-01 — never trust client-supplied socialAccountId across tenants.
+  let socialAccountId: string | null = null
+  if (input.kind === 'channel_overlay' && input.socialAccountId) {
+    const owned = await requireTenantSocialAccount(
+      input.tenantId,
+      input.socialAccountId,
+    )
+    socialAccountId = owned.id
+  }
+
   const maxVersion = await prisma.chatKnowledgeSource.aggregate({
     where: {
       tenantId: input.tenantId,
@@ -228,7 +259,7 @@ export async function createKnowledgeSource(input: {
       status: 'draft',
       version,
       contentHash,
-      socialAccountId: input.kind === 'channel_overlay' ? input.socialAccountId || null : null,
+      socialAccountId,
       metadata: input.metadata
         ? (input.metadata as Prisma.InputJsonValue)
         : Prisma.JsonNull,
@@ -495,6 +526,7 @@ export async function bindKnowledgeToAgent(input: {
     where: { id: input.sourceId, tenantId: input.tenantId },
   })
   if (!source) throw new Error('SOURCE_NOT_FOUND')
+  if (source.status !== 'approved') throw new Error('SOURCE_NOT_APPROVED')
 
   const link = await prisma.chatAgentKnowledgeSource.upsert({
     where: {

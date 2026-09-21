@@ -119,3 +119,56 @@ tables as an emergency rollback; old production code ignores them.
    - do not enable v2 flags unless the user explicitly asks
 6. If it needs code changes, branch as `cursor/<name>-<run-suffix>` from the
    review SHA. Keep any PR base set to `dev` and draft.
+
+---
+
+## 024 chat inbox conversations — PROPOSED (not applied)
+
+Date: 2026-09-21
+Branch: `cursor/respondio-pr1-schema-024-0b4c` (Respond.io parity PR-1)
+Source: `supabase/migrations/024_chat_inbox_conversations.sql`
+Review status: **source reviewed in PR — NOT APPLIED to shared Supabase**
+
+### What 024 adds (expand-only)
+
+| Object | Notes |
+|---|---|
+| `SocialAccount` nullable identity/health columns | `displayName`, `providerDisplayName`, `providerUsername`, `displayPhoneNumber`, `wabaId`, `pageId`, `avatarUrl`, `tokenStatus` (default `unknown`), token/webhook/send timestamps, `disconnectedAt` |
+| `ChatConversation` | One row per `(tenantId, socialAccountId, peerId)`; Soft status `nuevo/en_curso/hecho`; `revision` via sequence + BEFORE UPDATE trigger; tags `text[]` |
+| `ChatConversationReadState` | Per-user unread (`UNIQUE(conversationId, userId)`) |
+| `ChatMessage` nullable promoted columns | `conversationId`, `providerMessageId`, `peerId`, delivery/media fields, `duplicateOfMessageId`, `createdAt`/`updatedAt` |
+| Indexes | Non-unique only (incl. `(socialAccountId, providerMessageId)`). **No 025 partial uniques.** |
+| RLS | `service_role_bypass` on both new tables |
+
+### Explicitly out of this apply
+
+- `025_chat_inbox_uniques.sql` (partial unique on provider message id + active platform/accountId) — gated until `scripts/chat-inbox-verify.ts` reports zero collisions.
+- Runtime dual-write / conversation API / Soft UI — PR-2+.
+
+### Human gate before apply
+
+1. Fresh Vercel Blob backup (`npm run backup:*`).
+2. SecureDog / SQL review of `024_chat_inbox_conversations.sql`.
+3. Apply via gated script only:
+
+```bash
+BETSY_V2_APPLY_MIGRATIONS=1 \
+BETSY_V2_APPLY_CONFIRM_HOST=db.bmolvybsqzkeswkomgzw.supabase.co \
+BETSY_V2_APPLY_FILES=024 \
+node scripts/apply-betsy-v2-additive-sql.mjs
+```
+
+4. Dry-run backfill, then apply with host confirm:
+
+```bash
+npx tsx scripts/chat-inbox-backfill.ts --tenant=<id>
+CHAT_INBOX_BACKFILL_APPLY=1 \
+CHAT_INBOX_BACKFILL_CONFIRM_HOST=db.bmolvybsqzkeswkomgzw.supabase.co \
+npx tsx scripts/chat-inbox-backfill.ts --apply --tenant=<id>
+npx tsx scripts/chat-inbox-verify.ts --tenant=<id>
+```
+
+5. Catalog verify with `BETSY_V2_REQUIRE_024=1`.
+
+**Do not** `prisma db push` / `prisma migrate`. **Do not** deploy Prisma Client that SELECTs 024 columns before step 3.
+

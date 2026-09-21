@@ -60,6 +60,8 @@ model Tenant {
   productFields  ProductField[]
   socialAccounts SocialAccount[]
   chatMessages   ChatMessage[]
+  chatConversations ChatConversation[]
+  chatConversationReadStates ChatConversationReadState[]
   productOptionSets ProductOptionSet[]
   productOptions ProductOption[]
   businessInfo   BusinessInfo[]
@@ -299,6 +301,8 @@ model User {
   socialAccounts SocialAccount[]
   botSessions BotSession[]
   feedbackTickets FeedbackTicket[]
+  assignedChatConversations ChatConversation[] @relation("ChatConversationAssignee")
+  chatConversationReadStates ChatConversationReadState[]
   
   @@map("User")
   @@index([email])
@@ -336,6 +340,7 @@ model Client {
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   chatMessages ChatMessage[]
+  chatConversations ChatConversation[]
   orders Order[]
   
   @@index([tenantId])
@@ -842,12 +847,91 @@ model SocialAccount {
   linkedAt     DateTime @default(now())
   isActive     Boolean  @default(true)
 
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user     User   @relation(fields: [userId], references: [id])
-  messages ChatMessage[]
+  // Channel identity / health (024 — nullable; legacy rows stay valid)
+  displayName         String?
+  providerDisplayName String?
+  providerUsername    String?
+  displayPhoneNumber  String?
+  wabaId              String?
+  pageId              String?
+  avatarUrl           String?
+  tokenStatus         String    @default("unknown")
+  tokenLastCheckedAt  DateTime?
+  subscribedAt        DateTime?
+  lastWebhookAt       DateTime?
+  lastSendAt          DateTime?
+  lastErrorAt         DateTime?
+  lastErrorCode       String?
+  disconnectedAt      DateTime?
+
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User               @relation(fields: [userId], references: [id])
+  messages      ChatMessage[]
+  conversations ChatConversation[]
 
   @@unique([platform, accountId, tenantId])
   @@index([tenantId])
+  @@index([tenantId, isActive, platform])
+}
+
+// Server-side conversation row (024). Partial index on clientId is raw-SQL only
+// (WHERE clientId IS NOT NULL) — see supabase/migrations/024_*.sql.
+model ChatConversation {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  socialAccountId      String
+  peerId               String
+  peerName             String?
+  peerAvatarUrl        String?
+  clientId             String?
+  status               String   @default("nuevo")
+  assignedUserId       String?
+  aiMode               String?
+  tags                 String[] @default([])
+  lastMessageId        String?
+  lastMessageAt        DateTime
+  lastMessagePreview   String?
+  lastMessageDirection String?
+  lastInboundAt        DateTime?
+  lastOutboundAt       DateTime?
+  inboundCount         Int      @default(0)
+  messageCount         Int      @default(0)
+  revision             BigInt   @default(dbgenerated("nextval('public.\"ChatConversation_revision_seq\"')"))
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant        Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount              @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  client        Client?                    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  assignedUser  User?                      @relation("ChatConversationAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  messages      ChatMessage[]
+  readStates    ChatConversationReadState[]
+
+  @@unique([tenantId, socialAccountId, peerId])
+  @@index([tenantId, lastMessageAt(sort: Desc), id(sort: Desc)], map: "ChatConversation_tenantId_lastMessageAt_id_idx")
+  @@index([tenantId, status, lastMessageAt(sort: Desc), id(sort: Desc)], map: "ChatConversation_tenantId_status_lm_id_idx")
+  @@index([tenantId, socialAccountId, lastMessageAt(sort: Desc), id(sort: Desc)], map: "ChatConversation_tenantId_account_lm_id_idx")
+  @@index([tenantId, assignedUserId, status, lastMessageAt(sort: Desc), id(sort: Desc)], map: "ChatConversation_tenant_assignee_status_lm_idx")
+  @@index([tenantId, revision], map: "ChatConversation_tenantId_revision_idx")
+}
+
+model ChatConversationReadState {
+  id                String    @id @default(cuid())
+  tenantId          String
+  conversationId    String
+  userId            String
+  readInboundCount  Int       @default(0)
+  lastReadAt        DateTime?
+  lastReadMessageId String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([tenantId, userId], map: "ChatConversationReadState_tenantId_userId_idx")
 }
 
 model ChatMessage {
@@ -862,13 +946,37 @@ model ChatMessage {
   sentAt           DateTime
   receivedAt       DateTime?
 
-  tenant  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  account SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
-  client  Client?       @relation(fields: [clientId], references: [id])
-  order   Order?        @relation(fields: [orderId], references: [id])
+  // Promoted / delivery columns (024 — nullable; metadata kept for rollback)
+  conversationId       String?
+  providerMessageId    String?
+  peerId               String?
+  messageType          String?
+  deliveryStatus       String?
+  statusUpdatedAt      DateTime?
+  deliveredAt          DateTime?
+  readAt               DateTime?
+  failedAt             DateTime?
+  errorCode            String?
+  providerMediaId      String?
+  mediaMimeType        String?
+  mediaFilename        String?
+  duplicateOfMessageId String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  account        SocialAccount     @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  client         Client?           @relation(fields: [clientId], references: [id])
+  order          Order?            @relation(fields: [orderId], references: [id])
+  conversation   ChatConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  duplicateOf    ChatMessage?      @relation("ChatMessageDuplicates", fields: [duplicateOfMessageId], references: [id], onDelete: SetNull)
+  duplicates     ChatMessage[]     @relation("ChatMessageDuplicates")
 
   @@index([tenantId, socialAccountId, sentAt(sort: Desc)])
   @@index([tenantId])
+  @@index([conversationId, sentAt(sort: Desc), id(sort: Desc)], map: "ChatMessage_conversationId_sentAt_id_idx")
+  @@index([socialAccountId, providerMessageId], map: "ChatMessage_socialAccountId_providerMessageId_idx")
+  @@index([tenantId, createdAt, id], map: "ChatMessage_tenantId_createdAt_id_idx")
 }
 
 // ============================================================================

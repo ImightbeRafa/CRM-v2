@@ -20,7 +20,9 @@
     "test:lifecycle": "npx tsx --test src/lib/__tests__/order-lifecycle.test.ts",
     "test:pagination": "npx tsx --test src/lib/__tests__/server-pagination.test.ts",
     "test:bot-inbox": "npx tsx --test src/lib/__tests__/bot-inbox.test.ts",
-    "test:chat-harden": "npx tsx --test src/lib/__tests__/social-account-crypto.test.ts src/lib/__tests__/chat-webhook-account.test.ts src/lib/__tests__/soft-copilot-harden.test.ts src/lib/__tests__/chat-soft-copilot.test.ts src/lib/__tests__/chat-inbox.test.ts src/lib/__tests__/meta-chat-webhook.test.ts src/lib/__tests__/whatsapp-coexistence.test.ts src/lib/__tests__/soft-meta-wait-iron.test.ts src/lib/__tests__/soft-ai-worker.test.ts src/lib/__tests__/soft-ai-config-rbac.test.ts src/lib/__tests__/soft-ai-server-truth.test.ts src/lib/__tests__/soft-ai-composer.test.ts",
+    "test:chat-harden": "npx tsx --test src/lib/__tests__/social-account-crypto.test.ts src/lib/__tests__/chat-webhook-account.test.ts src/lib/__tests__/soft-copilot-harden.test.ts src/lib/__tests__/chat-soft-copilot.test.ts src/lib/__tests__/chat-inbox.test.ts src/lib/__tests__/chat-conversation-foundation.test.ts src/lib/__tests__/chat-inbox-schema.test.ts src/lib/__tests__/meta-chat-webhook.test.ts src/lib/__tests__/whatsapp-coexistence.test.ts src/lib/__tests__/soft-meta-wait-iron.test.ts src/lib/__tests__/soft-ai-worker.test.ts src/lib/__tests__/soft-ai-config-rbac.test.ts src/lib/__tests__/soft-ai-server-truth.test.ts src/lib/__tests__/soft-ai-composer.test.ts",
+    "chat:inbox:backfill": "npx tsx scripts/chat-inbox-backfill.ts",
+    "chat:inbox:verify": "npx tsx scripts/chat-inbox-verify.ts",
     "test:soft-ai": "npx tsx --test src/lib/__tests__/soft-ai-worker.test.ts src/lib/__tests__/soft-ai-config-rbac.test.ts src/lib/__tests__/soft-ai-server-truth.test.ts src/lib/__tests__/soft-ai-composer.test.ts",
     "test:archive": "npx tsx --test src/lib/__tests__/order-archive.test.ts",
     "test:tenant-ui": "npx tsx --test src/lib/__tests__/tenant-ui.test.ts",
@@ -35,7 +37,8 @@
     "betsyv2:clients:backfill": "npx tsx scripts/betsy-v2-client-backfill.ts",
     "betsyv2:statuses:classify": "npx tsx scripts/betsy-v2-terminal-statuses.ts",
     "betsyv2:verify-sql": "node scripts/verify-betsy-v2-additive-sql.mjs",
-    "betsyv2:verify-production": "node scripts/verify-betsy-v2-additive-sql.mjs --production-release"
+    "betsyv2:verify-production": "node scripts/verify-betsy-v2-additive-sql.mjs --production-release",
+    "betsyv2:verify-sql-024": "BETSY_V2_REQUIRE_024=1 node scripts/verify-betsy-v2-additive-sql.mjs"
   },
   "dependencies": {
     "@auth/core": "0.41.3",

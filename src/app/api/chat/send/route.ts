@@ -104,6 +104,14 @@ export async function POST(request: NextRequest) {
       : 'es'
 
     const isTemplate = messageType === 'template'
+    // Pack 7 deferred: outbound media (image/audio/video/document) is not supported yet.
+    // Keep /api/chat/send text + template only so the human desk never silently coerces media to text.
+    if (messageType !== 'text' && messageType !== 'template') {
+      return jsonError(
+        'Solo se admiten mensajes de texto o plantillas. El envío de media aún no está disponible.',
+        400,
+      )
+    }
     if (!recipient) {
       return jsonError('Falta destinatario del mensaje', 400)
     }

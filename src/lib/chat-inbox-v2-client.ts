@@ -12,6 +12,8 @@ import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 export const CHAT_INBOX_V2_IMPORTED_KEY = 'betsy.softCopilot.inboxV2Imported.v1'
 export const CHAT_INBOX_V2_POLL_MS = 4000
 export const CHAT_INBOX_V2_FULL_RECONCILE_MS = 120_000
+export const CHAT_INBOX_V2_LIST_PAGE_LIMIT = 50
+export const CHAT_INBOX_V2_LIST_MAX_PAGES = 40
 
 export function messageDtoToInbox(row: ChatMessageItemDto): ChatInboxMessage {
   return {
@@ -92,4 +94,92 @@ export function buildLocalImportPayload(
     })
   }
   return items
+}
+
+export type ChatInboxV2ListPage<T extends { id: string }> = {
+  conversations: T[]
+  nextCursor?: string | null
+  maxRevision?: string | null
+}
+
+export type ChatInboxV2ListWalkStopReason = 'complete' | 'repeated_cursor' | 'max_pages'
+
+export type ChatInboxV2ListWalk<T extends { id: string }> = {
+  items: T[]
+  maxRevision: string | null
+  complete: boolean
+  stopReason: ChatInboxV2ListWalkStopReason
+}
+
+export async function walkConversationListPages<T extends { id: string }>(opts: {
+  fetchPage: (cursor: string | null) => Promise<ChatInboxV2ListPage<T>>
+  maxPages?: number
+}): Promise<ChatInboxV2ListWalk<T>> {
+  const maxPages = opts.maxPages ?? CHAT_INBOX_V2_LIST_MAX_PAGES
+  const byId = new Map<string, T>()
+  const seenCursors = new Set<string>()
+  let cursor: string | null = null
+  let maxRevision: string | null = null
+  let pages = 0
+
+  while (pages < maxPages) {
+    if (cursor) {
+      if (seenCursors.has(cursor)) {
+        return {
+          items: [...byId.values()],
+          maxRevision: null,
+          complete: false,
+          stopReason: 'repeated_cursor',
+        }
+      }
+      seenCursors.add(cursor)
+    }
+
+    const page = await opts.fetchPage(cursor)
+    pages += 1
+    for (const item of page.conversations) {
+      byId.set(item.id, item)
+    }
+    if (page.maxRevision) maxRevision = page.maxRevision
+
+    const next = page.nextCursor?.trim() || null
+    if (!next) {
+      return {
+        items: [...byId.values()],
+        maxRevision,
+        complete: true,
+        stopReason: 'complete',
+      }
+    }
+    cursor = next
+  }
+
+  return {
+    items: [...byId.values()],
+    maxRevision: null,
+    complete: false,
+    stopReason: 'max_pages',
+  }
+}
+
+export function buildChatTemplateSendBody(opts: {
+  socialAccountId: string
+  recipient: string
+  template: { name: string; language: string }
+}): {
+  socialAccountId: string
+  recipient: string
+  type: 'template'
+  templateName: string
+  templateLanguage: string
+  content: string
+} {
+  return {
+    socialAccountId: opts.socialAccountId,
+    recipient: opts.recipient,
+    type: 'template',
+    templateName: opts.template.name,
+    templateLanguage: opts.template.language,
+    content: `[Plantilla] ${opts.template.name}`,
+  }
 }

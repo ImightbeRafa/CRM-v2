@@ -167,3 +167,83 @@ export function shouldIgnoreWaSessionEvent(event: unknown): boolean {
   if (typeof event === 'string' && event.startsWith('CANCEL')) return true
   return false
 }
+
+export const WA_DIRECT_OAUTH_MESSAGE_TYPE = 'wa_direct_oauth' as const
+
+export type WaDirectOauthMessage = {
+  type: typeof WA_DIRECT_OAUTH_MESSAGE_TYPE
+  ok: boolean
+  code: string
+  error: string
+}
+
+/** Same-origin popup payload from `/api/auth/whatsapp/callback`. */
+export function parseWaDirectOauthMessage(data: unknown): WaDirectOauthMessage | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+  const rec = data as Record<string, unknown>
+  if (rec.type !== WA_DIRECT_OAUTH_MESSAGE_TYPE) return null
+  return {
+    type: WA_DIRECT_OAUTH_MESSAGE_TYPE,
+    ok: rec.ok === true,
+    code: typeof rec.code === 'string' ? rec.code : '',
+    error: typeof rec.error === 'string' ? rec.error : '',
+  }
+}
+
+function fbErrorCodeCandidates(error: unknown, depth = 0): unknown[] {
+  if (error == null || depth > 3) return []
+  if (typeof error === 'number' || typeof error === 'string') return [error]
+  if (typeof error !== 'object') return []
+  const rec = error as Record<string, unknown>
+  return [
+    rec.code,
+    rec.error_code,
+    rec.errorCode,
+    rec.error_subcode,
+    rec.message,
+    rec.error_message,
+    rec.error,
+  ]
+}
+
+/** FB.login Embedded Signup fallback (SDK error 36008). */
+export function isFbSdkEmbeddedSignup36008(error: unknown): boolean {
+  const queue: Array<{ value: unknown; depth: number }> = [{ value: error, depth: 0 }]
+  const seen = new Set<unknown>()
+  while (queue.length > 0) {
+    const item = queue.shift()
+    if (!item) break
+    const { value, depth } = item
+    if (value == null || seen.has(value) || depth > 4) continue
+    if (typeof value === 'object') seen.add(value)
+    if (value === 36008 || value === '36008') return true
+    if (typeof value === 'string' && /\b36008\b/.test(value)) return true
+    if (typeof value === 'number' && value === 36008) return true
+    for (const next of fbErrorCodeCandidates(value, depth)) {
+      queue.push({ value: next, depth: depth + 1 })
+    }
+  }
+  return false
+}
+
+export function buildWhatsAppDirectOauthDialogUrl(opts: {
+  appId: string
+  redirectUri: string
+  state: string
+  configId: string
+  graphApiVersion?: string
+}): string {
+  const login = buildWhatsAppEmbeddedSignupLoginOptions(opts.configId)
+  const version = (opts.graphApiVersion || 'v24.0').replace(/^\/+|\/+$/g, '')
+  const url = new URL(`https://www.facebook.com/${version}/dialog/oauth`)
+  url.searchParams.set('client_id', opts.appId)
+  url.searchParams.set('redirect_uri', opts.redirectUri)
+  url.searchParams.set('state', opts.state)
+  url.searchParams.set('config_id', login.config_id)
+  url.searchParams.set('response_type', login.response_type)
+  url.searchParams.set('override_default_response_type', String(login.override_default_response_type))
+  url.searchParams.set('auth_type', login.auth_type)
+  url.searchParams.set('return_scopes', String(login.return_scopes))
+  url.searchParams.set('extras', JSON.stringify(login.extras))
+  return url.toString()
+}

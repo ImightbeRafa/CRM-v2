@@ -14,6 +14,7 @@ import { runSoftAiTurn } from '@/lib/soft-ai/worker'
 import { buildSoftAiServerDeps } from '@/lib/soft-ai/server-deps'
 import {
   maySoftAiMetaReply,
+  normalizeConversationAiMode,
   resolveSoftAiAgentMode,
   softAiConversationKey,
 } from '@/lib/soft-ai/agent-mode-server'
@@ -299,8 +300,17 @@ export async function maybeRunSoftAiAfterInbound(
       suppressSoftAi: true,
     })
 
-    // Persist escalated mode into flag.config.agentState (server truth)
+    // Persist escalated mode into ChatConversation.aiMode (preferred) + flag fallback.
     if (result.agentMode !== 'ai_active') {
+      const aiMode = normalizeConversationAiMode(result.agentMode) || result.agentMode
+      await db.chatConversation.updateMany({
+        where: {
+          tenantId: args.tenantId,
+          socialAccountId: args.socialAccountId,
+          peerId: args.senderId,
+        },
+        data: { aiMode },
+      })
       const existing = await db.tenantFeatureFlag.findFirst({
         where: {
           tenantId: args.tenantId,
@@ -315,10 +325,10 @@ export async function maybeRunSoftAiAfterInbound(
         const agentState =
           prev.agentState && typeof prev.agentState === 'object' ? { ...prev.agentState } : {}
         agentState[key] = {
-          mode: result.agentMode,
+          mode: aiMode,
           updatedAt: new Date().toISOString(),
           action: 'escalate',
-          staffControlled: result.agentMode === 'human',
+          staffControlled: aiMode === 'human',
         }
         await db.tenantFeatureFlag.update({
           where: { id: existing.id },

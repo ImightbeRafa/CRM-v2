@@ -6,7 +6,9 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import {
+  compareMessageOrder,
   deriveConversationPeer,
+  toMessageDate,
   truncatePreview,
 } from '@/lib/chat-conversation-foundation'
 import { normalizeClientPhone } from '@/lib/order-lifecycle'
@@ -70,6 +72,37 @@ export type DualWriteResult =
       reason: 'missing_peer' | 'literal_unknown' | 'error'
       error?: string
     }
+
+/** True when dual-write persisted or reconciled to a concrete row (including echo-first). */
+export function isPersistedDualWrite(
+  write: DualWriteResult,
+): write is Extract<DualWriteResult, { ok: true }> & {
+  messageId: string
+  conversationId: string
+} {
+  return write.ok === true && Boolean(write.messageId && write.conversationId)
+}
+
+export function shouldReplaceConversationPreview(
+  current: { lastMessageAt: Date | null; lastMessageId: string | null },
+  incoming: { sentAt: Date; messageId: string },
+): boolean {
+  if (!current.lastMessageAt) return true
+  return (
+    compareMessageOrder(
+      { sentAt: current.lastMessageAt, id: current.lastMessageId || '' },
+      { sentAt: incoming.sentAt, id: incoming.messageId },
+    ) < 0
+  )
+}
+
+export function shouldAdvanceConversationTimestamp(
+  current: Date | null,
+  incoming: Date,
+): boolean {
+  if (!current) return true
+  return toMessageDate(incoming).getTime() > toMessageDate(current).getTime()
+}
 
 function isP2002(error: unknown): boolean {
   return (
@@ -194,17 +227,39 @@ async function bumpConversationAfterInsert(
     platform?: string | null
   },
 ) {
+  await tx.$queryRaw`SELECT 1 FROM "ChatConversation" WHERE id = ${args.conversationId} FOR UPDATE`
+
+  const current = await tx.chatConversation.findUnique({
+    where: { id: args.conversationId },
+    select: {
+      lastMessageAt: true,
+      lastMessageId: true,
+      lastInboundAt: true,
+      lastOutboundAt: true,
+    },
+  })
+  if (!current) return
+
   const data: Prisma.ChatConversationUpdateInput = {
-    lastMessageId: args.messageId,
-    lastMessageAt: args.sentAt,
-    lastMessagePreview: truncatePreview(args.content),
-    lastMessageDirection: args.direction,
     messageCount: { increment: 1 },
   }
+  if (
+    shouldReplaceConversationPreview(
+      { lastMessageAt: current.lastMessageAt, lastMessageId: current.lastMessageId },
+      { sentAt: args.sentAt, messageId: args.messageId },
+    )
+  ) {
+    data.lastMessageId = args.messageId
+    data.lastMessageAt = args.sentAt
+    data.lastMessagePreview = truncatePreview(args.content)
+    data.lastMessageDirection = args.direction
+  }
   if (args.direction === 'inbound') {
-    data.lastInboundAt = args.sentAt
     data.inboundCount = { increment: 1 }
-  } else {
+    if (shouldAdvanceConversationTimestamp(current.lastInboundAt, args.sentAt)) {
+      data.lastInboundAt = args.sentAt
+    }
+  } else if (shouldAdvanceConversationTimestamp(current.lastOutboundAt, args.sentAt)) {
     data.lastOutboundAt = args.sentAt
   }
   if (!args.existingPeerName && args.peerName) {

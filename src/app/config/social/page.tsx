@@ -6,8 +6,10 @@ import { useRouter } from 'next/navigation'
 import {
   buildWhatsAppEmbeddedSignupLoginOptions,
   extractWaEmbeddedSignupAssets,
+  isFbSdkEmbeddedSignup36008,
   isWaEmbeddedSignupFinishEvent,
   isWaEmbeddedSignupMessage,
+  parseWaDirectOauthMessage,
   shouldIgnoreWaSessionEvent,
   type WaEmbeddedSignupMessage,
 } from '@/lib/whatsapp-embedded-signup'
@@ -238,6 +240,33 @@ export default function SocialConfigPage() {
               'Meta no devolvió Páginas. Revisa el mensaje en la ventana emergente (admin de Página + IG Empresa).',
             )
           }
+        } else {
+          const direct = parseWaDirectOauthMessage(data)
+          if (direct) {
+            if (!direct.ok || direct.error) {
+              setConnectingWhatsApp(false)
+              setStatusMessage(
+                direct.error
+                  ? `Error de WhatsApp OAuth: ${direct.error}`
+                  : 'La conexión de WhatsApp fue cancelada.',
+              )
+              setShowManualWhatsApp(true)
+              return
+            }
+            const code = direct.code.trim()
+            if (!code) {
+              setConnectingWhatsApp(false)
+              setStatusMessage(
+                'No se recibió código de autorización de WhatsApp. Usá el vínculo manual.',
+              )
+              setShowManualWhatsApp(true)
+              return
+            }
+            waSignupPendingRef.current.code = code
+            // Never forceTokenOnly here — exchanging a single-use code without
+            // FINISH phone/WABA assets cannot complete the connection.
+            void tryExchangeWhatsAppSignupRef.current(false)
+          }
         }
         return
       }
@@ -269,6 +298,54 @@ export default function SocialConfigPage() {
     return () => window.removeEventListener('message', onMessage)
   }, [])
 
+  async function launchWhatsAppDirectOauthFallback() {
+    setConnectingWhatsApp(true)
+    setStatusMessage('FB.login no pudo abrir Embedded Signup. Probando el flujo directo…')
+    waSignupPendingRef.current = {}
+    try {
+      const res = await fetch('/api/auth/whatsapp/direct-oauth', { credentials: 'same-origin' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.oauthUrl) {
+        setStatusMessage(
+          json.error ||
+            json.details ||
+            'No se pudo iniciar el OAuth directo de WhatsApp. Usá el vínculo manual.',
+        )
+        setShowManualWhatsApp(true)
+        setConnectingWhatsApp(false)
+        return
+      }
+
+      const popup = window.open(String(json.oauthUrl), 'whatsapp_direct_oauth', 'width=640,height=760')
+      if (!popup) {
+        setStatusMessage(
+          'El navegador bloqueó la ventana emergente. Permite popups e intenta de nuevo.',
+        )
+        setConnectingWhatsApp(false)
+        return
+      }
+
+      const checkClosed = window.setInterval(() => {
+        if (!popup.closed) return
+        window.clearInterval(checkClosed)
+        const pending = waSignupPendingRef.current
+        if (pending.exchanging) return
+        const assets = extractWaEmbeddedSignupAssets(pending.message || undefined)
+        if (assets.phoneNumberId || assets.wabaId) return
+        if (pending.code) {
+          setStatusMessage(
+            'Completá el registro en la ventana de Meta, o vinculá el número manualmente. No se intercambia el código sin WABA/teléfono.',
+          )
+          setShowManualWhatsApp(true)
+        }
+        setConnectingWhatsApp(false)
+      }, 1000)
+    } catch {
+      setStatusMessage('Error al iniciar el OAuth directo de WhatsApp.')
+      setConnectingWhatsApp(false)
+    }
+  }
+
   function launchWhatsAppEmbeddedSignup() {
     const FB = window.FB
     if (!FB || !FB_LOGIN_CONFIG_ID) {
@@ -286,6 +363,10 @@ export default function SocialConfigPage() {
       (response: any) => {
         const handleResponse = async () => {
           try {
+            if (isFbSdkEmbeddedSignup36008(response?.error) || isFbSdkEmbeddedSignup36008(response)) {
+              await launchWhatsAppDirectOauthFallback()
+              return
+            }
             if (!response || response.status === 'unknown') {
               setStatusMessage('Conexión de WhatsApp cancelada.')
               setConnectingWhatsApp(false)

@@ -1,3 +1,19 @@
+## 2026-09-21 — PR-2 Bugbot follow-up (send/echo + Soft AI + OAuth)
+
+- Verified 6/6 #44 Bugbot notes against `origin/dev` `ed598fdd`. All real.
+- HIGH send/echo (live, ungated): first dual-write now stamps Meta `providerMessageId`;
+  identified echo-first duplicates finalize as success. Residual: 025 unique still unapplied.
+- HIGH Soft AI worker escalate writes `ChatConversation.aiMode` before flag `agentState`.
+- HIGH direct OAuth: same-origin `wa_direct_oauth` listener + 36008 launcher; dialog URL
+  uses Embedded Signup `config_id` + coexistence extras. Code is not exchanged without
+  FINISH phone/WABA assets.
+- MED aggregates: preview/`lastMessageAt` only advance on newer `(sentAt, id)`; inbound
+  and outbound maxima are independent. Counts still increment.
+- MED v2 list follows `nextCursor` (flag still off). MED v2 template CTA POSTs `/api/chat/send`.
+- Soft chrome and `/api/bot/**` untouched. 024/025 not applied. `chat_inbox_v2` stays off.
+- Prove: focused write/soft-ai/oauth/v2 tests + `npm run test:chat-harden` (132 pass).
+  Lint existing warnings only. Local `npm run build` pass.
+
 ## 2026-09-21 — PR-2 Respond.io write+read v2
 
 - Dual-write ChatConversation + ChatMessage on webhook/send/soft-ai outbound

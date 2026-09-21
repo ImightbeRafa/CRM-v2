@@ -22,15 +22,18 @@ import {
 } from '@/lib/chat-soft-copilot'
 import type { ChatConversationListItemDto } from '@/lib/chat-conversation-api'
 import {
+  buildChatTemplateSendBody,
   buildLocalImportPayload,
   CHAT_INBOX_V2_FULL_RECONCILE_MS,
   CHAT_INBOX_V2_IMPORTED_KEY,
+  CHAT_INBOX_V2_LIST_PAGE_LIMIT,
   CHAT_INBOX_V2_POLL_MS,
   listDtoToSoftConversation,
   mergeListDtoIntoMap,
   messageDtoToInbox,
   softConversationKeyFromDto,
   sortedConversationDtos,
+  walkConversationListPages,
 } from '@/lib/chat-inbox-v2-client'
 import {
   applyAgentControl,
@@ -125,22 +128,41 @@ export function SoftCopilotInboxV2() {
   }, [])
 
   const fetchFullList = useCallback(async () => {
-    const res = await fetch('/api/chat/conversations?limit=50', {
-      credentials: 'same-origin',
-      cache: 'no-store',
-    })
-    const parsed = await parseApiJson<{
-      success?: boolean
-      conversations?: ChatConversationListItemDto[]
-      maxRevision?: string
-    }>(res)
-    if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.conversations) return
-    setDtoMap((prev) => mergeListDtoIntoMap(prev, parsed.data.conversations!))
-    if (parsed.data.maxRevision) {
-      maxRevisionRef.current = BigInt(parsed.data.maxRevision)
+    try {
+      const walked = await walkConversationListPages({
+        fetchPage: async (cursor) => {
+          const qs = new URLSearchParams({ limit: String(CHAT_INBOX_V2_LIST_PAGE_LIMIT) })
+          if (cursor) qs.set('cursor', cursor)
+          const res = await fetch(`/api/chat/conversations?${qs.toString()}`, {
+            credentials: 'same-origin',
+            cache: 'no-store',
+          })
+          const parsed = await parseApiJson<{
+            success?: boolean
+            conversations?: ChatConversationListItemDto[]
+            nextCursor?: string | null
+            maxRevision?: string
+          }>(res)
+          if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.conversations) {
+            throw new Error('list_failed')
+          }
+          return {
+            conversations: parsed.data.conversations,
+            nextCursor: parsed.data.nextCursor ?? null,
+            maxRevision: parsed.data.maxRevision ?? null,
+          }
+        },
+      })
+      if (!walked.complete) return
+      setDtoMap(mergeListDtoIntoMap(new Map(), walked.items))
+      if (walked.maxRevision) {
+        maxRevisionRef.current = BigInt(walked.maxRevision)
+      }
+      setLastSyncAt(Date.now())
+      lastFullReconcileRef.current = Date.now()
+    } catch {
+      // Keep the previous map if a mid-walk page fails.
     }
-    setLastSyncAt(Date.now())
-    lastFullReconcileRef.current = Date.now()
   }, [])
 
   const fetchChanges = useCallback(async () => {
@@ -430,6 +452,88 @@ export function SoftCopilotInboxV2() {
     }
   }
 
+  async function openTemplatePicker() {
+    if (!selectedConversation) return
+    setSendError(null)
+    setTemplatePickerOpen(true)
+    setTemplatesLoading(true)
+    setTemplatesError(null)
+    try {
+      const res = await fetch(
+        `/api/chat/templates?socialAccountId=${encodeURIComponent(selectedConversation.socialAccountId)}`,
+        { credentials: 'same-origin', cache: 'no-store' },
+      )
+      const parsed = await parseApiJson<{
+        success?: boolean
+        templates?: SoftWaTemplateOption[]
+        error?: string
+      }>(res)
+      if (!parsed.ok) {
+        setTemplatesError(humanizeChatSendError(parsed.error, parsed.status))
+        setTemplates([])
+        return
+      }
+      if (!res.ok || !parsed.data.success) {
+        setTemplatesError(humanizeChatSendError(parsed.data.error, res.status))
+        setTemplates([])
+        return
+      }
+      setTemplates(Array.isArray(parsed.data.templates) ? parsed.data.templates : [])
+    } catch (e: unknown) {
+      setTemplatesError(e instanceof Error ? e.message : 'Error al cargar plantillas')
+      setTemplates([])
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }
+
+  async function handleSendTemplate(template: SoftWaTemplateOption) {
+    if (!selectedConversation) return
+    if (selectedConversation.recipientId === 'unknown') {
+      setSendError('Selecciona una conversación para responder')
+      return
+    }
+
+    setSending(true)
+    setSendError(null)
+    setFailedOutboundId(null)
+    try {
+      const res = await fetch('/api/chat/send', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          buildChatTemplateSendBody({
+            socialAccountId: selectedConversation.socialAccountId,
+            recipient: selectedConversation.recipientId,
+            template,
+          }),
+        ),
+      })
+      const parsed = await parseApiJson<{ success?: boolean; error?: string }>(res)
+      if (!parsed.ok) {
+        setSendError(humanizeChatSendError(parsed.error, parsed.status))
+        setFailedOutboundId('pending-fail')
+        return
+      }
+      if (!res.ok || !parsed.data.success) {
+        setSendError(humanizeChatSendError(parsed.data.error, res.status))
+        setFailedOutboundId('pending-fail')
+        return
+      }
+      setTemplatePickerOpen(false)
+      if (selectedConversation.status === 'nuevo') updateStatus('en_curso')
+      if (selectedConversationId) {
+        await loadThreadMessages(selectedConversationId, { tailOnly: false })
+        await fetchChanges()
+      }
+    } catch (err: unknown) {
+      setSendError(humanizeChatSendError(err instanceof Error ? err.message : 'Error al enviar'))
+    } finally {
+      setSending(false)
+    }
+  }
+
   async function handleSendMessage(e: FormEvent) {
     e.preventDefault()
     if (!selectedConversation || !messageInput.trim()) return
@@ -513,9 +617,13 @@ export function SoftCopilotInboxV2() {
     templatesLoading,
     templatesError,
     showTemplatePicker: templatePickerOpen,
-    onOpenTemplatePicker: () => setTemplatePickerOpen(true),
+    onOpenTemplatePicker: () => {
+      void openTemplatePicker()
+    },
     onCloseTemplatePicker: () => setTemplatePickerOpen(false),
-    onSendTemplate: () => {},
+    onSendTemplate: (tpl: SoftWaTemplateOption) => {
+      void handleSendTemplate(tpl)
+    },
     agentMode: (selectedDto?.aiMode || selectedAgentState.mode) as typeof selectedAgentState.mode,
     onTakeOver: () => void setAgentControl('take_over'),
     onPauseAi: () => void setAgentControl('pause'),

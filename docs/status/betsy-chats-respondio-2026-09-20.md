@@ -58,9 +58,9 @@ npm: `chat:scale:seed` · `chat:scale:bench` · `chat:webhook:burst` · `test:ch
 
 Still Meta-blocked for non-tester IG: Advanced Access / App Review (ops).
 
-### NEXT — Agent Layer (A0 docs, awaiting Rafael GO)
+### NEXT — Agent Layer A1 (A0 plan GO'd + amended 2026-09-21 CR, PR #53)
 
-Rafael GO 2026-09-21 CR: make `/chats` agent-driven (Respond.io-style AI Agents). Binding **SocialAccount → ChatAgent** (Forge WA ≠ Forge IG) with tenant default fallback; **Forge WhatsApp sales agent** pilot; **Grok 4.6** default model. Plan: [`docs/plans/betsy-agent-layer-fable-2026-09-21.md`](../plans/betsy-agent-layer-fable-2026-09-21.md) — §8 lists the decisions needed before any A1 code. Today's Soft AI worker is a regex heuristic (no LLM); A1 swaps the turn runtime behind a new default-off flag `chat_agent_layer_v1`.
+Rafael GO 2026-09-21 CR: make `/chats` agent-driven (Respond.io-style AI Agents). Binding **SocialAccount → ChatAgent** (Forge WA ≠ Forge IG) with tenant default fallback; **Forge WhatsApp sales agent** pilot (`SocialAccount.id` `cmuahn5y90001l504y6kksiek`, +506 6104 3737 "Forge Costa Rica"); **Grok 4.6 only**; new agents default `ai_suggest`; `ChatAgentTurn.outputText` 90 days. Plan: [`docs/plans/betsy-agent-layer-fable-2026-09-21.md`](../plans/betsy-agent-layer-fable-2026-09-21.md) — **§8 is decided**; §2.5 gates + §2.7 operator surfaces (Probar, panic controls, trust labels) + Advisor musts 1–8 are **A1 blockers** with tests 1.11–1.22. Hard gate: no `ai_full` Meta send until the dark/`ai_suggest` pass is recorded in `aiFullUnlock`. Today's Soft AI worker is a regex heuristic (no LLM); A1 swaps the turn runtime behind a new default-off flag `chat_agent_layer_v1`. **A1 opens after #53 squash-merge.**
 
 ### BLOCKED — Meta ops / product HOLD
 

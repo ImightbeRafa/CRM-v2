@@ -13,8 +13,9 @@ Append-only. Newest entries at the top.
   nothing. Report includes `aggregateRepair`.
 - Offline `node:test` in `chat-inbox-backfill-repair.test.ts` (added to
   `test:chat-harden`). No 024/025/026/027/027b/028/029/030 apply, no shared `--apply`, staff bot untouched.
-- Rebased onto `dev` after #64 (`2fb0c69` AL2-A1 text agent layer; parent
-  `8f689b6` #63). Resume-aggregate repair kept. #64 AL2-A1 (classifier,
+- Rebased onto `dev` after #65 (`630dd99` docs-only AL2-A1 UX redo plan;
+  parent `2fb0c69` #64). Resume-aggregate repair kept. #65 UX redo plan
+  left as on `dev` (docs only; not implemented). #64 AL2-A1 (classifier,
   brand facts, shortcuts, Probar; 029 gated, `chat_agent_layer_v1` off)
   left as on `dev` (no overlay). #63 verify-betsy skill / helpers left as
   on `dev` (no overlay). #62 Arc 2 plan docs left as on `dev` (no overlay).
@@ -28,10 +29,10 @@ Append-only. Newest entries at the top.
   `aiFullUnlock` empty), #51 self-serve, #50 media / Soft-AI queue /
   template cache / windowing, #46 channel identity, #45 send/echo stamp,
   escalate `aiMode`, aggregate monotonicity, and WA OAuth/36008 left as on
-  `dev`. Did not import #47 about:blank or #49 charset/Graph cap.
-  024/025/026/027/027b/028/029/030 SQL still not applied;
-  `chat_inbox_v2` / `chat_agent_layer_v1` not toggled; `aiFullUnlock` not
-  written.
+  `dev`. Did not import #47 about:blank or #49 charset/Graph cap or #39
+  tagged outbound fallback. 024/025/026/027/027b/028/029/030 SQL still
+  not applied; `chat_inbox_v2` / `chat_agent_layer_v1` not toggled;
+  `aiFullUnlock` not written.
 - Prove (post-#64 rebase onto `2fb0c69`): `npx tsx --test src/lib/__tests__/chat-inbox-backfill-repair.test.ts`
   (8 pass) + `npm run test:chat-harden` (234 pass; 209 post-#63 plus #64 AL2-A1 suites).
 

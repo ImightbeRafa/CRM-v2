@@ -833,3 +833,21 @@ Append-only. Newest entries at the top.
   Playwright 3/3; security 71/71; lifecycle 8/8; pagination 8/8; inbox 8/8; archive 6/6;
   tenant UI 7/7; backups 8/8; bot Grok; upstream payroll/finance; read-only Logistics
   archive regression. No SQL, shared-data/provider write, remote push, or deployment.
+
+# 2026-09-21 — Betsy Agent Layer plan (A0, docs only)
+
+- Added `docs/plans/betsy-agent-layer-fable-2026-09-21.md`: Fable 5.1 phased plan (A0–A5)
+  to make Soft `/chats` agent-driven (Respond.io-style AI Agents) per Rafael GO 2026-09-21 CR
+  — SocialAccount → ChatAgent binding with tenant default fallback (conversation override
+  later), Forge WhatsApp sales agent pilot (`cmhsibjue0004js04gie724nx`), Grok 4.6 default
+  model with hybrid cheap tier documented as optional cost control only. Sol
+  (`gpt-5.6-sol-high`) plan-mode review folded in (§9).
+- Verified in code and recorded as gaps: `runSoftAiTurn` is a regex heuristic (no LLM);
+  Soft direct Graph sender skips the WA 24 h window check; `ChatAutomationJob.payload` is
+  nulled on completion (usage needs its own `ChatAgentTurn` table); history is filtered by
+  metadata peer, not `conversationId`.
+- Refreshed `docs/status/betsy-chats-respondio-2026-09-20.md` to tip `bd70517` (Phases 1–5
+  LIVE; P4/P5 DONE) with a NEXT pointer to the Agent Layer plan; added a follow-on pointer
+  in the Respond.io parity plan header.
+- Prove: docs only — no product TypeScript, SQL, UI, flag, or Supabase change. Soft chrome,
+  `src/lib/bot/**`, `src/app/api/bot/**` untouched (`git diff --stat` = `docs/**`).

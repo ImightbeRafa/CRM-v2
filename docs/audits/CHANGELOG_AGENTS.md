@@ -13,9 +13,10 @@ Append-only. Newest entries at the top.
   nothing. Report includes `aggregateRepair`.
 - Offline `node:test` in `chat-inbox-backfill-repair.test.ts` (added to
   `test:chat-harden`). No 024/025/026/027/027b/028/029/030 apply, no shared `--apply`, staff bot untouched.
-- Rebased onto `dev` after #62 (`938f7bc` docs-only Agent Layer Arc 2 plan;
-  parent `67fdb59` #61). Resume-aggregate repair kept. #62 Arc 2 plan docs
-  left as on `dev` (no overlay). #61 agentes contrast / in-page conocimiento /
+- Rebased onto `dev` after #63 (`8f689b6` verify-betsy skill; parent
+  `938f7bc` #62). Resume-aggregate repair kept. #63 verify-betsy skill /
+  helpers left as on `dev` (no overlay). #62 Arc 2 plan docs left as on
+  `dev` (no overlay). #61 agentes contrast / in-page conocimiento /
   empty `config/loading` left as on `dev` (no overlay). #60 conocimiento page
   type left as on `dev`. #59 desk polish (`SoftCopilotInboxV2` /
   `SoftThreadPane` / send route / `chat-inbox-v2-client`) left as on `dev`.

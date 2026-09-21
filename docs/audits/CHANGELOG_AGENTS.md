@@ -1,3 +1,60 @@
+# Agent Changelog
+
+Append-only. Newest entries at the top.
+
+## 2026-09-21 — #45 post-merge Bugbot follow-up (36008 popup + echo finalize)
+
+- Verified 3/3 #45 Bugbot notes against `origin/dev` `1d667331`. All real (claim 3
+  partial: FINISH-without-code stuck the spinner; in-flight exchange usually
+  cleared in `finally`).
+- HIGH 36008: reserve named `about:blank` popup on the click before `FB.login`;
+  navigate that handle after `/direct-oauth` fetch. No post-await `window.open`.
+- MED echo-first finalize: `finalizeOutboundDeliveryWithClient` still merges
+  send metadata and upserts sender `ChatConversationReadState` when the echo
+  row is already `sent`/`delivered`/`read`. `lastOutboundAt` stays monotonic.
+- MED popup close: settle connecting unless exchange is in flight; exchange
+  fetch uses `AbortSignal.timeout(30s)`. OAuth `code` is never POSTed without
+  phone/WABA assets (token-only waiting only). Direct-oauth listener still
+  calls `tryExchangeWhatsAppSignupRef.current(false)`.
+- Rebased onto `origin/dev` `4561866` (#74 Instagram reconnect updates
+  SocialAccount instead of P2002 500; parent `0df02d3` #72 P4 agent-sent
+  label from send snapshot; #71 `f358a82` P3 audited unlock gate; #70
+  `aa43dc0` P2 Probar matches live Soft agent turn; #69 `4bcce82` P0+P1
+  Soft agent Grok 4.7 allowlist; #68 `c664219` docs-only Forge WA
+  Probar↔live; #67 `63be5e7` sales-agent pipeline SoT; #66 `8dd8aa9`
+  AL2-A1 UX redo; #65 `630dd99` docs-only UX redo plan; #64 `2fb0c69`
+  AL2-A1; #63 `8f689b6` verify-betsy skill). Kept already-merged #74
+  Instagram reconnect (no #47 overlay on IG callback/complete or
+  `instagram-social-account.ts`), #72 P4 (did not implement P5+; did
+  not write `aiFullUnlock`; did not PATCH the Forge agent), #71 P3,
+  #70 P2, #69 P0+P1 allowlist, #68 Forge WA Probar↔live plan (docs
+  only; did not implement remaining packs), #67 sales-agent pipeline
+  SoT (docs only; did not implement the pipeline), #66 UX redo
+  (paste-import, plain atajos, WhatsApp Probar; 029 gated), #65 UX
+  redo plan (docs only), #64 AL2-A1 (029 gated, `chat_agent_layer_v1`
+  off; no #47 overlay on agent text-layer files), #63 skill (no #47
+  diff), #62 Arc 2 plan docs, #61 contrast / in-page conocimiento +
+  empty `config/loading.tsx`, #60 conocimiento `useState<string>`,
+  #59 desk polish, #58 A2 knowledge (028 gated), #57 introductionNames
+  + agentes Identidad/Voz, #56 agentes single-write +
+  audit-after-commit, #55 `session-permissions` import on
+  `/config/social`, #54 Agent Layer runtime (flag off; `aiFullUnlock`
+  empty; 027/027b/028/029/030 not applied), #51 `update_config` /
+  Reconectar, #50 media/Soft-AI queue, and #46 names/logos. Overlaid
+  36008 placeholder + spinner settle + echo finalize. Kept #64
+  `ensureConversation` allowlist (empty = nobody) in
+  `chat-conversation-write.ts`. Did not import #39 tagged outbound
+  fallback, #43 backfill repair, or #49 charset/Graph cap. Soft chrome
+  HOLD (Rail / SlimNav / InboxBuckets untouched; `SoftThreadPane`
+  footer is #72 on `origin/dev` with no #47 overlay). Did not take
+  #52 or #73 as a writer. Did not implement extra UX beyond the rebase
+  overlay.
+- Soft chrome and `/api/bot/**` untouched. 024/025/026/027/027b/028/029/030 not
+  applied. `chat_inbox_v2` / `chat_agent_layer_v1` not toggled. `aiFullUnlock`
+  not written. Did not touch PRs #39/#41/#43/#49/#52/#73.
+- Prove pending this rebase (focused coexistence/write/oauth + `test:chat-harden`
+  + `test:soft-ai-agent`).
+
 ## 2026-09-23 — Instagram reconnect no longer 500s on SocialAccount P2002
 
 - `upsertInstagramSocialAccount` updates the same-tenant Instagram row (active or
@@ -325,10 +382,6 @@
 - Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; `src/lib/bot/**` untouched.
 - Bench numbers left **pending local postgres** in this Cloud Agent (no Docker).
 
-# Agent Changelog
-
-Append-only. Newest entries at the top.
-
 ## 2026-09-21 — PR-3 channel identity (names / logos / Connect naming)
 
 - Persist WA/IG provider identity at connect (`exchange`, IG complete/callback shared upsert).
@@ -338,10 +391,6 @@ Append-only. Newest entries at the top.
 - Soft AI `canalContext` line `Canal: WhatsApp · {displayName}`; fallback never blank; IG numeric-id `@handle` bug fixed.
 - Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; bot paths untouched.
 - One-off: `scripts/chat-account-identity-backfill.ts` (dry-run default).
-
-# Agent Changelog
-
-Append-only. Newest entries at the top.
 
 ## 2026-09-21 — PR-2 Bugbot follow-up (send/echo + Soft AI + OAuth)
 
@@ -368,10 +417,6 @@ Append-only. Newest entries at the top.
 - Conversation API + SoftCopilotInbox v2 behind `chat_inbox_v2` (default off)
 - Shipped gated `025_chat_inbox_uniques.sql` (NOT applied; not in default apply)
 - Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; bot paths untouched
-
-# Agent Changelog
-
-Append-only. Newest entries at the top.
 
 ## 2026-09-21 — Respond.io PR-1: chat inbox schema foundation (024)
 

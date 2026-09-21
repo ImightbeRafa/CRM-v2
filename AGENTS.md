@@ -8,9 +8,15 @@ NextAuth). It is not a monorepo — one dev server serves the whole product
 Standard commands live in `package.json` and `DOCUMENTATION.md`; notes below only
 cover non-obvious setup/run gotchas.
 
+### Coding model (Rafael lock)
+- Cursor coding on this repo uses **Grok 4.7 high-fast** (`grok-4.7-high-fast`)
+  for implementation and verification. See `.cursor/rules/coding-model-grok-4.7.mdc`.
+  Do not merge to `dev` unless Rafael explicitly says to merge.
+
 ### Agent OS & audits
 - Skill: `.cursor/skills/executor-advisor-loop/SKILL.md` (Sol-orchestrated Executor/Advisor;
-  Sol model `gpt-5.6-sol-high`; parent session dispatches parallel read-only scouts).
+ Sol model `gpt-5.6-sol-high`; parent session dispatches parallel read-only scouts).
+ Coding implementation stays on Grok 4.7 high-fast (rule above).
 - Command: `.cursor/commands/codebase-audit.md` for Phase 0/1 slim & structure audits.
 - Living ledgers (update after every slice): [`docs/audits/`](docs/audits/README.md)
   — Phase 0 dead code, Phase 1 WIP, safety gates, agent changelog.

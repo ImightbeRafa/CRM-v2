@@ -1,6 +1,6 @@
 # Betsy `/chats` → Agent Layer (Respond.io-style AI Agents) — phased plan
 
-> **Status (2026-09-21 CR):** **A0 docs only — awaiting Rafael §8 GO before any A1 code.** Formalizes the 2026-09-21 CR GO: *SocialAccount → ChatAgent binding, Forge WhatsApp sales agent pilot, Grok 4.6 default*. Soft chrome Phase 6 **HOLD**; staff bot **HARD LOCK**.
+> **Status (2026-09-21 CR):** **A0 docs only — awaiting Rafael §8 GO before any A1 code.** Formalizes the 2026-09-21 CR GO: *SocialAccount → ChatAgent binding, Forge WhatsApp sales agent pilot, **Grok 4.6 only** as runtime default (Rafael reconfirmed 2026-09-21: no dual-model router in v1)*. Soft chrome Phase 6 **HOLD**; staff bot **HARD LOCK**.
 >
 > **Parent plan / live status:** [`docs/plans/betsy-respondio-parity-fable-2026-09-20.md`](./betsy-respondio-parity-fable-2026-09-20.md) (Phases 1–5 LIVE) · [`docs/status/betsy-chats-respondio-2026-09-20.md`](../status/betsy-chats-respondio-2026-09-20.md) · tip `dev` @ `bd70517` (PR-5 #51).
 >
@@ -180,7 +180,7 @@ Everything is re-read at send time, not trusted from the start of the turn:
 3. Conversation `aiMode === 'ai_active'` (existing check).
 4. `SocialAccount.isActive && tokenStatus ∉ {expired, revoked}` and `disconnectedAt IS NULL`.
 5. **WhatsApp 24 h window**: `waWindowOpenFromInbound(platform, conversation.lastInboundAt)` from `chat-conversation-api.ts`. Closed → turn `window_closed`, no free-text send, no automatic template (templates stay human-initiated in v1).
-6. Tenant daily token cap not exceeded (§5.4).
+6. Tenant daily token cap not exceeded (§5.3).
 7. Output passes the provenance validator (§3.4): no monetary claim without a matching tool result.
 
 ### 2.6 Runtime flow (A1)
@@ -289,7 +289,7 @@ Reads `InventoryItem` with the **runtime** `tenantId` (never a model-supplied id
 
 ### 5.1 Locked default — Grok 4.6 (xAI) for live agent turns
 
-Rafael GO 2026-09-21: **Grok 4.6 only** for Agent Layer v1 runtime; **no dual-model router in v1**. `ChatAgent.model` is stored per agent (so a later cheaper tier needs no migration) but the v1 allowlist is exactly `['grok-4.6']`.
+Rafael GO 2026-09-21 (reconfirmed the same day): **Grok 4.6 only** as the Agent Layer runtime default; **no dual-model router in v1** — not designed, not phased, not an acceptance requirement. `ChatAgent.model` is a text column so a future allowlist change needs no migration, but the v1 allowlist is exactly `['grok-4.6']` and the runtime rejects anything else.
 
 Runtime settings (Soft-only client, `src/lib/soft-ai/llm/client.ts`):
 
@@ -308,15 +308,11 @@ Runtime settings (Soft-only client, `src/lib/soft-ai/llm/client.ts`):
 
 | Path | Model | Input $/1M | Output $/1M | Source / status |
 |---|---|---:|---:|---|
-| **Live agent turns (v1 default)** | Grok 4.6 | **≈ $2** | **≈ $6** | xAI list price for < 200k-token prompts — CoS research 2026-08-30 ([PARKED: Admin usage, model cost vs credits](https://app.notion.com/p/3ccbc39c41ae81de8dfdc7c32b4e3676)) reconfirmed in the 2026-09-21 brainstorm. **Locked.** |
-| Optional cheap FAQ tier (hybrid, A5+ footnote) | TBD (e.g. a small/fast xAI or other provider model) | verify at A5 | verify at A5 | **Documentation only.** CoS fills current list price from the provider page when/if §8 #11 is GO'd. No number is committed here to avoid stale pricing in a plan. |
-| Escalation tier in hybrid | Grok 4.6 | ≈ $2 | ≈ $6 | Same as default |
+| **Live agent turns (v1 — the only path)** | Grok 4.6 | **≈ $2** | **≈ $6** | xAI list price for < 200k-token prompts — CoS research 2026-08-30 ([PARKED: Admin usage, model cost vs credits](https://app.notion.com/p/3ccbc39c41ae81de8dfdc7c32b4e3676)) reconfirmed in the 2026-09-21 brainstorm. **Locked.** |
 
-### 5.3 Optional hybrid (cost control, **not** the default)
+*Later cost-control footnote (not a phase, not a decision, not an acceptance requirement): if per-tenant spend ever becomes material, a cheaper model for FAQ-only agents could be considered under a separate Rafael GO; nothing in A1–A5 designs, prices, or tests for it.*
 
-If per-tenant cost becomes material, A5 may add a **classifier-free** hybrid: FAQ-only agents (`operationMode=ai_full`, `enabledTools=['search_approved_knowledge']`, no order/inventory tools) may run on the cheap tier; any turn that needs a tool, mentions money, or fails the provenance validator is re-run on Grok 4.6. Preconditions: `ChatAgent.model` allowlist widened by a one-line policy change, `pricingVersion` bumped, evaluation fixtures (A5) show no quality regression on the Forge FAQ set. Until then, one model.
-
-### 5.4 Cost formula and cap
+### 5.3 Cost formula and cap
 
 Per turn: `cost = (uncachedInput × 2 + output × 6 + cachedInput × cachedPrice) / 1e6` USD. Do **not** double-count `reasoningTokens` if the provider already bills them as output.
 
@@ -340,7 +336,7 @@ A0 docs (this PR) → A1 core runtime Forge WA (027) → A2 knowledge + grounded
 | **A2 "knowledge"** | SQL `028_chat_agent_knowledge_actions.sql` (`ChatKnowledgeSource`, `ChatAgentKnowledgeSource`, `ChatAgentSuggestion`, `ChatAgentPendingAction`); knowledge CRUD + approve API; Brand Book / policy / channel overlay assembly; `search_approved_knowledge`; provenance validator; `Canal:` line finally used | A1 + 027 applied | Approve Forge Brand Book + WA overlay + price/currency policy; SQL 028 gated apply |
 | **A3 "suggest"** | Effective-mode resolver; suggestion generation + `/api/chat/agent/suggestions/:id (accept|edit|dismiss)`; suggestion row + composer prefill in `SoftThreadPane.tsx`; `operationMode` editor in `/config/agentes` | A2 schema | Which Forge conversations use `ai_suggest` |
 | **A4 "actions"** | `create_client`, `create_order` (via `order-lifecycle.ts`), `send_approved_template` as pending actions; `/api/chat/agent/actions/:id (approve|reject)`; pending-action row in thread pane; expiry cron; idempotency | A2–A3 | Approve each enabled write tool + customer copy |
-| **A5 "retrieval + cost + rollout"** | SQL `029_chat_agent_message_fts.sql` (Spanish `tsvector`, GIN reviewed separately); same-account FAQ distillation + approval flow; daily cap enforcement + usage panel; prompt-injection + provenance regression suite and eval fixtures; optional hybrid tier **only if §8 #11 GO**; enable additional accounts one at a time | A1–A4 | FTS index op window; distilled FAQs; eval report; each new account (IG only after Advanced Access) |
+| **A5 "retrieval + cost + rollout"** | SQL `029_chat_agent_message_fts.sql` (Spanish `tsvector`, GIN reviewed separately); same-account FAQ distillation + approval flow; daily cap enforcement + usage panel; prompt-injection + provenance regression suite and eval fixtures; enable additional accounts one at a time | A1–A4 | FTS index op window; distilled FAQs; eval report; each new account (IG only after Advanced Access) |
 
 Two production SQL gates are non-negotiable: **gate 027** (A1 code ships column-guarded or after apply; never assume 027 before it is applied) and **gate 028**; **029** is a third, operationally reviewed gate.
 
@@ -414,7 +410,7 @@ Two production SQL gates are non-negotiable: **gate 027** (A1 code ships column-
 | 5.5 | `029` GIN build | Gated apply on Supabase | Runs in the approved window with `lock_timeout`; list/changes p95 from `chat-phase4-scale-report` not regressed by > 10 % |
 | 5.6 | Request to enable Forge IG | Rollout | Refused while IG Advanced Access is Meta-blocked; each new account needs its own §8-style GO |
 
-**Non-goals:** pgvector, hybrid routing without §8 #11 GO, autonomous self-learning, per-conversation agent selection, Phase 6 chrome.
+**Non-goals:** pgvector, any second model or router, autonomous self-learning, per-conversation agent selection, Phase 6 chrome.
 
 ---
 
@@ -424,7 +420,7 @@ Two production SQL gates are non-negotiable: **gate 027** (A1 code ships column-
 - **No staff-bot mixing** — no import, no shared table, no shared env, no shared Meta app. The Agent Layer is CRM-customer-facing only.
 - **No `prisma db push` / `prisma migrate`** against Supabase; additive gated SQL only.
 - **No per-conversation agent override in v1** (later; schema leaves room).
-- **No dual-model router in v1**; hybrid is §5.3 documentation.
+- **Grok 4.6 only; no dual-model router or second model tier in v1** (Rafael reconfirmed 2026-09-21). The cheap/hybrid idea survives only as the one-line footnote in §5.2.
 - **No raw past-chat text in prompts**; distilled FAQs only after human approval.
 - **No payment / SINPE / refund automation**, ever in this program.
 - **No autonomous writes** (client, order, sends) — pending action + human approval.
@@ -448,7 +444,7 @@ Recommended defaults in bold; a plain "GO with defaults" adopts all of them.
 8. **Fallback behavior on LLM failure** — narrow deterministic read (payment → human; linked order/guía status → templated fact) else **human handoff**; retire the generic heuristic sales copy for bound accounts. **Yes.**
 9. **SQL 027 production gate** — fresh Blob backup → human SQL review → gated apply (`BETSY_V2_APPLY_FILES=027`) → verify postconditions → enable `chat_agent_layer_v1` for Forge only. **Yes.**
 10. **A1 launch state** — dark validation (agent `live`, `operationMode=ai_suggest` or fixture-only) for the first real inbound set, then explicit GO to flip Forge WA to `ai_full`. **Dark first.**
-11. **Hybrid cheap tier** — remains documentation only; a separate GO is required to widen the model allowlist in A5. **Not now.**
+11. **Runtime model** — Grok 4.6 only; allowlist `['grok-4.6']`; no router. *(Reconfirmed by Rafael 2026-09-21 — recorded here so the list stays complete; no further decision needed.)* **Locked.**
 12. **Retention** — keep `ChatAgentTurn` usage/tool audit indefinitely with the tenant; keep `outputText` at least through queue retry and normal chat retention. **Yes.**
 13. **Soft chrome** — confirm Phase 6 stays HOLD through A1–A5; agent controls appear in `/config/agentes` and thread-pane data rows only. **Yes.**
 14. **Pilot expansion order** — Forge WA → (after Advanced Access) Forge IG with its own thin overlay → Betsy CRM demo tenant. Each step its own GO. **Yes.**
@@ -468,7 +464,7 @@ Recommended defaults in bold; a plain "GO with defaults" adopts all of them.
 
 **Adopted recommendations:** separate `ChatAgentBinding` table over a `SocialAccount.chatAgentId` column (tenant-default row, history, future override); composite tenant FKs so cross-tenant agents cannot be bound; **fail closed** when an exact binding is invalid (no silent fallback to tenant default); `ChatAgentSuggestion` table instead of draft `ChatMessage`; `ChatKnowledgeSource` with `draft → approved → archived` and versioning instead of `Tenant.settings`; live inventory outranks docs; monetary claims require tool provenance or hand off; no raw past-chat RAG in v1, FTS-first distillation with human approval, pgvector later; `ChatAgentPendingAction` with idempotency key, expiry, RBAC re-validation and execution through `order-lifecycle.ts`; per-tenant daily token cap checked before every call; `reasoning_effort: low`, `temperature 0.1`, `maxRetries 0`, two-call / four-tool budget; conversation mode can only restrict agent mode; per-conversation override and dual-model router explicitly out of v1.
 
-**Where this plan follows Rafael GO over Advisor latitude:** Grok 4.6 is the sole v1 runtime model (Advisor left room for a cheap tier; kept as §5.3 footnote per the brainstorm lock); pilot = Forge **WhatsApp** only even though the schema supports IG from day one; "suggest" mode is deferred to A3 so A1 stays a small, flag-gated runtime swap.
+**Where this plan follows Rafael GO over Advisor latitude:** Grok 4.6 is the sole v1 runtime model (Advisor left room for a cheap tier and a future hybrid; Rafael reconfirmed 2026-09-21 that this is one line in §5.2, not a phase, decision, or acceptance test); pilot = Forge **WhatsApp** only even though the schema supports IG from day one; "suggest" mode is deferred to A3 so A1 stays a small, flag-gated runtime swap.
 
 **Kept as Executor default with rationale:** `tonePreset` as a fixed enum of prompt snippets (free-text tone lives in `systemInstructions`); a minimal `/config/agentes` config page in A1 (agents need a place to be edited; it is config surface, not Soft chrome); illustrative cost math in §5.4 flagged as assumption, with `ChatAgentTurn` as the real meter.
 

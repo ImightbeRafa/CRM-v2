@@ -840,7 +840,8 @@ Append-only. Newest entries at the top.
   to make Soft `/chats` agent-driven (Respond.io-style AI Agents) per Rafael GO 2026-09-21 CR
   — SocialAccount → ChatAgent binding with tenant default fallback (conversation override
   later), Forge WhatsApp sales agent pilot (`cmhsibjue0004js04gie724nx`), Grok 4.6 default
-  model with hybrid cheap tier documented as optional cost control only. Sol
+  model only (Rafael reconfirmed: no dual-model router in v1; cheap/hybrid is a one-line
+  later-cost-control footnote, not a phase or acceptance requirement). Sol
   (`gpt-5.6-sol-high`) plan-mode review folded in (§9).
 - Verified in code and recorded as gaps: `runSoftAiTurn` is a regex heuristic (no LLM);
   Soft direct Graph sender skips the WA 24 h window check; `ChatAutomationJob.payload` is

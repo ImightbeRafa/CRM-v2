@@ -1,10 +1,10 @@
 /**
- * Apply Betsy v2 additive SQL 018–023 against the shared database.
+ * Apply Betsy v2 additive SQL 018–024 against the shared database.
  *
  * Safety gates (all required):
  *   BETSY_V2_APPLY_MIGRATIONS=1
  *   BETSY_V2_APPLY_CONFIRM_HOST=<exact DIRECT_URL hostname>
- *   BETSY_V2_APPLY_FILES=018,019,020,021,022,023   (optional subset)
+ *   BETSY_V2_APPLY_FILES=018,019,...,024   (optional subset)
  *
  * Never uses Prisma migrate / db push. Each file has its own BEGIN/COMMIT
  * plus lock_timeout/statement_timeout. Stops on the first failure.
@@ -13,46 +13,22 @@
  *   BETSY_V2_APPLY_MIGRATIONS=1 \
  *   BETSY_V2_APPLY_CONFIRM_HOST=db.xxxx.supabase.co \
  *   node scripts/apply-betsy-v2-additive-sql.mjs
+ *
+ * 025 unique constraints are intentionally NOT registered here.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
-
-const FILES = {
-  '018': '018_betsy_v2_feature_flags.sql',
-  '019': '019_betsy_v2_order_lifecycle.sql',
-  '020': '020_betsy_v2_server_pagination.sql',
-  '021': '021_betsy_v2_bot_inbox.sql',
-  '022': '022_betsy_v2_order_archive.sql',
-  '023': '023_betsy_v2_tenant_ui.sql',
-};
-
-const EXPECTED_TABLES = {
-  '018': ['TenantFeatureFlag'],
-  '019': ['ClientIdentityConflict', 'OrderLifecycleOperation', 'OrderInventoryAllocation'],
-  '020': ['TenantOrderStatusClassification'],
-  '021': ['BotInboxMessage', 'BotInboxDelivery'],
-  '022': [],
-  '023': ['TenantSetupProgress'],
-};
-
-const EXPECTED_COLUMNS = {
-  '019': [
-    ['Order', 'clientId'],
-    ['Order', 'lifecycleVersion'],
-    ['Client', 'normalizedPhone'],
-    ['Invoice', 'emailStatus'],
-  ],
-  '021': [
-    ['BotSession', 'seatPolicy'],
-    ['Invoice', 'sourceOperationKey'],
-  ],
-  '022': [
-    ['Order', 'deletedAt'],
-    ['Order', 'archiveMetadata'],
-  ],
-};
+import {
+  DEFAULT_APPLY_FILES,
+  EXPECTED_COLUMNS,
+  EXPECTED_INDEXES_024,
+  EXPECTED_SEQUENCE_024,
+  EXPECTED_TABLES,
+  EXPECTED_TRIGGER_024,
+  FILES,
+} from './lib/betsy-v2-additive-manifest.mjs';
 
 function fail(message) {
   console.error(`ERROR: ${message}`);
@@ -79,7 +55,7 @@ if (parsed.port && parsed.port !== '5432') {
   fail(`Refusing pooler/non-direct port ${parsed.port}. Use DIRECT_URL on 5432.`);
 }
 
-const requested = (process.env.BETSY_V2_APPLY_FILES || '018,019,020,021,022,023')
+const requested = (process.env.BETSY_V2_APPLY_FILES || DEFAULT_APPLY_FILES)
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
@@ -96,6 +72,57 @@ const sql = postgres(url, {
   idle_timeout: 5,
   onnotice: (notice) => console.log(`[notice] ${notice.message}`),
 });
+
+async function verify024Extras() {
+  const seq = await sql`
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'S' AND c.relname = ${EXPECTED_SEQUENCE_024}
+  `;
+  if (seq.length !== 1) fail(`Postcondition failed: sequence ${EXPECTED_SEQUENCE_024} missing.`);
+
+  const trigger = await sql`
+    SELECT t.tgname, t.tgenabled
+    FROM pg_trigger t
+    JOIN pg_class c ON c.oid = t.tgrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'ChatConversation'
+      AND t.tgname = ${EXPECTED_TRIGGER_024}
+      AND NOT t.tgisinternal
+  `;
+  if (trigger.length !== 1) fail(`Postcondition failed: trigger ${EXPECTED_TRIGGER_024} missing.`);
+  if (trigger[0].tgenabled !== 'O') {
+    fail(`Postcondition failed: trigger ${EXPECTED_TRIGGER_024} is not enabled.`);
+  }
+
+  for (const indexName of EXPECTED_INDEXES_024) {
+    const rows = await sql`
+      SELECT i.indisvalid
+      FROM pg_class idx
+      JOIN pg_index i ON i.indexrelid = idx.oid
+      JOIN pg_namespace n ON n.oid = idx.relnamespace
+      WHERE n.nspname = 'public' AND idx.relname = ${indexName}
+    `;
+    if (rows.length !== 1) fail(`Postcondition failed: index ${indexName} missing after 024.`);
+    if (rows[0].indisvalid !== true) fail(`Postcondition failed: index ${indexName} is invalid.`);
+  }
+
+  const forbidden = await sql`
+    SELECT idx.relname
+    FROM pg_class idx
+    JOIN pg_namespace n ON n.oid = idx.relnamespace
+    WHERE n.nspname = 'public'
+      AND idx.relkind = 'i'
+      AND (
+        idx.relname ILIKE '%ChatMessage%providerMessageId%key%'
+        OR idx.relname ILIKE '%SocialAccount%platform%accountId%active%'
+      )
+  `;
+  if (forbidden.length > 0) {
+    fail(`024 must not create 025 unique indexes: ${forbidden.map((r) => r.relname).join(', ')}`);
+  }
+}
 
 async function verify(id) {
   for (const table of EXPECTED_TABLES[id] || []) {
@@ -116,6 +143,7 @@ async function verify(id) {
     `;
     if (rows.length !== 1) fail(`Postcondition failed: ${table}.${column} missing after ${id}.`);
   }
+  if (id === '024') await verify024Extras();
   const flags = await sql`
     SELECT COUNT(*)::int AS n FROM public."TenantFeatureFlag" WHERE enabled = true
   `.catch(() => [{ n: 0 }]);
@@ -129,6 +157,9 @@ async function main() {
     const body = readFileSync(file, 'utf8');
     if (/\b(DROP TABLE|TRUNCATE|ALTER TABLE\b[\s\S]{0,80}DROP COLUMN)/i.test(body)) {
       fail(`${FILES[id]} contains destructive SQL.`);
+    }
+    if (id === '024' && /UNIQUE\s+INDEX[\s\S]{0,120}providerMessageId/i.test(body)) {
+      fail(`${FILES[id]} must not ship 025 providerMessageId unique index.`);
     }
     console.log(`\n--- ${id} ${FILES[id]} ---`);
     const started = Date.now();

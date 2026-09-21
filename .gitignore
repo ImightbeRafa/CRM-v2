@@ -27,8 +27,14 @@ scripts/*
 !scripts/chat-inbox-verify.ts
 !scripts/chat-inbox-v2-cutover.ts
 !scripts/chat-account-identity-backfill.ts
+!scripts/chat-scale-seed.ts
+!scripts/chat-scale-benchmark.ts
+!scripts/chat-webhook-burst.ts
+!scripts/chat-idle-network-assert.ts
 !scripts/lib/
 !scripts/lib/betsy-v2-additive-manifest.mjs
+!scripts/lib/chat-scale-constants.ts
+!scripts/lib/chat-scale-db-guard.ts
 SDK_V2_FINAL_CONFIGURATION.txt
 SDK_V2_IMPLEMENTATION.txt
 # Documentation and Notes (local only)

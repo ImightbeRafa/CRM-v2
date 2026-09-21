@@ -1,3 +1,22 @@
+## 2026-09-21 — Phase 4 scale tooling (seed / bench / burst / idle assert)
+
+- Local-only load-test scripts gated on `CHAT_SCALE_DATABASE_URL` (loopback;
+  refuse supabase hosts + pooler 6543). Never use shared `DATABASE_URL`.
+- `scripts/chat-scale-seed.ts`: 5 SocialAccounts / 2000 ChatConversations /
+  50000 ChatMessages (one 3000-msg thread); batched inserts; `--dry-run`.
+- `scripts/chat-scale-benchmark.ts`: list LIMIT 30 + changes idle p50/p95,
+  EXPLAIN (ANALYZE, BUFFERS) index asserts → `docs/audits/chat-phase4-scale-report.md`.
+- `scripts/chat-webhook-burst.ts` + `tests/fixtures/chat-webhook/`: 500 signed
+  events / 5 accounts unit-style (HMAC + parse + in-memory store).
+- `scripts/chat-idle-network-assert.ts`: ≤1 req/5s budget vs `CHAT_INBOX_V2_POLL_MS`.
+- npm: `chat:scale:seed` · `chat:scale:bench` · `chat:webhook:burst` · `test:chat-scale`.
+- Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; `src/lib/bot/**` untouched.
+- Bench numbers left **pending local postgres** in this Cloud Agent (no Docker).
+
+# Agent Changelog
+
+Append-only. Newest entries at the top.
+
 ## 2026-09-21 — PR-3 channel identity (names / logos / Connect naming)
 
 - Persist WA/IG provider identity at connect (`exchange`, IG complete/callback shared upsert).

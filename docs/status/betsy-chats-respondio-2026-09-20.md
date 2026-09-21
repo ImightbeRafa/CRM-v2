@@ -6,7 +6,7 @@
 |---|---|
 | **Repo tip (this board)** | `dev` @ `bd70517` (PR-5 #51 *Respond.io PR-5: self-serve Meta and token health*) — **Phases 1–5 LIVE** on www |
 | **Plan SoT** | [`docs/plans/betsy-respondio-parity-fable-2026-09-20.md`](../plans/betsy-respondio-parity-fable-2026-09-20.md) |
-| **Next plan (A0, awaiting GO)** | [`docs/plans/betsy-agent-layer-fable-2026-09-21.md`](../plans/betsy-agent-layer-fable-2026-09-21.md) — Agent Layer (SocialAccount → ChatAgent, Forge WA pilot, Grok 4.6). Docs only; no A1 code before §8 GO. |
+| **Next plan (A0 GO'd + amended 2026-09-21)** | [`docs/plans/betsy-agent-layer-fable-2026-09-21.md`](../plans/betsy-agent-layer-fable-2026-09-21.md) — Agent Layer (SocialAccount → ChatAgent, Forge WA `cmuahn5y90001l504y6kksiek` pilot, Grok 4.6 only, new agents `ai_suggest`, 90-day `outputText`). §8 decided; Advisor musts 1–8 are A1 blockers. **A1 code = next PR after #53 squash-merge.** |
 | **Notion** | [Betsy Chat — Full Implementation](https://app.notion.com/p/3cdbc39c41ae81968b64d25201be0676) · [Respond.io epic](https://app.notion.com/p/3d6bc39c41ae819b8994f3e2e6059977) |
 | **Feature flag** | `chat_inbox_v2` — **enabled for Forge tenant `cmhsibjue0004js04gie724nx` only** (default off globally) |
 | **SQL applied live** | `024_chat_inbox_conversations.sql` + `025_chat_inbox_uniques.sql` on Supabase project `db.bmolvybsqzkeswkomgzw` |

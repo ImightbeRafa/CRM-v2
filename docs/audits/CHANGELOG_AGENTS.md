@@ -852,3 +852,27 @@ Append-only. Newest entries at the top.
   in the Respond.io parity plan header.
 - Prove: docs only — no product TypeScript, SQL, UI, flag, or Supabase change. Soft chrome,
   `src/lib/bot/**`, `src/app/api/bot/**` untouched (`git diff --stat` = `docs/**`).
+
+# 2026-09-21 — Betsy Agent Layer plan amendment (Rafael GO; PR #53 ready)
+
+- Rafael GO 2026-09-21 CR: folded ALL CoS + Advisor suggestions into
+  `docs/plans/betsy-agent-layer-fable-2026-09-21.md`; §8 is now "decided" (18 items),
+  no longer open. Locked defaults written in: Probar + panic pause + IA trust badges as
+  A1 musts; `ChatAgentTurn.outputText` retention 90 days (metrics may stay longer);
+  new agents default `operationMode=ai_suggest` until explicit upgrade; Forge WA
+  allowlist id `cmuahn5y90001l504y6kksiek`; Grok 4.6 only; Soft HOLD; staff HARD LOCK.
+- Advisor musts 1–8 written as A1 blockers: §2.5 pre-send gate table (human already
+  replied → skip; per-conversation single-flight via partial unique index on
+  `ChatAutomationJob(conversationId) WHERE status='processing'`; token health; 24 h
+  window; `aiFullUnlock` hard gate), §2.7 operator surfaces (`/config/agentes` Spanish
+  config + Probar + panic controls + Historial audit; inbox trust labels in data
+  components only), §2.8 PII redaction + 90-day purge cron, §2.9 Forge fixture set and
+  dark-run unlock; A1 acceptance tests 1.11–1.22.
+- Should-adds written into A2–A5 (knowledge as data-not-instructions, media/comprobante
+  → escalate, paste-and-approve wizard, plain-Spanish pending-action row, usage panel
+  outcome mix, per-account subcap, extra injection fixtures, quiet hours, typing
+  indicator, prompt Restaurar, stop-words, eval pack); same-person WA+IG identity parked
+  in §7 roadmap. Added §3.5 fallback (fixes a dangling reference) and §9.1 traceability
+  table. Status board NEXT updated. PR #53 marked ready for squash-merge; A1 next.
+- Prove: docs only — `git diff --stat` = `docs/**`; no SQL, Prisma, or app code. Sol
+  verification not run (Rafael: not required); Executor self-check of § refs and links.

@@ -26,7 +26,8 @@ Append-only. Newest entries at the top.
   `dev`. Did not import #47 about:blank or #49 charset/Graph cap.
   024/025/026/027/027b/028 SQL still not applied; `chat_inbox_v2` /
   `chat_agent_layer_v1` not toggled; `aiFullUnlock` not written.
-- Prove (post-#60 rebase onto `4c493d5`): pending after force-with-lease.
+- Prove (post-#60 rebase onto `4c493d5`): `npx tsx --test src/lib/__tests__/chat-inbox-backfill-repair.test.ts`
+  (8 pass) + `npm run test:chat-harden` (209 pass; same as post-#59).
 
 ## 2026-09-23 — Instagram reconnect no longer 500s on SocialAccount P2002
 

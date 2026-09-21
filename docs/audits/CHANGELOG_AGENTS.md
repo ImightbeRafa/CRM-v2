@@ -2,6 +2,21 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-20 — WA ownership verify: coexistence nested-field #100 soft path
+
+- Prod Forge coexistence `POST /api/auth/whatsapp/exchange` 403ed after token +
+  claimed phone/WABA because Graph rejected nested
+  `whatsapp_business_account{id}` on the phone node (`(#100) nonexisting field`).
+- `verifyWhatsAppAssetsForToken` now GETs safe phone fields only, then proves
+  claimed WABA via `listWhatsAppPhoneNumbersForWaba` membership. Missing nested
+  WABA field is no longer an ownership hard-fail; no claimed WABA still accepts
+  phone ownership when resolve returns null after #100.
+- Tests: `ig-wa-connect-security.test.ts` (Forge claimed-WABA success, #100 path,
+  waba_mismatch). Added file to `npm run test:security`. Staff bot `/api/bot/**`
+  untouched.
+- Prove: `npx tsx --test src/lib/__tests__/ig-wa-connect-security.test.ts` +
+  `npm run test:security` + `npm run test:chat-harden` + `npm run build`.
+
 ## 2026-09-20 — WhatsApp coexistence Embedded Signup (Business App numbers)
 
 - Launch extras: `featureType: whatsapp_business_app_onboarding` + `sessionInfoVersion: 3`

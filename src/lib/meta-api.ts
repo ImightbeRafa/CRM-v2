@@ -239,6 +239,26 @@ async function readMetaJson(response: Response) {
   }
 }
 
+/** Meta Graph (#100) for a missing/unsupported field on a node. */
+export function isMetaNonexistingFieldError(data: unknown, fieldName?: string): boolean {
+  const error =
+    data && typeof data === 'object' && 'error' in data
+      ? (data as { error?: { code?: number; message?: string } }).error
+      : null
+  if (!error) return false
+  const code = typeof error.code === 'number' ? error.code : null
+  const message = typeof error.message === 'string' ? error.message : ''
+  const isCode100 = code === 100 || /\(#100\)/.test(message)
+  if (!isCode100 || !/nonexisting field/i.test(message)) return false
+  if (!fieldName) return true
+  return message.toLowerCase().includes(fieldName.toLowerCase())
+}
+
+/**
+ * Best-effort WABA id from a phone node.
+ * Nested `whatsapp_business_account` is missing on coexistence / some Cloud API phones (#100);
+ * callers must not treat that alone as ownership failure.
+ */
 export async function resolveWhatsAppBusinessAccountId(phoneNumberId: string, accessToken: string): Promise<string | null> {
   const fields = encodeURIComponent('whatsapp_business_account')
   const url = addAppSecretProofToUrl(
@@ -256,6 +276,12 @@ export async function resolveWhatsAppBusinessAccountId(phoneNumberId: string, ac
     const data = await readMetaJson(response)
 
     if (!response.ok) {
+      if (isMetaNonexistingFieldError(data, 'whatsapp_business_account')) {
+        console.warn('[meta-api] Phone node has no whatsapp_business_account field (coexistence-safe)', {
+          phoneNumberId,
+        })
+        return null
+      }
       console.warn('[meta-api] Could not resolve WhatsApp Business Account ID', {
         phoneNumberId,
         status: response.status,
@@ -278,8 +304,20 @@ export type WhatsAppWabaPhoneNumber = {
   platformType: string | null
 }
 
+const WABA_PHONE_LIST_MAX_PAGES = 5
+
+function mapWabaPhoneRow(row: any): WhatsAppWabaPhoneNumber {
+  return {
+    id: String(row.id),
+    displayPhoneNumber: row.display_phone_number ? String(row.display_phone_number) : null,
+    isOnBizApp: typeof row.is_on_biz_app === 'boolean' ? row.is_on_biz_app : null,
+    platformType: row.platform_type ? String(row.platform_type) : null,
+  }
+}
+
 /**
  * List phone numbers on a WABA (used when coexistence FINISH returns waba_id only).
+ * Follows Graph paging with a hard page cap to avoid malformed cursor loops.
  */
 export async function listWhatsAppPhoneNumbersForWaba(params: {
   wabaId: string
@@ -291,31 +329,38 @@ export async function listWhatsAppPhoneNumbersForWaba(params: {
   }
 
   const fields = encodeURIComponent('id,display_phone_number,is_on_biz_app,platform_type')
-  const url = addAppSecretProofToUrl(
-    buildMetaGraphUrl(`${encodeURIComponent(wabaId)}/phone_numbers?fields=${fields}`),
+  let nextUrl: string | null = addAppSecretProofToUrl(
+    buildMetaGraphUrl(`${encodeURIComponent(wabaId)}/phone_numbers?fields=${fields}&limit=100`),
     params.accessToken,
     { purpose: 'whatsapp' },
   )
 
-  try {
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${params.accessToken}` },
-    })
-    const data = await readMetaJson(response)
-    if (!response.ok) {
-      return {
-        ok: false,
-        phones: [],
-        reason: data?.error?.message || `graph_${response.status}`,
-      }
-    }
+  const phones: WhatsAppWabaPhoneNumber[] = []
 
-    const phones: WhatsAppWabaPhoneNumber[] = (data?.data || []).map((row: any) => ({
-      id: String(row.id),
-      displayPhoneNumber: row.display_phone_number ? String(row.display_phone_number) : null,
-      isOnBizApp: typeof row.is_on_biz_app === 'boolean' ? row.is_on_biz_app : null,
-      platformType: row.platform_type ? String(row.platform_type) : null,
-    }))
+  try {
+    for (let page = 0; page < WABA_PHONE_LIST_MAX_PAGES && nextUrl; page += 1) {
+      const response = await fetch(nextUrl, {
+        headers: { Authorization: `Bearer ${params.accessToken}` },
+      })
+      const data = await readMetaJson(response)
+      if (!response.ok) {
+        return {
+          ok: false,
+          phones,
+          reason: data?.error?.message || `graph_${response.status}`,
+        }
+      }
+
+      for (const row of data?.data || []) {
+        phones.push(mapWabaPhoneRow(row))
+      }
+
+      const pagingNext =
+        data?.paging?.next && typeof data.paging.next === 'string' ? String(data.paging.next) : null
+      nextUrl = pagingNext
+        ? addAppSecretProofToUrl(pagingNext, params.accessToken, { purpose: 'whatsapp' })
+        : null
+    }
 
     return { ok: true, phones }
   } catch (error) {
@@ -487,8 +532,9 @@ export async function initiateWhatsAppSmbAppDataSync(params: {
 }
 
 /**
- * Prove phone_number_id (and optional WABA) are reachable with this access token
- * before trusting client Embedded Signup message fields.
+ * Prove phone_number_id (and optional nested WABA when Graph returns it) from a phone GET.
+ * Missing nested `whatsapp_business_account` is NOT a mismatch — verify via WABA phone list instead.
+ * Callers must not treat Graph (#100) nonexisting-field alone as ownership failure; use safe fields.
  */
 export function interpretWhatsAppOwnershipGraphData(params: {
   graphOk: boolean
@@ -502,11 +548,14 @@ export function interpretWhatsAppOwnershipGraphData(params: {
   reason?: string
 } {
   if (!params.graphOk) {
+    const reason = params.data?.error?.message || 'graph_not_ok'
     return {
       ok: false,
       phoneNumberId: null,
       whatsappBusinessAccountId: null,
-      reason: params.data?.error?.message || 'graph_not_ok',
+      reason: isMetaNonexistingFieldError(params.data, 'whatsapp_business_account')
+        ? 'nonexisting_waba_field'
+        : reason,
     }
   }
 
@@ -525,14 +574,14 @@ export function interpretWhatsAppOwnershipGraphData(params: {
     : null
 
   const claimedWaba = (params.claimedWabaId || '').trim()
-  if (claimedWaba) {
-    if (!resolvedWaba || claimedWaba !== resolvedWaba) {
-      return {
-        ok: false,
-        phoneNumberId: resolvedPhoneId,
-        whatsappBusinessAccountId: resolvedWaba,
-        reason: 'waba_mismatch',
-      }
+  // Only fail closed when Graph returns a nested WABA that disagrees with the claim.
+  // Absent nested field is coexistence-normal — membership is checked via WABA phone list.
+  if (claimedWaba && resolvedWaba && claimedWaba !== resolvedWaba) {
+    return {
+      ok: false,
+      phoneNumberId: resolvedPhoneId,
+      whatsappBusinessAccountId: resolvedWaba,
+      reason: 'waba_mismatch',
     }
   }
 
@@ -542,6 +591,9 @@ export function interpretWhatsAppOwnershipGraphData(params: {
     whatsappBusinessAccountId: resolvedWaba,
   }
 }
+
+/** Safe phone fields — never request nested whatsapp_business_account (fails on coexistence). */
+export const WHATSAPP_OWNERSHIP_PHONE_FIELDS = 'id,display_phone_number,verified_name'
 
 export async function verifyWhatsAppAssetsForToken(params: {
   accessToken: string
@@ -558,7 +610,8 @@ export async function verifyWhatsAppAssetsForToken(params: {
     return { ok: false, phoneNumberId: null, whatsappBusinessAccountId: null, reason: 'missing_phone_or_token' }
   }
 
-  const fields = encodeURIComponent('id,display_phone_number,verified_name,whatsapp_business_account{id}')
+  const claimedWaba = String(params.whatsappBusinessAccountId || '').trim() || null
+  const fields = encodeURIComponent(WHATSAPP_OWNERSHIP_PHONE_FIELDS)
   const url = addAppSecretProofToUrl(
     buildMetaGraphUrl(`${encodeURIComponent(phoneNumberId)}?fields=${fields}`),
     params.accessToken,
@@ -574,18 +627,51 @@ export async function verifyWhatsAppAssetsForToken(params: {
       graphOk: response.ok,
       data,
       claimedPhoneNumberId: phoneNumberId,
-      claimedWabaId: params.whatsappBusinessAccountId,
+      // Phone GET no longer returns nested WABA; do not treat claim as mismatch here.
+      claimedWabaId: null,
     })
 
-    if (interpreted.ok && !interpreted.whatsappBusinessAccountId) {
-      const resolvedWaba = await resolveWhatsAppBusinessAccountId(phoneNumberId, params.accessToken)
+    if (!interpreted.ok || !interpreted.phoneNumberId) {
+      return interpreted
+    }
+
+    // Preferred coexistence path: prove WABA ownership by listing phones under the claimed WABA.
+    if (claimedWaba) {
+      const listed = await listWhatsAppPhoneNumbersForWaba({
+        wabaId: claimedWaba,
+        accessToken: params.accessToken,
+      })
+      if (!listed.ok) {
+        return {
+          ok: false,
+          phoneNumberId: interpreted.phoneNumberId,
+          whatsappBusinessAccountId: null,
+          reason: listed.reason || 'waba_phone_list_failed',
+        }
+      }
+      const phoneOnWaba = listed.phones.some((p) => p.id === interpreted.phoneNumberId)
+      if (!phoneOnWaba) {
+        return {
+          ok: false,
+          phoneNumberId: interpreted.phoneNumberId,
+          whatsappBusinessAccountId: null,
+          reason: 'waba_mismatch',
+        }
+      }
       return {
-        ...interpreted,
-        whatsappBusinessAccountId: resolvedWaba,
+        ok: true,
+        phoneNumberId: interpreted.phoneNumberId,
+        whatsappBusinessAccountId: claimedWaba,
       }
     }
 
-    return interpreted
+    // No claimed WABA: phone ownership is enough. Nested field may #100 — treat as unresolved, not fail.
+    const resolvedWaba = await resolveWhatsAppBusinessAccountId(phoneNumberId, params.accessToken)
+    return {
+      ok: true,
+      phoneNumberId: interpreted.phoneNumberId,
+      whatsappBusinessAccountId: resolvedWaba,
+    }
   } catch (error) {
     console.warn('[meta-api] WhatsApp asset verification failed', error)
     return {

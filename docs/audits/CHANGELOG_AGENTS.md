@@ -1,3 +1,14 @@
+## 2026-09-21 — docs: Agent Layer Arc 2 plan (Fable, plan only)
+
+- New plan `docs/plans/betsy-agent-layer-arc2-fable-2026-09-21.md`: Phases A–D
+  (payment classifier + brand facts + shortcuts + Canales + multi-turn Probar;
+  images + suggestion accept; SINPE `ChatPaymentIntent` queue in `/chats` +
+  staff notification outbox; post-approve order draft into `/ventas`; horario +
+  reply delay). Data deltas = gated SQL `029` / `030` (proposed, not written).
+- 4 read-only scouts + Sol plan-mode review folded (12 MUST, 10 SHOULD; §9).
+- Status board row added. No product code, SQL, flag or Supabase change.
+- Prove: `git diff --stat` = `docs/**` only.
+
 ## 2026-09-21 — HOTFIX: agentes contrast + stop reload feel
 
 - Contrast: route `!text-slate-900 [color-scheme:light]` + FIELD/TEXTAREA/

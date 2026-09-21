@@ -90,7 +90,8 @@ export function readMediaBlobRefFromMessage(message: {
 export async function resolveMetaMediaDownloadUrl(opts: {
   providerMediaId: string
   accessToken: string
-  purpose?: 'whatsapp' | 'instagram' | 'meta'
+  /** WA Graph secret for WhatsApp media; default Meta secret otherwise. */
+  purpose?: 'whatsapp' | 'default'
   fetchImpl?: typeof fetch
 }): Promise<{ url: string; mimeType: string | null }> {
   const fetchImpl = opts.fetchImpl ?? fetch
@@ -262,17 +263,20 @@ export async function cacheProviderMediaToBlob(opts: {
   messageId: string
   providerMediaId: string
   accessToken: string
-  purpose?: 'whatsapp' | 'instagram' | 'meta'
+  /** Callers may pass channel platform; non-WA maps to default Meta app secret. */
+  purpose?: 'whatsapp' | 'instagram' | 'meta' | 'default'
   mimeHint?: string | null
   filenameHint?: string | null
   fetchImpl?: typeof fetch
   putFn?: typeof putChatMediaToBlob
 }): Promise<CacheChatMediaResult> {
   try {
+    const proofPurpose: 'whatsapp' | 'default' =
+      opts.purpose === 'whatsapp' ? 'whatsapp' : 'default'
     const resolved = await resolveMetaMediaDownloadUrl({
       providerMediaId: opts.providerMediaId,
       accessToken: opts.accessToken,
-      purpose: opts.purpose,
+      purpose: proofPurpose,
       fetchImpl: opts.fetchImpl,
     })
     const downloaded = await downloadMetaMediaWithCap({

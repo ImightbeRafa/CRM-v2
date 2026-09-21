@@ -1,0 +1,32 @@
+{
+  "ranAt": "2026-09-21T04:10:09.047Z",
+  "host": "127.0.0.1",
+  "port": "5432",
+  "tenantId": "scale_tenant_chat_phase4",
+  "counts": {
+    "accounts": 5,
+    "conversations": 2000,
+    "messages": 50000
+  },
+  "list": {
+    "count": 40,
+    "p50Ms": 0.2034400000000005,
+    "p95Ms": 0.7085639999999955,
+    "minMs": 0.1630710000000022,
+    "maxMs": 1.0082920000000115,
+    "meanMs": 0.2918850500000012
+  },
+  "changes": {
+    "count": 40,
+    "p50Ms": 0.10620199999999613,
+    "p95Ms": 0.11589599999999223,
+    "minMs": 0.10276200000001268,
+    "maxMs": 0.12555400000002237,
+    "meanMs": 0.10793727499999975
+  },
+  "idlePayloadBytes": 20,
+  "listIndexOk": true,
+  "changesIndexOk": true,
+  "listExplain": "Limit  (cost=0.28..11.01 rows=30 width=112) (actual time=0.005..0.012 rows=30 loops=1)\n  Buffers: shared hit=4\n  ->  Index Scan using \"ChatConversation_tenantId_lastMessageAt_id_idx\" on \"ChatConversation\"  (cost=0.28..715.59 rows=2000 width=112) (actual time=0.005..0.010 rows=30 loops=1)\n        Index Cond: (\"tenantId\" = 'scale_tenant_chat_phase4'::text)\n        Buffers: shared hit=4\nPlanning:\n  Buffers: shared hit=1\nPlanning Time: 0.027 ms\nExecution Time: 0.017 ms",
+  "changesExplain": "Limit  (cost=0.28..8.30 rows=1 width=60) (actual time=0.002..0.002 rows=0 loops=1)\n  Buffers: shared hit=2\n  ->  Index Scan using \"ChatConversation_tenantId_revision_idx\" on \"ChatConversation\"  (cost=0.28..8.30 rows=1 width=60) (actual time=0.002..0.002 rows=0 loops=1)\n        Index Cond: ((\"tenantId\" = 'scale_tenant_chat_phase4'::text) AND (revision > '6000'::bigint))\n        Buffers: shared hit=2\nPlanning:\n  Buffers: shared hit=1\nPlanning Time: 0.024 ms\nExecution Time: 0.005 ms"
+}

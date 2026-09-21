@@ -1,3 +1,14 @@
+## 2026-09-21 — Phase 4 scale bench numbers + seed fix + render ≤100
+
+- Fixed `scripts/chat-scale-seed.ts` message index double-count across batches
+  (duplicate `ChatMessage` PK on 50k seed).
+- Local Postgres seed+bench: 5 accounts / 2k conversations / 50k messages;
+  list p95 ~0.7 ms; changes idle p95 ~0.12 ms; indexes used (see
+  `docs/audits/chat-phase4-scale-report.md`).
+- `CHAT_INBOX_V2_THREAD_RENDER_WINDOW` tightened to **100** (acceptance 4.3).
+- Acceptance 4.1–4.7 marked PASS in scale report (4.3–4.7 via code/unit + seed).
+- Soft chrome + bot paths still untouched; 026 remains gated (not applied live).
+
 ## 2026-09-21 — Phase 4 template cache / poll consolidate / media / windowing
 
 - `chat-template-cache.ts`: 300s per-WABA APPROVED templates (Upstash + memory);

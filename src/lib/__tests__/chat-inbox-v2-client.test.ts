@@ -241,9 +241,10 @@ describe('chat-inbox-v2-client reducers', () => {
       ),
     )
     const windowed = selectThreadRenderWindow(many, CHAT_INBOX_V2_THREAD_RENDER_WINDOW)
+    assert.equal(CHAT_INBOX_V2_THREAD_RENDER_WINDOW, 100)
     assert.equal(windowed.length, CHAT_INBOX_V2_THREAD_RENDER_WINDOW)
     assert.equal(windowed[0]?.id, `m${250 - CHAT_INBOX_V2_THREAD_RENDER_WINDOW}`)
-    assert.ok(windowed.length <= 500)
+    assert.ok(windowed.length <= 100)
 
     const older = mergeThreadMessageWindow({
       existing: many.slice(100),

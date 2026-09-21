@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
@@ -143,7 +144,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           mediaSizeBytes: cached.bytes.length,
           mediaCachedAt: new Date(),
           mediaErrorCode: null,
-          metadata: buildMediaCacheMetadataPatch(meta, cached.ref),
+          metadata: buildMediaCacheMetadataPatch(meta, cached.ref) as Prisma.InputJsonValue,
         },
       })
     } catch (error) {
@@ -152,7 +153,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         await prisma.chatMessage.update({
           where: { id: message.id },
           data: {
-            metadata: buildMediaCacheMetadataPatch(meta, cached.ref),
+            metadata: buildMediaCacheMetadataPatch(meta, cached.ref) as Prisma.InputJsonValue,
           },
         })
       } catch (metaErr) {

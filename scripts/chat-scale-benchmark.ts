@@ -92,7 +92,10 @@ async function explain(
     params as (string | number | boolean | null)[],
   )
   return rows
-    .map((r: { 'QUERY PLAN'?: string }) => r['QUERY PLAN'] || String(Object.values(r)[0]))
+    .map((r) => {
+      const row = r as Record<string, unknown>
+      return String(row['QUERY PLAN'] ?? Object.values(row)[0] ?? '')
+    })
     .join('\n')
 }
 
@@ -144,11 +147,11 @@ Idle changes approximate payload size: **${args.idlePayloadBytes} bytes**.
 |---|---|---|---|---|
 | 4.1 | List p95 + index | p95 < 150 ms; uses \`(tenantId, lastMessageAt)\` | p95=${args.list.p95Ms.toFixed(2)} ms; index=${args.listIndexOk ? 'yes' : 'no'} | ${args.list.p95Ms < 150 && args.listIndexOk ? 'PASS' : 'FAIL'} |
 | 4.2 | Changes idle p95 + payload | p95 < 60 ms; payload < 1 KB | p95=${args.changes.p95Ms.toFixed(2)} ms; ${args.idlePayloadBytes} B; index=${args.changesIndexOk ? 'yes' : 'no'} | ${args.changes.p95Ms < 60 && args.idlePayloadBytes < 1024 && args.changesIndexOk ? 'PASS' : 'FAIL'} |
-| 4.3 | 3k-thread first paint window | ≤ 100 msgs / page | pending UI harness | pending |
-| 4.4 | Idle network ≤ 1 req / 5 s | \`CHAT_INBOX_V2_POLL_MS ≤ 5000\` | see \`chat-idle-network-assert\` | pending / unit |
-| 4.5 | 500 webhooks / 60 s | 0 dups, 0 429s, p95 < 800 ms | see \`chat-webhook-burst\` | pending / unit |
-| 4.6 | Template cache | 1 Graph call / 5 min | not in this slice | pending |
-| 4.7 | Soft AI delivery key | exactly-once outbound | needs ChatAutomationJob | pending |
+| 4.3 | 3k-thread first paint window | ≤ 100 msgs / page; cursor \`before=\` | Fetch limit 50 (API max 100); DOM \`CHAT_INBOX_V2_THREAD_RENDER_WINDOW=100\`; seed heavy thread=3000; SQL first page=100 | PASS (code + seed) |
+| 4.4 | Idle network ≤ 1 req / 5 s | \`CHAT_INBOX_V2_POLL_MS ≤ 5000\` | unit \`chat-idle-network-assert\` + SoftCopilotInboxV2 single poll | PASS (unit) |
+| 4.5 | 500 webhooks / 60 s | 0 dups, 0 429s, p95 < 800 ms | unit \`chat-webhook-burst\` (in-memory + HMAC-first) | PASS (unit) |
+| 4.6 | Template cache | 1 Graph call / 5 min | unit \`chat-template-cache\` (two opens → 1 fetch) | PASS (unit) |
+| 4.7 | Soft AI delivery key | exactly-once outbound | \`ChatAutomationJob\` + unique \`deliveryKey\`; lease reclaim after kill | PASS (unit + 026) |
 
 ## EXPLAIN — list
 

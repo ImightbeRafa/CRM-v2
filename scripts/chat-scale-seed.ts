@@ -204,10 +204,12 @@ async function insertMessages(sql: postgres.Sql, counts: number[]) {
     for (let offset = 0; offset < n; offset += MSG_BATCH) {
       const batchLen = Math.min(MSG_BATCH, n - offset)
       const rows = Array.from({ length: batchLen }, (_, j) => {
-        const local = offset + j
-        const msgIndex = globalMsg + local
+        // globalMsg is total inserted so far; j is index within this batch.
+        // Do NOT add `offset` here — that double-counts across batches.
+        const msgIndex = globalMsg + j
+        const localInThread = offset + j
         const sentAt = new Date(baseMs + msgIndex * 1000)
-        const direction = local % 5 === 0 ? 'outbound' : 'inbound'
+        const direction = localInThread % 5 === 0 ? 'outbound' : 'inbound'
         return {
           id: scaleMessageId(msgIndex),
           tenantId: SCALE_TENANT_ID,

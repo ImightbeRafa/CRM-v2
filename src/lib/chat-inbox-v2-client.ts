@@ -15,7 +15,9 @@ export const CHAT_INBOX_V2_FULL_RECONCILE_MS = 120_000
 export const CHAT_INBOX_V2_LIST_PAGE_LIMIT = 50
 export const CHAT_INBOX_V2_LIST_MAX_PAGES = 40
 export const CHAT_INBOX_V2_THREAD_FETCH_LIMIT = 50
-export const CHAT_INBOX_V2_THREAD_RENDER_WINDOW = 200
+/** First-paint / DOM window — Phase 4 acceptance 4.3: ≤100 nodes. */
+export const CHAT_INBOX_V2_THREAD_RENDER_WINDOW = 100
+/** In-memory store cap (older pages + window); DOM still clipped to RENDER_WINDOW. */
 export const CHAT_INBOX_V2_THREAD_STORE_CAP = 300
 
 export function messageDtoToInbox(row: ChatMessageItemDto): ChatInboxMessage {

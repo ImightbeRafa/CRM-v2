@@ -1,3 +1,29 @@
+## 2026-09-21 — HOTFIX: agentes contrast + stop reload feel
+
+- Contrast: route `!text-slate-900 [color-scheme:light]` + FIELD/TEXTAREA/
+  SELECT with solid dark values (ThemeProvider dark was washing inputs).
+- Reload feel (not true document reloads): `config/loading.tsx` full-viewport
+  skeleton blanked every soft nav under `/config`; conocimiento cards used
+  `router.push` remounts. Fix: empty `config/loading.tsx`; open conocimiento
+  **in-page** on `/config/agentes` (local panel + shared wizard module); back
+  via `Link`; config hub skips remount skeleton (`mounted` starts true).
+- Soft chrome / staff bot untouched. Do not merge without Rafael OK.
+- Prove: screenshots Probar + sections; click wizard/back without document
+  navigation; `npm run build`.
+
+## 2026-09-21 — HOTFIX: `/config/agentes` contrast / readability
+
+- Root cause: ThemeProvider system dark set `body` near-white `text-foreground`
+  while agentes pages force light surfaces (`bg-white` / slate-50) without
+  explicit control colors → light-on-white inputs, Probar textarea/result,
+  selects, and wizard fields.
+- Fix: route `text-slate-900 [color-scheme:light]` + shared FIELD/TEXTAREA/
+  SELECT classes (`text-slate-900`, readable placeholders, solid disabled).
+  Bumped meta `text-slate-400` → `slate-600`. Silent `load({ silent })` after
+  mutations so edits no longer flash “Cargando…”. Config hub “Abrir Agentes”
+  uses `next/link` (cheap soft-nav). Soft chrome / staff bot untouched.
+- Prove: screenshots of Probar + conocimiento; `npm run build`.
+
 ## 2026-09-21 — A2 Soft Agent knowledge (028 gated, flag off)
 
 - Additive gated SQL `028_chat_agent_knowledge_actions.sql` (NOT applied live):

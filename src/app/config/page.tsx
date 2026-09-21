@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, Suspense, lazy } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useConfig } from '../contexts/ConfigContext'
 import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck, Bot, Building2, Sparkles } from 'lucide-react'
@@ -29,11 +30,17 @@ const CONFIG_TAB_IDS = [
 function ConfigPageInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState('fields')
+  const [activeTab, setActiveTab] = useState(() => {
+    const tabParam = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('tab')
+      : null
+    if (tabParam && (CONFIG_TAB_IDS as readonly string[]).includes(tabParam)) return tabParam
+    return 'fields'
+  })
   const [newFieldType, setNewFieldType] = useState('text') // Track type for validation
   const { user: currentUser } = useCurrentUser()
   const canManageSensitiveTools = currentUser?.membershipRole === 'OWNER' || currentUser?.membershipRole === 'ADMIN'
-  const [mounted, setMounted] = useState(false) // Client-side mount detection
+  const [mounted, setMounted] = useState(true) // stay true — avoid full-page skeleton remount flash
   
   // Data states
   const [fields, setFields] = useState<any[]>([])
@@ -126,7 +133,8 @@ function ConfigPageInner() {
     }
   }
 
-  // Client-side mount detection
+  // Client-side mount detection (keep true so returning from agentes does not
+  // flash a full-page skeleton — feels like a hard reload).
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -566,21 +574,6 @@ function ConfigPageInner() {
     { id: 'audit', label: 'Auditoría', icon: Shield }
   ];
 
-  // Show loading skeleton on server/initial render
-  if (!mounted) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-muted to-blue-50 dark:from-background dark:to-background">
-        <div className="max-w-7xl mx-auto p-4 md:p-6">
-          <div className="animate-pulse space-y-4">
-            <div className="h-24 bg-muted rounded-xl"></div>
-            <div className="h-16 bg-muted rounded-xl"></div>
-            <div className="h-96 bg-muted rounded-xl"></div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-muted to-blue-50 dark:from-background dark:to-background">
       <div className="max-w-7xl mx-auto p-4 md:p-6 pb-20 md:pb-6">
@@ -866,13 +859,13 @@ function ConfigPageInner() {
                 <p className="text-muted-foreground mb-6">
                   Configurá voz, tono, Probar y controles de pánico del Agent Layer
                 </p>
-                <a
+                <Link
                   href="/config/agentes"
                   className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium"
                 >
                   <Sparkles className="w-5 h-5" />
                   Abrir Agentes
-                </a>
+                </Link>
               </div>
             </div>
           )}

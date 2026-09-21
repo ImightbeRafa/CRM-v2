@@ -71,6 +71,10 @@ export function listDtoToSoftConversation(
     status: dto.status as ConversationStatus,
     tags: coerceSoftTags(dto.tags),
     orderId,
+    agentLabel: dto.agentLabel ?? null,
+    agentEmoji: dto.agentEmoji ?? null,
+    agentStateDot: dto.agentStateDot ?? null,
+    pendingSuggestionText: dto.pendingSuggestionText ?? null,
   }
 }
 

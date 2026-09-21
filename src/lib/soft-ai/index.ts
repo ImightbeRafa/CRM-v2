@@ -57,3 +57,10 @@ export {
   maySoftAiMetaReply,
   softAiConversationKey,
 } from '@/lib/soft-ai/agent-mode-server'
+export {
+  CHAT_AGENT_LAYER_V1_FLAG,
+  FORGE_WA_SOCIAL_ACCOUNT_ID,
+  A1_TOOL_NAMES,
+} from '@/lib/soft-ai/agent-types'
+export { composeEffectiveBehavior } from '@/lib/soft-ai/agent-resolver'
+export { formatAgentHeaderLabel, agentStateDot } from '@/lib/soft-ai/agent-inbox-projection'

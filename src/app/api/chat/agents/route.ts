@@ -1,0 +1,87 @@
+/**
+ * GET/POST /api/chat/agents — list + create ChatAgent
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { hasPermission, type Role } from '@/lib/rbac'
+import {
+  createChatAgent,
+  listChatAgents,
+  ensurePilotDefaults,
+} from '@/lib/soft-ai/agent-admin'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+export async function GET(request: NextRequest) {
+  try {
+    const auth = await authenticateAPIWithPermission(request, 'view_config')
+    if (!auth.ok) return auth.response
+
+    const result = await listChatAgents(auth.tenantId)
+    return NextResponse.json({
+      success: true,
+      schemaReady: result.schemaReady,
+      agents: result.agents,
+      canEdit: hasPermission(auth.role as Role, 'update_config'),
+    })
+  } catch (error) {
+    console.error('[chat/agents GET]', error)
+    return NextResponse.json({ success: false, error: 'Error al listar agentes' }, { status: 500 })
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ success: false, error: 'JSON requerido' }, { status: 400 })
+    }
+    const rec = body as Record<string, unknown>
+
+    if (rec.bootstrapPilot === true) {
+      const result = await ensurePilotDefaults({
+        tenantId: auth.tenantId,
+        actorUserId: auth.userId,
+      })
+      return NextResponse.json({ success: true, ...result })
+    }
+
+    const name = typeof rec.name === 'string' ? rec.name : ''
+    if (!name.trim()) {
+      return NextResponse.json({ success: false, error: 'Nombre requerido' }, { status: 400 })
+    }
+
+    const agent = await createChatAgent({
+      tenantId: auth.tenantId,
+      actorUserId: auth.userId,
+      actorName: auth.userId,
+      actorRole: String(auth.role),
+      name,
+      emoji: typeof rec.emoji === 'string' ? rec.emoji : undefined,
+      description: typeof rec.description === 'string' ? rec.description : null,
+      systemInstructions:
+        typeof rec.systemInstructions === 'string' ? rec.systemInstructions : undefined,
+      tonePreset: rec.tonePreset as 'warm_concise' | 'formal' | 'playful' | undefined,
+      enabledTools: Array.isArray(rec.enabledTools)
+        ? rec.enabledTools.filter((t): t is string => typeof t === 'string')
+        : undefined,
+    })
+
+    return NextResponse.json({ success: true, agent })
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'error'
+    if (msg === 'SCHEMA_NOT_READY') {
+      return NextResponse.json(
+        { success: false, error: 'SQL 027 aún no aplicado', schemaReady: false },
+        { status: 503 },
+      )
+    }
+    console.error('[chat/agents POST]', error)
+    return NextResponse.json({ success: false, error: 'Error al crear agente' }, { status: 500 })
+  }
+}

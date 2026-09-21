@@ -1,6 +1,7 @@
 /**
  * Soft AI automation job processor — run turn then exactly-once deliver.
- * Reuses Soft AI inbound logic; never imports staff bot modules.
+ * Dispatches Agent Layer when chat_agent_layer_v1 resolves; else legacy Soft AI.
+ * Never imports staff bot modules.
  */
 
 import {
@@ -18,6 +19,8 @@ import {
 } from '@/lib/soft-ai/automation-delivery'
 import { executeSoftAiInboundTurn } from '@/lib/soft-ai/inbound-hook'
 import { dualWriteChatMessage } from '@/lib/chat-conversation-write'
+import { executeAgentLayerTurn } from '@/lib/soft-ai/agent-turn'
+import { resolveChatAgent } from '@/lib/soft-ai/agent-resolver'
 
 type JobPayload = {
   platform?: string | null
@@ -35,7 +38,7 @@ function readPayload(payload: unknown): JobPayload {
   }
 }
 
-async function dispatch(row: ClaimedChatAutomationJob) {
+async function dispatchLegacy(row: ClaimedChatAutomationJob) {
   const payload = readPayload(row.payload)
   if (!payload.content || !payload.platform) {
     throw new Error('SOFT_AI_PAYLOAD_INVALID')
@@ -111,6 +114,27 @@ async function dispatch(row: ClaimedChatAutomationJob) {
   return { status: 'delivered' as const, skipped: delivery.skipped }
 }
 
+async function dispatch(row: ClaimedChatAutomationJob) {
+  // Probe layer flag without requiring ai_active yet.
+  const probe = await resolveChatAgent({
+    tenantId: row.tenantId,
+    socialAccountId: row.socialAccountId,
+    conversationAiMode: 'ai_active',
+  })
+
+  if (!probe.layerEnabled) {
+    return dispatchLegacy(row)
+  }
+
+  // Flag on: Agent Layer owns allowlisted + non-allowlisted outcomes (skip).
+  // Never fall through to legacy for allowlisted accounts.
+  const result = await executeAgentLayerTurn(row)
+  if (result.status === 'legacy') {
+    return dispatchLegacy(row)
+  }
+  return result
+}
+
 export async function processClaimedJob(row: ClaimedChatAutomationJob) {
   const work = dispatch(row)
   try {
@@ -120,9 +144,6 @@ export async function processClaimedJob(row: ClaimedChatAutomationJob) {
   } catch (error) {
     const terminal = await failJob(row, error)
     if (error instanceof Error && error.name === 'ChatAutomationTimeoutError') {
-      // If the serverless invocation remains alive and the timed-out work
-      // finishes before the delayed retry, close the row instead of sending a
-      // duplicate response. If Vercel kills it, the cron retry remains valid.
       void work.then(
         () => completeLateJob(row),
         () => undefined,

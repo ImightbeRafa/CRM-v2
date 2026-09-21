@@ -8,6 +8,7 @@ import {
   type SoftTag,
 } from '@/lib/chat-soft-copilot'
 import { agentModeLabel, isSoftHumanComposerEnabled, type SoftAiAgentMode } from '@/lib/soft-ai'
+import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
 import { formatThreadChannelMeta, platformFullName } from '@/lib/social-account-identity'
 import {
@@ -260,6 +261,9 @@ export function SoftThreadPane({
                   : metaLine}
               </span>
             </p>
+            <p className="mt-1 truncate text-[11px] text-slate-500" data-testid="soft-agent-label">
+              {conversation.agentLabel || 'Sin agente'}
+            </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               <span
                 className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${statusChipClass(conversation.status)}`}
@@ -313,7 +317,9 @@ export function SoftThreadPane({
           renderedMessages.map((msg) => {
             const outbound = msg.direction === 'outbound'
             const failed = failedOutboundId === msg.id
-            const softAi = Boolean(msg.id?.startsWith('demo-ai-'))
+            const softAi =
+              Boolean(msg.id?.startsWith('demo-ai-')) ||
+              isSoftAiOutboundMetadata(msg.metadata)
             const showMedia = messageHasMedia(msg)
             const isPlaceholder =
               showMedia &&
@@ -367,7 +373,7 @@ export function SoftThreadPane({
                           ) : null}
                         </>
                       ) : softAi ? (
-                        'IA ✓'
+                        'IA envió'
                       ) : (
                         'Enviado ✓'
                       )}
@@ -378,6 +384,21 @@ export function SoftThreadPane({
             )
           })
         )}
+
+        {conversation.pendingSuggestionText ? (
+          <div
+            className="rounded-[14px] bg-violet-50 px-4 py-3 text-[12px] text-violet-950 ring-1 ring-violet-100"
+            data-testid="soft-ai-suggestion"
+          >
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+              Sugerencia de IA
+            </p>
+            <p className="whitespace-pre-wrap">{conversation.pendingSuggestionText}</p>
+            <p className="mt-2 text-[10px] text-violet-600">
+              Solo lectura en A1 — Usar / Editar / Descartar llegan en A3.
+            </p>
+          </div>
+        ) : null}
 
         {conversation.isDemo ? (
           <div className="rounded-[14px] bg-amber-50 px-4 py-2.5 text-[11px] text-amber-900 ring-1 ring-amber-100">

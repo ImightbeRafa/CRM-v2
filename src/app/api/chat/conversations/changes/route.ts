@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parsePageLimit } from '@/lib/cursor-pagination'
 import { mapConversationToListDto, mapMessageToDto } from '@/lib/chat-conversation-api'
+import { enrichConversationDtosWithAgents } from '@/lib/soft-ai/agent-inbox-enrich'
 import {
   buildConversationChangesWhere,
   parseConversationChangesQuery,
@@ -129,8 +130,13 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    const conversations = rows.map((row) =>
-      mapConversationToListDto(mapRawConversationRow(row as Parameters<typeof mapRawConversationRow>[0])),
+    const conversations = await enrichConversationDtosWithAgents(
+      auth.tenantId,
+      rows.map((row) =>
+        mapConversationToListDto(
+          mapRawConversationRow(row as Parameters<typeof mapRawConversationRow>[0]),
+        ),
+      ),
     )
 
     // Advance only to last delivered row — never jump to tenant max (skips queued revisions).

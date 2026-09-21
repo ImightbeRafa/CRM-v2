@@ -21,6 +21,7 @@ import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
+import { dualWriteChatMessage } from '@/lib/chat-conversation-write'
 
 type InboundHookArgs = {
   tenantId: string
@@ -272,25 +273,30 @@ export async function maybeRunSoftAiAfterInbound(
       text: result.reply,
     })
 
-    await db.chatMessage.create({
-      data: {
-        tenantId: args.tenantId,
-        socialAccountId: args.socialAccountId,
-        direction: 'outbound',
-        content: result.reply,
-        orderId: result.orderId || null,
-        metadata: {
-          softAi: true,
-          toolLog: result.toolLog,
-          agentMode: result.agentMode,
-          to: args.senderId,
-          platform: args.platform,
-          providerMessageId: send.providerMessageId,
-          sendOk: send.ok,
-          sendError: send.error || null,
-        },
-        sentAt: new Date(),
+    await dualWriteChatMessage({
+      tenantId: args.tenantId,
+      socialAccountId: args.socialAccountId,
+      direction: 'outbound',
+      content: result.reply,
+      sentAt: new Date(),
+      peerId: args.senderId,
+      peerName: args.senderName || null,
+      providerMessageId: send.providerMessageId || null,
+      messageType: 'text',
+      deliveryStatus: send.ok ? 'sent' : 'failed',
+      platform: args.platform,
+      orderId: result.orderId || null,
+      metadata: {
+        softAi: true,
+        toolLog: result.toolLog,
+        agentMode: result.agentMode,
+        to: args.senderId,
+        platform: args.platform,
+        providerMessageId: send.providerMessageId,
+        sendOk: send.ok,
+        sendError: send.error || null,
       },
+      suppressSoftAi: true,
     })
 
     // Persist escalated mode into flag.config.agentState (server truth)

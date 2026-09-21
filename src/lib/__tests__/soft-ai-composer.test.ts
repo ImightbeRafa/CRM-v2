@@ -47,7 +47,7 @@ describe('F37-03 soft human composer after Pausar / Tomar control', () => {
   })
 
   it('SoftCopilotInbox allows DEMO local human send after pause/takeover', () => {
-    const src = readFileSync(resolve('src/components/chats/SoftCopilotInbox.tsx'), 'utf8')
+    const src = readFileSync(resolve('src/components/chats/SoftCopilotInboxLegacy.tsx'), 'utf8')
     assert.match(src, /F37-03/)
     assert.match(src, /demo-human-/)
     assert.match(src, /mode !== 'paused' && mode !== 'human'/)

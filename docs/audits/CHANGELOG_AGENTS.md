@@ -1,3 +1,13 @@
+## 2026-09-21 — PR-2 Respond.io write+read v2
+
+- Dual-write ChatConversation + ChatMessage on webhook/send/soft-ai outbound
+- Meta receipts: WA statuses + IG echo/delivery/read (monotonic deliveryStatus)
+- Webhook HMAC-first; invalid signatures get dedicated IP limiter
+- Hardened WA direct-oauth (`update_config` + CSRF state cookie/callback)
+- Conversation API + SoftCopilotInbox v2 behind `chat_inbox_v2` (default off)
+- Shipped gated `025_chat_inbox_uniques.sql` (NOT applied; not in default apply)
+- Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; bot paths untouched
+
 # Agent Changelog
 
 Append-only. Newest entries at the top.

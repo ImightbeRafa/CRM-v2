@@ -28,6 +28,109 @@ import { isChatAgentSchemaReady, isMissingRelationError } from '@/lib/soft-ai/ag
 import { runAgentTestTurn } from '@/lib/soft-ai/agent-turn'
 import { logAuditEvent } from '@/lib/auditLogger'
 
+/** Interactive txn options if a multi-write admin path needs `$transaction` again. */
+export const CHAT_AGENT_ADMIN_TX = {
+  maxWait: 20_000,
+  timeout: 20_000,
+} as const
+
+export type ChatAgentAdminHttpError = {
+  status: number
+  body: { success: false; error: string; schemaReady?: false; code?: string }
+}
+
+/**
+ * Map admin thrown codes / Prisma errors to clear Spanish API payloads.
+ * Prefer this over a generic "Error al crear agente".
+ */
+export function mapChatAgentAdminError(error: unknown): ChatAgentAdminHttpError | null {
+  const msg = error instanceof Error ? error.message : ''
+  if (msg === 'SCHEMA_NOT_READY') {
+    return {
+      status: 503,
+      body: {
+        success: false,
+        error: 'SQL 027 aún no aplicado — no se pueden crear agentes todavía',
+        schemaReady: false,
+        code: 'SCHEMA_NOT_READY',
+      },
+    }
+  }
+  if (msg === 'NAME_REQUIRED') {
+    return {
+      status: 400,
+      body: { success: false, error: 'Nombre requerido', code: 'NAME_REQUIRED' },
+    }
+  }
+  if (msg === 'AGENT_NOT_FOUND') {
+    return {
+      status: 404,
+      body: { success: false, error: 'Agente no encontrado', code: 'AGENT_NOT_FOUND' },
+    }
+  }
+  if (msg === 'MODEL_NOT_ALLOWED') {
+    return {
+      status: 400,
+      body: { success: false, error: 'Modelo no permitido', code: 'MODEL_NOT_ALLOWED' },
+    }
+  }
+  if (msg === 'SOCIAL_ACCOUNT_NOT_FOUND') {
+    return {
+      status: 404,
+      body: { success: false, error: 'Cuenta social no encontrada', code: 'SOCIAL_ACCOUNT_NOT_FOUND' },
+    }
+  }
+  if (msg === 'SOCIAL_ACCOUNT_ID_REQUIRED') {
+    return {
+      status: 400,
+      body: {
+        success: false,
+        error: 'Indicá la cuenta social (socialAccountId)',
+        code: 'SOCIAL_ACCOUNT_ID_REQUIRED',
+      },
+    }
+  }
+
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2028') {
+      return {
+        status: 503,
+        body: {
+          success: false,
+          error:
+            'La base de datos tardó demasiado (transacción cerrada). Reintentá en unos segundos.',
+          code: 'P2028',
+        },
+      }
+    }
+    if (error.code === 'P2002') {
+      const target = Array.isArray(error.meta?.target)
+        ? (error.meta?.target as string[]).join(',')
+        : String(error.meta?.target || '')
+      if (/name/i.test(target) || /tenantId_name/i.test(target)) {
+        return {
+          status: 409,
+          body: {
+            success: false,
+            error: 'Ya existe un agente con ese nombre en este tenant',
+            code: 'NAME_CONFLICT',
+          },
+        }
+      }
+      return {
+        status: 409,
+        body: {
+          success: false,
+          error: 'Conflicto de unicidad — ese registro ya existe',
+          code: 'UNIQUE_CONFLICT',
+        },
+      }
+    }
+  }
+
+  return null
+}
+
 function asTone(v: unknown): ChatAgentTonePreset {
   if (v === 'formal' || v === 'playful' || v === 'warm_concise') return v
   return 'warm_concise'
@@ -120,41 +223,40 @@ export async function createChatAgent(input: {
   ).slice(0, AGENT_INSTRUCTIONS_MAX)
   const enabledTools = (input.enabledTools || [...A1_TOOL_NAMES]).filter(isA1ToolName)
 
-  const created = await prisma.$transaction(async (tx) => {
-    const row = await tx.chatAgent.create({
-      data: {
-        tenantId: input.tenantId,
-        name,
-        emoji: (input.emoji || '✨').slice(0, 8),
-        description: input.description?.trim() || null,
-        systemInstructions,
-        tonePreset: asTone(input.tonePreset),
-        model: 'grok-4.6',
-        operationMode: 'ai_suggest',
-        enabledTools,
-        paymentAlwaysHuman: true,
-        status: 'draft',
-        version: 1,
-        createdBy: input.actorUserId,
-        updatedBy: input.actorUserId,
-      },
-    })
-    await logAuditEvent({
+  // Single write — do NOT nest logAuditEvent inside $transaction (audit uses
+  // global prisma and held interactive txns open → P2028 under Supabase latency).
+  const row = await prisma.chatAgent.create({
+    data: {
       tenantId: input.tenantId,
-      action: 'CREATE',
-      entityType: 'ChatAgent',
-      entityId: row.id,
-      entityName: row.name,
-      oldValues: null,
-      newValues: snapshotAgent(row),
-      userId: input.actorUserId,
-      userName: input.actorName,
-      userRole: input.actorRole,
-      reason: 'chat_agent_create',
-    })
-    return row
+      name,
+      emoji: (input.emoji || '✨').slice(0, 8),
+      description: input.description?.trim() || null,
+      systemInstructions,
+      tonePreset: asTone(input.tonePreset),
+      model: 'grok-4.6',
+      operationMode: 'ai_suggest',
+      enabledTools,
+      paymentAlwaysHuman: true,
+      status: 'draft',
+      version: 1,
+      createdBy: input.actorUserId,
+      updatedBy: input.actorUserId,
+    },
   })
-  return created
+  await logAuditEvent({
+    tenantId: input.tenantId,
+    action: 'CREATE',
+    entityType: 'ChatAgent',
+    entityId: row.id,
+    entityName: row.name,
+    oldValues: null,
+    newValues: snapshotAgent(row),
+    userId: input.actorUserId,
+    userName: input.actorName,
+    userRole: input.actorRole,
+    reason: 'chat_agent_create',
+  })
+  return row
 }
 
 export async function updateChatAgent(input: {
@@ -227,27 +329,25 @@ export async function updateChatAgent(input: {
     data.version = { increment: 1 }
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const row = await tx.chatAgent.update({
-      where: { id: existing.id },
-      data,
-    })
-    await logAuditEvent({
-      tenantId: input.tenantId,
-      action: 'UPDATE',
-      entityType: 'ChatAgent',
-      entityId: row.id,
-      entityName: row.name,
-      oldValues: snapshotAgent(existing),
-      newValues: snapshotAgent(row),
-      userId: input.actorUserId,
-      userName: input.actorName,
-      userRole: input.actorRole,
-      reason: 'chat_agent_update',
-    })
-    return row
+  // Single write — audit AFTER commit (never inside interactive $transaction).
+  const row = await prisma.chatAgent.update({
+    where: { id: existing.id },
+    data,
   })
-  return updated
+  await logAuditEvent({
+    tenantId: input.tenantId,
+    action: 'UPDATE',
+    entityType: 'ChatAgent',
+    entityId: row.id,
+    entityName: row.name,
+    oldValues: snapshotAgent(existing),
+    newValues: snapshotAgent(row),
+    userId: input.actorUserId,
+    userName: input.actorName,
+    userRole: input.actorRole,
+    reason: 'chat_agent_update',
+  })
+  return row
 }
 
 export async function listAgentAudit(tenantId: string, agentId: string, take = 20) {

@@ -8,6 +8,7 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import {
   listAgentAudit,
   updateChatAgent,
+  mapChatAgentAdminError,
 } from '@/lib/soft-ai/agent-admin'
 import { prisma } from '@/lib/db'
 import { isChatAgentSchemaReady } from '@/lib/soft-ai/agent-schema'
@@ -93,15 +94,9 @@ export async function PATCH(
     })
     return NextResponse.json({ success: true, agent })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : 'error'
-    if (msg === 'AGENT_NOT_FOUND') {
-      return NextResponse.json({ success: false, error: 'No encontrado' }, { status: 404 })
-    }
-    if (msg === 'MODEL_NOT_ALLOWED') {
-      return NextResponse.json({ success: false, error: 'Modelo no permitido' }, { status: 400 })
-    }
-    if (msg === 'SCHEMA_NOT_READY') {
-      return NextResponse.json({ success: false, schemaReady: false }, { status: 503 })
+    const mapped = mapChatAgentAdminError(error)
+    if (mapped) {
+      return NextResponse.json(mapped.body, { status: mapped.status })
     }
     console.error('[chat/agents/:id PATCH]', error)
     return NextResponse.json({ success: false, error: 'Error al actualizar' }, { status: 500 })

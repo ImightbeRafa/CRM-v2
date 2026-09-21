@@ -9,6 +9,7 @@ import {
   createChatAgent,
   listChatAgents,
   ensurePilotDefaults,
+  mapChatAgentAdminError,
 } from '@/lib/soft-ai/agent-admin'
 
 export const runtime = 'nodejs'
@@ -28,6 +29,10 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[chat/agents GET]', error)
+    const mapped = mapChatAgentAdminError(error)
+    if (mapped) {
+      return NextResponse.json(mapped.body, { status: mapped.status })
+    }
     return NextResponse.json({ success: false, error: 'Error al listar agentes' }, { status: 500 })
   }
 }
@@ -48,12 +53,32 @@ export async function POST(request: NextRequest) {
         tenantId: auth.tenantId,
         actorUserId: auth.userId,
       })
+      if (!result.ok) {
+        if (result.reason === 'schema_not_ready') {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'SQL 027 aún no aplicado — no se pueden sembrar agentes todavía',
+              schemaReady: false,
+              code: 'SCHEMA_NOT_READY',
+            },
+            { status: 503 },
+          )
+        }
+        return NextResponse.json(
+          { success: false, error: 'No se pudo sembrar el piloto', reason: result.reason },
+          { status: 500 },
+        )
+      }
       return NextResponse.json({ success: true, ...result })
     }
 
     const name = typeof rec.name === 'string' ? rec.name : ''
     if (!name.trim()) {
-      return NextResponse.json({ success: false, error: 'Nombre requerido' }, { status: 400 })
+      return NextResponse.json(
+        { success: false, error: 'Nombre requerido', code: 'NAME_REQUIRED' },
+        { status: 400 },
+      )
     }
 
     const agent = await createChatAgent({
@@ -74,12 +99,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, agent })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : 'error'
-    if (msg === 'SCHEMA_NOT_READY') {
-      return NextResponse.json(
-        { success: false, error: 'SQL 027 aún no aplicado', schemaReady: false },
-        { status: 503 },
-      )
+    const mapped = mapChatAgentAdminError(error)
+    if (mapped) {
+      return NextResponse.json(mapped.body, { status: mapped.status })
     }
     console.error('[chat/agents POST]', error)
     return NextResponse.json({ success: false, error: 'Error al crear agente' }, { status: 500 })

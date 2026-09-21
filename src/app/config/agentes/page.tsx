@@ -34,6 +34,14 @@ type AgentRow = {
 
 const TONES: ChatAgentTonePreset[] = ['warm_concise', 'formal', 'playful']
 
+function apiErrorMessage(data: unknown, fallback: string): string {
+  if (data && typeof data === 'object' && 'error' in data) {
+    const err = (data as { error?: unknown }).error
+    if (typeof err === 'string' && err.trim()) return err
+  }
+  return fallback
+}
+
 export default function AgentesConfigPage() {
   const router = useRouter()
   const { data: session } = useSession()
@@ -55,6 +63,7 @@ export default function AgentesConfigPage() {
   const [history, setHistory] = useState<unknown[]>([])
 
   const selected = agents.find((a) => a.id === selectedId) || null
+  const isEmpty = !loading && agents.length === 0
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -62,23 +71,30 @@ export default function AgentesConfigPage() {
     try {
       const res = await fetch('/api/chat/agents')
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Error')
+      if (!res.ok) throw new Error(apiErrorMessage(data, 'Error al cargar agentes'))
       setSchemaReady(data.schemaReady !== false)
-      setAgents(data.agents || [])
-      if (!selectedId && data.agents?.[0]?.id) setSelectedId(data.agents[0].id)
+      const nextAgents: AgentRow[] = data.agents || []
+      setAgents(nextAgents)
+      setSelectedId((prev) => {
+        if (prev && nextAgents.some((a) => a.id === prev)) return prev
+        return nextAgents[0]?.id ?? null
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al cargar')
     } finally {
       setLoading(false)
     }
-  }, [selectedId])
+  }, [])
 
   useEffect(() => {
     void load()
   }, [load])
 
   useEffect(() => {
-    if (!selectedId) return
+    if (!selectedId) {
+      setHistory([])
+      return
+    }
     void (async () => {
       const res = await fetch(`/api/chat/agents/${selectedId}`)
       if (!res.ok) return
@@ -88,7 +104,7 @@ export default function AgentesConfigPage() {
   }, [selectedId])
 
   async function patch(patch: Record<string, unknown>) {
-    if (!selectedId || !canEdit) return
+    if (!selectedId || !canEdit || saving) return
     setSaving(true)
     setError(null)
     try {
@@ -98,7 +114,8 @@ export default function AgentesConfigPage() {
         body: JSON.stringify(patch),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Error al guardar')
+      if (!res.ok) throw new Error(apiErrorMessage(data, 'Error al guardar'))
+      if (data.schemaReady === false) setSchemaReady(false)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
@@ -108,8 +125,9 @@ export default function AgentesConfigPage() {
   }
 
   async function createAgent() {
-    if (!canEdit) return
+    if (!canEdit || saving) return
     setSaving(true)
+    setError(null)
     try {
       const res = await fetch('/api/chat/agents', {
         method: 'POST',
@@ -117,8 +135,9 @@ export default function AgentesConfigPage() {
         body: JSON.stringify({ name: `Agente ${agents.length + 1}` }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Error')
-      setSelectedId(data.agent.id)
+      if (!res.ok) throw new Error(apiErrorMessage(data, 'Error al crear agente'))
+      if (data.schemaReady === false) setSchemaReady(false)
+      if (data.agent?.id) setSelectedId(data.agent.id)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
@@ -128,23 +147,32 @@ export default function AgentesConfigPage() {
   }
 
   async function bootstrapPilot() {
-    if (!canEdit) return
+    if (!canEdit || saving) return
     setSaving(true)
+    setError(null)
     try {
-      await fetch('/api/chat/agents', {
+      const res = await fetch('/api/chat/agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bootstrapPilot: true }),
       })
+      const data = await res.json()
+      if (!res.ok) throw new Error(apiErrorMessage(data, 'Error al sembrar piloto'))
+      if (data.schemaReady === false) setSchemaReady(false)
+      if (data.forgeId) setSelectedId(data.forgeId)
+      else if (data.predId) setSelectedId(data.predId)
       await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error')
     } finally {
       setSaving(false)
     }
   }
 
   async function runProbar() {
-    if (!selectedId || !canEdit) return
+    if (!selectedId || !canEdit || saving) return
     setSaving(true)
+    setError(null)
     setTestResult(null)
     try {
       const res = await fetch(`/api/chat/agents/${selectedId}/test`, {
@@ -156,7 +184,7 @@ export default function AgentesConfigPage() {
         }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Error en Probar')
+      if (!res.ok) throw new Error(apiErrorMessage(data, 'Error en Probar'))
       setTestResult({
         text: data.text,
         tokens: data.tokens,
@@ -171,9 +199,10 @@ export default function AgentesConfigPage() {
   }
 
   async function panic(action: string) {
-    if (!selectedId || !canEdit) return
+    if (!selectedId || !canEdit || saving) return
     if (!window.confirm('¿Confirmás esta acción de pánico?')) return
     setSaving(true)
+    setError(null)
     try {
       const res = await fetch(`/api/chat/agents/${selectedId}/panic`, {
         method: 'POST',
@@ -184,7 +213,7 @@ export default function AgentesConfigPage() {
         }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Error')
+      if (!res.ok) throw new Error(apiErrorMessage(data, 'Error en control de pánico'))
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
@@ -195,67 +224,117 @@ export default function AgentesConfigPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      <div className="mx-auto max-w-5xl p-4 md:p-6">
+      <div className="mx-auto max-w-5xl px-4 py-4 md:px-6 md:py-5">
         <button
           type="button"
           onClick={() => router.push('/config')}
-          className="mb-4 inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
+          className="mb-3 inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
         >
           <ArrowLeft className="h-4 w-4" /> Volver a Configuración
         </button>
 
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-900">
-              <Sparkles className="h-6 w-6 text-indigo-600" /> Agentes de chat
+            <h1 className="flex items-center gap-2 text-xl font-semibold text-slate-900 md:text-2xl">
+              <Sparkles className="h-5 w-5 text-indigo-600 md:h-6 md:w-6" /> Agentes de chat
             </h1>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="mt-0.5 text-sm text-slate-600">
               Voz, tono, herramientas y canales del Soft Agent Layer (piloto Forge WA).
             </p>
           </div>
-          {canEdit ? (
+          {canEdit && !isEmpty ? (
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => void bootstrapPilot()}
-                disabled={saving}
-                className="rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-slate-200 hover:bg-slate-50"
+                disabled={saving || !schemaReady}
+                className="rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Sembrar piloto
+                {saving ? 'Guardando…' : 'Sembrar piloto Forge'}
               </button>
               <button
                 type="button"
                 onClick={() => void createAgent()}
-                disabled={saving}
-                className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                disabled={saving || !schemaReady}
+                className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Nuevo agente
+                {saving ? 'Guardando…' : 'Crear agente'}
               </button>
             </div>
           ) : null}
         </header>
 
         {!schemaReady ? (
-          <div className="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-100">
-            SQL 027 aún no aplicado — la UI es de solo lectura hasta el gated apply.
+          <div className="mb-3 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-100">
+            SQL 027 aún no aplicado — la UI es de solo lectura hasta el gated apply. No se pueden
+            crear ni sembrar agentes.
           </div>
         ) : null}
         {error ? (
-          <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+          <div
+            role="alert"
+            className="mb-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-100"
+          >
+            {error}
+          </div>
         ) : null}
 
         {loading ? (
           <p className="text-sm text-slate-500">Cargando…</p>
+        ) : isEmpty ? (
+          <div className="rounded-xl bg-white px-6 py-10 text-center ring-1 ring-slate-100">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50 text-2xl">
+              ✨
+            </div>
+            <h2 className="text-lg font-semibold text-slate-900">Todavía no hay agentes</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm text-slate-600">
+              Sembrá el piloto Forge (Predeterminado + Forge ventas) o creá un agente nuevo para
+              configurar voz, tono y herramientas.
+            </p>
+            {canEdit && schemaReady ? (
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void bootstrapPilot()}
+                  disabled={saving}
+                  className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving ? 'Sembrando…' : 'Sembrar piloto Forge'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void createAgent()}
+                  disabled={saving}
+                  className="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving ? 'Creando…' : 'Crear agente'}
+                </button>
+              </div>
+            ) : null}
+            {canEdit && !schemaReady ? (
+              <p className="mt-4 text-xs text-amber-800">
+                Aplicá SQL 027 para habilitar creación y siembra.
+              </p>
+            ) : null}
+            {!canEdit ? (
+              <p className="mt-4 text-xs text-slate-500">
+                Necesitás permiso de configuración para crear agentes.
+              </p>
+            ) : null}
+          </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-[220px_1fr]">
-            <aside className="rounded-xl bg-white p-3 ring-1 ring-slate-100">
-              <ul className="space-y-1">
+          <div className="grid gap-3 md:grid-cols-[200px_1fr]">
+            <aside className="rounded-xl bg-white p-2 ring-1 ring-slate-100">
+              <p className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                Agentes
+              </p>
+              <ul className="space-y-0.5">
                 {agents.map((a) => (
                   <li key={a.id}>
                     <button
                       type="button"
                       onClick={() => setSelectedId(a.id)}
-                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
+                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm ${
                         selectedId === a.id ? 'bg-indigo-50 text-indigo-900' : 'hover:bg-slate-50'
                       }`}
                     >
@@ -267,18 +346,18 @@ export default function AgentesConfigPage() {
               </ul>
             </aside>
 
-            <section className="rounded-xl bg-white p-5 ring-1 ring-slate-100">
+            <section className="rounded-xl bg-white p-4 ring-1 ring-slate-100 md:p-5">
               {!selected ? (
-                <p className="text-sm text-slate-500">Seleccioná un agente.</p>
+                <p className="text-sm text-slate-500">Seleccioná un agente en la lista.</p>
               ) : (
-                <div className="space-y-5">
+                <div className="space-y-4">
                   <div>
                     <label className="text-xs font-medium text-slate-500">Nombre</label>
                     <input
-                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
                       defaultValue={selected.name}
                       key={`name-${selected.id}-${selected.version}`}
-                      disabled={!canEdit}
+                      disabled={!canEdit || saving}
                       onBlur={(e) => void patch({ name: e.target.value })}
                     />
                   </div>
@@ -290,9 +369,9 @@ export default function AgentesConfigPage() {
                         <button
                           key={t}
                           type="button"
-                          disabled={!canEdit}
+                          disabled={!canEdit || saving}
                           onClick={() => void patch({ tonePreset: t })}
-                          className={`rounded-full px-3 py-1 text-xs font-medium ${
+                          className={`rounded-full px-3 py-1 text-xs font-medium disabled:opacity-50 ${
                             selected.tonePreset === t
                               ? 'bg-indigo-600 text-white'
                               : 'bg-slate-100 text-slate-700'
@@ -307,12 +386,12 @@ export default function AgentesConfigPage() {
                   <div>
                     <label className="text-xs font-medium text-slate-500">Voz del agente</label>
                     <textarea
-                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
                       rows={4}
                       maxLength={1200}
                       defaultValue={selected.systemInstructions}
                       key={`voz-${selected.id}-${selected.version}`}
-                      disabled={!canEdit}
+                      disabled={!canEdit || saving}
                       onBlur={(e) => void patch({ systemInstructions: e.target.value })}
                     />
                     <p className="mt-1 text-[11px] text-slate-400">
@@ -328,7 +407,7 @@ export default function AgentesConfigPage() {
                         <label key={tool} className="flex items-center gap-2 text-sm text-slate-700">
                           <input
                             type="checkbox"
-                            disabled={!canEdit}
+                            disabled={!canEdit || saving}
                             checked={selected.enabledTools.includes(tool)}
                             onChange={(e) => {
                               const next = e.target.checked
@@ -347,9 +426,9 @@ export default function AgentesConfigPage() {
                     <div>
                       <p className="text-xs font-medium text-slate-500">Modo</p>
                       <select
-                        className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                        className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
                         value={selected.operationMode}
-                        disabled={!canEdit}
+                        disabled={!canEdit || saving}
                         onChange={(e) => {
                           const mode = e.target.value
                           if (
@@ -371,13 +450,15 @@ export default function AgentesConfigPage() {
                     <div>
                       <p className="text-xs font-medium text-slate-500">Estado</p>
                       <select
-                        className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                        className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
                         value={selected.status}
-                        disabled={!canEdit}
+                        disabled={!canEdit || saving}
                         onChange={(e) => {
                           if (
                             e.target.value === 'live' &&
-                            !window.confirm('¿Pasar a En vivo? Solo agentes En vivo corren en inbound real.')
+                            !window.confirm(
+                              '¿Pasar a En vivo? Solo agentes En vivo corren en inbound real.',
+                            )
                           ) {
                             return
                           }
@@ -392,14 +473,14 @@ export default function AgentesConfigPage() {
                     <p className="self-end text-xs text-slate-400">v{selected.version}</p>
                   </div>
 
-                  <div className="rounded-lg bg-slate-50 p-4">
+                  <div className="rounded-lg bg-slate-50 p-3">
                     <p className="text-sm font-medium text-slate-800">Probar</p>
                     <textarea
-                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
                       rows={2}
                       value={testText}
                       onChange={(e) => setTestText(e.target.value)}
-                      disabled={!canEdit}
+                      disabled={!canEdit || saving}
                     />
                     <button
                       type="button"
@@ -407,7 +488,7 @@ export default function AgentesConfigPage() {
                       onClick={() => void runProbar()}
                       className="mt-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                     >
-                      Probar (sin Meta)
+                      {saving ? 'Probando…' : 'Probar (sin Meta)'}
                     </button>
                     {testResult ? (
                       <div className="mt-3 space-y-2 text-sm">
@@ -427,7 +508,7 @@ export default function AgentesConfigPage() {
                     <div className="mt-2 flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={!canEdit}
+                        disabled={!canEdit || saving}
                         onClick={() => void panic('pause_channel')}
                         className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 ring-1 ring-amber-100 disabled:opacity-50"
                       >
@@ -435,7 +516,7 @@ export default function AgentesConfigPage() {
                       </button>
                       <button
                         type="button"
-                        disabled={!canEdit}
+                        disabled={!canEdit || saving}
                         onClick={() => void panic('human_only')}
                         className="rounded-lg bg-orange-50 px-3 py-2 text-xs font-medium text-orange-900 ring-1 ring-orange-100 disabled:opacity-50"
                       >
@@ -443,7 +524,7 @@ export default function AgentesConfigPage() {
                       </button>
                       <button
                         type="button"
-                        disabled={!canEdit}
+                        disabled={!canEdit || saving}
                         onClick={() => void panic('remove_allowlist')}
                         className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-900 ring-1 ring-red-100 disabled:opacity-50"
                       >
@@ -454,7 +535,7 @@ export default function AgentesConfigPage() {
 
                   <div>
                     <p className="text-sm font-medium text-slate-800">Historial (últimos 20)</p>
-                    <ul className="mt-2 max-h-48 space-y-2 overflow-y-auto text-xs text-slate-600">
+                    <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto text-xs text-slate-600">
                       {history.map((h, i) => {
                         const row = h as {
                           id?: string

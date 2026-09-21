@@ -10,12 +10,34 @@ import { coerceSoftTags } from '@/lib/chat-conversation-api'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 
 export const CHAT_INBOX_V2_IMPORTED_KEY = 'betsy.softCopilot.inboxV2Imported.v1'
-export const CHAT_INBOX_V2_POLL_MS = 4000
+export const CHAT_INBOX_V2_POLL_MS = 5000
 export const CHAT_INBOX_V2_FULL_RECONCILE_MS = 120_000
 export const CHAT_INBOX_V2_LIST_PAGE_LIMIT = 50
 export const CHAT_INBOX_V2_LIST_MAX_PAGES = 40
+export const CHAT_INBOX_V2_THREAD_FETCH_LIMIT = 50
+/** First-paint / DOM window — Phase 4 acceptance 4.3: ≤100 nodes. */
+export const CHAT_INBOX_V2_THREAD_RENDER_WINDOW = 100
+/** In-memory store cap (older pages + window); DOM still clipped to RENDER_WINDOW. */
+export const CHAT_INBOX_V2_THREAD_STORE_CAP = 300
 
 export function messageDtoToInbox(row: ChatMessageItemDto): ChatInboxMessage {
+  const meta = row.metadata
+  const providerMediaId =
+    row.providerMediaId ??
+    (typeof meta?.providerMediaId === 'string' ? meta.providerMediaId : undefined)
+  const mediaMimeType =
+    row.mediaMimeType ??
+    (typeof meta?.mediaMimeType === 'string' ? meta.mediaMimeType : undefined)
+  const mediaFilename =
+    row.mediaFilename ??
+    (typeof meta?.mediaFilename === 'string' ? meta.mediaFilename : undefined)
+  const mediaBlobPath =
+    row.mediaBlobPath ??
+    (typeof meta?.mediaBlobPath === 'string' ? meta.mediaBlobPath : undefined)
+  const clientRequestId =
+    typeof meta?.clientRequestId === 'string' && meta.clientRequestId
+      ? meta.clientRequestId
+      : undefined
   return {
     id: row.id,
     direction: row.direction,
@@ -25,6 +47,13 @@ export function messageDtoToInbox(row: ChatMessageItemDto): ChatInboxMessage {
     metadata: row.metadata,
     clientId: row.clientId ?? undefined,
     orderId: row.orderId ?? undefined,
+    messageType: row.messageType ?? undefined,
+    providerMediaId: providerMediaId || undefined,
+    mediaMimeType: mediaMimeType || undefined,
+    mediaFilename: mediaFilename || undefined,
+    mediaBlobPath: mediaBlobPath || undefined,
+    deliveryStatus: row.deliveryStatus ?? undefined,
+    clientRequestId,
   }
 }
 
@@ -48,6 +77,10 @@ export function listDtoToSoftConversation(
     status: dto.status as ConversationStatus,
     tags: coerceSoftTags(dto.tags),
     orderId,
+    agentLabel: dto.agentLabel ?? null,
+    agentEmoji: dto.agentEmoji ?? null,
+    agentStateDot: dto.agentStateDot ?? null,
+    pendingSuggestionText: dto.pendingSuggestionText ?? null,
   }
 }
 
@@ -183,4 +216,173 @@ export function buildChatTemplateSendBody(opts: {
     templateLanguage: opts.template.language,
     content: `[Plantilla] ${opts.template.name}`,
   }
+}
+
+/** Advance revision cursor only to the last delivered change — never jump to tenant head. */
+export function advanceRevisionCursor(opts: {
+  current: bigint
+  nextRevision?: string | null
+  /** @deprecated tenant-head max — ignored for cursor advancement */
+  maxRevision?: string | null
+  hasMoreChanges?: boolean
+}): { next: bigint; continueDrain: boolean } {
+  const raw = (opts.nextRevision ?? '').trim()
+  if (!raw || !/^\d+$/.test(raw)) {
+    return { next: opts.current, continueDrain: false }
+  }
+  const delivered = BigInt(raw)
+  const next = delivered > opts.current ? delivered : opts.current
+  return {
+    next,
+    continueDrain: Boolean(opts.hasMoreChanges),
+  }
+}
+
+export type ChatInboxV2PollDecision =
+  | { action: 'skip'; reason: 'hidden' | 'in_flight' }
+  | { action: 'changes' }
+  | { action: 'reconcile' }
+
+export function decideInboxV2PollTick(opts: {
+  documentHidden: boolean
+  inFlight: boolean
+  nowMs: number
+  lastFullReconcileMs: number
+  fullReconcileEveryMs?: number
+}): ChatInboxV2PollDecision {
+  if (opts.documentHidden) return { action: 'skip', reason: 'hidden' }
+  if (opts.inFlight) return { action: 'skip', reason: 'in_flight' }
+  const every = opts.fullReconcileEveryMs ?? CHAT_INBOX_V2_FULL_RECONCILE_MS
+  if (opts.nowMs - opts.lastFullReconcileMs >= every) {
+    return { action: 'reconcile' }
+  }
+  return { action: 'changes' }
+}
+
+/** Keep newest `max` messages for DOM render (oldest dropped from the window). */
+export function selectThreadRenderWindow<T extends { id: string; sentAt: string }>(
+  messages: T[],
+  max = CHAT_INBOX_V2_THREAD_RENDER_WINDOW,
+): T[] {
+  if (messages.length <= max) return messages
+  return messages.slice(messages.length - max)
+}
+
+/**
+ * Merge thread pages and cap store size.
+ * When over cap after loading older, drop from the newest end so older history stays;
+ * otherwise (tail merge) keep the newest and drop oldest.
+ */
+export function mergeThreadMessageWindow<
+  T extends {
+    id: string
+    sentAt: string
+    clientRequestId?: string
+    deliveryStatus?: string | null
+    metadata?: Record<string, unknown> | null
+  },
+>(opts: {
+  existing: T[]
+  incoming: T[]
+  mode: 'replace' | 'tail' | 'older'
+  storeCap?: number
+}): T[] {
+  const cap = opts.storeCap ?? CHAT_INBOX_V2_THREAD_STORE_CAP
+
+  const cridOf = (m: T): string | undefined => {
+    if (typeof m.clientRequestId === 'string' && m.clientRequestId) return m.clientRequestId
+    const meta = m.metadata
+    return typeof meta?.clientRequestId === 'string' ? meta.clientRequestId : undefined
+  }
+
+  const preferDelivery = (a: T, b: T): T => {
+    const aStatus = a.deliveryStatus
+    const bStatus = b.deliveryStatus
+    if (aStatus == null && bStatus == null) return { ...a, ...b, id: b.id.startsWith('optimistic:') ? a.id : b.id }
+    const rank: Record<string, number> = {
+      failed: 0,
+      error: 0,
+      pending: 1,
+      sending: 1,
+      queued: 1,
+      sent: 2,
+      delivered: 3,
+      read: 4,
+    }
+    const aFailed = /^(failed|error)$/i.test(aStatus || '')
+    const bFailed = /^(failed|error)$/i.test(bStatus || '')
+    let deliveryStatus = bStatus ?? aStatus
+    if (aFailed && !bFailed) deliveryStatus = bStatus
+    else if (bFailed && !aFailed) deliveryStatus = aStatus
+    else if (aStatus && bStatus) {
+      deliveryStatus =
+        (rank[bStatus.toLowerCase()] ?? 1) >= (rank[aStatus.toLowerCase()] ?? 1) ? bStatus : aStatus
+    }
+    const preferPersisted = !b.id.startsWith('optimistic:')
+    return {
+      ...a,
+      ...b,
+      id: preferPersisted ? b.id : a.id.startsWith('optimistic:') ? a.id : b.id,
+      deliveryStatus,
+      clientRequestId: cridOf(b) || cridOf(a) || b.clientRequestId || a.clientRequestId,
+    }
+  }
+
+  const upsertAll = (rows: T[]): T[] => {
+    const byId = new Map<string, T>()
+    const cridToId = new Map<string, string>()
+    for (const row of rows) {
+      const crid = cridOf(row)
+      if (crid && cridToId.has(crid)) {
+        const prevId = cridToId.get(crid)!
+        const prev = byId.get(prevId)
+        if (prev) {
+          const merged = preferDelivery(prev, row)
+          if (merged.id !== prevId) byId.delete(prevId)
+          byId.set(merged.id, merged)
+          cridToId.set(crid, merged.id)
+          continue
+        }
+      }
+      const prev = byId.get(row.id)
+      const merged = prev ? preferDelivery(prev, row) : row
+      byId.set(merged.id, merged)
+      if (crid) cridToId.set(crid, merged.id)
+    }
+    return [...byId.values()].sort((a, b) => a.sentAt.localeCompare(b.sentAt) || a.id.localeCompare(b.id))
+  }
+
+  if (opts.mode === 'replace') {
+    const sorted = upsertAll(opts.incoming)
+    return sorted.length > cap ? sorted.slice(sorted.length - cap) : sorted
+  }
+
+  const sorted = upsertAll([...opts.existing, ...opts.incoming])
+  if (sorted.length <= cap) return sorted
+
+  if (opts.mode === 'older') {
+    // Prefer keeping newly loaded older pages + mid history; drop newest overflow.
+    return sorted.slice(0, cap)
+  }
+  // Tail / default: keep newest.
+  return sorted.slice(sorted.length - cap)
+}
+
+export function buildChangesPollQuery(opts: {
+  afterRevision: string
+  limit?: number
+  threadId?: string | null
+  threadAfter?: string | null
+  includeReconcilePage?: boolean
+}): string {
+  const qs = new URLSearchParams({
+    afterRevision: opts.afterRevision,
+    limit: String(opts.limit ?? 200),
+  })
+  if (opts.threadId) {
+    qs.set('threadId', opts.threadId)
+    if (opts.threadAfter) qs.set('threadAfter', opts.threadAfter)
+  }
+  if (opts.includeReconcilePage) qs.set('reconcilePage', '1')
+  return qs.toString()
 }

@@ -1,9 +1,14 @@
 /**
  * Authentication & Authorization Helpers
- * 
+ *
  * Helper functions for protecting pages and API routes
- * with authentication and role-based access control
+ * with authentication and role-based access control.
+ *
+ * SERVER-ONLY: Client Components must not import this module (pulls Prisma via
+ * auth-options / billing-access). Use `@/lib/session-permissions` instead.
  */
+
+import 'server-only'
 
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
@@ -11,6 +16,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authOptions } from './auth-options';
 import { Permission, Role, hasPermission } from './rbac';
 import { guardTenantWrite } from './billing-access';
+
+export { getSessionRole, getSessionTenantId, hasSessionPermission } from './session-permissions';
 
 /**
  * Get the current session or redirect to login
@@ -215,28 +222,5 @@ export async function authenticateAPIWithPermission(
   return auth;
 }
 
-/**
- * Check if current user has permission (for client components)
- * Note: This should be used with session from useSession()
- */
-export function hasSessionPermission(session: any, permission: Permission): boolean {
-  if (!session?.user) return false;
-
-  const role = session.user.membershipRole || session.user.role || 'VIEWER';
-  return hasPermission(role as Role, permission);
-}
-
-/**
- * Get user's role from session (helper)
- */
-export function getSessionRole(session: any): Role {
-  if (!session?.user) return 'VIEWER';
-  return (session.user.membershipRole || session.user.role || 'VIEWER') as Role;
-}
-
-/**
- * Get user's tenant ID from session (helper)
- */
-export function getSessionTenantId(session: any): string | null {
-  return session?.user?.tenantId || null;
-}
+// Client-safe session helpers live in ./session-permissions and are re-exported
+// above for server callers. Do not reintroduce Prisma-touching imports there.

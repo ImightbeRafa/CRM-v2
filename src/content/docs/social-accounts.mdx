@@ -63,9 +63,21 @@ Si necesitas desconectar una red social:
 2. Haz clic en **Desconectar** junto a la cuenta
 3. Confirma la acción
 
-<Callout type="danger">
-Al desconectar una cuenta, dejarás de recibir mensajes de esa red social en BetsyCRM. El historial de conversaciones se mantiene, pero no podrás responder desde el CRM.
+<Callout type="info">
+Al desconectar (desvincular) una cuenta, BetsyCRM **no borra** el historial: la cuenta queda inactiva (`isActive=false`) y se deja de recibir/enviar. Si más tarde reconectás el **mismo** número de WhatsApp o la misma cuenta de Instagram, se reutiliza el mismo registro y las conversaciones anteriores vuelven a verse en `/chats`.
 </Callout>
+
+## Tokens y reconexión
+
+BetsyCRM revisa a diario la salud del token de cada canal activo. Si Meta revoca o vence el acceso, verás un aviso **Reconectar Instagram · @tienda** (o el equivalente de WhatsApp) en `/chats` y en **Configuración → Cuentas Sociales**. Hasta reconectar, el envío responde con un error claro en español.
+
+## FAQ: WhatsApp Business App (coexistencia)
+
+**¿Puedo conectar un número que ya uso en WhatsApp Business App?** Sí. El flujo Embedded Signup con coexistencia permite vincular ese número al inbox de BetsyCRM sin pasar por clics de Meta del lado de CoS (el código ya está listo). Seguí **Conectar WhatsApp** en Configuración → Cuentas Sociales.
+
+**¿Qué pasa si la suscripción a webhooks falla?** La cuenta se guarda pero queda **inactiva**. En la tarjeta verás **Re-suscribir**. Hasta que la suscripción funcione, no se considera “conectado” para recibir mensajes.
+
+**¿Por qué Instagram a veces no conecta para clientes no-tester?** Meta Advanced Access / App Review para scopes de mensajería IG sigue siendo un bloqueo de operaciones fuera de testers. El código de self-serve está listo; el acceso Advanced Access no.
 
 ## Próximos Pasos
 

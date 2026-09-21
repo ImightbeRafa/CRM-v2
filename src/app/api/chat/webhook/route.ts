@@ -14,12 +14,17 @@ import {
 import { getPageIdFromMetaChatMetadata } from '@/lib/social-account-meta'
 import { resolveWebhookSocialAccount } from '@/lib/chat-webhook-account'
 import { chatWebhookInvalidSignatureRateLimit } from '@/lib/rate-limit'
-import { maybeRunSoftAiAfterInbound } from '@/lib/soft-ai/inbound-hook'
+import { enqueueSoftAiAfterInbound } from '@/lib/soft-ai/inbound-hook'
+import { processJobById } from '@/lib/soft-ai/automation-processor'
 import {
   applyDeliveryStatusUpdate,
   applyPeerReadWatermark,
   dualWriteChatMessage,
 } from '@/lib/chat-conversation-write'
+import {
+  buildChatWebhookObsFields,
+  logChatWebhookEvent,
+} from '@/lib/chat-webhook-observability'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -115,6 +120,9 @@ async function storeMessage(event: ParsedMetaChatMessage) {
     messageType: event.messageType || null,
     deliveryStatus: direction === 'inbound' ? 'received' : 'sent',
     platform: event.platform,
+    providerMediaId: event.providerMediaId || null,
+    mediaMimeType: event.mediaMimeType || null,
+    mediaFilename: event.mediaFilename || null,
     metadata: {
       ...event.metadata,
       from: direction === 'inbound' ? event.senderId : undefined,
@@ -123,6 +131,9 @@ async function storeMessage(event: ParsedMetaChatMessage) {
       platform: event.platform,
       providerMessageId: event.providerMessageId,
       direction,
+      providerMediaId: event.providerMediaId,
+      mediaMimeType: event.mediaMimeType,
+      mediaFilename: event.mediaFilename,
     },
     suppressSoftAi: Boolean(event.suppressSoftAi) || direction !== 'inbound',
   })
@@ -287,7 +298,7 @@ export async function POST(request: NextRequest) {
               isActive: true,
               refreshToken: { startsWith: wabaPrefix },
             },
-            data: { isActive: false },
+            data: { isActive: false, disconnectedAt: new Date(), tokenStatus: 'revoked', lastErrorCode: 'PARTNER_REMOVED', lastErrorAt: new Date() },
           })
           console.warn('[chat/webhook][POST] PARTNER_REMOVED deactivated WhatsApp accounts', {
             wabaId: ev.wabaId,
@@ -314,26 +325,49 @@ export async function POST(request: NextRequest) {
 
     const stored = results.filter((result) => result.stored).length
 
+    const softAiJobIds: string[] = []
     for (const result of results) {
       if (!result.stored || !('tenantId' in result) || !result.tenantId) continue
       if ('suppressSoftAi' in result && result.suppressSoftAi) continue
-      void maybeRunSoftAiAfterInbound({
+      if (!result.conversationId || !result.messageId) continue
+      // Persist Soft AI job BEFORE 200 so cron can recover if this instance dies.
+      const enqueued = await enqueueSoftAiAfterInbound({
         tenantId: result.tenantId,
         socialAccountId: result.socialAccountId,
         senderId: result.senderId,
         senderName: result.senderName,
         platform: result.platform,
         content: result.content,
+        conversationId: result.conversationId,
+        messageId: result.messageId,
       })
+      if (enqueued && 'jobId' in enqueued) softAiJobIds.push(enqueued.jobId)
     }
 
-    console.log('[chat/webhook][POST] Done', {
-      stored,
-      skipped: results.length - stored,
-      receiptsUpdated,
-      durationMs: Date.now() - startedAt,
-      signatureValid: signatureResult.valid,
-    })
+    const durationMs = Date.now() - startedAt
+    const primaryAccountId =
+      results.find((r) => r.stored && 'socialAccountId' in r)?.socialAccountId ?? null
+    logChatWebhookEvent(
+      '[chat/webhook][POST] Done',
+      buildChatWebhookObsFields({
+        socialAccountId: primaryAccountId,
+        durationMs,
+        result: stored > 0 ? 'stored' : receiptsUpdated > 0 ? 'receipt_updated' : 'ok',
+      }),
+      {
+        stored,
+        skipped: results.length - stored,
+        receiptsUpdated,
+        softAiJobs: softAiJobIds.length,
+        signatureValid: signatureResult.valid,
+        parsedMessages: parsed.messages.length,
+      },
+    )
+
+    // Best-effort immediate dispatch after persist; cron is the safety net.
+    for (const jobId of softAiJobIds) {
+      void processJobById(jobId)
+    }
 
     return NextResponse.json({
       ok: true,
@@ -341,10 +375,19 @@ export async function POST(request: NextRequest) {
       skipped: results.length - stored,
       receiptsUpdated,
       ignoredReasons: parsed.ignoredReasons,
-      durationMs: Date.now() - startedAt,
+      durationMs,
     })
   } catch (error) {
     console.error('[chat/webhook][POST] Internal error', error)
+    logChatWebhookEvent(
+      '[chat/webhook][POST] Done',
+      buildChatWebhookObsFields({
+        socialAccountId: null,
+        durationMs: Date.now() - startedAt,
+        result: 'error',
+        reason: error instanceof Error ? error.message : 'Internal error',
+      }),
+    )
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

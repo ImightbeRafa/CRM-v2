@@ -97,6 +97,10 @@ export type ChatConversationListItemDto = {
     address: string | null
   }
   clientId: string | null
+  agentLabel?: string | null
+  agentEmoji?: string | null
+  agentStateDot?: 'IA' | 'Sug' | 'Hum' | null
+  pendingSuggestionText?: string | null
 }
 
 export type ChatMessageItemDto = {
@@ -110,6 +114,12 @@ export type ChatMessageItemDto = {
   clientId: string | null
   orderId: string | null
   metadata: Record<string, unknown> | null
+  providerMediaId?: string | null
+  mediaMimeType?: string | null
+  mediaFilename?: string | null
+  /** Prefer column when 026 lands; until then may live in metadata.mediaBlobPath. */
+  mediaBlobPath?: string | null
+  mediaCacheStatus?: string | null
 }
 
 const WA_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -199,11 +209,22 @@ export function mapMessageToDto(message: {
   clientId: string | null
   orderId: string | null
   metadata: unknown
+  providerMediaId?: string | null
+  mediaMimeType?: string | null
+  mediaFilename?: string | null
+  mediaBlobPath?: string | null
+  mediaCacheStatus?: string | null
 }): ChatMessageItemDto {
   const metadata =
     message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata)
       ? (message.metadata as Record<string, unknown>)
       : null
+  const mediaBlobPath =
+    message.mediaBlobPath ??
+    (typeof metadata?.mediaBlobPath === 'string' ? metadata.mediaBlobPath : null)
+  const mediaCacheStatus =
+    message.mediaCacheStatus ??
+    (typeof metadata?.mediaCacheStatus === 'string' ? metadata.mediaCacheStatus : null)
   return {
     id: message.id,
     direction: message.direction,
@@ -215,6 +236,11 @@ export function mapMessageToDto(message: {
     clientId: message.clientId,
     orderId: message.orderId,
     metadata,
+    providerMediaId: message.providerMediaId ?? null,
+    mediaMimeType: message.mediaMimeType ?? null,
+    mediaFilename: message.mediaFilename ?? null,
+    mediaBlobPath,
+    mediaCacheStatus,
   }
 }
 

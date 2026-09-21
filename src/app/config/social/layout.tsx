@@ -1,8 +1,10 @@
+import { requirePermission } from '@/lib/auth-helpers'
+
 export default async function SocialConfigLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  // No permission check here; the page itself checks for Owner/Master
+  await requirePermission('update_config')
   return <>{children}</>
 }

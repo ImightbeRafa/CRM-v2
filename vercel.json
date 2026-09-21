@@ -31,6 +31,12 @@
     "src/app/api/cron/bot-inbox/route.ts": {
       "maxDuration": 60
     },
+    "src/app/api/cron/chat-automation/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/cron/chat-agent-retention/route.ts": {
+      "maxDuration": 60
+    },
     "src/app/api/shipping/generate-guia/route.ts": {
       "maxDuration": 300,
       "memory": 1024
@@ -54,6 +60,9 @@
     "src/app/api/logistics/reports/pdf/route.ts": {
       "maxDuration": 120,
       "memory": 1024
+    },
+    "src/app/api/cron/chat-token-health/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -74,12 +83,24 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/cron/chat-automation",
+      "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/cron/chat-agent-retention",
+      "schedule": "30 3 * * *"
+    },
+    {
       "path": "/api/cron/logistics-report",
       "schedule": "0 5 * * *"
     },
     {
       "path": "/api/cron/logistics-finalize",
       "schedule": "0 18 * * 0"
+    },
+    {
+      "path": "/api/cron/chat-token-health",
+      "schedule": "0 6 * * *"
     }
   ]
 }

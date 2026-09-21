@@ -2,8 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
+  appendOptimisticOutbound,
+  createOptimisticOutboundMessage,
   humanizeChatSendError,
+  markOptimisticOutboundFailed,
+  newClientRequestId,
   parseApiJson,
+  projectOptimisticListPreview,
+  reconcileOptimisticOutbound,
   type ChatInboxMessage,
 } from '@/lib/chat-inbox'
 import {
@@ -24,18 +30,22 @@ import {
 } from '@/lib/chat-soft-copilot'
 import type { ChatConversationListItemDto } from '@/lib/chat-conversation-api'
 import {
+  advanceRevisionCursor,
+  buildChangesPollQuery,
   buildChatTemplateSendBody,
   buildLocalImportPayload,
   CHAT_INBOX_V2_FULL_RECONCILE_MS,
   CHAT_INBOX_V2_IMPORTED_KEY,
   CHAT_INBOX_V2_LIST_PAGE_LIMIT,
   CHAT_INBOX_V2_POLL_MS,
+  CHAT_INBOX_V2_THREAD_FETCH_LIMIT,
+  decideInboxV2PollTick,
   listDtoToSoftConversation,
   mergeListDtoIntoMap,
+  mergeThreadMessageWindow,
   messageDtoToInbox,
   softConversationKeyFromDto,
   sortedConversationDtos,
-  walkConversationListPages,
 } from '@/lib/chat-inbox-v2-client'
 import {
   applyAgentControl,
@@ -43,7 +53,7 @@ import {
   readAgentStateMap,
   writeAgentStateMap,
   type SoftAiAgentStateMap,
-} from '@/lib/soft-ai'
+} from '@/lib/soft-ai/agent-state'
 import { SoftSlimNav } from '@/components/chats/SoftSlimNav'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
@@ -51,6 +61,7 @@ import {
   SoftThreadPane,
   type SoftWaTemplateOption,
 } from '@/components/chats/SoftThreadPane'
+import { SoftTokenHealthBanners } from '@/components/chats/SoftTokenHealthBanners'
 import { SoftCopilotRail } from '@/components/chats/SoftCopilotRail'
 
 const TAG_FILTERS: SoftTag[] = ['Envío', 'VIP', 'Nuevo']
@@ -86,20 +97,35 @@ export function SoftCopilotInboxV2() {
   const [templatesError, setTemplatesError] = useState<string | null>(null)
   const [agentStateMap, setAgentStateMap] = useState<SoftAiAgentStateMap>({})
   const [controlBusy, setControlBusy] = useState(false)
+  const [listNextCursor, setListNextCursor] = useState<string | null>(null)
+  const [loadingMoreConversations, setLoadingMoreConversations] = useState(false)
 
   const maxRevisionRef = useRef<bigint>(BigInt(0))
   const lastFullReconcileRef = useRef(0)
   const importStartedRef = useRef(false)
+  const pollInFlightRef = useRef(false)
+  const selectedConversationIdRef = useRef<string | null>(null)
+  const threadMessagesRef = useRef<Record<string, ChatInboxMessage[]>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+  const sendInFlightRef = useRef(false)
+
+  useEffect(() => {
+    selectedConversationIdRef.current = selectedConversationId
+  }, [selectedConversationId])
+
+  useEffect(() => {
+    threadMessagesRef.current = threadMessages
+  }, [threadMessages])
 
   useEffect(() => {
     setAgentStateMap(readAgentStateMap())
   }, [])
 
   const fetchAccounts = useCallback(async () => {
-    const res = await fetch('/api/chat/accounts', { credentials: 'same-origin', cache: 'no-store' })
+    const res = await fetch('/api/chat/accounts?includeInactive=1', { credentials: 'same-origin', cache: 'no-store' })
     const parsed = await parseApiJson<{ success?: boolean; accounts?: SoftSocialAccount[] }>(res)
     if (parsed.ok && res.ok && parsed.data.success && Array.isArray(parsed.data.accounts)) {
       setAccounts(parsed.data.accounts)
@@ -129,155 +155,239 @@ export function SoftCopilotInboxV2() {
     }
   }, [])
 
-  const fetchFullList = useCallback(async () => {
-    try {
-      const walked = await walkConversationListPages({
-        fetchPage: async (cursor) => {
-          const qs = new URLSearchParams({ limit: String(CHAT_INBOX_V2_LIST_PAGE_LIMIT) })
-          if (cursor) qs.set('cursor', cursor)
-          const res = await fetch(`/api/chat/conversations?${qs.toString()}`, {
-            credentials: 'same-origin',
-            cache: 'no-store',
-          })
-          const parsed = await parseApiJson<{
-            success?: boolean
-            conversations?: ChatConversationListItemDto[]
-            nextCursor?: string | null
-            maxRevision?: string
-          }>(res)
-          if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.conversations) {
-            throw new Error('list_failed')
-          }
-          return {
-            conversations: parsed.data.conversations,
-            nextCursor: parsed.data.nextCursor ?? null,
-            maxRevision: parsed.data.maxRevision ?? null,
-          }
-        },
-      })
-      if (!walked.complete) return
-      setDtoMap(mergeListDtoIntoMap(new Map(), walked.items))
-      if (walked.maxRevision) {
-        maxRevisionRef.current = BigInt(walked.maxRevision)
-      }
-      setLastSyncAt(Date.now())
-      lastFullReconcileRef.current = Date.now()
-    } catch {
-      // Keep the previous map if a mid-walk page fails.
+  /** First page only (or one more page for "cargar más") — never walk 40 pages on idle. */
+  const fetchListPage = useCallback(async (opts?: { cursor?: string | null; replace?: boolean }) => {
+    const qs = new URLSearchParams({ limit: String(CHAT_INBOX_V2_LIST_PAGE_LIMIT) })
+    if (opts?.cursor) qs.set('cursor', opts.cursor)
+    const res = await fetch(`/api/chat/conversations?${qs.toString()}`, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+    })
+    const parsed = await parseApiJson<{
+      success?: boolean
+      conversations?: ChatConversationListItemDto[]
+      nextCursor?: string | null
+      maxRevision?: string
+    }>(res)
+    if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.conversations) {
+      throw new Error('list_failed')
     }
+    setDtoMap((prev) =>
+      opts?.replace
+        ? mergeListDtoIntoMap(new Map(), parsed.data.conversations!)
+        : mergeListDtoIntoMap(prev, parsed.data.conversations!),
+    )
+    setListNextCursor(parsed.data.nextCursor ?? null)
+    if (parsed.data.maxRevision && opts?.replace) {
+      // Seed revision cursor from first page max so changes feed starts at head.
+      const head = BigInt(parsed.data.maxRevision)
+      if (head > maxRevisionRef.current) maxRevisionRef.current = head
+    }
+    setLastSyncAt(Date.now())
+    lastFullReconcileRef.current = Date.now()
   }, [])
 
+  const applyThreadTail = useCallback(
+    (conversationId: string, messages: Array<Parameters<typeof messageDtoToInbox>[0]>) => {
+      const incoming = messages.map(messageDtoToInbox)
+      const hadInbound = incoming.some((m) => m.direction === 'inbound')
+      setThreadMessages((prev) => ({
+        ...prev,
+        [conversationId]: mergeThreadMessageWindow({
+          existing: prev[conversationId] || [],
+          incoming,
+          mode: 'tail',
+        }),
+      }))
+      if (
+        hadInbound &&
+        conversationId === selectedConversationIdRef.current &&
+        nearBottomRef.current
+      ) {
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        })
+      }
+    },
+    [],
+  )
+
   const fetchChanges = useCallback(async () => {
-    const after = maxRevisionRef.current.toString()
+    let guard = 0
+    while (guard < 20) {
+      guard += 1
+      const after = maxRevisionRef.current.toString()
+      const threadId = selectedConversationIdRef.current
+      const existing = threadId ? threadMessagesRef.current[threadId] : undefined
+      const persistedTail = existing?.length
+        ? [...existing].reverse().find((m) => !m.id.startsWith('optimistic:'))
+        : undefined
+      const threadAfter =
+        threadId && persistedTail
+          ? `${persistedTail.sentAt},${persistedTail.id}`
+          : null
+
+      const qs = buildChangesPollQuery({
+        afterRevision: after,
+        limit: 200,
+        // Piggyback thread tail only on the first page of a drain burst.
+        threadId: guard === 1 ? threadId : null,
+        threadAfter: guard === 1 ? threadAfter : null,
+      })
+      const res = await fetch(`/api/chat/conversations/changes?${qs}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      })
+      const parsed = await parseApiJson<{
+        success?: boolean
+        conversations?: ChatConversationListItemDto[]
+        nextRevision?: string
+        maxRevision?: string
+        hasMoreChanges?: boolean
+        threadTail?: {
+          conversationId: string
+          messages: Array<Parameters<typeof messageDtoToInbox>[0]>
+        } | null
+      }>(res)
+      if (!parsed.ok || !res.ok || !parsed.data.success) return
+
+      if (parsed.data.conversations?.length) {
+        setDtoMap((prev) => mergeListDtoIntoMap(prev, parsed.data.conversations!))
+      }
+
+      const advanced = advanceRevisionCursor({
+        current: maxRevisionRef.current,
+        nextRevision: parsed.data.nextRevision ?? parsed.data.maxRevision,
+        hasMoreChanges: parsed.data.hasMoreChanges,
+      })
+      maxRevisionRef.current = advanced.next
+
+      if (parsed.data.threadTail?.conversationId && parsed.data.threadTail.messages) {
+        applyThreadTail(parsed.data.threadTail.conversationId, parsed.data.threadTail.messages)
+      }
+
+      setLastSyncAt(Date.now())
+      if (!advanced.continueDrain) return
+    }
+  }, [applyThreadTail])
+
+  const loadThreadMessages = useCallback(async (conversationId: string) => {
+    const qs = `limit=${CHAT_INBOX_V2_THREAD_FETCH_LIMIT}`
     const res = await fetch(
-      `/api/chat/conversations/changes?afterRevision=${encodeURIComponent(after)}&limit=200`,
+      `/api/chat/conversations/${encodeURIComponent(conversationId)}/messages?${qs}`,
       { credentials: 'same-origin', cache: 'no-store' },
     )
     const parsed = await parseApiJson<{
       success?: boolean
-      conversations?: ChatConversationListItemDto[]
-      maxRevision?: string
+      messages?: Array<Parameters<typeof messageDtoToInbox>[0]>
+      nextBefore?: string | null
     }>(res)
-    if (!parsed.ok || !res.ok || !parsed.data.success) return
-    if (parsed.data.conversations?.length) {
-      setDtoMap((prev) => mergeListDtoIntoMap(prev, parsed.data.conversations!))
+    if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.messages) return
+    const incoming = parsed.data.messages.map(messageDtoToInbox)
+    setThreadMessages((prev) => ({
+      ...prev,
+      [conversationId]: mergeThreadMessageWindow({
+        existing: [],
+        incoming,
+        mode: 'replace',
+      }),
+    }))
+    if (parsed.data.nextBefore !== undefined) {
+      setThreadBeforeCursor((prev) => ({
+        ...prev,
+        [conversationId]: parsed.data.nextBefore ?? null,
+      }))
     }
-    if (parsed.data.maxRevision) {
-      maxRevisionRef.current = BigInt(parsed.data.maxRevision)
-    }
-    setLastSyncAt(Date.now())
-  }, [])
-
-  const loadThreadMessages = useCallback(
-    async (conversationId: string, opts?: { tailOnly?: boolean }) => {
-      const dto = dtoMap.get(conversationId)
-      const after =
-        opts?.tailOnly && threadMessages[conversationId]?.length
-          ? (() => {
-              const last = threadMessages[conversationId]![threadMessages[conversationId]!.length - 1]!
-              return `${last.sentAt},${last.id}`
-            })()
-          : null
-      const qs = after
-        ? `after=${encodeURIComponent(after)}&limit=50`
-        : 'limit=50'
-      const res = await fetch(
-        `/api/chat/conversations/${encodeURIComponent(conversationId)}/messages?${qs}`,
-        { credentials: 'same-origin', cache: 'no-store' },
-      )
-      const parsed = await parseApiJson<{
-        success?: boolean
-        messages?: Array<Parameters<typeof messageDtoToInbox>[0]>
-        nextBefore?: string | null
-      }>(res)
-      if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.messages) return
-      const incoming = parsed.data.messages.map(messageDtoToInbox)
-      setThreadMessages((prev) => {
-        const existing = prev[conversationId] || []
-        if (after) {
-          const byId = new Map(existing.map((m) => [m.id, m]))
-          for (const m of incoming) byId.set(m.id, m)
-          return { ...prev, [conversationId]: [...byId.values()].sort((a, b) => a.sentAt.localeCompare(b.sentAt)) }
-        }
-        return { ...prev, [conversationId]: incoming }
+    void fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}/read`, {
+      method: 'POST',
+      credentials: 'same-origin',
+    }).then(() => {
+      setDtoMap((prev) => {
+        const row = prev.get(conversationId)
+        if (!row) return prev
+        const next = new Map(prev)
+        next.set(conversationId, { ...row, unreadCount: 0 })
+        return next
       })
-      if (parsed.data.nextBefore !== undefined) {
-        setThreadBeforeCursor((prev) => ({
-          ...prev,
-          [conversationId]: parsed.data.nextBefore ?? null,
-        }))
-      }
-      if (dto && !after) {
-        void fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}/read`, {
-          method: 'POST',
-          credentials: 'same-origin',
-        }).then(() => {
-          setDtoMap((prev) => {
-            const row = prev.get(conversationId)
-            if (!row) return prev
-            const next = new Map(prev)
-            next.set(conversationId, { ...row, unreadCount: 0 })
-            return next
-          })
-        })
-      }
-    },
-    [dtoMap, threadMessages],
-  )
+    })
+  }, [])
 
   useEffect(() => {
     void (async () => {
       setLoading(true)
       await fetchAccounts()
       await runLocalImportOnce()
-      await fetchFullList()
+      try {
+        await fetchListPage({ replace: true })
+      } catch {
+        // keep empty map
+      }
       setLoading(false)
     })()
-  }, [fetchAccounts, fetchFullList, runLocalImportOnce])
+  }, [fetchAccounts, fetchListPage, runLocalImportOnce])
 
   useEffect(() => {
-    const id = window.setInterval(() => {
+    const tick = () => {
       void (async () => {
-        if (Date.now() - lastFullReconcileRef.current >= CHAT_INBOX_V2_FULL_RECONCILE_MS) {
-          await fetchFullList()
-        } else {
-          await fetchChanges()
-        }
-        if (selectedConversationId) {
-          await loadThreadMessages(selectedConversationId, { tailOnly: true })
+        const decision = decideInboxV2PollTick({
+          documentHidden: typeof document !== 'undefined' ? document.hidden : false,
+          inFlight: pollInFlightRef.current,
+          nowMs: Date.now(),
+          lastFullReconcileMs: lastFullReconcileRef.current,
+          fullReconcileEveryMs: CHAT_INBOX_V2_FULL_RECONCILE_MS,
+        })
+        if (decision.action === 'skip') return
+        pollInFlightRef.current = true
+        try {
+          if (decision.action === 'reconcile') {
+            // Option (2): reconcile tick = one list page only (no thread fetch).
+            await fetchListPage({ replace: true })
+          } else {
+            await fetchChanges()
+          }
+        } catch {
+          // swallow — next tick retries
+        } finally {
+          pollInFlightRef.current = false
         }
       })()
-    }, CHAT_INBOX_V2_POLL_MS)
-    return () => window.clearInterval(id)
-  }, [fetchChanges, fetchFullList, loadThreadMessages, selectedConversationId])
+    }
+    const id = window.setInterval(tick, CHAT_INBOX_V2_POLL_MS)
+    const onVisibility = () => {
+      if (!document.hidden) tick()
+    }
+    const onFocus = () => tick()
+    const onOnline = () => tick()
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('online', onOnline)
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [fetchChanges, fetchListPage])
 
   useEffect(() => {
     if (!lastSyncAt) return
-    const tick = () => setSyncAgeSeconds(Math.floor((Date.now() - lastSyncAt) / 1000))
-    tick()
-    const id = window.setInterval(tick, 1000)
+    const ageTick = () => setSyncAgeSeconds(Math.floor((Date.now() - lastSyncAt) / 1000))
+    ageTick()
+    const id = window.setInterval(ageTick, 1000)
     return () => window.clearInterval(id)
   }, [lastSyncAt])
+
+  async function loadMoreConversations() {
+    if (!listNextCursor || loadingMoreConversations) return
+    setLoadingMoreConversations(true)
+    try {
+      await fetchListPage({ cursor: listNextCursor, replace: false })
+    } catch {
+      // keep cursor for retry
+    } finally {
+      setLoadingMoreConversations(false)
+    }
+  }
 
   const conversations = useMemo(() => {
     const dtos = sortedConversationDtos(dtoMap)
@@ -378,7 +488,12 @@ export function SoftCopilotInboxV2() {
     setTemplatePickerOpen(false)
     nearBottomRef.current = true
     setMobileView('thread')
-    void loadThreadMessages(dto.id)
+    void loadThreadMessages(dto.id).then(() => {
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+        composerRef.current?.focus()
+      })
+    })
   }
 
   async function patchConversation(partial: {
@@ -446,7 +561,7 @@ export function SoftCopilotInboxV2() {
     setLoadingOlder(true)
     try {
       const res = await fetch(
-        `/api/chat/conversations/${encodeURIComponent(selectedConversationId)}/messages?before=${encodeURIComponent(before)}&limit=50`,
+        `/api/chat/conversations/${encodeURIComponent(selectedConversationId)}/messages?before=${encodeURIComponent(before)}&limit=${CHAT_INBOX_V2_THREAD_FETCH_LIMIT}`,
         { credentials: 'same-origin', cache: 'no-store' },
       )
       const parsed = await parseApiJson<{
@@ -458,7 +573,11 @@ export function SoftCopilotInboxV2() {
       const older = parsed.data.messages.map(messageDtoToInbox)
       setThreadMessages((prev) => ({
         ...prev,
-        [selectedConversationId]: [...older, ...(prev[selectedConversationId] || [])],
+        [selectedConversationId]: mergeThreadMessageWindow({
+          existing: prev[selectedConversationId] || [],
+          incoming: older,
+          mode: 'older',
+        }),
       }))
       setThreadBeforeCursor((prev) => ({
         ...prev,
@@ -541,7 +660,7 @@ export function SoftCopilotInboxV2() {
       setTemplatePickerOpen(false)
       if (selectedConversation.status === 'nuevo') updateStatus('en_curso')
       if (selectedConversationId) {
-        await loadThreadMessages(selectedConversationId, { tailOnly: false })
+        await loadThreadMessages(selectedConversationId)
         await fetchChanges()
       }
     } catch (err: unknown) {
@@ -551,48 +670,167 @@ export function SoftCopilotInboxV2() {
     }
   }
 
-  async function handleSendMessage(e: FormEvent) {
+  async function handleSendMessage(e: FormEvent, opts?: { retryClientRequestId?: string }) {
     e.preventDefault()
-    if (!selectedConversation || !messageInput.trim()) return
+    if (!selectedConversation || !selectedConversationId) return
+    if (sendInFlightRef.current) return
+
+    const conversationId = selectedConversationId
     const recipient = selectedConversation.recipientId
     const socialAccountId = selectedConversation.socialAccountId
-    const content = messageInput.trim()
+
+    let content = messageInput.trim()
+    let clientRequestId = opts?.retryClientRequestId
+
+    if (clientRequestId) {
+      const existing = threadMessagesRef.current[conversationId] || []
+      const failed = existing.find(
+        (m) =>
+          m.clientRequestId === clientRequestId ||
+          m.id === `optimistic:${clientRequestId}`,
+      )
+      if (!failed?.content?.trim()) return
+      content = failed.content.trim()
+    }
+
+    if (!content) return
+
+    sendInFlightRef.current = true
     setSending(true)
     setSendError(null)
+    setFailedOutboundId(null)
+
+    if (!clientRequestId) {
+      clientRequestId = newClientRequestId()
+      const optimistic = createOptimisticOutboundMessage({
+        content,
+        clientRequestId,
+        to: recipient,
+        platform: selectedConversation.platform,
+      })
+      setThreadMessages((prev) => ({
+        ...prev,
+        [conversationId]: appendOptimisticOutbound(prev[conversationId] || [], optimistic),
+      }))
+      setDtoMap((prev) => {
+        const row = prev.get(conversationId)
+        if (!row) return prev
+        const next = new Map(prev)
+        next.set(
+          conversationId,
+          projectOptimisticListPreview(row, content, optimistic.sentAt),
+        )
+        return next
+      })
+      setMessageInput('')
+      nearBottomRef.current = true
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        composerRef.current?.focus()
+      })
+    } else {
+      setThreadMessages((prev) => ({
+        ...prev,
+        [conversationId]: (prev[conversationId] || []).map((m) =>
+          m.clientRequestId === clientRequestId || m.id === `optimistic:${clientRequestId}`
+            ? { ...m, deliveryStatus: 'pending' }
+            : m,
+        ),
+      }))
+    }
+
     try {
       const res = await fetch('/api/chat/send', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ socialAccountId, recipient, content }),
+        body: JSON.stringify({
+          socialAccountId,
+          recipient,
+          content,
+          clientRequestId,
+        }),
       })
-      const parsed = await parseApiJson<{ success?: boolean; error?: string }>(res)
-      if (!parsed.ok) {
-        setSendError(humanizeChatSendError(parsed.error, parsed.status))
-        setFailedOutboundId('pending-fail')
+      const parsed = await parseApiJson<{
+        success?: boolean
+        error?: string
+        message?: Parameters<typeof messageDtoToInbox>[0]
+        conversationId?: string
+        clientRequestId?: string | null
+      }>(res)
+
+      // Thread may have changed while the request was in flight — only patch the origin conversation.
+      const stillOnSameThread = selectedConversationIdRef.current === conversationId
+
+      if (!parsed.ok || !res.ok || !parsed.data.success) {
+        const err = humanizeChatSendError(
+          !parsed.ok ? parsed.error : parsed.data.error,
+          !parsed.ok ? parsed.status : res.status,
+        )
+        setThreadMessages((prev) => ({
+          ...prev,
+          [conversationId]: markOptimisticOutboundFailed(
+            prev[conversationId] || [],
+            clientRequestId!,
+          ),
+        }))
+        if (stillOnSameThread) {
+          setSendError(err)
+          setFailedOutboundId(`optimistic:${clientRequestId}`)
+        }
         return
       }
-      if (!res.ok) {
-        setSendError(humanizeChatSendError(parsed.data.error, res.status))
-        setFailedOutboundId('pending-fail')
-        return
+
+      if (parsed.data.message) {
+        const persisted = messageDtoToInbox(parsed.data.message)
+        setThreadMessages((prev) => ({
+          ...prev,
+          [conversationId]: reconcileOptimisticOutbound(
+            prev[conversationId] || [],
+            persisted,
+          ),
+        }))
       }
-      if (!parsed.data.success) {
-        setSendError(humanizeChatSendError(parsed.data.error, res.status))
-        setFailedOutboundId('pending-fail')
-        return
-      }
-      setMessageInput('')
+
       if (selectedConversation.status === 'nuevo') updateStatus('en_curso')
-      if (selectedConversationId) {
-        await loadThreadMessages(selectedConversationId, { tailOnly: false })
-        await fetchChanges()
+      // Live list/unread via changes poll — no hard thread reload (keeps optimistic UX).
+      await fetchChanges()
+      if (stillOnSameThread) {
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+          composerRef.current?.focus()
+        })
       }
     } catch (err: unknown) {
-      setSendError(humanizeChatSendError(err instanceof Error ? err.message : 'Error al enviar'))
+      setThreadMessages((prev) => ({
+        ...prev,
+        [conversationId]: markOptimisticOutboundFailed(
+          prev[conversationId] || [],
+          clientRequestId!,
+        ),
+      }))
+      if (selectedConversationIdRef.current === conversationId) {
+        setSendError(
+          humanizeChatSendError(err instanceof Error ? err.message : 'Error al enviar'),
+        )
+        setFailedOutboundId(`optimistic:${clientRequestId}`)
+      }
     } finally {
+      sendInFlightRef.current = false
       setSending(false)
     }
+  }
+
+  function handleRetryMessage(messageId: string) {
+    const crid = messageId.startsWith('optimistic:')
+      ? messageId.slice('optimistic:'.length)
+      : (threadMessagesRef.current[selectedConversationId || ''] || []).find(
+          (m) => m.id === messageId,
+        )?.clientRequestId
+    if (!crid) return
+    void handleSendMessage({ preventDefault() {} } as FormEvent, {
+      retryClientRequestId: crid,
+    })
   }
 
   const emptyReason = (() => {
@@ -613,7 +851,13 @@ export function SoftCopilotInboxV2() {
     sending,
     sendError,
     onClearError: () => setSendError(null),
-    onRetry: () => void handleSendMessage({ preventDefault() {} } as FormEvent),
+    onRetry: () => {
+      if (failedOutboundId) handleRetryMessage(failedOutboundId)
+      else void handleSendMessage({ preventDefault() {} } as FormEvent)
+    },
+    onRetryMessage: handleRetryMessage,
+    failedOutboundId,
+    composerRef,
     messagesEndRef,
     messagesContainerRef,
     onMessagesScroll: () => {
@@ -650,8 +894,9 @@ export function SoftCopilotInboxV2() {
 
   return (
     <div className="flex h-[100dvh] flex-col bg-[#dde7f5] p-0 md:p-4 lg:p-6">
+      <SoftTokenHealthBanners accounts={accounts} />
       <div className="mx-auto flex h-full w-full max-w-[1440px] min-h-0 overflow-hidden rounded-none bg-white shadow-none md:rounded-[20px] md:shadow-sm">
-        <SoftSlimNav />
+      <SoftSlimNav />
         <SoftInboxBuckets
           bucket={bucket}
           onBucketChange={setBucket}
@@ -678,6 +923,9 @@ export function SoftCopilotInboxV2() {
             syncAgeSeconds={syncAgeSeconds}
             loading={loading}
             emptyReason={emptyReason}
+            hasMoreConversations={Boolean(listNextCursor)}
+            loadingMoreConversations={loadingMoreConversations}
+            onLoadMoreConversations={() => void loadMoreConversations()}
           />
           <SoftThreadPane
             {...threadSharedProps}
@@ -715,6 +963,9 @@ export function SoftCopilotInboxV2() {
               loading={loading}
               emptyReason={emptyReason}
               compact
+              hasMoreConversations={Boolean(listNextCursor)}
+              loadingMoreConversations={loadingMoreConversations}
+              onLoadMoreConversations={() => void loadMoreConversations()}
             />
           ) : (
             <SoftThreadPane

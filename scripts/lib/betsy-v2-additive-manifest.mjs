@@ -11,6 +11,10 @@ export const FILES = {
   '023': '023_betsy_v2_tenant_ui.sql',
   '024': '024_chat_inbox_conversations.sql',
   '025': '025_chat_inbox_uniques.sql',
+  '026': '026_chat_automation_jobs.sql',
+  '027': '027_chat_agents.sql',
+  '027b': '027b_chat_agent_introduction_names.sql',
+  '028': '028_chat_agent_knowledge_actions.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -23,9 +27,19 @@ export const EXPECTED_TABLES = {
   '022': [],
   '023': ['TenantSetupProgress'],
   '024': ['ChatConversation', 'ChatConversationReadState'],
+  '026': ['ChatAutomationJob', 'ChatAutomationDelivery'],
+  '027': ['ChatAgent', 'ChatAgentBinding', 'ChatAgentTurn'],
+  '027b': [],
+  '028': [
+    'ChatKnowledgeSource',
+    'ChatAgentKnowledgeSource',
+    'ChatAgentSuggestion',
+    'ChatAgentPendingAction',
+  ],
 };
 
 export const EXPECTED_COLUMNS = {
+  '027b': [['ChatAgent', 'introductionNames']],
   '019': [
     ['Order', 'clientId'],
     ['Order', 'lifecycleVersion'],
@@ -79,6 +93,13 @@ export const EXPECTED_COLUMNS = {
     ['ChatConversation', 'lastMessageAt'],
     ['ChatConversationReadState', 'readInboundCount'],
   ],
+  '026': [
+    ['ChatMessage', 'mediaBlobPath'],
+    ['ChatMessage', 'mediaCacheStatus'],
+    ['ChatMessage', 'mediaSizeBytes'],
+    ['ChatMessage', 'mediaCachedAt'],
+    ['ChatMessage', 'mediaErrorCode'],
+  ],
 };
 
 /** Index names introduced by 024 (non-unique only; 025 uniques are out of scope). */
@@ -101,7 +122,44 @@ export const EXPECTED_INDEXES_025 = [
   'SocialAccount_platform_accountId_active_uidx',
 ];
 
+export const EXPECTED_INDEXES_026 = [
+  'ChatAutomationJob_status_availableAt_createdAt_idx',
+  'ChatAutomationJob_tenantId_status_idx',
+  'ChatAutomationJob_conversationId_status_createdAt_idx',
+  'ChatAutomationDelivery_status_updatedAt_idx',
+];
+
+export const EXPECTED_INDEXES_027 = [
+  'ChatAgent_tenantId_status_idx',
+  'ChatAgentBinding_one_tenant_default_uidx',
+  'ChatAgentBinding_one_social_account_uidx',
+  'ChatAgentBinding_tenantId_socialAccountId_isActive_idx',
+  'ChatAgentBinding_tenantId_agentId_idx',
+  'ChatAgentTurn_tenantId_createdAt_idx',
+  'ChatAgentTurn_agentId_createdAt_idx',
+  'ChatAgentTurn_conversationId_createdAt_idx',
+  'ChatAgentTurn_status_createdAt_output_partial_idx',
+  'ChatAutomationJob_conversation_single_flight_idx',
+];
+
+export const EXPECTED_INDEXES_028 = [
+  'ChatKnowledgeSource_tenantId_kind_status_idx',
+  'ChatKnowledgeSource_tenantId_socialAccountId_status_idx',
+  'ChatKnowledgeSource_status_createdAt_body_partial_idx',
+  'ChatAgentKnowledgeSource_tenantId_agentId_priority_idx',
+  'ChatAgentKnowledgeSource_tenantId_sourceId_idx',
+  'ChatAgentSuggestion_tenantId_conversationId_status_idx',
+  'ChatAgentSuggestion_status_expiresAt_idx',
+  'ChatAgentSuggestion_status_createdAt_content_partial_idx',
+  'ChatAgentPendingAction_tenantId_conversationId_status_idx',
+  'ChatAgentPendingAction_status_expiresAt_idx',
+];
+
 /** 025 is gated - never part of default apply; verify only when BETSY_V2_REQUIRE_025=1. */
+/** 026 Soft AI queue is gated like 025 — never part of DEFAULT_APPLY_FILES. */
+/** 027 Soft Agent Layer is gated like 026 — never part of DEFAULT_APPLY_FILES. */
+/** 027b introductionNames is gated like 027 — never part of DEFAULT_APPLY_FILES. */
+/** 028 Soft Agent knowledge / suggestions / pending actions is gated — never DEFAULT_APPLY_FILES. */
 export const EXPECTED_SEQUENCE_024 = 'ChatConversation_revision_seq';
 export const EXPECTED_TRIGGER_024 = 'ChatConversation_revision_trg';
 
@@ -122,6 +180,15 @@ export const VERIFY_CATALOG_TABLES = [
   'TenantSetupProgress',
   'ChatConversation',
   'ChatConversationReadState',
+  'ChatAutomationJob',
+  'ChatAutomationDelivery',
+  'ChatAgent',
+  'ChatAgentBinding',
+  'ChatAgentTurn',
+  'ChatKnowledgeSource',
+  'ChatAgentKnowledgeSource',
+  'ChatAgentSuggestion',
+  'ChatAgentPendingAction',
 ];
 
 export const VERIFY_CATALOG_COLUMNS = [
@@ -147,4 +214,6 @@ export const VERIFY_CATALOG_COLUMNS = [
   ['ChatConversation', 'peerId'],
   ['ChatConversation', 'inboundCount'],
   ['ChatConversationReadState', 'readInboundCount'],
+  ['ChatMessage', 'mediaBlobPath'],
+  ['ChatMessage', 'mediaCacheStatus'],
 ];

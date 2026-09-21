@@ -13,6 +13,10 @@ supabase/migrations/*
 !supabase/migrations/023_betsy_v2_tenant_ui.sql
 !supabase/migrations/024_chat_inbox_conversations.sql
 !supabase/migrations/025_chat_inbox_uniques.sql
+!supabase/migrations/026_chat_automation_jobs.sql
+!supabase/migrations/027_chat_agents.sql
+!supabase/migrations/027b_chat_agent_introduction_names.sql
+!supabase/migrations/028_chat_agent_knowledge_actions.sql
 # Testing
 coverage/
 scripts
@@ -27,8 +31,15 @@ scripts/*
 !scripts/chat-inbox-verify.ts
 !scripts/chat-inbox-v2-cutover.ts
 !scripts/chat-account-identity-backfill.ts
+!scripts/chat-scale-seed.ts
+!scripts/chat-scale-benchmark.ts
+!scripts/chat-webhook-burst.ts
+!scripts/chat-idle-network-assert.ts
+!scripts/shim-server-only.mjs
 !scripts/lib/
 !scripts/lib/betsy-v2-additive-manifest.mjs
+!scripts/lib/chat-scale-constants.ts
+!scripts/lib/chat-scale-db-guard.ts
 SDK_V2_FINAL_CONFIGURATION.txt
 SDK_V2_IMPLEMENTATION.txt
 # Documentation and Notes (local only)

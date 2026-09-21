@@ -2,7 +2,9 @@
 
 > **Status (2026-09-20 CR night):** Phases **1–3 LIVE** on www (Forge pilot `chat_inbox_v2`). Phases **4–5 GO’d** 2026-09-20 (not built yet). Phase **6** Soft UX redesign remains **HOLD**.
 >
-> **Live status board (prefer over this plan’s §1 for “what’s shipped”):** [`docs/status/betsy-chats-respondio-2026-09-20.md`](../status/betsy-chats-respondio-2026-09-20.md) · tip `dev` @ `b5ecd01` (PR-3 #46).
+> **Live status board (prefer over this plan’s §1 for “what’s shipped”):** [`docs/status/betsy-chats-respondio-2026-09-20.md`](../status/betsy-chats-respondio-2026-09-20.md) · tip `dev` @ `bd70517` (PR-5 #51; Phases 1–5 LIVE).
+>
+> **Follow-on plan (A0, awaiting GO):** [`docs/plans/betsy-agent-layer-fable-2026-09-21.md`](./betsy-agent-layer-fable-2026-09-21.md) — Agent Layer (SocialAccount → ChatAgent binding, Forge WA pilot, Grok 4.6 default).
 >
 > **Original Rafael GO note:** Phases 1–3 GO’d with the **recommended defaults** from §9 (Soft status vocabulary `nuevo/en_curso/hecho`; per-user `ChatConversationReadState`; localStorage import on v2 cutover; soft-unlink later; revision polling; etc.). This document remains the phased plan SoT; the status board is the implementation ledger.
 

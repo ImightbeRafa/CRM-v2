@@ -29,6 +29,11 @@ export interface SoftConversation extends ChatConversation {
   orderId?: string | null
   /** Local Soft demo seed only — never persisted to ChatMessage. */
   isDemo?: boolean
+  /** Soft Agent Layer trust labels (optional; A1). */
+  agentLabel?: string | null
+  agentEmoji?: string | null
+  agentStateDot?: 'IA' | 'Sug' | 'Hum' | null
+  pendingSuggestionText?: string | null
 }
 
 export interface SoftSocialAccount {
@@ -45,6 +50,8 @@ export interface SoftSocialAccount {
   displayPhoneNumber?: string | null
   logoKey?: ChannelLogoKey
   tokenStatus?: string | null
+  expiresAt?: string | Date | null
+  disconnectedAt?: string | Date | null
 }
 
 /** Short display label for a connected social account (§7.2 fallback chain). */

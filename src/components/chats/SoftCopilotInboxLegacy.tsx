@@ -49,9 +49,10 @@ import {
   readAgentStateMap,
   writeAgentStateMap,
   type SoftAiAgentStateMap,
-} from '@/lib/soft-ai'
+} from '@/lib/soft-ai/agent-state'
 import { runSoftDemoAiPass } from '@/lib/soft-ai/demo-runner'
 import { SoftSlimNav } from '@/components/chats/SoftSlimNav'
+import { SoftTokenHealthBanners } from '@/components/chats/SoftTokenHealthBanners'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
 import {
@@ -333,7 +334,7 @@ export function SoftCopilotInboxLegacy() {
 
   async function fetchAccounts() {
     try {
-      const res = await fetch('/api/chat/accounts', { credentials: 'same-origin' })
+      const res = await fetch('/api/chat/accounts?includeInactive=1', { credentials: 'same-origin' })
       const parsed = await parseApiJson<{
         success?: boolean
         accounts?: SoftSocialAccount[]
@@ -1026,8 +1027,9 @@ export function SoftCopilotInboxLegacy() {
 
   return (
     <div className="flex h-[100dvh] flex-col bg-[#dde7f5] p-0 md:p-4 lg:p-6">
+      <SoftTokenHealthBanners accounts={accounts} />
       <div className="mx-auto flex h-full w-full max-w-[1440px] min-h-0 overflow-hidden rounded-none bg-white shadow-none md:rounded-[20px] md:shadow-sm">
-        <SoftSlimNav />
+      <SoftSlimNav />
         <SoftInboxBuckets
           bucket={bucket}
           onBucketChange={setBucket}

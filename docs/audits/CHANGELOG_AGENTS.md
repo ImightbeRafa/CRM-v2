@@ -1,3 +1,120 @@
+## 2026-09-21 — A2 Soft Agent knowledge (028 gated, flag off)
+
+- Additive gated SQL `028_chat_agent_knowledge_actions.sql` (NOT applied live):
+  `ChatKnowledgeSource`, `ChatAgentKnowledgeSource`, plus schema-only
+  `ChatAgentSuggestion` / `ChatAgentPendingAction` for A3/A4.
+- Prisma mirror + manifest entry `028` (not `DEFAULT_APPLY_FILES`).
+- Knowledge CRUD + approve/reject APIs; bind sources to agents; OWNER/ADMIN
+  (`update_config`) for mutations; audit after commit (no nested txn audit).
+- Prompt layers 2–4 as data-not-instructions; `search_approved_knowledge` tool;
+  monetary claims require `search_inventory` provenance; inventory over docs.
+- Deterministic safety router: payment / media / opt-out before model call.
+- Spanish paste-and-approve wizard `/config/agentes/conocimiento`; agentes
+  checklist cards show live status (no more Pendiente A2 stubs).
+- Soft chrome HOLD; staff bot untouched. Flag `chat_agent_layer_v1` still off.
+- Prove: `npm run test:soft-ai-agent` (new `soft-ai-agent-knowledge-a2.test.ts`).
+
+## 2026-09-21 — A1.5 Soft Agent introductionNames + agentes UI
+
+- Additive gated SQL `027b_chat_agent_introduction_names.sql` (NOT applied live).
+- `ChatAgent.introductionNames` text[] (1–3 presentation names); PATCH + audit after commit.
+- Prompt identity layer after immutable safety; Forge seed defaults to `['Forge']`.
+- `/config/agentes` readable sections (Identidad / Voz / Herramientas / Modo / Probar / Pánico)
+  + A2 knowledge checklist UI only (Precios = inventario en vivo).
+- Soft chrome HOLD; staff bot untouched. Flag `chat_agent_layer_v1` still off.
+- Prove: `npm run test:soft-ai-agent`.
+
+## 2026-09-21 — HOTFIX: agentes create P2028 + empty UI polish
+
+- Root cause: `createChatAgent` / `updateChatAgent` nested `logAuditEvent` (global
+  prisma) inside interactive `$transaction` → held open past 5s under Supabase
+  latency → Prisma P2028 on POST `/api/chat/agents`.
+- Fix: single-write create/update; audit **after** commit. `mapChatAgentAdminError`
+  surfaces SCHEMA_NOT_READY / P2028 / name P2002 in Spanish. `/config/agentes`
+  empty state + disabled-while-saving + API `error` field. Soft chrome HOLD.
+- Prove: `npm run test:soft-ai-agent` (new `soft-ai-agent-admin-txn.test.ts`).
+
+## 2026-09-21 — HOTFIX: Prisma out of browser client bundle (post-A1)
+
+- Root cause: `'use client'` `/config/agentes` imported `hasSessionPermission` from
+  `auth-helpers` → `auth-options` / `billing-access` → `db` → `PrismaClient`.
+  Secondary: Soft `@/lib/soft-ai` barrel re-exported `composeEffectiveBehavior`
+  from `agent-resolver` (Prisma) into Soft client chunks via commons.
+- Fix: client-safe `session-permissions.ts`; agentes/social use it; Soft clients
+  import `agent-state` / projection directly; drop resolver from Soft barrel;
+  `server-only` on auth-helpers / agent-admin / agent-resolver / agent-inbox-enrich.
+- Prove: `npm run test:soft-ai-agent` + production build client-chunk grep
+  (no `@prisma/client` in agentes/Soft page chunks). Soft chrome HOLD (Rail
+  untouched). Staff bot untouched.
+
+## 2026-09-21 — A1 Soft Agent Layer runtime (027 gated, flag off)
+
+- Additive `027_chat_agents.sql` + Prisma mirror + manifest (NOT applied live).
+- Soft-only `src/lib/soft-ai/llm/**`, `agent-resolver`, `agent-claim-gates`, `agent-turn`,
+  wired into Phase 4 `automation-processor` (legacy path when flag off).
+- Flag `chat_agent_layer_v1` default off; Forge WA allowlist only; `aiFullUnlock` empty.
+- `/config/agentes` Spanish UI (Probar, panic, audit); trust labels in SoftThreadPane/list.
+- Soft chrome + staff bot paths untouched. Tests: `test:soft-ai-agent`.
+
+## 2026-09-21 — Phase 4 scale bench numbers + seed fix + render ≤100
+
+- Fixed `scripts/chat-scale-seed.ts` message index double-count across batches
+  (duplicate `ChatMessage` PK on 50k seed).
+- Local Postgres seed+bench: 5 accounts / 2k conversations / 50k messages;
+  list p95 ~0.7 ms; changes idle p95 ~0.12 ms; indexes used (see
+  `docs/audits/chat-phase4-scale-report.md`).
+- `CHAT_INBOX_V2_THREAD_RENDER_WINDOW` tightened to **100** (acceptance 4.3).
+- Acceptance 4.1–4.7 marked PASS in scale report (4.3–4.7 via code/unit + seed).
+- Soft chrome + bot paths still untouched; 026 remains gated (not applied live).
+
+## 2026-09-21 — Phase 4 template cache / poll consolidate / media / windowing
+
+- `chat-template-cache.ts`: 300s per-WABA APPROVED templates (Upstash + memory);
+  wired into `/api/chat/templates` + send APPROVED gate (acceptance 4.6).
+- Poll: `CHAT_INBOX_V2_POLL_MS=5000`; SoftCopilotInboxV2 single scheduler +
+  `inFlight` + pause on `document.hidden`; changes piggybacks `threadTail`
+  (`threadId`/`threadAfter`); revision advances via `nextRevision` +
+  `hasMoreChanges` (no jump to tenant max); initial list = first page +
+  “Cargar más”; reconcile tick = one list page only (≤1 req/5s idle — 4.4).
+- Thread window: fetch ≤50; store cap 300; render window 200; SoftThreadPane
+  `data-testid="soft-thread-message"` + media via `/api/chat/media/[id]`.
+- `chat-media.ts` + GET media route: Graph resolve → 10MB-capped download →
+  private Blob `chat-media/{tenant}/{messageId}`; never persist Meta CDN URLs;
+  write `mediaBlobPath` columns when present (026) else metadata fallback.
+- Meta parser promotes `providerMediaId` / mime / filename; dual-write stores them.
+- `chat-webhook-observability.ts` structured Done logs (`socialAccountId`,
+  `durationMs`, `result`). Soft chrome + bot paths untouched.
+
+## 2026-09-21 — Phase 4 Soft AI durable ChatAutomationJob queue
+
+- Additive gated `026_chat_automation_jobs.sql`: `ChatAutomationJob` +
+  `ChatAutomationDelivery` + optional `ChatMessage` media cache columns.
+- Soft-only lease queue (`FOR UPDATE SKIP LOCKED`, 45s, per-conversation order)
+  copying BotInbox algorithms without importing bot modules/tables.
+- Webhook enqueues job after dual-write **before** 200; `void processJobById`
+  best-effort; cron `/api/cron/chat-automation` (`*/1`) is safety net.
+- Manifest registers 026; kept out of `DEFAULT_APPLY_FILES` (gated like 025).
+- Soft chrome + `/api/bot/**` + `src/lib/bot/**` untouched.
+
+## 2026-09-21 — Phase 4 scale tooling (seed / bench / burst / idle assert)
+
+- Local-only load-test scripts gated on `CHAT_SCALE_DATABASE_URL` (loopback;
+  refuse supabase hosts + pooler 6543). Never use shared `DATABASE_URL`.
+- `scripts/chat-scale-seed.ts`: 5 SocialAccounts / 2000 ChatConversations /
+  50000 ChatMessages (one 3000-msg thread); batched inserts; `--dry-run`.
+- `scripts/chat-scale-benchmark.ts`: list LIMIT 30 + changes idle p50/p95,
+  EXPLAIN (ANALYZE, BUFFERS) index asserts → `docs/audits/chat-phase4-scale-report.md`.
+- `scripts/chat-webhook-burst.ts` + `tests/fixtures/chat-webhook/`: 500 signed
+  events / 5 accounts unit-style (HMAC + parse + in-memory store).
+- `scripts/chat-idle-network-assert.ts`: ≤1 req/5s budget vs `CHAT_INBOX_V2_POLL_MS`.
+- npm: `chat:scale:seed` · `chat:scale:bench` · `chat:webhook:burst` · `test:chat-scale`.
+- Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; `src/lib/bot/**` untouched.
+- Bench numbers left **pending local postgres** in this Cloud Agent (no Docker).
+
+# Agent Changelog
+
+Append-only. Newest entries at the top.
+
 ## 2026-09-21 — PR-3 channel identity (names / logos / Connect naming)
 
 - Persist WA/IG provider identity at connect (`exchange`, IG complete/callback shared upsert).
@@ -774,3 +891,46 @@ Append-only. Newest entries at the top.
   Playwright 3/3; security 71/71; lifecycle 8/8; pagination 8/8; inbox 8/8; archive 6/6;
   tenant UI 7/7; backups 8/8; bot Grok; upstream payroll/finance; read-only Logistics
   archive regression. No SQL, shared-data/provider write, remote push, or deployment.
+
+# 2026-09-21 — Betsy Agent Layer plan (A0, docs only)
+
+- Added `docs/plans/betsy-agent-layer-fable-2026-09-21.md`: Fable 5.1 phased plan (A0–A5)
+  to make Soft `/chats` agent-driven (Respond.io-style AI Agents) per Rafael GO 2026-09-21 CR
+  — SocialAccount → ChatAgent binding with tenant default fallback (conversation override
+  later), Forge WhatsApp sales agent pilot (`cmhsibjue0004js04gie724nx`), Grok 4.6 default
+  model only (Rafael reconfirmed: no dual-model router in v1; cheap/hybrid is a one-line
+  later-cost-control footnote, not a phase or acceptance requirement). Sol
+  (`gpt-5.6-sol-high`) plan-mode review folded in (§9).
+- Verified in code and recorded as gaps: `runSoftAiTurn` is a regex heuristic (no LLM);
+  Soft direct Graph sender skips the WA 24 h window check; `ChatAutomationJob.payload` is
+  nulled on completion (usage needs its own `ChatAgentTurn` table); history is filtered by
+  metadata peer, not `conversationId`.
+- Refreshed `docs/status/betsy-chats-respondio-2026-09-20.md` to tip `bd70517` (Phases 1–5
+  LIVE; P4/P5 DONE) with a NEXT pointer to the Agent Layer plan; added a follow-on pointer
+  in the Respond.io parity plan header.
+- Prove: docs only — no product TypeScript, SQL, UI, flag, or Supabase change. Soft chrome,
+  `src/lib/bot/**`, `src/app/api/bot/**` untouched (`git diff --stat` = `docs/**`).
+
+# 2026-09-21 — Betsy Agent Layer plan amendment (Rafael GO; PR #53 ready)
+
+- Rafael GO 2026-09-21 CR: folded ALL CoS + Advisor suggestions into
+  `docs/plans/betsy-agent-layer-fable-2026-09-21.md`; §8 is now "decided" (18 items),
+  no longer open. Locked defaults written in: Probar + panic pause + IA trust badges as
+  A1 musts; `ChatAgentTurn.outputText` retention 90 days (metrics may stay longer);
+  new agents default `operationMode=ai_suggest` until explicit upgrade; Forge WA
+  allowlist id `cmuahn5y90001l504y6kksiek`; Grok 4.6 only; Soft HOLD; staff HARD LOCK.
+- Advisor musts 1–8 written as A1 blockers: §2.5 pre-send gate table (human already
+  replied → skip; per-conversation single-flight via partial unique index on
+  `ChatAutomationJob(conversationId) WHERE status='processing'`; token health; 24 h
+  window; `aiFullUnlock` hard gate), §2.7 operator surfaces (`/config/agentes` Spanish
+  config + Probar + panic controls + Historial audit; inbox trust labels in data
+  components only), §2.8 PII redaction + 90-day purge cron, §2.9 Forge fixture set and
+  dark-run unlock; A1 acceptance tests 1.11–1.22.
+- Should-adds written into A2–A5 (knowledge as data-not-instructions, media/comprobante
+  → escalate, paste-and-approve wizard, plain-Spanish pending-action row, usage panel
+  outcome mix, per-account subcap, extra injection fixtures, quiet hours, typing
+  indicator, prompt Restaurar, stop-words, eval pack); same-person WA+IG identity parked
+  in §7 roadmap. Added §3.5 fallback (fixes a dangling reference) and §9.1 traceability
+  table. Status board NEXT updated. PR #53 marked ready for squash-merge; A1 next.
+- Prove: docs only — `git diff --stat` = `docs/**`; no SQL, Prisma, or app code. Sol
+  verification not run (Rafael: not required); Executor self-check of § refs and links.

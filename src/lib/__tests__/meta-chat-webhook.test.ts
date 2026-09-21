@@ -206,6 +206,37 @@ test('parseMetaChatPayload WhatsApp button + image content helpers', () => {
   assert.equal(parsed.messages[0]?.messageType, 'button')
   assert.equal(parsed.messages[1]?.content, 'foto')
   assert.equal(parsed.messages[1]?.messageType, 'image')
+  assert.equal(parsed.messages[1]?.providerMediaId, undefined)
+})
+
+test('parseMetaChatPayload WhatsApp image promotes providerMediaId', () => {
+  const parsed = parseMetaChatPayload({
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: WA_WABA_ID,
+        changes: [
+          {
+            value: {
+              metadata: { phone_number_id: WA_PHONE_NUMBER_ID },
+              messages: [
+                {
+                  from: WA_SENDER,
+                  id: 'wamid.img2',
+                  timestamp: '1700000002',
+                  type: 'image',
+                  image: { id: 'media-abc', mime_type: 'image/jpeg', caption: 'foto' },
+                },
+              ],
+            },
+            field: 'messages',
+          },
+        ],
+      },
+    ],
+  })
+  assert.equal(parsed.messages[0]?.providerMediaId, 'media-abc')
+  assert.equal(parsed.messages[0]?.mediaMimeType, 'image/jpeg')
 })
 
 test('parseMetaChatPayload WhatsApp status-only updates become receipts (no messages)', () => {

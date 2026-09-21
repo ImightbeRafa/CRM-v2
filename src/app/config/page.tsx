@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense, lazy } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useConfig } from '../contexts/ConfigContext'
-import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck, Bot, Building2 } from 'lucide-react'
+import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck, Bot, Building2, Sparkles } from 'lucide-react'
 import { MobileBottomNav } from '../components/MobileBottomNav'
 import type { OrderStatus } from './components/StatusManager'
 import { useCurrentUser } from '../hooks/useCurrentUser'
@@ -22,7 +22,7 @@ const BusinessProfileSettings = lazy(() => import('./components/BusinessProfileS
 
 const CONFIG_TAB_IDS = [
   'profile', 'fields', 'statuses', 'inventory', 'clients', 'shipping-config',
-  'users', 'social', 'ai-assistant', 'integrations', 'import', 'billing',
+  'users', 'social', 'ai-assistant', 'agentes', 'integrations', 'import', 'billing',
   'bulk-delete', 'audit',
 ] as const
 
@@ -558,6 +558,7 @@ function ConfigPageInner() {
     { id: 'users', label: 'Usuarios', icon: Users },
     { id: 'social', label: 'Cuentas Sociales', icon: MessageCircle },
     { id: 'ai-assistant', label: 'AI Assistant', icon: Bot },
+    { id: 'agentes', label: 'Agentes Soft', icon: Sparkles },
     { id: 'integrations', label: 'Integraciones API', icon: Plug },
     { id: 'import', label: 'Importar Excel', icon: FileSpreadsheet },
     { id: 'billing', label: 'Facturación', icon: BarChart3 },
@@ -852,6 +853,25 @@ function ConfigPageInner() {
                 >
                   <Bot className="w-5 h-5" />
                   Configurar AI Assistant
+                </a>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'agentes' && (
+            <div className="bg-card rounded-xl shadow-lg border border-border p-6">
+              <div className="text-center">
+                <Sparkles className="w-12 h-12 text-indigo-600 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-foreground mb-2">Agentes Soft (chat)</h3>
+                <p className="text-muted-foreground mb-6">
+                  Configurá voz, tono, Probar y controles de pánico del Agent Layer
+                </p>
+                <a
+                  href="/config/agentes"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium"
+                >
+                  <Sparkles className="w-5 h-5" />
+                  Abrir Agentes
                 </a>
               </div>
             </div>

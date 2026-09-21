@@ -4,8 +4,9 @@
 
 | Field | Value |
 |---|---|
-| **Repo tip (this board)** | `dev` @ `b5ecd017cf15efdcdaecf523a9248fd27a8d2b5f` — *PR-3: channel identity names and logos* |
+| **Repo tip (this board)** | `dev` @ `bd70517` (PR-5 #51 *Respond.io PR-5: self-serve Meta and token health*) — **Phases 1–5 LIVE** on www |
 | **Plan SoT** | [`docs/plans/betsy-respondio-parity-fable-2026-09-20.md`](../plans/betsy-respondio-parity-fable-2026-09-20.md) |
+| **Next plan (A0 GO'd + amended 2026-09-21)** | [`docs/plans/betsy-agent-layer-fable-2026-09-21.md`](../plans/betsy-agent-layer-fable-2026-09-21.md) — Agent Layer (SocialAccount → ChatAgent, Forge WA `cmuahn5y90001l504y6kksiek` pilot, Grok 4.6 only, new agents `ai_suggest`, 90-day `outputText`). §8 decided; Advisor musts 1–8 are A1 blockers. **A1 code = next PR after #53 squash-merge.** |
 | **Notion** | [Betsy Chat — Full Implementation](https://app.notion.com/p/3cdbc39c41ae81968b64d25201be0676) · [Respond.io epic](https://app.notion.com/p/3d6bc39c41ae819b8994f3e2e6059977) |
 | **Feature flag** | `chat_inbox_v2` — **enabled for Forge tenant `cmhsibjue0004js04gie724nx` only** (default off globally) |
 | **SQL applied live** | `024_chat_inbox_conversations.sql` + `025_chat_inbox_uniques.sql` on Supabase project `db.bmolvybsqzkeswkomgzw` |
@@ -30,23 +31,36 @@
 | **Bugbot #45** | Send/echo, Soft AI escalate, direct-oauth, cursor fixes |
 | **PR-3 #46** | `displayName`, `ChannelLogo`, Renombrar, IG numeric-id bugfix — Rafael eye OK |
 
-### STILL OPEN — Phases 4–5 GO’d 2026-09-20, not built yet
+### DONE — Phase 4 scale (PR-4 #50, `026` applied) and Phase 5 self-serve (PR-5 #51)
 
-**P4 scale**
+**P4 scale — checklist**
 
-- Revision polling stress / 50k seed load-test
-- Template cache
-- `ChatAutomationJob` durable Soft AI
-- Media Blob cache
+| Item | Status |
+|---|---|
+| Local-only seed (`scripts/chat-scale-seed.ts`, 5 acct / 2k conv / 50k msg) | **Shipped** — requires `CHAT_SCALE_DATABASE_URL` loopback; refuses Supabase / 6543 |
+| Bench list + changes idle p50/p95 + EXPLAIN (`chat-scale-benchmark.ts`) | **Shipped** — report `docs/audits/chat-phase4-scale-report.md` |
+| Fill report numbers on local Postgres | **Pending** — Cloud Agent has no Docker/local Postgres; never seed shared Supabase |
+| Webhook burst 500/60s unit (`chat-webhook-burst.ts` + fixture) | **Shipped** (in-memory dual-write mock) |
+| Idle network ≤1 req/5s assert (`chat-idle-network-assert.ts`) | **Shipped** (validates `CHAT_INBOX_V2_POLL_MS`) |
+| Template cache | **Shipped** (PR-4) |
+| `ChatAutomationJob` durable Soft AI (026) | **Shipped** — `026` applied on Supabase 2026-09-20 (`ChatAutomationJob` + `ChatAutomationDelivery`, RLS on) |
+| Media Blob cache | **Shipped** (PR-4; Blob paths only, never Meta URLs) |
 
-**P5 self-serve**
+npm: `chat:scale:seed` · `chat:scale:bench` · `chat:webhook:burst` · `test:chat-scale` · `test:chat-automation`
 
-- Server RBAC on connect routes
-- IG `isActive=subscribeOk`
-- `expiresAt` + token-health cron + Reconectar banners
-- Soft-unlink (history kept)
-- Store-owner runbook
-- Fix `social-accounts.mdx` “history kept” claim
+**P5 self-serve — DONE in PR-5 #51 (merged → `bd70517`)**
+
+- Server RBAC on `/config/social` + WA/IG connect routes (`update_config`)
+- IG `isActive=subscribeOk` + Re-suscribir copy
+- Real `expiresAt` + daily `/api/cron/chat-token-health` + Reconectar banners
+- Soft-unlink (history kept; same `SocialAccount.id` on reconnect)
+- Store-owner runbook + `social-accounts.mdx` history claim fixed
+
+Still Meta-blocked for non-tester IG: Advanced Access / App Review (ops).
+
+### NEXT — Agent Layer A1 (A0 plan GO'd + amended 2026-09-21 CR, PR #53)
+
+Rafael GO 2026-09-21 CR: make `/chats` agent-driven (Respond.io-style AI Agents). Binding **SocialAccount → ChatAgent** (Forge WA ≠ Forge IG) with tenant default fallback; **Forge WhatsApp sales agent** pilot (`SocialAccount.id` `cmuahn5y90001l504y6kksiek`, +506 6104 3737 "Forge Costa Rica"); **Grok 4.6 only**; new agents default `ai_suggest`; `ChatAgentTurn.outputText` 90 days. Plan: [`docs/plans/betsy-agent-layer-fable-2026-09-21.md`](../plans/betsy-agent-layer-fable-2026-09-21.md) — **§8 is decided**; §2.5 gates + §2.7 operator surfaces (Probar, panic controls, trust labels) + Advisor musts 1–8 are **A1 blockers** with tests 1.11–1.22. Hard gate: no `ai_full` Meta send until the dark/`ai_suggest` pass is recorded in `aiFullUnlock`. Today's Soft AI worker is a regex heuristic (no LLM); A1 swaps the turn runtime behind a new default-off flag `chat_agent_layer_v1`. **A1 opens after #53 squash-merge.**
 
 ### BLOCKED — Meta ops / product HOLD
 
@@ -61,9 +75,9 @@
 
 | Lock | Consequence |
 |---|---|
-| **Staff bot HARD LOCK** | Do not touch `src/lib/bot/**`, `src/app/api/bot/**`, or `WHATSAPP_*` on CRM/inbox paths. Inbox uses Inbox Meta app + `META_WA_*` only. |
+| **Staff bot HARD LOCK** | Do not touch `src/lib/bot/**`, `src/app/api/bot/**`, or `WHATSAPP_*` on CRM/inbox paths. Inbox uses Inbox Meta app + `META_WA_*` only. Agent Layer LLM runtime gets its own client under `src/lib/soft-ai/llm/**`. |
 | **Soft chrome LOCKED** | Do not edit `SoftSlimNav`, `SoftInboxBuckets`, `SoftCopilotRail` until Phase 6 GO. |
-| **No prisma migrate / db push** | Additive SQL only (`supabase/migrations/024+_*.sql`); never `prisma db push` / `prisma migrate` against Supabase (drops raw-SQL `lm_*`). |
+| **No prisma migrate / db push** | Additive SQL only (`supabase/migrations/024+_*.sql`; Agent Layer = `027+`); never `prisma db push` / `prisma migrate` against Supabase (drops raw-SQL `lm_*`). |
 
 ---
 
@@ -91,6 +105,9 @@ Merged work on the path to this tip:
 - [#44](https://github.com/ImightbeRafa/CRM-v2/pull/44) — PR-2 dual-write + Soft v2 client / `025`
 - [#45](https://github.com/ImightbeRafa/CRM-v2/pull/45) — Bugbot follow-ups
 - [#46](https://github.com/ImightbeRafa/CRM-v2/pull/46) — PR-3 channel identity
+- [#50](https://github.com/ImightbeRafa/CRM-v2/pull/50) — PR-4 scale and reliability (`026` applied after merge)
+- [#51](https://github.com/ImightbeRafa/CRM-v2/pull/51) — PR-5 self-serve Meta and token health
 - Plan: [`docs/plans/betsy-respondio-parity-fable-2026-09-20.md`](../plans/betsy-respondio-parity-fable-2026-09-20.md)
+- Next plan (A0): [`docs/plans/betsy-agent-layer-fable-2026-09-21.md`](../plans/betsy-agent-layer-fable-2026-09-21.md)
 
 **Scope reminder:** Forge pilot only (`cmhsibjue0004js04gie724nx`). Other tenants remain on legacy Soft inbox until the flag is explicitly enabled.

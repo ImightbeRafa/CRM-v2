@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     // Verify the account belongs to the tenant
     const account = await db.socialAccount.findFirst({
-      where: { id: socialAccountId, tenantId, isActive: true },
+      where: { id: socialAccountId, tenantId },
       select: { id: true, platform: true, accountId: true },
     })
     if (!account) {

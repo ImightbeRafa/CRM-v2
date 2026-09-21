@@ -13,8 +13,15 @@ import {
 import {
   findApprovedWhatsAppTemplate,
   normalizeWhatsAppTemplateRows,
+  filterApprovedWhatsAppTemplates,
   templateNotApprovedErrorMessage,
 } from '@/lib/wa-template-approval'
+import { getApprovedTemplates } from '@/lib/chat-template-cache'
+import {
+  isMetaInvalidTokenError,
+  socialTokenSendBlockMessage,
+} from '@/lib/social-account-token-health'
+import { mapMessageToDto } from '@/lib/chat-conversation-api'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -83,6 +90,13 @@ export async function POST(request: NextRequest) {
     const content = body.content ? String(body.content) : ''
     const orderId = body.orderId ? String(body.orderId) : null
     const clientId = body.clientId ? String(body.clientId) : null
+    const rawClientRequestId = body.clientRequestId ? String(body.clientRequestId).trim() : ''
+    const clientRequestId =
+      rawClientRequestId &&
+      rawClientRequestId.length <= 80 &&
+      /^[A-Za-z0-9._:-]+$/.test(rawClientRequestId)
+        ? rawClientRequestId
+        : null
     const messageType = body.type ? String(body.type).toLowerCase() : 'text'
     const templateName = body.templateName ? String(body.templateName).trim() : ''
     const templateLanguage = body.templateLanguage
@@ -90,6 +104,14 @@ export async function POST(request: NextRequest) {
       : 'es'
 
     const isTemplate = messageType === 'template'
+    // Pack 7 deferred: outbound media (image/audio/video/document) is not supported yet.
+    // Keep /api/chat/send text + template only so the human desk never silently coerces media to text.
+    if (messageType !== 'text' && messageType !== 'template') {
+      return jsonError(
+        'Solo se admiten mensajes de texto o plantillas. El envío de media aún no está disponible.',
+        400,
+      )
+    }
     if (!recipient) {
       return jsonError('Falta destinatario del mensaje', 400)
     }
@@ -110,6 +132,9 @@ export async function POST(request: NextRequest) {
       accountId: string
       accessToken?: string | null
       refreshToken?: string | null
+      isActive?: boolean
+      disconnectedAt?: Date | null
+      tokenStatus?: string | null
     } | null = null
 
     if (socialAccountId) {
@@ -121,6 +146,9 @@ export async function POST(request: NextRequest) {
         accountId: found.accountId,
         accessToken: decryptSocialAccessToken(found.accessToken),
         refreshToken: found.refreshToken,
+        isActive: found.isActive,
+        disconnectedAt: found.disconnectedAt,
+        tokenStatus: found.tokenStatus,
       }
     } else if (platform && accountId) {
       const found = await db.socialAccount.findFirst({ where: { tenantId, platform, accountId } })
@@ -131,9 +159,22 @@ export async function POST(request: NextRequest) {
         accountId: found.accountId,
         accessToken: decryptSocialAccessToken(found.accessToken),
         refreshToken: found.refreshToken,
+        isActive: found.isActive,
+        disconnectedAt: found.disconnectedAt,
+        tokenStatus: found.tokenStatus,
       }
     } else {
       return jsonError('Falta socialAccountId o platform+accountId', 400)
+    }
+
+    const status = (account.tokenStatus || '').toLowerCase()
+    if (
+      account.isActive === false ||
+      account.disconnectedAt ||
+      status === 'revoked' ||
+      status === 'expired'
+    ) {
+      return jsonError(socialTokenSendBlockMessage(account), 400)
     }
 
     if (!account.accessToken) {
@@ -173,6 +214,10 @@ export async function POST(request: NextRequest) {
             sendPath,
             error: providerResponse?.error,
           })
+          await markSocialTokenRevoked(db, account.id, providerResponse)
+          if (isMetaInvalidTokenError(providerResponse)) {
+            return jsonError(socialTokenSendBlockMessage({ ...account, tokenStatus: 'revoked' }), 400)
+          }
           return jsonError(
             providerResponse?.error?.message || 'Falló el envío por Instagram',
             502,
@@ -206,28 +251,48 @@ export async function POST(request: NextRequest) {
             account.accessToken,
             { purpose: 'whatsapp' },
           )
-          const templatesRes = await fetch(templatesUrl, {
-            headers: { Authorization: `Bearer ${account.accessToken}` },
-            signal: metaFetchSignal(),
-          })
-          const templatesData = await readProviderJson(templatesRes)
-          if (!templatesRes.ok) {
-            console.warn('[chat/send] Template status lookup failed', {
-              status: templatesRes.status,
-              error: templatesData?.error?.message,
+
+          let approvedRows
+          try {
+            approvedRows = await getApprovedTemplates(wabaId, async () => {
+              const templatesRes = await fetch(templatesUrl, {
+                headers: { Authorization: `Bearer ${account.accessToken}` },
+                signal: metaFetchSignal(),
+              })
+              const templatesData = await readProviderJson(templatesRes)
+              if (!templatesRes.ok) {
+                console.warn('[chat/send] Template status lookup failed', {
+                  status: templatesRes.status,
+                  error: templatesData?.error?.message,
+                })
+                const err = new Error(
+                  templatesData?.error?.message ||
+                    'No se pudo verificar el estado APPROVED de la plantilla en Meta',
+                ) as Error & { status: number; providerResponse: unknown }
+                err.status = 502
+                err.providerResponse = templatesData
+                throw err
+              }
+              return filterApprovedWhatsAppTemplates(
+                normalizeWhatsAppTemplateRows(templatesData?.data),
+              )
             })
-            return jsonError(
-              templatesData?.error?.message ||
-                'No se pudo verificar el estado APPROVED de la plantilla en Meta',
-              502,
-              { providerResponse: templatesData },
-            )
+          } catch (error: any) {
+            if (error?.status === 502) {
+              return jsonError(error.message, 502, {
+                providerResponse: error.providerResponse,
+              })
+            }
+            throw error
           }
 
-          const rows = normalizeWhatsAppTemplateRows(templatesData?.data)
-          const approved = findApprovedWhatsAppTemplate(rows, templateName, templateLanguage)
+          const approved = findApprovedWhatsAppTemplate(
+            approvedRows,
+            templateName,
+            templateLanguage,
+          )
           if (!approved) {
-            const sameName = rows.find(
+            const sameName = approvedRows.find(
               (t) =>
                 t.name === templateName.trim() &&
                 t.language.toLowerCase() === (templateLanguage || 'es').trim().toLowerCase(),
@@ -335,6 +400,7 @@ export async function POST(request: NextRequest) {
         platform: account.platform,
         providerDispatch: dispatchResult,
         providerResponse,
+        ...(clientRequestId ? { clientRequestId } : {}),
         ...(isTemplate
           ? {
               messageType: 'template',
@@ -367,12 +433,31 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: saved,
+      message: saved ? mapMessageToDto(saved) : null,
       conversationId: write.conversationId,
       providerDispatch: dispatchResult,
+      clientRequestId,
     })
   } catch (error) {
     console.error('[chat/send] Internal error', error)
     return jsonError('Error interno al enviar el mensaje', 500)
+  }
+}
+
+
+async function markSocialTokenRevoked(db: any, accountId: string, providerResponse: any) {
+  if (!isMetaInvalidTokenError(providerResponse)) return
+  try {
+    await db.socialAccount.update({
+      where: { id: accountId },
+      data: {
+        tokenStatus: 'revoked',
+        tokenLastCheckedAt: new Date(),
+        lastErrorAt: new Date(),
+        lastErrorCode: '190',
+      },
+    })
+  } catch (error) {
+    console.warn('[chat/send] failed to persist revoked tokenStatus', error)
   }
 }

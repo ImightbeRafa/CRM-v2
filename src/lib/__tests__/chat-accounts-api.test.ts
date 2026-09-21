@@ -18,8 +18,10 @@ describe('chat-accounts-api', () => {
     assert.match(src, /refreshMissingAccountIdentities/)
     assert.match(src, /toChatAccountDto/)
     assert.match(src, /displayName/)
-    assert.match(src, /logoKey/)
     assert.match(src, /tokenStatus/)
+    const identity = readFileSync(resolve('src/lib/social-account-identity.ts'), 'utf8')
+    assert.match(identity, /logoKey/)
+    assert.match(identity, /toChatAccountDto/)
   })
 
   it('PATCH accounts/:id requires update_config and validates displayName', () => {
@@ -29,7 +31,8 @@ describe('chat-accounts-api', () => {
     assert.match(src, /defaultDisplayNameAtConnect/)
     assert.match(src, /status: 404/)
     const rbac = readFileSync(resolve('src/lib/rbac.ts'), 'utf8')
-    assert.match(rbac, /PATCH \/api\/chat\/accounts\/\*: 'update_config'/)
+    assert.match(rbac, /PATCH \/api\/chat\/accounts\/\*/)
+    assert.match(rbac, /'PATCH \/api\/chat\/accounts\/\*': 'update_config'/)
   })
 
   it('toChatAccountDto never blanks displayName', () => {

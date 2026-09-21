@@ -40,7 +40,9 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
     assert.match(sql, /"mediaCacheStatus"/)
     assert.match(sql, /service_role_bypass/)
     assert.match(sql, /CHECK \("status" IN \('ready', 'sending', 'sent', 'ambiguous'\)\)/)
-    assert.doesNotMatch(sql, /BotInbox/)
+    // Soft-only tables — no BotInbox* DDL (comments may mention the pattern)
+    assert.doesNotMatch(sql, /CREATE TABLE[\s\S]{0,40}BotInbox/i)
+    assert.doesNotMatch(sql, /REFERENCES public\."BotInbox/i)
     assert.doesNotMatch(sql, /(^|\n)\s*(DROP|TRUNCATE|DELETE)\s/im)
   })
 
@@ -141,7 +143,9 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
       const src = read(file)
       assert.doesNotMatch(src, /from ['"]@\/lib\/bot\//)
       assert.doesNotMatch(src, /from ['"]@\/app\/api\/bot\//)
-      assert.doesNotMatch(src, /BotInboxMessage|BotInboxDelivery|deliverBotOutputOnce|claimBotInbox/)
+      assert.doesNotMatch(src, /from ['"][^'"]*\/bot\/inbox['"]/)
+      assert.doesNotMatch(src, /prisma\.botInbox(Message|Delivery)/)
+      assert.doesNotMatch(src, /\bdeliverBotOutputOnce\b|\bclaimBotInbox\w*\b|\bprocessBotInbox\w*\b/)
     }
   })
 

@@ -66,6 +66,10 @@ model Tenant {
   chatAgents ChatAgent[]
   chatAgentBindings ChatAgentBinding[]
   chatAgentTurns ChatAgentTurn[]
+  chatKnowledgeSources ChatKnowledgeSource[]
+  chatAgentKnowledgeSources ChatAgentKnowledgeSource[]
+  chatAgentSuggestions ChatAgentSuggestion[]
+  chatAgentPendingActions ChatAgentPendingAction[]
   productOptionSets ProductOptionSet[]
   productOptions ProductOption[]
   businessInfo   BusinessInfo[]
@@ -875,6 +879,7 @@ model SocialAccount {
   automationJobs ChatAutomationJob[]
   agentBindings  ChatAgentBinding[]
   agentTurns     ChatAgentTurn[]
+  knowledgeSources ChatKnowledgeSource[]
 
   @@unique([platform, accountId, tenantId])
   @@index([tenantId])
@@ -915,6 +920,8 @@ model ChatConversation {
   readStates     ChatConversationReadState[]
   automationJobs ChatAutomationJob[]
   agentTurns     ChatAgentTurn[]
+  agentSuggestions ChatAgentSuggestion[]
+  agentPendingActions ChatAgentPendingAction[]
 
   @@unique([tenantId, socialAccountId, peerId])
   @@index([tenantId, lastMessageAt(sort: Desc), id(sort: Desc)], map: "ChatConversation_tenantId_lastMessageAt_id_idx")
@@ -987,6 +994,7 @@ model ChatMessage {
   duplicates     ChatMessage[]     @relation("ChatMessageDuplicates")
   automationJobs ChatAutomationJob[]
   agentTurns     ChatAgentTurn[]
+  agentSuggestions ChatAgentSuggestion[]
 
   @@index([tenantId, socialAccountId, sentAt(sort: Desc)])
   @@index([tenantId])
@@ -1018,8 +1026,11 @@ model ChatAgent {
   updatedAt          DateTime @updatedAt
 
   tenant   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  bindings ChatAgentBinding[]
-  turns    ChatAgentTurn[]
+  bindings         ChatAgentBinding[]
+  turns            ChatAgentTurn[]
+  knowledgeSources ChatAgentKnowledgeSource[]
+  suggestions      ChatAgentSuggestion[]
+  pendingActions   ChatAgentPendingAction[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, name])
@@ -1083,10 +1094,120 @@ model ChatAgentTurn {
   agent           ChatAgent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
   binding         ChatAgentBinding? @relation(fields: [bindingId], references: [id], onDelete: SetNull)
   triggerMessage  ChatMessage?      @relation(fields: [triggerMessageId], references: [id], onDelete: SetNull)
+  suggestions     ChatAgentSuggestion[]
+  pendingActions  ChatAgentPendingAction[]
 
   @@index([tenantId, createdAt])
   @@index([agentId, createdAt])
   @@index([conversationId, createdAt])
+}
+
+// Soft Agent Layer A2 — versioned knowledge (Brand Book / policy / FAQ / overlay).
+model ChatKnowledgeSource {
+  id              String    @id @default(cuid())
+  tenantId        String
+  socialAccountId String?
+  kind            String
+  name            String
+  body            String
+  status          String    @default("draft")
+  version         Int       @default(1)
+  contentHash     String
+  metadata        Json?
+  approvedBy      String?
+  approvedAt      DateTime?
+  contentPurgedAt DateTime?
+  createdBy       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant        Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount?             @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  agentLinks    ChatAgentKnowledgeSource[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, kind, name, version])
+  @@index([tenantId, kind, status])
+  @@index([tenantId, socialAccountId, status])
+}
+
+model ChatAgentKnowledgeSource {
+  id        String   @id @default(cuid())
+  tenantId  String
+  agentId   String
+  sourceId  String
+  priority  Int      @default(100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent  ChatAgent           @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  source ChatKnowledgeSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, sourceId])
+  @@index([tenantId, agentId, priority])
+  @@index([tenantId, sourceId])
+}
+
+// Reserved for A3 — schema only in A2.
+model ChatAgentSuggestion {
+  id                String    @id @default(cuid())
+  tenantId          String
+  conversationId    String
+  agentId           String
+  turnId            String?
+  triggerMessageId  String
+  content           String
+  status            String    @default("pending")
+  expiresAt         DateTime
+  actedBy           String?
+  actedAt           DateTime?
+  acceptedMessageId String?
+  contentPurgedAt   DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  agent        ChatAgent       @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  turn         ChatAgentTurn?  @relation(fields: [turnId], references: [id], onDelete: SetNull)
+  triggerMessage ChatMessage   @relation(fields: [triggerMessageId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, triggerMessageId])
+  @@index([tenantId, conversationId, status])
+  @@index([status, expiresAt])
+}
+
+// Reserved for A4 — schema only in A2.
+model ChatAgentPendingAction {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  conversationId     String
+  agentId            String
+  turnId             String?
+  kind               String
+  arguments          Json
+  argumentsHash      String
+  requiredPermission String
+  status             String    @default("pending")
+  idempotencyKey     String    @unique
+  expiresAt          DateTime
+  approvedBy         String?
+  approvedAt         DateTime?
+  executedAt         DateTime?
+  result             Json?
+  errorCode          String?
+  argumentsPurgedAt  DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  agent        ChatAgent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  turn         ChatAgentTurn?   @relation(fields: [turnId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, conversationId, status])
+  @@index([status, expiresAt])
 }
 
 // Soft AI durable inbound jobs. Copies BotInboxMessage lease/retry semantics

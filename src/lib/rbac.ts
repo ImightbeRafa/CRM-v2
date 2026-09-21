@@ -123,6 +123,7 @@ export function canAccessRoute(role: Role, route: string): boolean {
     '/config': 'view_config',
     '/config/social': 'update_config',
     '/config/agentes': 'view_config',
+    '/config/agentes/conocimiento': 'view_config',
   };
 
   const requiredPermission = routePermissions[route];
@@ -255,6 +256,16 @@ export const apiPermissions: Record<string, Permission> = {
   'POST /api/chat/agents/*/test': 'update_config',
   'POST /api/chat/agents/*/panic': 'update_config',
   'POST /api/chat/agents/*/bindings': 'update_config',
+  'GET /api/chat/knowledge': 'view_config',
+  'POST /api/chat/knowledge': 'update_config',
+  'GET /api/chat/knowledge/*': 'view_config',
+  'PATCH /api/chat/knowledge/*': 'update_config',
+  'DELETE /api/chat/knowledge/*': 'update_config',
+  'GET /api/chat/knowledge/*/review': 'view_config',
+  'POST /api/chat/knowledge/*/review': 'update_config',
+  'GET /api/chat/agents/*/knowledge-sources': 'view_config',
+  'POST /api/chat/agents/*/knowledge-sources': 'update_config',
+  'DELETE /api/chat/agents/*/knowledge-sources': 'update_config',
   'GET /api/chat/conversations': 'update_sales',
   'GET /api/chat/conversations/changes': 'update_sales',
   'GET /api/chat/conversations/*/messages': 'update_sales',

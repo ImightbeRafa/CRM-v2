@@ -23,8 +23,10 @@ import {
 import { softAiCanalContextLine } from '@/lib/soft-ai/channel-context'
 import { runSoftAiLlmRuntime } from '@/lib/soft-ai/llm/runtime'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
-import { HISTORY_WINDOW_MAX } from '@/lib/soft-ai/agent-types'
+import { HISTORY_WINDOW_MAX, AGENT_TOOL_NAMES } from '@/lib/soft-ai/agent-types'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
+import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
+import { routeInboundSafety } from '@/lib/soft-ai/llm/safety-router'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
@@ -379,6 +381,108 @@ export async function executeAgentLayerTurn(
       })
 
   const history = await loadHistory(row.conversationId)
+
+  const safety = routeInboundSafety({
+    inboundText: payload.content || '',
+    messageType: trigger.messageType,
+  })
+  if (safety.escalate) {
+    const outputHash = hashSoftAiOutput(safety.handoffText)
+    const turn = await prisma.chatAgentTurn.upsert({
+      where: { automationDeliveryKey: row.deliveryKey },
+      create: {
+        tenantId: row.tenantId,
+        conversationId: row.conversationId,
+        socialAccountId: row.socialAccountId,
+        agentId: resolved.agent.id,
+        bindingId: resolved.binding.id,
+        triggerMessageId: row.messageId,
+        automationDeliveryKey: row.deliveryKey,
+        mode:
+          resolved.effectiveBehavior === 'send'
+            ? 'ai_full'
+            : resolved.effectiveMode === 'ai_full'
+              ? 'ai_full'
+              : 'ai_suggest',
+        model: resolved.agent.model,
+        agentVersion: resolved.agent.version,
+        status: 'generated',
+        outputText: safety.handoffText,
+        outputHash,
+        toolTrace: {
+          safetyRoute: safety.reason,
+          knowledgeVersions: [],
+        } as Prisma.InputJsonValue,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        estimatedCostMicros: BigInt(0),
+        pricingVersion: 'xai-2026-09',
+        latencyMs: 0,
+        fallbackUsed: false,
+        errorCode: safety.reason,
+      },
+      update: {
+        status: 'generated',
+        outputText: safety.handoffText,
+        outputHash,
+        toolTrace: {
+          safetyRoute: safety.reason,
+          knowledgeVersions: [],
+        } as Prisma.InputJsonValue,
+        errorCode: safety.reason,
+      },
+    })
+    await prisma.chatConversation.updateMany({
+      where: { id: row.conversationId, tenantId: row.tenantId },
+      data: { aiMode: 'human' },
+    })
+    return finishDeliveryOrSuggest({
+      row,
+      payload,
+      conversation,
+      agent: resolved.agent,
+      bindingId: resolved.binding.id,
+      trigger,
+      agentMode,
+      effectiveBehavior:
+        resolved.effectiveBehavior === 'send' ? ('send' as const) : ('suggest' as const),
+      unlockedForSend: resolved.unlockedForSend,
+      turnId: turn.id,
+      outputText: safety.handoffText,
+      outputHash,
+      outputValidationOk: true,
+      toolTrace: { safetyRoute: safety.reason },
+      usage: {
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        estimatedCostMicros: BigInt(0),
+        latencyMs: 0,
+        fallbackUsed: false,
+      },
+      // Never Meta-send a safety handoff automatically in suggest default; force suggest
+      // unless unlocked ai_full — still force suggest for opt-out/media/payment.
+      forceSuggest: true,
+      skipReasonIfSuggest: safety.reason,
+    })
+  }
+
+  const knowledge = await loadApprovedKnowledgeForAgent({
+    tenantId: row.tenantId,
+    agentId: resolved.agent.id,
+    socialAccountId: row.socialAccountId,
+  })
+
+  const enabledTools = [
+    ...new Set([
+      ...resolved.agent.enabledTools,
+      ...AGENT_TOOL_NAMES.filter((t) => t === 'search_approved_knowledge'),
+    ]),
+  ]
+
   const llm = await runSoftAiLlmRuntime({
     tenantId: row.tenantId,
     agentId: resolved.agent.id,
@@ -390,7 +494,8 @@ export async function executeAgentLayerTurn(
     description: resolved.agent.description,
     introductionNames: resolved.agent.introductionNames,
     canalContext,
-    enabledTools: resolved.agent.enabledTools,
+    knowledge,
+    enabledTools,
     history,
     inboundText: payload.content,
     clientName: conversation.peerName,
@@ -402,8 +507,9 @@ export async function executeAgentLayerTurn(
       socialAccountId: row.socialAccountId,
       peerId: row.peerId,
       clientId: conversation.clientId,
-      enabledTools: resolved.agent.enabledTools,
+      enabledTools,
       inboundText: payload.content,
+      agentId: resolved.agent.id,
     },
   })
 
@@ -771,6 +877,61 @@ export async function runAgentTestTurn(input: {
   if (!conversation) throw new Error('AGENT_TEST_NO_CONVERSATION')
 
   const deliveryKey = `test:${agent.id}:${Date.now()}:${input.actorUserId}`
+  const knowledge = await loadApprovedKnowledgeForAgent({
+    tenantId: input.tenantId,
+    agentId: agent.id,
+    socialAccountId,
+  })
+  const enabledTools = [
+    ...new Set([
+      ...agent.enabledTools,
+      ...AGENT_TOOL_NAMES.filter((t) => t === 'search_approved_knowledge'),
+    ]),
+  ]
+  const safety = routeInboundSafety({
+    inboundText: input.inboundText,
+    messageType: 'text',
+  })
+  if (safety.escalate) {
+    const turn = await prisma.chatAgentTurn.create({
+      data: {
+        tenantId: input.tenantId,
+        conversationId: conversation.id,
+        socialAccountId,
+        agentId: agent.id,
+        triggerMessageId: null,
+        automationDeliveryKey: deliveryKey,
+        mode: 'test',
+        model: agent.model,
+        agentVersion: agent.version,
+        status: 'test',
+        outputText: safety.handoffText,
+        outputHash: hashSoftAiOutput(safety.handoffText),
+        toolTrace: {
+          safetyRoute: safety.reason,
+          knowledgeVersions: knowledge.versions,
+        } as Prisma.InputJsonValue,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        estimatedCostMicros: BigInt(0),
+        pricingVersion: 'xai-2026-09',
+        latencyMs: 0,
+        fallbackUsed: false,
+        errorCode: safety.reason,
+        completedAt: new Date(),
+      },
+    })
+    return {
+      text: safety.handoffText,
+      toolTrace: { safetyRoute: safety.reason, knowledgeVersions: knowledge.versions },
+      tokens: { input: 0, output: 0, cached: 0 },
+      turnId: turn.id,
+      latencyMs: 0,
+    }
+  }
+
   const llm = await runSoftAiLlmRuntime({
     tenantId: input.tenantId,
     agentId: agent.id,
@@ -786,7 +947,8 @@ export async function runAgentTestTurn(input: {
       platform: 'whatsapp',
       accountId: '',
     }),
-    enabledTools: agent.enabledTools,
+    knowledge,
+    enabledTools,
     history: [],
     inboundText: input.inboundText,
     clientName: conversation.peerName,
@@ -798,8 +960,9 @@ export async function runAgentTestTurn(input: {
       socialAccountId,
       peerId: conversation.peerId,
       clientId: conversation.clientId,
-      enabledTools: agent.enabledTools,
+      enabledTools,
       inboundText: input.inboundText,
+      agentId: agent.id,
     },
   })
 

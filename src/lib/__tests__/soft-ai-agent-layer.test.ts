@@ -91,6 +91,15 @@ describe('soft-ai output validator + history (1.7, gate 9)', () => {
     assert.ok(bad.reasons.includes('write_claim'))
   })
 
+  it('order status citation alone does not authorize money (A2)', () => {
+    const bad = validateAgentOutput({
+      text: 'Tu pedido sale ₡15000',
+      citedToolNames: ['get_order_status'],
+    })
+    assert.equal(bad.ok, false)
+    assert.ok(bad.reasons.includes('unsourced_money'))
+  })
+
   it('history window keeps only last N messages for one conversation', () => {
     const msgs = Array.from({ length: 40 }, (_, i) => ({
       id: `m${i}`,

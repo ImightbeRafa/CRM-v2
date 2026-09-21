@@ -8,13 +8,13 @@ import 'server-only'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import {
-  A1_TOOL_NAMES,
+  AGENT_TOOL_NAMES,
   AGENT_INSTRUCTIONS_MAX,
   AGENT_NAME_MAX,
   DEFAULT_FORGE_VOICE,
   FORGE_WA_SOCIAL_ACCOUNT_ID,
   isAllowedChatAgentModel,
-  isA1ToolName,
+  isAgentToolName,
   normalizeIntroductionNames,
   type ChatAgentOperationMode,
   type ChatAgentStatus,
@@ -236,7 +236,7 @@ export async function createChatAgent(input: {
   const systemInstructions = (
     input.systemInstructions?.trim() || DEFAULT_FORGE_VOICE
   ).slice(0, AGENT_INSTRUCTIONS_MAX)
-  const enabledTools = (input.enabledTools || [...A1_TOOL_NAMES]).filter(isA1ToolName)
+  const enabledTools = (input.enabledTools || [...AGENT_TOOL_NAMES]).filter(isAgentToolName)
   let introductionNames: string[] = []
   try {
     introductionNames = normalizeIntroductionNames(input.introductionNames ?? [])
@@ -335,7 +335,7 @@ export async function updateChatAgent(input: {
     bumpVersion = true
   }
   if (input.patch.enabledTools) {
-    data.enabledTools = input.patch.enabledTools.filter(isA1ToolName)
+    data.enabledTools = input.patch.enabledTools.filter(isAgentToolName)
     bumpVersion = true
   }
   if (input.patch.introductionNames !== undefined) {
@@ -716,7 +716,7 @@ export async function ensurePilotDefaults(input: {
         tonePreset: 'warm_concise',
         model: 'grok-4.6',
         operationMode: 'ai_suggest',
-        enabledTools: [...A1_TOOL_NAMES],
+        enabledTools: [...AGENT_TOOL_NAMES],
         introductionNames: ['Forge'],
         paymentAlwaysHuman: true,
         status: 'draft',

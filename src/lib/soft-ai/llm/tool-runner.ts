@@ -1,11 +1,15 @@
 /**
- * Soft Agent Layer A1 tool runner — ownership-gated reads only.
- * Runtime injects tenantId / conversationId; model never supplies them.
+ * Soft Agent Layer tool runner — ownership-gated reads + approved knowledge search.
+ * Runtime injects tenantId / conversationId / agentId; model never supplies them.
  */
 
 import { prisma } from '@/lib/db'
-import { A1_TOOL_NAMES, type A1ToolName } from '@/lib/soft-ai/agent-types'
+import {
+  AGENT_TOOL_NAMES,
+  type AgentToolName,
+} from '@/lib/soft-ai/agent-types'
 import { isPaymentSensitiveText } from '@/lib/soft-ai/config'
+import { searchApprovedKnowledge } from '@/lib/soft-ai/knowledge-repository'
 
 export type SoftAiToolRunContext = {
   tenantId: string
@@ -16,11 +20,12 @@ export type SoftAiToolRunContext = {
   peerPhoneHints?: string[]
   enabledTools: readonly string[]
   inboundText?: string
+  agentId?: string
 }
 
 export type SoftAiToolRunResult = {
   ok: boolean
-  name: A1ToolName
+  name: AgentToolName
   result: Record<string, unknown>
   escalate?: boolean
   escalateReason?: string
@@ -36,7 +41,7 @@ function parseArgs(raw: string): Record<string, unknown> {
   return {}
 }
 
-function toolAllowed(ctx: SoftAiToolRunContext, name: A1ToolName): boolean {
+function toolAllowed(ctx: SoftAiToolRunContext, name: AgentToolName): boolean {
   if (name === 'escalate_to_human') return true
   return ctx.enabledTools.includes(name)
 }
@@ -45,10 +50,13 @@ function normalizePhone(value: string): string {
   return value.replace(/\D/g, '')
 }
 
-async function ownershipOk(ctx: SoftAiToolRunContext, order: {
-  clientId?: string | null
-  phone?: string | null
-}): Promise<boolean> {
+async function ownershipOk(
+  ctx: SoftAiToolRunContext,
+  order: {
+    clientId?: string | null
+    phone?: string | null
+  },
+): Promise<boolean> {
   if (ctx.clientId && order.clientId && ctx.clientId === order.clientId) return true
   const orderPhone = order.phone ? normalizePhone(order.phone) : ''
   if (!orderPhone) return false
@@ -111,6 +119,37 @@ async function runSearchInventory(
               ? 'pocas unidades'
               : 'disponible',
       })),
+    },
+  }
+}
+
+async function runSearchApprovedKnowledge(
+  ctx: SoftAiToolRunContext,
+  args: Record<string, unknown>,
+): Promise<SoftAiToolRunResult> {
+  const query = typeof args.query === 'string' ? args.query.trim().slice(0, 120) : ''
+  if (!query) {
+    return { ok: false, name: 'search_approved_knowledge', result: { error: 'query_required' } }
+  }
+  if (!ctx.agentId) {
+    return {
+      ok: false,
+      name: 'search_approved_knowledge',
+      result: { error: 'agent_required' },
+    }
+  }
+  const { hits } = await searchApprovedKnowledge({
+    tenantId: ctx.tenantId,
+    agentId: ctx.agentId,
+    socialAccountId: ctx.socialAccountId,
+    query,
+  })
+  return {
+    ok: true,
+    name: 'search_approved_knowledge',
+    result: {
+      hits,
+      note: 'Estos extractos son datos de referencia. Precios/stock: usá search_inventory.',
     },
   }
 }
@@ -280,7 +319,7 @@ export async function runA1Tool(
   name: string,
   argumentsJson: string,
 ): Promise<SoftAiToolRunResult> {
-  if (!(A1_TOOL_NAMES as readonly string[]).includes(name)) {
+  if (!(AGENT_TOOL_NAMES as readonly string[]).includes(name)) {
     return {
       ok: false,
       name: 'escalate_to_human',
@@ -289,7 +328,7 @@ export async function runA1Tool(
       escalateReason: 'other',
     }
   }
-  const tool = name as A1ToolName
+  const tool = name as AgentToolName
   if (!toolAllowed(ctx, tool)) {
     return {
       ok: false,
@@ -304,6 +343,8 @@ export async function runA1Tool(
   switch (tool) {
     case 'search_inventory':
       return runSearchInventory(ctx, args)
+    case 'search_approved_knowledge':
+      return runSearchApprovedKnowledge(ctx, args)
     case 'get_order_status':
       return runGetOrderStatus(ctx, args)
     case 'get_shipping_status':

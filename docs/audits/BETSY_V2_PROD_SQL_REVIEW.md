@@ -243,3 +243,35 @@ node scripts/apply-betsy-v2-additive-sql.mjs
 
 **Do not** `prisma db push` / `prisma migrate`. **SQL 027b NOT applied — wait CoS gated apply.**
 
+## 028 Soft Agent knowledge + reserved suggestion/pending-action — PROPOSED (not applied)
+
+Date: 2026-09-21
+Branch: `cursor/a2-agent-knowledge-cd21`
+Source: `supabase/migrations/028_chat_agent_knowledge_actions.sql`
+Review status: **source reviewed in PR — NOT APPLIED to shared Supabase**
+
+### What 028 adds (expand-only)
+
+| Object | Notes |
+|---|---|
+| `ChatKnowledgeSource` | Versioned Brand Book / policy / FAQ / channel_overlay; draft→approved→archived |
+| `ChatAgentKnowledgeSource` | Agent↔source join with priority; composite tenant FKs |
+| `ChatAgentSuggestion` | Reserved for A3 (schema only) |
+| `ChatAgentPendingAction` | Reserved for A4 (schema only) |
+
+### Apply (human-gated only)
+
+1. Fresh Vercel Blob backup.
+2. SecureDog + Rafael GO.
+3. Confirm 027 (+ 027b if needed) already applied.
+4. Apply with:
+```bash
+BETSY_V2_APPLY_MIGRATIONS=1 \
+BETSY_V2_APPLY_CONFIRM_HOST=<direct-host> \
+BETSY_V2_APPLY_FILES=028 \
+node scripts/apply-betsy-v2-additive-sql.mjs
+```
+5. Verify tables via catalog / EXPECTED_TABLES 028 + EXPECTED_INDEXES_028.
+
+**Do not** `prisma db push` / `prisma migrate`. **SQL 028 NOT applied — wait CoS gated apply after SecureDog + Rafael GO.**
+

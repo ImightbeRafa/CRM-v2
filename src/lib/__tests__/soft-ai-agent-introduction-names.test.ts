@@ -44,7 +44,7 @@ describe('normalizeIntroductionNames (A1.5)', () => {
 
 describe('buildAgentSystemInstructions identity layer (A1.5)', () => {
   it('keeps immutable safety first and injects identity before voice', () => {
-    const out = buildAgentSystemInstructions({
+    const { instructions: out } = buildAgentSystemInstructions({
       systemInstructions: 'Voz editable de prueba.',
       tonePreset: 'warm_concise',
       introductionNames: ['Sofía', 'Forge'],
@@ -60,7 +60,7 @@ describe('buildAgentSystemInstructions identity layer (A1.5)', () => {
   })
 
   it('omits identity layer when introductionNames is empty', () => {
-    const out = buildAgentSystemInstructions({
+    const { instructions: out } = buildAgentSystemInstructions({
       systemInstructions: 'Solo voz.',
       tonePreset: 'formal',
       introductionNames: [],

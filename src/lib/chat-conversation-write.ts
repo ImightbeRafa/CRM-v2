@@ -44,6 +44,9 @@ export interface DualWriteMessageInput {
   orderId?: string | null
   /** When true, Soft AI must not run (echoes / history). */
   suppressSoftAi?: boolean
+  providerMediaId?: string | null
+  mediaMimeType?: string | null
+  mediaFilename?: string | null
 }
 
 export type DualWriteResult =
@@ -349,6 +352,9 @@ export async function dualWriteChatMessage(
     providerMessageId: providerMessageId || undefined,
     direction: input.direction,
     messageType: input.messageType || undefined,
+    providerMediaId: input.providerMediaId || undefined,
+    mediaMimeType: input.mediaMimeType || undefined,
+    mediaFilename: input.mediaFilename || undefined,
   }
 
   try {
@@ -400,6 +406,9 @@ export async function dualWriteChatMessage(
             messageType: input.messageType ?? null,
             deliveryStatus,
             statusUpdatedAt: new Date(),
+            providerMediaId: input.providerMediaId?.trim() || null,
+            mediaMimeType: input.mediaMimeType?.trim() || null,
+            mediaFilename: input.mediaFilename?.trim() || null,
           },
           select: { id: true },
         })

@@ -10,12 +10,28 @@ import { coerceSoftTags } from '@/lib/chat-conversation-api'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 
 export const CHAT_INBOX_V2_IMPORTED_KEY = 'betsy.softCopilot.inboxV2Imported.v1'
-export const CHAT_INBOX_V2_POLL_MS = 4000
+export const CHAT_INBOX_V2_POLL_MS = 5000
 export const CHAT_INBOX_V2_FULL_RECONCILE_MS = 120_000
 export const CHAT_INBOX_V2_LIST_PAGE_LIMIT = 50
 export const CHAT_INBOX_V2_LIST_MAX_PAGES = 40
+export const CHAT_INBOX_V2_THREAD_FETCH_LIMIT = 50
+export const CHAT_INBOX_V2_THREAD_RENDER_WINDOW = 200
+export const CHAT_INBOX_V2_THREAD_STORE_CAP = 300
 
 export function messageDtoToInbox(row: ChatMessageItemDto): ChatInboxMessage {
+  const meta = row.metadata
+  const providerMediaId =
+    row.providerMediaId ??
+    (typeof meta?.providerMediaId === 'string' ? meta.providerMediaId : undefined)
+  const mediaMimeType =
+    row.mediaMimeType ??
+    (typeof meta?.mediaMimeType === 'string' ? meta.mediaMimeType : undefined)
+  const mediaFilename =
+    row.mediaFilename ??
+    (typeof meta?.mediaFilename === 'string' ? meta.mediaFilename : undefined)
+  const mediaBlobPath =
+    row.mediaBlobPath ??
+    (typeof meta?.mediaBlobPath === 'string' ? meta.mediaBlobPath : undefined)
   return {
     id: row.id,
     direction: row.direction,
@@ -25,6 +41,11 @@ export function messageDtoToInbox(row: ChatMessageItemDto): ChatInboxMessage {
     metadata: row.metadata,
     clientId: row.clientId ?? undefined,
     orderId: row.orderId ?? undefined,
+    messageType: row.messageType ?? undefined,
+    providerMediaId: providerMediaId || undefined,
+    mediaMimeType: mediaMimeType || undefined,
+    mediaFilename: mediaFilename || undefined,
+    mediaBlobPath: mediaBlobPath || undefined,
   }
 }
 
@@ -183,4 +204,103 @@ export function buildChatTemplateSendBody(opts: {
     templateLanguage: opts.template.language,
     content: `[Plantilla] ${opts.template.name}`,
   }
+}
+
+/** Advance revision cursor only to the last delivered change — never jump to tenant head. */
+export function advanceRevisionCursor(opts: {
+  current: bigint
+  nextRevision?: string | null
+  /** @deprecated tenant-head max — ignored for cursor advancement */
+  maxRevision?: string | null
+  hasMoreChanges?: boolean
+}): { next: bigint; continueDrain: boolean } {
+  const raw = (opts.nextRevision ?? '').trim()
+  if (!raw || !/^\d+$/.test(raw)) {
+    return { next: opts.current, continueDrain: false }
+  }
+  const delivered = BigInt(raw)
+  const next = delivered > opts.current ? delivered : opts.current
+  return {
+    next,
+    continueDrain: Boolean(opts.hasMoreChanges),
+  }
+}
+
+export type ChatInboxV2PollDecision =
+  | { action: 'skip'; reason: 'hidden' | 'in_flight' }
+  | { action: 'changes' }
+  | { action: 'reconcile' }
+
+export function decideInboxV2PollTick(opts: {
+  documentHidden: boolean
+  inFlight: boolean
+  nowMs: number
+  lastFullReconcileMs: number
+  fullReconcileEveryMs?: number
+}): ChatInboxV2PollDecision {
+  if (opts.documentHidden) return { action: 'skip', reason: 'hidden' }
+  if (opts.inFlight) return { action: 'skip', reason: 'in_flight' }
+  const every = opts.fullReconcileEveryMs ?? CHAT_INBOX_V2_FULL_RECONCILE_MS
+  if (opts.nowMs - opts.lastFullReconcileMs >= every) {
+    return { action: 'reconcile' }
+  }
+  return { action: 'changes' }
+}
+
+/** Keep newest `max` messages for DOM render (oldest dropped from the window). */
+export function selectThreadRenderWindow<T extends { id: string; sentAt: string }>(
+  messages: T[],
+  max = CHAT_INBOX_V2_THREAD_RENDER_WINDOW,
+): T[] {
+  if (messages.length <= max) return messages
+  return messages.slice(messages.length - max)
+}
+
+/**
+ * Merge thread pages and cap store size.
+ * When over cap after loading older, drop from the newest end so older history stays;
+ * otherwise (tail merge) keep the newest and drop oldest.
+ */
+export function mergeThreadMessageWindow<T extends { id: string; sentAt: string }>(opts: {
+  existing: T[]
+  incoming: T[]
+  mode: 'replace' | 'tail' | 'older'
+  storeCap?: number
+}): T[] {
+  const cap = opts.storeCap ?? CHAT_INBOX_V2_THREAD_STORE_CAP
+  if (opts.mode === 'replace') {
+    const sorted = [...opts.incoming].sort((a, b) => a.sentAt.localeCompare(b.sentAt))
+    return sorted.length > cap ? sorted.slice(sorted.length - cap) : sorted
+  }
+
+  const byId = new Map(opts.existing.map((m) => [m.id, m]))
+  for (const m of opts.incoming) byId.set(m.id, m)
+  const sorted = [...byId.values()].sort((a, b) => a.sentAt.localeCompare(b.sentAt))
+  if (sorted.length <= cap) return sorted
+
+  if (opts.mode === 'older') {
+    // Prefer keeping newly loaded older pages + mid history; drop newest overflow.
+    return sorted.slice(0, cap)
+  }
+  // Tail / default: keep newest.
+  return sorted.slice(sorted.length - cap)
+}
+
+export function buildChangesPollQuery(opts: {
+  afterRevision: string
+  limit?: number
+  threadId?: string | null
+  threadAfter?: string | null
+  includeReconcilePage?: boolean
+}): string {
+  const qs = new URLSearchParams({
+    afterRevision: opts.afterRevision,
+    limit: String(opts.limit ?? 200),
+  })
+  if (opts.threadId) {
+    qs.set('threadId', opts.threadId)
+    if (opts.threadAfter) qs.set('threadAfter', opts.threadAfter)
+  }
+  if (opts.includeReconcilePage) qs.set('reconcilePage', '1')
+  return qs.toString()
 }

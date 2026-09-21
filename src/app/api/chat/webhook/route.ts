@@ -21,6 +21,10 @@ import {
   applyPeerReadWatermark,
   dualWriteChatMessage,
 } from '@/lib/chat-conversation-write'
+import {
+  buildChatWebhookObsFields,
+  logChatWebhookEvent,
+} from '@/lib/chat-webhook-observability'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -116,6 +120,9 @@ async function storeMessage(event: ParsedMetaChatMessage) {
     messageType: event.messageType || null,
     deliveryStatus: direction === 'inbound' ? 'received' : 'sent',
     platform: event.platform,
+    providerMediaId: event.providerMediaId || null,
+    mediaMimeType: event.mediaMimeType || null,
+    mediaFilename: event.mediaFilename || null,
     metadata: {
       ...event.metadata,
       from: direction === 'inbound' ? event.senderId : undefined,
@@ -124,6 +131,9 @@ async function storeMessage(event: ParsedMetaChatMessage) {
       platform: event.platform,
       providerMessageId: event.providerMessageId,
       direction,
+      providerMediaId: event.providerMediaId,
+      mediaMimeType: event.mediaMimeType,
+      mediaFilename: event.mediaFilename,
     },
     suppressSoftAi: Boolean(event.suppressSoftAi) || direction !== 'inbound',
   })
@@ -334,14 +344,25 @@ export async function POST(request: NextRequest) {
       if (enqueued && 'jobId' in enqueued) softAiJobIds.push(enqueued.jobId)
     }
 
-    console.log('[chat/webhook][POST] Done', {
-      stored,
-      skipped: results.length - stored,
-      receiptsUpdated,
-      softAiJobs: softAiJobIds.length,
-      durationMs: Date.now() - startedAt,
-      signatureValid: signatureResult.valid,
-    })
+    const durationMs = Date.now() - startedAt
+    const primaryAccountId =
+      results.find((r) => r.stored && 'socialAccountId' in r)?.socialAccountId ?? null
+    logChatWebhookEvent(
+      '[chat/webhook][POST] Done',
+      buildChatWebhookObsFields({
+        socialAccountId: primaryAccountId,
+        durationMs,
+        result: stored > 0 ? 'stored' : receiptsUpdated > 0 ? 'receipt_updated' : 'ok',
+      }),
+      {
+        stored,
+        skipped: results.length - stored,
+        receiptsUpdated,
+        softAiJobs: softAiJobIds.length,
+        signatureValid: signatureResult.valid,
+        parsedMessages: parsed.messages.length,
+      },
+    )
 
     // Best-effort immediate dispatch after persist; cron is the safety net.
     for (const jobId of softAiJobIds) {
@@ -354,10 +375,19 @@ export async function POST(request: NextRequest) {
       skipped: results.length - stored,
       receiptsUpdated,
       ignoredReasons: parsed.ignoredReasons,
-      durationMs: Date.now() - startedAt,
+      durationMs,
     })
   } catch (error) {
     console.error('[chat/webhook][POST] Internal error', error)
+    logChatWebhookEvent(
+      '[chat/webhook][POST] Done',
+      buildChatWebhookObsFields({
+        socialAccountId: null,
+        durationMs: Date.now() - startedAt,
+        result: 'error',
+        reason: error instanceof Error ? error.message : 'Internal error',
+      }),
+    )
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

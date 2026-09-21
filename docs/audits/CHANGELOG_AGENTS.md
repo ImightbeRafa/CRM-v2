@@ -1,3 +1,21 @@
+## 2026-09-21 — Phase 4 template cache / poll consolidate / media / windowing
+
+- `chat-template-cache.ts`: 300s per-WABA APPROVED templates (Upstash + memory);
+  wired into `/api/chat/templates` + send APPROVED gate (acceptance 4.6).
+- Poll: `CHAT_INBOX_V2_POLL_MS=5000`; SoftCopilotInboxV2 single scheduler +
+  `inFlight` + pause on `document.hidden`; changes piggybacks `threadTail`
+  (`threadId`/`threadAfter`); revision advances via `nextRevision` +
+  `hasMoreChanges` (no jump to tenant max); initial list = first page +
+  “Cargar más”; reconcile tick = one list page only (≤1 req/5s idle — 4.4).
+- Thread window: fetch ≤50; store cap 300; render window 200; SoftThreadPane
+  `data-testid="soft-thread-message"` + media via `/api/chat/media/[id]`.
+- `chat-media.ts` + GET media route: Graph resolve → 10MB-capped download →
+  private Blob `chat-media/{tenant}/{messageId}`; never persist Meta CDN URLs;
+  write `mediaBlobPath` columns when present (026) else metadata fallback.
+- Meta parser promotes `providerMediaId` / mime / filename; dual-write stores them.
+- `chat-webhook-observability.ts` structured Done logs (`socialAccountId`,
+  `durationMs`, `result`). Soft chrome + bot paths untouched.
+
 ## 2026-09-21 — Phase 4 Soft AI durable ChatAutomationJob queue
 
 - Additive gated `026_chat_automation_jobs.sql`: `ChatAutomationJob` +

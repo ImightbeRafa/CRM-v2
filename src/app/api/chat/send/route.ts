@@ -13,8 +13,10 @@ import {
 import {
   findApprovedWhatsAppTemplate,
   normalizeWhatsAppTemplateRows,
+  filterApprovedWhatsAppTemplates,
   templateNotApprovedErrorMessage,
 } from '@/lib/wa-template-approval'
+import { getApprovedTemplates } from '@/lib/chat-template-cache'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -206,28 +208,48 @@ export async function POST(request: NextRequest) {
             account.accessToken,
             { purpose: 'whatsapp' },
           )
-          const templatesRes = await fetch(templatesUrl, {
-            headers: { Authorization: `Bearer ${account.accessToken}` },
-            signal: metaFetchSignal(),
-          })
-          const templatesData = await readProviderJson(templatesRes)
-          if (!templatesRes.ok) {
-            console.warn('[chat/send] Template status lookup failed', {
-              status: templatesRes.status,
-              error: templatesData?.error?.message,
+
+          let approvedRows
+          try {
+            approvedRows = await getApprovedTemplates(wabaId, async () => {
+              const templatesRes = await fetch(templatesUrl, {
+                headers: { Authorization: `Bearer ${account.accessToken}` },
+                signal: metaFetchSignal(),
+              })
+              const templatesData = await readProviderJson(templatesRes)
+              if (!templatesRes.ok) {
+                console.warn('[chat/send] Template status lookup failed', {
+                  status: templatesRes.status,
+                  error: templatesData?.error?.message,
+                })
+                const err = new Error(
+                  templatesData?.error?.message ||
+                    'No se pudo verificar el estado APPROVED de la plantilla en Meta',
+                ) as Error & { status: number; providerResponse: unknown }
+                err.status = 502
+                err.providerResponse = templatesData
+                throw err
+              }
+              return filterApprovedWhatsAppTemplates(
+                normalizeWhatsAppTemplateRows(templatesData?.data),
+              )
             })
-            return jsonError(
-              templatesData?.error?.message ||
-                'No se pudo verificar el estado APPROVED de la plantilla en Meta',
-              502,
-              { providerResponse: templatesData },
-            )
+          } catch (error: any) {
+            if (error?.status === 502) {
+              return jsonError(error.message, 502, {
+                providerResponse: error.providerResponse,
+              })
+            }
+            throw error
           }
 
-          const rows = normalizeWhatsAppTemplateRows(templatesData?.data)
-          const approved = findApprovedWhatsAppTemplate(rows, templateName, templateLanguage)
+          const approved = findApprovedWhatsAppTemplate(
+            approvedRows,
+            templateName,
+            templateLanguage,
+          )
           if (!approved) {
-            const sameName = rows.find(
+            const sameName = approvedRows.find(
               (t) =>
                 t.name === templateName.trim() &&
                 t.language.toLowerCase() === (templateLanguage || 'es').trim().toLowerCase(),

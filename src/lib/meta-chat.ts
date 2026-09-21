@@ -16,6 +16,10 @@ export interface ParsedMetaChatMessage {
   /** When true, webhook must not run Soft Tenant AI. */
   suppressSoftAi: boolean
   metadata: Record<string, unknown>
+  /** WhatsApp Graph media id (image/audio/document/…); never a CDN URL. */
+  providerMediaId?: string
+  mediaMimeType?: string
+  mediaFilename?: string
 }
 
 export type MetaChatReceiptStatus = 'sent' | 'delivered' | 'read' | 'failed'
@@ -90,6 +94,26 @@ function getWhatsAppContent(message: any): string {
     default:
       return message?.type ? `[${message.type}]` : ''
   }
+}
+
+/** Extract Graph media id fields from a WA message object (never CDN URLs). */
+export function extractWhatsAppMediaFields(message: any): {
+  providerMediaId?: string
+  mediaMimeType?: string
+  mediaFilename?: string
+} {
+  const type = typeof message?.type === 'string' ? message.type : ''
+  const mediaTypes = new Set(['image', 'video', 'audio', 'voice', 'document', 'sticker'])
+  if (!mediaTypes.has(type)) return {}
+  const payload = message?.[type]
+  if (!payload || typeof payload !== 'object') return {}
+  const id = payload.id ? String(payload.id).trim() : ''
+  if (!id) return {}
+  return compactObject({
+    providerMediaId: id,
+    mediaMimeType: payload.mime_type ? String(payload.mime_type) : undefined,
+    mediaFilename: payload.filename ? String(payload.filename) : undefined,
+  })
 }
 
 function parseWhatsApp(payload: any): ParsedMetaChatPayload {
@@ -194,6 +218,7 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
                 ignoredReasons.push('whatsapp_history_missing_peer')
                 continue
               }
+              const media = extractWhatsAppMediaFields(message)
               messages.push({
                 platform: 'whatsapp',
                 accountId: phoneNumberId,
@@ -205,6 +230,7 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
                 sentAt: toDateFromMetaTimestamp(message.timestamp),
                 direction: finalDirection,
                 suppressSoftAi: true,
+                ...media,
                 metadata: compactObject({
                   providerMessageId: message.id,
                   providerTimestamp: message.timestamp,
@@ -215,6 +241,9 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
                   historyPhase: hist?.metadata?.phase,
                   historyChunk: hist?.metadata?.chunk_order,
                   historical: true,
+                  providerMediaId: media.providerMediaId,
+                  mediaMimeType: media.mediaMimeType,
+                  mediaFilename: media.mediaFilename,
                   rawMessage: message,
                 }),
               })
@@ -231,6 +260,7 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
             continue
           }
           const content = getWhatsAppContent(message)
+          const media = extractWhatsAppMediaFields(message)
           messages.push({
             platform: 'whatsapp',
             accountId: phoneNumberId,
@@ -242,6 +272,7 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
             sentAt: toDateFromMetaTimestamp(message.timestamp),
             direction: 'outbound',
             suppressSoftAi: true,
+            ...media,
             metadata: compactObject({
               providerMessageId: message.id,
               providerTimestamp: message.timestamp,
@@ -250,6 +281,9 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
               whatsappBusinessAccountId: wabaId || undefined,
               webhookField: 'smb_message_echoes',
               smbEcho: true,
+              providerMediaId: media.providerMediaId,
+              mediaMimeType: media.mediaMimeType,
+              mediaFilename: media.mediaFilename,
               rawMessage: message,
             }),
           })
@@ -266,6 +300,7 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
 
         const contact = (value.contacts || []).find((item: any) => item?.wa_id === message.from) || value.contacts?.[0]
         const content = getWhatsAppContent(message)
+        const media = extractWhatsAppMediaFields(message)
 
         messages.push({
           platform: 'whatsapp',
@@ -278,6 +313,7 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
           sentAt: toDateFromMetaTimestamp(message.timestamp),
           direction: 'inbound',
           suppressSoftAi: false,
+          ...media,
           metadata: compactObject({
             providerMessageId: message.id,
             providerTimestamp: message.timestamp,
@@ -286,6 +322,9 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
             whatsappBusinessAccountId: wabaId || undefined,
             webhookField: field,
             waId: contact?.wa_id,
+            providerMediaId: media.providerMediaId,
+            mediaMimeType: media.mediaMimeType,
+            mediaFilename: media.mediaFilename,
             rawMessage: message,
           }),
         })

@@ -16,6 +16,7 @@
  *
  * 025 unique constraints are registered but NOT in DEFAULT_APPLY_FILES.
  * Include 025 only via BETSY_V2_APPLY_FILES=025 after verify reports 0 dups.
+ * 026 Soft AI ChatAutomationJob is gated the same way (BETSY_V2_APPLY_FILES=026).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

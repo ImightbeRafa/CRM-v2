@@ -11,6 +11,7 @@ export const FILES = {
   '023': '023_betsy_v2_tenant_ui.sql',
   '024': '024_chat_inbox_conversations.sql',
   '025': '025_chat_inbox_uniques.sql',
+  '026': '026_chat_automation_jobs.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -23,6 +24,7 @@ export const EXPECTED_TABLES = {
   '022': [],
   '023': ['TenantSetupProgress'],
   '024': ['ChatConversation', 'ChatConversationReadState'],
+  '026': ['ChatAutomationJob', 'ChatAutomationDelivery'],
 };
 
 export const EXPECTED_COLUMNS = {
@@ -79,6 +81,13 @@ export const EXPECTED_COLUMNS = {
     ['ChatConversation', 'lastMessageAt'],
     ['ChatConversationReadState', 'readInboundCount'],
   ],
+  '026': [
+    ['ChatMessage', 'mediaBlobPath'],
+    ['ChatMessage', 'mediaCacheStatus'],
+    ['ChatMessage', 'mediaSizeBytes'],
+    ['ChatMessage', 'mediaCachedAt'],
+    ['ChatMessage', 'mediaErrorCode'],
+  ],
 };
 
 /** Index names introduced by 024 (non-unique only; 025 uniques are out of scope). */
@@ -101,7 +110,15 @@ export const EXPECTED_INDEXES_025 = [
   'SocialAccount_platform_accountId_active_uidx',
 ];
 
+export const EXPECTED_INDEXES_026 = [
+  'ChatAutomationJob_status_availableAt_createdAt_idx',
+  'ChatAutomationJob_tenantId_status_idx',
+  'ChatAutomationJob_conversationId_status_createdAt_idx',
+  'ChatAutomationDelivery_status_updatedAt_idx',
+];
+
 /** 025 is gated - never part of default apply; verify only when BETSY_V2_REQUIRE_025=1. */
+/** 026 Soft AI queue is gated like 025 — never part of DEFAULT_APPLY_FILES. */
 export const EXPECTED_SEQUENCE_024 = 'ChatConversation_revision_seq';
 export const EXPECTED_TRIGGER_024 = 'ChatConversation_revision_trg';
 
@@ -122,6 +139,8 @@ export const VERIFY_CATALOG_TABLES = [
   'TenantSetupProgress',
   'ChatConversation',
   'ChatConversationReadState',
+  'ChatAutomationJob',
+  'ChatAutomationDelivery',
 ];
 
 export const VERIFY_CATALOG_COLUMNS = [
@@ -147,4 +166,6 @@ export const VERIFY_CATALOG_COLUMNS = [
   ['ChatConversation', 'peerId'],
   ['ChatConversation', 'inboundCount'],
   ['ChatConversationReadState', 'readInboundCount'],
+  ['ChatMessage', 'mediaBlobPath'],
+  ['ChatMessage', 'mediaCacheStatus'],
 ];

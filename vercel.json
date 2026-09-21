@@ -31,6 +31,9 @@
     "src/app/api/cron/bot-inbox/route.ts": {
       "maxDuration": 60
     },
+    "src/app/api/cron/chat-automation/route.ts": {
+      "maxDuration": 60
+    },
     "src/app/api/shipping/generate-guia/route.ts": {
       "maxDuration": 300,
       "memory": 1024
@@ -72,6 +75,10 @@
     {
       "path": "/api/cron/bot-inbox",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/chat-automation",
+      "schedule": "*/1 * * * *"
     },
     {
       "path": "/api/cron/logistics-report",

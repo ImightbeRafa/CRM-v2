@@ -2,14 +2,15 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import {
-  CHAT_INBOX_V2_FULL_RECONCILE_MS,
-  CHAT_INBOX_V2_POLL_MS,
-} from '../chat-inbox-v2-client'
-import {
   assertIdleNetworkBudget,
   CHAT_IDLE_NETWORK_BUDGET_MS,
   evaluateIdleNetworkBudget,
 } from '../../../scripts/chat-idle-network-assert'
+import {
+  buildChangesPollQuery,
+  CHAT_INBOX_V2_FULL_RECONCILE_MS,
+  CHAT_INBOX_V2_POLL_MS,
+} from '../chat-inbox-v2-client'
 
 describe('chat-idle-network-assert (acceptance 4.4)', () => {
   it('exports SoftCopilotInboxV2 poll ≤ 5000ms budget', () => {
@@ -36,6 +37,14 @@ describe('chat-idle-network-assert (acceptance 4.4)', () => {
       'utf8',
     )
     assert.match(source, /CHAT_INBOX_V2_POLL_MS/)
-    assert.match(source, /conversations\/changes\?afterRevision=/)
+    // Poll URL is built via helper (not inlined) so account-count stays independent.
+    assert.match(source, /buildChangesPollQuery|conversations\/changes/)
+  })
+
+  it('buildChangesPollQuery encodes afterRevision for tenant-level changes poll', () => {
+    const qs = buildChangesPollQuery({ afterRevision: '42', limit: 200 })
+    assert.match(qs, /afterRevision=42/)
+    assert.match(qs, /limit=200/)
+    assert.equal(qs.includes('socialAccountId'), false)
   })
 })

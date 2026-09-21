@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getToken } from 'next-auth/jwt'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { prisma } from '@/lib/db'
 import {
   buildMetaGraphUrl,
@@ -19,6 +19,10 @@ import {
   isWaEmbeddedSignupMessage,
   shouldIgnoreWaSessionEvent,
 } from '@/lib/whatsapp-embedded-signup'
+import {
+  expiresAtFromExpiresIn,
+  reconnectLifecycleData,
+} from '@/lib/social-account-token-health'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,12 +37,10 @@ export const dynamic = 'force-dynamic'
  */
 export async function POST(request: NextRequest) {
   try {
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
-    if (!token?.tenantId || !token?.sub) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    const tenantId = String(token.tenantId)
-    const userId = String(token.sub)
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    const tenantId = String(auth.tenantId)
+    const userId = String(auth.userId)
 
     const body = await request.json().catch(() => ({}))
     const code: string | undefined = body?.code
@@ -75,6 +77,7 @@ export async function POST(request: NextRequest) {
       null
     const coexistenceFinish = sessionAssets.coexistence
 
+    let tokenExpiresIn: number | null = null
     let businessToken: string | null = accessToken || null
     let exchangeError: any = null
 
@@ -134,6 +137,7 @@ export async function POST(request: NextRequest) {
 
           if (res.ok && json?.access_token) {
             businessToken = json.access_token
+            if (json.expires_in != null) tokenExpiresIn = Number(json.expires_in)
             console.log('[wa/exchange] Token obtained', {
               tokenType: json.token_type,
               expiresIn: json.expires_in,
@@ -344,6 +348,10 @@ export async function POST(request: NextRequest) {
         data: {
           userId,
           isActive: subscribeOk,
+          ...reconnectLifecycleData({
+            isActive: subscribeOk,
+            expiresAt: expiresAtFromExpiresIn(tokenExpiresIn),
+          }),
           accessToken: encryptedToken ?? existing.accessToken ?? undefined,
           refreshToken: refreshToken ?? existing.refreshToken ?? undefined,
           ...identityData,
@@ -371,6 +379,10 @@ export async function POST(request: NextRequest) {
           accessToken: encryptedToken ?? undefined,
           refreshToken: refreshToken ?? undefined,
           isActive: subscribeOk,
+          ...reconnectLifecycleData({
+            isActive: subscribeOk,
+            expiresAt: expiresAtFromExpiresIn(tokenExpiresIn),
+          }),
           ...identityData,
         },
         select: {

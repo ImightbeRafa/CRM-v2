@@ -121,6 +121,7 @@ export function canAccessRoute(role: Role, route: string): boolean {
     '/produccion': 'view_production',
     '/estadisticas': 'view_statistics',
     '/config': 'view_config',
+    '/config/social': 'update_config',
   };
 
   const requiredPermission = routePermissions[route];
@@ -236,6 +237,15 @@ export const apiPermissions: Record<string, Permission> = {
   'POST /api/chat/soft-ai/run': 'update_sales',
   'GET /api/chat/soft-ai/config': 'update_sales',
   'PATCH /api/chat/soft-ai/config': 'update_config',
+  'POST /api/auth/whatsapp/exchange': 'update_config',
+  'GET /api/auth/whatsapp/direct-oauth': 'update_config',
+  'GET /api/auth/instagram/auth-url': 'update_config',
+  'GET /api/auth/instagram/callback': 'update_config',
+  'POST /api/auth/instagram/complete': 'update_config',
+  'GET /api/auth/instagram/cancel': 'update_config',
+  'DELETE /api/social/unlink': 'update_config',
+  'POST /api/social/subscribe': 'update_config',
+  'POST /api/social/link': 'update_config',
   'POST /api/chat/soft-ai/control': 'update_sales',
   'GET /api/chat/conversations': 'update_sales',
   'GET /api/chat/conversations/changes': 'update_sales',

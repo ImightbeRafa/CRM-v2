@@ -298,7 +298,7 @@ export async function POST(request: NextRequest) {
               isActive: true,
               refreshToken: { startsWith: wabaPrefix },
             },
-            data: { isActive: false },
+            data: { isActive: false, disconnectedAt: new Date(), tokenStatus: 'revoked', lastErrorCode: 'PARTNER_REMOVED', lastErrorAt: new Date() },
           })
           console.warn('[chat/webhook][POST] PARTNER_REMOVED deactivated WhatsApp accounts', {
             wabaId: ev.wabaId,

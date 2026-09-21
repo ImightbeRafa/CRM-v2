@@ -55,6 +55,7 @@ import {
   SoftThreadPane,
   type SoftWaTemplateOption,
 } from '@/components/chats/SoftThreadPane'
+import { SoftTokenHealthBanners } from '@/components/chats/SoftTokenHealthBanners'
 import { SoftCopilotRail } from '@/components/chats/SoftCopilotRail'
 
 const TAG_FILTERS: SoftTag[] = ['Envío', 'VIP', 'Nuevo']
@@ -116,7 +117,7 @@ export function SoftCopilotInboxV2() {
   }, [])
 
   const fetchAccounts = useCallback(async () => {
-    const res = await fetch('/api/chat/accounts', { credentials: 'same-origin', cache: 'no-store' })
+    const res = await fetch('/api/chat/accounts?includeInactive=1', { credentials: 'same-origin', cache: 'no-store' })
     const parsed = await parseApiJson<{ success?: boolean; accounts?: SoftSocialAccount[] }>(res)
     if (parsed.ok && res.ok && parsed.data.success && Array.isArray(parsed.data.accounts)) {
       setAccounts(parsed.data.accounts)
@@ -736,8 +737,9 @@ export function SoftCopilotInboxV2() {
 
   return (
     <div className="flex h-[100dvh] flex-col bg-[#dde7f5] p-0 md:p-4 lg:p-6">
+      <SoftTokenHealthBanners accounts={accounts} />
       <div className="mx-auto flex h-full w-full max-w-[1440px] min-h-0 overflow-hidden rounded-none bg-white shadow-none md:rounded-[20px] md:shadow-sm">
-        <SoftSlimNav />
+      <SoftSlimNav />
         <SoftInboxBuckets
           bucket={bucket}
           onBucketChange={setBucket}

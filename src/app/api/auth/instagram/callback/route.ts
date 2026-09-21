@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getToken } from 'next-auth/jwt'
+import { buildMetaGraphUrl, getMetaWhatsAppAppId, getMetaWhatsAppAppSecret, subscribePageToInstagramMessages } from '@/lib/meta-api'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { timingSafeEqual } from 'crypto'
-import { subscribePageToInstagramMessages, buildMetaGraphUrl } from '@/lib/meta-api'
 import {
   buildInstagramPickerHtml,
   buildInstagramSuccessHtml,
@@ -18,6 +18,7 @@ import {
   createInstagramPendingConnect,
 } from '@/lib/instagram-pending-connect'
 import { upsertInstagramSocialAccount } from '@/lib/instagram-social-account'
+import { debugMetaTokenExpiry } from '@/lib/social-account-token-health'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -71,19 +72,29 @@ export async function GET(request: NextRequest) {
       return new NextResponse('Invalid OAuth state — possible CSRF attack', { status: 403 })
     }
 
-    const token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET })
-    if (!token || !token.tenantId || !token.sub) {
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) {
+      const status = auth.response.status
+      if (status === 401) {
+        return html(
+          `<html><body>
+            <h2>Sesión no encontrada</h2>
+            <p>Por favor inicia sesión en Betsy antes de conectar Instagram.</p>
+          </body></html>`,
+          401,
+        )
+      }
       return html(
         `<html><body>
-          <h2>Sesión no encontrada</h2>
-          <p>Por favor inicia sesión en Betsy antes de conectar Instagram.</p>
+          <h2>Sin permiso</h2>
+          <p>Se requiere permiso de configuración para conectar Instagram.</p>
         </body></html>`,
-        401,
+        403,
       )
     }
 
-    const tenantId = token.tenantId as string
-    const userId = token.sub as string
+    const tenantId = auth.tenantId as string
+    const userId = auth.userId as string
     const appId = process.env.META_APP_ID
     const appSecret = process.env.META_APP_SECRET
     const redirectUri = `${process.env.NEXTAUTH_URL}/api/auth/instagram/callback`
@@ -198,8 +209,10 @@ export async function GET(request: NextRequest) {
     }
 
     const match = matches[0]
+    let subscribeOk = false
     try {
       const sub = await subscribePageToInstagramMessages(match.pageId, match.pageAccessToken)
+      subscribeOk = Boolean(sub.ok)
       if (!sub.ok) {
         console.warn('[instagram/callback] Page subscribe failed', { status: sub.status })
       } else {
@@ -207,6 +220,21 @@ export async function GET(request: NextRequest) {
       }
     } catch (error) {
       console.warn('[instagram/callback] Page subscribe error', error)
+      subscribeOk = false
+    }
+
+    let expiresAt: Date | null = null
+    try {
+      const appId = getMetaWhatsAppAppId() || process.env.META_APP_ID
+      const appSecret = getMetaWhatsAppAppSecret() || process.env.META_APP_SECRET
+      if (appId && appSecret) {
+        expiresAt = await debugMetaTokenExpiry({
+          inputToken: match.pageAccessToken,
+          appAccessToken: `${appId}|${appSecret}`,
+        })
+      }
+    } catch (error) {
+      console.warn('[instagram/callback] debug_token expiry failed', error)
     }
 
     await upsertInstagramSocialAccount({
@@ -217,7 +245,21 @@ export async function GET(request: NextRequest) {
       pageId: match.pageId,
       pageName: match.pageName,
       igUsername: match.igUsername,
+      isActive: subscribeOk,
+      expiresAt,
     })
+
+    if (!subscribeOk) {
+      return html(
+        `<html><body>
+          <h2>Instagram conectado sin webhooks</h2>
+          <p>La cuenta se guardó pero la suscripción a mensajes falló.</p>
+          <p>Usá <strong>Re-suscribir</strong> en Configuración → Cuentas sociales.</p>
+          <p><a href="/config/social">Volver</a></p>
+        </body></html>`,
+        422,
+      )
+    }
 
     return html(
       buildInstagramSuccessHtml({

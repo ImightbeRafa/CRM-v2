@@ -17,6 +17,10 @@ import {
   templateNotApprovedErrorMessage,
 } from '@/lib/wa-template-approval'
 import { getApprovedTemplates } from '@/lib/chat-template-cache'
+import {
+  isMetaInvalidTokenError,
+  socialTokenSendBlockMessage,
+} from '@/lib/social-account-token-health'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -112,6 +116,9 @@ export async function POST(request: NextRequest) {
       accountId: string
       accessToken?: string | null
       refreshToken?: string | null
+      isActive?: boolean
+      disconnectedAt?: Date | null
+      tokenStatus?: string | null
     } | null = null
 
     if (socialAccountId) {
@@ -123,6 +130,9 @@ export async function POST(request: NextRequest) {
         accountId: found.accountId,
         accessToken: decryptSocialAccessToken(found.accessToken),
         refreshToken: found.refreshToken,
+        isActive: found.isActive,
+        disconnectedAt: found.disconnectedAt,
+        tokenStatus: found.tokenStatus,
       }
     } else if (platform && accountId) {
       const found = await db.socialAccount.findFirst({ where: { tenantId, platform, accountId } })
@@ -133,9 +143,22 @@ export async function POST(request: NextRequest) {
         accountId: found.accountId,
         accessToken: decryptSocialAccessToken(found.accessToken),
         refreshToken: found.refreshToken,
+        isActive: found.isActive,
+        disconnectedAt: found.disconnectedAt,
+        tokenStatus: found.tokenStatus,
       }
     } else {
       return jsonError('Falta socialAccountId o platform+accountId', 400)
+    }
+
+    const status = (account.tokenStatus || '').toLowerCase()
+    if (
+      account.isActive === false ||
+      account.disconnectedAt ||
+      status === 'revoked' ||
+      status === 'expired'
+    ) {
+      return jsonError(socialTokenSendBlockMessage(account), 400)
     }
 
     if (!account.accessToken) {
@@ -175,6 +198,10 @@ export async function POST(request: NextRequest) {
             sendPath,
             error: providerResponse?.error,
           })
+          await markSocialTokenRevoked(db, account.id, providerResponse)
+          if (isMetaInvalidTokenError(providerResponse)) {
+            return jsonError(socialTokenSendBlockMessage({ ...account, tokenStatus: 'revoked' }), 400)
+          }
           return jsonError(
             providerResponse?.error?.message || 'Falló el envío por Instagram',
             502,
@@ -396,5 +423,23 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[chat/send] Internal error', error)
     return jsonError('Error interno al enviar el mensaje', 500)
+  }
+}
+
+
+async function markSocialTokenRevoked(db: any, accountId: string, providerResponse: any) {
+  if (!isMetaInvalidTokenError(providerResponse)) return
+  try {
+    await db.socialAccount.update({
+      where: { id: accountId },
+      data: {
+        tokenStatus: 'revoked',
+        tokenLastCheckedAt: new Date(),
+        lastErrorAt: new Date(),
+        lastErrorCode: '190',
+      },
+    })
+  } catch (error) {
+    console.warn('[chat/send] failed to persist revoked tokenStatus', error)
   }
 }

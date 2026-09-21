@@ -24,6 +24,8 @@ const ACCOUNT_SELECT = {
   pageId: true,
   tokenStatus: true,
   tokenLastCheckedAt: true,
+  expiresAt: true,
+  disconnectedAt: true,
 } as const
 
 function mapAccountRow(row: {

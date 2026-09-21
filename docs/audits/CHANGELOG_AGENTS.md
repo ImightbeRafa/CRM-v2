@@ -11,7 +11,8 @@
   and outbound maxima are independent. Counts still increment.
 - MED v2 list follows `nextCursor` (flag still off). MED v2 template CTA POSTs `/api/chat/send`.
 - Soft chrome and `/api/bot/**` untouched. 024/025 not applied. `chat_inbox_v2` stays off.
-- Prove: focused write/soft-ai/oauth/v2 tests + `npm run test:chat-harden`.
+- Prove: focused write/soft-ai/oauth/v2 tests + `npm run test:chat-harden` (132 pass).
+  Lint existing warnings only. Local `npm run build` pass.
 
 ## 2026-09-21 — PR-2 Respond.io write+read v2
 

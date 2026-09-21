@@ -15,6 +15,7 @@
 import postgres from 'postgres';
 import {
   EXPECTED_INDEXES_024,
+  EXPECTED_INDEXES_025,
   EXPECTED_SEQUENCE_024,
   EXPECTED_TRIGGER_024,
   VERIFY_CATALOG_COLUMNS,
@@ -27,6 +28,8 @@ const productionRelease = process.argv.includes('--production-release')
   || process.env.BETSY_V2_PRODUCTION_RELEASE === '1';
 const require024 = process.env.BETSY_V2_REQUIRE_024 === '1'
   || process.argv.includes('--require-024');
+const require025 = process.env.BETSY_V2_REQUIRE_025 === '1'
+  || process.argv.includes('--require-025');
 if (!url) {
   console.error('ERROR: DIRECT_URL / DATABASE_URL is missing.');
   process.exit(1);
@@ -201,6 +204,7 @@ const report = {
   ok: errors.length === 0,
   productionRelease,
   require024,
+  require025,
   errors,
   tables,
   columns,

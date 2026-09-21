@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { parseMetaChatPayload, type ParsedMetaChatMessage } from '@/lib/meta-chat'
+import {
+  parseMetaChatPayload,
+  type ParsedMetaChatMessage,
+  type ParsedMetaChatReceipt,
+} from '@/lib/meta-chat'
 import {
   describeMetaSignatureHeader,
   getMetaWebhookVerifyTokens,
@@ -9,8 +13,13 @@ import {
 } from '@/lib/meta-api'
 import { getPageIdFromMetaChatMetadata } from '@/lib/social-account-meta'
 import { resolveWebhookSocialAccount } from '@/lib/chat-webhook-account'
-import { chatWebhookRateLimit } from '@/lib/rate-limit'
+import { chatWebhookInvalidSignatureRateLimit } from '@/lib/rate-limit'
 import { maybeRunSoftAiAfterInbound } from '@/lib/soft-ai/inbound-hook'
+import {
+  applyDeliveryStatusUpdate,
+  applyPeerReadWatermark,
+  dualWriteChatMessage,
+} from '@/lib/chat-conversation-write'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -53,34 +62,29 @@ export async function GET(request: NextRequest) {
   }
 
   console.log('[chat/webhook][GET] Verification success')
-  return new NextResponse(challenge, { status: 200, headers: { 'Content-Type': 'text/plain' } })
-}
-
-async function alreadyStored(
-  db: any,
-  accountId: string,
-  providerMessageId: string | undefined,
-  direction: string,
-) {
-  if (!providerMessageId) return false
-
-  const existing = await db.chatMessage.findFirst({
-    where: {
-      socialAccountId: accountId,
-      direction,
-      metadata: {
-        path: ['providerMessageId'],
-        equals: providerMessageId,
-      },
-    },
-    select: { id: true },
+  return new NextResponse(challenge, {
+    status: 200,
+    headers: { 'Content-Type': 'text/plain' },
   })
-
-  return Boolean(existing)
 }
 
-async function storeMessage(db: any, event: ParsedMetaChatMessage) {
-  const resolved = await resolveWebhookSocialAccount(db, event)
+function receiptAsResolveEvent(receipt: ParsedMetaChatReceipt): ParsedMetaChatMessage {
+  return {
+    platform: receipt.platform,
+    accountId: receipt.accountId,
+    senderId: receipt.peerId || 'receipt',
+    content: '',
+    messageType: 'receipt',
+    sentAt: receipt.statusAt,
+    direction: 'outbound',
+    suppressSoftAi: true,
+    metadata: {},
+    providerMessageId: receipt.providerMessageId,
+  }
+}
+
+async function storeMessage(event: ParsedMetaChatMessage) {
+  const resolved = await resolveWebhookSocialAccount(prisma as any, event)
 
   if (!resolved.ok) {
     console.warn('[chat/webhook][POST] No resolvable SocialAccount for Meta event', {
@@ -92,41 +96,57 @@ async function storeMessage(db: any, event: ParsedMetaChatMessage) {
       providerMessageId: event.providerMessageId,
       reason: resolved.reason,
     })
-    return { stored: false, reason: resolved.reason }
+    return { stored: false as const, reason: resolved.reason }
   }
 
   const account = resolved.account
   const direction = event.direction || 'inbound'
 
-  if (await alreadyStored(db, account.id, event.providerMessageId, direction)) {
+  const result = await dualWriteChatMessage({
+    tenantId: account.tenantId,
+    socialAccountId: account.id,
+    direction,
+    content: event.content,
+    sentAt: event.sentAt,
+    receivedAt: direction === 'inbound' ? new Date() : null,
+    peerId: event.senderId,
+    peerName: event.senderName || null,
+    providerMessageId: event.providerMessageId || null,
+    messageType: event.messageType || null,
+    deliveryStatus: direction === 'inbound' ? 'received' : 'sent',
+    platform: event.platform,
+    metadata: {
+      ...event.metadata,
+      from: direction === 'inbound' ? event.senderId : undefined,
+      to: direction === 'outbound' ? event.senderId : undefined,
+      name: event.senderName,
+      platform: event.platform,
+      providerMessageId: event.providerMessageId,
+      direction,
+    },
+    suppressSoftAi: Boolean(event.suppressSoftAi) || direction !== 'inbound',
+  })
+
+  if (!result.ok) {
+    console.warn('[chat/webhook][POST] Dual-write skipped/failed', {
+      socialAccountId: account.id,
+      providerMessageId: event.providerMessageId,
+      reason: result.reason,
+      error: 'error' in result ? result.error : undefined,
+    })
+    return { stored: false as const, reason: result.reason }
+  }
+
+  if (result.duplicate) {
     console.log('[chat/webhook][POST] Duplicate Meta message skipped', {
       socialAccountId: account.id,
       providerMessageId: event.providerMessageId,
-      direction,
+      messageId: result.messageId,
     })
-    return { stored: false, reason: 'duplicate' }
+    return { stored: false as const, reason: 'duplicate' as const }
   }
 
-  await db.chatMessage.create({
-    data: {
-      tenantId: account.tenantId,
-      socialAccountId: account.id,
-      direction,
-      content: event.content,
-      metadata: {
-        ...event.metadata,
-        from: event.senderId,
-        name: event.senderName,
-        platform: event.platform,
-        providerMessageId: event.providerMessageId,
-        direction,
-      },
-      sentAt: event.sentAt,
-      receivedAt: new Date(),
-    },
-  })
-
-  await db.webhookLog.create({
+  await (prisma as any).webhookLog.create({
     data: {
       tenantId: account.tenantId,
       level: 'info',
@@ -141,63 +161,97 @@ async function storeMessage(db: any, event: ParsedMetaChatMessage) {
         messageType: event.messageType,
         direction,
         suppressSoftAi: event.suppressSoftAi,
+        conversationId: result.conversationId,
+        messageId: result.messageId,
       }),
     },
   })
 
   return {
-    stored: true,
-    tenantId: account.tenantId as string,
-    socialAccountId: account.id as string,
-    senderId: event.senderId as string,
-    senderName: (event.senderName as string | undefined) || null,
+    stored: true as const,
+    tenantId: result.tenantId,
+    socialAccountId: result.socialAccountId,
+    senderId: result.peerId,
+    senderName: result.peerName,
     platform: event.platform as string,
-    content: event.content as string,
-    suppressSoftAi: Boolean(event.suppressSoftAi) || direction !== 'inbound',
+    content: result.content,
+    suppressSoftAi: result.suppressSoftAi,
+    conversationId: result.conversationId,
+    messageId: result.messageId,
   }
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const rateLimited = await chatWebhookRateLimit(request)
-    if (rateLimited instanceof Response) {
-      return rateLimited
-    }
+async function applyReceipt(receipt: ParsedMetaChatReceipt) {
+  const resolved = await resolveWebhookSocialAccount(
+    prisma as any,
+    receiptAsResolveEvent(receipt),
+  )
+  if (!resolved.ok) {
+    return { updated: false, reason: resolved.reason }
+  }
 
+  if (receipt.kind === 'instagram_read' && !receipt.providerMessageId && receipt.peerId) {
+    const count = await applyPeerReadWatermark({
+      socialAccountId: resolved.account.id,
+      peerId: receipt.peerId,
+      readAt: receipt.statusAt,
+    })
+    return { updated: count > 0, reason: count > 0 ? undefined : 'no_rows', count }
+  }
+
+  if (!receipt.providerMessageId) {
+    return { updated: false, reason: 'missing_provider_id' }
+  }
+
+  return applyDeliveryStatusUpdate({
+    socialAccountId: resolved.account.id,
+    providerMessageId: receipt.providerMessageId,
+    status: receipt.status,
+    statusAt: receipt.statusAt,
+    errorCode: receipt.errorCode,
+  })
+}
+
+export async function POST(request: NextRequest) {
+  const startedAt = Date.now()
+  try {
+    // HMAC first — never IP-throttle signature-valid Meta fan-in.
     const raw = await request.text()
     const signatureHeader = request.headers.get('x-hub-signature-256')
     const signatureResult = verifyMetaWebhookSignature(raw, signatureHeader)
 
-    if (process.env.NODE_ENV === 'production' && !signatureResult.valid) {
-      const signatureDiag = describeMetaSignatureHeader(signatureHeader)
-      console.warn('[chat/webhook][POST] Invalid signature', {
-        signaturePresent: signatureDiag.signaturePresent,
-        signaturePrefix: signatureDiag.signaturePrefix,
-        bodyLen: raw.length,
-        contentType: request.headers.get('content-type'),
-        host: request.headers.get('host'),
-        triedMeta: signatureResult.triedMeta,
-        triedWhatsApp: signatureResult.triedWhatsApp,
-        triedInstagram: signatureResult.triedInstagram,
-      })
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    if (!signatureResult.valid) {
+      const rateLimited = await chatWebhookInvalidSignatureRateLimit(request)
+      if (rateLimited instanceof Response) {
+        return rateLimited
+      }
+
+      if (process.env.NODE_ENV === 'production') {
+        const signatureDiag = describeMetaSignatureHeader(signatureHeader)
+        console.warn('[chat/webhook][POST] Invalid signature', {
+          signaturePresent: signatureDiag.signaturePresent,
+          signaturePrefix: signatureDiag.signaturePrefix,
+          bodyLen: raw.length,
+          contentType: request.headers.get('content-type'),
+          host: request.headers.get('host'),
+          triedMeta: signatureResult.triedMeta,
+          triedWhatsApp: signatureResult.triedWhatsApp,
+          triedInstagram: signatureResult.triedInstagram,
+          durationMs: Date.now() - startedAt,
+        })
+        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+      }
     }
 
     if (signatureResult.valid && signatureResult.matchedSecret === 'instagram') {
       console.info('[chat/webhook][POST] Signature matched INSTAGRAM_APP_SECRET fallback', {
         matchedSecret: 'instagram',
-        triedMeta: signatureResult.triedMeta,
-        triedWhatsApp: signatureResult.triedWhatsApp,
-        triedInstagram: signatureResult.triedInstagram,
       })
     }
 
     if (signatureResult.valid && signatureResult.matchedSecret === 'whatsapp') {
       console.info('[chat/webhook][POST] Signature matched META_WA_APP_SECRET', {
         matchedSecret: 'whatsapp',
-        triedMeta: signatureResult.triedMeta,
-        triedWhatsApp: signatureResult.triedWhatsApp,
-        triedInstagram: signatureResult.triedInstagram,
       })
     }
 
@@ -214,6 +268,7 @@ export async function POST(request: NextRequest) {
       signatureValid: signatureResult.valid,
       matchedSecret: signatureResult.matchedSecret,
       parsedMessages: parsed.messages.length,
+      receipts: parsed.receipts.length,
       ignoredReasons: parsed.ignoredReasons,
       accountEvents: parsed.accountEvents?.length || 0,
       entryCount: payload?.entry?.length || 0,
@@ -221,7 +276,6 @@ export async function POST(request: NextRequest) {
 
     const db = prisma as any
 
-    // Coexistence offboarding: Meta account_update PARTNER_REMOVED → deactivate WA accounts on that WABA.
     if (parsed.accountEvents?.length) {
       for (const ev of parsed.accountEvents) {
         if (ev.event !== 'PARTNER_REMOVED' || !ev.wabaId) continue
@@ -247,23 +301,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (parsed.messages.length === 0) {
-      return NextResponse.json({
-        ok: true,
-        stored: 0,
-        ignoredReasons: parsed.ignoredReasons,
-        accountEvents: parsed.accountEvents?.length || 0,
-      })
-    }
-
     const results = []
     for (const event of parsed.messages) {
-      results.push(await storeMessage(db, event))
+      results.push(await storeMessage(event))
+    }
+
+    let receiptsUpdated = 0
+    for (const receipt of parsed.receipts) {
+      const applied = await applyReceipt(receipt)
+      if (applied.updated) receiptsUpdated += 1
     }
 
     const stored = results.filter((result) => result.stored).length
 
-    // Soft Tenant AI (feature-flagged): full reply after live inbound — never for echoes/history.
     for (const result of results) {
       if (!result.stored || !('tenantId' in result) || !result.tenantId) continue
       if ('suppressSoftAi' in result && result.suppressSoftAi) continue
@@ -277,11 +327,21 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    console.log('[chat/webhook][POST] Done', {
+      stored,
+      skipped: results.length - stored,
+      receiptsUpdated,
+      durationMs: Date.now() - startedAt,
+      signatureValid: signatureResult.valid,
+    })
+
     return NextResponse.json({
       ok: true,
       stored,
       skipped: results.length - stored,
+      receiptsUpdated,
       ignoredReasons: parsed.ignoredReasons,
+      durationMs: Date.now() - startedAt,
     })
   } catch (error) {
     console.error('[chat/webhook][POST] Internal error', error)

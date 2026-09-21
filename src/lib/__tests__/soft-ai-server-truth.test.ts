@@ -9,11 +9,74 @@ import { describe, it } from 'node:test'
 import {
   maySoftAiMetaReply,
   resolvePersistedAgentMode,
+  resolveSoftAiAgentMode,
   softAiConversationKey,
 } from '../soft-ai/agent-mode-server'
 
 describe('F37-02 soft-ai server-truth agent mode', () => {
   const key = softAiConversationKey('sa-1', '50688880001')
+
+  it('ChatConversation.aiMode column wins over agentState fallback', () => {
+    const config = { agentState: { [key]: { mode: 'ai_active' } } }
+    assert.equal(
+      resolveSoftAiAgentMode({ conversationAiMode: 'human', flagConfig: config, conversationKey: key }),
+      'human',
+    )
+    assert.equal(
+      resolveSoftAiAgentMode({ conversationAiMode: null, flagConfig: config, conversationKey: key }),
+      'ai_active',
+    )
+    assert.equal(
+      resolveSoftAiAgentMode({ conversationAiMode: null, flagConfig: {}, conversationKey: key }),
+      null,
+    )
+  })
+
+  it('inbound-hook reads aiMode column before agentState', () => {
+    const src = readFileSync(resolve('src/lib/soft-ai/inbound-hook.ts'), 'utf8')
+    assert.match(src, /resolveSoftAiAgentMode/)
+    assert.match(src, /conversationRow\?\.aiMode|conversationBeforeSend\?\.aiMode/)
+  })
+
+  it('control route dual-writes aiMode on ChatConversation', () => {
+    const src = readFileSync(resolve('src/app/api/chat/soft-ai/control/route.ts'), 'utf8')
+    assert.match(src, /chatConversation\.updateMany/)
+    assert.match(src, /aiMode: mode/)
+  })
+
+  it('worker escalation writes ChatConversation.aiMode so column-first Soft AI stays fail-closed', () => {
+    const src = readFileSync(resolve('src/lib/soft-ai/inbound-hook.ts'), 'utf8')
+    const escalateAt = src.indexOf("result.agentMode !== 'ai_active'")
+    assert.ok(escalateAt > 0)
+    const slice = src.slice(escalateAt)
+    assert.match(slice, /chatConversation\.updateMany/)
+    assert.match(slice, /aiMode/)
+    assert.match(slice, /normalizeConversationAiMode/)
+    const columnAt = slice.indexOf('chatConversation.updateMany')
+    const flagAt = slice.indexOf('agentState[key]')
+    assert.ok(columnAt >= 0)
+    assert.ok(flagAt > columnAt, 'column write must happen before flag fallback')
+
+    const config = { agentState: { [key]: { mode: 'ai_active' } } }
+    assert.equal(
+      resolveSoftAiAgentMode({
+        conversationAiMode: 'human',
+        flagConfig: config,
+        conversationKey: key,
+      }),
+      'human',
+    )
+    assert.equal(
+      maySoftAiMetaReply(
+        resolveSoftAiAgentMode({
+          conversationAiMode: 'human',
+          flagConfig: config,
+          conversationKey: key,
+        }),
+      ),
+      false,
+    )
+  })
 
   it('missing agentState / missing key does NOT silently become ai_active', () => {
     assert.equal(resolvePersistedAgentMode({}, key), null)
@@ -86,7 +149,7 @@ describe('F37-02 soft-ai server-truth agent mode', () => {
 
   it('inbound-hook source re-reads mode before Meta send and uses maySoftAiMetaReply', () => {
     const src = readFileSync(resolve('src/lib/soft-ai/inbound-hook.ts'), 'utf8')
-    assert.match(src, /resolvePersistedAgentMode/)
+    assert.match(src, /resolveSoftAiAgentMode/)
     assert.match(src, /maySoftAiMetaReply/)
     assert.match(src, /modeBeforeSend/)
     assert.match(src, /missing_or_non_explicit_mode|paused_before_send|human_before_send/)
@@ -99,7 +162,7 @@ describe('F37-02 soft-ai server-truth agent mode', () => {
   })
 
   it('SoftCopilotInbox awaits control API before committing UI mode (non-demo)', () => {
-    const src = readFileSync(resolve('src/components/chats/SoftCopilotInbox.tsx'), 'utf8')
+    const src = readFileSync(resolve('src/components/chats/SoftCopilotInboxLegacy.tsx'), 'utf8')
     assert.match(src, /await fetch\('\/api\/chat\/soft-ai\/control'/)
     assert.match(src, /F37-02/)
     // Must not fire-and-forget void fetch for control anymore

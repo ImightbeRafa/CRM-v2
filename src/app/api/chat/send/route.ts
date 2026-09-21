@@ -6,6 +6,11 @@ import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { chatSendRateLimit } from '@/lib/rate-limit'
 import {
+  dualWriteChatMessage,
+  finalizeOutboundDelivery,
+  isPersistedDualWrite,
+} from '@/lib/chat-conversation-write'
+import {
   findApprovedWhatsAppTemplate,
   normalizeWhatsAppTemplateRows,
   templateNotApprovedErrorMessage,
@@ -310,35 +315,62 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date()
-    const saved = await db.chatMessage.create({
-      data: {
-        tenantId,
-        socialAccountId: account.id,
-        clientId: clientId ?? undefined,
-        orderId: orderId ?? undefined,
-        direction: 'outbound',
-        content: storedContent,
-        metadata: {
-          to: recipient,
-          provider: account.platform,
-          platform: account.platform,
-          providerMessageId,
-          providerDispatch: dispatchResult,
-          providerResponse,
-          ...(isTemplate
-            ? {
-                messageType: 'template',
-                templateName,
-                templateLanguage,
-              }
-            : {}),
-        },
-        sentAt: now,
-        receivedAt: null,
+    const write = await dualWriteChatMessage({
+      tenantId,
+      socialAccountId: account.id,
+      direction: 'outbound',
+      content: storedContent,
+      sentAt: now,
+      receivedAt: null,
+      peerId: recipient,
+      providerMessageId: providerMessageId || null,
+      messageType: isTemplate ? 'template' : 'text',
+      deliveryStatus: 'pending',
+      platform: account.platform,
+      clientId: clientId ?? null,
+      orderId: orderId ?? null,
+      metadata: {
+        to: recipient,
+        provider: account.platform,
+        platform: account.platform,
+        providerDispatch: dispatchResult,
+        providerResponse,
+        ...(isTemplate
+          ? {
+              messageType: 'template',
+              templateName,
+              templateLanguage,
+            }
+          : {}),
       },
+      suppressSoftAi: true,
     })
 
-    return NextResponse.json({ success: true, message: saved, providerDispatch: dispatchResult })
+    if (!isPersistedDualWrite(write)) {
+      return jsonError('No se pudo guardar el mensaje enviado', 500, {
+        reason: !write.ok ? write.reason : 'duplicate',
+      })
+    }
+
+    await finalizeOutboundDelivery({
+      messageId: write.messageId,
+      tenantId,
+      conversationId: write.conversationId,
+      userId,
+      providerMessageId: providerMessageId || null,
+      deliveryStatus: providerMessageId ? 'sent' : 'failed',
+      errorCode: providerMessageId ? null : 'missing_provider_message_id',
+      providerResponse,
+    })
+
+    const saved = await db.chatMessage.findUnique({ where: { id: write.messageId } })
+
+    return NextResponse.json({
+      success: true,
+      message: saved,
+      conversationId: write.conversationId,
+      providerDispatch: dispatchResult,
+    })
   } catch (error) {
     console.error('[chat/send] Internal error', error)
     return jsonError('Error interno al enviar el mensaje', 500)

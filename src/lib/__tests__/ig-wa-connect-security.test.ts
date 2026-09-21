@@ -147,6 +147,8 @@ test('WA ownership interpreter tolerates missing nested WABA field (coexistence)
   assert.equal(phoneOnly.ok, true)
   assert.equal(phoneOnly.phoneNumberId, '111')
   assert.equal(phoneOnly.whatsappBusinessAccountId, null)
+  assert.equal(phoneOnly.providerDisplayName, 'Store')
+  assert.equal(phoneOnly.displayPhoneNumber, '+506…')
 
   const nestedFieldMissing = interpretWhatsAppOwnershipGraphData({
     graphOk: false,
@@ -345,4 +347,26 @@ test('meta-api ownership verify never hard-codes nested whatsapp_business_accoun
     source.match(/WHATSAPP_OWNERSHIP_PHONE_FIELDS\s*=\s*'([^']+)'/)?.[1] || '',
     /whatsapp_business_account/,
   )
+})
+
+
+test('WA direct-oauth requires update_config and persists CSRF state cookie (SD-04)', async () => {
+  const source = await readFile('src/app/api/auth/whatsapp/direct-oauth/route.ts', 'utf8')
+  assert.match(source, /authenticateAPIWithPermission/)
+  assert.match(source, /update_config/)
+  assert.match(source, /WA_DIRECT_OAUTH_STATE_COOKIE|wa_direct_oauth_state/)
+  assert.match(source, /cookies\.set/)
+  assert.match(source, /buildWhatsAppDirectOauthDialogUrl/)
+  assert.match(source, /NEXT_PUBLIC_FB_LOGIN_CONFIG_ID/)
+  assert.doesNotMatch(source, /console\.log\([^)]*state[^)]*\)/)
+
+  const callback = await readFile('src/app/api/auth/whatsapp/callback/route.ts', 'utf8')
+  assert.match(callback, /isValidWaDirectOauthState/)
+  assert.match(callback, /status: 403/)
+  assert.match(callback, /type: 'wa_direct_oauth'/)
+
+  const { isValidWaDirectOauthState } = await import('../wa-direct-oauth-state')
+  assert.equal(isValidWaDirectOauthState('abc', 'abc'), true)
+  assert.equal(isValidWaDirectOauthState('abc', 'xyz'), false)
+  assert.equal(isValidWaDirectOauthState('', 'abc'), false)
 })

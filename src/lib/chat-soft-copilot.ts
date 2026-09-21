@@ -4,6 +4,11 @@
  */
 
 import type { ChatConversation, ChatInboxMessage } from '@/lib/chat-inbox'
+import {
+  channelSecondaryAddress,
+  resolveChannelDisplayName,
+  type ChannelLogoKey,
+} from '@/lib/social-account-identity'
 
 export type ConversationStatus = 'nuevo' | 'en_curso' | 'hecho'
 export type ChannelFilter = 'todos' | 'whatsapp' | 'instagram'
@@ -17,6 +22,8 @@ export interface SoftConversation extends ChatConversation {
   socialAccountId: string
   platform: 'whatsapp' | 'instagram' | string
   accountLabel: string
+  /** Phone or @handle for thread meta (optional). */
+  channelAddress?: string | null
   status: ConversationStatus
   tags: SoftTag[]
   orderId?: string | null
@@ -32,18 +39,40 @@ export interface SoftSocialAccount {
   phoneNumberId?: string | null
   whatsappBusinessAccountId?: string | null
   pageId?: string | null
+  displayName?: string | null
+  providerDisplayName?: string | null
+  providerUsername?: string | null
+  displayPhoneNumber?: string | null
+  logoKey?: ChannelLogoKey
+  tokenStatus?: string | null
 }
 
-/** Short display label for a connected social account. */
+/** Short display label for a connected social account (§7.2 fallback chain). */
 export function accountDisplayLabel(account: SoftSocialAccount): string {
-  if (account.platform === 'whatsapp') {
-    const id = account.phoneNumberId || account.accountId
-    if (id.length > 10) return `WA · …${id.slice(-6)}`
-    return `WA · ${id}`
-  }
-  const handle = account.accountId.startsWith('@') ? account.accountId : `@${account.accountId}`
-  if (handle.length > 18) return `IG · ${handle.slice(0, 16)}…`
-  return `IG · ${handle}`
+  return resolveChannelDisplayName({
+    id: account.id,
+    platform: account.platform,
+    accountId: account.accountId,
+    isActive: account.isActive,
+    displayName: account.displayName,
+    providerDisplayName: account.providerDisplayName,
+    providerUsername: account.providerUsername,
+    displayPhoneNumber: account.displayPhoneNumber,
+    phoneNumberId: account.phoneNumberId,
+  })
+}
+
+export function accountChannelAddress(account: SoftSocialAccount): string | null {
+  return channelSecondaryAddress({
+    id: account.id,
+    platform: account.platform,
+    accountId: account.accountId,
+    displayName: account.displayName,
+    providerDisplayName: account.providerDisplayName,
+    providerUsername: account.providerUsername,
+    displayPhoneNumber: account.displayPhoneNumber,
+    phoneNumberId: account.phoneNumberId,
+  })
 }
 
 export function platformShort(platform: string): 'WA' | 'IG' | string {
@@ -264,6 +293,7 @@ export function enrichConversations(opts: {
   socialAccountId: string
   platform: string
   accountLabel: string
+  channelAddress?: string | null
   statusMap: Record<string, ConversationStatus>
   tagsMap: Record<string, SoftTag[]>
   groupFn: (msgs: ChatInboxMessage[], platformHint?: string) => ChatConversation[]
@@ -279,6 +309,7 @@ export function enrichConversations(opts: {
       socialAccountId: opts.socialAccountId,
       platform: opts.platform,
       accountLabel: opts.accountLabel,
+      channelAddress: opts.channelAddress ?? null,
       unreadCount: unread,
       status: opts.statusMap[key] || defaultStatusForConversation(c.messages),
       tags: opts.tagsMap[key] || defaultTagsForConversation(c.messages),

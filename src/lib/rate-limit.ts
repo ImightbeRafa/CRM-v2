@@ -197,3 +197,14 @@ export const chatWebhookRateLimit = createRateLimit({
   maxRequests: 120,
   identifier: 'chat-webhook',
 });
+
+
+/**
+ * Invalid Meta webhook signatures only — never apply to HMAC-valid traffic.
+ * Keeps abuse off the shared valid-webhook path (Meta IPs are shared/fan-in).
+ */
+export const chatWebhookInvalidSignatureRateLimit = createRateLimit({
+  windowMs: 60 * 1000,
+  maxRequests: 60,
+  identifier: 'chat-webhook-invalid-signature',
+});

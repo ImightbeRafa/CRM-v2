@@ -1,10 +1,14 @@
 # Betsy `/chats` → Respond.io-class omnichannel inbox — phased plan
 
-> **Rafael GO (2026-09-20 CR):** Phases **1–3** are GO’d with the **recommended defaults** from §9 (Soft status vocabulary `nuevo/en_curso/hecho`; per-user `ChatConversationReadState`; localStorage import on v2 cutover; soft-unlink later; revision polling; etc.). Phase **6** Soft UX redesign remains **HOLD**. This PR-1 implements schema foundation only (`024` + scripts + tests) — no runtime dual-write / UI.
+> **Status (2026-09-20 CR night):** Phases **1–3 LIVE** on www (Forge pilot `chat_inbox_v2`). Phases **4–5 GO’d** 2026-09-20 (not built yet). Phase **6** Soft UX redesign remains **HOLD**.
+>
+> **Live status board (prefer over this plan’s §1 for “what’s shipped”):** [`docs/status/betsy-chats-respondio-2026-09-20.md`](../status/betsy-chats-respondio-2026-09-20.md) · tip `dev` @ `b5ecd01` (PR-3 #46).
+>
+> **Original Rafael GO note:** Phases 1–3 GO’d with the **recommended defaults** from §9 (Soft status vocabulary `nuevo/en_curso/hecho`; per-user `ChatConversationReadState`; localStorage import on v2 cutover; soft-unlink later; revision polling; etc.). This document remains the phased plan SoT; the status board is the implementation ledger.
 
 - **Author:** Fable 5.1 (Cursor cloud, planning only) · **Advisor review:** Sol `gpt-5.6-sol-high` (see §11)
-- **Date:** 2026-09-20 (CR) · **Repo:** `ImightbeRafa/CRM-v2` · **Investigated tip:** `dev` @ `b71aaff` (#40)
-- **Status:** PLAN (Advisor-reviewed) — Phases 1–3 GO’d (Rafael 2026-09-20); Phase 6 HOLD. PR-1 schema (`024`) is on `dev` (#42); this PR remains docs-only (no additional product code). Rafael approvals listed in §9.
+- **Date:** 2026-09-20 (CR) · **Repo:** `ImightbeRafa/CRM-v2` · **Investigated tip:** `dev` @ `b71aaff` (#40) · **Live tip at status board:** `b5ecd01`
+- **Status:** Phases 1–3 LIVE; P4–P5 GO’d 2026-09-20; Phase 6 HOLD. See status board for Done / Still-open / Blocked. PLAN (Advisor-reviewed) — this PR remains docs-only (no additional product code). Rafael approvals listed in §9.
 - **Notion SoT:** [Betsy Chat — Full Implementation](https://app.notion.com/p/3cdbc39c41ae81968b64d25201be0676) · [Respond.io epic](https://app.notion.com/p/3d6bc39c41ae819b8994f3e2e6059977) · [Soft UX redesign brief (HOLD)](https://app.notion.com/p/3d8bc39c41ae81cb9b13e094ebf9c9e9)
 
 ## Locks that bind every phase

@@ -14,13 +14,16 @@ import { runSoftAiTurn } from '@/lib/soft-ai/worker'
 import { buildSoftAiServerDeps } from '@/lib/soft-ai/server-deps'
 import {
   maySoftAiMetaReply,
-  resolvePersistedAgentMode,
+  normalizeConversationAiMode,
+  resolveSoftAiAgentMode,
   softAiConversationKey,
 } from '@/lib/soft-ai/agent-mode-server'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
+import { softAiCanalContextLine } from '@/lib/soft-ai/channel-context'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
+import { dualWriteChatMessage } from '@/lib/chat-conversation-write'
 
 type InboundHookArgs = {
   tenantId: string
@@ -121,7 +124,22 @@ export async function maybeRunSoftAiAfterInbound(
 
     const key = softAiConversationKey(args.socialAccountId, args.senderId)
     let flagConfig = await loadSoftAiFlagConfig(args.tenantId)
-    const agentMode = resolvePersistedAgentMode(flagConfig, key)
+    const db = prisma as any
+    const conversationRow = await db.chatConversation.findUnique({
+      where: {
+        tenantId_socialAccountId_peerId: {
+          tenantId: args.tenantId,
+          socialAccountId: args.socialAccountId,
+          peerId: args.senderId,
+        },
+      },
+      select: { aiMode: true },
+    })
+    const agentMode = resolveSoftAiAgentMode({
+      conversationAiMode: conversationRow?.aiMode,
+      flagConfig,
+      conversationKey: key,
+    })
 
     // F37-02: missing key / non-explicit mode → fail closed (no Meta auto-reply)
     if (!maySoftAiMetaReply(agentMode)) {
@@ -137,7 +155,6 @@ export async function maybeRunSoftAiAfterInbound(
     }
 
     const config = parseSoftAiConfig(flagConfig)
-    const db = prisma as any
     const recent = await db.chatMessage.findMany({
       where: { socialAccountId: args.socialAccountId },
       orderBy: { sentAt: 'desc' },
@@ -179,12 +196,48 @@ export async function maybeRunSoftAiAfterInbound(
     const orderId =
       [...messages].reverse().find((m: { orderId?: string | null }) => m.orderId)?.orderId || null
 
+    const accountForContext = await db.socialAccount.findFirst({
+      where: { id: args.socialAccountId, tenantId: args.tenantId },
+      select: {
+        id: true,
+        platform: true,
+        accountId: true,
+        displayName: true,
+        providerDisplayName: true,
+        providerUsername: true,
+        displayPhoneNumber: true,
+        accessToken: true,
+        refreshToken: true,
+      },
+    })
+
+    const canalContext = accountForContext
+      ? softAiCanalContextLine({
+          id: accountForContext.id,
+          platform: accountForContext.platform || args.platform,
+          accountId: accountForContext.accountId,
+          displayName: accountForContext.displayName,
+          providerDisplayName: accountForContext.providerDisplayName,
+          providerUsername: accountForContext.providerUsername,
+          displayPhoneNumber: accountForContext.displayPhoneNumber,
+          phoneNumberId:
+            (accountForContext.platform || args.platform) === 'whatsapp'
+              ? accountForContext.accountId
+              : null,
+        })
+      : softAiCanalContextLine({
+          id: args.socialAccountId,
+          platform: args.platform,
+          accountId: args.senderId,
+        })
+
     const result = await runSoftAiTurn(
       {
         conversationKey: key,
         recipientId: args.senderId,
         recipientName: args.senderName || null,
         platform: args.platform,
+        canalContext,
         messages,
         inboundText: args.content,
         agentMode: 'ai_active',
@@ -202,7 +255,21 @@ export async function maybeRunSoftAiAfterInbound(
 
     // F37-02: re-read mode immediately before Meta send — fail closed if paused/human/missing
     flagConfig = await loadSoftAiFlagConfig(args.tenantId)
-    const modeBeforeSend = resolvePersistedAgentMode(flagConfig, key)
+    const conversationBeforeSend = await db.chatConversation.findUnique({
+      where: {
+        tenantId_socialAccountId_peerId: {
+          tenantId: args.tenantId,
+          socialAccountId: args.socialAccountId,
+          peerId: args.senderId,
+        },
+      },
+      select: { aiMode: true },
+    })
+    const modeBeforeSend = resolveSoftAiAgentMode({
+      conversationAiMode: conversationBeforeSend?.aiMode,
+      flagConfig,
+      conversationKey: key,
+    })
     if (!maySoftAiMetaReply(modeBeforeSend)) {
       console.info('[soft-ai/inbound-hook] Meta send blocked — mode not ai_active', {
         conversationKey: key,
@@ -220,16 +287,7 @@ export async function maybeRunSoftAiAfterInbound(
       }
     }
 
-    const account = await db.socialAccount.findFirst({
-      where: { id: args.socialAccountId, tenantId: args.tenantId },
-      select: {
-        id: true,
-        platform: true,
-        accessToken: true,
-        refreshToken: true,
-        accountId: true,
-      },
-    })
+    const account = accountForContext
     if (!account?.accessToken) return { ran: true, skippedReason: 'no_account', metaSent: false }
 
     const token = decryptSocialAccessToken(account.accessToken)
@@ -244,29 +302,43 @@ export async function maybeRunSoftAiAfterInbound(
       text: result.reply,
     })
 
-    await db.chatMessage.create({
-      data: {
-        tenantId: args.tenantId,
-        socialAccountId: args.socialAccountId,
-        direction: 'outbound',
-        content: result.reply,
-        orderId: result.orderId || null,
-        metadata: {
-          softAi: true,
-          toolLog: result.toolLog,
-          agentMode: result.agentMode,
-          to: args.senderId,
-          platform: args.platform,
-          providerMessageId: send.providerMessageId,
-          sendOk: send.ok,
-          sendError: send.error || null,
-        },
-        sentAt: new Date(),
+    await dualWriteChatMessage({
+      tenantId: args.tenantId,
+      socialAccountId: args.socialAccountId,
+      direction: 'outbound',
+      content: result.reply,
+      sentAt: new Date(),
+      peerId: args.senderId,
+      peerName: args.senderName || null,
+      providerMessageId: send.providerMessageId || null,
+      messageType: 'text',
+      deliveryStatus: send.ok ? 'sent' : 'failed',
+      platform: args.platform,
+      orderId: result.orderId || null,
+      metadata: {
+        softAi: true,
+        toolLog: result.toolLog,
+        agentMode: result.agentMode,
+        to: args.senderId,
+        platform: args.platform,
+        providerMessageId: send.providerMessageId,
+        sendOk: send.ok,
+        sendError: send.error || null,
       },
+      suppressSoftAi: true,
     })
 
-    // Persist escalated mode into flag.config.agentState (server truth)
+    // Persist escalated mode into ChatConversation.aiMode (preferred) + flag fallback.
     if (result.agentMode !== 'ai_active') {
+      const aiMode = normalizeConversationAiMode(result.agentMode) || result.agentMode
+      await db.chatConversation.updateMany({
+        where: {
+          tenantId: args.tenantId,
+          socialAccountId: args.socialAccountId,
+          peerId: args.senderId,
+        },
+        data: { aiMode },
+      })
       const existing = await db.tenantFeatureFlag.findFirst({
         where: {
           tenantId: args.tenantId,
@@ -281,10 +353,10 @@ export async function maybeRunSoftAiAfterInbound(
         const agentState =
           prev.agentState && typeof prev.agentState === 'object' ? { ...prev.agentState } : {}
         agentState[key] = {
-          mode: result.agentMode,
+          mode: aiMode,
           updatedAt: new Date().toISOString(),
           action: 'escalate',
-          staffControlled: result.agentMode === 'human',
+          staffControlled: aiMode === 'human',
         }
         await db.tenantFeatureFlag.update({
           where: { id: existing.id },

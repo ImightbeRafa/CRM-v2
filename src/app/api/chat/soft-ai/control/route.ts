@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
+import { parseConversationKey } from '@/lib/chat-conversation-api'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 
 export const runtime = 'nodejs'
@@ -65,6 +66,18 @@ export async function POST(request: NextRequest) {
     }
 
     const nextConfig = { ...prevConfig, agentState }
+
+    const keyParts = parseConversationKey(conversationKey)
+    if (keyParts) {
+      await db.chatConversation.updateMany({
+        where: {
+          tenantId,
+          socialAccountId: keyParts.socialAccountId,
+          peerId: keyParts.peerId,
+        },
+        data: { aiMode: mode },
+      })
+    }
 
     if (existing?.id) {
       await db.tenantFeatureFlag.update({

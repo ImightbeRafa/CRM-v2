@@ -14,7 +14,8 @@
  *   BETSY_V2_APPLY_CONFIRM_HOST=db.xxxx.supabase.co \
  *   node scripts/apply-betsy-v2-additive-sql.mjs
  *
- * 025 unique constraints are intentionally NOT registered here.
+ * 025 unique constraints are registered but NOT in DEFAULT_APPLY_FILES.
+ * Include 025 only via BETSY_V2_APPLY_FILES=025 after verify reports 0 dups.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -24,6 +25,7 @@ import {
   DEFAULT_APPLY_FILES,
   EXPECTED_COLUMNS,
   EXPECTED_INDEXES_024,
+  EXPECTED_INDEXES_025,
   EXPECTED_SEQUENCE_024,
   EXPECTED_TABLES,
   EXPECTED_TRIGGER_024,
@@ -72,6 +74,21 @@ const sql = postgres(url, {
   idle_timeout: 5,
   onnotice: (notice) => console.log(`[notice] ${notice.message}`),
 });
+
+async function verify025Extras() {
+  for (const indexName of EXPECTED_INDEXES_025) {
+    const rows = await sql`
+      SELECT i.indisunique, i.indisvalid
+      FROM pg_class idx
+      JOIN pg_index i ON i.indexrelid = idx.oid
+      JOIN pg_namespace n ON n.oid = idx.relnamespace
+      WHERE n.nspname = 'public' AND idx.relname = ${indexName}
+    `;
+    if (rows.length !== 1) fail(`Postcondition failed: index ${indexName} missing after 025.`);
+    if (rows[0].indisunique !== true) fail(`Postcondition failed: index ${indexName} is not UNIQUE.`);
+    if (rows[0].indisvalid !== true) fail(`Postcondition failed: index ${indexName} is invalid.`);
+  }
+}
 
 async function verify024Extras() {
   const seq = await sql`
@@ -144,6 +161,7 @@ async function verify(id) {
     if (rows.length !== 1) fail(`Postcondition failed: ${table}.${column} missing after ${id}.`);
   }
   if (id === '024') await verify024Extras();
+  if (id === '025') await verify025Extras();
   const flags = await sql`
     SELECT COUNT(*)::int AS n FROM public."TenantFeatureFlag" WHERE enabled = true
   `.catch(() => [{ n: 0 }]);

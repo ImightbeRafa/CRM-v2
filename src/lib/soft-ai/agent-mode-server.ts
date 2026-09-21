@@ -18,6 +18,25 @@ export type SoftAiAgentStateRow = {
  * Returns null when agentState or key is missing / invalid — caller must fail closed
  * (do not Meta-auto-reply). Explicit `ai_active` required to send.
  */
+export function normalizeConversationAiMode(
+  value: string | null | undefined,
+): SoftAiAgentMode | null {
+  if (value === 'paused' || value === 'human' || value === 'ai_active') return value
+  if (value === 'human_takeover') return 'human'
+  return null
+}
+
+/** Column `aiMode` wins; fall back to TenantFeatureFlag.config.agentState[key]. */
+export function resolveSoftAiAgentMode(opts: {
+  conversationAiMode: string | null | undefined
+  flagConfig: Record<string, unknown> | null | undefined
+  conversationKey: string
+}): SoftAiAgentMode | null {
+  const fromColumn = normalizeConversationAiMode(opts.conversationAiMode)
+  if (fromColumn) return fromColumn
+  return resolvePersistedAgentMode(opts.flagConfig, opts.conversationKey)
+}
+
 export function resolvePersistedAgentMode(
   config: Record<string, unknown> | null | undefined,
   conversationKey: string,

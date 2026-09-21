@@ -13,6 +13,8 @@ export const SETUP_GUIDE_V2_FLAG = 'setup_guide_v2';
 export const STATISTICS_REVENUE_V2_FLAG = 'statistics_revenue_v2';
 /** Soft tenant AI worker for /chats — default off in prod; Soft DEMO forces on client-side. */
 export const SOFT_TENANT_AI_V1_FLAG = 'soft_tenant_ai_v1';
+/** Server-grouped Soft inbox reads (PR-2) — default off; never preview-unlocked. */
+export const CHAT_INBOX_V2_FLAG = 'chat_inbox_v2';
 
 const PREVIEW_UNLOCKED_KEYS = new Set([
   ORDER_LIFECYCLE_V2_FLAG,
@@ -146,6 +148,11 @@ export async function shouldUseSoftDeleteRestoreV2(tenantId: string) {
 /** Soft Tenant AI full-reply worker. Default off — never preview-unlocked. */
 export async function shouldUseSoftTenantAiV1(tenantId: string) {
   return isTenantFeatureEnabled(tenantId, SOFT_TENANT_AI_V1_FLAG);
+}
+
+/** Chat inbox v2 list/delta API + client — explicit tenant flag only. */
+export async function shouldUseChatInboxV2(tenantId: string) {
+  return isTenantFeatureEnabled(tenantId, CHAT_INBOX_V2_FLAG);
 }
 
 export async function readSoftTenantAiConfig(tenantId: string) {

@@ -10,6 +10,7 @@ export const FILES = {
   '022': '022_betsy_v2_order_archive.sql',
   '023': '023_betsy_v2_tenant_ui.sql',
   '024': '024_chat_inbox_conversations.sql',
+  '025': '025_chat_inbox_uniques.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -95,10 +96,16 @@ export const EXPECTED_INDEXES_024 = [
   'ChatMessage_tenantId_createdAt_id_idx',
 ];
 
+export const EXPECTED_INDEXES_025 = [
+  'ChatMessage_socialAccountId_providerMessageId_uidx',
+  'SocialAccount_platform_accountId_active_uidx',
+];
+
+/** 025 is gated - never part of default apply; verify only when BETSY_V2_REQUIRE_025=1. */
 export const EXPECTED_SEQUENCE_024 = 'ChatConversation_revision_seq';
 export const EXPECTED_TRIGGER_024 = 'ChatConversation_revision_trg';
 
-/** Forbidden in 024 — these belong to gated migration 025. */
+/** Forbidden in 024 - these belong to gated migration 025. */
 export const FORBIDDEN_025_INDEX_FRAGMENTS = [
   'providerMessageId',
   'platform_accountId',

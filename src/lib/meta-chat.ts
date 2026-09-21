@@ -18,9 +18,23 @@ export interface ParsedMetaChatMessage {
   metadata: Record<string, unknown>
 }
 
+export type MetaChatReceiptStatus = 'sent' | 'delivered' | 'read' | 'failed'
+
+export interface ParsedMetaChatReceipt {
+  platform: MetaChatPlatform
+  accountId: string
+  providerMessageId?: string
+  peerId?: string
+  status: MetaChatReceiptStatus
+  statusAt: Date
+  errorCode?: string
+  kind: 'whatsapp_status' | 'instagram_delivery' | 'instagram_read'
+}
+
 export interface ParsedMetaChatPayload {
   messages: ParsedMetaChatMessage[]
   ignoredReasons: string[]
+  receipts: ParsedMetaChatReceipt[]
   /** Soft signals from account_update (e.g. PARTNER_REMOVED). */
   accountEvents?: Array<{
     wabaId: string
@@ -81,6 +95,7 @@ function getWhatsAppContent(message: any): string {
 function parseWhatsApp(payload: any): ParsedMetaChatPayload {
   const messages: ParsedMetaChatMessage[] = []
   const ignoredReasons: string[] = []
+  const receipts: ParsedMetaChatReceipt[] = []
   const accountEvents: NonNullable<ParsedMetaChatPayload['accountEvents']> = []
 
   for (const entry of payload?.entry || []) {
@@ -125,8 +140,31 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
         ? String(value.metadata.phone_number_id)
         : null
 
-      if (value.statuses?.length) {
-        ignoredReasons.push('whatsapp_status_update')
+      if (Array.isArray(value.statuses)) {
+        for (const status of value.statuses) {
+          if (!phoneNumberId || !status?.id || !status?.status) {
+            ignoredReasons.push('whatsapp_status_incomplete')
+            continue
+          }
+          const mapped = String(status.status)
+          if (!['sent', 'delivered', 'read', 'failed'].includes(mapped)) {
+            ignoredReasons.push(`whatsapp_status_unmapped:${mapped}`)
+            continue
+          }
+          const recipientId = status.recipient_id ? String(status.recipient_id) : undefined
+          const errorCode =
+            status.errors?.[0]?.code != null ? String(status.errors[0].code) : undefined
+          receipts.push({
+            platform: 'whatsapp',
+            accountId: phoneNumberId,
+            providerMessageId: String(status.id),
+            peerId: recipientId,
+            status: mapped as MetaChatReceiptStatus,
+            statusAt: toDateFromMetaTimestamp(status.timestamp),
+            errorCode,
+            kind: 'whatsapp_status',
+          })
+        }
       }
 
       // Decline-to-share history error (Meta code 2593109) or approved history threads.
@@ -258,6 +296,7 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
   return {
     messages,
     ignoredReasons,
+    receipts,
     accountEvents: accountEvents.length ? accountEvents : undefined,
   }
 }
@@ -300,18 +339,74 @@ function parseInstagramMessaging(
 ): ParsedMetaChatPayload {
   const messages: ParsedMetaChatMessage[] = []
   const ignoredReasons: string[] = []
+  const receipts: ParsedMetaChatReceipt[] = []
 
   for (const entry of payload?.entry || []) {
     const entryId = entry?.id ? String(entry.id) : ''
 
     for (const event of entry?.messaging || []) {
       if (event?.read) {
-        ignoredReasons.push('instagram_read_event')
+        const senderId = event?.sender?.id ? String(event.sender.id) : ''
+        const recipientId = event?.recipient?.id ? String(event.recipient.id) : ''
+        if (!entryId || !senderId) {
+          ignoredReasons.push('instagram_read_incomplete')
+          continue
+        }
+        const accountId = resolveInstagramAccountId({ source, entryId, recipientId })
+        const watermark = event.read?.watermark
+        const mid = event.read?.mid || event.read?.message_id
+        receipts.push({
+          platform: 'instagram',
+          accountId,
+          providerMessageId: mid ? String(mid) : undefined,
+          peerId: senderId,
+          status: 'read',
+          statusAt: watermark
+            ? toDateFromMetaTimestamp(watermark)
+            : toDateFromMetaTimestamp(event.timestamp),
+          kind: 'instagram_read',
+        })
         continue
       }
 
       if (event?.delivery) {
-        ignoredReasons.push('instagram_delivery_event')
+        const senderId = event?.sender?.id ? String(event.sender.id) : ''
+        const recipientId = event?.recipient?.id ? String(event.recipient.id) : ''
+        if (!entryId || !senderId) {
+          ignoredReasons.push('instagram_delivery_incomplete')
+          continue
+        }
+        const accountId = resolveInstagramAccountId({ source, entryId, recipientId })
+        const mids = Array.isArray(event.delivery?.mids)
+          ? event.delivery.mids
+          : event.delivery?.mid
+            ? [event.delivery.mid]
+            : []
+        const statusAt = event.delivery?.watermark
+          ? toDateFromMetaTimestamp(event.delivery.watermark)
+          : toDateFromMetaTimestamp(event.timestamp)
+        if (mids.length === 0) {
+          receipts.push({
+            platform: 'instagram',
+            accountId,
+            peerId: senderId,
+            status: 'delivered',
+            statusAt,
+            kind: 'instagram_delivery',
+          })
+        } else {
+          for (const mid of mids) {
+            receipts.push({
+              platform: 'instagram',
+              accountId,
+              providerMessageId: String(mid),
+              peerId: senderId,
+              status: 'delivered',
+              statusAt,
+              kind: 'instagram_delivery',
+            })
+          }
+        }
         continue
       }
 
@@ -326,11 +421,6 @@ function parseInstagramMessaging(
         continue
       }
 
-      if (message.is_echo) {
-        ignoredReasons.push('instagram_echo_event')
-        continue
-      }
-
       const senderId = event?.sender?.id
       if (!entryId || !senderId) {
         ignoredReasons.push('instagram_missing_account_or_sender')
@@ -340,18 +430,28 @@ function parseInstagramMessaging(
       const recipientId = event?.recipient?.id ? String(event.recipient.id) : ''
       const accountId = resolveInstagramAccountId({ source, entryId, recipientId })
       const messageType = message.attachments?.[0]?.type || (message.text ? 'text' : 'unknown')
+      const isEcho = Boolean(message.is_echo)
+
+      // Echo = business-sent from IG app / inbox; store as outbound, never Soft-AI.
+      const peerId = isEcho ? recipientId : String(senderId)
+      if (!peerId) {
+        ignoredReasons.push('instagram_echo_missing_peer')
+        continue
+      }
 
       messages.push({
         platform: 'instagram',
         accountId,
-        senderId: String(senderId),
-        senderName: senderId ? `Instagram User ${String(senderId).slice(-6)}` : undefined,
+        senderId: peerId,
+        senderName: isEcho
+          ? undefined
+          : `Instagram User ${String(senderId).slice(-6)}`,
         content: getInstagramContent(message),
         providerMessageId: message.mid ? String(message.mid) : undefined,
         messageType,
         sentAt: toDateFromMetaTimestamp(event.timestamp),
-        direction: 'inbound',
-        suppressSoftAi: false,
+        direction: isEcho ? 'outbound' : 'inbound',
+        suppressSoftAi: isEcho,
         metadata: compactObject({
           providerMessageId: message.mid,
           providerTimestamp: event.timestamp,
@@ -365,13 +465,14 @@ function parseInstagramMessaging(
           recipientId: recipientId || undefined,
           webhookObject: source === 'page' ? 'page' : undefined,
           pageId: source === 'page' ? entryId : undefined,
+          isEcho: isEcho || undefined,
           rawMessage: message,
         }),
       })
     }
   }
 
-  return { messages, ignoredReasons }
+  return { messages, ignoredReasons, receipts }
 }
 
 function pagePayloadHasMessaging(payload: any): boolean {
@@ -394,6 +495,7 @@ export function parseMetaChatPayload(payload: any): ParsedMetaChatPayload {
       return {
         messages: [],
         ignoredReasons: ['page_without_messaging'],
+        receipts: [],
       }
     }
     return parseInstagramMessaging(payload, 'page')
@@ -402,5 +504,6 @@ export function parseMetaChatPayload(payload: any): ParsedMetaChatPayload {
   return {
     messages: [],
     ignoredReasons: payload?.object ? [`unsupported_object:${payload.object}`] : ['missing_object'],
+    receipts: [],
   }
 }

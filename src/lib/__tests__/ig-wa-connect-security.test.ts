@@ -346,3 +346,22 @@ test('meta-api ownership verify never hard-codes nested whatsapp_business_accoun
     /whatsapp_business_account/,
   )
 })
+
+
+test('WA direct-oauth requires update_config and persists CSRF state cookie (SD-04)', async () => {
+  const source = await readFile('src/app/api/auth/whatsapp/direct-oauth/route.ts', 'utf8')
+  assert.match(source, /authenticateAPIWithPermission/)
+  assert.match(source, /update_config/)
+  assert.match(source, /WA_DIRECT_OAUTH_STATE_COOKIE|wa_direct_oauth_state/)
+  assert.match(source, /cookies\.set/)
+  assert.doesNotMatch(source, /console\.log\([^)]*state[^)]*\)/)
+
+  const callback = await readFile('src/app/api/auth/whatsapp/callback/route.ts', 'utf8')
+  assert.match(callback, /isValidWaDirectOauthState/)
+  assert.match(callback, /status: 403/)
+
+  const { isValidWaDirectOauthState } = await import('../wa-direct-oauth-state')
+  assert.equal(isValidWaDirectOauthState('abc', 'abc'), true)
+  assert.equal(isValidWaDirectOauthState('abc', 'xyz'), false)
+  assert.equal(isValidWaDirectOauthState('', 'abc'), false)
+})

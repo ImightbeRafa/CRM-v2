@@ -208,7 +208,7 @@ test('parseMetaChatPayload WhatsApp button + image content helpers', () => {
   assert.equal(parsed.messages[1]?.messageType, 'image')
 })
 
-test('parseMetaChatPayload WhatsApp status-only updates are ignored (no messages)', () => {
+test('parseMetaChatPayload WhatsApp status-only updates become receipts (no messages)', () => {
   const parsed = parseMetaChatPayload({
     object: 'whatsapp_business_account',
     entry: [
@@ -228,7 +228,11 @@ test('parseMetaChatPayload WhatsApp status-only updates are ignored (no messages
   })
 
   assert.equal(parsed.messages.length, 0)
-  assert.ok(parsed.ignoredReasons.includes('whatsapp_status_update'))
+  assert.equal(parsed.receipts.length, 1)
+  assert.equal(parsed.receipts[0]?.kind, 'whatsapp_status')
+  assert.equal(parsed.receipts[0]?.providerMessageId, 'wamid.x')
+  assert.equal(parsed.receipts[0]?.status, 'delivered')
+  assert.ok(!parsed.ignoredReasons.includes('whatsapp_status_update'))
 })
 
 test('parseMetaChatPayload WhatsApp skips messages missing phone_number_id or from', () => {
@@ -441,4 +445,86 @@ test('verifyMetaWebhookSignature rejects unsigned or non-sha256 headers', () => 
       assert.equal(verifyMetaWebhookSignature(body, 'sha1=deadbeef').valid, false)
     },
   )
+})
+
+
+test('parseMetaChatPayload ingests WhatsApp delivery statuses as receipts', () => {
+  const parsed = parseMetaChatPayload({
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: 'waba-1',
+        changes: [
+          {
+            field: 'messages',
+            value: {
+              metadata: { phone_number_id: 'phone-1' },
+              statuses: [
+                {
+                  id: 'wamid.OUT1',
+                  status: 'delivered',
+                  timestamp: '1710000000',
+                  recipient_id: '50688887777',
+                },
+                {
+                  id: 'wamid.OUT1',
+                  status: 'read',
+                  timestamp: '1710000060',
+                  recipient_id: '50688887777',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  })
+
+  assert.equal(parsed.messages.length, 0)
+  assert.equal(parsed.receipts.length, 2)
+  assert.equal(parsed.receipts[0]?.status, 'delivered')
+  assert.equal(parsed.receipts[1]?.status, 'read')
+  assert.equal(parsed.receipts[0]?.providerMessageId, 'wamid.OUT1')
+  assert.equal(parsed.receipts[0]?.kind, 'whatsapp_status')
+})
+
+test('parseMetaChatPayload stores Instagram echoes as outbound and delivery/read receipts', () => {
+  const parsed = parseMetaChatPayload({
+    object: 'instagram',
+    entry: [
+      {
+        id: IG_BUSINESS_ID,
+        messaging: [
+          {
+            sender: { id: IG_BUSINESS_ID },
+            recipient: { id: SENDER_ID },
+            timestamp: 1710000100000,
+            message: { mid: 'mid.echo1', text: 'hola desde app', is_echo: true },
+          },
+          {
+            sender: { id: SENDER_ID },
+            recipient: { id: IG_BUSINESS_ID },
+            timestamp: 1710000200000,
+            delivery: { mids: ['mid.out1'], watermark: 1710000200000 },
+          },
+          {
+            sender: { id: SENDER_ID },
+            recipient: { id: IG_BUSINESS_ID },
+            timestamp: 1710000300000,
+            read: { watermark: 1710000300000 },
+          },
+        ],
+      },
+    ],
+  })
+
+  assert.equal(parsed.messages.length, 1)
+  assert.equal(parsed.messages[0]?.direction, 'outbound')
+  assert.equal(parsed.messages[0]?.suppressSoftAi, true)
+  assert.equal(parsed.messages[0]?.senderId, SENDER_ID)
+  assert.equal(parsed.receipts.length, 2)
+  assert.equal(parsed.receipts[0]?.kind, 'instagram_delivery')
+  assert.equal(parsed.receipts[0]?.status, 'delivered')
+  assert.equal(parsed.receipts[1]?.kind, 'instagram_read')
+  assert.equal(parsed.receipts[1]?.status, 'read')
 })

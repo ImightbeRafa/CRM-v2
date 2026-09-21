@@ -55,12 +55,16 @@ describe('024 chat inbox schema contract', () => {
     )
   })
 
-  it('manifest registers 024 and not 025', async () => {
+  it('manifest registers 024; 025 is gated out of default apply', async () => {
     const manifest = await import(manifestUrl)
     assert.equal(manifest.FILES['024'], '024_chat_inbox_conversations.sql')
-    assert.equal(manifest.FILES['025'], undefined)
+    assert.equal(manifest.FILES['025'], '025_chat_inbox_uniques.sql')
     assert.ok(manifest.DEFAULT_APPLY_FILES.includes('024'))
     assert.ok(!manifest.DEFAULT_APPLY_FILES.includes('025'))
+    assert.deepEqual(manifest.EXPECTED_INDEXES_025, [
+      'ChatMessage_socialAccountId_providerMessageId_uidx',
+      'SocialAccount_platform_accountId_active_uidx',
+    ])
     assert.deepEqual(manifest.EXPECTED_TABLES['024'], [
       'ChatConversation',
       'ChatConversationReadState',

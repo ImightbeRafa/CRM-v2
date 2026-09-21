@@ -14,13 +14,14 @@ import { runSoftAiTurn } from '@/lib/soft-ai/worker'
 import { buildSoftAiServerDeps } from '@/lib/soft-ai/server-deps'
 import {
   maySoftAiMetaReply,
-  resolvePersistedAgentMode,
+  resolveSoftAiAgentMode,
   softAiConversationKey,
 } from '@/lib/soft-ai/agent-mode-server'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
+import { dualWriteChatMessage } from '@/lib/chat-conversation-write'
 
 type InboundHookArgs = {
   tenantId: string
@@ -121,7 +122,22 @@ export async function maybeRunSoftAiAfterInbound(
 
     const key = softAiConversationKey(args.socialAccountId, args.senderId)
     let flagConfig = await loadSoftAiFlagConfig(args.tenantId)
-    const agentMode = resolvePersistedAgentMode(flagConfig, key)
+    const db = prisma as any
+    const conversationRow = await db.chatConversation.findUnique({
+      where: {
+        tenantId_socialAccountId_peerId: {
+          tenantId: args.tenantId,
+          socialAccountId: args.socialAccountId,
+          peerId: args.senderId,
+        },
+      },
+      select: { aiMode: true },
+    })
+    const agentMode = resolveSoftAiAgentMode({
+      conversationAiMode: conversationRow?.aiMode,
+      flagConfig,
+      conversationKey: key,
+    })
 
     // F37-02: missing key / non-explicit mode → fail closed (no Meta auto-reply)
     if (!maySoftAiMetaReply(agentMode)) {
@@ -137,7 +153,6 @@ export async function maybeRunSoftAiAfterInbound(
     }
 
     const config = parseSoftAiConfig(flagConfig)
-    const db = prisma as any
     const recent = await db.chatMessage.findMany({
       where: { socialAccountId: args.socialAccountId },
       orderBy: { sentAt: 'desc' },
@@ -202,7 +217,21 @@ export async function maybeRunSoftAiAfterInbound(
 
     // F37-02: re-read mode immediately before Meta send — fail closed if paused/human/missing
     flagConfig = await loadSoftAiFlagConfig(args.tenantId)
-    const modeBeforeSend = resolvePersistedAgentMode(flagConfig, key)
+    const conversationBeforeSend = await db.chatConversation.findUnique({
+      where: {
+        tenantId_socialAccountId_peerId: {
+          tenantId: args.tenantId,
+          socialAccountId: args.socialAccountId,
+          peerId: args.senderId,
+        },
+      },
+      select: { aiMode: true },
+    })
+    const modeBeforeSend = resolveSoftAiAgentMode({
+      conversationAiMode: conversationBeforeSend?.aiMode,
+      flagConfig,
+      conversationKey: key,
+    })
     if (!maySoftAiMetaReply(modeBeforeSend)) {
       console.info('[soft-ai/inbound-hook] Meta send blocked — mode not ai_active', {
         conversationKey: key,
@@ -244,25 +273,30 @@ export async function maybeRunSoftAiAfterInbound(
       text: result.reply,
     })
 
-    await db.chatMessage.create({
-      data: {
-        tenantId: args.tenantId,
-        socialAccountId: args.socialAccountId,
-        direction: 'outbound',
-        content: result.reply,
-        orderId: result.orderId || null,
-        metadata: {
-          softAi: true,
-          toolLog: result.toolLog,
-          agentMode: result.agentMode,
-          to: args.senderId,
-          platform: args.platform,
-          providerMessageId: send.providerMessageId,
-          sendOk: send.ok,
-          sendError: send.error || null,
-        },
-        sentAt: new Date(),
+    await dualWriteChatMessage({
+      tenantId: args.tenantId,
+      socialAccountId: args.socialAccountId,
+      direction: 'outbound',
+      content: result.reply,
+      sentAt: new Date(),
+      peerId: args.senderId,
+      peerName: args.senderName || null,
+      providerMessageId: send.providerMessageId || null,
+      messageType: 'text',
+      deliveryStatus: send.ok ? 'sent' : 'failed',
+      platform: args.platform,
+      orderId: result.orderId || null,
+      metadata: {
+        softAi: true,
+        toolLog: result.toolLog,
+        agentMode: result.agentMode,
+        to: args.senderId,
+        platform: args.platform,
+        providerMessageId: send.providerMessageId,
+        sendOk: send.ok,
+        sendError: send.error || null,
       },
+      suppressSoftAi: true,
     })
 
     // Persist escalated mode into flag.config.agentState (server truth)

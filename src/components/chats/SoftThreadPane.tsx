@@ -1,6 +1,12 @@
 'use client'
 
-import { useMemo, useState, type FormEvent, type Ref } from 'react'
+import {
+  useMemo,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type Ref,
+} from 'react'
 import {
   isWhatsAppWindowOpen,
   type ConversationStatus,
@@ -19,7 +25,11 @@ import {
   CHAT_INBOX_V2_THREAD_RENDER_WINDOW,
   selectThreadRenderWindow,
 } from '@/lib/chat-inbox-v2-client'
-import type { ChatInboxMessage } from '@/lib/chat-inbox'
+import {
+  chatSendErrorNeedsReconnect,
+  outboundDeliveryLabel,
+  type ChatInboxMessage,
+} from '@/lib/chat-inbox'
 
 export type SoftWaTemplateOption = {
   name: string
@@ -36,7 +46,9 @@ interface SoftThreadPaneProps {
   sendError: string | null
   onClearError: () => void
   onRetry?: () => void
+  onRetryMessage?: (messageId: string) => void
   failedOutboundId?: string | null
+  composerRef?: Ref<HTMLTextAreaElement>
   onClose: () => void
   onBack?: () => void
   messagesEndRef: Ref<HTMLDivElement>
@@ -145,7 +157,9 @@ export function SoftThreadPane({
   sendError,
   onClearError,
   onRetry,
+  onRetryMessage,
   failedOutboundId,
+  composerRef,
   onClose,
   onBack,
   messagesEndRef,
@@ -360,26 +374,29 @@ export function SoftThreadPane({
                   {outbound ? (
                     <p
                       className={`mt-1 text-right text-[10px] ${
-                        failed ? 'font-medium text-red-600' : 'text-slate-500'
+                        failed || msg.deliveryStatus === 'failed'
+                          ? 'font-medium text-red-600'
+                          : 'text-slate-500'
                       }`}
                     >
-                      {failed ? (
+                      {softAi ? (
+                        'IA envió'
+                      ) : failed || msg.deliveryStatus === 'failed' ? (
                         <>
                           Falló ✕{' '}
-                          {onRetry ? (
-                            <button
-                              type="button"
-                              onClick={onRetry}
-                              className="underline underline-offset-2"
-                            >
-                              Reintentar
-                            </button>
-                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onRetryMessage) onRetryMessage(msg.id)
+                              else onRetry?.()
+                            }}
+                            className="underline underline-offset-2"
+                          >
+                            Reintentar
+                          </button>
                         </>
-                      ) : softAi ? (
-                        'IA envió'
                       ) : (
-                        'Enviado ✓'
+                        outboundDeliveryLabel(msg.deliveryStatus)
                       )}
                     </p>
                   ) : null}
@@ -528,6 +545,14 @@ export function SoftThreadPane({
               {sendError.includes('plantilla') || sendError.includes('24')
                 ? 'No se pudo enviar. Usá plantilla.'
                 : sendError}
+              {chatSendErrorNeedsReconnect(sendError) ? (
+                <>
+                  {' '}
+                  <a href="/config/social" className="font-semibold underline underline-offset-2">
+                    Reconectar
+                  </a>
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -545,26 +570,41 @@ export function SoftThreadPane({
               className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
             >
               {sendError}
+              {chatSendErrorNeedsReconnect(sendError) ? (
+                <>
+                  {' '}
+                  <a href="/config/social" className="font-semibold underline underline-offset-2">
+                    Reconectar
+                  </a>
+                </>
+              ) : null}
             </div>
           ) : null}
 
           <form onSubmit={onSend} className="flex gap-2">
-            <input
-              type="text"
+            <textarea
+              ref={composerRef}
+              rows={1}
               value={messageInput}
               onChange={(e) => {
                 onMessageInput(e.target.value)
                 if (sendError) onClearError()
               }}
+              onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
+                if (e.key !== 'Enter' || e.shiftKey) return
+                e.preventDefault()
+                if (sending || !composerEnabled || !messageInput.trim()) return
+                onSend(e as unknown as FormEvent)
+              }}
               placeholder={
                 composerEnabled
                   ? compact
                     ? 'Mensaje… Enter envía'
-                    : 'Escribí un mensaje…  Enter envía'
+                    : 'Escribí un mensaje… Enter envía · Shift+Enter nueva línea'
                   : 'Tomá control o pausá la IA para escribir'
               }
               disabled={sending || !composerEnabled}
-              className="min-w-0 flex-1 rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5b6cff]/35 disabled:opacity-60"
+              className="min-w-0 flex-1 resize-none rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5b6cff]/35 disabled:opacity-60"
             />
             <button
               type="submit"
@@ -576,7 +616,7 @@ export function SoftThreadPane({
           </form>
           {!compact ? (
             <p className="mt-2 text-[11px] text-slate-400">
-              Enter envía · ⌘K busca · Esc cierra · ↑↓ lista
+              Enter envía · Shift+Enter nueva línea · ⌘K busca · Esc cierra · ↑↓ lista
             </p>
           ) : null}
         </div>

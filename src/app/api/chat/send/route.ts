@@ -21,6 +21,7 @@ import {
   isMetaInvalidTokenError,
   socialTokenSendBlockMessage,
 } from '@/lib/social-account-token-health'
+import { mapMessageToDto } from '@/lib/chat-conversation-api'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -89,6 +90,13 @@ export async function POST(request: NextRequest) {
     const content = body.content ? String(body.content) : ''
     const orderId = body.orderId ? String(body.orderId) : null
     const clientId = body.clientId ? String(body.clientId) : null
+    const rawClientRequestId = body.clientRequestId ? String(body.clientRequestId).trim() : ''
+    const clientRequestId =
+      rawClientRequestId &&
+      rawClientRequestId.length <= 80 &&
+      /^[A-Za-z0-9._:-]+$/.test(rawClientRequestId)
+        ? rawClientRequestId
+        : null
     const messageType = body.type ? String(body.type).toLowerCase() : 'text'
     const templateName = body.templateName ? String(body.templateName).trim() : ''
     const templateLanguage = body.templateLanguage
@@ -384,6 +392,7 @@ export async function POST(request: NextRequest) {
         platform: account.platform,
         providerDispatch: dispatchResult,
         providerResponse,
+        ...(clientRequestId ? { clientRequestId } : {}),
         ...(isTemplate
           ? {
               messageType: 'template',
@@ -416,9 +425,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: saved,
+      message: saved ? mapMessageToDto(saved) : null,
       conversationId: write.conversationId,
       providerDispatch: dispatchResult,
+      clientRequestId,
     })
   } catch (error) {
     console.error('[chat/send] Internal error', error)

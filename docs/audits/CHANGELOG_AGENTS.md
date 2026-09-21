@@ -25,7 +25,7 @@ Append-only. Newest entries at the top.
   not applied; `chat_inbox_v2` / `chat_agent_layer_v1` not toggled;
   `aiFullUnlock` not written.
 - Prove: `npx tsx --test src/lib/__tests__/chat-inbox-backfill-repair.test.ts`
-  + `npm run test:chat-harden`.
+  (8 pass) + `npm run test:chat-harden` (194 pass).
 
 ## 2026-09-23 — Instagram reconnect no longer 500s on SocialAccount P2002
 

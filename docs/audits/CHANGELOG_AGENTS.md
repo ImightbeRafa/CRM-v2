@@ -13,17 +13,19 @@ Append-only. Newest entries at the top.
   nothing. Report includes `aggregateRepair`.
 - Offline `node:test` in `chat-inbox-backfill-repair.test.ts` (added to
   `test:chat-harden`). No 024/025/026/027/027b/028/029/030 apply, no shared `--apply`, staff bot untouched.
-- Rebased onto `dev` after #63 (`8f689b6` verify-betsy skill; parent
-  `938f7bc` #62). Resume-aggregate repair kept. #63 verify-betsy skill /
-  helpers left as on `dev` (no overlay). #62 Arc 2 plan docs left as on
-  `dev` (no overlay). #61 agentes contrast / in-page conocimiento /
-  empty `config/loading` left as on `dev` (no overlay). #60 conocimiento page
-  type left as on `dev`. #59 desk polish (`SoftCopilotInboxV2` /
-  `SoftThreadPane` / send route / `chat-inbox-v2-client`) left as on `dev`.
-  #58 knowledge layer (028 gated), #57 introductionNames, #56 agentes
-  single-write + audit-after-commit, #55 `session-permissions` / `server-only`
-  browser hotfix, #54 Agent Layer runtime (027 gated, `chat_agent_layer_v1`
-  off, `aiFullUnlock` empty), #51 self-serve, #50 media / Soft-AI queue /
+- Rebased onto `dev` after #64 (`2fb0c69` AL2-A1 text agent layer; parent
+  `8f689b6` #63). Resume-aggregate repair kept. #64 AL2-A1 (classifier,
+  brand facts, shortcuts, Probar; 029 gated, `chat_agent_layer_v1` off)
+  left as on `dev` (no overlay). #63 verify-betsy skill / helpers left as
+  on `dev` (no overlay). #62 Arc 2 plan docs left as on `dev` (no overlay).
+  #61 agentes contrast / in-page conocimiento / empty `config/loading`
+  left as on `dev` (no overlay). #60 conocimiento page type left as on
+  `dev`. #59 desk polish (`SoftCopilotInboxV2` / `SoftThreadPane` / send
+  route / `chat-inbox-v2-client`) left as on `dev`. #58 knowledge layer
+  (028 gated), #57 introductionNames, #56 agentes single-write +
+  audit-after-commit, #55 `session-permissions` / `server-only` browser
+  hotfix, #54 Agent Layer runtime (027 gated, `chat_agent_layer_v1` off,
+  `aiFullUnlock` empty), #51 self-serve, #50 media / Soft-AI queue /
   template cache / windowing, #46 channel identity, #45 send/echo stamp,
   escalate `aiMode`, aggregate monotonicity, and WA OAuth/36008 left as on
   `dev`. Did not import #47 about:blank or #49 charset/Graph cap.

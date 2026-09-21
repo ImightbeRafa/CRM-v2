@@ -1,0 +1,13 @@
+---
+description: HARD LOCK — grok-4.7 reasoning_effort=high fast=true. Never grok-4.5.
+alwaysApply: true
+---
+
+# Coding model (Rafael HARD LOCK)
+
+Run Cursor coding as **grok-4.7** with `reasoning_effort=high` and `fast=true`.
+
+- Task / subagent slug: `grok-4.7-high-fast`
+- Never use Grok 4.5, `grok-4.5`, or any 4.5 alias for coding, planning, or verification.
+- Do not substitute another model unless Rafael explicitly names one.
+- Do not merge to `dev` unless Rafael explicitly says to merge.

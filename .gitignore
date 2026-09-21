@@ -115,6 +115,8 @@ debug-vercel-api.ps1
 !.cursor/skills/**
 !.cursor/commands/
 !.cursor/commands/**
+!.cursor/rules/
+!.cursor/rules/coding-model-grok-4.7.mdc
 .cursorrules
 
 # Reference/scratch projects (not part of CRM-v2)

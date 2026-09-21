@@ -67,7 +67,6 @@ export async function upsertInstagramSocialAccount(params: UpsertInstagramSocial
   return db.socialAccount.create({
     data: {
       tenantId: params.tenantId,
-      userId: params.userId,
       platform: 'instagram',
       accountId: String(params.igBusinessAccountId),
       ...data,

@@ -16,7 +16,7 @@ export async function platformAccountIdsForFilter(
   platform: string,
 ): Promise<string[]> {
   const rows = await prisma.socialAccount.findMany({
-    where: { tenantId, platform, isActive: true },
+    where: { tenantId, platform },
     select: { id: true },
   })
   return rows.map((r) => r.id)

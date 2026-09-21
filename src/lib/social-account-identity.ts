@@ -169,6 +169,8 @@ export type ChatAccountDto = {
   whatsappBusinessAccountId: string | null
   pageId: string | null
   wabaId: string | null
+  expiresAt: Date | string | null
+  disconnectedAt: Date | string | null
 }
 
 export function toChatAccountDto(row: {
@@ -186,6 +188,8 @@ export function toChatAccountDto(row: {
   pageId?: string | null
   phoneNumberId?: string | null
   whatsappBusinessAccountId?: string | null
+  expiresAt?: Date | string | null
+  disconnectedAt?: Date | string | null
 }): ChatAccountDto {
   const identity: SocialAccountIdentityFields = {
     id: row.id,
@@ -215,6 +219,8 @@ export function toChatAccountDto(row: {
       row.platform === 'whatsapp' ? row.whatsappBusinessAccountId || row.wabaId || null : null,
     pageId: row.platform === 'instagram' ? row.pageId || null : null,
     wabaId: row.platform === 'whatsapp' ? row.wabaId || row.whatsappBusinessAccountId || null : null,
+    expiresAt: row.expiresAt ?? null,
+    disconnectedAt: row.disconnectedAt ?? null,
   }
 }
 

@@ -45,6 +45,8 @@ export interface SoftSocialAccount {
   displayPhoneNumber?: string | null
   logoKey?: ChannelLogoKey
   tokenStatus?: string | null
+  expiresAt?: string | Date | null
+  disconnectedAt?: string | Date | null
 }
 
 /** Short display label for a connected social account (§7.2 fallback chain). */

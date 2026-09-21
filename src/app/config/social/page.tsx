@@ -18,6 +18,11 @@ import {
   formatInstagramHandle,
   resolveChannelDisplayName,
 } from '@/lib/social-account-identity'
+import {
+  accountNeedsReconnect,
+  socialReconnectBannerLabel,
+} from '@/lib/social-account-token-health'
+import { hasSessionPermission } from '@/lib/auth-helpers'
 
 interface SocialAccount {
   id: string
@@ -118,8 +123,7 @@ export default function SocialConfigPage() {
   const META_GRAPH_API_VERSION =
     (process.env.NEXT_PUBLIC_META_GRAPH_API_VERSION as string | undefined) || 'v24.0'
 
-  const isOwnerOrMaster =
-    session?.user?.membershipRole === 'OWNER' || session?.user?.role === 'MASTER'
+  const canManageSocial = hasSessionPermission(session, 'update_config')
 
   async function applyWhatsAppExchangeResult(res: Response, json: any) {
     if (res.ok && json.success && json.subscribed !== false && json.account) {
@@ -209,13 +213,13 @@ export default function SocialConfigPage() {
 
   useEffect(() => {
     if (!session) return
-    if (!isOwnerOrMaster) {
+    if (!canManageSocial) {
       router.push('/')
       return
     }
     fetchAccounts()
     fetchMetaStatus()
-  }, [session, isOwnerOrMaster, router])
+  }, [session, canManageSocial, router])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -556,7 +560,7 @@ export default function SocialConfigPage() {
   async function handleUnlinkAccount(id: string, platform: string) {
     if (
       !confirm(
-        `¿Desvincular esta cuenta de ${platform}? Se eliminarán los mensajes asociados en el inbox.`,
+        `¿Desvincular esta cuenta de ${platform}? El historial de conversaciones se conserva; solo se deja de recibir y enviar mensajes hasta que la reconectes.`,
       )
     ) {
       return
@@ -567,7 +571,7 @@ export default function SocialConfigPage() {
       const res = await fetch(`/api/social/unlink?id=${id}`, { method: 'DELETE' })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Error desconocido')
-      setStatusMessage('Cuenta desvinculada.')
+      setStatusMessage('Cuenta desvinculada. El historial se mantiene.')
       fetchAccounts()
       fetchMetaStatus()
     } catch (e: unknown) {
@@ -605,13 +609,15 @@ export default function SocialConfigPage() {
   }
 
   if (!session) return null
-  if (!isOwnerOrMaster) {
+  if (!canManageSocial) {
     return (
       <div className="p-8 text-center text-muted-foreground">
         No tienes permisos para configurar cuentas sociales.
       </div>
     )
   }
+
+  const reconnectBanners = accounts.filter(accountNeedsReconnect)
 
   const igAccounts = accounts.filter((a) => a.platform === 'instagram')
   const waAccounts = accounts.filter((a) => a.platform === 'whatsapp')
@@ -763,6 +769,29 @@ export default function SocialConfigPage() {
         {statusMessage && !subscribeFailToast ? (
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
             {statusMessage}
+          </div>
+        ) : null}
+
+        {reconnectBanners.length > 0 ? (
+          <div className="mt-4 flex flex-col gap-2" data-testid="social-token-reconnect-banners">
+            {reconnectBanners.map((acc) => (
+              <div
+                key={acc.id}
+                className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+                role="status"
+              >
+                {socialReconnectBannerLabel({
+                  id: acc.id,
+                  platform: acc.platform,
+                  accountId: acc.accountId,
+                  tokenStatus: acc.tokenStatus,
+                  displayName: acc.displayName,
+                  providerDisplayName: acc.providerDisplayName,
+                  providerUsername: acc.providerUsername,
+                  displayPhoneNumber: acc.displayPhoneNumber,
+                })}
+              </div>
+            ))}
           </div>
         ) : null}
 

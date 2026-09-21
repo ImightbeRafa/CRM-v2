@@ -89,6 +89,14 @@ export async function POST(request: NextRequest) {
       try {
         const sub = await subscribePageToInstagramMessages(meta.pageId, accessToken)
         if (!sub.ok) {
+          await db.socialAccount.update({
+            where: { id: acc.id },
+            data: {
+              isActive: false,
+              lastErrorAt: new Date(),
+              lastErrorCode: 'subscribe_failed',
+            },
+          })
           return NextResponse.json({
             success: false,
             status: sub.status,
@@ -96,6 +104,18 @@ export async function POST(request: NextRequest) {
             details: sub.data,
           })
         }
+        await db.socialAccount.update({
+          where: { id: acc.id },
+          data: {
+            isActive: true,
+            disconnectedAt: null,
+            subscribedAt: new Date(),
+            tokenStatus: 'valid',
+            tokenLastCheckedAt: new Date(),
+            lastErrorAt: null,
+            lastErrorCode: null,
+          },
+        })
         return NextResponse.json({ success: true, pageId: meta.pageId })
       } catch (e: any) {
         return NextResponse.json({ error: e.message || 'Subscribe error' }, { status: 500 })

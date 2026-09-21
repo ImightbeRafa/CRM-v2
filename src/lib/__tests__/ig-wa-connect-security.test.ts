@@ -330,11 +330,11 @@ test('WA manual link Graph-verifies ownership like exchange and fails loud on su
   assert.match(source, /subscribed: true/)
 })
 
-test('IG auth-url requires session (SD-04)', async () => {
+test('IG auth-url requires update_config (Phase 5 RBAC)', async () => {
   const source = await readFile('src/app/api/auth/instagram/auth-url/route.ts', 'utf8')
-  assert.match(source, /getToken/)
-  assert.match(source, /Unauthorized/)
-  assert.match(source, /status: 401/)
+  assert.match(source, /authenticateAPIWithPermission/)
+  assert.match(source, /update_config/)
+  assert.doesNotMatch(source, /getToken/)
 })
 
 test('meta-api ownership verify never hard-codes nested whatsapp_business_account in verify fields', async () => {

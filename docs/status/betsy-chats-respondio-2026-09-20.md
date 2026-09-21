@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| **Repo tip (this board)** | `dev` @ `b5ecd017cf15efdcdaecf523a9248fd27a8d2b5f` — *PR-3: channel identity names and logos* |
+| **Repo tip (this board)** | `dev` @ `2f6c797` (PR-4 #50) + PR-5 self-serve in flight — *PR-3: channel identity names and logos* |
 | **Plan SoT** | [`docs/plans/betsy-respondio-parity-fable-2026-09-20.md`](../plans/betsy-respondio-parity-fable-2026-09-20.md) |
 | **Notion** | [Betsy Chat — Full Implementation](https://app.notion.com/p/3cdbc39c41ae81968b64d25201be0676) · [Respond.io epic](https://app.notion.com/p/3d6bc39c41ae819b8994f3e2e6059977) |
 | **Feature flag** | `chat_inbox_v2` — **enabled for Forge tenant `cmhsibjue0004js04gie724nx` only** (default off globally) |
@@ -47,14 +47,15 @@
 
 npm: `chat:scale:seed` · `chat:scale:bench` · `chat:webhook:burst` · `test:chat-scale`
 
-**P5 self-serve**
+**P5 self-serve — DONE in PR-5 (this branch)**
 
-- Server RBAC on connect routes
-- IG `isActive=subscribeOk`
-- `expiresAt` + token-health cron + Reconectar banners
-- Soft-unlink (history kept)
-- Store-owner runbook
-- Fix `social-accounts.mdx` “history kept” claim
+- Server RBAC on `/config/social` + WA/IG connect routes (`update_config`)
+- IG `isActive=subscribeOk` + Re-suscribir copy
+- Real `expiresAt` + daily `/api/cron/chat-token-health` + Reconectar banners
+- Soft-unlink (history kept; same `SocialAccount.id` on reconnect)
+- Store-owner runbook + `social-accounts.mdx` history claim fixed
+
+Still Meta-blocked for non-tester IG: Advanced Access / App Review (ops).
 
 ### BLOCKED — Meta ops / product HOLD
 

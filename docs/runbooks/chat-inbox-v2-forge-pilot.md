@@ -1,5 +1,7 @@
 # Chat inbox v2 — Forge pilot (`chat_inbox_v2`)
 
+> **Live status:** [`docs/status/betsy-chats-respondio-2026-09-20.md`](../status/betsy-chats-respondio-2026-09-20.md) (Phases 1–3 live; Forge pilot only).
+
 Server-grouped Soft inbox (PR-2 Phase 2). **Default off globally.** Enable only for the Forge pilot tenant:
 
 `cmhsibjue0004js04gie724nx`

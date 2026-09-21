@@ -13,6 +13,7 @@ import {
 } from '@/lib/meta-api'
 import { encodeWhatsAppRefreshToken } from '@/lib/social-account-meta'
 import { encryptSocialAccessToken } from '@/lib/social-account-crypto'
+import { identityPersistPayload } from '@/lib/social-account-identity'
 import {
   extractWaEmbeddedSignupAssets,
   isWaEmbeddedSignupMessage,
@@ -316,7 +317,26 @@ export async function POST(request: NextRequest) {
       : undefined
     const existing = await db.socialAccount.findFirst({
       where: { tenantId, platform: 'whatsapp', accountId: String(phoneNumberId) },
+      select: {
+        id: true,
+        accessToken: true,
+        refreshToken: true,
+        displayName: true,
+      },
     })
+    const identity = identityPersistPayload({
+      platform: 'whatsapp',
+      providerDisplayName: ownership.providerDisplayName,
+      displayPhoneNumber: ownership.displayPhoneNumber,
+      wabaId: whatsappBusinessAccountId,
+      existingDisplayName: existing?.displayName,
+    })
+    const identityData = {
+      providerDisplayName: identity.providerDisplayName,
+      displayPhoneNumber: identity.displayPhoneNumber,
+      wabaId: identity.wabaId,
+      displayName: identity.displayName,
+    }
     let saved: any
     if (existing) {
       saved = await db.socialAccount.update({
@@ -326,8 +346,20 @@ export async function POST(request: NextRequest) {
           isActive: subscribeOk,
           accessToken: encryptedToken ?? existing.accessToken ?? undefined,
           refreshToken: refreshToken ?? existing.refreshToken ?? undefined,
+          ...identityData,
         },
-        select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true, refreshToken: true },
+        select: {
+          id: true,
+          platform: true,
+          accountId: true,
+          isActive: true,
+          linkedAt: true,
+          refreshToken: true,
+          displayName: true,
+          providerDisplayName: true,
+          displayPhoneNumber: true,
+          wabaId: true,
+        },
       })
     } else {
       saved = await db.socialAccount.create({
@@ -339,8 +371,20 @@ export async function POST(request: NextRequest) {
           accessToken: encryptedToken ?? undefined,
           refreshToken: refreshToken ?? undefined,
           isActive: subscribeOk,
+          ...identityData,
         },
-        select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true, refreshToken: true },
+        select: {
+          id: true,
+          platform: true,
+          accountId: true,
+          isActive: true,
+          linkedAt: true,
+          refreshToken: true,
+          displayName: true,
+          providerDisplayName: true,
+          displayPhoneNumber: true,
+          wabaId: true,
+        },
       })
     }
 
@@ -350,8 +394,12 @@ export async function POST(request: NextRequest) {
       accountId: saved.accountId,
       isActive: saved.isActive,
       linkedAt: saved.linkedAt,
-      whatsappBusinessAccountId: whatsappBusinessAccountId || null,
+      whatsappBusinessAccountId: whatsappBusinessAccountId || saved.wabaId || null,
       phoneNumberId: phoneNumberId || null,
+      displayName: saved.displayName || null,
+      providerDisplayName: saved.providerDisplayName || null,
+      displayPhoneNumber: saved.displayPhoneNumber || null,
+      wabaId: saved.wabaId || whatsappBusinessAccountId || null,
     }
 
     if (!subscribeOk) {

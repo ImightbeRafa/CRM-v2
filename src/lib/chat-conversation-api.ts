@@ -1,7 +1,13 @@
 import { z } from 'zod'
 import type { Prisma } from '@prisma/client'
-import { accountDisplayLabel, type SoftTag } from '@/lib/chat-soft-copilot'
+import { type SoftTag } from '@/lib/chat-soft-copilot'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
+import {
+  channelLogoKey,
+  channelSecondaryAddress,
+  resolveChannelDisplayName,
+  type SocialAccountIdentityFields,
+} from '@/lib/social-account-identity'
 
 export const CHAT_CONVERSATION_STATUS = z.enum(['nuevo', 'en_curso', 'hecho'])
 export const CHAT_CONVERSATION_AI_MODE = z.enum(['ai_active', 'paused', 'human'])
@@ -88,6 +94,7 @@ export type ChatConversationListItemDto = {
     platform: string
     displayName: string
     logoKey: 'whatsapp' | 'instagram'
+    address: string | null
   }
   clientId: string | null
 }
@@ -114,25 +121,11 @@ export function normalizeAiMode(value: string | null | undefined): SoftAiAgentMo
 }
 
 export function channelDisplayName(account: SocialAccountChannelRow): string {
-  const trimmed = account.displayName?.trim()
-  if (trimmed) return trimmed
-  if (account.platform === 'whatsapp') {
-    return account.providerDisplayName?.trim() || account.displayPhoneNumber?.trim() || accountDisplayLabel({
-      id: account.id,
-      platform: account.platform,
-      accountId: account.accountId,
-      isActive: account.isActive,
-      phoneNumberId: account.phoneNumberId ?? account.accountId,
-    })
-  }
-  const handle = account.providerUsername?.trim()
-  if (handle) return handle.startsWith('@') ? handle : `@${handle}`
-  return accountDisplayLabel({
-    id: account.id,
-    platform: account.platform,
-    accountId: account.accountId,
-    isActive: account.isActive,
-  })
+  return resolveChannelDisplayName(account as SocialAccountIdentityFields)
+}
+
+export function channelAddress(account: SocialAccountChannelRow): string | null {
+  return channelSecondaryAddress(account as SocialAccountIdentityFields)
 }
 
 export function waWindowOpenFromInbound(
@@ -153,7 +146,6 @@ export function unreadCountForViewer(row: ConversationRow): number {
 export function mapConversationToListDto(row: ConversationRow): ChatConversationListItemDto {
   const account = row.socialAccount
   const platform = account?.platform || 'whatsapp'
-  const logoKey: 'whatsapp' | 'instagram' = platform === 'instagram' ? 'instagram' : 'whatsapp'
   const status = CHAT_CONVERSATION_STATUS.safeParse(row.status).success
     ? (row.status as z.infer<typeof CHAT_CONVERSATION_STATUS>)
     : 'nuevo'
@@ -182,13 +174,15 @@ export function mapConversationToListDto(row: ConversationRow): ChatConversation
           id: account.id,
           platform: account.platform,
           displayName: channelDisplayName(account),
-          logoKey,
+          logoKey: channelLogoKey(platform),
+          address: channelAddress(account),
         }
       : {
           id: row.socialAccountId,
           platform,
           displayName: platform,
-          logoKey,
+          logoKey: channelLogoKey(platform),
+          address: null,
         },
     clientId: row.clientId,
   }

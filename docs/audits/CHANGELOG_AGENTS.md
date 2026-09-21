@@ -2,6 +2,24 @@
 
 Append-only. Newest entries at the top.
 
+## 2026-09-21 — Respond.io PR-1: chat inbox schema foundation (024)
+
+- Additive SQL `supabase/migrations/024_chat_inbox_conversations.sql`:
+  `ChatConversation` + `ChatConversationReadState`, SocialAccount/ChatMessage
+  nullable columns, revision sequence/trigger, non-unique indexes, RLS.
+  **025 uniques not shipped.** SQL **not applied** to shared Supabase.
+- `schema.prisma` mirror; apply/verify scripts extended via
+  `scripts/lib/betsy-v2-additive-manifest.mjs` (018–024).
+- Backfill/verify scripts: `scripts/chat-inbox-backfill.ts` (dry-run default),
+  `scripts/chat-inbox-verify.ts`. Pure helpers:
+  `src/lib/chat-conversation-foundation.ts`.
+- Offline tests in `test:chat-harden`. Ledger entry in
+  `BETSY_V2_PROD_SQL_REVIEW.md` (proposed). Staff bot + Soft chrome untouched.
+- Prove: `npx tsx --test src/lib/__tests__/chat-conversation-foundation.test.ts
+  src/lib/__tests__/chat-inbox-schema.test.ts` + `npm run test:chat-harden` +
+  `npm run test:soft-meta-wait-iron` path via chat-harden + `npm run lint` +
+  `npm run build`.
+
 ## 2026-09-20 — WA ownership verify: coexistence nested-field #100 soft path
 
 - Prod Forge coexistence `POST /api/auth/whatsapp/exchange` 403ed after token +

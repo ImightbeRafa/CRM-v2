@@ -1,8 +1,10 @@
 # Betsy `/chats` → Respond.io-class omnichannel inbox — phased plan
 
+> **Rafael GO (2026-09-20 CR):** Phases **1–3** are GO’d with the **recommended defaults** from §9 (Soft status vocabulary `nuevo/en_curso/hecho`; per-user `ChatConversationReadState`; localStorage import on v2 cutover; soft-unlink later; revision polling; etc.). Phase **6** Soft UX redesign remains **HOLD**. This PR-1 implements schema foundation only (`024` + scripts + tests) — no runtime dual-write / UI.
+
 - **Author:** Fable 5.1 (Cursor cloud, planning only) · **Advisor review:** Sol `gpt-5.6-sol-high` (see §11)
 - **Date:** 2026-09-20 (CR) · **Repo:** `ImightbeRafa/CRM-v2` · **Investigated tip:** `dev` @ `b71aaff` (#40)
-- **Status:** PLAN (Advisor-reviewed) — no product code. Nothing here is GO'd. Rafael approvals listed in §9.
+- **Status:** PLAN (Advisor-reviewed) — Phases 1–3 GO’d (Rafael 2026-09-20); Phase 6 HOLD. PR-1 schema (`024`) is on `dev` (#42); this PR remains docs-only (no additional product code). Rafael approvals listed in §9.
 - **Notion SoT:** [Betsy Chat — Full Implementation](https://app.notion.com/p/3cdbc39c41ae81968b64d25201be0676) · [Respond.io epic](https://app.notion.com/p/3d6bc39c41ae819b8994f3e2e6059977) · [Soft UX redesign brief (HOLD)](https://app.notion.com/p/3d8bc39c41ae81cb9b13e094ebf9c9e9)
 
 ## Locks that bind every phase

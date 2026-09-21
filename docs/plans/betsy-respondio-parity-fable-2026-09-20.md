@@ -2,7 +2,7 @@
 
 - **Author:** Fable 5.1 (Cursor cloud, planning only) · **Advisor review:** Sol `gpt-5.6-sol-high` (see §11)
 - **Date:** 2026-09-20 (CR) · **Repo:** `ImightbeRafa/CRM-v2` · **Investigated tip:** `dev` @ `b71aaff` (#40)
-- **Status:** PLAN — no product code. Nothing here is GO'd. Rafael approvals listed in §9.
+- **Status:** PLAN (Advisor-reviewed) — no product code. Nothing here is GO'd. Rafael approvals listed in §9.
 - **Notion SoT:** [Betsy Chat — Full Implementation](https://app.notion.com/p/3cdbc39c41ae81968b64d25201be0676) · [Respond.io epic](https://app.notion.com/p/3d6bc39c41ae819b8994f3e2e6059977) · [Soft UX redesign brief (HOLD)](https://app.notion.com/p/3d8bc39c41ae81cb9b13e094ebf9c9e9)
 
 ## Locks that bind every phase
@@ -48,7 +48,9 @@
 | **Token health:** WA `expires_in` logged only, `expiresAt` not set; IG hard-coded +60 d; no refresh/health job; no “reconnect” banner | Silent channel death | `exchange/route.ts:136-139`; `instagram/callback/route.ts:43-74` |
 | **IG `isActive` ignores subscribe failure** (WA requires subscribe) | IG “connected” but receives nothing | `instagram/complete/route.ts:247-265` |
 | **Unlink hard-deletes the row → CASCADE deletes all `ChatMessage`** (docs say history kept) | Data loss on reconnect / renumber | `unlink/route.ts:43-48`; `schema.prisma:866`; `social-accounts.mdx:66-68` |
-| **RBAC mismatch for self-serve:** `/config/social` gate is client-side (OWNER or MASTER); `/api/social/*` = `update_config` (OWNER+ADMIN); `/api/auth/whatsapp/exchange` + IG OAuth routes only require a tenant session | Weaker than UI implies; must be server-gated before self-serve is advertised | `config/social/page.tsx:104-106`, `layout.tsx:6-7`; `exchange/route.ts:35-38` |
+| **RBAC mismatch for self-serve:** `/config/social` gate is client-side (OWNER or MASTER); `/api/social/*` = `update_config` (OWNER+ADMIN, `rbac.ts:45,64`); `/api/auth/whatsapp/exchange` + IG OAuth routes only require a tenant session | Weaker than UI implies; must be server-gated before self-serve is advertised | `config/social/page.tsx:104-106`, `layout.tsx:6-7`; `exchange/route.ts:35-38` |
+| **`GET /api/auth/whatsapp/direct-oauth` is fully unauthenticated** and its CSRF `state` is generated and returned but never persisted or validated on callback (Advisor finding, verified) | Open OAuth-URL minting; CSRF gap on the fallback WA path | `direct-oauth/route.ts:14-50` |
+| **Additive-SQL apply script hard-codes migrations `018`–`023`** (`FILES`, `EXPECTED_TABLES`) | `024`/`025` cannot be applied through the gated path until the script is extended with postcondition checks | `scripts/apply-betsy-v2-additive-sql.mjs:22-40` |
 | **Webhook rate limit 120/min per IP** — Meta sends from a handful of IPs; coexistence history sync can burst hundreds of events/min | Legit Meta traffic throttled at scale | `rate-limit.ts:195-199` |
 | **Templates fetched from Graph on every send and every picker open**; no cache | Latency + Graph quota | `send/route.ts:197-241`; `templates/route.ts` |
 | **Soft AI post-inbound is fire-and-forget `void`** | Lost replies on function timeout; no retry (staff bot already has a lease pattern) | `webhook/route.ts:270-278`; contrast `src/lib/bot/inbox.ts` |
@@ -113,12 +115,12 @@ The existing foundation (tenant-safe webhook resolution, encrypted tokens, Embed
 | `wabaId` | text NULL | Real column; `parseSocialRefreshToken` remains as read fallback |
 | `pageId` | text NULL | Same |
 | `avatarUrl` | text NULL | IG profile picture (optional, later) |
-| `tokenStatus` | text NOT NULL DEFAULT `'unknown'` | `ok` · `expiring` · `expired` · `revoked` · `unknown` |
-| `lastWebhookAt`, `lastSendAt`, `lastErrorAt` | timestamp NULL | Health signals |
+| `tokenStatus` | text NOT NULL DEFAULT `'unknown'` | `valid` · `expiring` · `expired` · `revoked` · `error` · `unknown` |
+| `tokenLastCheckedAt`, `subscribedAt`, `lastWebhookAt`, `lastSendAt`, `lastErrorAt` | timestamp NULL | Health signals |
 | `lastErrorCode` | text NULL | Last Graph error code |
 | `disconnectedAt` | timestamp NULL | Soft-unlink marker (replaces hard delete) |
 
-Index: `SocialAccount(tenantId, isActive, platform)`.
+Indexes: `SocialAccount(tenantId, isActive, platform)`. In `025`, after an audit finds zero collisions: **partial global unique `("platform","accountId") WHERE "isActive" = true`** — one Meta asset may actively deliver into exactly one tenant, which is the ambiguity the webhook resolver currently has to refuse at runtime (`chat-webhook-account.ts:28-59`). Logo is derived from `platform`, never stored.
 
 **New table `ChatConversation`** (one row per `(socialAccountId, peerId)`):
 
@@ -133,28 +135,32 @@ Index: `SocialAccount(tenantId, isActive, platform)`.
 | `status` | text NOT NULL DEFAULT `'nuevo'` | Reuse Soft vocabulary `nuevo` · `en_curso` · `hecho` (existing `ConversationStatus` type) |
 | `assignedUserId` | text NULL FK User | Assignment (Phase 2) |
 | `aiMode` | text NULL | `ai_active` · `paused` · `human`; NULL = inherit tenant default, resolved fail-closed. Replaces `TenantFeatureFlag.config.agentState` (Phase 2, migrate + keep old read fallback one release). |
-| `tags` | text[] NOT NULL DEFAULT `'{}'` | Shared tags (replaces localStorage) |
-| `lastMessageAt` | timestamp NOT NULL | Sort key |
+| `tags` | text[] NOT NULL DEFAULT `'{}'` | Shared tags v1 (Soft has 3 fixed tags). Normalized `ConversationTag`/`ConversationTagAssignment` tables (name, color, unique per tenant) are the **L** upgrade when tenants need custom tags. |
+| `lastMessageId`, `lastMessageAt` | text NULL / timestamp NOT NULL | Sort key; cursor = `(lastMessageAt, id)` |
 | `lastMessagePreview` | text NULL | ≤ 120 chars |
 | `lastMessageDirection` | text NULL | |
 | `lastInboundAt`, `lastOutboundAt` | timestamp NULL | 24h window = `lastInboundAt + 24h` (WA) computed server-side |
-| `unreadCount` | int NOT NULL DEFAULT 0 | Tenant-level: inbound since last agent read or reply |
-| `lastReadAt` | timestamp NULL | Tenant-level (per-user read = later) |
+| `inboundCount` | int NOT NULL DEFAULT 0 | Incremented only when a **new** inbound row was inserted; unread = `inboundCount − readInboundCount` (see read state) |
 | `messageCount` | int NOT NULL DEFAULT 0 | |
-| `createdAt`, `updatedAt` | timestamp | `updatedAt` drives delta polling |
+| `snoozedUntil`, `closedAt` | timestamp NULL | Optional; only if status set includes `snoozed`/`closed` (§9 #2) |
+| `revision` | bigint NOT NULL | From a Postgres sequence via `BEFORE UPDATE` trigger; drives delta polling (monotonic, no clock skew) |
+| `createdAt`, `updatedAt` | timestamp | |
+
+**`ChatConversationReadState`** (per-user read, recommended from day one — cheap and avoids re-doing unread later): `{ id, tenantId, conversationId FK, userId FK, readInboundCount int, lastReadAt, lastReadMessageId }`, `UNIQUE (conversationId, userId)`, `INDEX (tenantId, userId)`. Cutover baseline (§9 #3): seed all active members as “read up to now” or expose history as unread.
 
 Constraints/indexes:
 
 ```sql
-UNIQUE ("socialAccountId", "peerId");
-INDEX ("tenantId", "lastMessageAt" DESC);
-INDEX ("tenantId", "status", "lastMessageAt" DESC);
-INDEX ("tenantId", "socialAccountId", "lastMessageAt" DESC);
-INDEX ("tenantId", "updatedAt" DESC);            -- delta polling
+UNIQUE ("tenantId", "socialAccountId", "peerId");
+INDEX ("tenantId", "lastMessageAt" DESC, "id" DESC);
+INDEX ("tenantId", "status", "lastMessageAt" DESC, "id" DESC);
+INDEX ("tenantId", "socialAccountId", "lastMessageAt" DESC, "id" DESC);
+INDEX ("tenantId", "assignedUserId", "status", "lastMessageAt" DESC, "id" DESC);
+INDEX ("tenantId", "revision");                  -- delta polling
 INDEX ("clientId") WHERE "clientId" IS NOT NULL;
 ```
 
-RLS `service_role_bypass` policy as in `023_betsy_v2_tenant_ui.sql`.
+`assignedUserId` writes must validate an active membership in the same tenant. RLS `service_role_bypass` policy as in `023_betsy_v2_tenant_ui.sql`.
 
 **`ChatMessage` — new nullable columns:**
 
@@ -164,36 +170,51 @@ RLS `service_role_bypass` policy as in `023_betsy_v2_tenant_ui.sql`.
 | `providerMessageId` text NULL | Promoted out of JSON |
 | `peerId` text NULL | Promoted out of JSON |
 | `messageType` text NULL | `text` · `image` · `audio` · `document` · `template` · `interactive` · … |
-| `deliveryStatus` text NULL | `sent` · `delivered` · `read` · `failed` (monotonic) |
-| `deliveryStatusAt` timestamp NULL, `errorCode` text NULL | |
+| `deliveryStatus` text NULL | inbound `received`; outbound `pending` · `sent` · `delivered` · `read` · `failed` (monotonic) |
+| `statusUpdatedAt`, `deliveredAt`, `readAt`, `failedAt` timestamp NULL, `errorCode` text NULL | |
+| `providerMediaId`, `mediaMimeType`, `mediaFilename` text NULL | Media reference. `mediaUrl` (if added) holds **only a Betsy-controlled Blob URL** — Meta media URLs expire and must never be persisted as durable links |
+| `duplicateOfMessageId` text NULL | Set by the dedup pass instead of deleting rows |
+| `createdAt`, `updatedAt` timestamp | `createdAt` DEFAULT now() for audit ordering |
 
 Indexes:
 
 ```sql
-INDEX ("conversationId", "sentAt" DESC);
+INDEX ("conversationId", "sentAt" DESC, "id" DESC);
 INDEX ("socialAccountId", "providerMessageId");                       -- 024 (non-unique, for backfill/dedup)
+INDEX ("tenantId", "createdAt", "id");
 UNIQUE INDEX ... ("socialAccountId", "providerMessageId")
   WHERE "providerMessageId" IS NOT NULL;                              -- 025, only after dedup verified
 ```
 
-**Backfill (idempotent script, batched, dry-run first):** `providerMessageId = metadata->>'providerMessageId'`; `peerId = inbound ? coalesce(from, waId) : to`; upsert `ChatConversation` per `(socialAccountId, peerId)` with aggregates; set `conversationId`. Rows with `peerId` NULL/`'unknown'` keep `conversationId` NULL (orphan bucket, never shown). Existing duplicates: keep earliest, set later rows' `providerMessageId = NULL` and `metadata.duplicateOf = <id>` (no deletes). `025` runs only after `verify-…` reports zero duplicate `(socialAccountId, providerMessageId)` pairs.
+**Backfill (idempotent, resumable TypeScript script; batched transactions; dry-run default):**
+1. Select `ChatMessage` rows with `conversationId IS NULL` in bounded batches ordered by `(sentAt, id)`.
+2. `providerMessageId = metadata->>'providerMessageId'`; inbound `peerId = coalesce(from, waId)`; outbound `peerId = coalesce(to, from)` (existing SMB/history echoes carry the peer in `from`).
+3. Rows with no derivable peer (or literal `'unknown'`) are **quarantined and reported**, never merged into an “unknown” conversation; `conversationId` stays NULL.
+4. `INSERT … ON CONFLICT` the conversation per `(tenantId, socialAccountId, peerId)`, then set `conversationId` on the batch.
+5. Recompute conversation aggregates set-wise at the end (`lastMessage*`, `inboundCount`, `messageCount`), excluding rows marked duplicate.
+6. Duplicates by `(socialAccountId, providerMessageId)`: keep the earliest `(sentAt, id)` as canonical; on later rows set `duplicateOfMessageId`, copy the old id into `metadata.audit`, and null `providerMessageId`. **No deletes.** Null provider ids stay allowed (emit a metric); never fingerprint-dedup by content+time — two legitimate messages can collide.
+7. Print an unresolved-rows report; safe to re-run after interruption.
+
+`scripts/apply-betsy-v2-additive-sql.mjs` and `verify-betsy-v2-additive-sql.mjs` must be **extended** (they hard-code `018`–`023`) with `024`/`025` entries plus expected tables/columns/indexes as postconditions. `025` runs only after the verify script reports zero duplicate `(socialAccountId, providerMessageId)` pairs and zero duplicate active `(platform, accountId)` assets.
 
 ### 3.2 Write path (webhook + send) — transactional dual-write
 
-- Webhook `storeMessage`: `INSERT ChatMessage … ON CONFLICT DO NOTHING` (Prisma `create` catching `P2002` on the 025 unique index) → if inserted, `upsert ChatConversation` (`lastMessageAt = GREATEST`, `unreadCount += 1` for inbound, `lastInboundAt`, preview) inside `$transaction`. Update `SocialAccount.lastWebhookAt`.
-- WA `statuses` → `UPDATE ChatMessage SET deliveryStatus … WHERE socialAccountId = ? AND providerMessageId = ?` (monotonic `sent < delivered < read`; `failed` records `errorCode`). No insert.
-- IG `is_echo` → store as outbound (parity with WA SMB echoes) when `providerMessageId` not already present (covers replies sent from the IG app). `suppressSoftAi: true`.
-- Send: same transaction; `unreadCount = 0`, `lastReadAt = now`, `lastOutboundAt = now`.
+- Webhook `storeMessage`, inside one `$transaction`: (1) upsert `ChatConversation` by `(tenantId, socialAccountId, peerId)`; (2) `INSERT ChatMessage … ON CONFLICT DO NOTHING` (Prisma `create` catching `P2002` on the 025 unique index); (3) only if a row was inserted, update aggregates (`lastMessage*`, `lastInboundAt`, `inboundCount += 1` for inbound, `messageCount`). Update `SocialAccount.lastWebhookAt`.
+- WA `statuses` → `UPDATE ChatMessage SET deliveryStatus … WHERE socialAccountId = ? AND providerMessageId = ?` (monotonic `pending < sent < delivered < read`; `failed` records `errorCode` + `failedAt`). No insert.
+- IG `is_echo` + IG `delivery`/`read` → ingested (parity with WA SMB echoes and statuses). Echoes are stored as outbound when `providerMessageId` is new (covers replies typed in the IG app during human takeover) and reconcile with API-created outbound rows through the unique index. `suppressSoftAi: true`.
+- Send: insert outbound row as `pending` → Graph call → update to `sent` with `providerMessageId` (or `failed`); `lastOutboundAt = now`; caller's `ChatConversationReadState.readInboundCount = inboundCount`.
 - Legacy `metadata.from/to/waId/providerMessageId` **kept** so old read paths keep working during the flag window.
+- Webhook acknowledgement order: verify HMAC → parse → persist messages (+ automation jobs) → 200. Processing that can be slow (Soft AI) never runs before the 200.
 
 ### 3.3 Read path — server-grouped conversations
 
 | Endpoint | Shape |
 |---|---|
-| `GET /api/chat/conversations` | `?platform=&socialAccountId=&status=&assigned=me\|none\|<userId>&tag=&q=&cursor=&limit≤50` → `{ conversations[], nextCursor }` sorted by `lastMessageAt desc`. Each item carries `channel: { id, platform, displayName, logoKey }`, `unreadCount`, `waWindowOpen`, `aiMode`, `assignedUser`. |
-| `GET /api/chat/conversations/delta?since=<updatedAt iso>&…filters` | Only rows with `updatedAt > since` (+ `serverNow`). Drives the 4–5 s poll: near-zero payload when idle. |
-| `GET /api/chat/conversations/:id/messages?cursor=&limit≤100&after=<id>` | Thread page; `after` for cheap tail refresh of the open thread. |
-| `PATCH /api/chat/conversations/:id` | `{ status?, tags?, assignedUserId?, markRead?: true, aiMode? }` (`update_sales`; `aiMode` keeps Soft RBAC). |
+| `GET /api/chat/conversations` | `?platform=&socialAccountId=&status=&assigned=me\|none\|<userId>&tag=&q=&cursor=<lastMessageAt,id>&limit≤50` → `{ conversations[], nextCursor }` sorted by `(lastMessageAt desc, id desc)` (deterministic composite cursor). Each item carries `channel: { id, platform, displayName, logoKey }`, `unreadCount` (for the caller), `waWindowOpen`, `aiMode`, `assignedUser`. |
+| `GET /api/chat/conversations/changes?afterRevision=N&limit≤200&…filters` | Rows with `revision > N` (+ `maxRevision`). Drives the 4–5 s poll: near-zero payload when idle; periodic full reconciliation every ~2 min. |
+| `GET /api/chat/conversations/:id/messages?before=<sentAt,id>&limit≤100&after=<sentAt,id>` | Thread page (`before` = load older); `after` = cheap tail refresh of the open thread. |
+| `POST /api/chat/conversations/:id/read` | Sets caller's `readInboundCount = inboundCount`, `lastReadAt`, `lastReadMessageId`. |
+| `PATCH /api/chat/conversations/:id` | `{ status?, tags?, assignedUserId?, aiMode? }` (`update_sales`; `aiMode` keeps Soft RBAC; assignee must be an active tenant member). |
 | `GET /api/chat/accounts` (extend) | Adds `displayName`, `providerDisplayName`, `providerUsername`, `displayPhoneNumber`, `tokenStatus`, `lastWebhookAt`, `logoKey`. |
 | `PATCH /api/chat/accounts/:id` | `{ displayName }` (`update_config`). |
 
@@ -201,7 +222,11 @@ Old `GET /api/chat/messages?socialAccountId` stays for one release behind the sa
 
 ### 3.4 Realtime delivery on Vercel
 
-Recommendation: **keep polling, make it delta-based** (Phase 4). SSE on Vercel serverless burns function duration; Supabase Realtime would require tenant-scoped RLS on `ChatConversation` with anon keys — a security surface we do not need yet. Delta polling at 5 s over `(tenantId, updatedAt)` index returns empty arrays most of the time; the open thread tail-polls with `after=<lastId>`. SSE/Realtime = **L**.
+Recommendation: **keep polling, make it revision-based and tenant-level** (Phase 4). SSE on Vercel serverless burns function duration; Supabase Realtime would require tenant-scoped RLS on `ChatConversation` with anon keys — a security surface we do not need at 5k–50k messages. One `changes?afterRevision` request per tenant every 4 s over the `(tenantId, revision)` index returns empty arrays most of the time; the open thread tail-polls with `after=<sentAt,id>`. Revisit SSE/Realtime only if sub-second delivery becomes mandatory (**L**).
+
+### 3.4b Soft AI durability
+
+Soft AI post-inbound work moves to a **separate `ChatAutomationJob` table** (`{ id, tenantId, conversationId, messageId, kind, status, attempts, availableAt, leaseToken, leaseExpiresAt, deliveryKey UNIQUE, … }`) that **copies** the `BotInboxMessage` lease/retry pattern (`FOR UPDATE SKIP LOCKED`, 45 s lease, unique delivery key) but shares **no tables, env, routes, or processors** with the staff bot. Webhook persists message + job before the 200; a cron (`/api/cron/chat-automation`) plus best-effort immediate dispatch processes jobs. Phase 4 unless webhook p95 or AI drop rate forces it earlier.
 
 ### 3.5 Client (data components only)
 
@@ -213,9 +238,9 @@ Recommendation: **keep polling, make it delta-based** (Phase 4). SSE on Vercel s
 
 ### 3.6 Self-serve connect hardening (Phase 5)
 
-- Server-side gate: `config/social/page.tsx` wrapped by `requirePermission('update_config')`; `/api/auth/whatsapp/exchange`, `/api/auth/instagram/{auth-url,callback,complete}` require `update_config` too (decision §9: OWNER only vs OWNER+ADMIN).
+- Server-side gate: `config/social/page.tsx` wrapped by `requirePermission('update_config')`; `/api/auth/whatsapp/{exchange,direct-oauth}`, `/api/auth/instagram/{auth-url,callback,complete,cancel}` require `update_config` too (decision §9: OWNER only vs OWNER+ADMIN). `direct-oauth` additionally persists `state` in an HttpOnly cookie (as the IG flow already does) and the callback validates it — or the route is removed if Embedded Signup makes it redundant (decision §9 #12).
 - IG: `isActive = subscribeOk` (parity with WA); surface “Re-suscribir”.
-- Persist `expiresAt` from `expires_in` (WA) and `debug_token` result (IG page tokens from long-lived user tokens are typically non-expiring — store what Meta says, not +60 d).
+- Persist `expiresAt` from `expires_in` (WA) and `debug_token` result (IG page tokens from long-lived user tokens are typically non-expiring — store what Meta says; today's +60 d is a Betsy assumption, not Meta data). Refresh where Meta supports it; otherwise force reauthorization before expiry.
 - Daily cron `/api/cron/chat-token-health`: per active account one light Graph call (`GET /{phone_number_id}?fields=id` / `GET /{ig_id}?fields=username`) → `tokenStatus`, `lastErrorCode`; UI banner “Reconectar WhatsApp · Forge”.
 - Unlink → soft-deactivate (`isActive=false`, `disconnectedAt`, tokens nulled). Reconnect of same `accountId` reactivates the same row → history preserved. Meta data-deletion callback unchanged (regulatory delete).
 
@@ -234,28 +259,31 @@ Phases 1–3 are the “function parity” core Rafael asked for; 4–5 make it 
 ### Phase 1 — Schema & idempotency foundation
 
 **Workstreams (ordered):**
-1. `supabase/migrations/024_chat_inbox_conversations.sql` (columns + `ChatConversation` + non-unique indexes + RLS) and `schema.prisma` mirror. Verified by `scripts/verify-betsy-v2-additive-sql.mjs` extension.
-2. `scripts/chat-inbox-backfill.ts` (dry-run default; batch 1k; idempotent; reports duplicates) + `scripts/chat-inbox-verify.ts` (row parity: every `ChatMessage` with peer has `conversationId`; aggregates match).
-3. Dual-write in `webhook/route.ts` + `send/route.ts` (transaction, `P2002` = duplicate). Statuses + IG echo ingestion in `meta-chat.ts`.
-4. `supabase/migrations/025_chat_message_provider_unique.sql` (partial unique) — applied only after verify = 0 dups.
-5. Webhook rate-limit rework: signature-valid requests bypass the per-IP limiter; per-`socialAccountId` limiter after parse (e.g. 600/min) with structured log on trip.
-6. Tests: `chat-conversation-upsert.test.ts` (aggregates, monotonic status), `chat-webhook-idempotency.test.ts` (same wamid twice → one row; concurrent → one row via unique), `meta-chat-webhook.test.ts` extended for statuses + IG echo.
+1. `supabase/migrations/024_chat_inbox_conversations.sql` (nullable columns + `ChatConversation` + `ChatConversationReadState` + `revision` sequence/trigger + non-unique indexes + RLS) and `schema.prisma` mirror. Extend `apply-`/`verify-betsy-v2-additive-sql.mjs` with `024`/`025` entries and postconditions.
+2. `scripts/chat-inbox-backfill.ts` (dry-run default; batch 1k; idempotent; resumable; quarantine report; duplicate pass) + `scripts/chat-inbox-verify.ts` (row parity: every `ChatMessage` with a peer has `conversationId`; aggregates match; zero duplicate provider pairs; zero duplicate active assets).
+3. Dual-write in `webhook/route.ts` + `send/route.ts` (transaction, `P2002` = duplicate; outbound `pending → sent/failed`). Statuses + IG echo/delivery/read ingestion in `meta-chat.ts`.
+4. `supabase/migrations/025_chat_inbox_uniques.sql` (partial unique on `(socialAccountId, providerMessageId)` + partial unique on active `(platform, accountId)`) — applied only after verify = 0 collisions.
+5. Webhook rate-limit rework: **HMAC verification first**; signature-valid traffic is never IP-throttled by the app (Meta fan-in shares egress IPs, and an attacker can currently exhaust the bucket before signature rejection); invalid-signature requests get the per-IP limiter; endpoint abuse is Vercel WAF's job. Structured log per event (`socialAccountId`, `durationMs`, `result`).
+6. Security quick-fix: `direct-oauth` requires `update_config` + persisted/validated `state` (or removal, §9 #12) — cheap and independent of schema.
+7. Tests: `chat-conversation-upsert.test.ts` (aggregates, `inboundCount` only on insert, monotonic status), `chat-webhook-idempotency.test.ts` (same wamid twice → one row; concurrent → one row via unique), `meta-chat-webhook.test.ts` extended for statuses + IG echo, `ig-wa-connect-security.test.ts` extended for `direct-oauth`.
 
 **Acceptance tests**
 
 | # | Given | When | Then |
 |---|---|---|---|
 | 1.1 | Prod-like DB with existing `ChatMessage` rows (Forge history) | `024` applied + backfill run twice | Both runs succeed; `ChatConversation` count == distinct `(socialAccountId, peerId)` excluding `unknown`; second run changes 0 rows |
-| 1.2 | Webhook receives the **same** WA `wamid` twice (Meta retry) | Both POSTs processed, including concurrently | Exactly one `ChatMessage`; `unreadCount` incremented once; second response `{ skipped: 1 }` |
-| 1.3 | Inbound WA message for peer P on account A | Stored | `ChatConversation(A,P).lastMessageAt = sentAt`, `unreadCount = 1`, `lastInboundAt` set, preview ≤ 120 chars |
-| 1.4 | Outbound send to P from A | 200 from Graph | Same conversation `unreadCount = 0`, `lastOutboundAt` set, `providerMessageId` promoted to column |
+| 1.2 | Webhook receives the **same** WA `wamid` twice (Meta retry) | Both POSTs processed, including concurrently | Exactly one `ChatMessage`; `inboundCount` incremented once; second response `{ skipped: 1 }` |
+| 1.3 | Inbound WA message for peer P on account A | Stored | `ChatConversation(A,P).lastMessageAt = sentAt`, `inboundCount = 1`, `lastInboundAt` set, preview ≤ 120 chars, `revision` increased |
+| 1.4 | Outbound send to P from A | 200 from Graph | Row goes `pending → sent` with `providerMessageId` column set; `lastOutboundAt` set; sender's read state `readInboundCount = inboundCount` |
 | 1.5 | WA `statuses` `delivered` then `read` for that wamid | Webhook | `deliveryStatus` ends `read`; a late `delivered` after `read` does not regress |
-| 1.6 | Coexistence history sync burst of 300 events in 60 s from one Meta IP with valid HMAC | Webhook | 0 × 429; all stored; per-IP limiter not applied to signature-valid traffic |
-| 1.7 | Same `phone_number_id` active in two tenants | Webhook | Still refused (`ambiguous_tenant_match`) — regression guard |
-| 1.8 | `npm run test:chat-harden`, `test:security`, `test:soft-ai`, `npm run build`, `npm run lint` | CI | Green; `test:soft-meta-wait-iron` proves no `WHATSAPP_*` usage |
+| 1.6 | Coexistence history sync burst of 300 events in 60 s from one Meta IP with valid HMAC | Webhook | 0 × 429; all stored; signature-valid traffic never IP-throttled |
+| 1.7 | Same `phone_number_id` active in two tenants | Webhook (pre-025) / connect (post-025) | Pre-025: still refused (`ambiguous_tenant_match`). Post-025: second activation fails with a Spanish “ya conectado en otro negocio” error; resolver stays as defense in depth |
+| 1.8 | Backfill finds a message with no derivable peer | Run | Row quarantined in report; no “unknown” conversation created |
+| 1.9 | Unauthenticated `GET /api/auth/whatsapp/direct-oauth` | — | 401 JSON; authenticated call sets `state` cookie; callback with mismatched `state` → 403 |
+| 1.10 | `npm run test:chat-harden`, `test:security`, `test:soft-ai`, `npm run build`, `npm run lint` | CI | Green; `test:soft-meta-wait-iron` proves no `WHATSAPP_*` usage |
 
-**Non-goals:** UI changes; removing legacy metadata; per-user read state.
-**Risks:** backfill on shared Supabase (mitigate: dry-run, batches, `lock_timeout`, run off-peak, verify script, human gate); unique index creation blocked by dups (mitigate: 025 separate + verify); transaction latency on webhook (target p95 < 400 ms).
+**Non-goals:** UI changes; removing legacy metadata; normalized tag tables.
+**Risks:** backfill on shared Supabase (mitigate: dry-run, batches, `lock_timeout`, run off-peak, verify script, human gate, fresh Blob backup); unique index creation blocked by dups (mitigate: 025 separate + verify); transaction latency on webhook (target p95 < 400 ms); deploying code that assumes `024` before SQL is applied (mitigate: PR-1 code is behind column-existence guards or ships only after apply — see §5).
 
 ### Phase 2 — Conversation API + inbox reads (feature-flagged)
 
@@ -274,7 +302,8 @@ Phases 1–3 are the “function parity” core Rafael asked for; 4–5 make it 
 | 2.1 | Tenant with 2 WA + 1 IG accounts, 40 conversations | `GET /conversations?limit=20` then `cursor` | 20 + 20 distinct, sorted by `lastMessageAt desc`, no gaps/dups across a concurrent inbound |
 | 2.2 | Filter `socialAccountId=B` | List | Only B’s conversations; each item’s `channel.id == B` |
 | 2.3 | Agent 1 sets status `hecho` + tag `VIP` in browser 1 | Agent 2 polls in browser 2 | Sees `hecho` + `VIP` within ≤ 5 s |
-| 2.4 | Conversation with `unreadCount = 3` | Agent opens thread (`markRead`) | `unreadCount = 0` for all agents; list badge clears |
+| 2.4 | Conversation with 3 unread for agent 1 and agent 2 | Agent 1 opens thread (`POST …/read`) | Agent 1 unread = 0; agent 2 still 3 (per-user); a reply by agent 2 sets agent 2 to 0 too |
+| 2.4b | Tenant with 500 conversations | Cutover baseline chosen in §9 #3 | Either all members show 0 unread (seeded) or history shows as unread — matches the decision, no mixed state |
 | 2.5 | Tenant B calls `PATCH /conversations/<id of tenant A>` | — | 404 (not 403 leaking existence) |
 | 2.6 | Legacy `agentState[key] = 'human'` in feature-flag config, no column | Inbound | AI does **not** reply (fallback read honored) |
 | 2.7 | New WA peer `+50661043737` matches `Client.normalizedPhone` | Conversation created | `clientId` set; rail “Detalle” shows client name |
@@ -310,14 +339,14 @@ Phases 1–3 are the “function parity” core Rafael asked for; 4–5 make it 
 
 ### Phase 4 — Scale & reliability (≥ 5k → 50k messages)
 
-**Workstreams:** delta polling; thread tail fetch; windowing in thread; template cache (per WABA, 5 min, Upstash/in-memory); durable Soft AI job (persist-then-process with lease, modeled on `BotInboxMessage`) if webhook p95 > 1 s or AI drop observed; media rendering for image/audio/document via Graph media URL proxy (S); load-test seed script (50k msgs, 2k conversations, 5 accounts) on local Postgres; observability: structured log per webhook with `socialAccountId`, `durationMs`, `result`.
+**Workstreams:** revision-based `changes` polling (one request per tenant) + periodic full reconciliation; thread tail fetch; windowing in thread; template cache (per WABA, 5 min, Upstash/in-memory); `ChatAutomationJob` durable Soft AI queue (§3.4b) — mandatory here, earlier if webhook p95 > 1 s or AI drops observed; media rendering for image/audio/document via `providerMediaId` → Betsy Blob cache (never persist Meta URLs) (S); load-test seed script (50k msgs, 2k conversations, 5 accounts) on local Postgres; observability: structured log per webhook with `socialAccountId`, `durationMs`, `result`; replay fixtures for signed webhook payloads.
 
 **Acceptance tests**
 
 | # | Given | When | Then |
 |---|---|---|---|
 | 4.1 | Local Postgres seeded 50k msgs / 2k conversations / 5 accounts | `GET /conversations?limit=30` | p95 < 150 ms (EXPLAIN uses `(tenantId, lastMessageAt)` index) |
-| 4.2 | Same | `GET /conversations/delta?since=now-5s` idle | p95 < 60 ms; payload < 1 KB |
+| 4.2 | Same | `GET /conversations/changes?afterRevision=<max>` idle | p95 < 60 ms; payload < 1 KB |
 | 4.3 | Same | Open a 3k-message thread | First paint ≤ 100 msgs; “cargar anteriores” pages by cursor; no > 500-node DOM growth per page |
 | 4.4 | Inbox open 10 min idle | Network | ≤ 1 request / 5 s regardless of account count (was N/4 s) |
 | 4.5 | 500 webhook events in 60 s across 5 accounts | Vercel | 0 dups, 0 429s, p95 handler < 800 ms |
@@ -361,7 +390,7 @@ Only after Rafael GO on the 11-point brief. By then the data layer (Phases 1–4
 | **PR-4 “scale”** | Phase 4 | PR-2 | Load-test report attached |
 | **PR-5 “self-serve”** | Phase 5 | PR-3 | RBAC decision; docs fix |
 
-PR-2 and PR-3 may be merged into one fat PR if preferred; PR-1 must stay separate because its SQL needs the human apply gate before dependent code ships.
+PR-2 and PR-3 may be merged into one fat PR if preferred; PR-1 must stay separate because its SQL needs the human apply gate before dependent code ships. Two distinct production gates are non-negotiable: **gate A** = apply `024` → deploy dual-write code → run backfill; **gate B** = verify zero collisions → apply `025` → enable constraint-based dedup. Never deploy code that assumes `024` columns before `024` is applied.
 
 ---
 
@@ -369,12 +398,12 @@ PR-2 and PR-3 may be merged into one fat PR if preferred; PR-1 must stay separat
 
 | Layer | Today | Target |
 |---|---|---|
-| **DB** | Peer/provider lookups via JSON path (seq scan); 2 indexes | Promoted columns + composite indexes (§3.1); partial unique for idempotency; `updatedAt` index for delta |
-| **Webhook** | check-then-insert; 120/min per IP | `ON CONFLICT` + transaction; signature-first limiter, per-account limiter; p95 < 400 ms; statuses as updates |
-| **API** | `messages?socialAccountId&limit=100` per account | `conversations` (cursor ≤ 50), `delta?since`, `:id/messages` (cursor ≤ 100, `after`) |
-| **Client** | N requests / 4 s; regroup all; localStorage state | 1 delta request / 5 s + 1 thread tail; server-grouped; windowed thread |
-| **Idempotency** | JSON path dedup, race-prone | Unique `(socialAccountId, providerMessageId)`; echo/send collision handled; duplicate → `skipped` |
-| **Soft AI** | fire-and-forget | Optional persist-then-process with lease (Phase 4 trigger criteria) |
+| **DB** | Peer/provider lookups via JSON path (seq scan); 2 indexes | Promoted columns + composite `(…, lastMessageAt DESC, id DESC)` indexes (§3.1); partial unique for idempotency; `(tenantId, revision)` for changes feed |
+| **Webhook** | 120/min per-IP limiter **before** HMAC; check-then-insert | HMAC first; valid traffic never IP-throttled; `ON CONFLICT` + transaction; p95 < 400 ms; statuses as updates; persist-before-200 |
+| **API** | `messages?socialAccountId&limit=100` per account | `conversations` (composite cursor ≤ 50), `changes?afterRevision`, `:id/messages` (`before`/`after` composite cursors ≤ 100) |
+| **Client** | N requests / 4 s; regroup all; localStorage state | 1 changes request / 4 s per tenant + 1 thread tail; server-grouped; windowed thread (> ~200 rows) |
+| **Idempotency** | JSON path dedup, race-prone | Unique `(socialAccountId, providerMessageId)`; echo/send collision handled; duplicate → `skipped`; null ids allowed + metric |
+| **Soft AI** | fire-and-forget | `ChatAutomationJob` lease queue, separate from staff bot tables |
 | **Templates** | Graph per send/open | 5-min cache per WABA; APPROVED gate unchanged |
 | **Observability** | console logs | Structured per-webhook log + `WebhookLog` retained; p95 dashboards via Vercel logs |
 
@@ -434,7 +463,7 @@ An agent looking at any row or thread can name the channel in ≤ 1 s without op
 
 1. **Plan GO** for Phases 1–3 as the first implementation tranche (Phases 4–5 planned, GO separately).
 2. **Conversation status vocabulary**: keep Soft `nuevo / en_curso / hecho` in DB (recommended) vs Respond.io-style `open / pending / closed`.
-3. **Unread semantics**: tenant-level unread (recommended for v1) vs per-user unread (later).
+3. **Unread semantics**: per-user read state via `ChatConversationReadState` (recommended, Advisor-endorsed) vs tenant-level counter; plus the **cutover baseline** — seed all active members as read at cutover (recommended) or expose history as unread.
 4. **localStorage state**: import existing status/tags into DB on first v2 load (recommended) vs start clean.
 5. **Self-serve RBAC**: who may connect/rename/unlink channels — OWNER only (matches UI today) vs OWNER + ADMIN (matches `/api/social/*` today).
 6. **Unlink behavior**: soft-deactivate keeping history (recommended) vs today’s hard delete; confirm docs fix.
@@ -443,6 +472,10 @@ An agent looking at any row or thread can name the channel in ≤ 1 s without op
 9. **Pilot tenant** for `chat_inbox_v2` flag: Forge’s tenant first.
 10. **IG App Review Submit**: separate GO (Meta ops; not blocking WA phases).
 11. **Soft UX redesign** remains HOLD; confirm Phase 6 waits for the 11-point brief GO.
+12. **`direct-oauth` fallback route**: harden (auth + validated `state`) vs remove now that Embedded Signup + coexistence cover WA onboarding.
+13. **Global active-asset uniqueness**: one Meta phone/IG asset may be active in exactly one tenant (partial unique in `025`) — confirms today’s runtime refusal as a DB rule.
+14. **Realtime strategy**: 4 s revision polling per tenant as v1 (no SSE / Supabase Realtime).
+15. **Durable CRM automation queue** (`ChatAutomationJob`) separate from the staff bot tables — confirm this does not conflict with the HARD LOCK reading (it copies the pattern, shares nothing).
 
 ---
 
@@ -452,6 +485,18 @@ An agent looking at any row or thread can name the channel in ≤ 1 s without op
 - Correct “Missing vs Respond.io”: WA template path **exists**; 24h window UI **exists** (client-side); tokens **are encrypted**. Still missing: Conversation model, names/logos, statuses, health, assignment, shared tags, client link.
 - Correct `social-accounts.mdx`: unlink currently **deletes** history (to be changed in Phase 5).
 
-## 11. Advisor (Sol) review
+## 11. Advisor (Sol `gpt-5.6-sol-high`) plan-mode review — 2026-09-21
 
-_Pending — Sol `gpt-5.6-sol-high` plan-mode review runs in parallel; findings and any corrections will be appended here before this doc is marked ready._
+**Assessment:** extend, do not rebuild. Meta parsing, encrypted credentials, tenant-scoped APIs, Embedded Signup/coexistence, cursor pagination and the ambiguity refusal are sound foundations. Structural debts confirmed: (1) conversation identity only in JSON/client grouping, (2) provider ids and delivery state lack indexed, race-safe persistence, (3) onboarding lacks consistent server RBAC, subscription health and token lifecycle. Polling scales by account instead of tenant.
+
+**Corrections to the Executor's draft (verified in code and folded into §1.2 / §3 / Phase 1):**
+- `GET /api/auth/whatsapp/direct-oauth` is **fully unauthenticated** and its CSRF `state` is never persisted/validated — not merely “tenant-session only” (`direct-oauth/route.ts:14-50`).
+- The IG 60-day `expiresAt` is a Betsy assumption, not Meta data.
+- `apply-betsy-v2-additive-sql.mjs` hard-codes `018`–`023`; `024`/`025` need explicit entries + postconditions.
+- The per-IP webhook limiter runs **before** HMAC — attacker can exhaust it before signature rejection; Meta fan-in shares egress IPs. Verify HMAC first; never app-throttle valid signed traffic.
+
+**Adopted recommendations:** per-user `ChatConversationReadState` with `inboundCount − readInboundCount` (no message counting); `revision` sequence + `changes?afterRevision` feed instead of `updatedAt` deltas; deterministic composite cursors `(lastMessageAt, id)` / `(sentAt, id)`; conversation unique `(tenantId, socialAccountId, peerId)`; partial global unique on active `(platform, accountId)`; backfill quarantines peer-less rows (no “unknown” conversation), keeps earliest canonical row and marks later rows `duplicateOfMessageId` (no deletes, no content fingerprinting); outbound `pending → sent/delivered/read/failed`; `providerMediaId` with Betsy-Blob-only `mediaUrl`; `ChatAutomationJob` copying the `BotInboxMessage` lease pattern while sharing nothing with the staff bot; persist-before-200; assignee membership validation; unlink = soft-deactivate; `debug_token`-sourced expiry; two production gates (`024`+code+backfill, then `025`).
+
+**Deferred / kept as Executor default with rationale:** conversation status vocabulary stays a Rafael decision (§9 #2: Soft `nuevo/en_curso/hecho` vs Advisor's `open/pending/snoozed/closed`); tags stay `text[]` in v1 (Soft has 3 fixed tags) with normalized tag tables as the **L** upgrade; SSE / Supabase Realtime remain **L**.
+
+**Advisor phase ordering matches §4** (foundation SQL → integrity/uniqueness → API cutover → identity/connect naming → inbox parity → scale/reliability → self-serve Meta → visual refresh only after HOLD removal), with RBAC/OAuth hardening allowed to ship early (placed in Phase 1 item 6).

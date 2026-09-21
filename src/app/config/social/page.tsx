@@ -205,7 +205,7 @@ export default function SocialConfigPage() {
         setConnectingWhatsApp(false)
         return
       default: {
-        const _exhaustive: never = decision.reason
+        const _exhaustive: never = decision
         return _exhaustive
       }
     }

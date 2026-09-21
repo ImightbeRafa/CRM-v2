@@ -100,68 +100,129 @@ export async function persistJob(input: {
   }
 }
 
+async function supersedeOlderJobs(conversationId: string, keepId: string) {
+  await prisma.chatAutomationJob.updateMany({
+    where: {
+      conversationId,
+      id: { not: keepId },
+      status: { in: ['pending', 'retry'] },
+    },
+    data: {
+      status: 'completed',
+      lastErrorCode: 'SUPERSEDED',
+      processedAt: new Date(),
+      payload: Prisma.DbNull,
+      leaseToken: null,
+      leaseExpiresAt: null,
+    },
+  })
+}
+
+async function deferJob(id: string, delayMs = 5_000) {
+  await prisma.chatAutomationJob.updateMany({
+    where: { id, status: { in: ['pending', 'retry', 'processing'] } },
+    data: {
+      status: 'pending',
+      availableAt: new Date(Date.now() + delayMs),
+      leaseToken: null,
+      leaseExpiresAt: null,
+    },
+  })
+}
+
 async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJob[]> {
   const leaseToken = randomUUID()
   const leaseExpiresAt = new Date(Date.now() + LEASE_MS)
-  // NOT EXISTS preserves per-conversation order across serverless instances.
-  // SKIP LOCKED lets concurrent claimants work on different conversations.
-  const rows = await prisma.$queryRaw<
-    Array<{
-      id: string
-      tenantId: string
-      conversationId: string
-      messageId: string
-      socialAccountId: string
-      peerId: string
-      kind: string
-      deliveryKey: string
-      payload: unknown
-      attempts: number
-      leaseToken: string
-    }>
-  >(Prisma.sql`
-    WITH candidate AS (
-      SELECT current."id"
-      FROM "ChatAutomationJob" current
-      WHERE (${id || null}::text IS NULL OR current."id" = ${id || null})
-        AND current."availableAt" <= CURRENT_TIMESTAMP
-        AND EXISTS (
-          SELECT 1
-          FROM "TenantFeatureFlag" flag
-          WHERE flag."tenantId" = current."tenantId"
-            AND flag."scope" = current."tenantId"
-            AND flag."key" = 'soft_tenant_ai_v1'
-            AND flag."enabled" = true
-        )
-        AND (
-          current."status" IN ('pending', 'retry')
-          OR (current."status" = 'processing' AND current."leaseExpiresAt" <= CURRENT_TIMESTAMP)
-        )
-        AND NOT EXISTS (
-          SELECT 1
-          FROM "ChatAutomationJob" older
-          WHERE older."conversationId" = current."conversationId"
-            AND (older."createdAt", older."id") < (current."createdAt", current."id")
-            AND older."status" IN ('pending', 'retry', 'processing')
-        )
-      ORDER BY current."createdAt" ASC, current."id" ASC
-      FOR UPDATE SKIP LOCKED
-      LIMIT ${limit}
-    )
-    UPDATE "ChatAutomationJob" job
-    SET "status" = 'processing',
-        "attempts" = job."attempts" + 1,
-        "leaseToken" = ${leaseToken},
-        "leaseExpiresAt" = ${leaseExpiresAt},
-        "processingStartedAt" = CURRENT_TIMESTAMP,
-        "updatedAt" = CURRENT_TIMESTAMP
-    FROM candidate
-    WHERE job."id" = candidate."id"
-    RETURNING job."id", job."tenantId", job."conversationId", job."messageId",
-      job."socialAccountId", job."peerId", job."kind", job."deliveryKey",
-      job."payload", job."attempts", job."leaseToken"
-  `)
-  return rows
+  // Prefer the newest pending job per conversation; older siblings are
+  // SUPERSEDED after a successful claim (A1 single-flight / burst coalesce).
+  // Single-flight partial unique on status=processing defers concurrent claimants.
+  try {
+    const rows = await prisma.$queryRaw<
+      Array<{
+        id: string
+        tenantId: string
+        conversationId: string
+        messageId: string
+        socialAccountId: string
+        peerId: string
+        kind: string
+        deliveryKey: string
+        payload: unknown
+        attempts: number
+        leaseToken: string
+      }>
+    >(Prisma.sql`
+      WITH candidate AS (
+        SELECT current."id", current."conversationId"
+        FROM "ChatAutomationJob" current
+        WHERE (${id || null}::text IS NULL OR current."id" = ${id || null})
+          AND current."availableAt" <= CURRENT_TIMESTAMP
+          AND EXISTS (
+            SELECT 1
+            FROM "TenantFeatureFlag" flag
+            WHERE flag."tenantId" = current."tenantId"
+              AND flag."scope" = current."tenantId"
+              AND flag."key" = 'soft_tenant_ai_v1'
+              AND flag."enabled" = true
+          )
+          AND (
+            current."status" IN ('pending', 'retry')
+            OR (current."status" = 'processing' AND current."leaseExpiresAt" <= CURRENT_TIMESTAMP)
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "ChatAutomationJob" newer
+            WHERE newer."conversationId" = current."conversationId"
+              AND (newer."createdAt", newer."id") > (current."createdAt", current."id")
+              AND newer."status" IN ('pending', 'retry')
+              AND newer."availableAt" <= CURRENT_TIMESTAMP
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "ChatAutomationJob" inflight
+            WHERE inflight."conversationId" = current."conversationId"
+              AND inflight."status" = 'processing'
+              AND inflight."leaseExpiresAt" > CURRENT_TIMESTAMP
+              AND inflight."id" <> current."id"
+          )
+        ORDER BY current."createdAt" DESC, current."id" DESC
+        FOR UPDATE SKIP LOCKED
+        LIMIT ${limit}
+      )
+      UPDATE "ChatAutomationJob" job
+      SET "status" = 'processing',
+          "attempts" = job."attempts" + 1,
+          "leaseToken" = ${leaseToken},
+          "leaseExpiresAt" = ${leaseExpiresAt},
+          "processingStartedAt" = CURRENT_TIMESTAMP,
+          "updatedAt" = CURRENT_TIMESTAMP
+      FROM candidate
+      WHERE job."id" = candidate."id"
+      RETURNING job."id", job."tenantId", job."conversationId", job."messageId",
+        job."socialAccountId", job."peerId", job."kind", job."deliveryKey",
+        job."payload", job."attempts", job."leaseToken"
+    `)
+
+    for (const row of rows) {
+      await supersedeOlderJobs(row.conversationId, row.id)
+    }
+    return rows
+  } catch (error) {
+    // Partial unique ChatAutomationJob_conversation_single_flight_idx
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      if (id) await deferJob(id)
+      return []
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    if (/ChatAutomationJob_conversation_single_flight|unique/i.test(message)) {
+      if (id) await deferJob(id)
+      return []
+    }
+    throw error
+  }
 }
 
 export function claimBatch(limit = 2) {

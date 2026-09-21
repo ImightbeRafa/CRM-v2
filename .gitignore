@@ -14,6 +14,7 @@ supabase/migrations/*
 !supabase/migrations/024_chat_inbox_conversations.sql
 !supabase/migrations/025_chat_inbox_uniques.sql
 !supabase/migrations/026_chat_automation_jobs.sql
+!supabase/migrations/027_chat_agents.sql
 # Testing
 coverage/
 scripts

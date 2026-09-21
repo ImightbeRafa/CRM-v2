@@ -67,18 +67,20 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
     assert.ok(!manifest.DEFAULT_APPLY_FILES.includes('026'))
   })
 
-  it('claim uses FOR UPDATE SKIP LOCKED, 45s lease, and per-conversation ordering', () => {
+  it('claim uses FOR UPDATE SKIP LOCKED, 45s lease, and per-conversation single-flight', () => {
     const queue = read('src/lib/soft-ai/automation-queue.ts')
     assert.match(queue, /FOR UPDATE SKIP LOCKED/)
     assert.match(queue, /LEASE_MS = 45_000/)
     assert.equal(LEASE_MS, 45_000)
-    assert.match(queue, /older\."conversationId" = current\."conversationId"/)
+    assert.match(queue, /newer\."conversationId" = current\."conversationId"/)
     assert.match(queue, /NOT EXISTS/)
     assert.match(queue, /soft_tenant_ai_v1/)
     assert.match(queue, /leaseExpiresAt/)
     assert.match(queue, /MAX_ATTEMPTS = 5/)
     assert.equal(MAX_ATTEMPTS, 5)
     assert.match(queue, /status: ambiguous \? 'ambiguous' : terminal \? 'failed' : 'retry'/)
+    assert.match(queue, /SUPERSEDED/)
+    assert.match(queue, /ORDER BY current\."createdAt" DESC/)
     // Expired processing lease is reclaimable (retry after kill mid-run)
     assert.match(
       queue,
@@ -92,10 +94,11 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
     assert.match(queue, /WITH candidate AS/)
     assert.match(queue, /FOR UPDATE SKIP LOCKED/)
     assert.match(queue, /LIMIT \$\{limit\}/)
-    // Per-conversation serialization prevents two Soft AI replies racing one peer
+    // Prefer newest pending; inflate older siblings SUPERSEDED; block if another processing
+    assert.match(queue, /inflight\."status" = 'processing'/)
     assert.match(
       queue,
-      /older\."status" IN \('pending', 'retry', 'processing'\)/,
+      /newer\."status" IN \('pending', 'retry'\)/,
     )
   })
 

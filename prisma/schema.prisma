@@ -63,6 +63,9 @@ model Tenant {
   chatConversations ChatConversation[]
   chatConversationReadStates ChatConversationReadState[]
   chatAutomationJobs ChatAutomationJob[]
+  chatAgents ChatAgent[]
+  chatAgentBindings ChatAgentBinding[]
+  chatAgentTurns ChatAgentTurn[]
   productOptionSets ProductOptionSet[]
   productOptions ProductOption[]
   businessInfo   BusinessInfo[]
@@ -870,6 +873,8 @@ model SocialAccount {
   messages       ChatMessage[]
   conversations  ChatConversation[]
   automationJobs ChatAutomationJob[]
+  agentBindings  ChatAgentBinding[]
+  agentTurns     ChatAgentTurn[]
 
   @@unique([platform, accountId, tenantId])
   @@index([tenantId])
@@ -909,6 +914,7 @@ model ChatConversation {
   messages       ChatMessage[]
   readStates     ChatConversationReadState[]
   automationJobs ChatAutomationJob[]
+  agentTurns     ChatAgentTurn[]
 
   @@unique([tenantId, socialAccountId, peerId])
   @@index([tenantId, lastMessageAt(sort: Desc), id(sort: Desc)], map: "ChatConversation_tenantId_lastMessageAt_id_idx")
@@ -980,12 +986,106 @@ model ChatMessage {
   duplicateOf    ChatMessage?      @relation("ChatMessageDuplicates", fields: [duplicateOfMessageId], references: [id], onDelete: SetNull)
   duplicates     ChatMessage[]     @relation("ChatMessageDuplicates")
   automationJobs ChatAutomationJob[]
+  agentTurns     ChatAgentTurn[]
 
   @@index([tenantId, socialAccountId, sentAt(sort: Desc)])
   @@index([tenantId])
   @@index([conversationId, sentAt(sort: Desc), id(sort: Desc)], map: "ChatMessage_conversationId_sentAt_id_idx")
   @@index([socialAccountId, providerMessageId], map: "ChatMessage_socialAccountId_providerMessageId_idx")
   @@index([tenantId, createdAt, id], map: "ChatMessage_tenantId_createdAt_id_idx")
+}
+
+// Soft Agent Layer (A1) — first-class agents, bindings, durable turns.
+// SQL 027 is gated; do not assume tables exist until BETSY_V2_APPLY_FILES=027.
+model ChatAgent {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  name               String
+  emoji              String   @default("✨")
+  description        String?
+  systemInstructions String
+  tonePreset         String   @default("warm_concise")
+  model              String   @default("grok-4.6")
+  operationMode      String   @default("ai_suggest")
+  enabledTools       String[] @default([])
+  paymentAlwaysHuman Boolean  @default(true)
+  status             String   @default("draft")
+  version            Int      @default(1)
+  createdBy          String?
+  updatedBy          String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bindings ChatAgentBinding[]
+  turns    ChatAgentTurn[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+}
+
+model ChatAgentBinding {
+  id              String   @id @default(cuid())
+  tenantId        String
+  agentId         String
+  scope           String
+  socialAccountId String?
+  isActive        Boolean  @default(true)
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent         ChatAgent      @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount? @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  turns         ChatAgentTurn[]
+
+  @@index([tenantId, socialAccountId, isActive])
+  @@index([tenantId, agentId])
+}
+
+model ChatAgentTurn {
+  id                    String    @id @default(cuid())
+  tenantId              String
+  conversationId        String
+  socialAccountId       String
+  agentId               String
+  bindingId             String?
+  triggerMessageId      String?
+  automationDeliveryKey String    @unique
+  mode                  String
+  model                 String
+  agentVersion          Int
+  status                String
+  skipReason            String?
+  outputText            String?
+  outputHash            String?
+  outputPurgedAt        DateTime?
+  toolTrace             Json?
+  inputTokens           Int       @default(0)
+  cachedInputTokens     Int       @default(0)
+  outputTokens          Int       @default(0)
+  reasoningTokens       Int       @default(0)
+  estimatedCostMicros   BigInt    @default(0)
+  pricingVersion        String?
+  latencyMs             Int?
+  fallbackUsed          Boolean   @default(false)
+  errorCode             String?
+  completedAt           DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation    ChatConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  socialAccount   SocialAccount     @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  agent           ChatAgent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  binding         ChatAgentBinding? @relation(fields: [bindingId], references: [id], onDelete: SetNull)
+  triggerMessage  ChatMessage?      @relation(fields: [triggerMessageId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([agentId, createdAt])
+  @@index([conversationId, createdAt])
 }
 
 // Soft AI durable inbound jobs. Copies BotInboxMessage lease/retry semantics

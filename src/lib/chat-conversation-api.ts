@@ -97,6 +97,10 @@ export type ChatConversationListItemDto = {
     address: string | null
   }
   clientId: string | null
+  agentLabel?: string | null
+  agentEmoji?: string | null
+  agentStateDot?: 'IA' | 'Sug' | 'Hum' | null
+  pendingSuggestionText?: string | null
 }
 
 export type ChatMessageItemDto = {

@@ -29,6 +29,11 @@ export interface SoftConversation extends ChatConversation {
   orderId?: string | null
   /** Local Soft demo seed only — never persisted to ChatMessage. */
   isDemo?: boolean
+  /** Soft Agent Layer trust labels (optional; A1). */
+  agentLabel?: string | null
+  agentEmoji?: string | null
+  agentStateDot?: 'IA' | 'Sug' | 'Hum' | null
+  pendingSuggestionText?: string | null
 }
 
 export interface SoftSocialAccount {

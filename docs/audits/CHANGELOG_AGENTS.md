@@ -1,3 +1,12 @@
+## 2026-09-21 — A1 Soft Agent Layer runtime (027 gated, flag off)
+
+- Additive `027_chat_agents.sql` + Prisma mirror + manifest (NOT applied live).
+- Soft-only `src/lib/soft-ai/llm/**`, `agent-resolver`, `agent-claim-gates`, `agent-turn`,
+  wired into Phase 4 `automation-processor` (legacy path when flag off).
+- Flag `chat_agent_layer_v1` default off; Forge WA allowlist only; `aiFullUnlock` empty.
+- `/config/agentes` Spanish UI (Probar, panic, audit); trust labels in SoftThreadPane/list.
+- Soft chrome + staff bot paths untouched. Tests: `test:soft-ai-agent`.
+
 ## 2026-09-21 — Phase 4 scale bench numbers + seed fix + render ≤100
 
 - Fixed `scripts/chat-scale-seed.ts` message index double-count across batches

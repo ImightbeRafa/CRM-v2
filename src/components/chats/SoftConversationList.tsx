@@ -302,6 +302,15 @@ export function SoftConversationList({
                           ) : null}
                           <ChannelLogo platform={conv.platform} size={12} className="shrink-0" />
                           <span className="truncate">{conv.accountLabel}</span>
+                          {conv.agentEmoji || conv.agentStateDot ? (
+                            <span
+                              className="ml-1 shrink-0 rounded bg-slate-100 px-1 py-px text-[9px] font-semibold text-slate-600"
+                              data-testid="soft-agent-dot"
+                            >
+                              {conv.agentEmoji ? `${conv.agentEmoji} ` : ''}
+                              {conv.agentStateDot || ''}
+                            </span>
+                          ) : null}
                         </p>
                         {unread > 0 ? (
                           <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#5b6cff] px-1 text-[10px] font-bold text-white">

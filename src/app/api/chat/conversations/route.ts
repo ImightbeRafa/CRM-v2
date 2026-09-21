@@ -7,6 +7,7 @@ import {
   parsePageLimit,
 } from '@/lib/cursor-pagination'
 import { mapConversationToListDto } from '@/lib/chat-conversation-api'
+import { enrichConversationDtosWithAgents } from '@/lib/soft-ai/agent-inbox-enrich'
 import {
   buildConversationListWhere,
   conversationListCursorScope,
@@ -73,8 +74,13 @@ export async function GET(request: NextRequest) {
 
     const hasMore = rows.length > limit
     const page = hasMore ? rows.slice(0, limit) : rows
-    const conversations = page.map((row) =>
-      mapConversationToListDto(mapRawConversationRow(row as Parameters<typeof mapRawConversationRow>[0])),
+    const conversations = await enrichConversationDtosWithAgents(
+      auth.tenantId,
+      page.map((row) =>
+        mapConversationToListDto(
+          mapRawConversationRow(row as Parameters<typeof mapRawConversationRow>[0]),
+        ),
+      ),
     )
 
     const last = page[page.length - 1]

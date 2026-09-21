@@ -15,6 +15,8 @@ export const STATISTICS_REVENUE_V2_FLAG = 'statistics_revenue_v2';
 export const SOFT_TENANT_AI_V1_FLAG = 'soft_tenant_ai_v1';
 /** Server-grouped Soft inbox reads (PR-2) — default off; never preview-unlocked. */
 export const CHAT_INBOX_V2_FLAG = 'chat_inbox_v2';
+/** Soft Agent Layer (A1) — default off; never preview-unlocked. */
+export const CHAT_AGENT_LAYER_V1_FLAG = 'chat_agent_layer_v1';
 
 const PREVIEW_UNLOCKED_KEYS = new Set([
   ORDER_LIFECYCLE_V2_FLAG,
@@ -153,6 +155,19 @@ export async function shouldUseSoftTenantAiV1(tenantId: string) {
 /** Chat inbox v2 list/delta API + client — explicit tenant flag only. */
 export async function shouldUseChatInboxV2(tenantId: string) {
   return isTenantFeatureEnabled(tenantId, CHAT_INBOX_V2_FLAG);
+}
+
+/** Soft Agent Layer — default off; never preview-unlocked. */
+export async function shouldUseChatAgentLayerV1(tenantId: string) {
+  return isTenantFeatureEnabled(tenantId, CHAT_AGENT_LAYER_V1_FLAG);
+}
+
+export async function readChatAgentLayerConfig(tenantId: string) {
+  const flag = await readTenantFlag(tenantId, CHAT_AGENT_LAYER_V1_FLAG);
+  return {
+    enabled: flag.enabled,
+    config: flag.config,
+  };
 }
 
 export async function readSoftTenantAiConfig(tenantId: string) {

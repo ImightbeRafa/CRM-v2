@@ -122,6 +122,7 @@ export function canAccessRoute(role: Role, route: string): boolean {
     '/estadisticas': 'view_statistics',
     '/config': 'view_config',
     '/config/social': 'update_config',
+    '/config/agentes': 'view_config',
   };
 
   const requiredPermission = routePermissions[route];
@@ -247,6 +248,13 @@ export const apiPermissions: Record<string, Permission> = {
   'POST /api/social/subscribe': 'update_config',
   'POST /api/social/link': 'update_config',
   'POST /api/chat/soft-ai/control': 'update_sales',
+  'GET /api/chat/agents': 'view_config',
+  'POST /api/chat/agents': 'update_config',
+  'GET /api/chat/agents/*': 'view_config',
+  'PATCH /api/chat/agents/*': 'update_config',
+  'POST /api/chat/agents/*/test': 'update_config',
+  'POST /api/chat/agents/*/panic': 'update_config',
+  'POST /api/chat/agents/*/bindings': 'update_config',
   'GET /api/chat/conversations': 'update_sales',
   'GET /api/chat/conversations/changes': 'update_sales',
   'GET /api/chat/conversations/*/messages': 'update_sales',

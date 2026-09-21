@@ -12,6 +12,7 @@ export const FILES = {
   '024': '024_chat_inbox_conversations.sql',
   '025': '025_chat_inbox_uniques.sql',
   '026': '026_chat_automation_jobs.sql',
+  '027': '027_chat_agents.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -25,6 +26,7 @@ export const EXPECTED_TABLES = {
   '023': ['TenantSetupProgress'],
   '024': ['ChatConversation', 'ChatConversationReadState'],
   '026': ['ChatAutomationJob', 'ChatAutomationDelivery'],
+  '027': ['ChatAgent', 'ChatAgentBinding', 'ChatAgentTurn'],
 };
 
 export const EXPECTED_COLUMNS = {
@@ -117,8 +119,22 @@ export const EXPECTED_INDEXES_026 = [
   'ChatAutomationDelivery_status_updatedAt_idx',
 ];
 
+export const EXPECTED_INDEXES_027 = [
+  'ChatAgent_tenantId_status_idx',
+  'ChatAgentBinding_one_tenant_default_uidx',
+  'ChatAgentBinding_one_social_account_uidx',
+  'ChatAgentBinding_tenantId_socialAccountId_isActive_idx',
+  'ChatAgentBinding_tenantId_agentId_idx',
+  'ChatAgentTurn_tenantId_createdAt_idx',
+  'ChatAgentTurn_agentId_createdAt_idx',
+  'ChatAgentTurn_conversationId_createdAt_idx',
+  'ChatAgentTurn_status_createdAt_output_partial_idx',
+  'ChatAutomationJob_conversation_single_flight_idx',
+];
+
 /** 025 is gated - never part of default apply; verify only when BETSY_V2_REQUIRE_025=1. */
 /** 026 Soft AI queue is gated like 025 — never part of DEFAULT_APPLY_FILES. */
+/** 027 Soft Agent Layer is gated like 026 — never part of DEFAULT_APPLY_FILES. */
 export const EXPECTED_SEQUENCE_024 = 'ChatConversation_revision_seq';
 export const EXPECTED_TRIGGER_024 = 'ChatConversation_revision_trg';
 
@@ -141,6 +157,9 @@ export const VERIFY_CATALOG_TABLES = [
   'ChatConversationReadState',
   'ChatAutomationJob',
   'ChatAutomationDelivery',
+  'ChatAgent',
+  'ChatAgentBinding',
+  'ChatAgentTurn',
 ];
 
 export const VERIFY_CATALOG_COLUMNS = [

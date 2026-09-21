@@ -96,7 +96,7 @@
 - Hard locks: `/api/bot/**` + staff `WHATSAPP_*` untouched; Soft Copilot chrome
   HOLD (Rail untouched); no prisma push; 024/025/026/027/027b/028/029/030 SQL not applied; `chat_inbox_v2` and
   `chat_agent_layer_v1` stay off; `aiFullUnlock` not written.
-- Prove (post-#64 rebase): focused coexistence/inbox/media + Phase 5
+- Prove (post-#65 rebase): focused coexistence/inbox/media + Phase 5
   self-serve + IG/WA security 103 pass; `npm run test:chat-harden`
   230 pass; `npm run test:soft-ai-agent` 90 pass; lint existing warnings only.
 

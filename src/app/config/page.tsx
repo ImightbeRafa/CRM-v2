@@ -30,11 +30,17 @@ const CONFIG_TAB_IDS = [
 function ConfigPageInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState('fields')
+  const [activeTab, setActiveTab] = useState(() => {
+    const tabParam = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('tab')
+      : null
+    if (tabParam && (CONFIG_TAB_IDS as readonly string[]).includes(tabParam)) return tabParam
+    return 'fields'
+  })
   const [newFieldType, setNewFieldType] = useState('text') // Track type for validation
   const { user: currentUser } = useCurrentUser()
   const canManageSensitiveTools = currentUser?.membershipRole === 'OWNER' || currentUser?.membershipRole === 'ADMIN'
-  const [mounted, setMounted] = useState(false) // Client-side mount detection
+  const [mounted, setMounted] = useState(true) // stay true — avoid full-page skeleton remount flash
   
   // Data states
   const [fields, setFields] = useState<any[]>([])
@@ -127,7 +133,8 @@ function ConfigPageInner() {
     }
   }
 
-  // Client-side mount detection
+  // Client-side mount detection (keep true so returning from agentes does not
+  // flash a full-page skeleton — feels like a hard reload).
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -566,21 +573,6 @@ function ConfigPageInner() {
     { id: 'bulk-delete', label: 'Eliminación Masiva', icon: Trash2 },
     { id: 'audit', label: 'Auditoría', icon: Shield }
   ];
-
-  // Show loading skeleton on server/initial render
-  if (!mounted) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-muted to-blue-50 dark:from-background dark:to-background">
-        <div className="max-w-7xl mx-auto p-4 md:p-6">
-          <div className="animate-pulse space-y-4">
-            <div className="h-24 bg-muted rounded-xl"></div>
-            <div className="h-16 bg-muted rounded-xl"></div>
-            <div className="h-96 bg-muted rounded-xl"></div>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-muted to-blue-50 dark:from-background dark:to-background">

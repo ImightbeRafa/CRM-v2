@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { ArrowLeft, Sparkles } from 'lucide-react'
 import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
 import { hasSessionPermission } from '@/lib/session-permissions'
 import {
   AGENT_TOOL_NAMES,
@@ -11,6 +11,7 @@ import {
   TONE_PRESET_LABELS,
   type ChatAgentTonePreset,
 } from '@/lib/soft-ai/agent-types'
+import { ConocimientoWizardInner } from '@/app/config/agentes/conocimiento/ConocimientoWizard'
 
 type AgentRow = {
   id: string
@@ -70,7 +71,6 @@ function apiErrorMessage(data: unknown, fallback: string): string {
 }
 
 export default function AgentesConfigPage() {
-  const router = useRouter()
   const { data: session } = useSession()
   const canEdit = hasSessionPermission(session, 'update_config')
 
@@ -91,9 +91,18 @@ export default function AgentesConfigPage() {
   const [introDraft, setIntroDraft] = useState('')
   const [checklist, setChecklist] = useState<ChecklistCard[]>([])
   const [knowledgeSchemaReady, setKnowledgeSchemaReady] = useState(true)
+  /** In-page conocimiento panel — avoids /config soft-nav remount flash. */
+  const [knowledgePanel, setKnowledgePanel] = useState<{
+    open: boolean
+    cardId: string | null
+  }>({ open: false, cardId: null })
 
   const selected = agents.find((a) => a.id === selectedId) || null
   const isEmpty = !loading && agents.length === 0
+
+  const openKnowledge = useCallback((cardId?: string | null) => {
+    setKnowledgePanel({ open: true, cardId: cardId ?? null })
+  }, [])
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true)
@@ -139,6 +148,11 @@ export default function AgentesConfigPage() {
       if (!opts?.silent) setLoading(false)
     }
   }, [])
+
+  const closeKnowledge = useCallback(() => {
+    setKnowledgePanel({ open: false, cardId: null })
+    void load({ silent: true })
+  }, [load])
 
   useEffect(() => {
     void load()
@@ -278,14 +292,23 @@ export default function AgentesConfigPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 !text-slate-900 [color-scheme:light]">
+      {knowledgePanel.open ? (
+        <Suspense fallback={<div className="p-4 text-sm text-slate-600">Cargando…</div>}>
+          <ConocimientoWizardInner
+            key={knowledgePanel.cardId || 'wizard'}
+            cardId={knowledgePanel.cardId}
+            onBack={closeKnowledge}
+          />
+        </Suspense>
+      ) : (
       <div className="mx-auto max-w-5xl px-4 py-4 md:px-6 md:py-5">
-        <button
-          type="button"
-          onClick={() => router.push('/config')}
+        <Link
+          href="/config?tab=agentes"
+          prefetch
           className="mb-3 inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
         >
           <ArrowLeft className="h-4 w-4" /> Volver a Configuración
-        </button>
+        </Link>
 
         <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -646,7 +669,7 @@ export default function AgentesConfigPage() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => router.push('/config/agentes/conocimiento')}
+                        onClick={() => openKnowledge(null)}
                         className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white"
                       >
                         Abrir wizard
@@ -686,9 +709,7 @@ export default function AgentesConfigPage() {
                         <button
                           key={card.id}
                           type="button"
-                          onClick={() =>
-                            router.push(`/config/agentes/conocimiento?card=${card.id}`)
-                          }
+                          onClick={() => openKnowledge(card.id)}
                           className="rounded-lg bg-white px-3 py-2.5 text-left text-slate-900 ring-1 ring-indigo-100 hover:ring-indigo-300"
                         >
                           <div className="flex items-center justify-between gap-2">
@@ -806,6 +827,7 @@ export default function AgentesConfigPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }

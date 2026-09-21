@@ -1,3 +1,16 @@
+## 2026-09-21 — HOTFIX: agentes contrast + stop reload feel
+
+- Contrast: route `!text-slate-900 [color-scheme:light]` + FIELD/TEXTAREA/
+  SELECT with solid dark values (ThemeProvider dark was washing inputs).
+- Reload feel (not true document reloads): `config/loading.tsx` full-viewport
+  skeleton blanked every soft nav under `/config`; conocimiento cards used
+  `router.push` remounts. Fix: empty `config/loading.tsx`; open conocimiento
+  **in-page** on `/config/agentes` (local panel + shared wizard module); back
+  via `Link`; config hub skips remount skeleton (`mounted` starts true).
+- Soft chrome / staff bot untouched. Do not merge without Rafael OK.
+- Prove: screenshots Probar + sections; click wizard/back without document
+  navigation; `npm run build`.
+
 ## 2026-09-21 — HOTFIX: `/config/agentes` contrast / readability
 
 - Root cause: ThemeProvider system dark set `body` near-white `text-foreground`

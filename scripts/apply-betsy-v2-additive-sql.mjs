@@ -19,6 +19,8 @@
  * 026 Soft AI ChatAutomationJob is gated the same way (BETSY_V2_APPLY_FILES=026).
  * 027 Soft Agent Layer is gated the same way (BETSY_V2_APPLY_FILES=027).
  * 027b introductionNames is gated the same way (BETSY_V2_APPLY_FILES=027b).
+ * 028 Soft Agent knowledge / suggestions / pending actions is gated the same way
+ * (BETSY_V2_APPLY_FILES=028). Never part of DEFAULT_APPLY_FILES.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

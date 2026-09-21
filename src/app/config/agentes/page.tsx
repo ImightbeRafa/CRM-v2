@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { hasSessionPermission } from '@/lib/session-permissions'
 import {
-  A1_TOOL_NAMES,
+  AGENT_TOOL_NAMES,
   FORGE_WA_SOCIAL_ACCOUNT_ID,
   TONE_PRESET_LABELS,
   type ChatAgentTonePreset,
@@ -37,37 +37,19 @@ const TONES: ChatAgentTonePreset[] = ['warm_concise', 'formal', 'playful']
 
 const TOOL_LABELS: Record<string, string> = {
   search_inventory: 'Buscar inventario (precios en vivo)',
+  search_approved_knowledge: 'Buscar conocimiento aprobado',
   get_order_status: 'Estado de pedido',
   get_shipping_status: 'Estado de envío',
   escalate_to_human: 'Escalar a humano',
 }
 
-const A2_CHECKLIST = [
-  {
-    id: 'precios',
-    title: 'Precios',
-    status: 'Usar inventario en vivo',
-    hint: 'A1 ya consulta stock/precio con search_inventory. CRUD de conocimiento llega en A2.',
-  },
-  {
-    id: 'envios',
-    title: 'Envíos',
-    status: 'Pendiente A2',
-    hint: 'Políticas y zonas de envío como fuente de conocimiento editable.',
-  },
-  {
-    id: 'ofertas',
-    title: 'Ofertas',
-    status: 'Pendiente A2',
-    hint: 'Promos y bundles versionados para el agente.',
-  },
-  {
-    id: 'politicas',
-    title: 'Políticas',
-    status: 'Pendiente A2',
-    hint: 'Devoluciones, garantías y reglas de negocio.',
-  },
-] as const
+type ChecklistCard = {
+  id: string
+  title: string
+  statusLabel: string
+  hint: string
+  inventoryWins?: boolean
+}
 
 function apiErrorMessage(data: unknown, fallback: string): string {
   if (data && typeof data === 'object' && 'error' in data) {
@@ -97,6 +79,8 @@ export default function AgentesConfigPage() {
   } | null>(null)
   const [history, setHistory] = useState<unknown[]>([])
   const [introDraft, setIntroDraft] = useState('')
+  const [checklist, setChecklist] = useState<ChecklistCard[]>([])
+  const [knowledgeSchemaReady, setKnowledgeSchemaReady] = useState(true)
 
   const selected = agents.find((a) => a.id === selectedId) || null
   const isEmpty = !loading && agents.length === 0
@@ -105,7 +89,10 @@ export default function AgentesConfigPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/chat/agents')
+      const [res, kRes] = await Promise.all([
+        fetch('/api/chat/agents'),
+        fetch('/api/chat/knowledge?checklist=1'),
+      ])
       const data = await res.json()
       if (!res.ok) throw new Error(apiErrorMessage(data, 'Error al cargar agentes'))
       setSchemaReady(data.schemaReady !== false)
@@ -115,6 +102,27 @@ export default function AgentesConfigPage() {
         if (prev && nextAgents.some((a) => a.id === prev)) return prev
         return nextAgents[0]?.id ?? null
       })
+      if (kRes.ok) {
+        const kData = await kRes.json()
+        setKnowledgeSchemaReady(kData.schemaReady !== false)
+        setChecklist(
+          (kData.cards || []).map(
+            (c: {
+              id: string
+              title: string
+              statusLabel: string
+              hint: string
+              inventoryWins?: boolean
+            }) => ({
+              id: c.id,
+              title: c.title,
+              statusLabel: c.statusLabel,
+              hint: c.hint,
+              inventoryWins: c.inventoryWins,
+            }),
+          ),
+        )
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al cargar')
     } finally {
@@ -529,7 +537,7 @@ export default function AgentesConfigPage() {
                   <div className="rounded-xl border border-slate-200 p-4">
                     <h2 className="text-sm font-semibold text-slate-900">Herramientas</h2>
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      {A1_TOOL_NAMES.map((tool) => (
+                      {AGENT_TOOL_NAMES.map((tool) => (
                         <label
                           key={tool}
                           className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-800"
@@ -611,35 +619,83 @@ export default function AgentesConfigPage() {
                     </div>
                   </div>
 
-                  {/* Conocimiento A2 checklist */}
-                  <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-4">
-                    <h2 className="text-sm font-semibold text-slate-900">
-                      Conocimiento (checklist A2)
-                    </h2>
-                    <p className="mt-0.5 text-[11px] text-slate-600">
-                      Solo UI — no hay backend de conocimiento en este PR. Precios usan inventario
-                      en vivo.
-                    </p>
+                  {/* Conocimiento A2 — live checklist + wizard */}
+                  <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <h2 className="text-sm font-semibold text-slate-900">Conocimiento</h2>
+                        <p className="mt-0.5 text-[11px] text-slate-600">
+                          Pegá y aprobá Brand Book / políticas / FAQ. Precios: inventario en vivo
+                          manda.
+                          {!knowledgeSchemaReady
+                            ? ' SQL 028 aún no aplicado.'
+                            : ''}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => router.push('/config/agentes/conocimiento')}
+                        className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white"
+                      >
+                        Abrir wizard
+                      </button>
+                    </div>
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      {A2_CHECKLIST.map((card) => (
-                        <div
+                      {(checklist.length
+                        ? checklist
+                        : [
+                            {
+                              id: 'precios',
+                              title: 'Precios',
+                              statusLabel: 'Usar inventario en vivo',
+                              hint: 'search_inventory es la fuente de verdad.',
+                              inventoryWins: true,
+                            },
+                            {
+                              id: 'envios',
+                              title: 'Envíos',
+                              statusLabel: 'Sin fuentes',
+                              hint: 'Políticas de envío aprobadas.',
+                            },
+                            {
+                              id: 'ofertas',
+                              title: 'Ofertas',
+                              statusLabel: 'Sin fuentes',
+                              hint: 'FAQ / promos aprobadas.',
+                            },
+                            {
+                              id: 'politicas',
+                              title: 'Políticas',
+                              statusLabel: 'Sin fuentes',
+                              hint: 'Devoluciones y reglas.',
+                            },
+                          ]
+                      ).map((card) => (
+                        <button
                           key={card.id}
-                          className="rounded-lg bg-white px-3 py-2.5 ring-1 ring-indigo-100"
+                          type="button"
+                          onClick={() =>
+                            router.push(`/config/agentes/conocimiento?card=${card.id}`)
+                          }
+                          className="rounded-lg bg-white px-3 py-2.5 text-left ring-1 ring-indigo-100 hover:ring-indigo-300"
                         >
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-sm font-medium text-slate-900">{card.title}</p>
                             <span
                               className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                                card.status === 'Usar inventario en vivo'
+                                card.statusLabel.includes('aprobado') ||
+                                card.statusLabel === 'Usar inventario en vivo'
                                   ? 'bg-emerald-50 text-emerald-800'
-                                  : 'bg-amber-50 text-amber-900'
+                                  : card.statusLabel.includes('borrador')
+                                    ? 'bg-amber-50 text-amber-900'
+                                    : 'bg-slate-100 text-slate-700'
                               }`}
                             >
-                              {card.status}
+                              {card.statusLabel}
                             </span>
                           </div>
                           <p className="mt-1 text-[11px] leading-snug text-slate-500">{card.hint}</p>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </div>

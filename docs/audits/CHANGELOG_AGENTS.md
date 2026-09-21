@@ -1,3 +1,19 @@
+## 2026-09-21 — A2 Soft Agent knowledge (028 gated, flag off)
+
+- Additive gated SQL `028_chat_agent_knowledge_actions.sql` (NOT applied live):
+  `ChatKnowledgeSource`, `ChatAgentKnowledgeSource`, plus schema-only
+  `ChatAgentSuggestion` / `ChatAgentPendingAction` for A3/A4.
+- Prisma mirror + manifest entry `028` (not `DEFAULT_APPLY_FILES`).
+- Knowledge CRUD + approve/reject APIs; bind sources to agents; OWNER/ADMIN
+  (`update_config`) for mutations; audit after commit (no nested txn audit).
+- Prompt layers 2–4 as data-not-instructions; `search_approved_knowledge` tool;
+  monetary claims require `search_inventory` provenance; inventory over docs.
+- Deterministic safety router: payment / media / opt-out before model call.
+- Spanish paste-and-approve wizard `/config/agentes/conocimiento`; agentes
+  checklist cards show live status (no more Pendiente A2 stubs).
+- Soft chrome HOLD; staff bot untouched. Flag `chat_agent_layer_v1` still off.
+- Prove: `npm run test:soft-ai-agent` (new `soft-ai-agent-knowledge-a2.test.ts`).
+
 ## 2026-09-21 — A1.5 Soft Agent introductionNames + agentes UI
 
 - Additive gated SQL `027b_chat_agent_introduction_names.sql` (NOT applied live).

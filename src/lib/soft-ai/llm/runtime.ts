@@ -23,6 +23,7 @@ import {
   buildAgentUserPrompt,
 } from '@/lib/soft-ai/llm/prompt'
 import type { ChatAgentTonePreset } from '@/lib/soft-ai/agent-types'
+import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
 
 export type SoftAiLlmRuntimeInput = {
   tenantId: string
@@ -35,6 +36,7 @@ export type SoftAiLlmRuntimeInput = {
   description?: string | null
   canalContext?: string | null
   introductionNames?: string[] | null
+  knowledge?: ApprovedKnowledgeSlice | null
   enabledTools: readonly string[]
   history: SoftAiHistoryMessage[]
   inboundText: string
@@ -52,6 +54,7 @@ export type SoftAiLlmRuntimeResult = {
   escalateReason?: string
   toolTrace: unknown
   citedToolNames: string[]
+  knowledgeVersions: ApprovedKnowledgeSlice['versions']
   inputTokens: number
   cachedInputTokens: number
   outputTokens: number
@@ -74,16 +77,20 @@ export async function runSoftAiLlmRuntime(
   let reasoningTokens = 0
   const toolTrace: unknown[] = []
   const citedToolNames: string[] = []
+  const inventoryPrices: number[] = []
   let escalate = false
   let escalateReason: string | undefined
 
-  const instructions = buildAgentSystemInstructions({
+  const built = buildAgentSystemInstructions({
     systemInstructions: input.systemInstructions,
     tonePreset: input.tonePreset,
     description: input.description,
     canalContext: input.canalContext,
     introductionNames: input.introductionNames,
+    knowledge: input.knowledge,
   })
+  const instructions = built.instructions
+  const knowledgeVersions = built.knowledgeVersions
   const userPrompt = buildAgentUserPrompt({
     history: input.history,
     inboundText: input.inboundText,
@@ -162,6 +169,14 @@ export async function runSoftAiLlmRuntime(
           result: result.result,
           ok: result.ok,
         })
+        if (result.name === 'search_inventory' && result.ok) {
+          const items = (result.result as { items?: Array<{ sellingPrice?: number }> }).items
+          if (Array.isArray(items)) {
+            for (const item of items) {
+              if (typeof item.sellingPrice === 'number') inventoryPrices.push(item.sellingPrice)
+            }
+          }
+        }
         if (result.escalate) {
           escalate = true
           escalateReason = result.escalateReason || 'other'
@@ -213,8 +228,13 @@ export async function runSoftAiLlmRuntime(
         needsHuman: fb.escalate,
         escalate: fb.escalate,
         escalateReason: fb.escalateReason,
-        toolTrace: redactToolTrace([...toolTrace, ...fb.toolTrace]),
+        toolTrace: redactToolTrace([
+          { knowledgeVersions },
+          ...toolTrace,
+          ...fb.toolTrace,
+        ]),
         citedToolNames,
+        knowledgeVersions,
         inputTokens,
         cachedInputTokens,
         outputTokens,
@@ -234,6 +254,7 @@ export async function runSoftAiLlmRuntime(
     const validation = validateAgentOutput({
       text: finalText,
       citedToolNames,
+      inventoryPrices,
     })
     if (validation.needsHuman) {
       escalate = true
@@ -246,8 +267,9 @@ export async function runSoftAiLlmRuntime(
       needsHuman: validation.needsHuman || escalate,
       escalate,
       escalateReason,
-      toolTrace: redactToolTrace(toolTrace),
+      toolTrace: redactToolTrace([{ knowledgeVersions }, ...toolTrace]),
       citedToolNames,
+      knowledgeVersions,
       inputTokens,
       cachedInputTokens,
       outputTokens,
@@ -280,8 +302,13 @@ export async function runSoftAiLlmRuntime(
       needsHuman: true,
       escalate: fb.escalate,
       escalateReason: fb.escalateReason,
-      toolTrace: redactToolTrace([...toolTrace, ...fb.toolTrace]),
+      toolTrace: redactToolTrace([
+        { knowledgeVersions },
+        ...toolTrace,
+        ...fb.toolTrace,
+      ]),
       citedToolNames,
+      knowledgeVersions,
       inputTokens,
       cachedInputTokens,
       outputTokens,

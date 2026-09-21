@@ -31,6 +31,13 @@ export const A1_TOOL_NAMES = [
 ] as const
 export type A1ToolName = (typeof A1_TOOL_NAMES)[number]
 
+/** A2 adds grounded knowledge search (auto read). */
+export const A2_TOOL_NAMES = ['search_approved_knowledge'] as const
+export type A2ToolName = (typeof A2_TOOL_NAMES)[number]
+
+export const AGENT_TOOL_NAMES = [...A1_TOOL_NAMES, ...A2_TOOL_NAMES] as const
+export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number]
+
 export type ChatAgentTonePreset = 'warm_concise' | 'formal' | 'playful'
 export type ChatAgentOperationMode = 'ai_full' | 'ai_suggest' | 'human_only'
 export type ChatAgentStatus = 'draft' | 'live' | 'archived'
@@ -123,6 +130,10 @@ export function isAllowedChatAgentModel(model: string): model is ChatAgentModel 
 
 export function isA1ToolName(value: string): value is A1ToolName {
   return (A1_TOOL_NAMES as readonly string[]).includes(value)
+}
+
+export function isAgentToolName(value: string): value is AgentToolName {
+  return (AGENT_TOOL_NAMES as readonly string[]).includes(value)
 }
 
 /**

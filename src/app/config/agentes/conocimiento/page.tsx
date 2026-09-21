@@ -45,9 +45,9 @@ function ConocimientoWizardInner() {
 
   const [step, setStep] = useState<Step>('pegar')
   const [kind, setKind] = useState<KnowledgeKind>(preset?.kind || 'policy')
-  const [name, setName] = useState(preset?.nameHint || 'Políticas')
+  const [name, setName] = useState<string>(preset?.nameHint || 'Políticas')
   const [body, setBody] = useState('')
-  const [socialAccountId, setSocialAccountId] = useState(FORGE_WA_SOCIAL_ACCOUNT_ID)
+  const [socialAccountId, setSocialAccountId] = useState<string>(FORGE_WA_SOCIAL_ACCOUNT_ID)
   const [sourceId, setSourceId] = useState<string | null>(null)
   const [sources, setSources] = useState<SourceRow[]>([])
   const [schemaReady, setSchemaReady] = useState(true)

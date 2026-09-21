@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join, relative } from 'node:path'
 
 const ROOT = join(process.cwd())
 
@@ -43,6 +43,57 @@ describe('chat-agent locked paths (1.10 / 1.20)', () => {
     assert.match(sql, /ChatAgentTurn_conversationId_createdAt_idx/)
     assert.match(sql, /ChatAutomationJob_conversation_single_flight_idx/)
     assert.match(sql, /ChatAgentBinding_tenantId_agentId_fkey/)
+  })
+})
+
+function collectSourceFiles(dir: string, acc: string[] = []): string[] {
+  let entries: string[] = []
+  try {
+    entries = readdirSync(dir)
+  } catch {
+    return acc
+  }
+  for (const name of entries) {
+    if (name === '__fixtures__' || name === '__tests__' || name === 'node_modules') continue
+    const full = join(dir, name)
+    const stat = statSync(full)
+    if (stat.isDirectory()) collectSourceFiles(full, acc)
+    else if (/\.(ts|tsx|mjs|js)$/.test(name)) acc.push(full)
+  }
+  return acc
+}
+
+describe('chat-agent A1 locked directories (A1.11 / A1.21)', () => {
+  it('soft-ai and chat API do not import the staff bot or read WHATSAPP_', () => {
+    const files = [
+      ...collectSourceFiles(join(ROOT, 'src/lib/soft-ai')),
+      ...collectSourceFiles(join(ROOT, 'src/app/api/chat')),
+    ]
+    assert.ok(files.length > 10)
+    for (const file of files) {
+      const src = readFileSync(file, 'utf8')
+      assert.doesNotMatch(src, /process\.env\.WHATSAPP_/, relative(ROOT, file))
+      assert.doesNotMatch(src, /from ['"]@\/lib\/bot\//, relative(ROOT, file))
+    }
+  })
+
+  it('product agent paths have no hardcoded pilot account or brand name', () => {
+    const files = [
+      ...collectSourceFiles(join(ROOT, 'src/lib/soft-ai')),
+      ...collectSourceFiles(join(ROOT, 'src/app/api/chat')),
+      ...collectSourceFiles(join(ROOT, 'src/app/config/agentes')),
+      ...collectSourceFiles(join(ROOT, 'src/components/chats')),
+    ]
+    const chatLib = readdirSync(join(ROOT, 'src/lib')).filter((name) => name.startsWith('chat-'))
+    for (const name of chatLib) {
+      const full = join(ROOT, 'src/lib', name)
+      if (statSync(full).isFile() && /\.(ts|tsx)$/.test(name)) files.push(full)
+    }
+    const banned = /cmuahn5y90001l504y6kksiek|cmhsibjue0004js04gie724nx|Forge/
+    for (const file of files) {
+      const src = readFileSync(file, 'utf8')
+      assert.doesNotMatch(src, banned, relative(ROOT, file))
+    }
   })
 })
 

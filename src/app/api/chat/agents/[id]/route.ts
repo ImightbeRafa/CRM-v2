@@ -93,6 +93,8 @@ export async function PATCH(
           : undefined,
         status: patch.status as 'draft' | 'live' | 'archived' | undefined,
         model: typeof patch.model === 'string' ? patch.model : undefined,
+        brandFacts: 'brandFacts' in patch ? patch.brandFacts : undefined,
+        replyStyle: 'replyStyle' in patch ? patch.replyStyle : undefined,
       },
     })
     return NextResponse.json({ success: true, agent })

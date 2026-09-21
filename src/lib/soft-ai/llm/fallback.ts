@@ -2,15 +2,10 @@
  * Soft Agent Layer LLM failure fallback — bound accounts never use legacy sales template.
  */
 
-import { isPaymentSensitiveText } from '@/lib/soft-ai/config'
+import { classifyPaymentText } from '@/lib/soft-ai/payment-classifier'
+import { reservedShortcutBody } from '@/lib/soft-ai/shortcuts'
 import type { SoftAiToolRunContext } from '@/lib/soft-ai/llm/tool-runner'
 import { runA1Tool } from '@/lib/soft-ai/llm/tool-runner'
-
-const HANDOFF =
-  'En un momento te atiende una persona del equipo. Gracias por la paciencia.'
-
-const PAYMENT_HANDOFF =
-  'Para pagos y SINPE te paso con una persona del equipo; ellos confirman el comprobante.'
 
 export type FallbackResult = {
   text: string
@@ -24,9 +19,9 @@ export async function runAgentFallback(input: {
   toolCtx: SoftAiToolRunContext
   linkedOrderId?: string | null
 }): Promise<FallbackResult> {
-  if (isPaymentSensitiveText(input.inboundText)) {
+  if (classifyPaymentText(input.inboundText) === 'payment_proof_or_risk') {
     return {
-      text: PAYMENT_HANDOFF,
+      text: reservedShortcutBody('sys_handoff_payment'),
       escalate: true,
       escalateReason: 'payment_or_sinpe',
       toolTrace: [{ tool: 'escalate_to_human', reason: 'payment_or_sinpe', source: 'fallback' }],
@@ -67,7 +62,7 @@ export async function runAgentFallback(input: {
   }
 
   return {
-    text: HANDOFF,
+    text: reservedShortcutBody('sys_handoff_unavailable'),
     escalate: true,
     escalateReason: 'llm_unavailable',
     toolTrace: [{ tool: 'escalate_to_human', reason: 'llm_unavailable', source: 'fallback' }],

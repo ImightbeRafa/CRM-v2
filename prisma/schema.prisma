@@ -70,6 +70,9 @@ model Tenant {
   chatAgentKnowledgeSources ChatAgentKnowledgeSource[]
   chatAgentSuggestions ChatAgentSuggestion[]
   chatAgentPendingActions ChatAgentPendingAction[]
+  chatAgentShortcuts ChatAgentShortcut[]
+  chatAgentAssets ChatAgentAsset[]
+  chatAgentShortcutAssets ChatAgentShortcutAsset[]
   productOptionSets ProductOptionSet[]
   productOptions ProductOption[]
   businessInfo   BusinessInfo[]
@@ -452,8 +455,10 @@ model InventoryItem {
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   orderAllocations OrderInventoryAllocation[]
+  chatAgentAssets ChatAgentAsset[]
   
   @@unique([tenantId, sku]) // SKU unique within tenant
+  @@unique([tenantId, id], map: "InventoryItem_tenantId_id_uidx")
   @@index([tenantId])
   @@index([tenantId, isActive])
   @@index([tenantId, category])
@@ -1018,6 +1023,10 @@ model ChatAgent {
   enabledTools       String[] @default([])
   introductionNames  String[] @default([])
   paymentAlwaysHuman Boolean  @default(true)
+  brandFacts         Json     @default("{}")
+  replyStyle         Json     @default("{}")
+  activeHours        Json?
+  replyDelay         Json?
   status             String   @default("draft")
   version            Int      @default(1)
   createdBy          String?
@@ -1031,6 +1040,7 @@ model ChatAgent {
   knowledgeSources ChatAgentKnowledgeSource[]
   suggestions      ChatAgentSuggestion[]
   pendingActions   ChatAgentPendingAction[]
+  shortcuts        ChatAgentShortcut[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, name])
@@ -1060,7 +1070,7 @@ model ChatAgentBinding {
 model ChatAgentTurn {
   id                    String    @id @default(cuid())
   tenantId              String
-  conversationId        String
+  conversationId        String?
   socialAccountId       String
   agentId               String
   bindingId             String?
@@ -1084,12 +1094,17 @@ model ChatAgentTurn {
   latencyMs             Int?
   fallbackUsed          Boolean   @default(false)
   errorCode             String?
+  outputManifest        Json?
+  decisionTrace         Json?
+  shortcutKey           String?
+  intent                String?
+  testSessionId         String?
   completedAt           DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
   tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  conversation    ChatConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation    ChatConversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   socialAccount   SocialAccount     @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
   agent           ChatAgent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
   binding         ChatAgentBinding? @relation(fields: [bindingId], references: [id], onDelete: SetNull)
@@ -1164,6 +1179,7 @@ model ChatAgentSuggestion {
   actedAt           DateTime?
   acceptedMessageId String?
   contentPurgedAt   DateTime?
+  attachments       Json?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -1176,6 +1192,79 @@ model ChatAgentSuggestion {
   @@unique([conversationId, triggerMessageId])
   @@index([tenantId, conversationId, status])
   @@index([status, expiresAt])
+}
+
+// AL2-A1 shortcuts. Asset rows are schema-ready for A2; A1 does not upload.
+model ChatAgentShortcut {
+  id           String   @id @default(cuid())
+  tenantId     String
+  agentId      String
+  key          String
+  title        String
+  kind         String
+  intents      String[] @default([])
+  keywords     String[] @default([])
+  body         String
+  deliveryMode String
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  version      Int      @default(1)
+  createdBy    String?
+  updatedBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent  ChatAgent                @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  assets ChatAgentShortcutAsset[]
+
+  @@unique([tenantId, id])
+  @@unique([agentId, key])
+  @@index([tenantId, agentId, isActive])
+}
+
+model ChatAgentAsset {
+  id              String   @id @default(cuid())
+  tenantId        String
+  kind            String
+  name            String
+  caption         String?
+  blobPath        String
+  publicUrl       String
+  mimeType        String
+  sizeBytes       Int
+  width           Int?
+  height          Int?
+  sha256          String
+  inventoryItemId String?
+  status          String   @default("active")
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant        Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem?           @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  shortcuts     ChatAgentShortcutAsset[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, sha256])
+  @@index([tenantId, status])
+}
+
+model ChatAgentShortcutAsset {
+  id         String   @id @default(cuid())
+  tenantId   String
+  shortcutId String
+  assetId    String
+  position   Int
+  createdAt  DateTime @default(now())
+
+  tenant   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  shortcut ChatAgentShortcut  @relation(fields: [shortcutId], references: [id], onDelete: Cascade)
+  asset    ChatAgentAsset     @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@unique([shortcutId, position])
+  @@unique([shortcutId, assetId])
 }
 
 // Reserved for A4 — schema only in A2.

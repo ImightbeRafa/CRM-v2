@@ -13,10 +13,9 @@ import {
 } from '@/lib/chat-conversation-foundation'
 import { normalizeClientPhone } from '@/lib/order-lifecycle'
 import {
-  FORGE_WA_SOCIAL_ACCOUNT_ID,
   CHAT_AGENT_LAYER_V1_FLAG,
-} from '@/lib/soft-ai/agent-types'
-import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
+  parseChatAgentLayerConfig,
+} from '@/lib/soft-ai/agent-config'
 
 export const DELIVERY_STATUS_RANK = {
   pending: 0,
@@ -186,31 +185,30 @@ async function ensureConversation(
   )
 
   try {
-    // Pilot: new Forge WA conversations may auto-activate AI when flag says so.
-    // Existing NULL rows stay closed (only set on create).
+    // New conversations auto-activate only when the layer flag is on,
+    // autoActivateNewConversations is true, and the account is allowlisted.
+    // An empty allowlist activates nobody. Existing rows stay untouched.
     let aiMode: string | undefined
-    if (args.socialAccountId === FORGE_WA_SOCIAL_ACCOUNT_ID) {
-      try {
-        const flag = await tx.tenantFeatureFlag.findFirst({
-          where: {
-            tenantId: args.tenantId,
-            scope: args.tenantId,
-            key: CHAT_AGENT_LAYER_V1_FLAG,
-          },
-          select: { enabled: true, config: true },
-        })
-        if (flag?.enabled) {
-          const cfg = parseChatAgentLayerConfig(flag.config)
-          if (
-            cfg.autoActivateNewConversations &&
-            cfg.accountAllowlist.includes(args.socialAccountId)
-          ) {
-            aiMode = 'ai_active'
-          }
+    try {
+      const flag = await tx.tenantFeatureFlag.findFirst({
+        where: {
+          tenantId: args.tenantId,
+          scope: args.tenantId,
+          key: CHAT_AGENT_LAYER_V1_FLAG,
+        },
+        select: { enabled: true, config: true },
+      })
+      if (flag?.enabled) {
+        const cfg = parseChatAgentLayerConfig(flag.config)
+        if (
+          cfg.autoActivateNewConversations &&
+          cfg.accountAllowlist.includes(args.socialAccountId)
+        ) {
+          aiMode = 'ai_active'
         }
-      } catch {
-        // Flag/table unavailable — leave aiMode unset (fail closed).
       }
+    } catch {
+      // Flag/table unavailable — leave aiMode unset (fail closed).
     }
 
     const created = await tx.chatConversation.create({

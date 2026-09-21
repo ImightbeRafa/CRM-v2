@@ -21,6 +21,12 @@ import {
   type EffectiveAgentBehavior,
 } from '@/lib/soft-ai/agent-types'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
+import {
+  parseBrandFactsSafe,
+  parseReplyStyleSafe,
+  type BrandFacts,
+  type ReplyStyle,
+} from '@/lib/soft-ai/brand-facts'
 import { shouldUseSoftTenantAiV1 } from '@/lib/feature-flags'
 
 export type ResolvedChatAgent = {
@@ -35,6 +41,8 @@ export type ResolvedChatAgent = {
   operationMode: ChatAgentOperationMode
   enabledTools: string[]
   introductionNames: string[]
+  brandFacts: BrandFacts
+  replyStyle: ReplyStyle
   status: ChatAgentStatus
   version: number
 }
@@ -135,6 +143,8 @@ function mapAgent(row: {
   operationMode: string
   enabledTools: string[]
   introductionNames?: string[] | null
+  brandFacts?: unknown
+  replyStyle?: unknown
   status: string
   version: number
 }): ResolvedChatAgent {
@@ -150,6 +160,8 @@ function mapAgent(row: {
     operationMode: asMode(row.operationMode),
     enabledTools: row.enabledTools || [],
     introductionNames: row.introductionNames || [],
+    brandFacts: parseBrandFactsSafe(row.brandFacts),
+    replyStyle: parseReplyStyleSafe(row.replyStyle),
     status: asStatus(row.status),
     version: row.version,
   }

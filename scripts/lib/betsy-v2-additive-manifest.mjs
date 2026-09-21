@@ -15,6 +15,7 @@ export const FILES = {
   '027': '027_chat_agents.sql',
   '027b': '027b_chat_agent_introduction_names.sql',
   '028': '028_chat_agent_knowledge_actions.sql',
+  '029': '029_chat_agent_playbooks_assets.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -36,6 +37,7 @@ export const EXPECTED_TABLES = {
     'ChatAgentSuggestion',
     'ChatAgentPendingAction',
   ],
+  '029': ['ChatAgentShortcut', 'ChatAgentAsset', 'ChatAgentShortcutAsset'],
 };
 
 export const EXPECTED_COLUMNS = {
@@ -93,6 +95,18 @@ export const EXPECTED_COLUMNS = {
     ['ChatConversation', 'lastMessageAt'],
     ['ChatConversationReadState', 'readInboundCount'],
   ],
+  '029': [
+    ['ChatAgent', 'brandFacts'],
+    ['ChatAgent', 'replyStyle'],
+    ['ChatAgent', 'activeHours'],
+    ['ChatAgent', 'replyDelay'],
+    ['ChatAgentTurn', 'outputManifest'],
+    ['ChatAgentTurn', 'decisionTrace'],
+    ['ChatAgentTurn', 'shortcutKey'],
+    ['ChatAgentTurn', 'intent'],
+    ['ChatAgentTurn', 'testSessionId'],
+    ['ChatAgentSuggestion', 'attachments'],
+  ],
   '026': [
     ['ChatMessage', 'mediaBlobPath'],
     ['ChatMessage', 'mediaCacheStatus'],
@@ -142,6 +156,13 @@ export const EXPECTED_INDEXES_027 = [
   'ChatAutomationJob_conversation_single_flight_idx',
 ];
 
+export const EXPECTED_INDEXES_029 = [
+  'InventoryItem_tenantId_id_uidx',
+  'ChatAgentShortcut_tenantId_agentId_isActive_idx',
+  'ChatAgentAsset_tenantId_status_idx',
+  'ChatAgentTurn_tenantId_testSessionId_idx',
+];
+
 export const EXPECTED_INDEXES_028 = [
   'ChatKnowledgeSource_tenantId_kind_status_idx',
   'ChatKnowledgeSource_tenantId_socialAccountId_status_idx',
@@ -160,6 +181,7 @@ export const EXPECTED_INDEXES_028 = [
 /** 027 Soft Agent Layer is gated like 026 — never part of DEFAULT_APPLY_FILES. */
 /** 027b introductionNames is gated like 027 — never part of DEFAULT_APPLY_FILES. */
 /** 028 Soft Agent knowledge / suggestions / pending actions is gated — never DEFAULT_APPLY_FILES. */
+/** 029 playbooks / brand facts / assets is gated — never DEFAULT_APPLY_FILES. Do not apply without CoS. */
 export const EXPECTED_SEQUENCE_024 = 'ChatConversation_revision_seq';
 export const EXPECTED_TRIGGER_024 = 'ChatConversation_revision_trg';
 
@@ -189,6 +211,9 @@ export const VERIFY_CATALOG_TABLES = [
   'ChatAgentKnowledgeSource',
   'ChatAgentSuggestion',
   'ChatAgentPendingAction',
+  'ChatAgentShortcut',
+  'ChatAgentAsset',
+  'ChatAgentShortcutAsset',
 ];
 
 export const VERIFY_CATALOG_COLUMNS = [

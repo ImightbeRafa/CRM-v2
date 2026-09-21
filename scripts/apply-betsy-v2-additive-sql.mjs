@@ -21,6 +21,8 @@
  * 027b introductionNames is gated the same way (BETSY_V2_APPLY_FILES=027b).
  * 028 Soft Agent knowledge / suggestions / pending actions is gated the same way
  * (BETSY_V2_APPLY_FILES=028). Never part of DEFAULT_APPLY_FILES.
+ * 029 playbooks, brand facts, and asset tables are gated the same way
+ * (BETSY_V2_APPLY_FILES=029). Never part of DEFAULT_APPLY_FILES. Not applied.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

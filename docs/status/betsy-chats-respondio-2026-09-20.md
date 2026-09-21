@@ -4,11 +4,11 @@
 
 | Field | Value |
 |---|---|
-| **Repo tip (this board)** | `dev` @ `2f6c797` (PR-4 #50) + PR-5 self-serve in flight — *PR-3: channel identity names and logos* |
+| **Repo tip (this board)** | `dev` @ `bd70517` (PR-5 #51 merged) — Phases **1–5** live |
 | **Plan SoT** | [`docs/plans/betsy-respondio-parity-fable-2026-09-20.md`](../plans/betsy-respondio-parity-fable-2026-09-20.md) |
-| **Notion** | [Betsy Chat — Full Implementation](https://app.notion.com/p/3cdbc39c41ae81968b64d25201be0676) · [Respond.io epic](https://app.notion.com/p/3d6bc39c41ae819b8994f3e2e6059977) |
+| **Notion** | [Betsy Chat — Full Implementation](https://app.notion.com/p/3cdbc39c41ae81968b64d25201be0676) · [Respond.io epic](https://app.notion.com/p/3d6bc39c41ae819b8994f3e2e6059977) · [Betsy Agent Layer — brainstorm (2026-09-21)](https://app.notion.com/p/3e2bc39c41ae81fab6e7c140983969c4) |
 | **Feature flag** | `chat_inbox_v2` — **enabled for Forge tenant `cmhsibjue0004js04gie724nx` only** (default off globally) |
-| **SQL applied live** | `024_chat_inbox_conversations.sql` + `025_chat_inbox_uniques.sql` on Supabase project `db.bmolvybsqzkeswkomgzw` |
+| **SQL applied live** | `024_chat_inbox_conversations.sql` + `025_chat_inbox_uniques.sql` + `026_chat_automation_jobs.sql` (`ChatAutomationJob`) on Supabase project `db.bmolvybsqzkeswkomgzw` |
 | **Pilot runbook** | [`docs/runbooks/chat-inbox-v2-forge-pilot.md`](../runbooks/chat-inbox-v2-forge-pilot.md) |
 
 **Do not claim all tenants are on inbox v2.** Only the Forge pilot flag is on.
@@ -17,7 +17,7 @@
 
 ## Done vs Still-open vs Blocked
 
-### DONE — Phases 1–3 live on www
+### DONE — Phases 1–5 live on www
 
 | Slice | What shipped |
 |---|---|
@@ -29,25 +29,24 @@
 | **PR-2 #44** | Dual-write, conversation API, Soft client behind `chat_inbox_v2`, migration `025` uniques |
 | **Bugbot #45** | Send/echo, Soft AI escalate, direct-oauth, cursor fixes |
 | **PR-3 #46** | `displayName`, `ChannelLogo`, Renombrar, IG numeric-id bugfix — Rafael eye OK |
+| **PR-4 #50** | Scale & reliability: revision polling, thread windowing, WABA template cache, durable Soft AI `ChatAutomationJob` (`026`), media Blob cache, load-test tooling |
+| **PR-5 #51** | Self-serve Meta: server RBAC on `/config/social` + WA/IG connect; IG `isActive=subscribeOk`; real `expiresAt` + daily token-health cron + Reconectar; soft-unlink (history kept) |
 
-### IN PROGRESS — Phase 4 scale tooling (2026-09-21)
-
-**P4 scale — checklist**
+**P4 scale (#50) — shipped checklist**
 
 | Item | Status |
 |---|---|
 | Local-only seed (`scripts/chat-scale-seed.ts`, 5 acct / 2k conv / 50k msg) | **Shipped** — requires `CHAT_SCALE_DATABASE_URL` loopback; refuses Supabase / 6543 |
 | Bench list + changes idle p50/p95 + EXPLAIN (`chat-scale-benchmark.ts`) | **Shipped** — report `docs/audits/chat-phase4-scale-report.md` |
-| Fill report numbers on local Postgres | **Pending** — Cloud Agent has no Docker/local Postgres; never seed shared Supabase |
 | Webhook burst 500/60s unit (`chat-webhook-burst.ts` + fixture) | **Shipped** (in-memory dual-write mock) |
 | Idle network ≤1 req/5s assert (`chat-idle-network-assert.ts`) | **Shipped** (validates `CHAT_INBOX_V2_POLL_MS`) |
-| Template cache | Still open |
-| `ChatAutomationJob` durable Soft AI (026) | Sibling / still open |
-| Media Blob cache | Still open |
+| Template cache | **Shipped** — per-WABA ~5 min (Upstash / memory) |
+| `ChatAutomationJob` durable Soft AI (`026`) | **Shipped** + SQL live |
+| Media Blob cache | **Shipped** — `providerMediaId` → private Betsy Blob |
 
-npm: `chat:scale:seed` · `chat:scale:bench` · `chat:webhook:burst` · `test:chat-scale`
+npm: `chat:scale:seed` · `chat:scale:bench` · `chat:webhook:burst` · `test:chat-scale` · `test:chat-automation`
 
-**P5 self-serve — DONE in PR-5 (this branch)**
+**P5 self-serve (#51) — shipped**
 
 - Server RBAC on `/config/social` + WA/IG connect routes (`update_config`)
 - IG `isActive=subscribeOk` + Re-suscribir copy
@@ -55,7 +54,14 @@ npm: `chat:scale:seed` · `chat:scale:bench` · `chat:webhook:burst` · `test:ch
 - Soft-unlink (history kept; same `SocialAccount.id` on reconnect)
 - Store-owner runbook + `social-accounts.mdx` history claim fixed
 
-Still Meta-blocked for non-tester IG: Advanced Access / App Review (ops).
+### STILL OPEN
+
+| Item | Notes |
+|---|---|
+| **Agent Layer** (planning only) | Next product slice — assignable agents / tunable behavior. Brainstorm under Betsy Chat hub: [Betsy Agent Layer — brainstorm (2026-09-21)](https://app.notion.com/p/3e2bc39c41ae81fab6e7c140983969c4). No code yet. |
+| Soft UX redesign **Phase 6 HOLD** | 11-point brief remains HOLD (see Notion Soft UX redesign brief). Not the next build target. |
+| Customer-scale IG Advanced Access / App Review | Testers work; non-testers need Advanced Access (Meta ops). |
+| Rolling `chat_inbox_v2` beyond Forge | Flag remains Forge-only (`cmhsibjue0004js04gie724nx`) until explicitly enabled per tenant. |
 
 ### BLOCKED — Meta ops / product HOLD
 
@@ -87,7 +93,7 @@ Still Meta-blocked for non-tester IG: Advanced Access / App Review (ops).
 | Channel logo / display name | `src/components/social/ChannelLogo.tsx` · `src/lib/social-account-identity.ts` |
 | Social connect UI | `src/app/config/social/page.tsx` |
 | Feature flag | `src/lib/feature-flags.ts` · key `chat_inbox_v2` |
-| SQL | `supabase/migrations/024_chat_inbox_conversations.sql` · `025_chat_inbox_uniques.sql` |
+| SQL | `supabase/migrations/024_chat_inbox_conversations.sql` · `025_chat_inbox_uniques.sql` · `026_chat_automation_jobs.sql` |
 | Forge pilot runbook | `docs/runbooks/chat-inbox-v2-forge-pilot.md` |
 
 ---
@@ -100,6 +106,9 @@ Merged work on the path to this tip:
 - [#44](https://github.com/ImightbeRafa/CRM-v2/pull/44) — PR-2 dual-write + Soft v2 client / `025`
 - [#45](https://github.com/ImightbeRafa/CRM-v2/pull/45) — Bugbot follow-ups
 - [#46](https://github.com/ImightbeRafa/CRM-v2/pull/46) — PR-3 channel identity
+- [#50](https://github.com/ImightbeRafa/CRM-v2/pull/50) — PR-4 scale & reliability / `026` (`ChatAutomationJob`, template cache, media Blob)
+- [#51](https://github.com/ImightbeRafa/CRM-v2/pull/51) — PR-5 self-serve Meta / soft-unlink / token health
 - Plan: [`docs/plans/betsy-respondio-parity-fable-2026-09-20.md`](../plans/betsy-respondio-parity-fable-2026-09-20.md)
+- Agent Layer brainstorm (planning): [Betsy Agent Layer — brainstorm (2026-09-21)](https://app.notion.com/p/3e2bc39c41ae81fab6e7c140983969c4)
 
 **Scope reminder:** Forge pilot only (`cmhsibjue0004js04gie724nx`). Other tenants remain on legacy Soft inbox until the flag is explicitly enabled.

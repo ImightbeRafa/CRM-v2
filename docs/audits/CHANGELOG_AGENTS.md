@@ -1,3 +1,14 @@
+## 2026-09-21 — Phase 4 Soft AI durable ChatAutomationJob queue
+
+- Additive gated `026_chat_automation_jobs.sql`: `ChatAutomationJob` +
+  `ChatAutomationDelivery` + optional `ChatMessage` media cache columns.
+- Soft-only lease queue (`FOR UPDATE SKIP LOCKED`, 45s, per-conversation order)
+  copying BotInbox algorithms without importing bot modules/tables.
+- Webhook enqueues job after dual-write **before** 200; `void processJobById`
+  best-effort; cron `/api/cron/chat-automation` (`*/1`) is safety net.
+- Manifest registers 026; kept out of `DEFAULT_APPLY_FILES` (gated like 025).
+- Soft chrome + `/api/bot/**` + `src/lib/bot/**` untouched.
+
 ## 2026-09-21 — Phase 4 scale tooling (seed / bench / burst / idle assert)
 
 - Local-only load-test scripts gated on `CHAT_SCALE_DATABASE_URL` (loopback;

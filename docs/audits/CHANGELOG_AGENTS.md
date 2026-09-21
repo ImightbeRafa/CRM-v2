@@ -13,22 +13,20 @@ Append-only. Newest entries at the top.
   nothing. Report includes `aggregateRepair`.
 - Offline `node:test` in `chat-inbox-backfill-repair.test.ts` (added to
   `test:chat-harden`). No 024/025/026/027/027b/028 apply, no shared `--apply`, staff bot untouched.
-- Rebased onto `dev` after #59 (`8fb80fa` human desk /chats polish packs 1–6;
-  parent `4a59dc3` #58). Resume-aggregate repair kept. #59 desk polish
-  (`SoftCopilotInboxV2` / `SoftThreadPane` / send route / `chat-inbox-v2-client`)
-  left as on `dev` (no overlay). #58 knowledge layer (028 gated), #57
-  introductionNames, #56 agentes single-write + audit-after-commit, #55
-  `session-permissions` / `server-only` browser hotfix, #54 Agent Layer
-  runtime (027 gated, `chat_agent_layer_v1` off, `aiFullUnlock` empty),
-  #51 self-serve, #50 media / Soft-AI queue / template cache / windowing,
-  #46 channel identity, #45 send/echo stamp, escalate `aiMode`, aggregate
-  monotonicity, and WA OAuth/36008 left as on `dev`. Did not import #47
-  about:blank or #49 charset/Graph cap. 024/025/026/027/027b/028 SQL still
-  not applied; `chat_inbox_v2` / `chat_agent_layer_v1` not toggled;
-  `aiFullUnlock` not written.
-- Prove (post-#59 rebase onto `8fb80fa`): `npx tsx --test src/lib/__tests__/chat-inbox-backfill-repair.test.ts`
-  (8 pass) + `npm run test:chat-harden` (209 pass; #59 added desk/optimistic
-  tests vs post-#58 202).
+- Rebased onto `dev` after #60 (`4c493d5` conocimiento name type; parent
+  `8fb80fa` #59). Resume-aggregate repair kept. #60 conocimiento page type
+  left as on `dev` (no overlay). #59 desk polish (`SoftCopilotInboxV2` /
+  `SoftThreadPane` / send route / `chat-inbox-v2-client`) left as on `dev`.
+  #58 knowledge layer (028 gated), #57 introductionNames, #56 agentes
+  single-write + audit-after-commit, #55 `session-permissions` / `server-only`
+  browser hotfix, #54 Agent Layer runtime (027 gated, `chat_agent_layer_v1`
+  off, `aiFullUnlock` empty), #51 self-serve, #50 media / Soft-AI queue /
+  template cache / windowing, #46 channel identity, #45 send/echo stamp,
+  escalate `aiMode`, aggregate monotonicity, and WA OAuth/36008 left as on
+  `dev`. Did not import #47 about:blank or #49 charset/Graph cap.
+  024/025/026/027/027b/028 SQL still not applied; `chat_inbox_v2` /
+  `chat_agent_layer_v1` not toggled; `aiFullUnlock` not written.
+- Prove (post-#60 rebase onto `4c493d5`): pending after force-with-lease.
 
 ## 2026-09-23 — Instagram reconnect no longer 500s on SocialAccount P2002
 

@@ -239,6 +239,13 @@ async function readMetaJson(response: Response) {
   }
 }
 
+function metaGetInit(accessToken: string, signal?: AbortSignal): RequestInit {
+  return {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    ...(signal ? { signal } : {}),
+  }
+}
+
 /** Meta Graph (#100) for a missing/unsupported field on a node. */
 export function isMetaNonexistingFieldError(data: unknown, fieldName?: string): boolean {
   const error =
@@ -259,7 +266,11 @@ export function isMetaNonexistingFieldError(data: unknown, fieldName?: string): 
  * Nested `whatsapp_business_account` is missing on coexistence / some Cloud API phones (#100);
  * callers must not treat that alone as ownership failure.
  */
-export async function resolveWhatsAppBusinessAccountId(phoneNumberId: string, accessToken: string): Promise<string | null> {
+export async function resolveWhatsAppBusinessAccountId(
+  phoneNumberId: string,
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   const fields = encodeURIComponent('whatsapp_business_account')
   const url = addAppSecretProofToUrl(
     buildMetaGraphUrl(`${encodeURIComponent(phoneNumberId)}?fields=${fields}`),
@@ -268,11 +279,7 @@ export async function resolveWhatsAppBusinessAccountId(phoneNumberId: string, ac
   )
 
   try {
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    })
+    const response = await fetch(url, metaGetInit(accessToken, signal))
     const data = await readMetaJson(response)
 
     if (!response.ok) {
@@ -322,6 +329,7 @@ function mapWabaPhoneRow(row: any): WhatsAppWabaPhoneNumber {
 export async function listWhatsAppPhoneNumbersForWaba(params: {
   wabaId: string
   accessToken: string
+  signal?: AbortSignal
 }): Promise<{ ok: boolean; phones: WhatsAppWabaPhoneNumber[]; reason?: string }> {
   const wabaId = String(params.wabaId || '').trim()
   if (!wabaId || !params.accessToken) {
@@ -339,9 +347,7 @@ export async function listWhatsAppPhoneNumbersForWaba(params: {
 
   try {
     for (let page = 0; page < WABA_PHONE_LIST_MAX_PAGES && nextUrl; page += 1) {
-      const response = await fetch(nextUrl, {
-        headers: { Authorization: `Bearer ${params.accessToken}` },
-      })
+      const response = await fetch(nextUrl, metaGetInit(params.accessToken, params.signal))
       const data = await readMetaJson(response)
       if (!response.ok) {
         return {
@@ -399,6 +405,7 @@ export function selectCoexistencePhoneNumber(
 export async function resolvePhoneNumberIdFromWaba(params: {
   wabaId: string
   accessToken: string
+  signal?: AbortSignal
 }): Promise<{
   ok: boolean
   phoneNumberId: string | null
@@ -616,6 +623,7 @@ export async function verifyWhatsAppAssetsForToken(params: {
   accessToken: string
   phoneNumberId: string
   whatsappBusinessAccountId?: string | null
+  signal?: AbortSignal
 }): Promise<{
   ok: boolean
   phoneNumberId: string | null
@@ -645,9 +653,7 @@ export async function verifyWhatsAppAssetsForToken(params: {
   )
 
   try {
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${params.accessToken}` },
-    })
+    const response = await fetch(url, metaGetInit(params.accessToken, params.signal))
     const data = await readMetaJson(response)
     const interpreted = interpretWhatsAppOwnershipGraphData({
       graphOk: response.ok,
@@ -671,6 +677,7 @@ export async function verifyWhatsAppAssetsForToken(params: {
       const listed = await listWhatsAppPhoneNumbersForWaba({
         wabaId: claimedWaba,
         accessToken: params.accessToken,
+        signal: params.signal,
       })
       if (!listed.ok) {
         return {
@@ -700,7 +707,11 @@ export async function verifyWhatsAppAssetsForToken(params: {
     }
 
     // No claimed WABA: phone ownership is enough. Nested field may #100 — treat as unresolved, not fail.
-    const resolvedWaba = await resolveWhatsAppBusinessAccountId(phoneNumberId, params.accessToken)
+    const resolvedWaba = await resolveWhatsAppBusinessAccountId(
+      phoneNumberId,
+      params.accessToken,
+      params.signal,
+    )
     return {
       ok: true,
       phoneNumberId: interpreted.phoneNumberId,
@@ -724,6 +735,7 @@ export async function verifyWhatsAppAssetsForToken(params: {
 export async function fetchInstagramPageIdentity(params: {
   pageId: string
   accessToken: string
+  signal?: AbortSignal
 }): Promise<{
   ok: boolean
   pageName: string | null
@@ -740,9 +752,7 @@ export async function fetchInstagramPageIdentity(params: {
     params.accessToken,
   )
   try {
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${params.accessToken}` },
-    })
+    const response = await fetch(url, metaGetInit(params.accessToken, params.signal))
     const data = await readMetaJson(response)
     if (!response.ok) {
       return {

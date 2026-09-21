@@ -16,6 +16,8 @@ describe('chat-accounts-api', () => {
   it('GET accounts route refreshes missing identity and returns §7.5 fields', () => {
     const src = readFileSync(resolve('src/app/api/chat/accounts/route.ts'), 'utf8')
     assert.match(src, /refreshMissingAccountIdentities/)
+    assert.match(src, /IDENTITY_REFRESH_TIMEOUT_MS/)
+    assert.match(src, /timeoutMs/)
     assert.match(src, /toChatAccountDto/)
     assert.match(src, /displayName/)
     assert.match(src, /tokenStatus/)

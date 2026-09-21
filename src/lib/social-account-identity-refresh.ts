@@ -12,7 +12,11 @@ import {
 
 const IDENTITY_REFRESH_THROTTLE_MS = 60 * 60 * 1000
 
-type IdentityAccountRow = {
+/** GET /api/chat/accounts Graph budget. Backfill omits this so jobs can finish. */
+export const IDENTITY_REFRESH_TIMEOUT_MS = 2_000
+const IDENTITY_REFRESH_CONCURRENCY = 4
+
+export type IdentityAccountRow = {
   id: string
   platform: string
   accountId: string
@@ -25,6 +29,21 @@ type IdentityAccountRow = {
   wabaId: string | null
   pageId: string | null
   tokenLastCheckedAt: Date | null
+}
+
+export type IdentityRefreshJob = (
+  row: IdentityAccountRow,
+  signal: AbortSignal | undefined,
+) => Promise<boolean>
+
+export type RefreshMissingIdentitiesOptions = {
+  /** Combined with timeoutMs when both are set. */
+  signal?: AbortSignal
+  /** 0 / omitted = no deadline (one-off backfill). GET passes IDENTITY_REFRESH_TIMEOUT_MS. */
+  timeoutMs?: number
+  claimSlot?: (accountId: string) => Promise<boolean>
+  refreshWhatsApp?: IdentityRefreshJob
+  refreshInstagram?: IdentityRefreshJob
 }
 
 /**
@@ -47,7 +66,72 @@ export async function claimIdentityRefreshSlot(
   return (result?.count ?? 0) > 0
 }
 
-async function refreshWhatsAppIdentity(row: IdentityAccountRow): Promise<boolean> {
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const name = (error as { name?: string }).name
+  return name === 'AbortError' || name === 'TimeoutError'
+}
+
+function startRefreshDeadline(
+  timeoutMs: number | undefined,
+  external?: AbortSignal,
+): { signal: AbortSignal | undefined; dispose: () => void } {
+  const wantsTimeout = typeof timeoutMs === 'number' && timeoutMs > 0
+  if (!wantsTimeout && !external) return { signal: undefined, dispose: () => undefined }
+
+  const controller = new AbortController()
+  const onExternalAbort = () => controller.abort()
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  if (wantsTimeout) {
+    timer = setTimeout(() => controller.abort(), timeoutMs)
+  }
+  if (external) {
+    if (external.aborted) controller.abort()
+    else external.addEventListener('abort', onExternalAbort, { once: true })
+  }
+
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      if (timer) clearTimeout(timer)
+      external?.removeEventListener('abort', onExternalAbort)
+    },
+  }
+}
+
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise((resolve) => {
+    signal.addEventListener('abort', () => resolve(), { once: true })
+  })
+}
+
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return []
+  const results: R[] = new Array(items.length)
+  let next = 0
+  const workerCount = Math.min(Math.max(1, limit), items.length)
+  async function worker() {
+    while (true) {
+      const index = next
+      next += 1
+      if (index >= items.length) return
+      results[index] = await mapper(items[index]!)
+    }
+  }
+  await Promise.all(Array.from({ length: workerCount }, () => worker()))
+  return results
+}
+
+async function refreshWhatsAppIdentity(
+  row: IdentityAccountRow,
+  signal?: AbortSignal,
+): Promise<boolean> {
   const token = decryptSocialAccessToken(row.accessToken)
   if (!token) return false
   const meta = parseSocialRefreshToken(row.refreshToken)
@@ -56,6 +140,7 @@ async function refreshWhatsAppIdentity(row: IdentityAccountRow): Promise<boolean
     accessToken: token,
     phoneNumberId: row.accountId,
     whatsappBusinessAccountId: wabaId,
+    signal,
   })
   if (!verified.ok) return false
 
@@ -80,14 +165,17 @@ async function refreshWhatsAppIdentity(row: IdentityAccountRow): Promise<boolean
   return true
 }
 
-async function refreshInstagramIdentity(row: IdentityAccountRow): Promise<boolean> {
+async function refreshInstagramIdentity(
+  row: IdentityAccountRow,
+  signal?: AbortSignal,
+): Promise<boolean> {
   const token = decryptSocialAccessToken(row.accessToken)
   if (!token) return false
   const meta = parseSocialRefreshToken(row.refreshToken)
   const pageId = row.pageId || meta.pageId
   if (!pageId) return false
 
-  const fetched = await fetchInstagramPageIdentity({ pageId, accessToken: token })
+  const fetched = await fetchInstagramPageIdentity({ pageId, accessToken: token, signal })
   if (!fetched.ok) return false
 
   const identity = identityPersistPayload({
@@ -114,36 +202,79 @@ async function refreshInstagramIdentity(row: IdentityAccountRow): Promise<boolea
 /**
  * Lazy Graph identity backfill for accounts missing provider fields.
  * Throttled ≤1/h/account via atomic tokenLastCheckedAt claim.
+ * Graph jobs run concurrently (capped) and honor an optional deadline so
+ * GET /api/chat/accounts cannot stall `/chats` on hung Meta.
  */
 export async function refreshMissingAccountIdentities(
   rows: IdentityAccountRow[],
+  options: RefreshMissingIdentitiesOptions = {},
 ): Promise<{ attempted: number; refreshed: number }> {
-  let attempted = 0
-  let refreshed = 0
+  const { signal, dispose } = startRefreshDeadline(options.timeoutMs, options.signal)
+  const claimSlot = options.claimSlot ?? claimIdentityRefreshSlot
+  const refreshWhatsApp = options.refreshWhatsApp ?? refreshWhatsAppIdentity
+  const refreshInstagram = options.refreshInstagram ?? refreshInstagramIdentity
 
-  for (const row of rows) {
-    if (!needsIdentityRefresh(row)) continue
-    const claimed = await claimIdentityRefreshSlot(row.id)
-    if (!claimed) continue
-    attempted += 1
-    try {
-      const ok =
-        row.platform === 'whatsapp'
-          ? await refreshWhatsAppIdentity(row)
-          : row.platform === 'instagram'
-            ? await refreshInstagramIdentity(row)
-            : false
-      if (ok) refreshed += 1
-    } catch (error) {
-      console.warn('[social-account-identity-refresh] failed', {
-        accountId: row.id,
-        platform: row.platform,
-        error,
-      })
+  try {
+    if (signal?.aborted) return { attempted: 0, refreshed: 0 }
+
+    const eligible: IdentityAccountRow[] = []
+    for (const row of rows) {
+      if (signal?.aborted) break
+      if (!needsIdentityRefresh(row)) continue
+      const claimed = await claimSlot(row.id)
+      if (!claimed) continue
+      eligible.push(row)
     }
-  }
 
-  return { attempted, refreshed }
+    if (eligible.length === 0) return { attempted: 0, refreshed: 0 }
+
+    const completed: boolean[] = []
+    const jobs = mapLimit(eligible, IDENTITY_REFRESH_CONCURRENCY, async (row) => {
+      if (signal?.aborted) {
+        completed.push(false)
+        return false
+      }
+      try {
+        let ok = false
+        switch (row.platform) {
+          case 'whatsapp':
+            ok = await refreshWhatsApp(row, signal)
+            break
+          case 'instagram':
+            ok = await refreshInstagram(row, signal)
+            break
+          default:
+            ok = false
+            break
+        }
+        completed.push(ok)
+        return ok
+      } catch (error) {
+        if (!isAbortError(error)) {
+          console.warn('[social-account-identity-refresh] failed', {
+            accountId: row.id,
+            platform: row.platform,
+            error,
+          })
+        }
+        completed.push(false)
+        return false
+      }
+    })
+
+    if (signal) {
+      await Promise.race([jobs, waitForAbort(signal)])
+    } else {
+      await jobs
+    }
+
+    return {
+      attempted: eligible.length,
+      refreshed: completed.filter(Boolean).length,
+    }
+  } finally {
+    dispose()
+  }
 }
 
 export const IDENTITY_REFRESH_THROTTLE_MS_FOR_TESTS = IDENTITY_REFRESH_THROTTLE_MS

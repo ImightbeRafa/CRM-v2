@@ -17,8 +17,8 @@ export type SocialAccountIdentityFields = {
   phoneNumberId?: string | null
 }
 
-/** Allowed displayName charset after NFC + trim (§7.2). */
-const DISPLAY_NAME_ALLOWED = /^[\p{L}\p{N} ._&’'\-]+$/u
+/** Allowed displayName charset after NFC + trim (§7.2). Includes @ / + for IG handles and WA phones. */
+const DISPLAY_NAME_ALLOWED = /^[\p{L}\p{N} ._&’'@+\-]+$/u
 const CONTROL_CHARS = /[\p{Cc}\p{Cf}]/u
 const MAX_DISPLAY_NAME_CODEPOINTS = 40
 
@@ -50,7 +50,7 @@ export function validateDisplayNameInput(raw: unknown): DisplayNameValidation {
   if (!DISPLAY_NAME_ALLOWED.test(value)) {
     return {
       ok: false,
-      error: 'El nombre solo admite letras, números, espacios y -_.&’',
+      error: 'El nombre solo admite letras, números, espacios, @, + y -_.&’',
     }
   }
   return { ok: true, value, reset: false }

@@ -104,6 +104,17 @@ describe('channel-display-name', () => {
     assert.equal(validateDisplayNameInput('Bad\nname').ok, false)
     assert.equal(validateDisplayNameInput('Hello!').ok, false)
     assert.equal(validateDisplayNameInput("Cafe & Co.’s").ok, true)
+    assert.deepEqual(validateDisplayNameInput('@betsy_crm'), {
+      ok: true,
+      value: '@betsy_crm',
+      reset: false,
+    })
+    assert.deepEqual(validateDisplayNameInput('+506 6104 3737'), {
+      ok: true,
+      value: '+506 6104 3737',
+      reset: false,
+    })
+    assert.equal(validateDisplayNameInput('Bad#name').ok, false)
   })
 
   it('default at connect follows WA verified_name / phone and IG @username', () => {

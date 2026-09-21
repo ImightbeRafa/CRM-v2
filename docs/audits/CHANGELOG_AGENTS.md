@@ -1,3 +1,32 @@
+# Agent Changelog
+
+Append-only. Newest entries at the top.
+
+## 2026-09-21 — Chat inbox backfill: resume repairs stale aggregates
+
+- Bugbot HIGH after #42: interrupted `chat-inbox-backfill --apply` can link
+  messages then die before `recomputeAggregates`. Rerun `fetchBatch` skips
+  `conversationId` rows, `touched` stays empty, seed `inboundCount` /
+  `messageCount` 0 never get repaired.
+- Apply now runs `repairConversationAggregates` after duplicate marking:
+  tenant-scoped count mismatch ∪ `touched`, even when the current run linked
+  nothing. Report includes `aggregateRepair`.
+- Offline `node:test` in `chat-inbox-backfill-repair.test.ts` (added to
+  `test:chat-harden`). No 024/025/026/027/027b/028 apply, no shared `--apply`, staff bot untouched.
+- Rebased onto `dev` after #58 (`4a59dc3` A2 knowledge; parent `3beb5e1`
+  #57). Resume-aggregate repair kept. #58 knowledge layer (028 gated), #57
+  introductionNames, #56 agentes single-write + audit-after-commit, #55
+  `session-permissions` / `server-only` browser hotfix, #54 Agent Layer
+  runtime (027 gated, `chat_agent_layer_v1` off, `aiFullUnlock` empty),
+  #51 self-serve, #50 media / Soft-AI queue / template cache / windowing,
+  #46 channel identity, #45 send/echo stamp, escalate `aiMode`, aggregate
+  monotonicity, and WA OAuth/36008 left as on `dev`. Did not import #47
+  about:blank or #49 charset/Graph cap. 024/025/026/027/027b/028 SQL still
+  not applied; `chat_inbox_v2` / `chat_agent_layer_v1` not toggled;
+  `aiFullUnlock` not written.
+- Prove: `npx tsx --test src/lib/__tests__/chat-inbox-backfill-repair.test.ts`
+  + `npm run test:chat-harden`.
+
 ## 2026-09-23 — Instagram reconnect no longer 500s on SocialAccount P2002
 
 - `upsertInstagramSocialAccount` updates the same-tenant Instagram row (active or
@@ -325,10 +354,6 @@
 - Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; `src/lib/bot/**` untouched.
 - Bench numbers left **pending local postgres** in this Cloud Agent (no Docker).
 
-# Agent Changelog
-
-Append-only. Newest entries at the top.
-
 ## 2026-09-21 — PR-3 channel identity (names / logos / Connect naming)
 
 - Persist WA/IG provider identity at connect (`exchange`, IG complete/callback shared upsert).
@@ -338,10 +363,6 @@ Append-only. Newest entries at the top.
 - Soft AI `canalContext` line `Canal: WhatsApp · {displayName}`; fallback never blank; IG numeric-id `@handle` bug fixed.
 - Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; bot paths untouched.
 - One-off: `scripts/chat-account-identity-backfill.ts` (dry-run default).
-
-# Agent Changelog
-
-Append-only. Newest entries at the top.
 
 ## 2026-09-21 — PR-2 Bugbot follow-up (send/echo + Soft AI + OAuth)
 
@@ -368,10 +389,6 @@ Append-only. Newest entries at the top.
 - Conversation API + SoftCopilotInbox v2 behind `chat_inbox_v2` (default off)
 - Shipped gated `025_chat_inbox_uniques.sql` (NOT applied; not in default apply)
 - Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; bot paths untouched
-
-# Agent Changelog
-
-Append-only. Newest entries at the top.
 
 ## 2026-09-21 — Respond.io PR-1: chat inbox schema foundation (024)
 

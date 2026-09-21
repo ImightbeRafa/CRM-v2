@@ -13,6 +13,8 @@
  * Idempotent + resumable via keyset cursor on (sentAt, id). Quarantines
  * peer-less / literal-"unknown" rows (conversationId stays NULL). Marks
  * duplicate providerMessageId rows (earliest wins); never deletes.
+ * Apply always repairs conversations whose stored counts disagree with
+ * already-linked non-duplicate messages, even when fetchBatch is empty.
  */
 import { createHash, randomBytes } from 'node:crypto'
 import type { Prisma } from '@prisma/client'
@@ -31,6 +33,10 @@ import {
   type ChatInboxBackfillMessage,
   type ConversationNaturalKey,
 } from '../src/lib/chat-conversation-foundation'
+import {
+  repairConversationAggregates,
+  type BackfillRepairStore,
+} from '../src/lib/chat-inbox-backfill-repair'
 
 function asInputJson(value: Record<string, unknown>): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue
@@ -211,20 +217,66 @@ async function recomputeAggregates(conversationIds: string[]) {
     })
     const aggregate = computeConversationAggregate(messages)
     if (!options.apply) continue
-    if (!aggregate.lastMessageAt) continue
     await prisma.chatConversation.update({
       where: { id: conversationId },
       data: {
-        lastMessageId: aggregate.lastMessageId,
-        lastMessageAt: aggregate.lastMessageAt,
-        lastMessagePreview: aggregate.lastMessagePreview,
-        lastMessageDirection: aggregate.lastMessageDirection,
-        lastInboundAt: aggregate.lastInboundAt,
-        lastOutboundAt: aggregate.lastOutboundAt,
         inboundCount: aggregate.inboundCount,
         messageCount: aggregate.messageCount,
+        ...(aggregate.lastMessageAt
+          ? {
+              lastMessageId: aggregate.lastMessageId,
+              lastMessageAt: aggregate.lastMessageAt,
+              lastMessagePreview: aggregate.lastMessagePreview,
+              lastMessageDirection: aggregate.lastMessageDirection,
+              lastInboundAt: aggregate.lastInboundAt,
+              lastOutboundAt: aggregate.lastOutboundAt,
+            }
+          : {}),
       },
     })
+  }
+}
+
+function asCount(value: unknown): number {
+  if (typeof value === 'bigint') return Number(value)
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function createPrismaRepairStore(): BackfillRepairStore {
+  return {
+    async listConversations(tenantId) {
+      return prisma.chatConversation.findMany({
+        where: tenantId ? { tenantId } : {},
+        select: { id: true, tenantId: true, messageCount: true, inboundCount: true },
+      })
+    },
+    async listActualCounts(tenantId) {
+      const rows = await prisma.$queryRaw<
+        Array<{ conversationId: string; messageCount: unknown; inboundCount: unknown }>
+      >`
+        SELECT "conversationId",
+               COUNT(*)::int AS "messageCount",
+               COUNT(*) FILTER (WHERE direction = 'inbound')::int AS "inboundCount"
+        FROM public."ChatMessage"
+        WHERE "conversationId" IS NOT NULL
+          AND "duplicateOfMessageId" IS NULL
+          AND (${tenantId}::text IS NULL OR "tenantId" = ${tenantId})
+        GROUP BY "conversationId"
+      `
+      return rows
+        .filter((row) => row.conversationId)
+        .map((row) => ({
+          conversationId: row.conversationId,
+          messageCount: asCount(row.messageCount),
+          inboundCount: asCount(row.inboundCount),
+        }))
+    },
+    async recomputeAggregates(conversationIds) {
+      await recomputeAggregates(conversationIds)
+      return conversationIds.filter((id) => !id.startsWith('dry_'))
+    },
   }
 }
 
@@ -373,26 +425,18 @@ async function main() {
     if (batch.length < options.batchSize) break
   }
 
-  if (options.apply && touched.size > 0) {
-    await recomputeAggregates([...touched])
-  }
-
   const duplicateReport = await markDuplicates(options.tenantId)
-  if (options.apply && touched.size > 0) {
-    // Recompute again after duplicate marking so aggregates exclude dups.
-    const convIds = await prisma.chatMessage.findMany({
-      where: {
-        duplicateOfMessageId: { not: null },
-        conversationId: { not: null },
-        ...(options.tenantId ? { tenantId: options.tenantId } : {}),
-      },
-      select: { conversationId: true },
-      distinct: ['conversationId'],
-    })
-    await recomputeAggregates(
-      convIds.map((row) => row.conversationId!).filter(Boolean),
-    )
-  }
+  const aggregateRepair = options.apply
+    ? await repairConversationAggregates(createPrismaRepairStore(), {
+        tenantId: options.tenantId,
+        touchedIds: touched,
+      })
+    : {
+        touched: 0,
+        mismatchCandidates: 0,
+        repairIds: [] as string[],
+        repaired: [] as string[],
+      }
 
   const report = {
     mode: options.apply ? 'APPLY' : 'DRY_RUN',
@@ -408,8 +452,13 @@ async function main() {
       ? { sentAt: cursor.sentAt.toISOString(), id: cursor.id }
       : null,
     duplicates: duplicateReport,
+    aggregateRepair: {
+      touched: aggregateRepair.touched,
+      mismatchCandidates: aggregateRepair.mismatchCandidates,
+      repaired: aggregateRepair.repaired.length,
+    },
     note: options.apply
-      ? 'Writes applied. Re-run is safe (idempotent).'
+      ? 'Writes applied. Re-run is safe (idempotent); already-linked rows still get aggregate repair when counts are stale.'
       : 'No writes. Pass --apply with CHAT_INBOX_BACKFILL_APPLY=1 and CONFIRM_HOST to write.',
   }
   console.log(JSON.stringify(report, null, 2))

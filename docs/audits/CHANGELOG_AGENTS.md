@@ -13,8 +13,10 @@ Append-only. Newest entries at the top.
   nothing. Report includes `aggregateRepair`.
 - Offline `node:test` in `chat-inbox-backfill-repair.test.ts` (added to
   `test:chat-harden`). No 024/025/026/027/027b/028 apply, no shared `--apply`, staff bot untouched.
-- Rebased onto `dev` after #58 (`4a59dc3` A2 knowledge; parent `3beb5e1`
-  #57). Resume-aggregate repair kept. #58 knowledge layer (028 gated), #57
+- Rebased onto `dev` after #59 (`8fb80fa` human desk /chats polish packs 1–6;
+  parent `4a59dc3` #58). Resume-aggregate repair kept. #59 desk polish
+  (`SoftCopilotInboxV2` / `SoftThreadPane` / send route / `chat-inbox-v2-client`)
+  left as on `dev` (no overlay). #58 knowledge layer (028 gated), #57
   introductionNames, #56 agentes single-write + audit-after-commit, #55
   `session-permissions` / `server-only` browser hotfix, #54 Agent Layer
   runtime (027 gated, `chat_agent_layer_v1` off, `aiFullUnlock` empty),

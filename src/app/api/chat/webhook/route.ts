@@ -14,7 +14,8 @@ import {
 import { getPageIdFromMetaChatMetadata } from '@/lib/social-account-meta'
 import { resolveWebhookSocialAccount } from '@/lib/chat-webhook-account'
 import { chatWebhookInvalidSignatureRateLimit } from '@/lib/rate-limit'
-import { maybeRunSoftAiAfterInbound } from '@/lib/soft-ai/inbound-hook'
+import { enqueueSoftAiAfterInbound } from '@/lib/soft-ai/inbound-hook'
+import { processJobById } from '@/lib/soft-ai/automation-processor'
 import {
   applyDeliveryStatusUpdate,
   applyPeerReadWatermark,
@@ -314,26 +315,38 @@ export async function POST(request: NextRequest) {
 
     const stored = results.filter((result) => result.stored).length
 
+    const softAiJobIds: string[] = []
     for (const result of results) {
       if (!result.stored || !('tenantId' in result) || !result.tenantId) continue
       if ('suppressSoftAi' in result && result.suppressSoftAi) continue
-      void maybeRunSoftAiAfterInbound({
+      if (!result.conversationId || !result.messageId) continue
+      // Persist Soft AI job BEFORE 200 so cron can recover if this instance dies.
+      const enqueued = await enqueueSoftAiAfterInbound({
         tenantId: result.tenantId,
         socialAccountId: result.socialAccountId,
         senderId: result.senderId,
         senderName: result.senderName,
         platform: result.platform,
         content: result.content,
+        conversationId: result.conversationId,
+        messageId: result.messageId,
       })
+      if (enqueued && 'jobId' in enqueued) softAiJobIds.push(enqueued.jobId)
     }
 
     console.log('[chat/webhook][POST] Done', {
       stored,
       skipped: results.length - stored,
       receiptsUpdated,
+      softAiJobs: softAiJobIds.length,
       durationMs: Date.now() - startedAt,
       signatureValid: signatureResult.valid,
     })
+
+    // Best-effort immediate dispatch after persist; cron is the safety net.
+    for (const jobId of softAiJobIds) {
+      void processJobById(jobId)
+    }
 
     return NextResponse.json({
       ok: true,

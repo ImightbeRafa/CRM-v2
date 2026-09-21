@@ -13,6 +13,7 @@ supabase/migrations/*
 !supabase/migrations/023_betsy_v2_tenant_ui.sql
 !supabase/migrations/024_chat_inbox_conversations.sql
 !supabase/migrations/025_chat_inbox_uniques.sql
+!supabase/migrations/026_chat_automation_jobs.sql
 # Testing
 coverage/
 scripts

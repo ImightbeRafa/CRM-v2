@@ -2,6 +2,8 @@
  * Soft Agent Layer binding resolution + effective mode compose.
  */
 
+import 'server-only'
+
 import { prisma } from '@/lib/db'
 import {
   hasAiFullUnlock,

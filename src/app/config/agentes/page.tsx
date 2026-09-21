@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { ArrowLeft, Sparkles } from 'lucide-react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { hasSessionPermission } from '@/lib/auth-helpers'
+import { hasSessionPermission } from '@/lib/session-permissions'
 import {
   A1_TOOL_NAMES,
   FORGE_WA_SOCIAL_ACCOUNT_ID,

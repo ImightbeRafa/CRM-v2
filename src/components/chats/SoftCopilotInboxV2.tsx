@@ -47,7 +47,7 @@ import {
   readAgentStateMap,
   writeAgentStateMap,
   type SoftAiAgentStateMap,
-} from '@/lib/soft-ai'
+} from '@/lib/soft-ai/agent-state'
 import { SoftSlimNav } from '@/components/chats/SoftSlimNav'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'

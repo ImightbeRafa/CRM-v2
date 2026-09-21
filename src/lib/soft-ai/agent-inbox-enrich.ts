@@ -3,6 +3,8 @@
  * No-ops when SQL 027 is not applied or the flag is off.
  */
 
+import 'server-only'
+
 import { prisma } from '@/lib/db'
 import type { ChatConversationListItemDto } from '@/lib/chat-conversation-api'
 import {

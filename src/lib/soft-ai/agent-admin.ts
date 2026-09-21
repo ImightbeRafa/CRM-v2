@@ -3,6 +3,8 @@
  * OWNER/ADMIN (update_config) for mutations; view_config for reads.
  */
 
+import 'server-only'
+
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import {

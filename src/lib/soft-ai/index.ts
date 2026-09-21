@@ -62,5 +62,7 @@ export {
   FORGE_WA_SOCIAL_ACCOUNT_ID,
   A1_TOOL_NAMES,
 } from '@/lib/soft-ai/agent-types'
-export { composeEffectiveBehavior } from '@/lib/soft-ai/agent-resolver'
+// Do NOT re-export agent-resolver / agent-admin / agent-inbox-enrich here —
+// they import Prisma and must stay server-only. Soft Client Components import
+// this barrel; keep composeEffectiveBehavior as a direct server import.
 export { formatAgentHeaderLabel, agentStateDot } from '@/lib/soft-ai/agent-inbox-projection'

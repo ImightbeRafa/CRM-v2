@@ -24,6 +24,7 @@ scripts/*
 !scripts/disable-betsy-v2-flags.mjs
 !scripts/chat-inbox-backfill.ts
 !scripts/chat-inbox-verify.ts
+!scripts/chat-inbox-v2-cutover.ts
 !scripts/lib/
 !scripts/lib/betsy-v2-additive-manifest.mjs
 SDK_V2_FINAL_CONFIGURATION.txt

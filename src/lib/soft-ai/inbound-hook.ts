@@ -14,7 +14,7 @@ import { runSoftAiTurn } from '@/lib/soft-ai/worker'
 import { buildSoftAiServerDeps } from '@/lib/soft-ai/server-deps'
 import {
   maySoftAiMetaReply,
-  resolvePersistedAgentMode,
+  resolveSoftAiAgentMode,
   softAiConversationKey,
 } from '@/lib/soft-ai/agent-mode-server'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
@@ -121,7 +121,22 @@ export async function maybeRunSoftAiAfterInbound(
 
     const key = softAiConversationKey(args.socialAccountId, args.senderId)
     let flagConfig = await loadSoftAiFlagConfig(args.tenantId)
-    const agentMode = resolvePersistedAgentMode(flagConfig, key)
+    const db = prisma as any
+    const conversationRow = await db.chatConversation.findUnique({
+      where: {
+        tenantId_socialAccountId_peerId: {
+          tenantId: args.tenantId,
+          socialAccountId: args.socialAccountId,
+          peerId: args.senderId,
+        },
+      },
+      select: { aiMode: true },
+    })
+    const agentMode = resolveSoftAiAgentMode({
+      conversationAiMode: conversationRow?.aiMode,
+      flagConfig,
+      conversationKey: key,
+    })
 
     // F37-02: missing key / non-explicit mode → fail closed (no Meta auto-reply)
     if (!maySoftAiMetaReply(agentMode)) {
@@ -137,7 +152,6 @@ export async function maybeRunSoftAiAfterInbound(
     }
 
     const config = parseSoftAiConfig(flagConfig)
-    const db = prisma as any
     const recent = await db.chatMessage.findMany({
       where: { socialAccountId: args.socialAccountId },
       orderBy: { sentAt: 'desc' },
@@ -202,7 +216,21 @@ export async function maybeRunSoftAiAfterInbound(
 
     // F37-02: re-read mode immediately before Meta send — fail closed if paused/human/missing
     flagConfig = await loadSoftAiFlagConfig(args.tenantId)
-    const modeBeforeSend = resolvePersistedAgentMode(flagConfig, key)
+    const conversationBeforeSend = await db.chatConversation.findUnique({
+      where: {
+        tenantId_socialAccountId_peerId: {
+          tenantId: args.tenantId,
+          socialAccountId: args.socialAccountId,
+          peerId: args.senderId,
+        },
+      },
+      select: { aiMode: true },
+    })
+    const modeBeforeSend = resolveSoftAiAgentMode({
+      conversationAiMode: conversationBeforeSend?.aiMode,
+      flagConfig,
+      conversationKey: key,
+    })
     if (!maySoftAiMetaReply(modeBeforeSend)) {
       console.info('[soft-ai/inbound-hook] Meta send blocked — mode not ai_active', {
         conversationKey: key,

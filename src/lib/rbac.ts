@@ -236,6 +236,12 @@ export const apiPermissions: Record<string, Permission> = {
   'GET /api/chat/soft-ai/config': 'update_sales',
   'PATCH /api/chat/soft-ai/config': 'update_config',
   'POST /api/chat/soft-ai/control': 'update_sales',
+  'GET /api/chat/conversations': 'update_sales',
+  'GET /api/chat/conversations/changes': 'update_sales',
+  'GET /api/chat/conversations/*/messages': 'update_sales',
+  'PATCH /api/chat/conversations/*': 'update_sales',
+  'POST /api/chat/conversations/*/read': 'update_sales',
+  'POST /api/chat/conversations/import-local-state': 'update_sales',
 
   // Users
   'GET /api/users': 'manage_users',

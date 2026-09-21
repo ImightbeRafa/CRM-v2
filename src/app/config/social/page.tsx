@@ -22,7 +22,7 @@ import {
   accountNeedsReconnect,
   socialReconnectBannerLabel,
 } from '@/lib/social-account-token-health'
-import { hasSessionPermission } from '@/lib/auth-helpers'
+import { hasSessionPermission } from '@/lib/session-permissions'
 
 interface SocialAccount {
   id: string

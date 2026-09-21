@@ -33,6 +33,7 @@ scripts/*
 !scripts/chat-scale-benchmark.ts
 !scripts/chat-webhook-burst.ts
 !scripts/chat-idle-network-assert.ts
+!scripts/shim-server-only.mjs
 !scripts/lib/
 !scripts/lib/betsy-v2-additive-manifest.mjs
 !scripts/lib/chat-scale-constants.ts

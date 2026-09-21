@@ -1,3 +1,16 @@
+## 2026-09-21 — HOTFIX: Prisma out of browser client bundle (post-A1)
+
+- Root cause: `'use client'` `/config/agentes` imported `hasSessionPermission` from
+  `auth-helpers` → `auth-options` / `billing-access` → `db` → `PrismaClient`.
+  Secondary: Soft `@/lib/soft-ai` barrel re-exported `composeEffectiveBehavior`
+  from `agent-resolver` (Prisma) into Soft client chunks via commons.
+- Fix: client-safe `session-permissions.ts`; agentes/social use it; Soft clients
+  import `agent-state` / projection directly; drop resolver from Soft barrel;
+  `server-only` on auth-helpers / agent-admin / agent-resolver / agent-inbox-enrich.
+- Prove: `npm run test:soft-ai-agent` + production build client-chunk grep
+  (no `@prisma/client` in agentes/Soft page chunks). Soft chrome HOLD (Rail
+  untouched). Staff bot untouched.
+
 ## 2026-09-21 — A1 Soft Agent Layer runtime (027 gated, flag off)
 
 - Additive `027_chat_agents.sql` + Prisma mirror + manifest (NOT applied live).

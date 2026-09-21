@@ -7,7 +7,11 @@ import {
   type SoftConversation,
   type SoftTag,
 } from '@/lib/chat-soft-copilot'
-import { agentModeLabel, isSoftHumanComposerEnabled, type SoftAiAgentMode } from '@/lib/soft-ai'
+import {
+  agentModeLabel,
+  isSoftHumanComposerEnabled,
+} from '@/lib/soft-ai/agent-state'
+import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
 import { formatThreadChannelMeta, platformFullName } from '@/lib/social-account-identity'

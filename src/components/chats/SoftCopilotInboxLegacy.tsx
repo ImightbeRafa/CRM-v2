@@ -49,7 +49,7 @@ import {
   readAgentStateMap,
   writeAgentStateMap,
   type SoftAiAgentStateMap,
-} from '@/lib/soft-ai'
+} from '@/lib/soft-ai/agent-state'
 import { runSoftDemoAiPass } from '@/lib/soft-ai/demo-runner'
 import { SoftSlimNav } from '@/components/chats/SoftSlimNav'
 import { SoftTokenHealthBanners } from '@/components/chats/SoftTokenHealthBanners'

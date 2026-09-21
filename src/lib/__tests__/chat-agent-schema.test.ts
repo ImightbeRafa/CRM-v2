@@ -13,6 +13,7 @@ describe('chat-agent schema mirror (1.17)', () => {
     assert.match(schema, /@@index\(\[conversationId, createdAt\]\)/)
     assert.match(schema, /outputPurgedAt/)
     assert.match(schema, /skipReason/)
+    assert.match(schema, /introductionNames/)
   })
 
   it('history index ChatMessage_conversationId_sentAt_id_idx remains in schema', () => {

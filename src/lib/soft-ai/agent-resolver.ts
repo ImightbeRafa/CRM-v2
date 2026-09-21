@@ -34,6 +34,7 @@ export type ResolvedChatAgent = {
   model: string
   operationMode: ChatAgentOperationMode
   enabledTools: string[]
+  introductionNames: string[]
   status: ChatAgentStatus
   version: number
 }
@@ -133,6 +134,7 @@ function mapAgent(row: {
   model: string
   operationMode: string
   enabledTools: string[]
+  introductionNames?: string[] | null
   status: string
   version: number
 }): ResolvedChatAgent {
@@ -147,6 +149,7 @@ function mapAgent(row: {
     model: row.model,
     operationMode: asMode(row.operationMode),
     enabledTools: row.enabledTools || [],
+    introductionNames: row.introductionNames || [],
     status: asStatus(row.status),
     version: row.version,
   }

@@ -388,6 +388,7 @@ export async function executeAgentLayerTurn(
     systemInstructions: resolved.agent.systemInstructions,
     tonePreset: resolved.agent.tonePreset,
     description: resolved.agent.description,
+    introductionNames: resolved.agent.introductionNames,
     canalContext,
     enabledTools: resolved.agent.enabledTools,
     history,
@@ -779,6 +780,7 @@ export async function runAgentTestTurn(input: {
     systemInstructions: agent.systemInstructions,
     tonePreset: agent.tonePreset as 'warm_concise' | 'formal' | 'playful',
     description: agent.description,
+    introductionNames: agent.introductionNames,
     canalContext: softAiCanalContextLine({
       id: socialAccountId,
       platform: 'whatsapp',

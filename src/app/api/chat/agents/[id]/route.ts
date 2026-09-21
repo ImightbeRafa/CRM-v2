@@ -88,6 +88,9 @@ export async function PATCH(
         enabledTools: Array.isArray(patch.enabledTools)
           ? patch.enabledTools.filter((t): t is string => typeof t === 'string')
           : undefined,
+        introductionNames: Array.isArray(patch.introductionNames)
+          ? patch.introductionNames
+          : undefined,
         status: patch.status as 'draft' | 'live' | 'archived' | undefined,
         model: typeof patch.model === 'string' ? patch.model : undefined,
       },

@@ -92,6 +92,7 @@ export async function POST(request: NextRequest) {
       systemInstructions:
         typeof rec.systemInstructions === 'string' ? rec.systemInstructions : undefined,
       tonePreset: rec.tonePreset as 'warm_concise' | 'formal' | 'playful' | undefined,
+      introductionNames: Array.isArray(body.introductionNames) ? body.introductionNames : undefined,
       enabledTools: Array.isArray(rec.enabledTools)
         ? rec.enabledTools.filter((t): t is string => typeof t === 'string')
         : undefined,

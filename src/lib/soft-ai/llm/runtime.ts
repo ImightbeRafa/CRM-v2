@@ -34,6 +34,7 @@ export type SoftAiLlmRuntimeInput = {
   tonePreset: ChatAgentTonePreset
   description?: string | null
   canalContext?: string | null
+  introductionNames?: string[] | null
   enabledTools: readonly string[]
   history: SoftAiHistoryMessage[]
   inboundText: string
@@ -81,6 +82,7 @@ export async function runSoftAiLlmRuntime(
     tonePreset: input.tonePreset,
     description: input.description,
     canalContext: input.canalContext,
+    introductionNames: input.introductionNames,
   })
   const userPrompt = buildAgentUserPrompt({
     history: input.history,

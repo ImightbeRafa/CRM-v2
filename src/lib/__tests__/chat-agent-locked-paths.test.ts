@@ -45,3 +45,21 @@ describe('chat-agent locked paths (1.10 / 1.20)', () => {
     assert.match(sql, /ChatAgentBinding_tenantId_agentId_fkey/)
   })
 })
+
+describe('chat-agent A1.5 SQL 027b (gated)', () => {
+  it('ships additive introductionNames migration without touching Soft chrome', () => {
+    const sql = readFileSync(
+      join(ROOT, 'supabase/migrations/027b_chat_agent_introduction_names.sql'),
+      'utf8',
+    )
+    assert.match(sql, /introductionNames/)
+    assert.doesNotMatch(sql, /DROP TABLE/i)
+    for (const rel of [
+      'src/components/chats/SoftSlimNav.tsx',
+      'src/components/chats/SoftInboxBuckets.tsx',
+      'src/components/chats/SoftCopilotRail.tsx',
+    ]) {
+      assert.ok(readFileSync(join(ROOT, rel), 'utf8').length > 100)
+    }
+  })
+})

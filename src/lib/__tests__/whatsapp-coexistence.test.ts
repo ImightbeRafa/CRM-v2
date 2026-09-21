@@ -5,17 +5,27 @@ import {
   buildWhatsAppCoexistenceLoginExtras,
   buildWhatsAppDirectOauthDialogUrl,
   buildWhatsAppEmbeddedSignupLoginOptions,
+  buildWhatsAppExchangeRequestBody,
+  closeWhatsAppDirectOauthPopup,
+  decideWhatsAppDirectOauthPopupClosed,
   extractWaEmbeddedSignupAssets,
   isFbSdkEmbeddedSignup36008,
   isWaCoexistenceFinishEvent,
   isWaEmbeddedSignupFinishEvent,
   isWaEmbeddedSignupMessage,
+  navigateWhatsAppDirectOauthPopup,
+  openWhatsAppDirectOauthPlaceholder,
   parseWaDirectOauthMessage,
   shouldIgnoreWaSessionEvent,
+  waSignupExchangeHasSendableCred,
   waSignupReadyToExchange,
   WA_COEXISTENCE_FEATURE_TYPE,
   WA_DIRECT_OAUTH_MESSAGE_TYPE,
+  WA_DIRECT_OAUTH_PLACEHOLDER_URL,
+  WA_DIRECT_OAUTH_POPUP_NAME,
   WA_SESSION_INFO_VERSION,
+  WA_SIGNUP_EXCHANGE_TIMEOUT_MS,
+  type OpenNamedWindow,
 } from '../whatsapp-embedded-signup'
 import { selectCoexistencePhoneNumber, WHATSAPP_SUBSCRIBED_FIELDS_DEFAULT } from '../meta-api'
 import { parseMetaChatPayload } from '../meta-chat'
@@ -340,11 +350,116 @@ test('social page consumes wa_direct_oauth and does not spend the code before as
   assert.match(page, /isFbSdkEmbeddedSignup36008/)
   assert.match(page, /\/api\/auth\/whatsapp\/direct-oauth/)
   assert.match(page, /launchWhatsAppDirectOauthFallback/)
+  assert.match(page, /buildWhatsAppExchangeRequestBody/)
+  assert.match(page, /waSignupExchangeHasSendableCred/)
+  assert.match(page, /AbortSignal\.timeout\(WA_SIGNUP_EXCHANGE_TIMEOUT_MS\)/)
+  assert.doesNotMatch(page, /code: pending\.code \|\| undefined/)
   const directAt = page.indexOf('parseWaDirectOauthMessage')
   const forceAt = page.indexOf('tryExchangeWhatsAppSignupRef.current(false)', directAt)
   assert.ok(directAt > 0)
   assert.ok(forceAt > directAt)
   assert.doesNotMatch(page.slice(directAt, forceAt + 80), /tryExchangeWhatsAppSignupRef\.current\(true\)/)
+})
+
+test('36008 fallback reserves popup on the click and navigates that handle after fetch', () => {
+  const opens: string[] = []
+  const popup = {
+    closed: false,
+    location: {
+      href: WA_DIRECT_OAUTH_PLACEHOLDER_URL,
+      replace(url: string) {
+        this.href = url
+      },
+    },
+    close() {
+      this.closed = true
+    },
+  }
+  const openWindow: OpenNamedWindow = (url, name) => {
+    opens.push(`${name}:${url}`)
+    return popup as unknown as Window
+  }
+
+  const reserved = openWhatsAppDirectOauthPlaceholder(openWindow)
+  const oauthUrl = 'https://www.facebook.com/v24.0/dialog/oauth?client_id=app-1'
+  // Simulate FB.login + await fetch completing after the gesture.
+  assert.equal(navigateWhatsAppDirectOauthPopup(reserved, oauthUrl), true)
+  assert.deepEqual(opens, [`${WA_DIRECT_OAUTH_POPUP_NAME}:${WA_DIRECT_OAUTH_PLACEHOLDER_URL}`])
+  assert.equal(popup.location.href, oauthUrl)
+
+  closeWhatsAppDirectOauthPopup(reserved)
+  assert.equal(popup.closed, true)
+  assert.equal(navigateWhatsAppDirectOauthPopup(reserved, 'https://example.test'), false)
+
+  const page = readFileSync('src/app/config/social/page.tsx', 'utf8')
+  const reserveAt = page.indexOf('openWhatsAppDirectOauthPlaceholder')
+  const loginAt = page.indexOf('FB.login')
+  const fallbackAt = page.indexOf('launchWhatsAppDirectOauthFallback(reservedPopup)')
+  assert.ok(reserveAt > 0 && loginAt > reserveAt, 'placeholder must open before FB.login')
+  assert.ok(fallbackAt > loginAt)
+  assert.match(page, /navigateWhatsAppDirectOauthPopup\(popup/)
+  assert.doesNotMatch(page, /window\.open\(\s*String\(json\.oauthUrl\)/)
+  assert.match(page, /closeWhatsAppDirectOauthPopup\(reservedPopup\)/)
+})
+
+test('exchange body never includes OAuth code before phone/WABA assets', () => {
+  const codeOnly = buildWhatsAppExchangeRequestBody({ code: 'AQB...' })
+  assert.equal(codeOnly.code, undefined)
+  assert.equal(waSignupExchangeHasSendableCred(codeOnly), false)
+
+  const tokenOnly = buildWhatsAppExchangeRequestBody({
+    code: 'AQB...',
+    accessToken: 'EAA...',
+  })
+  assert.equal(tokenOnly.code, undefined)
+  assert.equal(tokenOnly.accessToken, 'EAA...')
+  assert.equal(waSignupExchangeHasSendableCred(tokenOnly), true)
+
+  const withAssets = buildWhatsAppExchangeRequestBody({
+    code: 'AQB...',
+    message: {
+      type: 'WA_EMBEDDED_SIGNUP',
+      event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+      data: { waba_id: '102290129340398' },
+    },
+  })
+  assert.equal(withAssets.code, 'AQB...')
+  assert.equal(waSignupExchangeHasSendableCred(withAssets), true)
+  assert.ok(WA_SIGNUP_EXCHANGE_TIMEOUT_MS >= 15_000)
+})
+
+test('direct OAuth popup close settles connecting except in-flight exchange', () => {
+  assert.deepEqual(decideWhatsAppDirectOauthPopupClosed({ exchanging: true, code: 'AQB' }), {
+    settleConnecting: false,
+    reason: 'exchanging',
+  })
+  assert.deepEqual(
+    decideWhatsAppDirectOauthPopupClosed({
+      code: null,
+      message: {
+        type: 'WA_EMBEDDED_SIGNUP',
+        event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+        data: { waba_id: '1' },
+      },
+    }),
+    { settleConnecting: true, reason: 'assets_without_code' },
+  )
+  assert.deepEqual(decideWhatsAppDirectOauthPopupClosed({ code: 'AQB...' }), {
+    settleConnecting: true,
+    reason: 'code_without_assets',
+  })
+  assert.deepEqual(decideWhatsAppDirectOauthPopupClosed({}), {
+    settleConnecting: true,
+    reason: 'closed',
+  })
+
+  const page = readFileSync('src/app/config/social/page.tsx', 'utf8')
+  assert.match(page, /decideWhatsAppDirectOauthPopupClosed/)
+  assert.match(page, /applyDirectOauthPopupClosed/)
+  const assetsWithoutCodeAt = page.indexOf("case 'assets_without_code'")
+  const setConnectingAt = page.indexOf('setConnectingWhatsApp(false)', assetsWithoutCodeAt)
+  assert.ok(assetsWithoutCodeAt > 0)
+  assert.ok(setConnectingAt > assetsWithoutCodeAt)
 })
 
 test('direct-oauth route requires config_id for Embedded Signup parity', () => {

@@ -96,7 +96,7 @@
 - Hard locks: `/api/bot/**` + staff `WHATSAPP_*` untouched; Soft Copilot chrome
   HOLD (Rail untouched); no prisma push; 024/025/026/027/027b/028/029/030 SQL not applied; `chat_inbox_v2` and
   `chat_agent_layer_v1` stay off; `aiFullUnlock` not written.
-- Prove (post-#60 rebase): focused coexistence/inbox/media + Phase 5
+- Prove (post-#61 rebase): focused coexistence/inbox/media + Phase 5
   self-serve + IG/WA security 103 pass; `npm run test:chat-harden`
   205 pass; `npm run test:soft-ai-agent` 65 pass; lint existing warnings only.
 
@@ -315,7 +315,6 @@
   mutations so edits no longer flash “Cargando…”. Config hub “Abrir Agentes”
   uses `next/link` (cheap soft-nav). Soft chrome / staff bot untouched.
 - Prove: screenshots of Probar + conocimiento; `npm run build`.
-
 
 ## 2026-09-21 — A2 Soft Agent knowledge (028 gated, flag off)
 

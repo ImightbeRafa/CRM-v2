@@ -13,6 +13,7 @@ export const FILES = {
   '025': '025_chat_inbox_uniques.sql',
   '026': '026_chat_automation_jobs.sql',
   '027': '027_chat_agents.sql',
+  '027b': '027b_chat_agent_introduction_names.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -27,9 +28,11 @@ export const EXPECTED_TABLES = {
   '024': ['ChatConversation', 'ChatConversationReadState'],
   '026': ['ChatAutomationJob', 'ChatAutomationDelivery'],
   '027': ['ChatAgent', 'ChatAgentBinding', 'ChatAgentTurn'],
+  '027b': [],
 };
 
 export const EXPECTED_COLUMNS = {
+  '027b': [['ChatAgent', 'introductionNames']],
   '019': [
     ['Order', 'clientId'],
     ['Order', 'lifecycleVersion'],
@@ -135,6 +138,7 @@ export const EXPECTED_INDEXES_027 = [
 /** 025 is gated - never part of default apply; verify only when BETSY_V2_REQUIRE_025=1. */
 /** 026 Soft AI queue is gated like 025 — never part of DEFAULT_APPLY_FILES. */
 /** 027 Soft Agent Layer is gated like 026 — never part of DEFAULT_APPLY_FILES. */
+/** 027b introductionNames is gated like 027 — never part of DEFAULT_APPLY_FILES. */
 export const EXPECTED_SEQUENCE_024 = 'ChatConversation_revision_seq';
 export const EXPECTED_TRIGGER_024 = 'ChatConversation_revision_trg';
 

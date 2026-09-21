@@ -1008,6 +1008,7 @@ model ChatAgent {
   model              String   @default("grok-4.6")
   operationMode      String   @default("ai_suggest")
   enabledTools       String[] @default([])
+  introductionNames  String[] @default([])
   paymentAlwaysHuman Boolean  @default(true)
   status             String   @default("draft")
   version            Int      @default(1)

@@ -15,6 +15,7 @@ import {
   FORGE_WA_SOCIAL_ACCOUNT_ID,
   isAllowedChatAgentModel,
   isA1ToolName,
+  normalizeIntroductionNames,
   type ChatAgentOperationMode,
   type ChatAgentStatus,
   type ChatAgentTonePreset,
@@ -50,7 +51,7 @@ export function mapChatAgentAdminError(error: unknown): ChatAgentAdminHttpError 
       status: 503,
       body: {
         success: false,
-        error: 'SQL 027 aún no aplicado — no se pueden crear agentes todavía',
+        error: 'SQL 027/027b aún no aplicado — no se pueden crear agentes todavía',
         schemaReady: false,
         code: 'SCHEMA_NOT_READY',
       },
@@ -60,6 +61,17 @@ export function mapChatAgentAdminError(error: unknown): ChatAgentAdminHttpError 
     return {
       status: 400,
       body: { success: false, error: 'Nombre requerido', code: 'NAME_REQUIRED' },
+    }
+  }
+  if (msg === 'INTRODUCTION_NAMES_INVALID') {
+    return {
+      status: 400,
+      body: {
+        success: false,
+        error:
+          'Nombres de presentación inválidos: 1–3 nombres únicos, máx. 40 caracteres cada uno (o lista vacía).',
+        code: 'INTRODUCTION_NAMES_INVALID',
+      },
     }
   }
   if (msg === 'AGENT_NOT_FOUND') {
@@ -156,6 +168,7 @@ function snapshotAgent(row: {
   model: string
   operationMode: string
   enabledTools: string[]
+  introductionNames: string[]
   status: string
   version: number
 }) {
@@ -169,6 +182,7 @@ function snapshotAgent(row: {
     model: row.model,
     operationMode: row.operationMode,
     enabledTools: row.enabledTools,
+    introductionNames: row.introductionNames || [],
     status: row.status,
     version: row.version,
   }
@@ -214,6 +228,7 @@ export async function createChatAgent(input: {
   systemInstructions?: string
   tonePreset?: ChatAgentTonePreset
   enabledTools?: string[]
+  introductionNames?: string[]
 }) {
   if (!(await isChatAgentSchemaReady())) throw new Error('SCHEMA_NOT_READY')
   const name = input.name.trim().slice(0, AGENT_NAME_MAX)
@@ -222,6 +237,12 @@ export async function createChatAgent(input: {
     input.systemInstructions?.trim() || DEFAULT_FORGE_VOICE
   ).slice(0, AGENT_INSTRUCTIONS_MAX)
   const enabledTools = (input.enabledTools || [...A1_TOOL_NAMES]).filter(isA1ToolName)
+  let introductionNames: string[] = []
+  try {
+    introductionNames = normalizeIntroductionNames(input.introductionNames ?? [])
+  } catch {
+    throw new Error('INTRODUCTION_NAMES_INVALID')
+  }
 
   // Single write — do NOT nest logAuditEvent inside $transaction (audit uses
   // global prisma and held interactive txns open → P2028 under Supabase latency).
@@ -236,6 +257,7 @@ export async function createChatAgent(input: {
       model: 'grok-4.6',
       operationMode: 'ai_suggest',
       enabledTools,
+      introductionNames,
       paymentAlwaysHuman: true,
       status: 'draft',
       version: 1,
@@ -273,6 +295,7 @@ export async function updateChatAgent(input: {
     tonePreset?: ChatAgentTonePreset
     operationMode?: ChatAgentOperationMode
     enabledTools?: string[]
+    introductionNames?: string[]
     status?: ChatAgentStatus
     model?: string
   }
@@ -313,6 +336,14 @@ export async function updateChatAgent(input: {
   }
   if (input.patch.enabledTools) {
     data.enabledTools = input.patch.enabledTools.filter(isA1ToolName)
+    bumpVersion = true
+  }
+  if (input.patch.introductionNames !== undefined) {
+    try {
+      data.introductionNames = normalizeIntroductionNames(input.patch.introductionNames)
+    } catch {
+      throw new Error('INTRODUCTION_NAMES_INVALID')
+    }
     bumpVersion = true
   }
   if (input.patch.status) {
@@ -641,6 +672,7 @@ export async function ensurePilotDefaults(input: {
         model: 'grok-4.6',
         operationMode: 'human_only',
         enabledTools: [],
+        introductionNames: [],
         paymentAlwaysHuman: true,
         status: 'live',
         version: 1,
@@ -685,6 +717,7 @@ export async function ensurePilotDefaults(input: {
         model: 'grok-4.6',
         operationMode: 'ai_suggest',
         enabledTools: [...A1_TOOL_NAMES],
+        introductionNames: ['Forge'],
         paymentAlwaysHuman: true,
         status: 'draft',
         version: 1,

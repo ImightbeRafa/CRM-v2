@@ -214,3 +214,32 @@ node scripts/apply-betsy-v2-additive-sql.mjs
 4. Catalog verify with `BETSY_V2_REQUIRE_027=1`.
 
 **Do not** `prisma db push` / `prisma migrate`. **SQL 027 NOT applied — wait CoS gated apply after SecureDog + Rafael GO.**
+
+## 027b Soft Agent introductionNames — PROPOSED (not applied)
+
+Date: 2026-09-21
+Branch: `cursor/a15-agentes-introduction-names-4b4e`
+Source: `supabase/migrations/027b_chat_agent_introduction_names.sql`
+Review status: **source reviewed in PR — NOT APPLIED to shared Supabase**
+
+### What 027b adds (expand-only)
+
+| Object | Notes |
+|---|---|
+| `ChatAgent.introductionNames` | `text[] NOT NULL DEFAULT '{}'` — 1–3 presentation names for new-chat intros |
+
+### Apply (human-gated only)
+
+1. Blob backup / SecureDog GO.
+2. Confirm 027 already applied.
+3. Apply with:
+```bash
+BETSY_V2_APPLY_MIGRATIONS=1 \
+BETSY_V2_APPLY_CONFIRM_HOST=<direct-host> \
+BETSY_V2_APPLY_FILES=027b \
+node scripts/apply-betsy-v2-additive-sql.mjs
+```
+4. Verify column via catalog / EXPECTED_COLUMNS 027b.
+
+**Do not** `prisma db push` / `prisma migrate`. **SQL 027b NOT applied — wait CoS gated apply.**
+

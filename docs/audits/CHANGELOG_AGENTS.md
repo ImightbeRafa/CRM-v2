@@ -1,3 +1,13 @@
+## 2026-09-21 — A1.5 Soft Agent introductionNames + agentes UI
+
+- Additive gated SQL `027b_chat_agent_introduction_names.sql` (NOT applied live).
+- `ChatAgent.introductionNames` text[] (1–3 presentation names); PATCH + audit after commit.
+- Prompt identity layer after immutable safety; Forge seed defaults to `['Forge']`.
+- `/config/agentes` readable sections (Identidad / Voz / Herramientas / Modo / Probar / Pánico)
+  + A2 knowledge checklist UI only (Precios = inventario en vivo).
+- Soft chrome HOLD; staff bot untouched. Flag `chat_agent_layer_v1` still off.
+- Prove: `npm run test:soft-ai-agent`.
+
 ## 2026-09-21 — HOTFIX: agentes create P2028 + empty UI polish
 
 - Root cause: `createChatAgent` / `updateChatAgent` nested `logAuditEvent` (global

@@ -22,6 +22,7 @@ type AgentRow = {
   model: string
   operationMode: string
   enabledTools: string[]
+  introductionNames: string[]
   status: string
   version: number
   bindings?: Array<{
@@ -33,6 +34,40 @@ type AgentRow = {
 }
 
 const TONES: ChatAgentTonePreset[] = ['warm_concise', 'formal', 'playful']
+
+const TOOL_LABELS: Record<string, string> = {
+  search_inventory: 'Buscar inventario (precios en vivo)',
+  get_order_status: 'Estado de pedido',
+  get_shipping_status: 'Estado de envío',
+  escalate_to_human: 'Escalar a humano',
+}
+
+const A2_CHECKLIST = [
+  {
+    id: 'precios',
+    title: 'Precios',
+    status: 'Usar inventario en vivo',
+    hint: 'A1 ya consulta stock/precio con search_inventory. CRUD de conocimiento llega en A2.',
+  },
+  {
+    id: 'envios',
+    title: 'Envíos',
+    status: 'Pendiente A2',
+    hint: 'Políticas y zonas de envío como fuente de conocimiento editable.',
+  },
+  {
+    id: 'ofertas',
+    title: 'Ofertas',
+    status: 'Pendiente A2',
+    hint: 'Promos y bundles versionados para el agente.',
+  },
+  {
+    id: 'politicas',
+    title: 'Políticas',
+    status: 'Pendiente A2',
+    hint: 'Devoluciones, garantías y reglas de negocio.',
+  },
+] as const
 
 function apiErrorMessage(data: unknown, fallback: string): string {
   if (data && typeof data === 'object' && 'error' in data) {
@@ -61,6 +96,7 @@ export default function AgentesConfigPage() {
     toolTrace: unknown
   } | null>(null)
   const [history, setHistory] = useState<unknown[]>([])
+  const [introDraft, setIntroDraft] = useState('')
 
   const selected = agents.find((a) => a.id === selectedId) || null
   const isEmpty = !loading && agents.length === 0
@@ -266,7 +302,7 @@ export default function AgentesConfigPage() {
 
         {!schemaReady ? (
           <div className="mb-3 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-100">
-            SQL 027 aún no aplicado — la UI es de solo lectura hasta el gated apply. No se pueden
+            SQL 027/027b aún no aplicado — la UI es de solo lectura hasta el gated apply. No se pueden
             crear ni sembrar agentes.
           </div>
         ) : null}
@@ -313,7 +349,7 @@ export default function AgentesConfigPage() {
             ) : null}
             {canEdit && !schemaReady ? (
               <p className="mt-4 text-xs text-amber-800">
-                Aplicá SQL 027 para habilitar creación y siembra.
+                Aplicá SQL 027 + 027b para habilitar creación y siembra.
               </p>
             ) : null}
             {!canEdit ? (
@@ -350,63 +386,157 @@ export default function AgentesConfigPage() {
               {!selected ? (
                 <p className="text-sm text-slate-500">Seleccioná un agente en la lista.</p>
               ) : (
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-xs font-medium text-slate-500">Nombre</label>
-                    <input
-                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
-                      defaultValue={selected.name}
-                      key={`name-${selected.id}-${selected.version}`}
-                      disabled={!canEdit || saving}
-                      onBlur={(e) => void patch({ name: e.target.value })}
-                    />
-                  </div>
-
-                  <div>
-                    <p className="text-xs font-medium text-slate-500">Tono</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {TONES.map((t) => (
-                        <button
-                          key={t}
-                          type="button"
+                <div className="space-y-5">
+                  {/* Identidad */}
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                    <div className="mb-3 flex items-baseline justify-between gap-2">
+                      <h2 className="text-sm font-semibold text-slate-900">Identidad</h2>
+                      <span className="text-[11px] text-slate-400">v{selected.version}</span>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                      <div>
+                        <label className="text-xs font-medium text-slate-600">Nombre interno</label>
+                        <input
+                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:opacity-60"
+                          defaultValue={selected.name}
+                          key={`name-${selected.id}-${selected.version}`}
                           disabled={!canEdit || saving}
-                          onClick={() => void patch({ tonePreset: t })}
-                          className={`rounded-full px-3 py-1 text-xs font-medium disabled:opacity-50 ${
-                            selected.tonePreset === t
-                              ? 'bg-indigo-600 text-white'
-                              : 'bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          {TONE_PRESET_LABELS[t]}
-                        </button>
-                      ))}
+                          onBlur={(e) => void patch({ name: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600">Emoji</label>
+                        <input
+                          className="mt-1 w-20 rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-sm disabled:opacity-60"
+                          defaultValue={selected.emoji}
+                          key={`emoji-${selected.id}-${selected.version}`}
+                          disabled={!canEdit || saving}
+                          onBlur={(e) => void patch({ emoji: e.target.value })}
+                          maxLength={8}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <label className="text-xs font-medium text-slate-600">
+                        Nombres de presentación
+                      </label>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        1–3 nombres con los que el agente se presenta en chats nuevos (ej. Sofía,
+                        Forge). El primero es el preferido.
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {(selected.introductionNames || []).map((n) => (
+                          <span
+                            key={n}
+                            className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-sm font-medium text-indigo-900 ring-1 ring-indigo-100"
+                          >
+                            {n}
+                            {canEdit ? (
+                              <button
+                                type="button"
+                                disabled={saving}
+                                className="ml-0.5 text-indigo-500 hover:text-indigo-800 disabled:opacity-50"
+                                aria-label={`Quitar ${n}`}
+                                onClick={() => {
+                                  const next = (selected.introductionNames || []).filter(
+                                    (x) => x !== n,
+                                  )
+                                  void patch({ introductionNames: next })
+                                }}
+                              >
+                                ×
+                              </button>
+                            ) : null}
+                          </span>
+                        ))}
+                        {(selected.introductionNames || []).length < 3 && canEdit ? (
+                          <form
+                            className="flex items-center gap-1"
+                            onSubmit={(e) => {
+                              e.preventDefault()
+                              const value = introDraft.trim()
+                              if (!value) return
+                              const next = [...(selected.introductionNames || []), value]
+                              setIntroDraft('')
+                              void patch({ introductionNames: next })
+                            }}
+                          >
+                            <input
+                              className="w-36 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm disabled:opacity-60"
+                              placeholder="Agregar nombre"
+                              value={introDraft}
+                              disabled={saving}
+                              maxLength={40}
+                              onChange={(e) => setIntroDraft(e.target.value)}
+                            />
+                            <button
+                              type="submit"
+                              disabled={saving || !introDraft.trim()}
+                              className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              Añadir
+                            </button>
+                          </form>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <p className="text-xs font-medium text-slate-600">Tono</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {TONES.map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            disabled={!canEdit || saving}
+                            onClick={() => void patch({ tonePreset: t })}
+                            className={`rounded-full px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
+                              selected.tonePreset === t
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-white text-slate-700 ring-1 ring-slate-200'
+                            }`}
+                          >
+                            {TONE_PRESET_LABELS[t]}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
-                  <div>
-                    <label className="text-xs font-medium text-slate-500">Voz del agente</label>
+                  {/* Voz */}
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <h2 className="text-sm font-semibold text-slate-900">Voz</h2>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      Instrucciones editables. Nunca anulan las reglas fijas de seguridad.
+                    </p>
                     <textarea
-                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
-                      rows={4}
+                      className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-3 text-base leading-relaxed disabled:opacity-60"
+                      rows={8}
                       maxLength={1200}
                       defaultValue={selected.systemInstructions}
                       key={`voz-${selected.id}-${selected.version}`}
                       disabled={!canEdit || saving}
                       onBlur={(e) => void patch({ systemInstructions: e.target.value })}
                     />
-                    <p className="mt-1 text-[11px] text-slate-400">
+                    <p className="mt-1.5 text-[11px] text-slate-400">
                       No puede anular: dinero → humano, no inventar precios, no decir &quot;ya
                       creé&quot;.
                     </p>
                   </div>
 
-                  <div>
-                    <p className="text-xs font-medium text-slate-500">Herramientas</p>
-                    <div className="mt-2 space-y-1">
+                  {/* Herramientas */}
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <h2 className="text-sm font-semibold text-slate-900">Herramientas</h2>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
                       {A1_TOOL_NAMES.map((tool) => (
-                        <label key={tool} className="flex items-center gap-2 text-sm text-slate-700">
+                        <label
+                          key={tool}
+                          className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                        >
                           <input
                             type="checkbox"
+                            className="mt-0.5"
                             disabled={!canEdit || saving}
                             checked={selected.enabledTools.includes(tool)}
                             onChange={(e) => {
@@ -416,67 +546,112 @@ export default function AgentesConfigPage() {
                               void patch({ enabledTools: next })
                             }}
                           />
-                          {tool}
+                          <span>
+                            <span className="font-medium">
+                              {TOOL_LABELS[tool] || tool}
+                            </span>
+                            <span className="mt-0.5 block text-[11px] text-slate-400">{tool}</span>
+                          </span>
                         </label>
                       ))}
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-3">
-                    <div>
-                      <p className="text-xs font-medium text-slate-500">Modo</p>
-                      <select
-                        className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
-                        value={selected.operationMode}
-                        disabled={!canEdit || saving}
-                        onChange={(e) => {
-                          const mode = e.target.value
-                          if (
-                            mode === 'ai_full' &&
-                            !window.confirm(
-                              'Responder (ai_full) queda en Sugerir hasta pasar la prueba dark-run. ¿Continuar?',
-                            )
-                          ) {
-                            return
-                          }
-                          void patch({ operationMode: mode })
-                        }}
-                      >
-                        <option value="ai_suggest">Sugerir</option>
-                        <option value="ai_full">Responder</option>
-                        <option value="human_only">Solo humanos</option>
-                      </select>
+                  {/* Modo */}
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <h2 className="text-sm font-semibold text-slate-900">Modo</h2>
+                    <div className="mt-3 flex flex-wrap gap-3">
+                      <div>
+                        <p className="text-xs font-medium text-slate-600">Operación</p>
+                        <select
+                          className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
+                          value={selected.operationMode}
+                          disabled={!canEdit || saving}
+                          onChange={(e) => {
+                            const mode = e.target.value
+                            if (
+                              mode === 'ai_full' &&
+                              !window.confirm(
+                                'Responder (ai_full) queda en Sugerir hasta pasar la prueba dark-run. ¿Continuar?',
+                              )
+                            ) {
+                              return
+                            }
+                            void patch({ operationMode: mode })
+                          }}
+                        >
+                          <option value="ai_suggest">Sugerir</option>
+                          <option value="ai_full">Responder</option>
+                          <option value="human_only">Solo humanos</option>
+                        </select>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-slate-600">Estado</p>
+                        <select
+                          className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
+                          value={selected.status}
+                          disabled={!canEdit || saving}
+                          onChange={(e) => {
+                            if (
+                              e.target.value === 'live' &&
+                              !window.confirm(
+                                '¿Pasar a En vivo? Solo agentes En vivo corren en inbound real.',
+                              )
+                            ) {
+                              return
+                            }
+                            void patch({ status: e.target.value })
+                          }}
+                        >
+                          <option value="draft">Borrador</option>
+                          <option value="live">En vivo</option>
+                          <option value="archived">Archivado</option>
+                        </select>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs font-medium text-slate-500">Estado</p>
-                      <select
-                        className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
-                        value={selected.status}
-                        disabled={!canEdit || saving}
-                        onChange={(e) => {
-                          if (
-                            e.target.value === 'live' &&
-                            !window.confirm(
-                              '¿Pasar a En vivo? Solo agentes En vivo corren en inbound real.',
-                            )
-                          ) {
-                            return
-                          }
-                          void patch({ status: e.target.value })
-                        }}
-                      >
-                        <option value="draft">Borrador</option>
-                        <option value="live">En vivo</option>
-                        <option value="archived">Archivado</option>
-                      </select>
-                    </div>
-                    <p className="self-end text-xs text-slate-400">v{selected.version}</p>
                   </div>
 
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <p className="text-sm font-medium text-slate-800">Probar</p>
+                  {/* Conocimiento A2 checklist */}
+                  <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-4">
+                    <h2 className="text-sm font-semibold text-slate-900">
+                      Conocimiento (checklist A2)
+                    </h2>
+                    <p className="mt-0.5 text-[11px] text-slate-600">
+                      Solo UI — no hay backend de conocimiento en este PR. Precios usan inventario
+                      en vivo.
+                    </p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {A2_CHECKLIST.map((card) => (
+                        <div
+                          key={card.id}
+                          className="rounded-lg bg-white px-3 py-2.5 ring-1 ring-indigo-100"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-medium text-slate-900">{card.title}</p>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                card.status === 'Usar inventario en vivo'
+                                  ? 'bg-emerald-50 text-emerald-800'
+                                  : 'bg-amber-50 text-amber-900'
+                              }`}
+                            >
+                              {card.status}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] leading-snug text-slate-500">{card.hint}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Probar */}
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <h2 className="text-sm font-semibold text-slate-900">Probar</h2>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      Corre un turno de prueba sin enviar a Meta.
+                    </p>
                     <textarea
-                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-60"
+                      className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:opacity-60"
                       rows={2}
                       value={testText}
                       onChange={(e) => setTestText(e.target.value)}
@@ -503,9 +678,13 @@ export default function AgentesConfigPage() {
                     ) : null}
                   </div>
 
-                  <div>
-                    <p className="text-sm font-medium text-slate-800">Controles de pánico</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
+                  {/* Pánico */}
+                  <div className="rounded-xl border border-red-100 bg-red-50/40 p-4">
+                    <h2 className="text-sm font-semibold text-slate-900">Pánico</h2>
+                    <p className="mt-0.5 text-[11px] text-slate-600">
+                      Controles de emergencia para el piloto Forge WA.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
                         disabled={!canEdit || saving}
@@ -533,8 +712,9 @@ export default function AgentesConfigPage() {
                     </div>
                   </div>
 
-                  <div>
-                    <p className="text-sm font-medium text-slate-800">Historial (últimos 20)</p>
+                  {/* Historial */}
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <h2 className="text-sm font-semibold text-slate-900">Historial (últimos 20)</h2>
                     <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto text-xs text-slate-600">
                       {history.map((h, i) => {
                         const row = h as {

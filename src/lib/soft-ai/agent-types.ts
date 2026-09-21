@@ -17,6 +17,8 @@ export const DEFAULT_DAILY_TOKEN_CAP = 250_000
 export const DEFAULT_PRICING_VERSION = 'xai-2026-09'
 export const AGENT_INSTRUCTIONS_MAX = 1_200
 export const AGENT_NAME_MAX = 40
+export const INTRODUCTION_NAMES_MAX = 3
+export const INTRODUCTION_NAME_MAX_LEN = 40
 export const HISTORY_WINDOW_MAX = 24
 export const HISTORY_WINDOW_MIN = 16
 export const OUTPUT_RETENTION_DAYS = 90
@@ -121,4 +123,40 @@ export function isAllowedChatAgentModel(model: string): model is ChatAgentModel 
 
 export function isA1ToolName(value: string): value is A1ToolName {
   return (A1_TOOL_NAMES as readonly string[]).includes(value)
+}
+
+/**
+ * Normalize presentation names for new-chat introductions.
+ * Returns 1–3 unique trimmed names, or [] when intentionally cleared.
+ * Throws INTRODUCTION_NAMES_INVALID on bad input.
+ */
+export function normalizeIntroductionNames(raw: unknown): string[] {
+  if (raw == null) return []
+  if (!Array.isArray(raw)) {
+    throw new Error('INTRODUCTION_NAMES_INVALID')
+  }
+  if (raw.length > INTRODUCTION_NAMES_MAX) {
+    throw new Error('INTRODUCTION_NAMES_INVALID')
+  }
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    if (typeof item !== 'string') {
+      throw new Error('INTRODUCTION_NAMES_INVALID')
+    }
+    const name = item.trim()
+    if (!name) {
+      throw new Error('INTRODUCTION_NAMES_INVALID')
+    }
+    if (name.length > INTRODUCTION_NAME_MAX_LEN) {
+      throw new Error('INTRODUCTION_NAMES_INVALID')
+    }
+    const key = name.toLocaleLowerCase('es')
+    if (seen.has(key)) {
+      throw new Error('INTRODUCTION_NAMES_INVALID')
+    }
+    seen.add(key)
+    out.push(name)
+  }
+  return out
 }

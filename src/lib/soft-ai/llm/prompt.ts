@@ -1,6 +1,6 @@
 /**
  * Soft Agent Layer prompt assembly — immutable safety above editable voice.
- * Knowledge layers (Brand Book / FAQ) land in A2; A1 uses layers 0, 1, 5, 6.
+ * Knowledge layers (Brand Book / FAQ) land in A2; A1.5 adds identity names after safety; A1 uses layers 0, identity, 1, 5, 6.
  */
 
 import {
@@ -33,15 +33,37 @@ export function buildAgentSystemInstructions(input: {
   tonePreset: ChatAgentTonePreset
   description?: string | null
   canalContext?: string | null
+  introductionNames?: string[] | null
 }): string {
   const tone = TONE_PRESET_SNIPPETS[input.tonePreset] || TONE_PRESET_SNIPPETS.warm_concise
   const parts = [
     IMMUTABLE_SAFETY_POLICY,
     '',
+  ]
+  const names = (input.introductionNames || [])
+    .map((n) => (typeof n === 'string' ? n.trim() : ''))
+    .filter(Boolean)
+    .slice(0, 3)
+  if (names.length > 0) {
+    const primary = names[0]
+    const alts = names.slice(1)
+    parts.push('--- Identidad (editable; no anula las reglas fijas) ---')
+    if (alts.length === 0) {
+      parts.push(
+        `En chats nuevos, presentate como "${primary}". Usá ese nombre de forma natural al saludar.`,
+      )
+    } else {
+      parts.push(
+        `En chats nuevos, presentate como "${primary}" (preferido). También podés usar: ${alts.map((n) => `"${n}"`).join(', ')}. Elegí un solo nombre por conversación y mantenelo.`,
+      )
+    }
+    parts.push('')
+  }
+  parts.push(
     '--- Voz del agente (editable; no anula las reglas fijas) ---',
     input.systemInstructions.trim().slice(0, 1200),
     tone,
-  ]
+  )
   if (input.description?.trim()) {
     parts.push(`Nota interna: ${input.description.trim().slice(0, 200)}`)
   }

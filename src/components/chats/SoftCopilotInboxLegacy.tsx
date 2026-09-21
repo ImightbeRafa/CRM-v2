@@ -16,6 +16,7 @@ import {
 } from '@/lib/chat-message-query'
 import {
   accountDisplayLabel,
+  accountChannelAddress,
   conversationStorageKey,
   enrichConversations,
   filterSoftConversations,
@@ -206,7 +207,9 @@ export function SoftCopilotInboxLegacy() {
         .filter(Boolean) as Array<{ account: SoftSocialAccount; messages: ChatInboxMessage[] }>
 
       const fp = byAccount
-        .map(({ account, messages }) => `${account.id}:${messagesFingerprint(messages)}`)
+        .map(({ account, messages }) =>
+          `${account.id}:${accountDisplayLabel(account)}:${accountChannelAddress(account) || ''}:${messagesFingerprint(messages)}`,
+        )
         .join('||')
       const changed = fp !== messagesFingerprintRef.current
       if (!changed && !opts?.forceScroll) return false
@@ -224,6 +227,7 @@ export function SoftCopilotInboxLegacy() {
             socialAccountId: account.id,
             platform: account.platform,
             accountLabel: accountDisplayLabel(account),
+            channelAddress: accountChannelAddress(account),
             statusMap: statusMapRef.current,
             tagsMap: tagsMapRef.current,
             groupFn: groupMessagesByRecipient,

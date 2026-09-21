@@ -44,6 +44,7 @@ export function listDtoToSoftConversation(
     socialAccountId: dto.socialAccountId,
     platform: dto.channel.platform,
     accountLabel: dto.channel.displayName,
+    channelAddress: dto.channel.address ?? null,
     status: dto.status as ConversationStatus,
     tags: coerceSoftTags(dto.tags),
     orderId,

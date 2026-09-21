@@ -12,6 +12,8 @@ import {
   isWhatsAppWindowClosedError,
   readStatusMap,
   readTagsMap,
+  accountDisplayLabel,
+  accountChannelAddress,
   type ChannelFilter,
   type ConversationStatus,
   type InboxBucket,
@@ -279,17 +281,32 @@ export function SoftCopilotInboxV2() {
 
   const conversations = useMemo(() => {
     const dtos = sortedConversationDtos(dtoMap)
-    return dtos.map((dto) =>
-      listDtoToSoftConversation(dto, threadMessages[dto.id] || []),
-    )
-  }, [dtoMap, threadMessages])
+    const byId = new Map(accounts.map((a) => [a.id, a]))
+    return dtos.map((dto) => {
+      const soft = listDtoToSoftConversation(dto, threadMessages[dto.id] || [])
+      const account = byId.get(dto.socialAccountId)
+      if (!account) return soft
+      return {
+        ...soft,
+        accountLabel: accountDisplayLabel(account),
+        channelAddress: accountChannelAddress(account),
+      }
+    })
+  }, [dtoMap, threadMessages, accounts])
 
   const selectedConversation = useMemo(() => {
     if (!selectedConversationId) return null
     const dto = dtoMap.get(selectedConversationId)
     if (!dto) return null
-    return listDtoToSoftConversation(dto, threadMessages[selectedConversationId] || [])
-  }, [dtoMap, selectedConversationId, threadMessages])
+    const soft = listDtoToSoftConversation(dto, threadMessages[selectedConversationId] || [])
+    const account = accounts.find((a) => a.id === dto.socialAccountId)
+    if (!account) return soft
+    return {
+      ...soft,
+      accountLabel: accountDisplayLabel(account),
+      channelAddress: accountChannelAddress(account),
+    }
+  }, [dtoMap, selectedConversationId, threadMessages, accounts])
 
   const selectedKey = selectedConversation ? softKey(selectedConversation) : null
 

@@ -2,9 +2,52 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
+import { toChatAccountDto } from '@/lib/social-account-identity'
+import { refreshMissingAccountIdentities } from '@/lib/social-account-identity-refresh'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+const ACCOUNT_SELECT = {
+  id: true,
+  platform: true,
+  accountId: true,
+  linkedAt: true,
+  isActive: true,
+  refreshToken: true,
+  accessToken: true,
+  displayName: true,
+  providerDisplayName: true,
+  providerUsername: true,
+  displayPhoneNumber: true,
+  wabaId: true,
+  pageId: true,
+  tokenStatus: true,
+  tokenLastCheckedAt: true,
+} as const
+
+function mapAccountRow(row: {
+  id: string
+  platform: string
+  accountId: string
+  linkedAt: Date
+  isActive: boolean
+  refreshToken: string | null
+  displayName: string | null
+  providerDisplayName: string | null
+  providerUsername: string | null
+  displayPhoneNumber: string | null
+  wabaId: string | null
+  pageId: string | null
+  tokenStatus: string | null
+}) {
+  const meta = parseSocialRefreshToken(row.refreshToken)
+  return toChatAccountDto({
+    ...row,
+    whatsappBusinessAccountId: row.wabaId || meta.whatsappBusinessAccountId,
+    pageId: row.pageId || meta.pageId,
+  })
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,41 +59,24 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url)
     const includeInactive = url.searchParams.get('includeInactive') === '1'
 
-    const rows = await db.socialAccount.findMany({
+    let rows = await db.socialAccount.findMany({
       where: includeInactive ? { tenantId } : { tenantId, isActive: true },
-      select: {
-        id: true,
-        platform: true,
-        accountId: true,
-        linkedAt: true,
-        isActive: true,
-        refreshToken: true,
-      },
+      select: ACCOUNT_SELECT,
     })
 
-    const accounts = rows.map((row: {
-      id: string
-      platform: string
-      accountId: string
-      linkedAt: Date
-      isActive: boolean
-      refreshToken: string | null
-    }) => {
-      const meta = parseSocialRefreshToken(row.refreshToken)
-      return {
-        id: row.id,
-        platform: row.platform,
-        accountId: row.accountId,
-        linkedAt: row.linkedAt,
-        isActive: row.isActive,
-        phoneNumberId: row.platform === 'whatsapp' ? row.accountId : null,
-        whatsappBusinessAccountId: row.platform === 'whatsapp' ? meta.whatsappBusinessAccountId : null,
-        pageId: row.platform === 'instagram' ? meta.pageId : null,
-      }
-    })
+    const refreshResult = await refreshMissingAccountIdentities(rows)
+    if (refreshResult.refreshed > 0) {
+      rows = await db.socialAccount.findMany({
+        where: includeInactive ? { tenantId } : { tenantId, isActive: true },
+        select: ACCOUNT_SELECT,
+      })
+    }
+
+    const accounts = rows.map(mapAccountRow)
 
     return NextResponse.json({ success: true, accounts })
   } catch (error) {
+    console.error('[chat/accounts] GET failed', error)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

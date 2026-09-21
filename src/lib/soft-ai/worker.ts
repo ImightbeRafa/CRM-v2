@@ -55,6 +55,8 @@ function composeReply(opts: {
   const personalityLead = opts.input.config.personality.split('.')[0]
   const body = opts.hints.filter(Boolean).join(' ')
   const kb = kbHint(opts.input)
+  // Prompt-ready channel context (PR-3) — carried for LLM/heuristic awareness; no routing change.
+  void opts.input.canalContext
 
   if (opts.paymentBlocked) {
     return `Hola ${name}, para temas de pago / SINPE te paso con una persona del equipo (no lo manejo automático). ${kb ? `Nota: ${kb}` : ''}`.trim()

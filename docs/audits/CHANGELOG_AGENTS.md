@@ -1,3 +1,17 @@
+## 2026-09-21 — PR-3 channel identity (names / logos / Connect naming)
+
+- Persist WA/IG provider identity at connect (`exchange`, IG complete/callback shared upsert).
+- Lazy Graph identity refresh on `GET /api/chat/accounts` (≤1/h via `tokenLastCheckedAt`).
+- `PATCH /api/chat/accounts/:id { displayName }` (`update_config`); empty → provider default.
+- `ChannelLogo` + wire SoftConversationList / SoftThreadPane / account filter / `/config/social`.
+- Soft AI `canalContext` line `Canal: WhatsApp · {displayName}`; fallback never blank; IG numeric-id `@handle` bug fixed.
+- Soft chrome SoftSlimNav / SoftInboxBuckets / SoftCopilotRail untouched; bot paths untouched.
+- One-off: `scripts/chat-account-identity-backfill.ts` (dry-run default).
+
+# Agent Changelog
+
+Append-only. Newest entries at the top.
+
 ## 2026-09-21 — PR-2 Bugbot follow-up (send/echo + Soft AI + OAuth)
 
 - Verified 6/6 #44 Bugbot notes against `origin/dev` `ed598fdd`. All real.

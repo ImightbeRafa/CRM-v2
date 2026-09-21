@@ -545,6 +545,8 @@ export function interpretWhatsAppOwnershipGraphData(params: {
   ok: boolean
   phoneNumberId: string | null
   whatsappBusinessAccountId: string | null
+  providerDisplayName: string | null
+  displayPhoneNumber: string | null
   reason?: string
 } {
   if (!params.graphOk) {
@@ -553,6 +555,8 @@ export function interpretWhatsAppOwnershipGraphData(params: {
       ok: false,
       phoneNumberId: null,
       whatsappBusinessAccountId: null,
+      providerDisplayName: null,
+      displayPhoneNumber: null,
       reason: isMetaNonexistingFieldError(params.data, 'whatsapp_business_account')
         ? 'nonexisting_waba_field'
         : reason,
@@ -565,6 +569,8 @@ export function interpretWhatsAppOwnershipGraphData(params: {
       ok: false,
       phoneNumberId: null,
       whatsappBusinessAccountId: null,
+      providerDisplayName: null,
+      displayPhoneNumber: null,
       reason: 'phone_id_mismatch',
     }
   }
@@ -581,14 +587,25 @@ export function interpretWhatsAppOwnershipGraphData(params: {
       ok: false,
       phoneNumberId: resolvedPhoneId,
       whatsappBusinessAccountId: resolvedWaba,
+      providerDisplayName: null,
+      displayPhoneNumber: null,
       reason: 'waba_mismatch',
     }
   }
+
+  const providerDisplayName = params.data?.verified_name
+    ? String(params.data.verified_name).trim() || null
+    : null
+  const displayPhoneNumber = params.data?.display_phone_number
+    ? String(params.data.display_phone_number).trim() || null
+    : null
 
   return {
     ok: true,
     phoneNumberId: resolvedPhoneId,
     whatsappBusinessAccountId: resolvedWaba,
+    providerDisplayName,
+    displayPhoneNumber,
   }
 }
 
@@ -603,11 +620,20 @@ export async function verifyWhatsAppAssetsForToken(params: {
   ok: boolean
   phoneNumberId: string | null
   whatsappBusinessAccountId: string | null
+  providerDisplayName: string | null
+  displayPhoneNumber: string | null
   reason?: string
 }> {
   const phoneNumberId = String(params.phoneNumberId || '').trim()
   if (!phoneNumberId || !params.accessToken) {
-    return { ok: false, phoneNumberId: null, whatsappBusinessAccountId: null, reason: 'missing_phone_or_token' }
+    return {
+      ok: false,
+      phoneNumberId: null,
+      whatsappBusinessAccountId: null,
+      providerDisplayName: null,
+      displayPhoneNumber: null,
+      reason: 'missing_phone_or_token',
+    }
   }
 
   const claimedWaba = String(params.whatsappBusinessAccountId || '').trim() || null
@@ -635,6 +661,11 @@ export async function verifyWhatsAppAssetsForToken(params: {
       return interpreted
     }
 
+    const identity = {
+      providerDisplayName: interpreted.providerDisplayName,
+      displayPhoneNumber: interpreted.displayPhoneNumber,
+    }
+
     // Preferred coexistence path: prove WABA ownership by listing phones under the claimed WABA.
     if (claimedWaba) {
       const listed = await listWhatsAppPhoneNumbersForWaba({
@@ -646,6 +677,7 @@ export async function verifyWhatsAppAssetsForToken(params: {
           ok: false,
           phoneNumberId: interpreted.phoneNumberId,
           whatsappBusinessAccountId: null,
+          ...identity,
           reason: listed.reason || 'waba_phone_list_failed',
         }
       }
@@ -655,6 +687,7 @@ export async function verifyWhatsAppAssetsForToken(params: {
           ok: false,
           phoneNumberId: interpreted.phoneNumberId,
           whatsappBusinessAccountId: null,
+          ...identity,
           reason: 'waba_mismatch',
         }
       }
@@ -662,6 +695,7 @@ export async function verifyWhatsAppAssetsForToken(params: {
         ok: true,
         phoneNumberId: interpreted.phoneNumberId,
         whatsappBusinessAccountId: claimedWaba,
+        ...identity,
       }
     }
 
@@ -671,6 +705,7 @@ export async function verifyWhatsAppAssetsForToken(params: {
       ok: true,
       phoneNumberId: interpreted.phoneNumberId,
       whatsappBusinessAccountId: resolvedWaba,
+      ...identity,
     }
   } catch (error) {
     console.warn('[meta-api] WhatsApp asset verification failed', error)
@@ -678,8 +713,53 @@ export async function verifyWhatsAppAssetsForToken(params: {
       ok: false,
       phoneNumberId: null,
       whatsappBusinessAccountId: null,
+      providerDisplayName: null,
+      displayPhoneNumber: null,
       reason: 'verification_exception',
     }
+  }
+}
+
+/** Fetch IG Page name + nested username for identity refresh / connect. */
+export async function fetchInstagramPageIdentity(params: {
+  pageId: string
+  accessToken: string
+}): Promise<{
+  ok: boolean
+  pageName: string | null
+  igUsername: string | null
+  reason?: string
+}> {
+  const pageId = String(params.pageId || '').trim()
+  if (!pageId || !params.accessToken) {
+    return { ok: false, pageName: null, igUsername: null, reason: 'missing_page_or_token' }
+  }
+  const fields = encodeURIComponent('name,instagram_business_account{id,username}')
+  const url = addAppSecretProofToUrl(
+    buildMetaGraphUrl(`${encodeURIComponent(pageId)}?fields=${fields}`),
+    params.accessToken,
+  )
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${params.accessToken}` },
+    })
+    const data = await readMetaJson(response)
+    if (!response.ok) {
+      return {
+        ok: false,
+        pageName: null,
+        igUsername: null,
+        reason: data?.error?.message || 'graph_not_ok',
+      }
+    }
+    const pageName = data?.name ? String(data.name).trim() || null : null
+    const igUsername = data?.instagram_business_account?.username
+      ? String(data.instagram_business_account.username).trim() || null
+      : null
+    return { ok: true, pageName, igUsername }
+  } catch (error) {
+    console.warn('[meta-api] IG page identity fetch failed', error)
+    return { ok: false, pageName: null, igUsername: null, reason: 'identity_exception' }
   }
 }
 

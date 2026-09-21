@@ -147,6 +147,8 @@ test('WA ownership interpreter tolerates missing nested WABA field (coexistence)
   assert.equal(phoneOnly.ok, true)
   assert.equal(phoneOnly.phoneNumberId, '111')
   assert.equal(phoneOnly.whatsappBusinessAccountId, null)
+  assert.equal(phoneOnly.providerDisplayName, 'Store')
+  assert.equal(phoneOnly.displayPhoneNumber, '+506…')
 
   const nestedFieldMissing = interpretWhatsAppOwnershipGraphData({
     graphOk: false,

@@ -20,6 +20,7 @@ import {
 } from '@/lib/soft-ai/agent-mode-server'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
+import { softAiCanalContextLine } from '@/lib/soft-ai/channel-context'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import { dualWriteChatMessage } from '@/lib/chat-conversation-write'
@@ -195,12 +196,48 @@ export async function maybeRunSoftAiAfterInbound(
     const orderId =
       [...messages].reverse().find((m: { orderId?: string | null }) => m.orderId)?.orderId || null
 
+    const accountForContext = await db.socialAccount.findFirst({
+      where: { id: args.socialAccountId, tenantId: args.tenantId },
+      select: {
+        id: true,
+        platform: true,
+        accountId: true,
+        displayName: true,
+        providerDisplayName: true,
+        providerUsername: true,
+        displayPhoneNumber: true,
+        accessToken: true,
+        refreshToken: true,
+      },
+    })
+
+    const canalContext = accountForContext
+      ? softAiCanalContextLine({
+          id: accountForContext.id,
+          platform: accountForContext.platform || args.platform,
+          accountId: accountForContext.accountId,
+          displayName: accountForContext.displayName,
+          providerDisplayName: accountForContext.providerDisplayName,
+          providerUsername: accountForContext.providerUsername,
+          displayPhoneNumber: accountForContext.displayPhoneNumber,
+          phoneNumberId:
+            (accountForContext.platform || args.platform) === 'whatsapp'
+              ? accountForContext.accountId
+              : null,
+        })
+      : softAiCanalContextLine({
+          id: args.socialAccountId,
+          platform: args.platform,
+          accountId: args.senderId,
+        })
+
     const result = await runSoftAiTurn(
       {
         conversationKey: key,
         recipientId: args.senderId,
         recipientName: args.senderName || null,
         platform: args.platform,
+        canalContext,
         messages,
         inboundText: args.content,
         agentMode: 'ai_active',
@@ -250,16 +287,7 @@ export async function maybeRunSoftAiAfterInbound(
       }
     }
 
-    const account = await db.socialAccount.findFirst({
-      where: { id: args.socialAccountId, tenantId: args.tenantId },
-      select: {
-        id: true,
-        platform: true,
-        accessToken: true,
-        refreshToken: true,
-        accountId: true,
-      },
-    })
+    const account = accountForContext
     if (!account?.accessToken) return { ran: true, skippedReason: 'no_account', metaSent: false }
 
     const token = decryptSocialAccessToken(account.accessToken)

@@ -229,6 +229,7 @@ export const apiPermissions: Record<string, Permission> = {
 
   // Soft Copilot chat (aligned with send → update_sales)
   'GET /api/chat/accounts': 'update_sales',
+  'PATCH /api/chat/accounts/*': 'update_config',
   'GET /api/chat/messages': 'update_sales',
   'GET /api/chat/templates': 'update_sales',
   'POST /api/chat/send': 'update_sales',

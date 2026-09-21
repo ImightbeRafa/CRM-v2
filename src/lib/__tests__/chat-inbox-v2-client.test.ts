@@ -30,7 +30,7 @@ function sampleDto(id: string, at: string): ChatConversationListItemDto {
     aiMode: null,
     assignedUserId: null,
     assignedUser: null,
-    channel: { id: 'sa1', platform: 'whatsapp', displayName: 'Forge', logoKey: 'whatsapp' },
+    channel: { id: 'sa1', platform: 'whatsapp', displayName: 'Forge', logoKey: 'whatsapp', address: '+506 6104 3737' },
     clientId: null,
   }
 }

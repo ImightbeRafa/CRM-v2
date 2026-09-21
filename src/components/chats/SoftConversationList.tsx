@@ -3,12 +3,12 @@
 import {
   formatRelativeEs,
   initialsFromName,
-  platformShort,
   type ChannelFilter,
   type SoftConversation,
   type SoftSocialAccount,
   accountDisplayLabel,
 } from '@/lib/chat-soft-copilot'
+import { ChannelLogo } from '@/components/social/ChannelLogo'
 
 interface SoftConversationListProps {
   conversations: SoftConversation[]
@@ -88,6 +88,14 @@ export function SoftConversationList({
     },
   ]
 
+  const waAccounts = accounts.filter((a) => a.platform === 'whatsapp')
+  const igAccounts = accounts.filter((a) => a.platform === 'instagram')
+  const otherAccounts = accounts.filter(
+    (a) => a.platform !== 'whatsapp' && a.platform !== 'instagram',
+  )
+  const selectedAccount =
+    selectedAccountId !== 'all' ? accounts.find((a) => a.id === selectedAccountId) : null
+
   return (
     <section
       className={`flex h-full min-h-0 flex-col border-r border-slate-100 bg-white ${
@@ -153,20 +161,43 @@ export function SoftConversationList({
       <div className="mt-2 px-4">
         <label className="block">
           <span className="sr-only">Filtrar por cuenta</span>
-          <select
-            value={selectedAccountId}
-            onChange={(e) =>
-              onAccountFilter(e.target.value === 'all' ? 'all' : e.target.value)
-            }
-            className="w-full appearance-none rounded-lg border-0 bg-slate-50 px-3 py-2 text-[11px] text-slate-600 outline-none ring-1 ring-slate-100 focus:ring-2 focus:ring-[#5b6cff]/30"
-          >
-            <option value="all">Cuenta: Todas</option>
-            {accounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>
-                {accountDisplayLabel(acc)}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            {selectedAccount ? (
+              <ChannelLogo platform={selectedAccount.platform} size={14} className="shrink-0" />
+            ) : null}
+            <select
+              value={selectedAccountId}
+              onChange={(e) =>
+                onAccountFilter(e.target.value === 'all' ? 'all' : e.target.value)
+              }
+              className="w-full appearance-none rounded-lg border-0 bg-slate-50 px-3 py-2 text-[11px] text-slate-600 outline-none ring-1 ring-slate-100 focus:ring-2 focus:ring-[#5b6cff]/30"
+            >
+              <option value="all">Cuenta: Todas</option>
+              {waAccounts.length > 0 ? (
+                <optgroup label="WhatsApp">
+                  {waAccounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {accountDisplayLabel(acc)}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {igAccounts.length > 0 ? (
+                <optgroup label="Instagram">
+                  {igAccounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {accountDisplayLabel(acc)}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {otherAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {accountDisplayLabel(acc)}
+                </option>
+              ))}
+            </select>
+          </div>
         </label>
       </div>
 
@@ -257,14 +288,14 @@ export function SoftConversationList({
                         {conv.lastMessage || '—'}
                       </p>
                       <div className="mt-1 flex items-center justify-between gap-2">
-                        <p className="truncate text-[11px] text-slate-400">
+                        <p className="flex min-w-0 items-center gap-1 truncate text-[11px] text-slate-400">
                           {isDemo ? (
                             <span className="mr-1 rounded bg-amber-100 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-amber-900">
                               Demo
                             </span>
                           ) : null}
-                          {platformShort(conv.platform)} ·{' '}
-                          {conv.accountLabel.replace(/^(WA|IG)\s·\s/, '')}
+                          <ChannelLogo platform={conv.platform} size={12} className="shrink-0" />
+                          <span className="truncate">{conv.accountLabel}</span>
                         </p>
                         {unread > 0 ? (
                           <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#5b6cff] px-1 text-[10px] font-bold text-white">

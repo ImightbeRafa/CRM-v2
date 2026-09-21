@@ -3,12 +3,13 @@
 import { useState, type FormEvent, type Ref } from 'react'
 import {
   isWhatsAppWindowOpen,
-  platformShort,
   type ConversationStatus,
   type SoftConversation,
   type SoftTag,
 } from '@/lib/chat-soft-copilot'
 import { agentModeLabel, isSoftHumanComposerEnabled, type SoftAiAgentMode } from '@/lib/soft-ai'
+import { ChannelLogo } from '@/components/social/ChannelLogo'
+import { formatThreadChannelMeta, platformFullName } from '@/lib/social-account-identity'
 
 export type SoftWaTemplateOption = {
   name: string
@@ -133,13 +134,19 @@ export function SoftThreadPane({
         ? 'ventana 24h OK'
         : 'ventana 24h CERRADA'
       : null
-  const channelName = conversation.platform === 'whatsapp' ? 'WhatsApp' : 'Instagram'
-  const metaLine = [
-    channelName,
-    conversation.accountLabel.replace(/^(WA|IG)\s·\s/, ''),
-    statusLabel(conversation.status),
-    windowLabel,
-  ]
+  const channelMeta = formatThreadChannelMeta({
+    id: conversation.socialAccountId,
+    platform: conversation.platform,
+    accountId: conversation.recipientId,
+    displayName: conversation.accountLabel,
+    displayPhoneNumber:
+      conversation.platform === 'whatsapp' ? conversation.channelAddress : null,
+    providerUsername:
+      conversation.platform === 'instagram'
+        ? conversation.channelAddress?.replace(/^@/, '')
+        : null,
+  })
+  const metaLine = [channelMeta, statusLabel(conversation.status), windowLabel]
     .filter(Boolean)
     .join(' · ')
 
@@ -176,13 +183,16 @@ export function SoftThreadPane({
               {conversation.recipientName || conversation.recipientId}
             </h2>
             <p
-              className={`mt-0.5 truncate text-[11px] ${
+              className={`mt-0.5 flex items-center gap-1.5 truncate text-[11px] ${
                 closedWindow ? 'font-medium text-red-600' : 'text-slate-500'
               }`}
             >
-              {compact && closedWindow
-                ? `${platformShort(conversation.platform)} · ventana 24h CERRADA`
-                : metaLine}
+              <ChannelLogo platform={conversation.platform} size={16} className="shrink-0" />
+              <span className="truncate">
+                {compact && closedWindow
+                  ? `${platformFullName(conversation.platform)} · ${conversation.accountLabel} · ventana 24h CERRADA`
+                  : metaLine}
+              </span>
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               <span

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { getToken } from 'next-auth/jwt'
 import { timingSafeEqual } from 'crypto'
-import { subscribePageToInstagramMessages } from '@/lib/meta-api'
+import { subscribePageToInstagramMessages, buildMetaGraphUrl } from '@/lib/meta-api'
 import {
   buildInstagramPickerHtml,
   buildInstagramSuccessHtml,
@@ -18,9 +17,7 @@ import {
   INSTAGRAM_PENDING_COOKIE_MAX_AGE,
   createInstagramPendingConnect,
 } from '@/lib/instagram-pending-connect'
-import { encodeInstagramRefreshToken } from '@/lib/social-account-meta'
-import { encryptSocialAccessToken } from '@/lib/social-account-crypto'
-import { buildMetaGraphUrl } from '@/lib/meta-api'
+import { upsertInstagramSocialAccount } from '@/lib/instagram-social-account'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -29,50 +26,6 @@ function html(body: string, status = 200) {
   return new NextResponse(body, {
     status,
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
-  })
-}
-
-async function upsertInstagramAccount(params: {
-  tenantId: string
-  userId: string
-  igBusinessAccountId: string
-  pageAccessToken: string
-  pageId: string
-}) {
-  const db = prisma as any
-  const expiresAt = new Date(Date.now() + 5184000 * 1000)
-  const refreshToken = encodeInstagramRefreshToken(params.pageId)
-  const existing = await db.socialAccount.findFirst({
-    where: {
-      tenantId: params.tenantId,
-      platform: 'instagram',
-      accountId: String(params.igBusinessAccountId),
-    },
-  })
-  const encryptedToken = encryptSocialAccessToken(params.pageAccessToken)
-  if (existing) {
-    return db.socialAccount.update({
-      where: { id: existing.id },
-      data: {
-        accessToken: encryptedToken,
-        refreshToken: refreshToken ?? undefined,
-        expiresAt,
-        isActive: true,
-        userId: params.userId,
-      },
-    })
-  }
-  return db.socialAccount.create({
-    data: {
-      tenantId: params.tenantId,
-      userId: params.userId,
-      platform: 'instagram',
-      accountId: String(params.igBusinessAccountId),
-      accessToken: encryptedToken,
-      refreshToken: refreshToken ?? undefined,
-      expiresAt,
-      isActive: true,
-    },
   })
 }
 
@@ -256,12 +209,14 @@ export async function GET(request: NextRequest) {
       console.warn('[instagram/callback] Page subscribe error', error)
     }
 
-    await upsertInstagramAccount({
+    await upsertInstagramSocialAccount({
       tenantId,
       userId,
       igBusinessAccountId: match.igBusinessAccountId,
       pageAccessToken: match.pageAccessToken,
       pageId: match.pageId,
+      pageName: match.pageName,
+      igUsername: match.igUsername,
     })
 
     return html(

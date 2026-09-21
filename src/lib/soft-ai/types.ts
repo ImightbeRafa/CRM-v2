@@ -59,6 +59,8 @@ export type SoftAiTurnInput = {
   recipientId: string
   recipientName?: string | null
   platform: string
+  /** Prompt-ready channel line, e.g. "Canal: WhatsApp · Forge". */
+  canalContext?: string | null
   messages: SoftAiTurnMessage[]
   /** Latest inbound that triggered the turn (optional). */
   inboundText?: string

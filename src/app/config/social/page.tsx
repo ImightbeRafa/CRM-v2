@@ -13,6 +13,11 @@ import {
   shouldIgnoreWaSessionEvent,
   type WaEmbeddedSignupMessage,
 } from '@/lib/whatsapp-embedded-signup'
+import { ChannelLogo } from '@/components/social/ChannelLogo'
+import {
+  formatInstagramHandle,
+  resolveChannelDisplayName,
+} from '@/lib/social-account-identity'
 
 interface SocialAccount {
   id: string
@@ -23,6 +28,13 @@ interface SocialAccount {
   phoneNumberId?: string | null
   whatsappBusinessAccountId?: string | null
   pageId?: string | null
+  displayName?: string | null
+  providerDisplayName?: string | null
+  providerUsername?: string | null
+  displayPhoneNumber?: string | null
+  logoKey?: 'whatsapp' | 'instagram'
+  tokenStatus?: string | null
+  wabaId?: string | null
 }
 
 interface MetaEnvFlag {
@@ -86,6 +98,9 @@ export default function SocialConfigPage() {
   const [metaStatusError, setMetaStatusError] = useState('')
   const [accountSearch, setAccountSearch] = useState('')
   const [subscribeFailToast, setSubscribeFailToast] = useState('')
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const [renamingBusy, setRenamingBusy] = useState(false)
   const waSignupPendingRef = useRef<{
     code?: string | null
     accessToken?: string | null
@@ -602,25 +617,98 @@ export default function SocialConfigPage() {
   const waAccounts = accounts.filter((a) => a.platform === 'whatsapp')
   const q = accountSearch.trim().toLowerCase()
   const igVisible = q
-    ? igAccounts.filter((a) => a.accountId.toLowerCase().includes(q))
+    ? igAccounts.filter(
+        (a) =>
+          a.accountId.toLowerCase().includes(q) ||
+          (a.displayName || '').toLowerCase().includes(q) ||
+          (a.providerUsername || '').toLowerCase().includes(q) ||
+          (a.providerDisplayName || '').toLowerCase().includes(q),
+      )
     : igAccounts
   const waVisible = q
     ? waAccounts.filter(
         (a) =>
           a.accountId.toLowerCase().includes(q) ||
           (a.phoneNumberId || '').toLowerCase().includes(q) ||
-          (a.whatsappBusinessAccountId || '').toLowerCase().includes(q),
+          (a.whatsappBusinessAccountId || '').toLowerCase().includes(q) ||
+          (a.displayName || '').toLowerCase().includes(q) ||
+          (a.displayPhoneNumber || '').toLowerCase().includes(q) ||
+          (a.providerDisplayName || '').toLowerCase().includes(q),
       )
     : waAccounts
 
-  function accountRowLabel(acc: SocialAccount) {
+  function accountResolvedName(acc: SocialAccount) {
+    return resolveChannelDisplayName({
+      id: acc.id,
+      platform: acc.platform,
+      accountId: acc.accountId,
+      displayName: acc.displayName,
+      providerDisplayName: acc.providerDisplayName,
+      providerUsername: acc.providerUsername,
+      displayPhoneNumber: acc.displayPhoneNumber,
+      phoneNumberId: acc.phoneNumberId,
+    })
+  }
+
+  function accountSecondaryLine(acc: SocialAccount): string {
     if (acc.platform === 'instagram') {
-      const handle = acc.accountId.startsWith('@') ? acc.accountId : `@${acc.accountId}`
-      return handle
+      const handle = formatInstagramHandle(acc.providerUsername)
+      const meta = acc.providerDisplayName?.trim()
+      return [handle, meta ? `Meta: ${meta}` : null].filter(Boolean).join(' · ')
     }
-    const phone = acc.phoneNumberId || acc.accountId
-    const short = phone.length > 10 ? `${phone.slice(0, 4)}…${phone.slice(-4)}` : phone
-    return `WA ${short}`
+    const phone = acc.displayPhoneNumber?.trim()
+    const meta = acc.providerDisplayName?.trim()
+    return [phone, meta ? `Meta: ${meta}` : null].filter(Boolean).join(' · ')
+  }
+
+  function healthLabel(acc: SocialAccount): string {
+    if (!acc.isActive) return 'Error: no suscrito'
+    const status = (acc.tokenStatus || 'unknown').toLowerCase()
+    if (status === 'valid') return 'Saludable'
+    if (status === 'expiring') return 'Token por vencer'
+    if (status === 'expired' || status === 'revoked') return 'Reconectar'
+    if (status === 'error') return 'Error de token'
+    return 'Conectado'
+  }
+
+  function startRename(acc: SocialAccount) {
+    setRenamingId(acc.id)
+    setRenameDraft(accountResolvedName(acc))
+  }
+
+  function cancelRename() {
+    setRenamingId(null)
+    setRenameDraft('')
+  }
+
+  async function saveRename(acc: SocialAccount) {
+    setRenamingBusy(true)
+    try {
+      const res = await fetch(`/api/chat/accounts/${acc.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: renameDraft }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setStatusMessage(json.error || 'No se pudo renombrar la cuenta.')
+        return
+      }
+      setStatusMessage('Nombre actualizado.')
+      cancelRename()
+      fetchAccounts()
+    } catch {
+      setStatusMessage('No se pudo renombrar la cuenta.')
+    } finally {
+      setRenamingBusy(false)
+    }
+  }
+
+  function duplicateNameWarning(acc: SocialAccount): boolean {
+    const name = accountResolvedName(acc).toLowerCase()
+    return accounts.some(
+      (other) => other.id !== acc.id && accountResolvedName(other).toLowerCase() === name,
+    )
   }
 
   function confirmAddAnother(platform: 'instagram' | 'whatsapp', existingCount: number): boolean {
@@ -682,9 +770,7 @@ export default function SocialConfigPage() {
           {/* Instagram card */}
           <section className="rounded-2xl bg-[#fafbfd] p-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-pink-100 text-sm font-semibold text-pink-800">
-                IG
-              </div>
+              <ChannelLogo platform="instagram" size={20} colorful className="shrink-0" />
               <h2 className="text-base font-semibold text-slate-900">Instagram</h2>
             </div>
 
@@ -703,19 +789,71 @@ export default function SocialConfigPage() {
                   {igVisible.map((acc) => (
                   <div
                     key={acc.id}
-                    className={`flex flex-col gap-2 rounded-xl px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${
+                    className={`flex flex-col gap-2 rounded-xl px-4 py-3 sm:flex-row sm:items-start sm:justify-between ${
                       acc.isActive ? 'bg-white' : 'bg-red-50'
                     }`}
                   >
-                    <p
-                      className={`text-[13px] font-medium ${
-                        acc.isActive ? 'text-green-800' : 'text-red-700'
-                      }`}
-                    >
-                      {accountRowLabel(acc)} ·{' '}
-                      {acc.isActive ? 'Conectado' : 'Error: no suscrito'}
-                    </p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <ChannelLogo platform="instagram" size={16} className="shrink-0" />
+                        {renamingId === acc.id ? (
+                          <input
+                            value={renameDraft}
+                            onChange={(e) => setRenameDraft(e.target.value)}
+                            maxLength={40}
+                            className="w-full max-w-xs rounded-md bg-slate-50 px-2 py-1 text-[13px] text-slate-900 outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-[#5b6cff]/30"
+                            aria-label="Nuevo nombre del canal"
+                          />
+                        ) : (
+                          <p
+                            className={`truncate text-[13px] font-semibold ${
+                              acc.isActive ? 'text-slate-900' : 'text-red-700'
+                            }`}
+                          >
+                            {accountResolvedName(acc)}
+                          </p>
+                        )}
+                      </div>
+                      <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                        {accountSecondaryLine(acc) || 'Sin handle todavía'}
+                        {' · '}
+                        {healthLabel(acc)}
+                      </p>
+                      {duplicateNameWarning(acc) ? (
+                        <p className="mt-0.5 text-[10px] text-amber-700">
+                          Nombre duplicado — podés distinguirlas renombrando.
+                        </p>
+                      ) : null}
+                    </div>
                     <div className="flex flex-wrap gap-2">
+                      {renamingId === acc.id ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void saveRename(acc)}
+                            disabled={renamingBusy}
+                            className="text-xs font-medium text-[#5b6cff] disabled:opacity-50"
+                          >
+                            {renamingBusy ? 'Guardando…' : 'Guardar'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelRename}
+                            disabled={renamingBusy}
+                            className="text-xs font-medium text-slate-500 disabled:opacity-50"
+                          >
+                            Cancelar
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => startRename(acc)}
+                          className="text-xs font-medium text-slate-600"
+                        >
+                          Renombrar
+                        </button>
+                      )}
                       {!acc.isActive ? (
                         <button
                           type="button"
@@ -765,9 +903,7 @@ export default function SocialConfigPage() {
           {/* WhatsApp card */}
           <section className="rounded-2xl bg-[#fafbfd] p-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-100 text-sm font-semibold text-green-800">
-                WA
-              </div>
+              <ChannelLogo platform="whatsapp" size={20} className="shrink-0" />
               <h2 className="text-base font-semibold text-slate-900">WhatsApp</h2>
             </div>
 
@@ -786,22 +922,74 @@ export default function SocialConfigPage() {
                   {waVisible.map((acc) => (
                   <div
                     key={acc.id}
-                    className={`flex flex-col gap-2 rounded-xl px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${
+                    className={`flex flex-col gap-2 rounded-xl px-4 py-3 sm:flex-row sm:items-start sm:justify-between ${
                       acc.isActive ? 'bg-white' : 'bg-red-50'
                     }`}
                   >
-                    <p
-                      className={`text-[13px] font-medium ${
-                        acc.isActive ? 'text-green-800' : 'text-red-700'
-                      }`}
-                    >
-                      {accountRowLabel(acc)}
-                      {acc.whatsappBusinessAccountId
-                        ? ` · WABA …${acc.whatsappBusinessAccountId.slice(-4)}`
-                        : ''}{' '}
-                      · {acc.isActive ? 'Conectado' : 'Error: no suscrito'}
-                    </p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <ChannelLogo platform="whatsapp" size={16} className="shrink-0" />
+                        {renamingId === acc.id ? (
+                          <input
+                            value={renameDraft}
+                            onChange={(e) => setRenameDraft(e.target.value)}
+                            maxLength={40}
+                            className="w-full max-w-xs rounded-md bg-slate-50 px-2 py-1 text-[13px] text-slate-900 outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-[#5b6cff]/30"
+                            aria-label="Nuevo nombre del canal"
+                          />
+                        ) : (
+                          <p
+                            className={`truncate text-[13px] font-semibold ${
+                              acc.isActive ? 'text-slate-900' : 'text-red-700'
+                            }`}
+                          >
+                            {accountResolvedName(acc)}
+                          </p>
+                        )}
+                      </div>
+                      <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                        {accountSecondaryLine(acc) ||
+                          (acc.whatsappBusinessAccountId
+                            ? `WABA …${acc.whatsappBusinessAccountId.slice(-4)}`
+                            : 'Sin teléfono todavía')}
+                        {' · '}
+                        {healthLabel(acc)}
+                      </p>
+                      {duplicateNameWarning(acc) ? (
+                        <p className="mt-0.5 text-[10px] text-amber-700">
+                          Nombre duplicado — podés distinguirlas renombrando.
+                        </p>
+                      ) : null}
+                    </div>
                     <div className="flex flex-wrap gap-2">
+                      {renamingId === acc.id ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void saveRename(acc)}
+                            disabled={renamingBusy}
+                            className="text-xs font-medium text-[#5b6cff] disabled:opacity-50"
+                          >
+                            {renamingBusy ? 'Guardando…' : 'Guardar'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelRename}
+                            disabled={renamingBusy}
+                            className="text-xs font-medium text-slate-500 disabled:opacity-50"
+                          >
+                            Cancelar
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => startRename(acc)}
+                          className="text-xs font-medium text-slate-600"
+                        >
+                          Renombrar
+                        </button>
+                      )}
                       {!acc.isActive ? (
                         <button
                           type="button"

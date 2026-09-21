@@ -113,6 +113,7 @@ debug-vercel-api.ps1
 .cursor/*
 !.cursor/skills/
 !.cursor/skills/**
+.cursor/skills/verify-betsy/evidence/
 !.cursor/commands/
 !.cursor/commands/**
 !.cursor/rules/

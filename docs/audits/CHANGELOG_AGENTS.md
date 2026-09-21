@@ -26,8 +26,9 @@ Append-only. Newest entries at the top.
   about:blank or #49 charset/Graph cap. 024/025/026/027/027b/028 SQL still
   not applied; `chat_inbox_v2` / `chat_agent_layer_v1` not toggled;
   `aiFullUnlock` not written.
-- Prove (post-#58 rebase onto `4a59dc3`): `npx tsx --test src/lib/__tests__/chat-inbox-backfill-repair.test.ts`
-  (8 pass) + `npm run test:chat-harden` (202 pass).
+- Prove (post-#59 rebase onto `8fb80fa`): `npx tsx --test src/lib/__tests__/chat-inbox-backfill-repair.test.ts`
+  (8 pass) + `npm run test:chat-harden` (209 pass; #59 added desk/optimistic
+  tests vs post-#58 202).
 
 ## 2026-09-23 — Instagram reconnect no longer 500s on SocialAccount P2002
 

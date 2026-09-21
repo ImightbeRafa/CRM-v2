@@ -37,11 +37,11 @@ const TONES: ChatAgentTonePreset[] = ['warm_concise', 'formal', 'playful']
 
 /** Light-surface form controls: explicit foreground so dark theme cannot inherit pale text. */
 const FIELD_CLASS =
-  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600'
+  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm !text-slate-900 placeholder:!text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:!text-slate-600'
 const TEXTAREA_CLASS =
-  'w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-base leading-relaxed text-slate-900 placeholder:text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600'
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-base leading-relaxed !text-slate-900 placeholder:!text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:!text-slate-600'
 const SELECT_CLASS =
-  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600'
+  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm !text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:!text-slate-600'
 const META_CLASS = 'text-[11px] text-slate-600'
 const HINT_CLASS = 'text-[11px] text-slate-600'
 
@@ -277,7 +277,7 @@ export default function AgentesConfigPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 text-slate-900 [color-scheme:light]">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 !text-slate-900 [color-scheme:light]">
       <div className="mx-auto max-w-5xl px-4 py-4 md:px-6 md:py-5">
         <button
           type="button"
@@ -736,7 +736,7 @@ export default function AgentesConfigPage() {
                     </button>
                     {testResult ? (
                       <div className="mt-3 space-y-2 text-sm text-slate-900">
-                        <p className="whitespace-pre-wrap rounded-lg bg-white p-3 text-sm text-slate-900 ring-1 ring-slate-200">
+                        <p className="whitespace-pre-wrap rounded-lg bg-white p-3 text-sm !text-slate-900 ring-1 ring-slate-200">
                           {testResult.text}
                         </p>
                         <p className="text-xs text-slate-600">

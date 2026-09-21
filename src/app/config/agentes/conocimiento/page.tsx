@@ -36,9 +36,9 @@ type Step = 'pegar' | 'revisar' | 'aprobar'
 
 /** Light-surface form controls: explicit foreground so dark theme cannot inherit pale text. */
 const FIELD_CLASS =
-  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600'
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm !text-slate-900 placeholder:!text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:!text-slate-600'
 const TEXTAREA_CLASS =
-  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900 placeholder:text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600'
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-sm !text-slate-900 placeholder:!text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:!text-slate-600'
 const HINT_CLASS = 'text-[11px] text-slate-600'
 
 function ConocimientoWizardInner() {
@@ -166,7 +166,7 @@ function ConocimientoWizardInner() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 text-slate-900 [color-scheme:light]">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 !text-slate-900 [color-scheme:light]">
       <div className="mx-auto max-w-3xl p-4 md:p-6">
         <button
           type="button"
@@ -308,7 +308,7 @@ function ConocimientoWizardInner() {
             <h2 className="text-sm font-semibold text-slate-900">
               Vista previa (como lo verá el agente — datos, no instrucciones)
             </h2>
-            <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-[12px] text-slate-900 ring-1 ring-slate-200">
+            <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-[12px] !text-slate-900 ring-1 ring-slate-200">
               {body}
             </pre>
             {review.monetaryFigures.length > 0 ? (

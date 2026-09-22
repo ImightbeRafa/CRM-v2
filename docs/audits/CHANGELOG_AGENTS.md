@@ -33,8 +33,8 @@ Append-only. Newest entries at the top.
   tagged outbound fallback. 024/025/026/027/027b/028/029/030 SQL still
   not applied; `chat_inbox_v2` / `chat_agent_layer_v1` not toggled;
   `aiFullUnlock` not written.
-- Prove (post-#64 rebase onto `2fb0c69`): `npx tsx --test src/lib/__tests__/chat-inbox-backfill-repair.test.ts`
-  (8 pass) + `npm run test:chat-harden` (234 pass; 209 post-#63 plus #64 AL2-A1 suites).
+- Prove (post-#65 rebase onto `630dd99`): `npx tsx --test src/lib/__tests__/chat-inbox-backfill-repair.test.ts`
+  (8 pass) + `npm run test:chat-harden` (234 pass; same as post-#64, #65 docs-only).
 
 ## 2026-09-23 — Instagram reconnect no longer 500s on SocialAccount P2002
 

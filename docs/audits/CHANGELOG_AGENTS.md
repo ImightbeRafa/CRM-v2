@@ -1,3 +1,15 @@
+## 2026-09-22 — Railway: self-host next/font (no Google fetch at build)
+
+- `betsy-crm-pr71` Railpack builds failed in `src/app/layout.tsx` with
+  `next/font` `TypeError: Cannot read properties of null (reading '1')` while
+  fetching Plus Jakarta / Space Grotesk from Google. Same flake hit an earlier
+  `dev` deploy; `pr70` later succeeded — intermittent egress, not P3 logic.
+- Root + logistics layouts now use `next/font/local` via `src/app/fonts.ts` and
+  committed latin woff2 files under `src/app/fonts/`. Builds no longer call
+  fonts.googleapis.com.
+- Prove: `npm run build` without Google font fetch; Railway redeploy / PR #72
+  service after push.
+
 ## 2026-09-22 — P4: monitor attribution in /chats (AT-WA-3, G23)
 
 - Agent-layer delivery in `agent-turn.ts` snapshots `agentName` and `agentEmoji` onto the

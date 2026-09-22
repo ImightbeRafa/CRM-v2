@@ -28,8 +28,7 @@ export function selectWhatsappTestChannel(
   currentId: string | null,
 ): TestChannelSelection {
   const wa = whatsappChannels(channels)
-  const bound = wa.filter((row) => row.attendedByThisAgent)
-  const options = bound.length > 0 ? bound : wa
+  const options = wa.filter((row) => row.attendedByThisAgent)
   if (options.length === 0) {
     return { selectedId: null, mode: 'empty', options: [] }
   }

@@ -13,17 +13,19 @@ Append-only. Newest entries at the top.
   nothing. Report includes `aggregateRepair`.
 - Offline `node:test` in `chat-inbox-backfill-repair.test.ts` (added to
   `test:chat-harden`). No 024/025/026/027/027b/028/029/030 apply, no shared `--apply`, staff bot untouched.
-- Rebased onto `dev` after #65 (`630dd99` docs-only AL2-A1 UX redo plan;
-  parent `2fb0c69` #64). Resume-aggregate repair kept. #65 UX redo plan
-  left as on `dev` (docs only; not implemented). #64 AL2-A1 (classifier,
-  brand facts, shortcuts, Probar; 029 gated, `chat_agent_layer_v1` off)
-  left as on `dev` (no overlay). #63 verify-betsy skill / helpers left as
-  on `dev` (no overlay). #62 Arc 2 plan docs left as on `dev` (no overlay).
-  #61 agentes contrast / in-page conocimiento / empty `config/loading`
-  left as on `dev` (no overlay). #60 conocimiento page type left as on
-  `dev`. #59 desk polish (`SoftCopilotInboxV2` / `SoftThreadPane` / send
-  route / `chat-inbox-v2-client`) left as on `dev`. #58 knowledge layer
-  (028 gated), #57 introductionNames, #56 agentes single-write +
+- Rebased onto `dev` after #66 (`8dd8aa9` AL2-A1 UX redo squash; parent
+  `630dd99` #65). Resume-aggregate repair kept. #66 agentes UX redo
+  (paste-import, plain atajos, WhatsApp Probar) left as on `dev` (no
+  overlay). #65 UX redo plan left as on `dev` (docs only). #64 AL2-A1
+  (classifier, brand facts, shortcuts, Probar; 029 gated,
+  `chat_agent_layer_v1` off) left as on `dev` (no overlay). #63
+  verify-betsy skill / helpers left as on `dev` (no overlay). #62 Arc 2
+  plan docs left as on `dev` (no overlay). #61 agentes contrast /
+  in-page conocimiento / empty `config/loading` left as on `dev` (no
+  overlay). #60 conocimiento page type left as on `dev`. #59 desk polish
+  (`SoftCopilotInboxV2` / `SoftThreadPane` / send route /
+  `chat-inbox-v2-client`) left as on `dev`. #58 knowledge layer (028
+  gated), #57 introductionNames, #56 agentes single-write +
   audit-after-commit, #55 `session-permissions` / `server-only` browser
   hotfix, #54 Agent Layer runtime (027 gated, `chat_agent_layer_v1` off,
   `aiFullUnlock` empty), #51 self-serve, #50 media / Soft-AI queue /

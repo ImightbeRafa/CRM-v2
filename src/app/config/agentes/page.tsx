@@ -14,7 +14,9 @@ import { ConocimientoWizardInner } from '@/app/config/agentes/conocimiento/Conoc
 import { AgentTestSandbox } from '@/app/config/agentes/AgentTestSandbox'
 import { BrandFactsEditor } from '@/app/config/agentes/BrandFactsEditor'
 import { ChannelsEditor } from '@/app/config/agentes/ChannelsEditor'
+import { ShortcutPasteImport } from '@/app/config/agentes/ShortcutPasteImport'
 import { ShortcutsEditor } from '@/app/config/agentes/ShortcutsEditor'
+import { selectWhatsappTestChannel, type TestChannelOption } from '@/lib/soft-ai/test-channel'
 
 type AgentRow = {
   id: string
@@ -85,6 +87,9 @@ export default function AgentesConfigPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [channelId, setChannelId] = useState<string | null>(null)
+  const [testChannels, setTestChannels] = useState<TestChannelOption[]>([])
+  const [channelsLoaded, setChannelsLoaded] = useState(false)
+  const [setupRefresh, setSetupRefresh] = useState(0)
   const [history, setHistory] = useState<unknown[]>([])
   const [introDraft, setIntroDraft] = useState('')
   const [checklist, setChecklist] = useState<ChecklistCard[]>([])
@@ -155,6 +160,16 @@ export default function AgentesConfigPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    setChannelId(null)
+    setTestChannels([])
+    setChannelsLoaded(false)
+  }, [selectedId])
+
+  useEffect(() => {
+    setChannelId((current) => selectWhatsappTestChannel(testChannels, current).selectedId)
+  }, [testChannels])
 
   useEffect(() => {
     if (!selectedId) {
@@ -237,7 +252,7 @@ export default function AgentesConfigPage() {
 
   async function panic(action: string) {
     if (!selectedId || !canEdit || saving) return
-    if (!window.confirm('¿Confirmás esta acción de pánico?')) return
+    if (!window.confirm('¿Confirmás detener o limitar el agente en este canal?')) return
     setSaving(true)
     setError(null)
     try {
@@ -399,6 +414,42 @@ export default function AgentesConfigPage() {
                 <p className="text-sm text-slate-600">Seleccioná un agente en la lista.</p>
               ) : (
                 <div className="space-y-5">
+                  <ShortcutPasteImport
+                    agentId={selected.id}
+                    canEdit={canEdit}
+                    onApplied={() => setSetupRefresh((value) => value + 1)}
+                  />
+                  <BrandFactsEditor agentId={selected.id} canEdit={canEdit} reloadToken={setupRefresh} />
+                  <ShortcutsEditor agentId={selected.id} canEdit={canEdit} reloadToken={setupRefresh} />
+                  <AgentTestSandbox
+                    agentId={selected.id}
+                    canEdit={canEdit}
+                    channels={testChannels}
+                    channelsLoaded={channelsLoaded}
+                    socialAccountId={channelId}
+                    onSelectChannel={setChannelId}
+                  />
+                  <ChannelsEditor
+                    agentId={selected.id}
+                    canEdit={canEdit}
+                    onUseForTest={setChannelId}
+                    onChannels={(rows) => {
+                      setTestChannels(
+                        rows.map((row) => ({
+                          id: row.id,
+                          platform: row.platform,
+                          attendedByThisAgent: row.attendedByThisAgent,
+                          label:
+                            row.displayName ||
+                            row.providerUsername ||
+                            row.displayPhoneNumber ||
+                            row.platform,
+                        })),
+                      )
+                      setChannelsLoaded(true)
+                    }}
+                  />
+
                   {/* Identidad */}
                   <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
                     <div className="mb-3 flex items-baseline justify-between gap-2">
@@ -558,11 +609,8 @@ export default function AgentesConfigPage() {
                               void patch({ enabledTools: next })
                             }}
                           />
-                          <span>
-                            <span className="font-medium text-slate-900">
-                              {TOOL_LABELS[tool] || tool}
-                            </span>
-                            <span className={`mt-0.5 block ${META_CLASS}`}>{tool}</span>
+                          <span className="font-medium text-slate-900">
+                            {TOOL_LABELS[tool] || tool}
                           </span>
                         </label>
                       ))}
@@ -622,18 +670,6 @@ export default function AgentesConfigPage() {
                       </div>
                     </div>
                   </div>
-
-                  {selected ? (
-                    <>
-                      <ChannelsEditor
-                        agentId={selected.id}
-                        canEdit={canEdit}
-                        onUseForTest={setChannelId}
-                      />
-                      <BrandFactsEditor agentId={selected.id} canEdit={canEdit} />
-                      <ShortcutsEditor agentId={selected.id} canEdit={canEdit} />
-                    </>
-                  ) : null}
 
                   {/* Conocimiento A2 — live checklist + wizard */}
                   <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4">
@@ -714,19 +750,10 @@ export default function AgentesConfigPage() {
                     </div>
                   </div>
 
-                  {selected ? (
-                    <AgentTestSandbox
-                      agentId={selected.id}
-                      canEdit={canEdit}
-                      socialAccountId={channelId}
-                    />
-                  ) : null}
-
-                  {/* Pánico */}
-                  <div className="rounded-xl border border-red-100 bg-red-50/40 p-4">
-                    <h2 className="text-sm font-semibold text-slate-900">Pánico</h2>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <h2 className="text-sm font-semibold text-slate-900">Detener agente</h2>
                     <p className={`mt-0.5 ${HINT_CLASS}`}>
-                      Controles de emergencia del canal elegido en Canales.
+                      Pausá el canal, pasá a solo humanos, o sacalo de la lista.
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
@@ -756,9 +783,10 @@ export default function AgentesConfigPage() {
                     </div>
                   </div>
 
-                  {/* Historial */}
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <h2 className="text-sm font-semibold text-slate-900">Historial (últimos 20)</h2>
+                  <details className="rounded-xl border border-slate-200 bg-white p-4">
+                    <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+                      Cambios recientes
+                    </summary>
                     <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto text-xs text-slate-700">
                       {history.map((h, i) => {
                         const row = h as {
@@ -774,7 +802,7 @@ export default function AgentesConfigPage() {
                         )
                       })}
                     </ul>
-                  </div>
+                  </details>
                 </div>
               )}
             </section>

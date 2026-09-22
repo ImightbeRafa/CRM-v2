@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 type ChannelRow = {
   id: string
@@ -19,25 +19,35 @@ export function ChannelsEditor({
   agentId,
   canEdit,
   onUseForTest,
+  onChannels,
 }: {
   agentId: string
   canEdit: boolean
   onUseForTest: (socialAccountId: string) => void
+  onChannels?: (channels: ChannelRow[]) => void
 }) {
   const [channels, setChannels] = useState<ChannelRow[]>([])
   const [schemaReady, setSchemaReady] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const onChannelsRef = useRef(onChannels)
+  const requestRef = useRef(0)
+  onChannelsRef.current = onChannels
 
   const load = useCallback(async () => {
+    const requestId = ++requestRef.current
     const res = await fetch(`/api/chat/agents/${agentId}/bindings`)
     const data = await res.json()
+    if (requestRef.current !== requestId) return
     if (!res.ok) {
       setError(typeof data.error === 'string' ? data.error : 'No se pudieron cargar los canales')
+      onChannelsRef.current?.([])
       return
     }
     setSchemaReady(data.schemaReady !== false)
-    setChannels(data.channels || [])
+    const next: ChannelRow[] = data.channels || []
+    setChannels(next)
+    onChannelsRef.current?.(next)
   }, [agentId])
 
   useEffect(() => {

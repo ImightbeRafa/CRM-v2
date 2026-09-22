@@ -63,7 +63,15 @@ function numOrUndef(value: string): number | undefined {
   return Number.isFinite(n) ? n : undefined
 }
 
-export function BrandFactsEditor({ agentId, canEdit }: { agentId: string; canEdit: boolean }) {
+export function BrandFactsEditor({
+  agentId,
+  canEdit,
+  reloadToken = 0,
+}: {
+  agentId: string
+  canEdit: boolean
+  reloadToken?: number
+}) {
   const [form, setForm] = useState<FactsForm>(EMPTY)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -100,7 +108,7 @@ export function BrandFactsEditor({ agentId, canEdit }: { agentId: string; canEdi
 
   useEffect(() => {
     void load()
-  }, [load])
+  }, [load, reloadToken])
 
   function toggleMethod(method: string) {
     setForm((prev) => ({
@@ -165,12 +173,38 @@ export function BrandFactsEditor({ agentId, canEdit }: { agentId: string; canEdi
     }
   }
 
+  const checklist = [
+    form.storeName ? { label: 'Tienda', value: form.storeName } : null,
+    form.hoursText ? { label: 'Horario', value: form.hoursText } : null,
+    form.sinpeNumber
+      ? { label: 'SINPE', value: [form.sinpeNumber, form.sinpeHolder].filter(Boolean).join(' · ') }
+      : null,
+    form.gamCost ? { label: 'Envío GAM', value: form.gamCost } : null,
+    form.outsideGamCost ? { label: 'Fuera del GAM', value: form.outsideGamCost } : null,
+    form.raText ? { label: 'Retiro', value: form.raText } : null,
+    form.website ? { label: 'Sitio', value: form.website } : null,
+  ].filter((row): row is { label: string; value: string } => row != null)
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
       <h2 className="text-sm font-semibold text-slate-900">Datos de la marca</h2>
       <p className={`mt-0.5 ${HINT}`}>
-        Sitio, pagos, envío a domicilio (EA), retiro (RA) y horario. Nada de esto va fijo en el código.
+        Lo que el agente puede decir. Cargá tus atajos arriba, o editá a mano si falta un dato.
       </p>
+      {checklist.length === 0 ? (
+        <p className="mt-3 text-sm text-slate-800">Todavía no hay datos guardados.</p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {checklist.map((row) => (
+            <li key={row.label} className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
+              <span className="text-xs font-medium text-slate-700">{row.label}</span>
+              <span className="text-sm text-slate-900">{row.value}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <details className="mt-4">
+        <summary className="cursor-pointer text-sm font-medium text-slate-900">Editar a mano</summary>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-medium text-slate-700">
           Nombre de tienda
@@ -273,6 +307,7 @@ export function BrandFactsEditor({ agentId, canEdit }: { agentId: string; canEdi
       >
         {saving ? 'Guardando…' : 'Guardar datos de la marca'}
       </button>
+      </details>
     </div>
   )
 }

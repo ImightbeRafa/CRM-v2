@@ -1,10 +1,13 @@
 /**
  * Fixture set v2 for AL2-A1 replay. Account ids live only in fixtures/tests.
+ * The fixture hash is defined once in agent-types (G7).
  */
 
+import { FORGE_WA_V2_FIXTURE_SET_HASH } from '@/lib/soft-ai/agent-types'
+
+export { FORGE_WA_V2_FIXTURE_SET_HASH }
 export const FIXTURE_SOCIAL_ACCOUNT_ID = 'cmuahn5y90001l504y6kksiek'
 export const FIXTURE_TENANT_ID = 'cmhsibjue0004js04gie724nx'
-export const FORGE_WA_V2_FIXTURE_SET_HASH = 'forge-wa-v2-al2-a1-2026-09-21'
 
 export type FixtureExpect = {
   paymentClass: 'non_payment' | 'payment_info_safe' | 'payment_proof_or_risk'

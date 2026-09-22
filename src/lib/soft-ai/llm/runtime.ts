@@ -10,7 +10,11 @@ import {
   SOFT_AI_FIRST_CALL_TIMEOUT_MS,
   SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS,
 } from '@/lib/soft-ai/llm/client'
-import { SOFT_AI_MAX_MODEL_CALLS, SOFT_AI_MAX_TOOL_CALLS } from '@/lib/soft-ai/llm/model-policy'
+import {
+  SOFT_AI_MAX_MODEL_CALLS,
+  SOFT_AI_MAX_TOOL_CALLS,
+  buildSoftAiPromptCacheKey,
+} from '@/lib/soft-ai/llm/model-policy'
 import { softAiToolDefinitions } from '@/lib/soft-ai/llm/tool-definitions'
 import { runA1Tool, type SoftAiToolRunContext } from '@/lib/soft-ai/llm/tool-runner'
 import { validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
@@ -108,12 +112,13 @@ export async function runSoftAiLlmRuntime(
     linkedOrderId: input.linkedOrderId,
   })
   const tools = softAiToolDefinitions(input.enabledTools)
-  const promptCacheKey = [
-    input.tenantId,
-    input.agentId,
-    String(input.agentVersion),
-    input.socialAccountId,
-  ].join(':')
+  const promptCacheKey = buildSoftAiPromptCacheKey({
+    tenantId: input.tenantId,
+    agentId: input.agentId,
+    agentVersion: input.agentVersion,
+    socialAccountId: input.socialAccountId,
+    model: input.model,
+  })
 
   const inputItems: unknown[] = [
     {
@@ -250,6 +255,7 @@ export async function runSoftAiLlmRuntime(
         outputTokens,
         reasoningTokens,
         estimatedCostMicros: estimateCostMicros({
+          model: input.model,
           inputTokens,
           cachedInputTokens,
           outputTokens,
@@ -290,6 +296,7 @@ export async function runSoftAiLlmRuntime(
       outputTokens,
       reasoningTokens,
       estimatedCostMicros: estimateCostMicros({
+        model: input.model,
         inputTokens,
         cachedInputTokens,
         outputTokens,
@@ -329,6 +336,7 @@ export async function runSoftAiLlmRuntime(
       outputTokens,
       reasoningTokens,
       estimatedCostMicros: estimateCostMicros({
+        model: input.model,
         inputTokens,
         cachedInputTokens,
         outputTokens,

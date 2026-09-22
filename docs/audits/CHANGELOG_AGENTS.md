@@ -1,3 +1,27 @@
+## 2026-09-22 — P0+P1: Soft agent Grok 4.7 allowlist + guardrails
+
+- Decisions in force: **D1 off** (not implemented; P3), **D2 on** (not implemented; P3),
+  **D3 PATCH** (Avanzado button calls the existing agent PATCH; no SQL, no Forge row write).
+- P0: `DEFAULT_CHAT_AGENT_MODEL` and `FORGE_WA_V2_FIXTURE_SET_HASH` live in `agent-types.ts`.
+  `FIXTURE_SET_HASH_V2` is an alias. The v2 fixture module re-exports the hash (G7).
+  Locked-path test rejects `@/lib/bot`, `@/app/api/bot`, and `process.env.WHATSAPP_` on
+  soft-ai, chat API, and the P0/P1 files. Literal lock: no `grok-4.6` token under
+  `src/lib/soft-ai/**` except `agent-types.ts`. P2/P3 modules are covered by the
+  recursive scan once they exist; missing paths are not stubbed.
+- P1: allowlist `['grok-4.7', 'grok-4.6']`, default `grok-4.7`. Creation, starter
+  agents, shortcut-import turn fallback, and `resolveSoftAiModel()` use the constant.
+  Prisma `@default` and SQL 027 left unchanged. Prompt cache key appends `model`.
+- Pricing: verified 2026-09-22 on https://docs.x.ai/developers/pricing. `grok-4.7`
+  short-context is $2 input / $0.50 cached / $6 output per 1M, identical to `grok-4.6`
+  (long-context ≥200k is $4 / $1 / $12 for both). Estimator keeps the shared $2 / $6
+  short-context rates and still bills cached tokens at the full input rate.
+  `pricingVersion` stays `xai-2026-09`.
+- UI: `/config/agentes` Avanzado shows a read-only Modelo line and, for `update_config`
+  when the agent is not already on the default, **Cambiar a grok-4.7** via PATCH.
+- Out of this slice: P2 parity, P3 unlock, P4 monitor label, P5 live proof, staff bot,
+  Soft chrome, schema/SQL.
+- Prove: `npm run test:soft-ai-agent`. Staff-bot diff empty (AT-WA-4).
+
 ## 2026-09-22 — Plan: Forge WA Probar↔live fidelity + Soft agent Grok 4.7 (Fable, docs only)
 
 - Added `docs/plans/betsy-forge-wa-probar-live-fidelity-grok47-fable-2026-09-22.md` after

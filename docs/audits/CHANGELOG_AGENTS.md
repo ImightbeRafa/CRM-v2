@@ -13,11 +13,12 @@ Append-only. Newest entries at the top.
   nothing. Report includes `aggregateRepair`.
 - Offline `node:test` in `chat-inbox-backfill-repair.test.ts` (added to
   `test:chat-harden`). No 024/025/026/027/027b/028/029/030 apply, no shared `--apply`, staff bot untouched.
-- Rebased onto `dev` after #66 (`8dd8aa9` AL2-A1 UX redo squash; parent
-  `630dd99` #65). Resume-aggregate repair kept. #66 agentes UX redo
-  (paste-import, plain atajos, WhatsApp Probar) left as on `dev` (no
-  overlay). #65 UX redo plan left as on `dev` (docs only). #64 AL2-A1
-  (classifier, brand facts, shortcuts, Probar; 029 gated,
+- Rebased onto `dev` after #67 (`63be5e7` docs-only sales-agent pipeline
+  SoT squash; parent `8dd8aa9` #66). Resume-aggregate repair kept. #67
+  sales-agent pipeline SoT left as on `dev` (docs only; not implemented).
+  #66 agentes UX redo (paste-import, plain atajos, WhatsApp Probar) left
+  as on `dev` (no overlay). #65 UX redo plan left as on `dev` (docs only).
+  #64 AL2-A1 (classifier, brand facts, shortcuts, Probar; 029 gated,
   `chat_agent_layer_v1` off) left as on `dev` (no overlay). #63
   verify-betsy skill / helpers left as on `dev` (no overlay). #62 Arc 2
   plan docs left as on `dev` (no overlay). #61 agentes contrast /

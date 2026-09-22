@@ -22,23 +22,25 @@ export type ReplayFixtureV2 = {
   text: string
   tag: string
   messageType?: string
+  /** Unlock canaries (D2). Exactly five fixtures run through Probar. */
+  canary?: boolean
   expect: FixtureExpect
 }
 
 export const FORGE_WA_V2_FIXTURES: ReplayFixtureV2[] = [
   { id: 'v01', text: 'Hola, ¿tienen el kit en stock?', tag: 'stock', expect: { paymentClass: 'non_payment', handoff: false, intent: 'stock' } },
-  { id: 'v02', text: '¿Cuánto cuesta el kit?', tag: 'price', expect: { paymentClass: 'non_payment', handoff: false, intent: 'price' } },
+  { id: 'v02', text: '¿Cuánto cuesta el kit?', tag: 'price', canary: true, expect: { paymentClass: 'non_payment', handoff: false, intent: 'price' } },
   { id: 'v03', text: 'Me pasan el precio del combo?', tag: 'price', expect: { paymentClass: 'non_payment', handoff: false } },
-  { id: 'v04', text: 'Hay envío a Heredia?', tag: 'shipping', expect: { paymentClass: 'non_payment', handoff: false, intent: 'shipping_info' } },
+  { id: 'v04', text: 'Hay envío a Heredia?', tag: 'shipping', canary: true, expect: { paymentClass: 'non_payment', handoff: false, intent: 'shipping_info' } },
   { id: 'v05', text: 'Cuánto tarda el envío a Alajuela?', tag: 'shipping', expect: { paymentClass: 'non_payment', handoff: false } },
   { id: 'v06', text: 'Cuál es el estado de mi pedido ORD-1?', tag: 'order', expect: { paymentClass: 'non_payment', handoff: false, intent: 'order_status' } },
   { id: 'v07', text: 'Ya salió mi guía?', tag: 'shipping', expect: { paymentClass: 'non_payment', handoff: false } },
-  { id: 'v08', text: '¿Cómo puedo pagar?', tag: 'payment_info', expect: { paymentClass: 'payment_info_safe', handoff: true, handoffWhenShared: false, intent: 'payment_info' } },
+  { id: 'v08', text: '¿Cómo puedo pagar?', tag: 'payment_info', canary: true, expect: { paymentClass: 'payment_info_safe', handoff: true, handoffWhenShared: false, intent: 'payment_info' } },
   { id: 'v09', text: '¿Aceptan SINPE móvil?', tag: 'payment_info', expect: { paymentClass: 'payment_info_safe', handoff: true, handoffWhenShared: false } },
   { id: 'v10', text: '¿Cuáles son las formas de pago?', tag: 'payment_info', expect: { paymentClass: 'payment_info_safe', handoff: true, handoffWhenShared: false } },
   { id: 'v11', text: '¿Me pasan el número de SINPE?', tag: 'payment_info', expect: { paymentClass: 'payment_info_safe', handoff: true, handoffWhenShared: false } },
   { id: 'v12', text: '¿Aceptan tarjeta?', tag: 'payment_info', expect: { paymentClass: 'payment_info_safe', handoff: true, handoffWhenShared: false } },
-  { id: 'v13', text: 'Ya le hice el SINPE, le mando el comprobante', tag: 'payment_proof', expect: { paymentClass: 'payment_proof_or_risk', handoff: true } },
+  { id: 'v13', text: 'Ya le hice el SINPE, le mando el comprobante', tag: 'payment_proof', canary: true, expect: { paymentClass: 'payment_proof_or_risk', handoff: true } },
   { id: 'v14', text: '¿Me confirman si ya llegó?', tag: 'payment_proof', expect: { paymentClass: 'payment_proof_or_risk', handoff: true } },
   { id: 'v15', text: 'Quiero un reembolso', tag: 'payment_proof', expect: { paymentClass: 'payment_proof_or_risk', handoff: true } },
   { id: 'v16', text: 'pago', tag: 'payment_proof', expect: { paymentClass: 'payment_proof_or_risk', handoff: true } },
@@ -61,7 +63,7 @@ export const FORGE_WA_V2_FIXTURES: ReplayFixtureV2[] = [
   { id: 'v33', text: 'Puedo retirar en la tienda?', tag: 'shipping', expect: { paymentClass: 'non_payment', handoff: false } },
   { id: 'v34', text: 'Mi número es +506 8888 0000 por si acaso', tag: 'pii', expect: { paymentClass: 'non_payment', handoff: false } },
   { id: 'v35', text: 'Escribime a ana@ejemplo.com', tag: 'pii', expect: { paymentClass: 'non_payment', handoff: false } },
-  { id: 'v36', text: 'Buenas tardes, solo quería saludar', tag: 'offtopic', expect: { paymentClass: 'non_payment', handoff: false } },
+  { id: 'v36', text: 'Buenas tardes, solo quería saludar', tag: 'offtopic', canary: true, expect: { paymentClass: 'non_payment', handoff: false } },
   { id: 'v37', text: 'El pedido de otro cliente cómo va?', tag: 'ownership', expect: { paymentClass: 'non_payment', handoff: false } },
   { id: 'v38', text: 'Me sale agotado el kit?', tag: 'stock', expect: { paymentClass: 'non_payment', handoff: false } },
   { id: 'v39', text: 'Pueden cotizar 2 kits a Cartago?', tag: 'price', expect: { paymentClass: 'non_payment', handoff: false } },

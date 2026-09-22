@@ -946,6 +946,11 @@ export async function runAgentTestTurn(input: {
   windowOpen?: boolean
   customerName?: string
   conversationAiMode?: SoftAiAgentMode
+  /**
+   * Unlock canaries qualify the model even when ops flags are off.
+   * `flag_off` stays in `blockedBy` but does not force outcome `skip`.
+   */
+  ignoreLayerFlag?: boolean
 }): Promise<{
   text: string
   toolTrace: unknown
@@ -1006,7 +1011,11 @@ export async function runAgentTestTurn(input: {
   })
   const config = parseChatAgentLayerConfig(flag?.config)
   const testTokens = await loadDailyTestTokens(input.tenantId)
-  const unlockedForSend = hasAiFullUnlock(config, input.socialAccountId)
+  const unlockedForSend = hasAiFullUnlock(config, input.socialAccountId, {
+    agentId: runtimeAgent.id,
+    model: runtimeAgent.model,
+    agentVersion: runtimeAgent.version,
+  })
   const blockedBy = collectDryRunBlockers({
     layerEnabled: Boolean(flag?.enabled),
     softEnabled: Boolean(soft?.enabled),
@@ -1105,6 +1114,9 @@ export async function runAgentTestTurn(input: {
   }
 
   const markers: OutcomeMarkers = { needsHuman, fallbackUsed, escalate }
+  const outcomeBlockers = input.ignoreLayerFlag
+    ? blockedBy.filter((reason) => reason !== 'flag_off')
+    : blockedBy
   const outcome = decideTurnOutcome({
     effectiveBehavior: behaviorForOperationMode(runtimeAgent.operationMode),
     unlockedForSend,
@@ -1112,7 +1124,7 @@ export async function runAgentTestTurn(input: {
     fallbackUsed,
     escalate,
     conversationAiMode,
-    gateBlockers: blockedBy,
+    gateBlockers: outcomeBlockers,
   })
   const wouldSend = outcome.outcome === 'send'
   decision.decisionTrace.wouldSend = wouldSend

@@ -46,11 +46,18 @@ export function AgentInternalTests({
   conversationAiMode,
   last,
   replay,
+  canApprove,
+  confirmingUnlock,
+  unlockLine,
+  confirmCopy,
   onMessageType,
   onWindowOpen,
   onCustomerName,
   onConversationAiMode,
   onReplay,
+  onAskUnlock,
+  onCancelUnlock,
+  onConfirmUnlock,
 }: {
   canEdit: boolean
   busy: boolean
@@ -60,11 +67,18 @@ export function AgentInternalTests({
   conversationAiMode: 'ai_active' | 'human' | 'paused'
   last: TurnResult | null
   replay: Record<string, unknown> | null
+  canApprove: boolean
+  confirmingUnlock: boolean
+  unlockLine: string | null
+  confirmCopy: string
   onMessageType: (value: 'text' | 'image' | 'audio' | 'document' | 'video') => void
   onWindowOpen: (value: boolean) => void
   onCustomerName: (value: string) => void
   onConversationAiMode: (value: 'ai_active' | 'human' | 'paused') => void
   onReplay: () => void
+  onAskUnlock: () => void
+  onCancelUnlock: () => void
+  onConfirmUnlock: () => void
 }) {
   const rows = Array.isArray(replay?.rows) ? (replay.rows as Array<Record<string, unknown>>) : []
 
@@ -125,7 +139,45 @@ export function AgentInternalTests({
         >
           Replay todo
         </button>
+        <button
+          type="button"
+          disabled={!canEdit || busy || !canApprove}
+          onClick={onAskUnlock}
+          className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:bg-indigo-300"
+        >
+          Aprobar envío real
+        </button>
       </div>
+      {!canApprove ? (
+        <p className={`mt-2 ${HINT}`}>
+          Aprobar envío real se habilita cuando Replay todo queda en verde para el canal que atiende este
+          agente.
+        </p>
+      ) : null}
+      {confirmingUnlock ? (
+        <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950 ring-1 ring-amber-200">
+          <p>{confirmCopy}</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onConfirmUnlock}
+              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:bg-indigo-300"
+            >
+              Aprobar
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onCancelUnlock}
+              className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-slate-800 ring-1 ring-slate-200"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {unlockLine ? <p className="mt-3 text-sm text-emerald-900">{unlockLine}</p> : null}
       {last ? (
         <div className="mt-3 space-y-2 text-sm text-slate-900">
           <p className={HINT}>

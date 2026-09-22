@@ -90,7 +90,28 @@ export type AiFullUnlockRecord = {
   approvedBy: string
   fixtureSetHash: string
   passRate: number
+  /** Present on records written by Aprobar. Older rows omit it. */
+  agentId?: string
+  agentVersion?: number
+  model?: string
+  canaryCount?: number
 }
+
+export const AI_FULL_UNLOCK_REFUSAL_CODES = [
+  'ACCOUNT_NOT_TENANT',
+  'ACCOUNT_NOT_ALLOWLISTED',
+  'ACCOUNT_NOT_WHATSAPP',
+  'AGENT_NOT_BOUND',
+  'AGENT_NOT_LIVE',
+  'REPLAY_FAILED',
+  'HASH_MISMATCH',
+  'CANARY_FAILED',
+  'TEST_BUDGET_BLOCKED',
+  'XAI_NOT_CONFIGURED',
+] as const
+export type AiFullUnlockRefusalCode = (typeof AI_FULL_UNLOCK_REFUSAL_CODES)[number]
+
+export type AiFullUnlockMismatch = 'missing' | 'hash' | 'agent' | 'model' | 'version'
 
 export const DEFAULT_TEST_DAILY_TOKEN_CAP = 100_000
 /** Single source for the v2 fixture hash (G7). Fixtures re-export this. */
@@ -106,6 +127,13 @@ export type ChatAgentLayerConfig = {
   aiFullUnlock: Record<string, AiFullUnlockRecord>
   /** Current fixture set hash for unlock matching. */
   fixtureSetHash: string
+  /**
+   * When true, a recorded agentVersion must match the live agent.
+   * Pilot default is off: version is stored and warned, not a hard lock (D1).
+   */
+  strictUnlockVersion: boolean
+  /** When true, Aprobar runs the tagged canary fixtures through Probar (D2). */
+  unlockCanaries: boolean
 }
 
 export const DEFAULT_CHAT_AGENT_LAYER_CONFIG: ChatAgentLayerConfig = {
@@ -116,6 +144,8 @@ export const DEFAULT_CHAT_AGENT_LAYER_CONFIG: ChatAgentLayerConfig = {
   pricingVersion: DEFAULT_PRICING_VERSION,
   aiFullUnlock: {},
   fixtureSetHash: FIXTURE_SET_HASH_V2,
+  strictUnlockVersion: false,
+  unlockCanaries: true,
 }
 
 export const TONE_PRESET_LABELS: Record<ChatAgentTonePreset, string> = {

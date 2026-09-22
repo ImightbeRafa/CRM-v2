@@ -84,22 +84,30 @@ export async function createShortcut(input: {
   await requireAgent(input.tenantId, input.agentId)
   if (isReservedShortcutKey(input.draft.key)) throw new Error('SHORTCUT_RESERVED')
   assertSave(input.draft)
-  const row = await prisma.chatAgentShortcut.create({
-    data: {
-      tenantId: input.tenantId,
-      agentId: input.agentId,
-      key: input.draft.key,
-      title: input.draft.title.trim(),
-      kind: input.draft.kind,
-      intents: input.draft.intents,
-      keywords: input.draft.keywords,
-      body: input.draft.body.trim(),
-      deliveryMode: input.draft.deliveryMode,
-      isActive: input.draft.isActive !== false,
-      sortOrder: input.draft.sortOrder ?? 100,
-      createdBy: input.actorUserId,
-      updatedBy: input.actorUserId,
-    },
+  const row = await prisma.$transaction(async (tx) => {
+    const created = await tx.chatAgentShortcut.create({
+      data: {
+        tenantId: input.tenantId,
+        agentId: input.agentId,
+        key: input.draft.key,
+        title: input.draft.title.trim(),
+        kind: input.draft.kind,
+        intents: input.draft.intents,
+        keywords: input.draft.keywords,
+        body: input.draft.body.trim(),
+        deliveryMode: input.draft.deliveryMode,
+        isActive: input.draft.isActive !== false,
+        sortOrder: input.draft.sortOrder ?? 100,
+        createdBy: input.actorUserId,
+        updatedBy: input.actorUserId,
+      },
+    })
+    const bumped = await tx.chatAgent.updateMany({
+      where: { id: input.agentId, tenantId: input.tenantId },
+      data: { version: { increment: 1 }, updatedBy: input.actorUserId },
+    })
+    if (bumped.count !== 1) throw new Error('AGENT_NOT_FOUND')
+    return created
   })
   await logAuditEvent({
     tenantId: input.tenantId,
@@ -144,20 +152,28 @@ export async function updateShortcut(input: {
     deliveryMode: (input.patch.deliveryMode ?? existing.deliveryMode) as ShortcutDraft['deliveryMode'],
   }
   assertSave(next)
-  const row = await prisma.chatAgentShortcut.update({
-    where: { id: existing.id },
-    data: {
-      title: next.title.trim(),
-      kind: next.kind,
-      intents: next.intents,
-      keywords: next.keywords,
-      body: next.body.trim(),
-      deliveryMode: next.deliveryMode,
-      isActive: input.patch.isActive ?? existing.isActive,
-      sortOrder: input.patch.sortOrder ?? existing.sortOrder,
-      version: { increment: 1 },
-      updatedBy: input.actorUserId,
-    },
+  const row = await prisma.$transaction(async (tx) => {
+    const updated = await tx.chatAgentShortcut.update({
+      where: { id: existing.id },
+      data: {
+        title: next.title.trim(),
+        kind: next.kind,
+        intents: next.intents,
+        keywords: next.keywords,
+        body: next.body.trim(),
+        deliveryMode: next.deliveryMode,
+        isActive: input.patch.isActive ?? existing.isActive,
+        sortOrder: input.patch.sortOrder ?? existing.sortOrder,
+        version: { increment: 1 },
+        updatedBy: input.actorUserId,
+      },
+    })
+    const bumped = await tx.chatAgent.updateMany({
+      where: { id: input.agentId, tenantId: input.tenantId },
+      data: { version: { increment: 1 }, updatedBy: input.actorUserId },
+    })
+    if (bumped.count !== 1) throw new Error('AGENT_NOT_FOUND')
+    return updated
   })
   await logAuditEvent({
     tenantId: input.tenantId,
@@ -189,7 +205,14 @@ export async function deleteShortcut(input: {
   })
   if (!existing) throw new Error('SHORTCUT_NOT_FOUND')
   if (isReservedShortcutKey(existing.key)) throw new Error('SHORTCUT_RESERVED')
-  await prisma.chatAgentShortcut.delete({ where: { id: existing.id } })
+  await prisma.$transaction(async (tx) => {
+    await tx.chatAgentShortcut.delete({ where: { id: existing.id } })
+    const bumped = await tx.chatAgent.updateMany({
+      where: { id: input.agentId, tenantId: input.tenantId },
+      data: { version: { increment: 1 }, updatedBy: input.actorUserId },
+    })
+    if (bumped.count !== 1) throw new Error('AGENT_NOT_FOUND')
+  })
   await logAuditEvent({
     tenantId: input.tenantId,
     action: 'DELETE',

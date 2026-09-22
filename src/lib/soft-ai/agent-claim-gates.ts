@@ -279,7 +279,13 @@ export async function runPreSendGates(input: {
 
   // Gate 10 — ai_full unlock
   if (input.unlockedRequired && input.operationMode === 'ai_full') {
-    if (!hasAiFullUnlock(config, input.socialAccountId)) {
+    if (
+      !hasAiFullUnlock(config, input.socialAccountId, {
+        agentId: binding.agent.id,
+        model: binding.agent.model,
+        agentVersion: binding.agent.version,
+      })
+    ) {
       return { ok: false, status: 'suggested', skipReason: 'ai_full_not_unlocked' }
     }
   }

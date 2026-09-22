@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { composeEffectiveBehavior } from '../soft-ai/agent-resolver'
 import { hasAiFullUnlock, parseChatAgentLayerConfig } from '../soft-ai/agent-config'
@@ -18,7 +20,11 @@ import {
   isAllowedChatAgentModel,
 } from '../soft-ai/agent-types'
 import { FORGE_WA_V2_FIXTURE_SET_HASH as FIXTURE_HASH_REEXPORT } from '../soft-ai/__fixtures__/forge-wa-v2'
-import { formatAgentHeaderLabel, agentStateDot } from '../soft-ai/agent-inbox-projection'
+import {
+  formatAgentHeaderLabel,
+  agentStateDot,
+  softAiOutboundLabel,
+} from '../soft-ai/agent-inbox-projection'
 import { hashSoftAiOutput } from '../soft-ai/agent-claim-gates'
 
 describe('soft-ai agent resolver compose (1.9, 1.15, 1.22)', () => {
@@ -194,6 +200,84 @@ describe('soft-ai model allowlist', () => {
     assert.equal(FORGE_WA_V2_FIXTURE_SET_HASH, 'forge-wa-v2-al2-a1-2026-09-21')
     assert.equal(FIXTURE_SET_HASH_V2, FORGE_WA_V2_FIXTURE_SET_HASH)
     assert.equal(FIXTURE_HASH_REEXPORT, FORGE_WA_V2_FIXTURE_SET_HASH)
+  })
+})
+
+describe('soft-ai outbound attribution (AT-WA-3, G23)', () => {
+  it('labels a delivered agent from the metadata snapshot', () => {
+    assert.equal(
+      softAiOutboundLabel({
+        softAi: true,
+        agentId: 'agent-1',
+        agentName: 'Forge ventas',
+        agentEmoji: '🤖',
+        turnId: 'turn-1',
+      }),
+      '🤖 Forge ventas envió',
+    )
+  })
+
+  it('omits a blank emoji and trims the stored snapshot', () => {
+    for (const agentEmoji of [undefined, null, '', '   ']) {
+      assert.equal(
+        softAiOutboundLabel({
+          softAi: true,
+          agentId: 'agent-1',
+          agentName: 'Forge ventas',
+          agentEmoji,
+        }),
+        'Forge ventas envió',
+      )
+    }
+    assert.equal(
+      softAiOutboundLabel({
+        softAi: true,
+        agentId: '  agent-1  ',
+        agentName: '  Forge ventas  ',
+        agentEmoji: '  🤖  ',
+      }),
+      '🤖 Forge ventas envió',
+    )
+  })
+
+  it('keeps legacy and incomplete rows as IA envió', () => {
+    assert.equal(softAiOutboundLabel({ softAi: true }), 'IA envió')
+    assert.equal(softAiOutboundLabel({ softAi: true, toolLog: [] }), 'IA envió')
+    assert.equal(softAiOutboundLabel({ softAi: true, agentId: 'agent-1' }), 'IA envió')
+    assert.equal(
+      softAiOutboundLabel({ softAi: true, agentId: 'agent-1', agentName: '   ' }),
+      'IA envió',
+    )
+    assert.equal(
+      softAiOutboundLabel({ softAi: true, agentName: 'Forge ventas', agentEmoji: '🤖' }),
+      'IA envió',
+    )
+    assert.equal(softAiOutboundLabel(null), 'IA envió')
+    assert.equal(softAiOutboundLabel([]), 'IA envió')
+    assert.equal(softAiOutboundLabel('soft'), 'IA envió')
+    assert.equal(
+      softAiOutboundLabel({
+        softAi: true,
+        agentId: 12,
+        agentName: 'Forge ventas',
+        agentEmoji: '🤖',
+      }),
+      'IA envió',
+    )
+    assert.equal(
+      softAiOutboundLabel({
+        agentId: 'agent-1',
+        agentName: 'Nombre actual',
+        agentEmoji: '🔥',
+      }),
+      'IA envió',
+    )
+  })
+
+  it('snapshots agentName and agentEmoji on the delivery write', () => {
+    const turn = readFileSync(join(process.cwd(), 'src/lib/soft-ai/agent-turn.ts'), 'utf8')
+    assert.match(turn, /agentName: input\.agent\.name/)
+    assert.match(turn, /agentEmoji: input\.agent\.emoji/)
   })
 })
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 const ROOT = join(process.cwd())
@@ -63,6 +63,24 @@ function collectSourceFiles(dir: string, acc: string[] = []): string[] {
   return acc
 }
 
+/** Includes fixtures. Skips tests. Used by the model-id literal lock. */
+function collectSoftAiLiterals(dir: string, acc: string[] = []): string[] {
+  let entries: string[] = []
+  try {
+    entries = readdirSync(dir)
+  } catch {
+    return acc
+  }
+  for (const name of entries) {
+    if (name === '__tests__' || name === 'node_modules') continue
+    const full = join(dir, name)
+    const stat = statSync(full)
+    if (stat.isDirectory()) collectSoftAiLiterals(full, acc)
+    else if (/\.(ts|tsx|mjs|js)$/.test(name) && !name.endsWith('.test.ts')) acc.push(full)
+  }
+  return acc
+}
+
 describe('chat-agent A1 locked directories (A1.11 / A1.21)', () => {
   it('soft-ai and chat API do not import the staff bot or read WHATSAPP_', () => {
     const files = [
@@ -74,6 +92,39 @@ describe('chat-agent A1 locked directories (A1.11 / A1.21)', () => {
       const src = readFileSync(file, 'utf8')
       assert.doesNotMatch(src, /process\.env\.WHATSAPP_/, relative(ROOT, file))
       assert.doesNotMatch(src, /from ['"]@\/lib\/bot\//, relative(ROOT, file))
+      assert.doesNotMatch(src, /from ['"]@\/app\/api\/bot\//, relative(ROOT, file))
+    }
+  })
+
+  it('P0/P1 modules do not import the staff bot or read WHATSAPP_', () => {
+    // P2/P3 files (agent-turn-inputs, agent-turn-outcome, agent-layer-config-mutate,
+    // test/unlock route) are covered by the recursive scan above once they exist.
+    const files = [
+      'src/lib/soft-ai/agent-types.ts',
+      'src/lib/soft-ai/agent-admin.ts',
+      'src/lib/soft-ai/shortcut-import-server.ts',
+      'src/lib/soft-ai/llm/client.ts',
+      'src/lib/soft-ai/llm/model-policy.ts',
+      'src/lib/soft-ai/llm/runtime.ts',
+      'src/lib/soft-ai/llm/usage.ts',
+      'src/app/config/agentes/page.tsx',
+    ]
+    for (const rel of files) {
+      assert.equal(existsSync(join(ROOT, rel)), true, rel)
+      const src = readFileSync(join(ROOT, rel), 'utf8')
+      assert.doesNotMatch(src, /process\.env\.WHATSAPP_/, rel)
+      assert.doesNotMatch(src, /from ['"]@\/lib\/bot\//, rel)
+      assert.doesNotMatch(src, /from ['"]@\/app\/api\/bot\//, rel)
+    }
+  })
+
+  it('soft-ai sources have no grok-4.6 literal outside agent-types', () => {
+    const files = collectSoftAiLiterals(join(ROOT, 'src/lib/soft-ai'))
+    assert.ok(files.some((file) => file.endsWith('agent-types.ts')))
+    for (const file of files) {
+      if (file.endsWith(`${join('soft-ai', 'agent-types.ts')}`)) continue
+      const src = readFileSync(file, 'utf8')
+      assert.doesNotMatch(src, /grok-4\.6/, relative(ROOT, file))
     }
   })
 

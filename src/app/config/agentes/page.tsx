@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react'
 import { hasSessionPermission } from '@/lib/session-permissions'
 import {
   AGENT_TOOL_NAMES,
+  DEFAULT_CHAT_AGENT_MODEL,
   TONE_PRESET_LABELS,
   type ChatAgentTonePreset,
 } from '@/lib/soft-ai/agent-types'
@@ -670,6 +671,26 @@ export default function AgentesConfigPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Avanzado — audited model migration (existing PATCH). */}
+                  <details className="rounded-xl border border-slate-200 p-4">
+                    <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+                      Avanzado
+                    </summary>
+                    <p className="mt-3 text-sm text-slate-900">
+                      Modelo: <span className="font-mono">{selected.model}</span>
+                    </p>
+                    {canEdit && selected.model !== DEFAULT_CHAT_AGENT_MODEL ? (
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void patch({ model: DEFAULT_CHAT_AGENT_MODEL })}
+                        className="mt-3 rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600"
+                      >
+                        Cambiar a {DEFAULT_CHAT_AGENT_MODEL}
+                      </button>
+                    ) : null}
+                  </details>
 
                   {/* Conocimiento A2 — live checklist + wizard */}
                   <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4">

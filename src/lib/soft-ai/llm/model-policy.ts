@@ -1,5 +1,5 @@
 /**
- * Soft Agent Layer model policy — Grok 4.6 only.
+ * Soft Agent Layer model policy. Allowlist and default live in agent-types.
  */
 
 import {
@@ -20,4 +20,21 @@ export function assertAllowedModel(model: string): ChatAgentModel {
 
 export function softAiModelAllowlist(): readonly string[] {
   return CHAT_AGENT_MODEL_ALLOWLIST
+}
+
+/** Prompt cache identity. Includes model so a model change cold-starts the cache. */
+export function buildSoftAiPromptCacheKey(input: {
+  tenantId: string
+  agentId: string
+  agentVersion: number
+  socialAccountId: string
+  model: string
+}): string {
+  return [
+    input.tenantId,
+    input.agentId,
+    String(input.agentVersion),
+    input.socialAccountId,
+    input.model,
+  ].join(':')
 }

@@ -5,9 +5,14 @@
 
 export const CHAT_AGENT_LAYER_V1_FLAG = 'chat_agent_layer_v1' as const
 
-/** v1 model allowlist — reject anything else. */
-export const CHAT_AGENT_MODEL_ALLOWLIST = ['grok-4.6'] as const
+/**
+ * Soft agent models. Default is 4.7; 4.6 stays so stored rows keep resolving
+ * and a rollback is a one-line default flip. This file is the only soft-ai
+ * source allowed to contain the previous model id.
+ */
+export const CHAT_AGENT_MODEL_ALLOWLIST = ['grok-4.7', 'grok-4.6'] as const
 export type ChatAgentModel = (typeof CHAT_AGENT_MODEL_ALLOWLIST)[number]
+export const DEFAULT_CHAT_AGENT_MODEL: ChatAgentModel = 'grok-4.7'
 
 export const DEFAULT_DAILY_TOKEN_CAP = 250_000
 export const DEFAULT_PRICING_VERSION = 'xai-2026-09'
@@ -88,7 +93,9 @@ export type AiFullUnlockRecord = {
 }
 
 export const DEFAULT_TEST_DAILY_TOKEN_CAP = 100_000
-export const FIXTURE_SET_HASH_V2 = 'forge-wa-v2-al2-a1-2026-09-21'
+/** Single source for the v2 fixture hash (G7). Fixtures re-export this. */
+export const FORGE_WA_V2_FIXTURE_SET_HASH = 'forge-wa-v2-al2-a1-2026-09-21'
+export const FIXTURE_SET_HASH_V2 = FORGE_WA_V2_FIXTURE_SET_HASH
 
 export type ChatAgentLayerConfig = {
   accountAllowlist: string[]

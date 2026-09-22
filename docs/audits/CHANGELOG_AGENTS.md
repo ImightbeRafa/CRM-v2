@@ -1,3 +1,20 @@
+## 2026-09-22 — P4: monitor attribution in /chats (AT-WA-3, G23)
+
+- Agent-layer delivery in `agent-turn.ts` snapshots `agentName` and `agentEmoji` onto the
+  outbound `ChatMessage` metadata, next to `softAi`, `agentId`, and `turnId`.
+- `softAiOutboundLabel` in `agent-inbox-projection.ts` reads that snapshot only.
+  Agent layer → `<emoji> <name> envió` (emoji omitted when the snapshot is blank).
+  Legacy Soft AI (`softAi` without `agentId`) and rows that have `agentId` but no stored
+  name stay `IA envió`. The label never looks up the current binding.
+- `SoftThreadPane` bubble footer uses the helper. Demo bubbles stay `IA envió`.
+  SoftSlimNav, SoftInboxBuckets, and SoftCopilotRail are untouched.
+- Out of this slice: P5 live phone proof, unlock/Probar, staff bot, Soft chrome, schema/SQL,
+  Meta Submit, Vercel.
+- Prove: `npm run test:soft-ai-agent` and `npm run test:chat-harden`. Screenshots wait for
+  the Railway eye-test after CoS attaches this branch. Stable `dev` host:
+  https://betsy-crm-production.up.railway.app
+- Plan: `docs/plans/betsy-forge-wa-probar-live-fidelity-grok47-fable-2026-09-22.md` §5 P4.
+
 ## 2026-09-22 — P3: audited unlock gate (AT-P-3, AT-P-4)
 
 - Decisions in force: **D1 off** (`strictUnlockVersion` default false; hash + agentId + model

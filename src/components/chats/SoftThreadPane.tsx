@@ -18,7 +18,10 @@ import {
   isSoftHumanComposerEnabled,
 } from '@/lib/soft-ai/agent-state'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
-import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
+import {
+  isSoftAiOutboundMetadata,
+  softAiOutboundLabel,
+} from '@/lib/soft-ai/agent-inbox-projection'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
 import { formatThreadChannelMeta, platformFullName } from '@/lib/social-account-identity'
 import {
@@ -380,7 +383,9 @@ export function SoftThreadPane({
                       }`}
                     >
                       {softAi ? (
-                        'IA envió'
+                        msg.id?.startsWith('demo-ai-')
+                          ? 'IA envió'
+                          : softAiOutboundLabel(msg.metadata)
                       ) : failed || msg.deliveryStatus === 'failed' ? (
                         <>
                           Falló ✕{' '}

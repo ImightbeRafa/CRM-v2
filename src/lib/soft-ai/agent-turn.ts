@@ -868,6 +868,9 @@ async function finishDeliveryOrSuggest(input: {
       softAi: true,
       agentId: input.agent.id,
       agentVersion: input.agent.version,
+      // Snapshot at send time. /chats labels this bubble from these fields, not the live binding.
+      agentName: input.agent.name,
+      agentEmoji: input.agent.emoji,
       turnId: input.turnId,
       toolTrace: input.toolTrace,
       to: input.row.peerId,

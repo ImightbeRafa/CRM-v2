@@ -43,3 +43,24 @@ export function isSoftAiOutboundMetadata(metadata: unknown): boolean {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false
   return (metadata as Record<string, unknown>).softAi === true
 }
+
+function snapshotText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/**
+ * Historical outbound label for a delivered bubble.
+ * Agent-layer sends are named from the metadata snapshot (`agentId` + `agentName`).
+ * Legacy Soft AI, and any row without that snapshot, stays "IA envió".
+ * Callers must not pass the current binding — names change after the send.
+ */
+export function softAiOutboundLabel(metadata: unknown): string {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return 'IA envió'
+  const meta = metadata as Record<string, unknown>
+  if (meta.softAi !== true) return 'IA envió'
+  const agentId = snapshotText(meta.agentId)
+  const agentName = snapshotText(meta.agentName)
+  if (!agentId || !agentName) return 'IA envió'
+  const agentEmoji = snapshotText(meta.agentEmoji)
+  return agentEmoji ? `${agentEmoji} ${agentName} envió` : `${agentName} envió`
+}

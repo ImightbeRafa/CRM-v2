@@ -1,6 +1,6 @@
 import '@/app/components/globals.css'
 import '@/app/globals-mobile.css'
-import { Plus_Jakarta_Sans, Space_Grotesk } from 'next/font/google'
+import { jakarta, spaceGrotesk } from '@/app/fonts'
 import SessionProvider from "./components/Sessionprovider"
 import { ErrorBoundary } from "./components/ErrorBoundary"
 import { TenantSettingsProvider } from "./contexts/TenantSettingsContext"
@@ -12,20 +12,6 @@ import MetaPixel from "./components/MetaPixel"
 import { PreviewDataWarning } from "./components/PreviewDataWarning"
 import { shouldShowPreviewDataWarning } from "@/lib/review-environment"
 import type { Metadata, Viewport } from 'next'
-
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-display',
-  display: 'swap',
-})
-
-const spaceGrotesk = Space_Grotesk({
-  subsets: ['latin'],
-  weight: ['700'],
-  variable: '--font-logo',
-  display: 'swap',
-})
 
 export const viewport: Viewport = {
   width: 'device-width',

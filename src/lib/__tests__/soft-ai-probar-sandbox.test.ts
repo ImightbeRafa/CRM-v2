@@ -7,6 +7,7 @@ import { describe, it } from 'node:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { collectDryRunBlockers } from '../soft-ai/agent-claim-gates'
+import { selectWhatsappTestChannel } from '../soft-ai/test-channel'
 import { replayFixtures, REPLAY_FIXTURE_CAP } from '../soft-ai/agent-replay'
 import { parseBrandFacts } from '../soft-ai/brand-facts'
 import { buildAgentUserPrompt } from '../soft-ai/llm/prompt'
@@ -100,6 +101,61 @@ describe('Probar sandbox', () => {
       agentStatus: 'live',
     })
     assert.deepEqual(blocked, ['ai_full_not_unlocked', 'window_closed'])
+  })
+
+  it('auto-selects the only WhatsApp binding and never labels an empty channel', () => {
+    const sandbox = readFileSync(join(process.cwd(), 'src/app/config/agentes/AgentTestSandbox.tsx'), 'utf8')
+    const internals = readFileSync(join(process.cwd(), 'src/app/config/agentes/AgentInternalTests.tsx'), 'utf8')
+    const page = readFileSync(join(process.cwd(), 'src/app/config/agentes/page.tsx'), 'utf8')
+    assert.doesNotMatch(sandbox, /ninguno/)
+    assert.match(sandbox, /Conectá un canal en Canales/)
+    assert.match(sandbox, /Enviar/)
+    assert.match(internals, /Pruebas internas/)
+    assert.match(internals, /passRate/)
+    assert.match(internals, /Ventana de 24 h abierta/)
+    assert.match(page, /Detener agente/)
+    assert.match(page, /Cambios recientes/)
+    assert.doesNotMatch(page, /Pánico/)
+    assert.doesNotMatch(page, /Historial \(últimos 20\)/)
+
+    const only = selectWhatsappTestChannel(
+      [{ id: 'wa-1', platform: 'whatsapp', attendedByThisAgent: true, label: 'Tienda WA' }],
+      null,
+    )
+    assert.equal(only.mode, 'selected')
+    assert.equal(only.selectedId, 'wa-1')
+
+    const many = selectWhatsappTestChannel(
+      [
+        { id: 'wa-1', platform: 'whatsapp', attendedByThisAgent: true, label: 'A' },
+        { id: 'wa-2', platform: 'whatsapp', attendedByThisAgent: true, label: 'B' },
+      ],
+      null,
+    )
+    assert.equal(many.mode, 'pick')
+    assert.equal(many.selectedId, null)
+
+    const kept = selectWhatsappTestChannel(
+      [
+        { id: 'wa-1', platform: 'whatsapp', attendedByThisAgent: true, label: 'A' },
+        { id: 'wa-2', platform: 'whatsapp', attendedByThisAgent: true, label: 'B' },
+      ],
+      'wa-2',
+    )
+    assert.equal(kept.selectedId, 'wa-2')
+
+    const instagram = selectWhatsappTestChannel(
+      [{ id: 'ig-1', platform: 'instagram', attendedByThisAgent: true, label: 'IG' }],
+      null,
+    )
+    assert.equal(instagram.mode, 'empty')
+    assert.equal(instagram.selectedId, null)
+
+    const unboundOnly = selectWhatsappTestChannel(
+      [{ id: 'wa-9', platform: 'whatsapp', attendedByThisAgent: false, label: 'Suelta' }],
+      null,
+    )
+    assert.equal(unboundOnly.selectedId, 'wa-9')
   })
 
   it('A1.9–A1.10 channel writes audit the binding and drop unlock when IA is off', () => {

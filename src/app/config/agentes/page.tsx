@@ -91,6 +91,7 @@ export default function AgentesConfigPage() {
   const [testChannels, setTestChannels] = useState<TestChannelOption[]>([])
   const [channelsLoaded, setChannelsLoaded] = useState(false)
   const [setupRefresh, setSetupRefresh] = useState(0)
+  const [channelReload, setChannelReload] = useState(0)
   const [history, setHistory] = useState<unknown[]>([])
   const [introDraft, setIntroDraft] = useState('')
   const [checklist, setChecklist] = useState<ChecklistCard[]>([])
@@ -424,15 +425,18 @@ export default function AgentesConfigPage() {
                   <ShortcutsEditor agentId={selected.id} canEdit={canEdit} reloadToken={setupRefresh} />
                   <AgentTestSandbox
                     agentId={selected.id}
+                    agentName={selected.name}
                     canEdit={canEdit}
                     channels={testChannels}
                     channelsLoaded={channelsLoaded}
                     socialAccountId={channelId}
                     onSelectChannel={setChannelId}
+                    onUnlocked={() => setChannelReload((value) => value + 1)}
                   />
                   <ChannelsEditor
                     agentId={selected.id}
                     canEdit={canEdit}
+                    reloadToken={channelReload}
                     onUseForTest={setChannelId}
                     onChannels={(rows) => {
                       setTestChannels(

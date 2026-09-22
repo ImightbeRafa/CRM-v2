@@ -21,10 +21,13 @@ import {
   type ChatAgentTonePreset,
 } from '@/lib/soft-ai/agent-types'
 import {
+  channelRealSendStatus,
   chatAgentLayerConfigToJson,
   parseChatAgentLayerConfig,
+  withoutAccountUnlock,
   CHAT_AGENT_LAYER_V1_FLAG,
 } from '@/lib/soft-ai/agent-config'
+import { mutateChatAgentLayerConfig } from '@/lib/soft-ai/agent-layer-config-mutate'
 import { isChatAgentSchemaReady, isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { runAgentTestTurn } from '@/lib/soft-ai/agent-turn'
 import { logAuditEvent } from '@/lib/auditLogger'
@@ -464,6 +467,16 @@ export async function requireTenantSocialAccount(
   return account
 }
 
+/** Drop a channel unlock when its serving agent changes or the binding is turned off. */
+export function shouldClearAccountUnlock(input: {
+  nextActive: boolean
+  requestedAgentId: string
+  currentAgentId: string | null
+}): boolean {
+  if (!input.nextActive) return input.currentAgentId === input.requestedAgentId
+  return input.currentAgentId !== input.requestedAgentId
+}
+
 export async function setAgentBinding(input: {
   tenantId: string
   agentId: string
@@ -480,6 +493,27 @@ export async function setAgentBinding(input: {
   if (!agent) throw new Error('AGENT_NOT_FOUND')
 
   await requireTenantSocialAccount(input.tenantId, input.socialAccountId)
+
+  const currentBinding = await prisma.chatAgentBinding.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      socialAccountId: input.socialAccountId,
+      scope: 'social_account',
+      isActive: true,
+    },
+    select: { agentId: true },
+  })
+  if (
+    shouldClearAccountUnlock({
+      nextActive: input.active,
+      requestedAgentId: input.agentId,
+      currentAgentId: currentBinding?.agentId ?? null,
+    })
+  ) {
+    await mutateChatAgentLayerConfig(input.tenantId, (before) =>
+      withoutAccountUnlock(before, input.socialAccountId),
+    )
+  }
 
   if (!input.active) {
     await prisma.chatAgentBinding.updateMany({
@@ -594,38 +628,12 @@ export async function panicRemoveAllowlist(input: {
 }) {
   await requireTenantSocialAccount(input.tenantId, input.socialAccountId)
 
-  const flag = await prisma.tenantFeatureFlag.findFirst({
-    where: {
-      tenantId: input.tenantId,
-      scope: input.tenantId,
-      key: CHAT_AGENT_LAYER_V1_FLAG,
-    },
-  })
-  const before = parseChatAgentLayerConfig(flag?.config)
-  const after = {
-    ...before,
-    accountAllowlist: before.accountAllowlist.filter((id) => id !== input.socialAccountId),
-    aiFullUnlock: { ...before.aiFullUnlock },
-  }
-  delete after.aiFullUnlock[input.socialAccountId]
-
-  await prisma.tenantFeatureFlag.upsert({
-    where: {
-      scope_key: {
-        scope: input.tenantId,
-        key: CHAT_AGENT_LAYER_V1_FLAG,
-      },
-    },
-    create: {
-      tenantId: input.tenantId,
-      scope: input.tenantId,
-      key: CHAT_AGENT_LAYER_V1_FLAG,
-      enabled: flag?.enabled ?? false,
-      config: chatAgentLayerConfigToJson(after) as Prisma.InputJsonValue,
-    },
-    update: {
-      config: chatAgentLayerConfigToJson(after) as Prisma.InputJsonValue,
-    },
+  const { before, after } = await mutateChatAgentLayerConfig(input.tenantId, (current) => {
+    const stripped = withoutAccountUnlock(current, input.socialAccountId)
+    return {
+      ...stripped,
+      accountAllowlist: stripped.accountAllowlist.filter((id) => id !== input.socialAccountId),
+    }
   })
 
   await logAuditEvent({
@@ -807,7 +815,11 @@ export async function listAgentChannels(tenantId: string, agentId: string) {
     }),
     prisma.chatAgentBinding.findMany({
       where: { tenantId, scope: 'social_account', isActive: true },
-      select: { socialAccountId: true, agentId: true, agent: { select: { name: true } } },
+      select: {
+        socialAccountId: true,
+        agentId: true,
+        agent: { select: { name: true, model: true, version: true } },
+      },
     }),
     prisma.tenantFeatureFlag.findFirst({
       where: { tenantId, scope: tenantId, key: CHAT_AGENT_LAYER_V1_FLAG },
@@ -822,6 +834,17 @@ export async function listAgentChannels(tenantId: string, agentId: string) {
     schemaReady: true as const,
     channels: accounts.map((account) => {
       const binding = bindingByAccount.get(account.id)
+      const send = channelRealSendStatus(
+        config,
+        account.id,
+        binding
+          ? {
+              agentId: binding.agentId,
+              model: binding.agent.model,
+              agentVersion: binding.agent.version,
+            }
+          : null,
+      )
       return {
         id: account.id,
         platform: account.platform,
@@ -833,6 +856,10 @@ export async function listAgentChannels(tenantId: string, agentId: string) {
         attendedByAgentId: binding?.agentId || null,
         attendedByThisAgent: binding?.agentId === agentId,
         aiAllowed: config.accountAllowlist.includes(account.id),
+        realSend: send.realSend,
+        realSendReason: send.realSendReason,
+        realSendVersionWarning: send.realSendVersionWarning,
+        approvedVersion: send.approvedVersion,
       }
     }),
   }
@@ -866,39 +893,14 @@ export async function setAgentChannelConfiguration(input: {
     actorRole: input.actorRole,
   })
 
-  const flag = await prisma.tenantFeatureFlag.findFirst({
-    where: {
-      tenantId: input.tenantId,
-      scope: input.tenantId,
-      key: CHAT_AGENT_LAYER_V1_FLAG,
-    },
-  })
-  const before = parseChatAgentLayerConfig(flag?.config)
-  const allow = new Set(before.accountAllowlist)
-  if (input.aiAllowed) allow.add(input.socialAccountId)
-  else allow.delete(input.socialAccountId)
-  const aiFullUnlock = { ...before.aiFullUnlock }
-  if (!input.aiAllowed) delete aiFullUnlock[input.socialAccountId]
-  const after = {
-    ...before,
-    accountAllowlist: [...allow],
-    aiFullUnlock,
-  }
-  await prisma.tenantFeatureFlag.upsert({
-    where: {
-      scope_key: { scope: input.tenantId, key: CHAT_AGENT_LAYER_V1_FLAG },
-    },
-    create: {
-      tenantId: input.tenantId,
-      scope: input.tenantId,
-      key: CHAT_AGENT_LAYER_V1_FLAG,
-      enabled: flag?.enabled ?? false,
-      config: chatAgentLayerConfigToJson(after) as Prisma.InputJsonValue,
-    },
-    update: {
-      enabled: flag?.enabled ?? false,
-      config: chatAgentLayerConfigToJson(after) as Prisma.InputJsonValue,
-    },
+  const { before, after } = await mutateChatAgentLayerConfig(input.tenantId, (current) => {
+    const allow = new Set(current.accountAllowlist)
+    if (input.aiAllowed) allow.add(input.socialAccountId)
+    else allow.delete(input.socialAccountId)
+    const base = input.aiAllowed
+      ? current
+      : withoutAccountUnlock(current, input.socialAccountId)
+    return { ...base, accountAllowlist: [...allow] }
   })
   await logAuditEvent({
     tenantId: input.tenantId,

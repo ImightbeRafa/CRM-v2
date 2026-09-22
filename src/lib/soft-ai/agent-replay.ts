@@ -15,6 +15,61 @@ import {
 
 export const REPLAY_FIXTURE_CAP = 60
 
+export function expectedReplayHandoff(
+  fixture: ReplayFixtureV2,
+  sharePaymentFacts: boolean,
+): boolean {
+  return fixture.expect.handoffWhenShared === false && sharePaymentFacts
+    ? false
+    : fixture.expect.handoff
+}
+
+export type UnlockCanaryFailure = 'skip' | 'fallback' | 'confirmation' | 'handoff' | 'budget'
+
+/** Model qualification for one unlock canary. Ops `flag_off` is not a failure by itself. */
+export function assessUnlockCanaryTurn(input: {
+  fixture: ReplayFixtureV2
+  sharePaymentFacts: boolean
+  outcome: 'send' | 'suggest' | 'skip'
+  fallbackUsed: boolean
+  escalate: boolean
+  text: string
+  blockedBy?: readonly string[]
+}): { ok: true } | { ok: false; reason: UnlockCanaryFailure } {
+  const blocked = input.blockedBy ?? []
+  if (blocked.includes('test_budget_blocked')) return { ok: false, reason: 'budget' }
+  if (input.outcome === 'skip') return { ok: false, reason: 'skip' }
+  if (input.fallbackUsed) return { ok: false, reason: 'fallback' }
+  if (hasConfirmationWording(input.text)) return { ok: false, reason: 'confirmation' }
+  if (input.escalate !== expectedReplayHandoff(input.fixture, input.sharePaymentFacts)) {
+    return { ok: false, reason: 'handoff' }
+  }
+  return { ok: true }
+}
+
+export function replayAccountBinding(input: {
+  socialAccountId: string | null
+  accountInTenant: boolean
+  serving: { agentId: string; scope: 'social_account' | 'tenant_default' } | null
+}): {
+  socialAccountId: string | null
+  boundAgentId: string | null
+  bindingScope: 'social_account' | 'tenant_default' | null
+} {
+  if (!input.socialAccountId || !input.accountInTenant || !input.serving) {
+    return {
+      socialAccountId: input.socialAccountId,
+      boundAgentId: null,
+      bindingScope: null,
+    }
+  }
+  return {
+    socialAccountId: input.socialAccountId,
+    boundAgentId: input.serving.agentId,
+    bindingScope: input.serving.scope,
+  }
+}
+
 export type ReplayRow = {
   id: string
   tag: string
@@ -53,10 +108,7 @@ export function replayFixtures(input: {
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
     })
-    const expectedHandoff =
-      fixture.expect.handoffWhenShared === false && input.sharePaymentFacts
-        ? false
-        : fixture.expect.handoff
+    const expectedHandoff = expectedReplayHandoff(fixture, Boolean(input.sharePaymentFacts))
     const actualHandoff = decision.escalate || decision.shortcutKey?.startsWith('sys_handoff') === true
     const classOk = decision.paymentClass === fixture.expect.paymentClass
     const handoffOk = actualHandoff === expectedHandoff

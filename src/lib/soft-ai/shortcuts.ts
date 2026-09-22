@@ -305,6 +305,33 @@ export type TemplateContext = {
   orderId?: string | null
 }
 
+export const MISSING_FACT_CHIP_HINT = 'Completá Datos de la marca o cargá tus atajos'
+
+const TEMPLATE_TOKEN_RE = /\{\{\s*([a-zA-Z0-9_.:]+)\s*\}\}/g
+
+/** Customer text for a starter chip. Missing brand facts disable the chip. */
+export function previewStarterChip(
+  template: Pick<ShortcutDraft, 'body'>,
+  facts: BrandFacts,
+): { body: string; missing: string[]; disabled: boolean; hint: string | null } {
+  const values = brandFactTemplateValues(facts)
+  const missing: string[] = []
+  for (const match of template.body.matchAll(TEMPLATE_TOKEN_RE)) {
+    const token = match[1]
+    if (!token || token.startsWith('inventory.price:')) continue
+    if (token === 'client.firstName' || token === 'order.orderId') continue
+    if (!values[token]?.trim()) missing.push(token)
+  }
+  const body = renderShortcutTemplate(template.body, { facts }).replace(/\s{2,}/g, ' ').trim()
+  const disabled = missing.length > 0 || !body
+  return {
+    body,
+    missing,
+    disabled,
+    hint: disabled ? MISSING_FACT_CHIP_HINT : null,
+  }
+}
+
 export function renderShortcutTemplate(body: string, ctx: TemplateContext): string {
   const values = brandFactTemplateValues(ctx.facts)
   return body.replace(/\{\{\s*([a-zA-Z0-9_.:]+)\s*\}\}/g, (_match, token: string) => {

@@ -1,3 +1,11 @@
+## 2026-09-21 — AL2-A1 UX redo: paste-import, plain atajos, WhatsApp Probar
+
+- Owner flow on `/config/agentes`: paste "Cargar desde mis atajos" → review checklist → one Guardar (`import/extract` does not write config; `import/apply` bumps agent version once and writes one audit). Soft LLM via `llm/client.ts` when `XAI_API_KEY` is set; heuristic mapping covers the same facts for review. Confirmation wording stays a red row. Tokens for a model call go to `testDailyTokenCap`.
+- Atajos default to title, customer text, and Activo. Keys, `sys_*`, templates, kind, and delivery mode render only after Avanzado. Starter chips insert resolved Spanish or stay disabled.
+- Probar is a WhatsApp thread with one Enviar. A single WA binding is pre-selected. Replay, fixtures, pass rate, and the 24 h window sit under collapsed Pruebas internas. Pánico is Detener agente; history is collapsed Cambios recientes.
+- No schema, Soft chrome, or staff-bot edits.
+- Prove: `src/lib/__tests__/soft-ai-shortcut-import.test.ts` and the channel case in `soft-ai-probar-sandbox.test.ts`. Preview of this branch showed the saved checklist, plain atajos, and a Probar thread for `precio con envío?` (customer bubble right, agent bubble left, Pruebas internas collapsed).
+
 ## 2026-09-21 — Plan: AL2-A1 `/config/agentes` UX redo (Fable, docs only)
 
 - Added `docs/plans/betsy-al2-a1-ux-redo-fable-2026-09-21.md` after Rafael rejected the shipped

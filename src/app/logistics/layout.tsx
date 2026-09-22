@@ -1,4 +1,3 @@
-import { Inter } from 'next/font/google';
 import { redirect } from 'next/navigation';
 import { requireLogisticsAdmin } from '@/lib/logistics-auth';
 import Link from 'next/link';
@@ -9,12 +8,7 @@ import {
 } from 'lucide-react';
 import { LOGISTICS_NAV_ITEMS } from './nav-items';
 import { LogisticsMobileNav } from './components/LogisticsMobileNav';
-
-const inter = Inter({
-    subsets: ['latin'],
-    display: 'swap',
-    weight: ['400', '500', '600', '700'],
-});
+import { inter } from '@/app/fonts';
 
 export const metadata: Metadata = {
     title: 'HolaMA · Logistics Manager',

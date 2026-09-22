@@ -111,6 +111,7 @@ export function collectDryRunBlockers(input: {
   layerEnabled: boolean
   softEnabled: boolean
   allowlisted: boolean
+  boundToChannel: boolean
   operationMode: string
   unlockedForSend: boolean
   windowOpen: boolean
@@ -118,17 +119,20 @@ export function collectDryRunBlockers(input: {
   conversationAiMode?: string | null
 }): string[] {
   const blocked: string[] = []
-  if (!input.layerEnabled || !input.softEnabled) blocked.push('flag_off')
-  if (!input.allowlisted) blocked.push('account_not_allowlisted')
-  if (input.agentStatus !== 'live') blocked.push('agent_not_live')
-  if (input.operationMode === 'human_only') blocked.push('human_only')
-  if (input.conversationAiMode === 'human' || input.conversationAiMode === 'paused') {
-    blocked.push('human_before_send')
+  const push = (reason: string) => {
+    if (!blocked.includes(reason)) blocked.push(reason)
   }
+  if (!input.layerEnabled || !input.softEnabled) push('flag_off')
+  if (!input.allowlisted) push('account_not_allowlisted')
+  if (!input.boundToChannel) push('not_bound_to_channel')
+  if (input.agentStatus !== 'live') push('agent_not_live')
+  if (input.operationMode === 'human_only') push('human_only')
+  if (input.conversationAiMode === 'paused') push('paused_before_send')
+  else if (input.conversationAiMode === 'human') push('human_before_send')
   if (input.operationMode === 'ai_full' && !input.unlockedForSend) {
-    blocked.push('ai_full_not_unlocked')
+    push('ai_full_not_unlocked')
   }
-  if (!input.windowOpen) blocked.push('window_closed')
+  if (!input.windowOpen) push('window_closed')
   return blocked
 }
 

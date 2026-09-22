@@ -684,6 +684,8 @@ export async function probeAgent(input: {
   messageType?: 'text' | 'image' | 'audio' | 'document' | 'video'
   history?: Array<{ direction: 'inbound' | 'outbound'; content: string; sentAt: string }>
   windowOpen?: boolean
+  customerName?: string
+  conversationAiMode?: 'ai_active' | 'human' | 'paused'
 }) {
   return runAgentTestTurn(input)
 }

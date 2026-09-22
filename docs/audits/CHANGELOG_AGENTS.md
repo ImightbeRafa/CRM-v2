@@ -1,3 +1,30 @@
+## 2026-09-22 — P3: audited unlock gate (AT-P-3, AT-P-4)
+
+- Decisions in force: **D1 off** (`strictUnlockVersion` default false; hash + agentId + model
+  bound; version recorded and warned), **D2 on** (five forge-wa-v2 canaries through
+  `runAgentTestTurn`), **D3** unchanged (Avanzado PATCH, no SQL).
+- `AiFullUnlockRecord` accepts optional `agentId`, `agentVersion`, `model`, `canaryCount`.
+  `hasAiFullUnlock` / `aiFullUnlockStatus` fail closed on hash, agent, or model mismatch.
+  Resolver and pre-send gate 10 pass that context (G6).
+- `mutateChatAgentLayerConfig` locks `TenantFeatureFlag` with `SELECT … FOR UPDATE`.
+  Allowlist, panic remove, and unlock write go through it. Audit stays after commit (G9, P2028).
+- Rebind or deactivate deletes `aiFullUnlock[accountId]` (G4). Shortcut create, update, and
+  delete bump `ChatAgent.version` in the same transaction (G10). `expectedVersion` consumers
+  are unchanged, so an in-flight turn fails `stale_version`.
+- Replay stays read-only and accepts optional `socialAccountId`, returning `boundAgentId` (G3).
+- `POST /api/chat/agents/[id]/test/unlock` (`update_config`) writes the record and audits
+  `chat_agent_ai_full_unlock`. Refusals: `ACCOUNT_NOT_TENANT`, `ACCOUNT_NOT_ALLOWLISTED`,
+  `ACCOUNT_NOT_WHATSAPP`, `AGENT_NOT_BOUND`, `AGENT_NOT_LIVE`, `REPLAY_FAILED`,
+  `HASH_MISMATCH`, `CANARY_FAILED`, `TEST_BUDGET_BLOCKED`, `XAI_NOT_CONFIGURED`.
+  Canaries ignore `flag_off` so approval does not depend on ops flags. `unlockCanaries: false`
+  skips them.
+- UI: Pruebas internas **Aprobar envío real** with confirm; Canales shows envío real
+  desbloqueado / bloqueado / aprobación vencida. Copy says Betsy chat / agentes / Probar.
+- Out of this slice: P4 monitor label, P5 live phone proof, staff bot, Soft chrome, schema/SQL,
+  Meta Submit, Vercel.
+- Prove: `npm run test:soft-ai-agent` and `npm run test:chat-harden`. Eye-test is Railway
+  after CoS attaches the branch. Stable `dev` host: https://betsy-crm-production.up.railway.app
+
 ## 2026-09-22 — P2: Probar ↔ live runtime parity
 
 - Shared `assembleAgentRuntimeInputs` (`agent-turn-inputs.ts`). Live tool semantics win:

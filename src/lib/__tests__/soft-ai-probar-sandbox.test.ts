@@ -207,7 +207,7 @@ describe('Probar sandbox', () => {
   it('A1.9–A1.10 channel writes audit the binding and drop unlock when IA is off', () => {
     const admin = readFileSync(join(process.cwd(), 'src/lib/soft-ai/agent-admin.ts'), 'utf8')
     assert.match(admin, /reason: 'chat_agent_channel_allowlist'/)
-    assert.match(admin, /delete aiFullUnlock\[input\.socialAccountId\]/)
+    assert.match(admin, /withoutAccountUnlock\(current, input\.socialAccountId\)/)
     assert.match(admin, /await setAgentBinding\(/)
   })
 })

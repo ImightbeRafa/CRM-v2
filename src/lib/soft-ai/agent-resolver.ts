@@ -87,6 +87,34 @@ function asStatus(value: string): ChatAgentStatus {
   return 'draft'
 }
 
+/** Exact social-account binding wins. Otherwise the active tenant default. */
+export async function findServingAgentBinding(tenantId: string, socialAccountId: string) {
+  const accountBinding = await prisma.chatAgentBinding.findFirst({
+    where: {
+      tenantId,
+      scope: 'social_account',
+      socialAccountId,
+      isActive: true,
+    },
+    include: { agent: true },
+  })
+  if (accountBinding) {
+    return { row: accountBinding, usedExact: true as const }
+  }
+  const tenantDefault = await prisma.chatAgentBinding.findFirst({
+    where: {
+      tenantId,
+      scope: 'tenant_default',
+      isActive: true,
+    },
+    include: { agent: true },
+  })
+  if (tenantDefault) {
+    return { row: tenantDefault, usedExact: false as const }
+  }
+  return null
+}
+
 export function composeEffectiveBehavior(input: {
   conversationAiMode: SoftAiAgentMode | null | undefined
   operationMode: ChatAgentOperationMode
@@ -218,30 +246,9 @@ export async function resolveChatAgent(input: {
   }
 
   try {
-    const accountBinding = await prisma.chatAgentBinding.findFirst({
-      where: {
-        tenantId: input.tenantId,
-        scope: 'social_account',
-        socialAccountId: input.socialAccountId,
-        isActive: true,
-      },
-      include: { agent: true },
-    })
-
-    let bindingRow = accountBinding
-    let usedExact = Boolean(accountBinding)
-
-    if (!bindingRow) {
-      bindingRow = await prisma.chatAgentBinding.findFirst({
-        where: {
-          tenantId: input.tenantId,
-          scope: 'tenant_default',
-          isActive: true,
-        },
-        include: { agent: true },
-      })
-      usedExact = false
-    }
+    const found = await findServingAgentBinding(input.tenantId, input.socialAccountId)
+    const bindingRow = found?.row
+    const usedExact = found?.usedExact ?? false
 
     if (!bindingRow || !bindingRow.agent) {
       return {
@@ -332,7 +339,11 @@ export async function resolveChatAgent(input: {
       }
     }
 
-    const unlockedForSend = hasAiFullUnlock(layer.config, input.socialAccountId)
+    const unlockedForSend = hasAiFullUnlock(layer.config, input.socialAccountId, {
+      agentId: agent.id,
+      model: agent.model,
+      agentVersion: agent.version,
+    })
     const composed = composeEffectiveBehavior({
       conversationAiMode: input.conversationAiMode,
       operationMode: agent.operationMode,

@@ -1,6 +1,8 @@
 'use client'
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { formatRealSendStatus, type RealSendStatus } from '@/lib/soft-ai/agent-config'
+import type { AiFullUnlockMismatch } from '@/lib/soft-ai/agent-types'
 
 type ChannelRow = {
   id: string
@@ -11,6 +13,10 @@ type ChannelRow = {
   attendedBy: string | null
   attendedByThisAgent: boolean
   aiAllowed: boolean
+  realSend?: RealSendStatus
+  realSendReason?: AiFullUnlockMismatch | null
+  realSendVersionWarning?: boolean
+  approvedVersion?: number | null
 }
 
 const HINT = 'text-[11px] text-slate-600'
@@ -18,11 +24,13 @@ const HINT = 'text-[11px] text-slate-600'
 export function ChannelsEditor({
   agentId,
   canEdit,
+  reloadToken = 0,
   onUseForTest,
   onChannels,
 }: {
   agentId: string
   canEdit: boolean
+  reloadToken?: number
   onUseForTest: (socialAccountId: string) => void
   onChannels?: (channels: ChannelRow[]) => void
 }) {
@@ -52,7 +60,7 @@ export function ChannelsEditor({
 
   useEffect(() => {
     void load()
-  }, [load])
+  }, [load, reloadToken])
 
   async function save(row: ChannelRow, patch: { activeBinding?: boolean; aiAllowed?: boolean }) {
     if (!canEdit) return
@@ -113,6 +121,14 @@ export function ChannelsEditor({
                     {row.attendedBy
                       ? `Atiende: ${row.attendedBy}`
                       : 'Sin agente asignado'}
+                  </p>
+                  <p className={HINT}>
+                    {formatRealSendStatus({
+                      realSend: row.realSend || 'locked',
+                      realSendReason: row.realSendReason ?? null,
+                      versionWarning: Boolean(row.realSendVersionWarning),
+                      approvedVersion: row.approvedVersion ?? null,
+                    })}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 text-xs text-slate-800">

@@ -54,8 +54,8 @@ describe('SD54-01 tenant-owned socialAccountId', () => {
 
     const removeIdx = admin.indexOf('export async function panicRemoveAllowlist')
     const requireInRemove = admin.indexOf('requireTenantSocialAccount', removeIdx)
-    const upsertIdx = admin.indexOf('tenantFeatureFlag.upsert', removeIdx)
-    assert.ok(requireInRemove > removeIdx && requireInRemove < upsertIdx)
+    const mutateIdx = admin.indexOf('mutateChatAgentLayerConfig', removeIdx)
+    assert.ok(requireInRemove > removeIdx && requireInRemove < mutateIdx)
   })
 
   it('panic route does not hardcode Forge WA as silent default', () => {

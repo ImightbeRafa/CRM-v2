@@ -96,7 +96,7 @@ describe('chat-agent A1 locked directories (A1.11 / A1.21)', () => {
     }
   })
 
-  it('P0/P1 modules do not import the staff bot or read WHATSAPP_', () => {
+  it('P0–P2 modules do not import the staff bot or read WHATSAPP_', () => {
     // P2/P3 files (agent-turn-inputs, agent-turn-outcome, agent-layer-config-mutate,
     // test/unlock route) are covered by the recursive scan above once they exist.
     const files = [
@@ -107,6 +107,8 @@ describe('chat-agent A1 locked directories (A1.11 / A1.21)', () => {
       'src/lib/soft-ai/llm/model-policy.ts',
       'src/lib/soft-ai/llm/runtime.ts',
       'src/lib/soft-ai/llm/usage.ts',
+      'src/lib/soft-ai/agent-turn-inputs.ts',
+      'src/lib/soft-ai/agent-turn-outcome.ts',
       'src/app/config/agentes/page.tsx',
     ]
     for (const rel of files) {

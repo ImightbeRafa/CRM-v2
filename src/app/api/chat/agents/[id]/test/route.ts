@@ -30,6 +30,8 @@ export async function POST(
       messageType: parsed.messageType,
       history: parsed.history,
       windowOpen: parsed.windowOpen,
+      customerName: parsed.customerName,
+      conversationAiMode: parsed.conversationAiMode,
     })
     return NextResponse.json({ success: true, ...result })
   } catch (error) {

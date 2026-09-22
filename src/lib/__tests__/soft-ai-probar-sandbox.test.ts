@@ -95,6 +95,7 @@ describe('Probar sandbox', () => {
       layerEnabled: true,
       softEnabled: true,
       allowlisted: true,
+      boundToChannel: true,
       operationMode: 'ai_full',
       unlockedForSend: false,
       windowOpen: false,
@@ -103,12 +104,45 @@ describe('Probar sandbox', () => {
     assert.deepEqual(blocked, ['ai_full_not_unlocked', 'window_closed'])
   })
 
+  it('paused dry-run uses paused_before_send and unbound channels are not selectable', () => {
+    const paused = collectDryRunBlockers({
+      layerEnabled: true,
+      softEnabled: true,
+      allowlisted: true,
+      boundToChannel: true,
+      operationMode: 'ai_full',
+      unlockedForSend: true,
+      windowOpen: true,
+      agentStatus: 'live',
+      conversationAiMode: 'paused',
+    })
+    assert.deepEqual(paused, ['paused_before_send'])
+    const human = collectDryRunBlockers({
+      layerEnabled: true,
+      softEnabled: true,
+      allowlisted: true,
+      boundToChannel: false,
+      operationMode: 'ai_full',
+      unlockedForSend: true,
+      windowOpen: true,
+      agentStatus: 'live',
+      conversationAiMode: 'human',
+    })
+    assert.deepEqual(human, ['not_bound_to_channel', 'human_before_send'])
+  })
+
   it('auto-selects the only WhatsApp binding and never labels an empty channel', () => {
     const sandbox = readFileSync(join(process.cwd(), 'src/app/config/agentes/AgentTestSandbox.tsx'), 'utf8')
     const internals = readFileSync(join(process.cwd(), 'src/app/config/agentes/AgentInternalTests.tsx'), 'utf8')
     const page = readFileSync(join(process.cwd(), 'src/app/config/agentes/page.tsx'), 'utf8')
     assert.doesNotMatch(sandbox, /ninguno/)
-    assert.match(sandbox, /Conectá un canal en Canales/)
+    assert.match(sandbox, /Este agente no atiende ningún canal de WhatsApp\. Activalo en Canales\./)
+    assert.match(sandbox, /kind: 'text'/)
+    assert.match(sandbox, /_exhaustive: never/)
+    assert.match(internals, /No simulado en Probar/)
+    assert.match(internals, /Nombre del cliente \(opcional\)/)
+    assert.match(internals, /Modo de conversación/)
+    assert.match(internals, /Resultado:/)
     assert.match(sandbox, /Enviar/)
     assert.match(internals, /Pruebas internas/)
     assert.match(internals, /passRate/)
@@ -155,7 +189,19 @@ describe('Probar sandbox', () => {
       [{ id: 'wa-9', platform: 'whatsapp', attendedByThisAgent: false, label: 'Suelta' }],
       null,
     )
-    assert.equal(unboundOnly.selectedId, 'wa-9')
+    assert.equal(unboundOnly.mode, 'empty')
+    assert.equal(unboundOnly.selectedId, null)
+
+    const mixed = selectWhatsappTestChannel(
+      [
+        { id: 'wa-9', platform: 'whatsapp', attendedByThisAgent: false, label: 'Suelta' },
+        { id: 'wa-1', platform: 'whatsapp', attendedByThisAgent: true, label: 'Atendido' },
+      ],
+      'wa-9',
+    )
+    assert.equal(mixed.mode, 'selected')
+    assert.equal(mixed.selectedId, 'wa-1')
+    assert.deepEqual(mixed.options.map((row) => row.id), ['wa-1'])
   })
 
   it('A1.9–A1.10 channel writes audit the binding and drop unlock when IA is off', () => {

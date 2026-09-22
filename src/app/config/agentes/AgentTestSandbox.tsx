@@ -4,18 +4,53 @@ import React, { useMemo, useState } from 'react'
 import { AgentInternalTests } from '@/app/config/agentes/AgentInternalTests'
 import { selectWhatsappTestChannel, type TestChannelOption } from '@/lib/soft-ai/test-channel'
 
-type HistoryItem = { direction: 'inbound' | 'outbound'; content: string; sentAt: string }
+export type WaBubble = {
+  kind: 'text'
+  from: 'customer' | 'agent'
+  text: string
+  at: string
+  label?: string
+}
 
 type TurnResult = {
   text: string
   tokens?: { input: number; output: number; cached: number }
   latencyMs?: number
   wouldSend?: boolean
+  outcome?: 'send' | 'suggest' | 'skip'
+  needsHuman?: boolean
+  fallbackUsed?: boolean
+  escalate?: boolean
   blockedBy?: string[]
   highlightedAmounts?: number[]
   intent?: string
   shortcutKey?: string | null
   decisionTrace?: unknown
+}
+
+function BubbleView({ bubble }: { bubble: WaBubble }) {
+  switch (bubble.kind) {
+    case 'text': {
+      const customer = bubble.from === 'customer'
+      return (
+        <div className={`flex ${customer ? 'justify-end' : 'justify-start'}`}>
+          <div
+            className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm !text-slate-900 ${
+              customer ? 'bg-[#d9fdd3]' : 'bg-white ring-1 ring-slate-200'
+            }`}
+          >
+            {bubble.label ? <p className="text-[10px] font-medium text-slate-700">{bubble.label}</p> : null}
+            <p className="whitespace-pre-wrap">{bubble.text}</p>
+            <p className="mt-1 text-[10px] text-slate-600">{clock(bubble.at)}</p>
+          </div>
+        </div>
+      )
+    }
+    default: {
+      const _exhaustive: never = bubble.kind
+      return _exhaustive
+    }
+  }
 }
 
 const FIELD =
@@ -47,7 +82,9 @@ export function AgentTestSandbox({
   const [text, setText] = useState('precio con envío?')
   const [messageType, setMessageType] = useState<'text' | 'image' | 'audio' | 'document' | 'video'>('text')
   const [windowOpen, setWindowOpen] = useState(true)
-  const [history, setHistory] = useState<HistoryItem[]>([])
+  const [customerName, setCustomerName] = useState('')
+  const [conversationAiMode, setConversationAiMode] = useState<'ai_active' | 'human' | 'paused'>('ai_active')
+  const [history, setHistory] = useState<WaBubble[]>([])
   const [last, setLast] = useState<TurnResult | null>(null)
   const [replay, setReplay] = useState<Record<string, unknown> | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -74,19 +111,29 @@ export function AgentTestSandbox({
           socialAccountId,
           testSessionId: sessionId,
           messageType,
-          history,
+          history: history.map((bubble) => ({
+            direction: bubble.from === 'customer' ? 'inbound' : 'outbound',
+            content: bubble.text,
+            sentAt: bubble.at,
+          })),
           windowOpen,
+          customerName: customerName.trim() || undefined,
+          conversationAiMode,
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Error en Probar')
       const outbound = typeof data.text === 'string' ? data.text : ''
+      const blockedBefore =
+        Array.isArray(data.blockedBy) && data.blockedBy.includes('not_bound_to_channel')
       const now = new Date().toISOString()
       setHistory((prev) =>
         [
           ...prev,
-          { direction: 'inbound' as const, content: inbound, sentAt: now },
-          ...(outbound ? [{ direction: 'outbound' as const, content: outbound, sentAt: now }] : []),
+          { kind: 'text' as const, from: 'customer' as const, text: inbound, at: now },
+          ...(outbound && !blockedBefore
+            ? [{ kind: 'text' as const, from: 'agent' as const, text: outbound, at: now }]
+            : []),
         ].slice(-40),
       )
       setLast(data)
@@ -140,25 +187,15 @@ export function AgentTestSandbox({
         {history.length === 0 ? (
           <p className="text-sm text-slate-700">Escribí como cliente para ver la respuesta.</p>
         ) : (
-          history.map((item, index) => {
-            const mine = item.direction === 'inbound'
-            return (
-              <div key={`${item.sentAt}-${index}`} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm !text-slate-900 ${
-                    mine ? 'bg-[#d9fdd3]' : 'bg-white ring-1 ring-slate-200'
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap">{item.content}</p>
-                  <p className="mt-1 text-[10px] text-slate-600">{clock(item.sentAt)}</p>
-                </div>
-              </div>
-            )
-          })
+          history.map((bubble, index) => (
+            <BubbleView key={`${bubble.at}-${index}`} bubble={bubble} />
+          ))
         )}
       </div>
       {channelsLoaded && selection.mode === 'empty' ? (
-        <p className="mt-3 text-sm text-slate-800">Conectá un canal en Canales</p>
+        <p className="mt-3 text-sm text-slate-800">
+          Este agente no atiende ningún canal de WhatsApp. Activalo en Canales.
+        </p>
       ) : (
         <form
           className="mt-3 flex flex-col gap-2 sm:flex-row"
@@ -199,10 +236,14 @@ export function AgentTestSandbox({
         busy={busy}
         messageType={messageType}
         windowOpen={windowOpen}
+        customerName={customerName}
+        conversationAiMode={conversationAiMode}
         last={last}
         replay={replay}
         onMessageType={setMessageType}
         onWindowOpen={setWindowOpen}
+        onCustomerName={setCustomerName}
+        onConversationAiMode={setConversationAiMode}
         onReplay={() => void replayAll()}
       />
     </div>

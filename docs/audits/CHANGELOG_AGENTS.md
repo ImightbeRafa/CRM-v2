@@ -1,3 +1,28 @@
+## 2026-09-22 — P2: Probar ↔ live runtime parity
+
+- Shared `assembleAgentRuntimeInputs` (`agent-turn-inputs.ts`). Live tool semantics win:
+  force `search_approved_knowledge` only. Probar no longer force-adds `use_shortcut` (G16).
+  Canal context and customer name use the same account select (G17).
+- **Live prompt change (G18):** `loadHistory` excludes the trigger message
+  (`id !== triggerMessageId`) before the 24-message window, so the current inbound
+  appears once as `inboundText`. Rollback is that one filter.
+- Shared `decideTurnOutcome` (`agent-turn-outcome.ts`). Probar computes `wouldSend`
+  after the model (`outcome === 'send'`) and returns `outcome`, `needsHuman`,
+  `fallbackUsed`, `escalate`. The sandbox turn stores the real `fallbackUsed` (G20–G21).
+  `historyCount` is the windowed length, max 24 (G19).
+- Probar resolves the channel binding. A different or missing serving agent adds
+  `not_bound_to_channel` and does not call the model (G1). When flags are off the
+  binding lookup still runs, so Probar does not depend on ops flag state.
+  `selectWhatsappTestChannel` no longer falls back to any WhatsApp channel (G2).
+- Optional Probar inputs: `customerName`, `conversationAiMode` (`ai_active` | `human` | `paused`).
+  Live-only gates are labeled "No simulado en Probar" and are not reported as passed (G22).
+- Probar bubbles are `WaBubble` `{ kind: 'text', from, text, at, label? }` with an
+  exhaustive switch. Text only (AT-P-2).
+- Out of this slice: P3 unlock, P4 monitor label, P5 live proof, Forge agent PATCH,
+  staff bot, Soft chrome, schema/SQL, Meta Submit.
+- Prove: `npm run test:soft-ai-agent` and `npm run test:chat-harden`. AT-P-1, AT-P-2,
+  offline half of AT-WA-2.
+
 ## 2026-09-22 — P0+P1: Soft agent Grok 4.7 allowlist + guardrails
 
 - Decisions in force: **D1 off** (not implemented; P3), **D2 on** (not implemented; P3),

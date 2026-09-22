@@ -17,6 +17,13 @@ export const AgentTestRequestSchema = z.object({
   messageType: z.enum(['text', 'image', 'audio', 'document', 'video']).default('text'),
   history: z.array(TestHistoryMessageSchema).max(40).default([]),
   windowOpen: z.boolean().optional(),
+  customerName: z.preprocess((value) => {
+    if (value == null) return undefined
+    if (typeof value !== 'string') return value
+    const trimmed = value.trim()
+    return trimmed.length === 0 ? undefined : trimmed
+  }, z.string().max(120).optional()),
+  conversationAiMode: z.enum(['ai_active', 'human', 'paused']).default('ai_active'),
 })
 
 export type AgentTestRequest = z.infer<typeof AgentTestRequestSchema>

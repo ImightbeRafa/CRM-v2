@@ -13,19 +13,21 @@ Append-only. Newest entries at the top.
   nothing. Report includes `aggregateRepair`.
 - Offline `node:test` in `chat-inbox-backfill-repair.test.ts` (added to
   `test:chat-harden`). No 024/025/026/027/027b/028/029/030 apply, no shared `--apply`, staff bot untouched.
-- Rebased onto `dev` after #70 (`aa43dc0` P2 Probar matches live Soft
-  agent turn squash; parent `4bcce82` #69). Resume-aggregate repair
-  kept. #70 P2 (`assembleAgentRuntimeInputs` / `decideTurnOutcome` /
-  Probar ↔ live `wouldSend` after model / trigger-history filter /
-  channel binding) left as on `dev` (no overlay; did not implement P3+;
-  did not PATCH the Forge agent; did not write `aiFullUnlock`). #69 Soft
-  agent allowlist (`src/lib/soft-ai/**`, `/config/agentes` Avanzado
-  Modelo / Cambiar a grok-4.7) left as on `dev` (no overlay). #68 Forge
-  WA plan left as on `dev` (docs only; not implemented). #67 sales-agent
-  pipeline SoT left as on `dev` (docs only; not implemented). #66
-  agentes UX redo (paste-import, plain atajos, WhatsApp Probar) left as
-  on `dev` (no overlay). #65 UX redo plan left as on `dev` (docs only).
-  #64 AL2-A1 (classifier, brand facts, shortcuts, Probar; 029 gated,
+- Rebased onto `dev` after #71 (`f358a82` P3 audited unlock gate squash;
+  parent `aa43dc0` #70). Resume-aggregate repair kept. #71 P3 (`AiFullUnlockRecord`
+  context / `mutateChatAgentLayerConfig` lock / Aprobar envío real /
+  canaries) left as on `dev` (no overlay; did not implement P4+; did not
+  PATCH the Forge agent; did not write `aiFullUnlock`). #70 P2
+  (`assembleAgentRuntimeInputs` / `decideTurnOutcome` / Probar ↔ live
+  `wouldSend` after model / trigger-history filter / channel binding)
+  left as on `dev` (no overlay). #69 Soft agent allowlist
+  (`src/lib/soft-ai/**`, `/config/agentes` Avanzado Modelo / Cambiar a
+  grok-4.7) left as on `dev` (no overlay). #68 Forge WA plan left as on
+  `dev` (docs only; not implemented). #67 sales-agent pipeline SoT left
+  as on `dev` (docs only; not implemented). #66 agentes UX redo
+  (paste-import, plain atajos, WhatsApp Probar) left as on `dev` (no
+  overlay). #65 UX redo plan left as on `dev` (docs only). #64 AL2-A1
+  (classifier, brand facts, shortcuts, Probar; 029 gated,
   `chat_agent_layer_v1` off) left as on `dev` (no overlay). #63
   verify-betsy skill / helpers left as on `dev` (no overlay). #62 Arc 2
   plan docs left as on `dev` (no overlay). #61 agentes contrast /

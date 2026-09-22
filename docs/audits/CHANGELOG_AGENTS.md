@@ -1,3 +1,20 @@
+## 2026-09-22 — Plan: Forge WA Probar↔live fidelity + Soft agent Grok 4.7 (Fable, docs only)
+
+- Added `docs/plans/betsy-forge-wa-probar-live-fidelity-grok47-fable-2026-09-22.md` after
+  Rafael's 2026-09-21 GO (ops enable flags + this plan + later Cursor implement). Mission A:
+  make `/config/agentes` Probar a faithful dry run of `executeAgentLayerTurn` (shared runtime
+  input assembly, shared send/suggest/skip outcome, channel-binding check, post-model
+  `wouldSend`) and add an audited `POST /test/unlock` that writes `aiFullUnlock[socialAccountId]`
+  (hash + agent + model bound). Mission B: allowlist `['grok-4.7','grok-4.6']`, default 4.7,
+  Forge agent migrated by audited PATCH (SQL only as gated note).
+- 23 gaps with file pointers; 8 acceptance tests (AT-WA-1…4, AT-P-1…4); packs P0–P5.
+- Key findings: nothing writes `aiFullUnlock` today; Probar forces `use_shortcut` while live does
+  not; live history duplicates the trigger inbound; Probar `wouldSend` ignores `needsHuman`;
+  rebinding keeps a stale unlock; `/chats` cannot tell agent-layer from legacy Soft AI.
+- Locks: Soft chrome HOLD, staff bot HARD LOCK (empty diff), no Meta Submit, no schema/SQL in
+  PRs. Implementer model lock: grok-4.7 high fast only, never grok-4.5.
+- Prove: docs only — `git diff --stat` = `docs/**`. PR stays draft; no merge without Rafael GO.
+
 ## 2026-09-21 — Plan: sales-agent pipeline SoT (CoS, docs only)
 
 - Added `docs/plans/betsy-sales-agent-pipeline-2026-09-21.md` as the source of truth

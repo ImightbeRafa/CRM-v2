@@ -13,9 +13,12 @@ Append-only. Newest entries at the top.
   nothing. Report includes `aggregateRepair`.
 - Offline `node:test` in `chat-inbox-backfill-repair.test.ts` (added to
   `test:chat-harden`). No 024/025/026/027/027b/028/029/030 apply, no shared `--apply`, staff bot untouched.
-- Rebased onto `dev` after #68 (`c664219` docs-only Forge WA Probar↔live
-  fidelity + Soft agent Grok 4.7 squash; parent `63be5e7` #67). Resume-aggregate
-  repair kept. #68 Forge WA plan left as on `dev` (docs only; not
+- Rebased onto `dev` after #69 (`4bcce82` P0+P1 Soft agent Grok 4.7
+  allowlist + guardrails squash; parent `c664219` #68). Resume-aggregate
+  repair kept. #69 Soft agent allowlist (`src/lib/soft-ai/**`,
+  `/config/agentes` Avanzado Modelo / Cambiar a grok-4.7) left as on
+  `dev` (no overlay; did not implement P2/P3; did not PATCH the Forge
+  agent). #68 Forge WA plan left as on `dev` (docs only; not
   implemented). #67 sales-agent pipeline SoT left as on `dev` (docs only;
   not implemented). #66 agentes UX redo (paste-import, plain atajos,
   WhatsApp Probar) left as on `dev` (no overlay). #65 UX redo plan left
@@ -37,8 +40,7 @@ Append-only. Newest entries at the top.
   tagged outbound fallback. 024/025/026/027/027b/028/029/030 SQL still
   not applied; `chat_inbox_v2` / `chat_agent_layer_v1` not toggled;
   `aiFullUnlock` not written.
-- Prove (post-#68 rebase onto `c664219`): `npx tsx --test src/lib/__tests__/chat-inbox-backfill-repair.test.ts`
-  (8 pass) + `npm run test:chat-harden` (243 pass; same as post-#67, #68 docs-only).
+- Prove (post-#69 rebase onto `4bcce82`): pending prove after rebase.
 
 ## 2026-09-23 — Instagram reconnect no longer 500s on SocialAccount P2002
 

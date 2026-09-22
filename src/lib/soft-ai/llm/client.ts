@@ -3,7 +3,7 @@
  */
 
 import OpenAI from 'openai'
-import { isAllowedChatAgentModel } from '@/lib/soft-ai/agent-types'
+import { DEFAULT_CHAT_AGENT_MODEL, isAllowedChatAgentModel } from '@/lib/soft-ai/agent-types'
 
 export const SOFT_AI_XAI_BASE_URL = 'https://api.x.ai/v1'
 export const SOFT_AI_FIRST_CALL_TIMEOUT_MS = 9_000
@@ -15,7 +15,7 @@ export function resolveSoftAiModel(override?: string | null): string {
     typeof process.env.SOFT_AI_XAI_MODEL === 'string'
       ? process.env.SOFT_AI_XAI_MODEL.trim()
       : ''
-  const candidate = (override || fromEnv || 'grok-4.6').trim()
+  const candidate = (override || fromEnv || DEFAULT_CHAT_AGENT_MODEL).trim()
   if (!isAllowedChatAgentModel(candidate)) {
     throw new Error('SOFT_AI_MODEL_NOT_ALLOWED')
   }

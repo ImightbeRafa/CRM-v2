@@ -12,6 +12,7 @@ import {
   parseChatAgentLayerConfig,
 } from '@/lib/soft-ai/agent-config'
 import { isChatAgentSchemaReady } from '@/lib/soft-ai/agent-schema'
+import { DEFAULT_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
 import { parseBrandFactsSafe } from '@/lib/soft-ai/brand-facts'
 import {
   parseSoftAiResponseText,
@@ -113,7 +114,7 @@ export async function runShortcutExtract(input: {
             agentId: agent.id,
             automationDeliveryKey: `shortcut-import:${agent.id}:${extractionId}`,
             mode: 'test',
-            model: agent.model || 'grok-4.6',
+            model: agent.model || DEFAULT_CHAT_AGENT_MODEL,
             agentVersion: agent.version,
             status: 'test',
             outputText: null,

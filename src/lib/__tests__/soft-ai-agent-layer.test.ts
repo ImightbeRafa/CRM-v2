@@ -6,7 +6,18 @@ import { FIXTURE_SOCIAL_ACCOUNT_ID } from '../soft-ai/__fixtures__/forge-wa-v2'
 import { FORGE_WA_V1_FIXTURE_SET_HASH } from '../soft-ai/__fixtures__/forge-wa-v1'
 import { validateAgentOutput } from '../soft-ai/llm/output-validator'
 import { selectHistoryWindow, buildAgentUserPrompt } from '../soft-ai/llm/prompt'
-import { assertAllowedModel } from '../soft-ai/llm/model-policy'
+import { assertAllowedModel, buildSoftAiPromptCacheKey } from '../soft-ai/llm/model-policy'
+import { resolveSoftAiModel } from '../soft-ai/llm/client'
+import { estimateCostMicros } from '../soft-ai/llm/usage'
+import {
+  CHAT_AGENT_MODEL_ALLOWLIST,
+  DEFAULT_CHAT_AGENT_MODEL,
+  DEFAULT_PRICING_VERSION,
+  FIXTURE_SET_HASH_V2,
+  FORGE_WA_V2_FIXTURE_SET_HASH,
+  isAllowedChatAgentModel,
+} from '../soft-ai/agent-types'
+import { FORGE_WA_V2_FIXTURE_SET_HASH as FIXTURE_HASH_REEXPORT } from '../soft-ai/__fixtures__/forge-wa-v2'
 import { formatAgentHeaderLabel, agentStateDot } from '../soft-ai/agent-inbox-projection'
 import { hashSoftAiOutput } from '../soft-ai/agent-claim-gates'
 
@@ -120,9 +131,69 @@ describe('soft-ai output validator + history (1.7, gate 9)', () => {
 })
 
 describe('soft-ai model allowlist', () => {
-  it('rejects non-grok-4.6', () => {
+  it('allows grok-4.7 and grok-4.6, rejects others', () => {
+    assert.equal(assertAllowedModel('grok-4.7'), 'grok-4.7')
     assert.equal(assertAllowedModel('grok-4.6'), 'grok-4.6')
+    assert.deepEqual(CHAT_AGENT_MODEL_ALLOWLIST, ['grok-4.7', 'grok-4.6'])
+    assert.equal(DEFAULT_CHAT_AGENT_MODEL, 'grok-4.7')
+    assert.throws(() => assertAllowedModel('grok-4.5'), /SOFT_AI_MODEL_NOT_ALLOWED/)
     assert.throws(() => assertAllowedModel('gpt-4o'), /SOFT_AI_MODEL_NOT_ALLOWED/)
+  })
+
+  it('resolveSoftAiModel() with no override and no env returns grok-4.7', () => {
+    const prev = process.env.SOFT_AI_XAI_MODEL
+    delete process.env.SOFT_AI_XAI_MODEL
+    try {
+      assert.equal(resolveSoftAiModel(), 'grok-4.7')
+      assert.equal(resolveSoftAiModel(null), 'grok-4.7')
+      assert.equal(resolveSoftAiModel(''), 'grok-4.7')
+      assert.equal(resolveSoftAiModel('grok-4.6'), 'grok-4.6')
+    } finally {
+      if (prev === undefined) delete process.env.SOFT_AI_XAI_MODEL
+      else process.env.SOFT_AI_XAI_MODEL = prev
+    }
+  })
+
+  it('stored grok-4.6 still passes the resolveChatAgent allowlist gate', () => {
+    assert.equal(isAllowedChatAgentModel('grok-4.6'), true)
+    assert.equal(isAllowedChatAgentModel('grok-4.7'), true)
+    assert.equal(isAllowedChatAgentModel('grok-4.5'), false)
+  })
+
+  it('prices both allowlisted models at the shared short-context rates', () => {
+    assert.equal(DEFAULT_PRICING_VERSION, 'xai-2026-09')
+    const sample = {
+      inputTokens: 1_000_000,
+      cachedInputTokens: 0,
+      outputTokens: 1_000_000,
+    }
+    const cost47 = estimateCostMicros({ model: 'grok-4.7', ...sample })
+    const cost46 = estimateCostMicros({ model: 'grok-4.6', ...sample })
+    assert.equal(cost47, 8_000_000)
+    assert.equal(cost46, cost47)
+  })
+
+  it('prompt cache key includes the model', () => {
+    const base = {
+      tenantId: 't',
+      agentId: 'a',
+      agentVersion: 3,
+      socialAccountId: 's',
+    }
+    assert.equal(
+      buildSoftAiPromptCacheKey({ ...base, model: 'grok-4.7' }),
+      't:a:3:s:grok-4.7',
+    )
+    assert.notEqual(
+      buildSoftAiPromptCacheKey({ ...base, model: 'grok-4.7' }),
+      buildSoftAiPromptCacheKey({ ...base, model: 'grok-4.6' }),
+    )
+  })
+
+  it('fixture hash has a single source (G7)', () => {
+    assert.equal(FORGE_WA_V2_FIXTURE_SET_HASH, 'forge-wa-v2-al2-a1-2026-09-21')
+    assert.equal(FIXTURE_SET_HASH_V2, FORGE_WA_V2_FIXTURE_SET_HASH)
+    assert.equal(FIXTURE_HASH_REEXPORT, FORGE_WA_V2_FIXTURE_SET_HASH)
   })
 })
 

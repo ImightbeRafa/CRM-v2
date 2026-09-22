@@ -1,3 +1,13 @@
+## 2026-09-21 — Plan: sales-agent pipeline SoT (CoS, docs only)
+
+- Added `docs/plans/betsy-sales-agent-pipeline-2026-09-21.md` as the source of truth
+  for Rafael García’s CR store sales-agent pipeline (locked 2026-09-21 with CoS).
+  Sits above Arc 2 phases: sales layer only, inventory SKU mapping, GAM via
+  `getCorreosAutomatedShippingCost` (no new geography; contra entrega never
+  outside GAM), payment-proof pause, order after human approve, human post-sale.
+- No product code, no schema. Implementer model lock: grok-4.7 high fast only.
+- Prove: docs only — `git diff --stat` = `docs/**`. PR stays draft.
+
 ## 2026-09-21 — AL2-A1 UX redo: paste-import, plain atajos, WhatsApp Probar
 
 - Owner flow on `/config/agentes`: paste "Cargar desde mis atajos" → review checklist → one Guardar (`import/extract` does not write config; `import/apply` bumps agent version once and writes one audit). Soft LLM via `llm/client.ts` when `XAI_API_KEY` is set; heuristic mapping covers the same facts for review. Confirmation wording stays a red row. Tokens for a model call go to `testDailyTokenCap`.

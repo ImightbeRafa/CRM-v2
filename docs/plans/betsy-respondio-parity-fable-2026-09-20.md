@@ -10,7 +10,7 @@
 
 - **Author:** Fable 5.1 (Cursor cloud, planning only) · **Advisor review:** Sol `gpt-5.6-sol-high` (see §11)
 - **Date:** 2026-09-20 (CR) · **Repo:** `ImightbeRafa/CRM-v2` · **Investigated tip:** `dev` @ `b71aaff` (#40) · **Live tip at status board:** `b5ecd01`
-- **Status:** Phases 1–3 LIVE; P4–P5 GO’d 2026-09-20; Phase 6 HOLD. See status board for Done / Still-open / Blocked.
+- **Status:** Phases 1–3 LIVE; P4–P5 GO’d 2026-09-20; Phase 6 HOLD. See status board for Done / Still-open / Blocked. PLAN (Advisor-reviewed) — this PR remains docs-only (no additional product code). Rafael approvals listed in §9.
 - **Notion SoT:** [Betsy Chat — Full Implementation](https://app.notion.com/p/3cdbc39c41ae81968b64d25201be0676) · [Respond.io epic](https://app.notion.com/p/3d6bc39c41ae819b8994f3e2e6059977) · [Soft UX redesign brief (HOLD)](https://app.notion.com/p/3d8bc39c41ae81cb9b13e094ebf9c9e9)
 
 ## Locks that bind every phase

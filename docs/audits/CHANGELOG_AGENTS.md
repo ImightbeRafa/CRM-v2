@@ -13,14 +13,16 @@ Append-only. Newest entries at the top.
   nothing. Report includes `aggregateRepair`.
 - Offline `node:test` in `chat-inbox-backfill-repair.test.ts` (added to
   `test:chat-harden`). No 024/025/026/027/027b/028/029/030 apply, no shared `--apply`, staff bot untouched.
-- Rebased onto `dev` after #72 (`0df02d3` P4 agent-sent label from send
-  snapshot; parent `f358a82` #71). Resume-aggregate repair kept. #72 P4
-  (`agent-turn.ts` snapshot of agentName/agentEmoji /
-  `softAiOutboundLabel` / SoftThreadPane footer) left as on `dev` (no
-  overlay; did not implement P5+; did not PATCH the Forge agent; did not
-  write `aiFullUnlock`). #71 P3 (`AiFullUnlockRecord`
-  context / `mutateChatAgentLayerConfig` lock / Aprobar envío real /
-  canaries) left as on `dev` (no overlay). #70 P2
+- Rebased onto `dev` after #74 (`4561866` Instagram reconnect P2002;
+  parent `0df02d3` #72). Resume-aggregate repair kept. #74 Instagram
+  reconnect (`upsertInstagramSocialAccount` / callback+complete 409 /
+  `instagram-social-account.test.ts` in `test:security`) left as on
+  `dev` (no overlay). #72 P4 (`agent-turn.ts` snapshot of
+  agentName/agentEmoji / `softAiOutboundLabel` / SoftThreadPane footer)
+  left as on `dev` (no overlay; did not implement P5+; did not PATCH the
+  Forge agent; did not write `aiFullUnlock`). #71 P3
+  (`AiFullUnlockRecord` context / `mutateChatAgentLayerConfig` lock /
+  Aprobar envío real / canaries) left as on `dev` (no overlay). #70 P2
   (`assembleAgentRuntimeInputs` / `decideTurnOutcome` / Probar ↔ live
   `wouldSend` after model / trigger-history filter / channel binding)
   left as on `dev` (no overlay). #69 Soft agent allowlist

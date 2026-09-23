@@ -17,7 +17,11 @@ import {
   INSTAGRAM_PENDING_COOKIE_MAX_AGE,
   createInstagramPendingConnect,
 } from '@/lib/instagram-pending-connect'
-import { upsertInstagramSocialAccount } from '@/lib/instagram-social-account'
+import {
+  InstagramSocialAccountConflictError,
+  instagramAccountOwnedElsewhereHtml,
+  upsertInstagramSocialAccount,
+} from '@/lib/instagram-social-account'
 import { debugMetaTokenExpiry } from '@/lib/social-account-token-health'
 
 export const runtime = 'nodejs'
@@ -268,6 +272,10 @@ export async function GET(request: NextRequest) {
       }),
     )
   } catch (error) {
+    if (error instanceof InstagramSocialAccountConflictError) {
+      console.warn('[instagram/callback] Instagram account already connected on another tenant')
+      return html(instagramAccountOwnedElsewhereHtml(), 409)
+    }
     console.error('[instagram/callback] Unexpected error', error)
     return html(
       `<html><body>

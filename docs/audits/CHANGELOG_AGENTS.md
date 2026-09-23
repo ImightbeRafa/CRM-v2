@@ -52,8 +52,11 @@ Append-only. Newest entries at the top.
 - Soft chrome and `/api/bot/**` untouched. 024/025/026/027/027b/028/029/030 not
   applied. `chat_inbox_v2` / `chat_agent_layer_v1` not toggled. `aiFullUnlock`
   not written. Did not touch PRs #39/#41/#43/#49/#52/#73.
-- Prove pending this rebase (focused coexistence/write/oauth + `test:chat-harden`
-  + `test:soft-ai-agent`).
+- Prove (post-#74 rebase onto `4561866`): focused coexistence+write+oauth 41 pass;
+  `npm run test:chat-harden` 274 pass; `npm run test:soft-ai-agent` 130 pass;
+  lint existing warnings only. Chat-harden stayed 274 and soft-ai-agent 130
+  because #74 added Instagram SocialAccount tests under `test:security`, not
+  these suites.
 
 ## 2026-09-23 — Instagram reconnect no longer 500s on SocialAccount P2002
 

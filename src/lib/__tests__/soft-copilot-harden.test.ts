@@ -20,8 +20,11 @@ test('chatMessagesWhereForPeer with recipientId filters inbound from / outbound 
   }) as any
   assert.equal(where.socialAccountId, 'sa-1')
   assert.ok(Array.isArray(where.OR))
-  assert.equal(where.OR.length, 3)
+  assert.equal(where.OR.length, 4)
   assert.equal(where.OR[0].AND[1].metadata.equals, '50688887777')
+  assert.equal(where.OR[3].AND[0].direction, 'outbound')
+  assert.equal(where.OR[3].AND[1].metadata.path[0], 'from')
+  assert.equal(where.OR[3].AND[1].metadata.equals, '50688887777')
 })
 
 test('mergeChatMessagesById dedupes and sorts by sentAt ascending', () => {

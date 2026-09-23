@@ -32,6 +32,13 @@ test('webhook route verifies HMAC before any IP rate limit', () => {
   assert.match(source, /dualWriteChatMessage/)
   assert.match(source, /applyDeliveryStatusUpdate/)
   assert.match(source, /applyPeerReadWatermark/)
+  assert.match(source, /buildWebhookStoredMetadata/)
+  assert.match(source, /partnerRemovedWhatsAppWhere/)
+  assert.match(source, /tokenStatus:\s*'revoked'/)
+  assert.match(source, /lastErrorCode:\s*'PARTNER_REMOVED'/)
+  assert.match(source, /disconnectedAt:\s*new Date\(\)/)
+  assert.doesNotMatch(source, /chatMessage\.create\(/)
+  assert.doesNotMatch(source, /startsWith:\s*wabaPrefix/)
 })
 
 test('send route stamps providerMessageId on first dual-write and accepts echo-first', () => {

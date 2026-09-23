@@ -17,6 +17,7 @@ import { identityPersistPayload } from '@/lib/social-account-identity'
 import {
   extractWaEmbeddedSignupAssets,
   isWaEmbeddedSignupMessage,
+  shouldDeferWhatsAppCodeExchange,
   shouldIgnoreWaSessionEvent,
 } from '@/lib/whatsapp-embedded-signup'
 import {
@@ -80,6 +81,25 @@ export async function POST(request: NextRequest) {
     let tokenExpiresIn: number | null = null
     let businessToken: string | null = accessToken || null
     let exchangeError: any = null
+
+    if (
+      shouldDeferWhatsAppCodeExchange({
+        code,
+        accessToken,
+        phoneNumberId: claimedPhoneNumberId,
+        wabaId: claimedWabaId,
+      })
+    ) {
+      console.log('[wa/exchange] Deferring single-use code until phone/WABA assets arrive')
+      return NextResponse.json({
+        success: true,
+        tokenReceived: false,
+        waitingForPhoneNumber: true,
+        deferredCodeExchange: true,
+        message:
+          'Esperando phone_number_id o waba_id del Embedded Signup antes de intercambiar el código.',
+      })
+    }
 
     if (accessToken) {
       console.log('[wa/exchange] Access token provided directly (response_type=token)')

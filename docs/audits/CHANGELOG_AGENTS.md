@@ -1,3 +1,12 @@
+## 2026-09-21 — PR-3 Bugbot follow-up (rename charset + accounts GET Graph budget)
+
+- Verified 2/2 #46 Bugbot notes against `origin/dev` `463a0615` (includes #46 `b5ecd017` + docs #48). Both real.
+- Rebased onto `origin/dev` `4561866` (#74 Instagram reconnect no longer 500s on SocialAccount P2002; parent `0df02d3` #72). Kept charset `@` / `+` and accounts GET Graph 2s deadline / cap 4.
+- MED rename: `validateDisplayNameInput` now allows `@` and `+` so Guardar on stored IG `@username` / WA `+506 …` defaults succeeds. Empty still resets to provider default. Identity UI (`ChannelLogo` / Renombrar) unchanged.
+- MED accounts GET: `refreshMissingAccountIdentities` runs Graph jobs concurrently (cap 4) with a 2s deadline on `GET /api/chat/accounts`. Hung Meta returns existing rows; backfill omits the deadline. Optional `AbortSignal` threaded through identity Graph helpers; OAuth/ownership callers unchanged.
+- Staff bot `/api/bot/**` untouched. Soft Copilot chrome HOLD (`SoftSlimNav` / `SoftInboxBuckets` / `SoftCopilotRail` untouched). 024/025/026/027/027b/028/029/030 not applied. Did not enable or disable `chat_inbox_v2` or `chat_agent_layer_v1`. `aiFullUnlock` not written. Did not import #47 about:blank or implement P5. Did not undo #74 Instagram reconnect, #72 P4 monitor attribution, #71 P3 audited unlock gate, #70 P2 Probar ↔ live runtime parity, #69 Soft agent Grok 4.7 allowlist + guardrails, #68 Forge WA Probar↔live + Grok 4.7 plan (docs only), #67 sales-agent pipeline SoT (docs only; not implemented), #66 AL2-A1 UX redo (paste-import, plain atajos, WhatsApp Probar), #65 UX redo plan, #64 AL2-A1, #63 verify-betsy, #62 Arc 2 plan, #61 contrast/reload feel, #60 conocimiento type, #59 desk polish, #58 A2 knowledge, #57 introductionNames, #56 agentes txn/audit, #55 session-permissions, #54 Agent Layer, or #51 token lifecycle.
+- Prove (post-#74 rebase): focused display-name + accounts + identity-refresh 15 pass; `npm run test:chat-harden` 271 pass, 0 fail; `npm run test:soft-ai-agent` 130 pass, 0 fail. Lint existing warnings only.
+
 ## 2026-09-23 — Instagram reconnect no longer 500s on SocialAccount P2002
 
 - `upsertInstagramSocialAccount` updates the same-tenant Instagram row (active or

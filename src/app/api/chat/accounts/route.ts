@@ -3,7 +3,10 @@ import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { toChatAccountDto } from '@/lib/social-account-identity'
-import { refreshMissingAccountIdentities } from '@/lib/social-account-identity-refresh'
+import {
+  IDENTITY_REFRESH_TIMEOUT_MS,
+  refreshMissingAccountIdentities,
+} from '@/lib/social-account-identity-refresh'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -66,7 +69,10 @@ export async function GET(request: NextRequest) {
       select: ACCOUNT_SELECT,
     })
 
-    const refreshResult = await refreshMissingAccountIdentities(rows)
+    const refreshResult = await refreshMissingAccountIdentities(rows, {
+      timeoutMs: IDENTITY_REFRESH_TIMEOUT_MS,
+      signal: request.signal,
+    })
     if (refreshResult.refreshed > 0) {
       rows = await db.socialAccount.findMany({
         where: includeInactive ? { tenantId } : { tenantId, isActive: true },

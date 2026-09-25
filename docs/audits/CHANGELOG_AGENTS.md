@@ -1,3 +1,10 @@
+## 2026-09-25 — Cloudflare Containers daytime packaging
+
+- `Dockerfile` + `.dockerignore` for Next standalone (`prisma generate` via `npm run build`, `@sparticuz/chromium` + puppeteer runtime libs, Correos WSDL copied to both resolve paths).
+- `DISABLE_CRONS=1|true` makes every `/api/cron/*` return 503 in middleware before the handler.
+- Ops note: `docs/ops/cloudflare-containers-daytime.md`. No DNS, Meta, or Vercel Production changes.
+- Prove: `npx tsx --test src/lib/__tests__/cron-kill-switch.test.ts`. Docker is not installed on the agent VM, so `docker build` was not run.
+
 ## 2026-09-23 — Instagram reconnect no longer 500s on SocialAccount P2002
 
 - `upsertInstagramSocialAccount` updates the same-tenant Instagram row (active or

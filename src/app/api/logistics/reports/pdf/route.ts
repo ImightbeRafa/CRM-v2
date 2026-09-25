@@ -4,11 +4,12 @@ import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { calculateTilopayFees, isTilopayOrder } from '@/lib/tilopay-fees';
 import { getLogisticsRates } from '@/lib/logistics-rates';
 import { MANAGED_TENANT_IDS } from '@/lib/logistics-managed-tenants';
+import { useSparticuzChromium } from '@/lib/use-sparticuz-chromium';
 
 export const dynamic = 'force-dynamic';
 
 async function getBrowser() {
-    if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    if (useSparticuzChromium()) {
         const chromium = await import('@sparticuz/chromium');
         const puppeteer = await import('puppeteer-core');
         return puppeteer.default.launch({

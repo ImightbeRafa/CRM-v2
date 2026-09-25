@@ -3,13 +3,14 @@ import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
 import { escapeHtml } from '@/lib/validation';
 import { PII_NO_STORE_HEADERS } from '@/lib/security';
+import { useSparticuzChromium } from '@/lib/use-sparticuz-chromium';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
 
 // Helper to get Puppeteer browser
 async function getBrowser() {
-  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  if (useSparticuzChromium()) {
     // Production: use puppeteer-core with @sparticuz/chromium
     const chromium = await import('@sparticuz/chromium');
     const puppeteer = await import('puppeteer-core');

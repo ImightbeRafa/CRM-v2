@@ -1,0 +1,26 @@
+{
+  "name": "betsy-crm-daytime-smoke",
+  "main": "src/cf-container-worker.ts",
+  "compatibility_date": "2026-09-25",
+  "containers": [
+    {
+      "class_name": "BetsyCrmContainer",
+      "image": "./Dockerfile",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BETSY_CRM_CONTAINER",
+        "class_name": "BetsyCrmContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["BetsyCrmContainer"]
+    }
+  ]
+}

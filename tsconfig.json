@@ -39,6 +39,7 @@
 , "src/app/backup/publicbackupworker.js"  ],
   "exclude": [
     "node_modules",
+    "src/cf-container-worker.ts",
     "holama",
     "e2e",
     "playwright.config.ts"

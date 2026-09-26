@@ -5,20 +5,33 @@ import {
   buildWhatsAppCoexistenceLoginExtras,
   buildWhatsAppDirectOauthDialogUrl,
   buildWhatsAppEmbeddedSignupLoginOptions,
+  closeWhatsAppDirectOauthPopup,
+  decideWhatsAppDirectOauthPopupClosed,
   extractWaEmbeddedSignupAssets,
   isFbSdkEmbeddedSignup36008,
   isWaCoexistenceFinishEvent,
   isWaEmbeddedSignupFinishEvent,
   isWaEmbeddedSignupMessage,
+  navigateWhatsAppDirectOauthPopup,
+  openWhatsAppDirectOauthPlaceholder,
   parseWaDirectOauthMessage,
+  shouldDeferWhatsAppCodeExchange,
   shouldIgnoreWaSessionEvent,
   waSignupReadyToExchange,
   WA_COEXISTENCE_FEATURE_TYPE,
   WA_DIRECT_OAUTH_MESSAGE_TYPE,
+  WA_DIRECT_OAUTH_PLACEHOLDER_URL,
+  WA_DIRECT_OAUTH_POPUP_NAME,
   WA_SESSION_INFO_VERSION,
+  type OpenNamedWindow,
 } from '../whatsapp-embedded-signup'
 import { selectCoexistencePhoneNumber, WHATSAPP_SUBSCRIBED_FIELDS_DEFAULT } from '../meta-api'
-import { parseMetaChatPayload } from '../meta-chat'
+import { buildWebhookStoredMetadata, parseMetaChatPayload } from '../meta-chat'
+import { getConversationPeerId, groupMessagesByRecipient } from '../chat-inbox'
+import {
+  partnerRemovedWhatsAppWhere,
+  whatsappRefreshTokensForWabaId,
+} from '../social-account-meta'
 
 test('coexistence FB.login extras match Meta docs', () => {
   const extras = buildWhatsAppCoexistenceLoginExtras()
@@ -89,7 +102,34 @@ test('waSignupReadyToExchange correlates code + coexistence waba', () => {
     }),
     false,
   )
-  assert.equal(waSignupReadyToExchange({ code: 'AQB...' }), true)
+  assert.equal(waSignupReadyToExchange({ code: 'AQB...' }), false)
+  assert.equal(waSignupReadyToExchange({ accessToken: 'EAA...' }), false)
+})
+
+test('shouldDeferWhatsAppCodeExchange blocks code-only Meta exchange', () => {
+  assert.equal(shouldDeferWhatsAppCodeExchange({ code: 'AQB...' }), true)
+  assert.equal(
+    shouldDeferWhatsAppCodeExchange({
+      code: 'AQB...',
+      phoneNumberId: '106540352242922',
+    }),
+    false,
+  )
+  assert.equal(
+    shouldDeferWhatsAppCodeExchange({
+      code: 'AQB...',
+      wabaId: '102290129340398',
+    }),
+    false,
+  )
+  assert.equal(
+    shouldDeferWhatsAppCodeExchange({
+      code: 'AQB...',
+      accessToken: 'EAA...',
+    }),
+    false,
+  )
+  assert.equal(shouldDeferWhatsAppCodeExchange({ accessToken: 'EAA...' }), false)
 })
 
 test('CANCEL/ERROR session events are ignored', () => {
@@ -178,6 +218,16 @@ test('parseMetaChatPayload parses smb_message_echoes as outbound and suppresses 
   assert.equal(message.senderId, '16505551234')
   assert.equal(message.content, 'enviado desde la app')
   assert.equal(message.metadata.smbEcho, true)
+  assert.equal(message.metadata.to, '16505551234')
+  assert.equal(message.metadata.from, '15550783881')
+
+  const stored = buildWebhookStoredMetadata(message)
+  assert.equal(stored.to, '16505551234')
+  assert.equal(stored.from, '15550783881')
+  assert.equal(
+    getConversationPeerId({ direction: 'outbound', metadata: stored }),
+    '16505551234',
+  )
 })
 
 test('parseMetaChatPayload parses history threads and suppresses Soft AI', () => {
@@ -233,9 +283,60 @@ test('parseMetaChatPayload parses history threads and suppresses Soft AI', () =>
   assert.equal(parsed.messages[0]!.direction, 'inbound')
   assert.equal(parsed.messages[0]!.suppressSoftAi, true)
   assert.equal(parsed.messages[0]!.content, 'hola historial')
+  assert.equal(parsed.messages[0]!.metadata.from, '16505551234')
   assert.equal(parsed.messages[1]!.direction, 'outbound')
   assert.equal(parsed.messages[1]!.suppressSoftAi, true)
   assert.equal(parsed.messages[1]!.content, 'respuesta historial')
+  assert.equal(parsed.messages[1]!.metadata.to, '16505551234')
+
+  const inboundStored = buildWebhookStoredMetadata(parsed.messages[0]!)
+  const outboundStored = buildWebhookStoredMetadata(parsed.messages[1]!)
+  assert.equal(
+    getConversationPeerId({ direction: 'inbound', metadata: inboundStored }),
+    '16505551234',
+  )
+  assert.equal(
+    getConversationPeerId({ direction: 'outbound', metadata: outboundStored }),
+    '16505551234',
+  )
+
+  const convs = groupMessagesByRecipient(
+    [
+      {
+        id: 'h1',
+        direction: 'inbound',
+        content: parsed.messages[0]!.content,
+        sentAt: '2026-09-20T10:00:00.000Z',
+        receivedAt: '2026-09-20T10:00:01.000Z',
+        metadata: inboundStored,
+      },
+      {
+        id: 'h2',
+        direction: 'outbound',
+        content: parsed.messages[1]!.content,
+        sentAt: '2026-09-20T10:01:00.000Z',
+        receivedAt: null,
+        metadata: outboundStored,
+      },
+    ],
+    'whatsapp',
+  )
+  assert.equal(convs.length, 1)
+  assert.equal(convs[0]!.recipientId, '16505551234')
+})
+
+test('PARTNER_REMOVED matches canonical and legacy WABA tokens exactly', () => {
+  const wabaId = '102290129340398'
+  assert.deepEqual(whatsappRefreshTokensForWabaId(wabaId), [
+    `waba:${wabaId}`,
+    wabaId,
+  ])
+  const where = partnerRemovedWhatsAppWhere(wabaId)
+  assert.ok(where)
+  assert.deepEqual(where?.refreshToken.in, [`waba:${wabaId}`, wabaId])
+  assert.equal(where?.refreshToken.in.includes(`waba:${wabaId}0`), false)
+  assert.equal(partnerRemovedWhatsAppWhere(''), null)
+  assert.deepEqual(whatsappRefreshTokensForWabaId('waba-not-numeric'), ['waba:waba-not-numeric'])
 })
 
 test('parseMetaChatPayload surfaces PARTNER_REMOVED account_update', () => {
@@ -340,11 +441,86 @@ test('social page consumes wa_direct_oauth and does not spend the code before as
   assert.match(page, /isFbSdkEmbeddedSignup36008/)
   assert.match(page, /\/api\/auth\/whatsapp\/direct-oauth/)
   assert.match(page, /launchWhatsAppDirectOauthFallback/)
-  const directAt = page.indexOf('parseWaDirectOauthMessage')
-  const forceAt = page.indexOf('tryExchangeWhatsAppSignupRef.current(false)', directAt)
-  assert.ok(directAt > 0)
-  assert.ok(forceAt > directAt)
-  assert.doesNotMatch(page.slice(directAt, forceAt + 80), /tryExchangeWhatsAppSignupRef\.current\(true\)/)
+  const usageAt = page.lastIndexOf('parseWaDirectOauthMessage')
+  const exchangeAt = page.indexOf('tryExchangeWhatsAppSignupRef.current()', usageAt)
+  assert.ok(usageAt > 0)
+  assert.ok(exchangeAt > usageAt)
+  assert.doesNotMatch(page, /tryExchangeWhatsAppSignupRef\.current\(true\)/)
+  assert.doesNotMatch(page, /tryExchangeWhatsAppSignupRef\.current\(false\)/)
+  assert.doesNotMatch(page, /forceTokenOnly/)
+})
+
+test('36008 fallback reserves popup on the click and navigates that handle after fetch', () => {
+  const opens: string[] = []
+  const popup = {
+    closed: false,
+    location: {
+      href: WA_DIRECT_OAUTH_PLACEHOLDER_URL as string,
+      replace(url: string) {
+        this.href = url
+      },
+    },
+    close() {
+      this.closed = true
+    },
+  }
+  const openWindow: OpenNamedWindow = (url, name) => {
+    opens.push(`${name}:${url}`)
+    return popup as unknown as Window
+  }
+
+  const reserved = openWhatsAppDirectOauthPlaceholder(openWindow)
+  const oauthUrl = 'https://www.facebook.com/v24.0/dialog/oauth?client_id=app-1'
+  assert.equal(navigateWhatsAppDirectOauthPopup(reserved, oauthUrl), true)
+  assert.deepEqual(opens, [`${WA_DIRECT_OAUTH_POPUP_NAME}:${WA_DIRECT_OAUTH_PLACEHOLDER_URL}`])
+  assert.equal(popup.location.href, oauthUrl)
+
+  closeWhatsAppDirectOauthPopup(reserved)
+  assert.equal(popup.closed, true)
+  assert.equal(navigateWhatsAppDirectOauthPopup(reserved, 'https://example.test'), false)
+  assert.equal(navigateWhatsAppDirectOauthPopup(null, oauthUrl), false)
+
+  const page = readFileSync('src/app/config/social/page.tsx', 'utf8')
+  const reserveAt = page.indexOf('openWhatsAppDirectOauthPlaceholder(')
+  const loginAt = page.indexOf('FB.login(')
+  const fallbackAt = page.indexOf('launchWhatsAppDirectOauthFallback(reservedPopup)')
+  assert.ok(reserveAt > 0 && loginAt > reserveAt, 'placeholder must open before FB.login')
+  assert.ok(fallbackAt > loginAt)
+  assert.match(page, /navigateWhatsAppDirectOauthPopup\(popup/)
+  assert.doesNotMatch(page, /window\.open\(\s*String\(json\.oauthUrl\)/)
+  assert.doesNotMatch(page, /forceTokenOnly/)
+})
+
+test('direct OAuth popup close settles connecting except in-flight exchange', () => {
+  assert.deepEqual(decideWhatsAppDirectOauthPopupClosed({ exchanging: true, code: 'AQB' }), {
+    settleConnecting: false,
+    reason: 'exchanging',
+  })
+  assert.deepEqual(
+    decideWhatsAppDirectOauthPopupClosed({
+      code: null,
+      message: {
+        type: 'WA_EMBEDDED_SIGNUP',
+        event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+        data: { waba_id: '1' },
+      },
+    }),
+    { settleConnecting: true, reason: 'assets_without_code' },
+  )
+  assert.deepEqual(decideWhatsAppDirectOauthPopupClosed({ code: 'AQB...' }), {
+    settleConnecting: true,
+    reason: 'code_without_assets',
+  })
+  assert.deepEqual(decideWhatsAppDirectOauthPopupClosed({}), {
+    settleConnecting: true,
+    reason: 'closed',
+  })
+
+  const page = readFileSync('src/app/config/social/page.tsx', 'utf8')
+  assert.match(page, /decideWhatsAppDirectOauthPopupClosed/)
+  const assetsWithoutCodeAt = page.indexOf("case 'assets_without_code'")
+  const setConnectingAt = page.indexOf('setConnectingWhatsApp(false)', assetsWithoutCodeAt)
+  assert.ok(assetsWithoutCodeAt > 0 && setConnectingAt > assetsWithoutCodeAt)
 })
 
 test('direct-oauth route requires config_id for Embedded Signup parity', () => {

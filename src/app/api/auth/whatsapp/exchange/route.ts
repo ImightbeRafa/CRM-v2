@@ -10,13 +10,19 @@ import {
   initiateWhatsAppSmbAppDataSync,
   getMetaWhatsAppAppId,
   getMetaWhatsAppAppSecret,
+  metaEnvFingerprint,
 } from '@/lib/meta-api'
-import { encodeWhatsAppRefreshToken } from '@/lib/social-account-meta'
+import {
+  encodeWhatsAppRefreshToken,
+  resolveExistingWhatsAppPhoneForWaba,
+  whatsappAccountsForWabaWhere,
+} from '@/lib/social-account-meta'
 import { encryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { identityPersistPayload } from '@/lib/social-account-identity'
 import {
   extractWaEmbeddedSignupAssets,
   isWaEmbeddedSignupMessage,
+  shouldDeferWhatsAppCodeExchange,
   shouldIgnoreWaSessionEvent,
 } from '@/lib/whatsapp-embedded-signup'
 import {
@@ -81,15 +87,65 @@ export async function POST(request: NextRequest) {
     let businessToken: string | null = accessToken || null
     let exchangeError: any = null
 
+    if (
+      shouldDeferWhatsAppCodeExchange({
+        code,
+        accessToken,
+        phoneNumberId: claimedPhoneNumberId,
+        wabaId: claimedWabaId,
+      })
+    ) {
+      console.log('[wa/exchange] Deferring single-use code until phone/WABA assets arrive')
+      return NextResponse.json({
+        success: true,
+        tokenReceived: false,
+        waitingForPhoneNumber: true,
+        deferredCodeExchange: true,
+        message:
+          'Esperando phone_number_id o waba_id del Embedded Signup antes de intercambiar el código.',
+      })
+    }
+
     if (accessToken) {
       console.log('[wa/exchange] Access token provided directly (response_type=token)')
     } else if (code) {
       const appId = getMetaWhatsAppAppId()
       const appSecret = getMetaWhatsAppAppSecret()
+      const fp = metaEnvFingerprint()
 
       if (!appId || !appSecret) {
-        console.error('[wa/exchange] Missing META_WA_APP_ID/META_APP_ID or META_WA_APP_SECRET/META_APP_SECRET')
-        return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+        console.error('[wa/exchange] Missing or unusable Meta app id/secret', {
+          waAppIdUsable: fp.waAppIdUsable,
+          waSecretUsable: fp.waSecretUsable,
+          placeholderKeys: fp.placeholderKeys,
+          waAppIdSource: fp.waAppIdSource,
+          waSecretSource: fp.waSecretSource,
+        })
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              fp.placeholderKeys.length > 0
+                ? 'Server Meta secrets are placeholders ([SENSITIVE] from Vercel pull). Re-put real Inbox app secrets on the Worker, then redeploy the container.'
+                : 'Server configuration error: Meta WA app id/secret missing or unusable',
+            exchangeError: {
+              errorCode: 'meta_env_unusable',
+              errorMessage:
+                fp.placeholderKeys.length > 0
+                  ? 'META secrets look like Vercel [SENSITIVE] placeholders'
+                  : 'META_WA_APP_ID/META_APP_ID or META_WA_APP_SECRET/META_APP_SECRET missing',
+              placeholderKeys: fp.placeholderKeys,
+            },
+            debugInfo: {
+              codeProvided: true,
+              accessTokenProvided: false,
+              messageProvided: !!message,
+              ...fp,
+              hint: 'Put real META_APP_SECRET / META_WA_APP_SECRET / META_WA_APP_ID / ENCRYPTION_KEY on Worker (not [SENSITIVE]), then wrangler deploy --keep-vars --containers-rollout=immediate',
+            },
+          },
+          { status: 500 },
+        )
       }
 
       console.log('[wa/exchange] Exchanging Embedded Signup code', {
@@ -97,6 +153,11 @@ export async function POST(request: NextRequest) {
         hasConfigId: Boolean(process.env.NEXT_PUBLIC_FB_LOGIN_CONFIG_ID),
         hasNextAuthUrl: Boolean(process.env.NEXTAUTH_URL),
         usingDedicatedWaApp: Boolean((process.env.META_WA_APP_ID || '').trim()),
+        waAppIdSource: fp.waAppIdSource,
+        waAppIdLast4: fp.waAppIdLast4,
+        waSecretSource: fp.waSecretSource,
+        waSecretLenBucket: fp.waSecretLenBucket,
+        placeholderKeys: fp.placeholderKeys,
         coexistenceFinish,
         sessionEvent: sessionAssets.event,
       })
@@ -165,15 +226,23 @@ export async function POST(request: NextRequest) {
     }
 
     if (!businessToken) {
+      const fpFail = metaEnvFingerprint()
+      const graphMsg =
+        exchangeError && typeof exchangeError === 'object'
+          ? String((exchangeError as { errorMessage?: string }).errorMessage || '')
+          : ''
       return NextResponse.json(
         {
           success: false,
-          message: 'Failed to obtain access token',
+          message: graphMsg
+            ? `Failed to obtain access token: ${graphMsg}`
+            : 'Failed to obtain access token',
           exchangeError: exchangeError || 'No error details available',
           debugInfo: {
             codeProvided: !!code,
             accessTokenProvided: !!accessToken,
             messageProvided: !!message,
+            ...fpFail,
             hint: 'Check server logs for detailed error information',
           },
         },
@@ -197,35 +266,78 @@ export async function POST(request: NextRequest) {
           wabaId: claimedWabaId,
           coexistence: fromWaba.coexistence,
         })
-      } else if (coexistenceFinish) {
-        console.warn('[wa/exchange] Coexistence finish but could not resolve phone from WABA', {
-          reason: fromWaba.reason,
-          phoneCount: fromWaba.phones?.length ?? 0,
-        })
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              fromWaba.reason === 'ambiguous_coexistence_phones' ||
-              fromWaba.reason === 'ambiguous_phones_on_waba' ||
-              fromWaba.reason === 'ambiguous_biz_app_phones'
-                ? 'La WABA tiene varios números; no se pudo elegir cuál conectar. Vinculá manualmente el Phone Number ID.'
-                : 'Coexistence completó en Meta pero no se encontró un número en la WABA. Verificá que el número esté en la app de WhatsApp Business (2.24.17+).',
-            reason: fromWaba.reason || 'coexistence_phone_resolve_failed',
-            whatsappBusinessAccountId: claimedWabaId,
+      } else {
+        // Reconnect path: tenant already has a SocialAccount for this WABA
+        // (e.g. soft-unlinked Forge). Reuse its phone number id so we can
+        // persist the new token even when Graph phone listing is empty.
+        // One WABA can host several lines, so never pick a row by WABA alone:
+        // reuse only when exactly one line exists, else ask for a phone_number_id.
+        const dbEarly = prisma as any
+        const wabaWhere = whatsappAccountsForWabaWhere(tenantId, String(claimedWabaId))
+        const wabaAccounts: Array<{ id: string; accountId: string | null }> = wabaWhere
+          ? await dbEarly.socialAccount.findMany({
+              where: wabaWhere,
+              select: { id: true, accountId: true },
+            })
+          : []
+        const existingPhone = resolveExistingWhatsAppPhoneForWaba(wabaAccounts)
+        if (!existingPhone.ok && existingPhone.reason === 'ambiguous_waba_accounts') {
+          console.warn('[wa/exchange] Multiple WhatsApp lines on WABA — refusing to pick one', {
+            candidateCount: existingPhone.candidateCount,
+            reason: fromWaba.reason || 'graph_phone_unresolved',
+          })
+          return NextResponse.json(
+            {
+              success: false,
+              message:
+                'La WABA tiene varios números conectados; no se pudo elegir cuál reconectar. Indicá el phone_number_id del número a conectar.',
+              reason: 'ambiguous_waba_accounts',
+              whatsappBusinessAccountId: claimedWabaId,
+              candidateCount: existingPhone.candidateCount,
+              requiresPhoneNumberId: true,
+            },
+            { status: 422 },
+          )
+        }
+        if (existingPhone.ok) {
+          resolvedPhoneClaim = existingPhone.accountId
+          console.log('[wa/exchange] Using existing SocialAccount phone for WABA reconnect', {
+            socialAccountId: existingPhone.socialAccountId,
+            reason: fromWaba.reason || 'graph_phone_unresolved',
+          })
+        } else if (coexistenceFinish) {
+          console.warn('[wa/exchange] Coexistence finish but could not resolve phone from WABA', {
+            reason: fromWaba.reason,
             phoneCount: fromWaba.phones?.length ?? 0,
-          },
-          { status: 422 },
-        )
+          })
+          return NextResponse.json(
+            {
+              success: false,
+              message:
+                fromWaba.reason === 'ambiguous_coexistence_phones' ||
+                fromWaba.reason === 'ambiguous_phones_on_waba' ||
+                fromWaba.reason === 'ambiguous_biz_app_phones'
+                  ? 'La WABA tiene varios números; no se pudo elegir cuál conectar. Vinculá manualmente el Phone Number ID.'
+                  : 'Coexistence completó en Meta pero no se encontró un número en la WABA. Verificá que el número esté en la app de WhatsApp Business (2.24.17+).',
+              reason: fromWaba.reason || 'coexistence_phone_resolve_failed',
+              whatsappBusinessAccountId: claimedWabaId,
+              phoneCount: fromWaba.phones?.length ?? 0,
+            },
+            { status: 422 },
+          )
+        }
       }
     }
 
     if (!resolvedPhoneClaim) {
       console.log('[wa/exchange] Token obtained, waiting for phone_number_id from message event')
+      // Return the business token so the client can complete a later FINISH
+      // correlation after this single-use code was consumed. Never log the value.
       return NextResponse.json({
         success: true,
         tokenReceived: true,
         waitingForPhoneNumber: true,
+        accessToken: businessToken,
         message: 'Token received, waiting for WhatsApp phone number from setup completion',
       })
     }

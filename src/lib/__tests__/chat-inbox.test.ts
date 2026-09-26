@@ -28,6 +28,24 @@ describe('chat-inbox helpers', () => {
       '507123',
     )
     assert.equal(getConversationPeerId({ direction: 'inbound', metadata: {} }), 'unknown')
+    assert.equal(
+      getConversationPeerId({
+        direction: 'outbound',
+        metadata: { from: '507123', webhookField: 'smb_message_echoes', smbEcho: true },
+      }),
+      '507123',
+    )
+    assert.equal(
+      getConversationPeerId({
+        direction: 'outbound',
+        metadata: { from: '507123', historical: true, webhookField: 'history' },
+      }),
+      '507123',
+    )
+    assert.equal(
+      getConversationPeerId({ direction: 'outbound', metadata: { from: '507123' } }),
+      'unknown',
+    )
   })
 
   it('groups inbound + outbound into one conversation without losing selection key', () => {
@@ -58,6 +76,67 @@ describe('chat-inbox helpers', () => {
     assert.equal(convs[0].recipientName, 'Ana')
     assert.equal(convs[0].messages.length, 2)
     assert.equal(convs[0].lastMessage, 'Buenas')
+  })
+
+  it('keeps legacy tagged coexistence outbound (from-only) in the customer thread', () => {
+    const convs = groupMessagesByRecipient(
+      [
+        {
+          id: '1',
+          direction: 'inbound',
+          content: 'Hola',
+          sentAt: '2026-09-20T10:00:00.000Z',
+          receivedAt: '2026-09-20T10:00:01.000Z',
+          metadata: { from: '16505551234', name: 'Cliente', platform: 'whatsapp' },
+        },
+        {
+          id: '2',
+          direction: 'outbound',
+          content: 'Echo viejo',
+          sentAt: '2026-09-20T10:01:00.000Z',
+          receivedAt: null,
+          metadata: {
+            from: '16505551234',
+            platform: 'whatsapp',
+            webhookField: 'smb_message_echoes',
+            smbEcho: true,
+          },
+        },
+      ],
+      'whatsapp',
+    )
+
+    assert.equal(convs.length, 1)
+    assert.equal(convs[0].recipientId, '16505551234')
+    assert.equal(convs[0].messages.length, 2)
+  })
+
+  it('does not fall back outbound from unless the row is tagged coexistence', () => {
+    const convs = groupMessagesByRecipient(
+      [
+        {
+          id: '1',
+          direction: 'inbound',
+          content: 'Hola',
+          sentAt: '2026-09-20T10:00:00.000Z',
+          receivedAt: '2026-09-20T10:00:01.000Z',
+          metadata: { from: '16505551234', platform: 'whatsapp' },
+        },
+        {
+          id: '2',
+          direction: 'outbound',
+          content: 'CRM send',
+          sentAt: '2026-09-20T10:01:00.000Z',
+          receivedAt: null,
+          metadata: { from: '16505551234', platform: 'whatsapp' },
+        },
+      ],
+      'whatsapp',
+    )
+
+    assert.equal(convs.length, 2)
+    assert.ok(convs.some((c) => c.recipientId === '16505551234'))
+    assert.ok(convs.some((c) => c.recipientId === 'unknown'))
   })
 
   it('fingerprints messages for calm silent polls', () => {

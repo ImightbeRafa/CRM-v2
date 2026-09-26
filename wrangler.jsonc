@@ -1,0 +1,59 @@
+{
+  "name": "betsy-crm-daytime-smoke",
+  "workers_dev": true,
+  "preview_urls": true,
+  "main": "src/cf-container-worker.ts",
+  "compatibility_date": "2026-09-25",
+  "triggers": {
+    // Unique schedules matching vercel.json (9 paths; "0 2 * * *" fans out to 2).
+    // Handler no-ops while DISABLE_CRONS=1 — safe to deploy before DNS flip.
+    "crons": [
+      "0 2 * * *",
+      "0 14 * * *",
+      "*/5 * * * *",
+      "*/1 * * * *",
+      "30 3 * * *",
+      "0 5 * * *",
+      "0 18 * * SUN",
+      "0 6 * * *"
+    ]
+  },
+  "containers": [
+    {
+      "class_name": "BetsyCrmContainer",
+      "image": "./Dockerfile",
+      // Next.js + Prisma + optional Chromium needs >> lite (256MiB / 1/16 vCPU).
+      "instance_type": "standard-2",
+      "max_instances": 1,
+      // Build-time NEXT_PUBLIC_* (public Meta Embedded Signup IDs). Runtime secrets stay on Worker.
+      "image_vars": {
+        "NEXT_PUBLIC_APP_URL": "https://www.betsycrm.com",
+        "NEXT_PUBLIC_FB_LOGIN_CONFIG_ID": "1886311709005467",
+        "NEXT_PUBLIC_IG_LOGIN_CONFIG_ID": "2496407814189162",
+        "NEXT_PUBLIC_META_APP_ID": "1038331905909624",
+        "NEXT_PUBLIC_META_GRAPH_API_VERSION": "v24.0",
+        "NEXT_PUBLIC_META_WA_APP_ID": "1038331905909624",
+        "NEXT_PUBLIC_TILOPAY_API_KEY": "7067-2615-6995-8721-7143"
+      }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BETSY_CRM_CONTAINER",
+        "class_name": "BetsyCrmContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["BetsyCrmContainer"]
+    }
+  ],
+  // www traffic flip: zone route on already-proxied hostname (custom_domain blocked by
+  // existing Vercel-managed DNS records; OAuth token lacks Zone DNS delete).
+  "routes": [
+    { "pattern": "www.betsycrm.com/*", "zone_name": "betsycrm.com" }
+  ]
+}

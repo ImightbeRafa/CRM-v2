@@ -65,42 +65,5 @@
       "maxDuration": 60
     }
   },
-  "crons": [
-    {
-      "path": "/api/cron/backup",
-      "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/cron/backup/hot",
-      "schedule": "0 14 * * *"
-    },
-    {
-      "path": "/api/cron/process-subscription-expiry",
-      "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/cron/bot-inbox",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/chat-automation",
-      "schedule": "*/1 * * * *"
-    },
-    {
-      "path": "/api/cron/chat-agent-retention",
-      "schedule": "30 3 * * *"
-    },
-    {
-      "path": "/api/cron/logistics-report",
-      "schedule": "0 5 * * *"
-    },
-    {
-      "path": "/api/cron/logistics-finalize",
-      "schedule": "0 18 * * 0"
-    },
-    {
-      "path": "/api/cron/chat-token-health",
-      "schedule": "0 6 * * *"
-    }
-  ]
+  "crons": []
 }

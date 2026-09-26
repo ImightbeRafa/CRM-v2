@@ -370,3 +370,20 @@ test('WA direct-oauth requires update_config and persists CSRF state cookie (SD-
   assert.equal(isValidWaDirectOauthState('abc', 'xyz'), false)
   assert.equal(isValidWaDirectOauthState('', 'abc'), false)
 })
+
+
+test('WA exchange returns accessToken on waitingForPhoneNumber (ES code handoff)', async () => {
+  const source = await readFile('src/app/api/auth/whatsapp/exchange/route.ts', 'utf8')
+  assert.match(source, /waitingForPhoneNumber:\s*true/)
+  assert.match(source, /accessToken:\s*businessToken/)
+  assert.match(source, /Using existing SocialAccount phone for WABA reconnect/)
+})
+
+test('social page retries Embedded Signup exchange after in-flight FINISH race', async () => {
+  const source = await readFile('src/app/config/social/page.tsx', 'utf8')
+  assert.match(source, /retryAfter/)
+  assert.match(source, /exchangeData\.accessToken/)
+  assert.match(source, /for \(let i = 0; i < 20; i\+\+\)/)
+  // Must not burn code at a fixed 800ms without waiting for FINISH.
+  assert.doesNotMatch(source, /setTimeout\(r, 800\)/)
+})

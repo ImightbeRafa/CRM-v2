@@ -5,12 +5,17 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import {
   buildWhatsAppEmbeddedSignupLoginOptions,
-  extractWaEmbeddedSignupAssets,
+  closeWhatsAppDirectOauthPopup,
+  decideWhatsAppDirectOauthPopupClosed,
   isFbSdkEmbeddedSignup36008,
   isWaEmbeddedSignupFinishEvent,
   isWaEmbeddedSignupMessage,
+  navigateWhatsAppDirectOauthPopup,
+  openWhatsAppDirectOauthPlaceholder,
   parseWaDirectOauthMessage,
   shouldIgnoreWaSessionEvent,
+  waSignupReadyToExchange,
+  type WaDirectOauthPopupCloseDecision,
   type WaEmbeddedSignupMessage,
 } from '@/lib/whatsapp-embedded-signup'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
@@ -111,10 +116,11 @@ export default function SocialConfigPage() {
     accessToken?: string | null
     message?: WaEmbeddedSignupMessage | null
     exchanging?: boolean
+    /** Set when FINISH arrives while an exchange is in flight — retry after. */
+    retryAfter?: boolean
   }>({})
-  const tryExchangeWhatsAppSignupRef = useRef<(forceTokenOnly?: boolean) => Promise<void>>(
-    async () => {},
-  )
+  const tryExchangeWhatsAppSignupRef = useRef<() => Promise<void>>(async () => {})
+  const waDirectOauthWatchRef = useRef<number | null>(null)
 
   const META_WA_APP_ID =
     (process.env.NEXT_PUBLIC_META_WA_APP_ID as string | undefined) ||
@@ -147,10 +153,17 @@ export default function SocialConfigPage() {
       setStatusMessage('Conexión de WhatsApp cancelada en Meta.')
       return
     }
+    const graphDetail =
+      typeof json.exchangeError === 'object' && json.exchangeError?.errorMessage
+        ? String(json.exchangeError.errorMessage)
+        : ''
     const errorMsg =
+      (json.message && graphDetail && !String(json.message).includes(graphDetail)
+        ? `${json.message} (${graphDetail})`
+        : null) ||
       json.message ||
       json.error ||
-      json.exchangeError?.errorMessage ||
+      graphDetail ||
       'No se pudo conectar WhatsApp (revisa suscripción a webhooks).'
     setStatusMessage(errorMsg)
     if (json.subscribed === false || /suscri/i.test(errorMsg)) {
@@ -164,21 +177,56 @@ export default function SocialConfigPage() {
     }
   }
 
-  async function tryExchangeWhatsAppSignup(forceTokenOnly = false) {
+  function clearWaDirectOauthWatch() {
+    if (waDirectOauthWatchRef.current == null) return
+    window.clearInterval(waDirectOauthWatchRef.current)
+    waDirectOauthWatchRef.current = null
+  }
+
+  function applyDirectOauthPopupClosed(decision: WaDirectOauthPopupCloseDecision) {
+    switch (decision.reason) {
+      case 'exchanging':
+        return
+      case 'code_without_assets':
+        setStatusMessage(
+          'Completá el registro en la ventana de Meta, o vinculá el número manualmente. No se intercambia el código sin WABA/teléfono.',
+        )
+        setShowManualWhatsApp(true)
+        setConnectingWhatsApp(false)
+        return
+      case 'assets_without_code':
+        setStatusMessage(
+          'La ventana se cerró antes de completar el código OAuth. Reintentá o vinculá el número manualmente.',
+        )
+        setShowManualWhatsApp(true)
+        setConnectingWhatsApp(false)
+        return
+      case 'closed':
+        setConnectingWhatsApp(false)
+        return
+      default: {
+        const _exhaustive: never = decision
+        return _exhaustive
+      }
+    }
+  }
+
+  async function tryExchangeWhatsAppSignup() {
     const pending = waSignupPendingRef.current
-    if (pending.exchanging) return
+    if (pending.exchanging) {
+      // FINISH (or a second callback) arrived while Graph exchange is in flight.
+      // Remember to retry once the in-flight call finishes — otherwise a single-use
+      // code can be burned on waitingForPhoneNumber and never correlated with assets.
+      pending.retryAfter = true
+      return
+    }
 
-    const hasCred = Boolean(pending.code || pending.accessToken)
-    if (!hasCred) return
-
-    const assets = extractWaEmbeddedSignupAssets(pending.message || undefined)
-    const hasAssets = Boolean(assets.phoneNumberId || assets.wabaId)
-    // Prefer correlated exchange (code + session). Token-only only when FB.login
-    // finished and we still have no session (legacy / waiting path).
-    if (!hasAssets && !forceTokenOnly) return
-    if (!hasAssets && forceTokenOnly && pending.message) return
+    // Single-use codes are never spent until FINISH phone/WABA assets exist.
+    if (!waSignupReadyToExchange(pending)) return
 
     pending.exchanging = true
+    pending.retryAfter = false
+    setConnectingWhatsApp(true)
     try {
       const exchangeRes = await fetch('/api/auth/whatsapp/exchange', {
         method: 'POST',
@@ -191,8 +239,20 @@ export default function SocialConfigPage() {
       })
       const exchangeData = await exchangeRes.json().catch(() => ({}))
 
-      if (exchangeData.waitingForPhoneNumber && !hasAssets) {
-        // Keep pending code; session postMessage may still arrive.
+      // A ready exchange (assets present) can still hit waitingForPhoneNumber when
+      // Graph has no phone yet. The code is burned server-side, so keep the returned
+      // business token for a later FINISH payload.
+      if (
+        exchangeData.waitingForPhoneNumber &&
+        typeof exchangeData.accessToken === 'string' &&
+        exchangeData.accessToken
+      ) {
+        pending.accessToken = exchangeData.accessToken
+        pending.code = null
+      }
+
+      if (exchangeData.waitingForPhoneNumber) {
+        // Keep pending credentials; another FINISH payload may still arrive.
         await applyWhatsAppExchangeResult(exchangeRes, exchangeData)
         return
       }
@@ -206,6 +266,13 @@ export default function SocialConfigPage() {
       setStatusMessage('Error de red al conectar WhatsApp.')
     } finally {
       pending.exchanging = false
+      const again = waSignupPendingRef.current
+      const canRetry = Boolean(again.retryAfter) && waSignupReadyToExchange(again)
+      again.retryAfter = false
+      if (canRetry) {
+        void tryExchangeWhatsAppSignupRef.current()
+        return
+      }
       setConnectingWhatsApp(false)
     }
   }
@@ -282,9 +349,9 @@ export default function SocialConfigPage() {
               return
             }
             waSignupPendingRef.current.code = code
-            // Never forceTokenOnly here — exchanging a single-use code without
-            // FINISH phone/WABA assets cannot complete the connection.
-            void tryExchangeWhatsAppSignupRef.current(false)
+            // Never spend the single-use code until FINISH phone/WABA assets exist;
+            // current() no-ops via waSignupReadyToExchange when assets are missing.
+            void tryExchangeWhatsAppSignupRef.current()
           }
         }
         return
@@ -308,16 +375,22 @@ export default function SocialConfigPage() {
         }
 
         waSignupPendingRef.current.message = data as WaEmbeddedSignupMessage
-        void tryExchangeWhatsAppSignupRef.current(false)
+        void tryExchangeWhatsAppSignupRef.current()
       } catch {
         // ignore non-JSON SDK noise
       }
     }
     window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
+    return () => {
+      window.removeEventListener('message', onMessage)
+      if (waDirectOauthWatchRef.current != null) {
+        window.clearInterval(waDirectOauthWatchRef.current)
+        waDirectOauthWatchRef.current = null
+      }
+    }
   }, [])
 
-  async function launchWhatsAppDirectOauthFallback() {
+  async function launchWhatsAppDirectOauthFallback(popup: Window | null) {
     setConnectingWhatsApp(true)
     setStatusMessage('FB.login no pudo abrir Embedded Signup. Probando el flujo directo…')
     waSignupPendingRef.current = {}
@@ -325,6 +398,7 @@ export default function SocialConfigPage() {
       const res = await fetch('/api/auth/whatsapp/direct-oauth', { credentials: 'same-origin' })
       const json = await res.json().catch(() => ({}))
       if (!res.ok || !json.oauthUrl) {
+        closeWhatsAppDirectOauthPopup(popup)
         setStatusMessage(
           json.error ||
             json.details ||
@@ -335,8 +409,8 @@ export default function SocialConfigPage() {
         return
       }
 
-      const popup = window.open(String(json.oauthUrl), 'whatsapp_direct_oauth', 'width=640,height=760')
-      if (!popup) {
+      if (!navigateWhatsAppDirectOauthPopup(popup, String(json.oauthUrl))) {
+        closeWhatsAppDirectOauthPopup(popup)
         setStatusMessage(
           'El navegador bloqueó la ventana emergente. Permite popups e intenta de nuevo.',
         )
@@ -344,22 +418,16 @@ export default function SocialConfigPage() {
         return
       }
 
-      const checkClosed = window.setInterval(() => {
-        if (!popup.closed) return
-        window.clearInterval(checkClosed)
-        const pending = waSignupPendingRef.current
-        if (pending.exchanging) return
-        const assets = extractWaEmbeddedSignupAssets(pending.message || undefined)
-        if (assets.phoneNumberId || assets.wabaId) return
-        if (pending.code) {
-          setStatusMessage(
-            'Completá el registro en la ventana de Meta, o vinculá el número manualmente. No se intercambia el código sin WABA/teléfono.',
-          )
-          setShowManualWhatsApp(true)
-        }
-        setConnectingWhatsApp(false)
+      clearWaDirectOauthWatch()
+      waDirectOauthWatchRef.current = window.setInterval(() => {
+        if (!popup || !popup.closed) return
+        clearWaDirectOauthWatch()
+        applyDirectOauthPopupClosed(
+          decideWhatsAppDirectOauthPopupClosed(waSignupPendingRef.current),
+        )
       }, 1000)
     } catch {
+      closeWhatsAppDirectOauthPopup(popup)
       setStatusMessage('Error al iniciar el OAuth directo de WhatsApp.')
       setConnectingWhatsApp(false)
     }
@@ -377,15 +445,23 @@ export default function SocialConfigPage() {
     setConnectingWhatsApp(true)
     setStatusMessage('')
     waSignupPendingRef.current = {}
+    clearWaDirectOauthWatch()
+
+    // Reserve the fallback window on the click gesture. A second window.open
+    // after FB.login + await fetch is blocked by popup blockers (error 36008).
+    const reservedPopup = openWhatsAppDirectOauthPlaceholder((url, name, features) =>
+      window.open(url, name, features),
+    )
 
     FB.login(
       (response: any) => {
         const handleResponse = async () => {
           try {
             if (isFbSdkEmbeddedSignup36008(response?.error) || isFbSdkEmbeddedSignup36008(response)) {
-              await launchWhatsAppDirectOauthFallback()
+              await launchWhatsAppDirectOauthFallback(reservedPopup)
               return
             }
+            closeWhatsAppDirectOauthPopup(reservedPopup)
             if (!response || response.status === 'unknown') {
               setStatusMessage('Conexión de WhatsApp cancelada.')
               setConnectingWhatsApp(false)
@@ -409,20 +485,20 @@ export default function SocialConfigPage() {
             waSignupPendingRef.current.code = code || null
             waSignupPendingRef.current.accessToken = token || null
 
-            // If session postMessage already arrived, exchange now; else wait briefly
-            // then fall back to token-only (waitingForPhoneNumber) for classic flows.
-            if (waSignupPendingRef.current.message) {
-              await tryExchangeWhatsAppSignup(false)
+            // Never spend a single-use Embedded Signup code until FINISH assets exist.
+            // A late WA_EMBEDDED_SIGNUP message triggers the exchange from onMessage.
+            if (waSignupReadyToExchange(waSignupPendingRef.current)) {
+              await tryExchangeWhatsAppSignup()
               return
             }
 
-            await new Promise((r) => setTimeout(r, 800))
-            if (waSignupPendingRef.current.message) {
-              await tryExchangeWhatsAppSignup(false)
-              return
-            }
-            await tryExchangeWhatsAppSignup(true)
+            setStatusMessage(
+              'Esperando confirmación de Meta (número o WABA). Completá el registro en la ventana…',
+            )
+            // Settle the spinner; a late FINISH message re-arms it via tryExchange.
+            setConnectingWhatsApp(false)
           } catch (err: unknown) {
+            closeWhatsAppDirectOauthPopup(reservedPopup)
             const message = err instanceof Error ? err.message : 'Error inesperado'
             setStatusMessage(message)
             setConnectingWhatsApp(false)

@@ -152,14 +152,23 @@ export function waSignupReadyToExchange(parts: WaSignupPendingParts): boolean {
   const assets = extractWaEmbeddedSignupAssets(parts.message || undefined)
   if (assets.phoneNumberId) return true
   // Coexistence FINISH often returns waba_id only — server resolves phone via Graph.
-  if (assets.wabaId && (assets.coexistence || assets.event === 'FINISH_ONLY_WABA')) return true
-  // Classic FINISH without ids yet — keep waiting for session payload.
-  if (parts.message && isWaEmbeddedSignupFinishEvent(assets.event) && !assets.phoneNumberId && !assets.wabaId) {
-    return false
-  }
-  // Token alone (no session yet): allow a soft exchange that returns waitingForPhoneNumber.
-  // Callers that want strict correlation should require message.
-  return !parts.message
+  if (assets.wabaId) return true
+  return false
+}
+
+/**
+ * Embedded Signup `code` is single-use. Never call Graph oauth/access_token until
+ * the session has a phone_number_id or waba_id to finish the upsert.
+ */
+export function shouldDeferWhatsAppCodeExchange(parts: {
+  code?: string | null
+  accessToken?: string | null
+  phoneNumberId?: string | null
+  wabaId?: string | null
+}): boolean {
+  if (!parts.code) return false
+  if (parts.accessToken) return false
+  return !parts.phoneNumberId && !parts.wabaId
 }
 
 export function shouldIgnoreWaSessionEvent(event: unknown): boolean {
@@ -246,4 +255,80 @@ export function buildWhatsAppDirectOauthDialogUrl(opts: {
   url.searchParams.set('return_scopes', String(login.return_scopes))
   url.searchParams.set('extras', JSON.stringify(login.extras))
   return url.toString()
+}
+
+/** Named popup reserved on the user click so the 36008 fallback is not blocked. */
+export const WA_DIRECT_OAUTH_POPUP_NAME = 'whatsapp_direct_oauth' as const
+export const WA_DIRECT_OAUTH_POPUP_FEATURES = 'width=640,height=760' as const
+export const WA_DIRECT_OAUTH_PLACEHOLDER_URL = 'about:blank' as const
+
+export type OpenNamedWindow = (
+  url: string,
+  name: string,
+  features: string,
+) => Window | null
+
+/** Open the fallback popup synchronously on the click that calls FB.login. */
+export function openWhatsAppDirectOauthPlaceholder(
+  openWindow: OpenNamedWindow,
+): Window | null {
+  return openWindow(
+    WA_DIRECT_OAUTH_PLACEHOLDER_URL,
+    WA_DIRECT_OAUTH_POPUP_NAME,
+    WA_DIRECT_OAUTH_POPUP_FEATURES,
+  )
+}
+
+export function navigateWhatsAppDirectOauthPopup(
+  popup: Window | null,
+  oauthUrl: string,
+): boolean {
+  if (!popup || popup.closed) return false
+  try {
+    popup.location.replace(oauthUrl)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function closeWhatsAppDirectOauthPopup(popup: Window | null): void {
+  if (!popup || popup.closed) return
+  try {
+    popup.close()
+  } catch {
+    // Cross-origin or already tearing down.
+  }
+}
+
+export type WaDirectOauthPopupCloseDecision =
+  | { settleConnecting: false; reason: 'exchanging' }
+  | {
+      settleConnecting: true
+      reason: 'code_without_assets' | 'assets_without_code' | 'closed'
+    }
+
+/**
+ * Popup-close watcher must settle the spinner unless an in-flight exchange owns
+ * `connecting` via its `finally`. Never exchanges: a held code without assets
+ * stays unspent.
+ */
+export function decideWhatsAppDirectOauthPopupClosed(pending: {
+  exchanging?: boolean
+  code?: string | null
+  message?: WaEmbeddedSignupMessage | null
+}): WaDirectOauthPopupCloseDecision {
+  if (pending.exchanging) {
+    return { settleConnecting: false, reason: 'exchanging' }
+  }
+  const assets = extractWaEmbeddedSignupAssets(pending.message || undefined)
+  const hasAssets = Boolean(assets.phoneNumberId || assets.wabaId)
+  const hasCode = Boolean(pending.code?.trim())
+  if (hasCode && !hasAssets) {
+    return { settleConnecting: true, reason: 'code_without_assets' }
+  }
+  if (hasAssets && !hasCode) {
+    return { settleConnecting: true, reason: 'assets_without_code' }
+  }
+  return { settleConnecting: true, reason: 'closed' }
 }

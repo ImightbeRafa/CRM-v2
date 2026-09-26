@@ -3,6 +3,7 @@ import { getToken } from 'next-auth/jwt';
 import { withTenantContext } from '@/lib/tenantContext';
 import { TenantError } from '@/lib/errors';
 import { isIntegrationOriginAllowed } from '@/lib/integration-cors';
+import { cronsDisabled } from '@/lib/cron-kill-switch';
 
 const CSP_HEADER = [
   "default-src 'self'",
@@ -56,6 +57,17 @@ const PUBLIC_ROUTES = [
 export default async function middleware(request: Request) {
   const url = new URL(request.url);
   const { pathname } = url;
+
+  // Before the public-route short-circuit. A copy sharing the live DB must not run crons.
+  if (
+    (pathname === '/api/cron' || pathname.startsWith('/api/cron/')) &&
+    cronsDisabled()
+  ) {
+    return NextResponse.json(
+      { error: 'crons_disabled' },
+      { status: 503, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
 
   // Strip internal auth headers to prevent client-side spoofing.
   // Only middleware may set these after JWT validation.

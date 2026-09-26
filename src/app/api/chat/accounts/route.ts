@@ -26,6 +26,7 @@ const ACCOUNT_SELECT = {
   tokenLastCheckedAt: true,
   expiresAt: true,
   disconnectedAt: true,
+  lastWebhookAt: true,
 } as const
 
 function mapAccountRow(row: {
@@ -42,13 +43,17 @@ function mapAccountRow(row: {
   wabaId: string | null
   pageId: string | null
   tokenStatus: string | null
+  lastWebhookAt?: Date | null
 }) {
   const meta = parseSocialRefreshToken(row.refreshToken)
-  return toChatAccountDto({
-    ...row,
-    whatsappBusinessAccountId: row.wabaId || meta.whatsappBusinessAccountId,
-    pageId: row.pageId || meta.pageId,
-  })
+  return {
+    ...toChatAccountDto({
+      ...row,
+      whatsappBusinessAccountId: row.wabaId || meta.whatsappBusinessAccountId,
+      pageId: row.pageId || meta.pageId,
+    }),
+    lastWebhookAt: row.lastWebhookAt ?? null,
+  }
 }
 
 export async function GET(request: NextRequest) {

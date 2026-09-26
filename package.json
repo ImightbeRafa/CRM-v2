@@ -17,6 +17,7 @@
     "test:backup-roundtrip": "npx tsx scripts/test-backup-roundtrip.ts",
     "test:bot-grok": "npx tsx src/lib/bot/__tests__/grok-first-order.test.ts",
     "test:security": "npx tsx --test src/lib/__tests__/security-hardening.test.ts src/lib/__tests__/integration-cors.test.ts src/lib/__tests__/tilopay-repeat.test.ts src/lib/__tests__/billing-access.test.ts src/lib/__tests__/tenant-write-coverage.test.ts src/lib/__tests__/ig-wa-connect-security.test.ts src/lib/__tests__/respondio-phase5-self-serve.test.ts src/lib/__tests__/instagram-social-account.test.ts",
+    "test:channels-ui": "npx tsx --test src/lib/__tests__/channels-health.test.ts",
     "test:lifecycle": "npx tsx --test src/lib/__tests__/order-lifecycle.test.ts",
     "test:pagination": "npx tsx --test src/lib/__tests__/server-pagination.test.ts",
     "test:bot-inbox": "npx tsx --test src/lib/__tests__/bot-inbox.test.ts",

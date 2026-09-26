@@ -13,34 +13,24 @@ import {
   shouldIgnoreWaSessionEvent,
   type WaEmbeddedSignupMessage,
 } from '@/lib/whatsapp-embedded-signup'
-import { ChannelLogo } from '@/components/social/ChannelLogo'
+import { Plus, Search } from 'lucide-react'
+import { AuroraShell } from '@/components/aurora/AuroraShell'
 import {
   formatInstagramHandle,
   resolveChannelDisplayName,
 } from '@/lib/social-account-identity'
-import {
-  accountNeedsReconnect,
-  socialReconnectBannerLabel,
-} from '@/lib/social-account-token-health'
 import { hasSessionPermission } from '@/lib/session-permissions'
-
-interface SocialAccount {
-  id: string
-  platform: string
-  accountId: string
-  linkedAt: string
-  isActive: boolean
-  phoneNumberId?: string | null
-  whatsappBusinessAccountId?: string | null
-  pageId?: string | null
-  displayName?: string | null
-  providerDisplayName?: string | null
-  providerUsername?: string | null
-  displayPhoneNumber?: string | null
-  logoKey?: 'whatsapp' | 'instagram'
-  tokenStatus?: string | null
-  wabaId?: string | null
-}
+import type { SocialAccount } from './types'
+import {
+  classifyChannelHealth,
+  filterByTab,
+  isOwnerChannel,
+  summarizeChannels,
+  type ChannelTab,
+} from './channel-health'
+import { ChannelsAlertBanner } from './components/ChannelsAlertBanner'
+import { ChannelsTable } from './components/ChannelsTable'
+import { ChannelSummaryCards } from './components/ChannelSummaryCards'
 
 interface MetaEnvFlag {
   key: string
@@ -106,6 +96,11 @@ export default function SocialConfigPage() {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [renamingBusy, setRenamingBusy] = useState(false)
+  const [activeTab, setActiveTab] = useState<ChannelTab>('all')
+  const [diagOpen, setDiagOpen] = useState(false)
+  const [agentNameByAccountId, setAgentNameByAccountId] = useState<Record<string, string>>({})
+  const [agentsKnown, setAgentsKnown] = useState(false)
+  const diagRef = useRef<HTMLDetailsElement>(null)
   const waSignupPendingRef = useRef<{
     code?: string | null
     accessToken?: string | null
@@ -219,6 +214,7 @@ export default function SocialConfigPage() {
     }
     fetchAccounts()
     fetchMetaStatus()
+    fetchAgentBindings()
   }, [session, canManageSocial, router])
 
   useEffect(() => {
@@ -446,6 +442,27 @@ export default function SocialConfigPage() {
     }
   }
 
+  /** Read-only: which ChatAgent is bound to each SocialAccount (Agentes owns editing). */
+  async function fetchAgentBindings() {
+    try {
+      const res = await fetch('/api/chat/agents')
+      const json = await res.json()
+      if (!res.ok || !json.success || json.schemaReady === false) return
+      const byAccount: Record<string, string> = {}
+      for (const agent of json.agents || []) {
+        for (const binding of agent.bindings || []) {
+          if (binding.scope === 'social_account' && binding.isActive && binding.socialAccountId) {
+            byAccount[binding.socialAccountId] = agent.name
+          }
+        }
+      }
+      setAgentNameByAccountId(byAccount)
+      setAgentsKnown(true)
+    } catch {
+      // Agent column falls back to "—"; never blocks Canales.
+    }
+  }
+
   async function fetchAccounts() {
     try {
       const res = await fetch('/api/chat/accounts?includeInactive=1')
@@ -617,32 +634,39 @@ export default function SocialConfigPage() {
     )
   }
 
-  const reconnectBanners = accounts.filter(accountNeedsReconnect)
 
-  const igAccounts = accounts.filter((a) => a.platform === 'instagram')
-  const waAccounts = accounts.filter((a) => a.platform === 'whatsapp')
+  const ownerAccounts = accounts.filter(isOwnerChannel)
+  const waAccounts = ownerAccounts.filter((a) => a.platform === 'whatsapp')
+  const igAccounts = ownerAccounts.filter((a) => a.platform === 'instagram')
+  const summary = summarizeChannels(ownerAccounts)
+
   const q = accountSearch.trim().toLowerCase()
-  const igVisible = q
-    ? igAccounts.filter(
-        (a) =>
-          a.accountId.toLowerCase().includes(q) ||
-          (a.displayName || '').toLowerCase().includes(q) ||
-          (a.providerUsername || '').toLowerCase().includes(q) ||
-          (a.providerDisplayName || '').toLowerCase().includes(q),
+  const searched = q
+    ? ownerAccounts.filter((a) =>
+        [
+          a.accountId,
+          a.phoneNumberId,
+          a.whatsappBusinessAccountId,
+          a.displayName,
+          a.displayPhoneNumber,
+          a.providerDisplayName,
+          a.providerUsername,
+        ].some((v) => (v || '').toLowerCase().includes(q)),
       )
-    : igAccounts
-  const waVisible = q
-    ? waAccounts.filter(
-        (a) =>
-          a.accountId.toLowerCase().includes(q) ||
-          (a.phoneNumberId || '').toLowerCase().includes(q) ||
-          (a.whatsappBusinessAccountId || '').toLowerCase().includes(q) ||
-          (a.displayName || '').toLowerCase().includes(q) ||
-          (a.displayPhoneNumber || '').toLowerCase().includes(q) ||
-          (a.providerDisplayName || '').toLowerCase().includes(q),
-      )
-    : waAccounts
+    : ownerAccounts
+  const visibleAccounts = filterByTab(searched, activeTab)
 
+  const webhookDownAccounts = ownerAccounts.filter(
+    (a) => classifyChannelHealth(a).action === 'repair',
+  )
+
+  function openDiagnostics() {
+    setDiagOpen(true)
+    fetchMetaStatus()
+    window.setTimeout(() => {
+      diagRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 0)
+  }
   function accountResolvedName(acc: SocialAccount) {
     return resolveChannelDisplayName({
       id: acc.id,
@@ -665,16 +689,6 @@ export default function SocialConfigPage() {
     const phone = acc.displayPhoneNumber?.trim()
     const meta = acc.providerDisplayName?.trim()
     return [phone, meta ? `Meta: ${meta}` : null].filter(Boolean).join(' · ')
-  }
-
-  function healthLabel(acc: SocialAccount): string {
-    if (!acc.isActive) return 'Error: no suscrito'
-    const status = (acc.tokenStatus || 'unknown').toLowerCase()
-    if (status === 'valid') return 'Saludable'
-    if (status === 'expiring') return 'Token por vencer'
-    if (status === 'expired' || status === 'revoked') return 'Reconectar'
-    if (status === 'error') return 'Error de token'
-    return 'Conectado'
   }
 
   function startRename(acc: SocialAccount) {
@@ -738,352 +752,203 @@ export default function SocialConfigPage() {
     launchWhatsAppEmbeddedSignup()
   }
 
+  function handleReconnect(acc: SocialAccount) {
+    // Same asset ID = update in place (no duplicate row), so skip the "add another" confirm.
+    if (acc.platform === 'instagram') {
+      void handleLinkInstagram()
+    } else {
+      launchWhatsAppEmbeddedSignup()
+    }
+  }
+
+  const addLineDisabled = !fbReady || !FB_LOGIN_CONFIG_ID || connectingWhatsApp
+  const addLineTitle = !FB_LOGIN_CONFIG_ID
+    ? 'Falta configuración de Embedded Signup (NEXT_PUBLIC_FB_LOGIN_CONFIG_ID).'
+    : !fbReady
+      ? 'Cargando SDK de Meta…'
+      : undefined
+
+  const tabs: Array<{ key: ChannelTab; label: string; count: number }> = [
+    { key: 'all', label: 'Todos', count: searched.length },
+    { key: 'whatsapp', label: 'WhatsApp', count: searched.filter((a) => a.platform === 'whatsapp').length },
+    { key: 'instagram', label: 'Instagram', count: searched.filter((a) => a.platform === 'instagram').length },
+  ]
+
   return (
-    <div className="min-h-[100dvh] bg-[#dde7f5] px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl overflow-hidden rounded-[20px] bg-white p-6 shadow-sm sm:p-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-[22px] font-semibold text-slate-900">Canales conectados</h1>
-            <p className="mt-1 text-[13px] text-slate-500">
-              Multi IG + multi WA. Podés agregar otra cuenta sin reemplazar las ya conectadas.
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              Inbox de clientes en{' '}
-              <a className="text-[#5b6cff] underline" href="/chats">
-                /chats
-              </a>
-              . El bot staff NO aparece aquí.
-            </p>
-          </div>
-          <label className="block w-full sm:max-w-xs">
-            <span className="sr-only">Buscar cuenta</span>
+    <AuroraShell>
+      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b border-slate-200/70 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-[20px] font-semibold leading-tight text-slate-900">Canales</h1>
+          <p className="text-[12px] text-slate-500">
+            Cada número de WhatsApp es un canal · salud, agente y actividad
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="relative hidden w-64 sm:block">
+            <span className="sr-only">Buscar canal</span>
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+              aria-hidden
+            />
             <input
               value={accountSearch}
               onChange={(e) => setAccountSearch(e.target.value)}
-              placeholder="Buscar cuenta…  ⌘K"
-              className="w-full rounded-[10px] border-0 bg-slate-50 px-3 py-2.5 text-xs text-slate-800 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5b6cff]/30"
+              placeholder="Buscar canal…"
+              className="w-full rounded-[10px] border-0 bg-slate-50 py-2.5 pl-8 pr-3 text-xs text-slate-800 outline-none ring-1 ring-slate-200/70 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/30"
             />
           </label>
+          <button
+            type="button"
+            onClick={handleAddWhatsApp}
+            disabled={addLineDisabled}
+            title={addLineTitle}
+            className="inline-flex items-center gap-1.5 rounded-[10px] bg-[#5B6CFF] px-4 py-2.5 text-[13px] font-medium text-white hover:bg-[#4A5AE8] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            {connectingWhatsApp ? 'Conectando…' : 'Agregar línea'}
+          </button>
         </div>
+      </header>
 
+      <div className="mx-auto w-full max-w-[1200px] space-y-4 px-6 py-5">
         {statusMessage && !subscribeFailToast ? (
-          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
             {statusMessage}
           </div>
         ) : null}
 
-        {reconnectBanners.length > 0 ? (
-          <div className="mt-4 flex flex-col gap-2" data-testid="social-token-reconnect-banners">
-            {reconnectBanners.map((acc) => (
-              <div
-                key={acc.id}
-                className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950"
-                role="status"
-              >
-                {socialReconnectBannerLabel({
-                  id: acc.id,
-                  platform: acc.platform,
-                  accountId: acc.accountId,
-                  tokenStatus: acc.tokenStatus,
-                  displayName: acc.displayName,
-                  providerDisplayName: acc.providerDisplayName,
-                  providerUsername: acc.providerUsername,
-                  displayPhoneNumber: acc.displayPhoneNumber,
-                })}
-              </div>
-            ))}
+        {subscribeFailToast ? (
+          <div role="alert" className="rounded-xl bg-red-50 px-4 py-3.5 text-[13px] text-red-800">
+            {subscribeFailToast}
+            <button
+              type="button"
+              className="ml-3 text-xs underline"
+              onClick={() => setSubscribeFailToast('')}
+            >
+              Cerrar
+            </button>
           </div>
         ) : null}
 
-        <div className="mt-6 grid gap-4 lg:grid-cols-2">
-          {/* Instagram card */}
-          <section className="rounded-2xl bg-[#fafbfd] p-5">
-            <div className="flex items-center gap-3">
-              <ChannelLogo platform="instagram" size={20} colorful className="shrink-0" />
-              <h2 className="text-base font-semibold text-slate-900">Instagram</h2>
-            </div>
+        <ChannelsAlertBanner
+          names={webhookDownAccounts.map(accountResolvedName)}
+          canRepair={webhookDownAccounts.length > 0}
+          repairing={webhookDownAccounts.some((a) => a.id === resubscribing)}
+          onRepair={() => void handleResubscribe(webhookDownAccounts[0].id)}
+          onDiagnose={openDiagnostics}
+        />
 
-            <div className="mt-4 space-y-2">
-              {loading ? (
-                <p className="text-sm text-slate-400">Cargando…</p>
-              ) : igVisible.length === 0 ? (
-                <p className="rounded-xl bg-white px-4 py-3 text-sm text-slate-500">
-                  Ninguna cuenta de Instagram todavía. Conectá la primera para empezar.
-                </p>
-              ) : (
-                <>
-                  <p className="text-[11px] font-medium text-slate-500">
-                    {igAccounts.length} conectada{igAccounts.length === 1 ? '' : 's'} · podés sumar otra
-                  </p>
-                  {igVisible.map((acc) => (
-                  <div
-                    key={acc.id}
-                    className={`flex flex-col gap-2 rounded-xl px-4 py-3 sm:flex-row sm:items-start sm:justify-between ${
-                      acc.isActive ? 'bg-white' : 'bg-red-50'
-                    }`}
+        <ChannelSummaryCards summary={summary} />
+
+        <section className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white">
+          <div className="flex items-center justify-between px-5 py-3.5">
+            <div role="tablist" aria-label="Filtrar canales" className="inline-flex rounded-xl bg-slate-100 p-1">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`rounded-lg px-3 py-1.5 text-[13px] font-medium ${
+                    activeTab === tab.key
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {tab.label}{' '}
+                  <span className={activeTab === tab.key ? 'text-[#5B6CFF]' : 'text-slate-400'}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <ChannelsTable
+            accounts={visibleAccounts}
+            loading={loading}
+            totalCount={ownerAccounts.length}
+            agentNameByAccountId={agentNameByAccountId}
+            agentsKnown={agentsKnown}
+            resolvedName={accountResolvedName}
+            secondaryLine={accountSecondaryLine}
+            isDuplicateName={duplicateNameWarning}
+            renamingId={renamingId}
+            renameDraft={renameDraft}
+            renamingBusy={renamingBusy}
+            resubscribing={resubscribing}
+            unlinking={unlinking}
+            onRenameDraftChange={setRenameDraft}
+            onStartRename={startRename}
+            onCancelRename={cancelRename}
+            onSaveRename={(acc) => void saveRename(acc)}
+            onDiagnose={openDiagnostics}
+            onRepair={(acc) => void handleResubscribe(acc.id)}
+            onReconnect={handleReconnect}
+            onUnlink={(acc) => void handleUnlinkAccount(acc.id, acc.platform)}
+            onAddLine={handleAddWhatsApp}
+          >
+            <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-3">
+                <button
+                  type="button"
+                  onClick={handleAddWhatsApp}
+                  disabled={addLineDisabled}
+                  title={addLineTitle}
+                  aria-label="Agregar otra línea de WhatsApp"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-[#5B6CFF]/50 text-[#5B6CFF] disabled:opacity-50"
+                >
+                  <Plus className="h-4 w-4" aria-hidden />
+                </button>
+                <div>
+                  <button
+                    type="button"
+                    onClick={handleAddWhatsApp}
+                    disabled={addLineDisabled}
+                    title={addLineTitle}
+                    className="text-[13px] font-medium text-[#5B6CFF] disabled:opacity-50"
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <ChannelLogo platform="instagram" size={16} className="shrink-0" />
-                        {renamingId === acc.id ? (
-                          <input
-                            value={renameDraft}
-                            onChange={(e) => setRenameDraft(e.target.value)}
-                            maxLength={40}
-                            className="w-full max-w-xs rounded-md bg-slate-50 px-2 py-1 text-[13px] text-slate-900 outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-[#5b6cff]/30"
-                            aria-label="Nuevo nombre del canal"
-                          />
-                        ) : (
-                          <p
-                            className={`truncate text-[13px] font-semibold ${
-                              acc.isActive ? 'text-slate-900' : 'text-red-700'
-                            }`}
-                          >
-                            {accountResolvedName(acc)}
-                          </p>
-                        )}
-                      </div>
-                      <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                        {accountSecondaryLine(acc) || 'Sin handle todavía'}
-                        {' · '}
-                        {healthLabel(acc)}
-                      </p>
-                      {duplicateNameWarning(acc) ? (
-                        <p className="mt-0.5 text-[10px] text-amber-700">
-                          Nombre duplicado — podés distinguirlas renombrando.
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {renamingId === acc.id ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => void saveRename(acc)}
-                            disabled={renamingBusy}
-                            className="text-xs font-medium text-[#5b6cff] disabled:opacity-50"
-                          >
-                            {renamingBusy ? 'Guardando…' : 'Guardar'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={cancelRename}
-                            disabled={renamingBusy}
-                            className="text-xs font-medium text-slate-500 disabled:opacity-50"
-                          >
-                            Cancelar
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => startRename(acc)}
-                          className="text-xs font-medium text-slate-600"
-                        >
-                          Renombrar
-                        </button>
-                      )}
-                      {!acc.isActive ? (
-                        <button
-                          type="button"
-                          onClick={() => handleResubscribe(acc.id)}
-                          disabled={resubscribing === acc.id}
-                          className="text-xs font-medium text-[#5b6cff] disabled:opacity-50"
-                        >
-                          {resubscribing === acc.id ? 'Re-suscribiendo…' : 'Re-suscribir'}
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => handleUnlinkAccount(acc.id, acc.platform)}
-                        disabled={unlinking === acc.id}
-                        className="text-xs font-medium text-red-600 disabled:opacity-50"
-                      >
-                        {unlinking === acc.id ? '…' : 'Desvincular'}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                </>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                void handleAddInstagram()
-              }}
-              disabled={connectingInstagram}
-              className="mt-5 rounded-[10px] bg-[#5b6cff] px-4 py-2.5 text-[13px] font-medium text-white disabled:opacity-50"
-            >
-              {connectingInstagram
-                ? 'Conectando…'
-                : igAccounts.length > 0
-                  ? '+ Agregar otra Instagram'
-                  : '+ Conectar Instagram'}
-            </button>
-            {igAccounts.length > 0 ? (
-              <p className="mt-2 text-[11px] text-slate-500">
-                Misma cuenta IG = actualizar. Otra Página/IG = se suma al inbox.
-              </p>
-            ) : null}
-          </section>
-
-          {/* WhatsApp card */}
-          <section className="rounded-2xl bg-[#fafbfd] p-5">
-            <div className="flex items-center gap-3">
-              <ChannelLogo platform="whatsapp" size={20} className="shrink-0" />
-              <h2 className="text-base font-semibold text-slate-900">WhatsApp</h2>
-            </div>
-
-            <div className="mt-4 space-y-2">
-              {loading ? (
-                <p className="text-sm text-slate-400">Cargando…</p>
-              ) : waVisible.length === 0 ? (
-                <p className="rounded-xl bg-white px-4 py-3 text-sm text-slate-500">
-                  Ningún número de WhatsApp todavía. Conectá el primero para el inbox.
-                </p>
-              ) : (
-                <>
-                  <p className="text-[11px] font-medium text-slate-500">
-                    {waAccounts.length} número{waAccounts.length === 1 ? '' : 's'} · podés sumar otro
+                    Agregar otra línea de WhatsApp
+                  </button>
+                  <p className="text-[12px] text-slate-500">
+                    Cada número queda como canal independiente con su propio agente y plantillas.
                   </p>
-                  {waVisible.map((acc) => (
-                  <div
-                    key={acc.id}
-                    className={`flex flex-col gap-2 rounded-xl px-4 py-3 sm:flex-row sm:items-start sm:justify-between ${
-                      acc.isActive ? 'bg-white' : 'bg-red-50'
-                    }`}
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Podés seguir usando WhatsApp Business en el teléfono + Betsy (
+                    <span className="font-medium text-slate-700">coexistence</span>, requiere la app
+                    2.24.17+). Mismo Phone Number ID = actualizar; otro número = se suma.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowManualWhatsApp((value) => !value)}
+                    className="mt-1.5 text-[11px] text-slate-500 underline"
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <ChannelLogo platform="whatsapp" size={16} className="shrink-0" />
-                        {renamingId === acc.id ? (
-                          <input
-                            value={renameDraft}
-                            onChange={(e) => setRenameDraft(e.target.value)}
-                            maxLength={40}
-                            className="w-full max-w-xs rounded-md bg-slate-50 px-2 py-1 text-[13px] text-slate-900 outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-[#5b6cff]/30"
-                            aria-label="Nuevo nombre del canal"
-                          />
-                        ) : (
-                          <p
-                            className={`truncate text-[13px] font-semibold ${
-                              acc.isActive ? 'text-slate-900' : 'text-red-700'
-                            }`}
-                          >
-                            {accountResolvedName(acc)}
-                          </p>
-                        )}
-                      </div>
-                      <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                        {accountSecondaryLine(acc) ||
-                          (acc.whatsappBusinessAccountId
-                            ? `WABA …${acc.whatsappBusinessAccountId.slice(-4)}`
-                            : 'Sin teléfono todavía')}
-                        {' · '}
-                        {healthLabel(acc)}
-                      </p>
-                      {duplicateNameWarning(acc) ? (
-                        <p className="mt-0.5 text-[10px] text-amber-700">
-                          Nombre duplicado — podés distinguirlas renombrando.
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {renamingId === acc.id ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => void saveRename(acc)}
-                            disabled={renamingBusy}
-                            className="text-xs font-medium text-[#5b6cff] disabled:opacity-50"
-                          >
-                            {renamingBusy ? 'Guardando…' : 'Guardar'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={cancelRename}
-                            disabled={renamingBusy}
-                            className="text-xs font-medium text-slate-500 disabled:opacity-50"
-                          >
-                            Cancelar
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => startRename(acc)}
-                          className="text-xs font-medium text-slate-600"
-                        >
-                          Renombrar
-                        </button>
-                      )}
-                      {!acc.isActive ? (
-                        <button
-                          type="button"
-                          onClick={() => handleResubscribe(acc.id)}
-                          disabled={resubscribing === acc.id}
-                          className="text-xs font-medium text-[#5b6cff] disabled:opacity-50"
-                        >
-                          {resubscribing === acc.id ? 'Re-suscribiendo…' : 'Re-suscribir'}
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => handleUnlinkAccount(acc.id, acc.platform)}
-                        disabled={unlinking === acc.id}
-                        className="text-xs font-medium text-red-600 disabled:opacity-50"
-                      >
-                        {unlinking === acc.id ? '…' : 'Desvincular'}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                </>
-              )}
+                    {showManualWhatsApp ? 'Ocultar vínculo manual' : 'Usar vínculo manual (avanzado)'}
+                  </button>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleAddInstagram()
+                }}
+                disabled={connectingInstagram}
+                className="shrink-0 rounded-[10px] border border-slate-200 bg-white px-3.5 py-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {connectingInstagram
+                  ? 'Conectando…'
+                  : igAccounts.length > 0
+                    ? '+ Agregar otra Instagram'
+                    : '+ Conectar Instagram'}
+              </button>
             </div>
-
-            <button
-              type="button"
-              onClick={handleAddWhatsApp}
-              disabled={!fbReady || !FB_LOGIN_CONFIG_ID || connectingWhatsApp}
-              className="mt-5 rounded-[10px] bg-[#5b6cff] px-4 py-2.5 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {connectingWhatsApp
-                ? 'Conectando…'
-                : !FB_LOGIN_CONFIG_ID
-                  ? waAccounts.length > 0
-                    ? '+ Agregar otro WA (falta config)'
-                    : '+ Conectar WA (falta config)'
-                  : !fbReady
-                    ? 'Cargando SDK…'
-                    : waAccounts.length > 0
-                      ? '+ Agregar otro WhatsApp'
-                      : '+ Conectar WhatsApp'}
-            </button>
-            <p className="mt-2 text-[11px] text-slate-500">
-              Números ya activos en la app WhatsApp Business usan{' '}
-              <span className="font-medium text-slate-700">coexistence</span> (Embedded Signup).
-              Requiere WhatsApp Business app 2.24.17+. Si Meta dice “No cumple los requisitos”, el
-              número no admitía partner-share clásico — este flujo es el correcto.
-            </p>
-            {waAccounts.length > 0 ? (
-              <p className="mt-1 text-[11px] text-slate-500">
-                Mismo Phone Number ID = actualizar. Otro número = se suma al inbox.
-              </p>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={() => setShowManualWhatsApp((value) => !value)}
-              className="mt-3 block text-xs text-slate-500 underline"
-            >
-              {showManualWhatsApp ? 'Ocultar vínculo manual' : 'Usar vínculo manual (avanzado)'}
-            </button>
 
             {showManualWhatsApp ? (
-              <form onSubmit={handleLinkWhatsApp} className="mt-3 space-y-3 border-t border-slate-100 pt-3">
+              <form
+                onSubmit={handleLinkWhatsApp}
+                className="mx-5 mb-5 max-w-md space-y-3 border-t border-slate-100 pt-3"
+              >
                 <input
                   id="accountId"
                   type="text"
@@ -1127,32 +992,24 @@ export default function SocialConfigPage() {
                 </button>
               </form>
             ) : null}
-          </section>
-        </div>
+          </ChannelsTable>
+        </section>
 
-        {subscribeFailToast ? (
-          <div
-            role="alert"
-            className="mt-5 rounded-xl bg-red-50 px-4 py-3.5 text-[13px] text-red-800"
-          >
-            {subscribeFailToast}
-            <button
-              type="button"
-              className="ml-3 text-xs underline"
-              onClick={() => setSubscribeFailToast('')}
-            >
-              Cerrar
-            </button>
-          </div>
-        ) : null}
-
-        <p className="mt-5 text-[12px] text-[#5b6cff]">
-          ✦ Tip: “Agregar otra/otro” suma un canal al inbox. OAuth verifica subscribed_apps antes de
-          marcar Conectado.
+        <p className="text-[12px] text-[#5B6CFF]">
+          ✦ Inbox de clientes en{' '}
+          <a className="underline" href="/chats">
+            Chats
+          </a>
+          . OAuth verifica subscribed_apps antes de marcar Conectado.
         </p>
 
         {/* Collapsible Meta diagnostics */}
-        <details className="mt-6 rounded-xl border border-slate-100 bg-slate-50/80 p-4">
+        <details
+          ref={diagRef}
+          open={diagOpen}
+          onToggle={(e) => setDiagOpen((e.currentTarget as HTMLDetailsElement).open)}
+          className="rounded-xl border border-slate-100 bg-white p-4"
+        >
           <summary className="cursor-pointer text-sm font-medium text-slate-700">
             Estado de Meta (diagnóstico inbox)
           </summary>
@@ -1182,6 +1039,6 @@ export default function SocialConfigPage() {
           </div>
         </details>
       </div>
-    </div>
+    </AuroraShell>
   )
 }

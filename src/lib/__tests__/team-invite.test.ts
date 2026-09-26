@@ -41,7 +41,7 @@ describe('team-invite', () => {
     if (!expired.ok) assert.equal(expired.reason, 'expired')
   })
 
-  it('joins invite instead of provisioning when membership-less with pending invite', () => {
+  it('joins pending invite even when user already has other memberships', () => {
     assert.equal(
       shouldJoinInviteInsteadOfProvisioning({
         activeMembershipCount: 0,
@@ -49,10 +49,19 @@ describe('team-invite', () => {
       }),
       'join_invite',
     )
+    // Live bug: rafa.work0412@gmail.com had OWNER on orphan SimplePatch and a
+    // pending DeepSleep ADMIN invite — must still join invite, not early-return.
     assert.equal(
       shouldJoinInviteInsteadOfProvisioning({
         activeMembershipCount: 2,
-        pendingInvite: { tenantId: 't1', role: 'SALES' },
+        pendingInvite: { tenantId: 'deepsleep', role: 'ADMIN' },
+      }),
+      'join_invite',
+    )
+    assert.equal(
+      shouldJoinInviteInsteadOfProvisioning({
+        activeMembershipCount: 2,
+        pendingInvite: null,
       }),
       'use_existing',
     )

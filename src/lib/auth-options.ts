@@ -167,10 +167,45 @@ export const authOptions: NextAuthOptions = {
             return null
           }
 
+          // Pending TenantInvite wins even when user already has other memberships.
+          let memberships = user.memberships
+          let defaultTenantId = user.defaultTenantId
+          try {
+            const pending = await findPendingInviteForEmail(user.email)
+            if (pending) {
+              const accepted = await acceptTeamInviteForUser({
+                inviteId: pending.id,
+                token: pending.token,
+                userId: user.id,
+                userEmail: user.email,
+              })
+              if (accepted.ok) {
+                const refreshed = await prisma.user.findUnique({
+                  where: { id: user.id },
+                  select: {
+                    defaultTenantId: true,
+                    memberships: {
+                      where: { isActive: true },
+                      select: { role: true, tenantId: true },
+                    },
+                  },
+                })
+                memberships = refreshed?.memberships || memberships
+                defaultTenantId = refreshed?.defaultTenantId ?? accepted.tenantId
+                console.log(`[Credentials Auth] ✅ Joined inviting tenant ${accepted.tenantId} via pending invite`)
+              } else {
+                console.warn(`[Credentials Auth] Invite accept skipped:`, accepted.error)
+              }
+            }
+          } catch (inviteError) {
+            console.warn('[Credentials Auth] TenantInvite lookup/accept failed:', inviteError)
+          }
+
           // Get membership role (OWNER, ADMIN, MANAGER, SALES, PRODUCTION, VIEWER)
-          const activeTenantIds = user.memberships.map((m) => m.tenantId)
-          const selectedTenantId = selectActiveTenantId(user.defaultTenantId, activeTenantIds)
-          const selectedMembership = user.memberships.find((m) => m.tenantId === selectedTenantId)
+          const activeTenantIds = memberships.map((m) => m.tenantId)
+          // Prefer inviting tenant (now defaultTenantId) over orphan owned tenants.
+          const selectedTenantId = selectActiveTenantId(defaultTenantId, activeTenantIds)
+          const selectedMembership = memberships.find((m) => m.tenantId === selectedTenantId)
           const membershipRole = selectedMembership?.role ?? null
 
           // Legacy role for compatibility (OWNER -> MASTER)
@@ -185,7 +220,7 @@ export const authOptions: NextAuthOptions = {
             tenantId: selectedTenantId,
             email_verified: !!user.emailVerified,
             active: user.active,
-            memberships: user.memberships.map(m => ({
+            memberships: memberships.map(m => ({
               id: m.tenantId,
               role: m.role,
               tenantId: m.tenantId
@@ -328,34 +363,21 @@ export const authOptions: NextAuthOptions = {
               (user as any).active = updatedUser.active !== false;
               (user as any).memberships = updatedUser.memberships || [];
 
-              // Set role based on memberships - use existing tenant memberships
-              if (updatedUser.memberships.length > 0) {
-                const hasOwnerRole = updatedUser.memberships.some(m => m.role === 'OWNER');
-                (user as any).role = hasOwnerRole ? 'MASTER' : 'REGULAR';
-                const selectedTenantId = selectActiveTenantId(
-                  updatedUser.defaultTenantId,
-                  updatedUser.memberships.map((m) => m.tenantId),
-                );
-                (user as any).tenantId = selectedTenantId;
-                (user as any).memberships = updatedUser.memberships;
-                console.log(`[OAuth] ✅ User logged in with tenant: ${selectedTenantId} (${updatedUser.memberships.length} active membership(s))`);
-                return true; // SUCCESS - User has active memberships
-              }
-
-              // Prefer pending team invite over orphan owned-tenant provisioning.
-              console.log(`[OAuth] ⚠️ User ${updatedUser.email} has no active memberships; checking team invites`);
+              // Prefer pending TenantInvite EVEN when the user already has other
+              // active memberships (orphan owned tenant must not shadow invite).
+              let pending = null as Awaited<ReturnType<typeof findPendingInviteForEmail>>
               try {
-                let pending = null as Awaited<ReturnType<typeof findPendingInviteForEmail>>
+                pending = await findPendingInviteForEmail(updatedUser.email)
+              } catch (inviteLookupError) {
+                console.warn('[OAuth] TenantInvite lookup failed (SQL 030 may be pending):', inviteLookupError)
+              }
+              const decision = shouldJoinInviteInsteadOfProvisioning({
+                activeMembershipCount: updatedUser.memberships.length,
+                pendingInvite: pending ? { tenantId: pending.tenantId, role: pending.role } : null,
+              })
+
+              if (decision === 'join_invite' && pending) {
                 try {
-                  pending = await findPendingInviteForEmail(updatedUser.email)
-                } catch (inviteLookupError) {
-                  console.warn('[OAuth] TenantInvite lookup failed (SQL 030 may be pending):', inviteLookupError)
-                }
-                const decision = shouldJoinInviteInsteadOfProvisioning({
-                  activeMembershipCount: 0,
-                  pendingInvite: pending ? { tenantId: pending.tenantId, role: pending.role } : null,
-                })
-                if (decision === 'join_invite' && pending) {
                   const accepted = await acceptTeamInviteForUser({
                     inviteId: pending.id,
                     token: pending.token,
@@ -366,17 +388,66 @@ export const authOptions: NextAuthOptions = {
                     console.error(`[OAuth] ❌ Invite accept failed for ${updatedUser.email}:`, accepted.error)
                     return false
                   }
-                  (user as any).role = 'REGULAR'
+                  const refreshed = await prisma.user.findUnique({
+                    where: { id: updatedUser.id },
+                    select: {
+                      defaultTenantId: true,
+                      memberships: {
+                        where: { isActive: true },
+                        include: {
+                          tenant: {
+                            select: {
+                              id: true,
+                              name: true,
+                              slug: true,
+                              plan: true,
+                              isActive: true,
+                              trialEndsAt: true,
+                            },
+                          },
+                        },
+                      },
+                    },
+                  })
+                  const memberships = refreshed?.memberships || []
+                  const hasOwnerRole = memberships.some((m) => m.role === 'OWNER')
+                  ;(user as any).role = hasOwnerRole ? 'MASTER' : 'REGULAR'
+                  // Session + defaultTenantId must land on the inviting tenant.
                   ;(user as any).tenantId = accepted.tenantId
-                  ;(user as any).memberships = [{
-                    role: accepted.role,
-                    tenantId: accepted.tenantId,
-                    tenant: pending.tenant,
-                  }]
-                  console.log(`[OAuth] ✅ Joined inviting tenant ${accepted.tenantId} via invite`)
+                  ;(user as any).memberships = memberships.length
+                    ? memberships
+                    : [{
+                        role: accepted.role,
+                        tenantId: accepted.tenantId,
+                        tenant: pending.tenant,
+                      }]
+                  console.log(
+                    `[OAuth] ✅ Joined inviting tenant ${accepted.tenantId} via invite (had ${updatedUser.memberships.length} prior membership(s))`,
+                  )
                   return true
+                } catch (inviteAcceptError) {
+                  console.error(`[OAuth] ❌ Invite accept path failed for ${updatedUser.email}:`, inviteAcceptError)
+                  return false
                 }
+              }
 
+              // No pending invite — use existing tenant memberships.
+              if (updatedUser.memberships.length > 0) {
+                const hasOwnerRole = updatedUser.memberships.some(m => m.role === 'OWNER');
+                (user as any).role = hasOwnerRole ? 'MASTER' : 'REGULAR';
+                const selectedTenantId = selectActiveTenantId(
+                  updatedUser.defaultTenantId,
+                  updatedUser.memberships.map((m) => m.tenantId),
+                );
+                (user as any).tenantId = selectedTenantId;
+                (user as any).memberships = updatedUser.memberships;
+                console.log(`[OAuth] ✅ User logged in with tenant: ${selectedTenantId} (${updatedUser.memberships.length} active membership(s))`);
+                return true;
+              }
+
+              // No memberships and no invite — provision one owned tenant (not another orphan when invite exists).
+              console.log(`[OAuth] ⚠️ User ${updatedUser.email} has no active memberships and no pending invite; provisioning owned tenant`);
+              try {
                 const newTenant = await withoutTenantIsolation(async () => {
                   return prisma.$transaction(async (tx) => {
                     return provisionOwnedTenantForExistingUser(tx, {

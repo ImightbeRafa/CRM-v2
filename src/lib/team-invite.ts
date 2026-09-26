@@ -45,15 +45,17 @@ export function isInviteAcceptable(invite: {
 }
 
 /**
- * Decide whether OAuth/register should join an inviting tenant instead of
- * provisioning a brand-new owned tenant.
+ * Decide whether OAuth/register/sign-in should join an inviting tenant.
+ * A pending TenantInvite always wins — even when the user already has other
+ * active memberships (e.g. an orphan owned tenant from an earlier Google
+ * signup). Never provision another owned tenant while an invite is pending.
  */
 export function shouldJoinInviteInsteadOfProvisioning(input: {
   activeMembershipCount: number
   pendingInvite: { tenantId: string; role: string } | null
 }): 'join_invite' | 'use_existing' | 'provision_owned' {
-  if (input.activeMembershipCount > 0) return 'use_existing'
   if (input.pendingInvite) return 'join_invite'
+  if (input.activeMembershipCount > 0) return 'use_existing'
   return 'provision_owned'
 }
 

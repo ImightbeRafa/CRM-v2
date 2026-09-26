@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui/card";
 import { Save, Loader, AlertCircle, CheckCircle, Clock, Banknote } from 'lucide-react';
@@ -17,12 +17,33 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useConfig } from '@/app/contexts/ConfigContext';
 import { paymentChoiceToOrderFields, type ManualPaymentChoice } from '@/lib/order-payment-status';
 
+export interface CreatedOrderRef {
+  /** `Order.id` (cuid), when the API returned it. */
+  id?: string;
+  /** Public order id (e.g. `ORDER-123…`). */
+  orderId: string;
+}
+
+export interface OrderFormPrefill {
+  name?: string;
+  phone?: string;
+  username?: string;
+}
+
 interface EnhancedSalesFormProps {
   showOrderForm: boolean;
   onToggleForm: (show: boolean) => void;
+  /** Called once after the order was created (drawer / chat hand-off). */
+  onCreated?: (order: CreatedOrderRef) => void | Promise<void>;
+  /** Initial customer data (e.g. from a chat). Applied only to empty fields; skips the autosaved draft. */
+  prefill?: OrderFormPrefill;
+  /** Rendered inside a drawer that already provides the frame and the close button. */
+  embedded?: boolean;
 }
 
-const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, onToggleForm }) => {
+const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, onToggleForm, onCreated, prefill, embedded = false }) => {
+  const prefillRef = useRef(prefill);
+  const prefillAppliedRef = useRef(false);
   const { user } = useCurrentUser();
   const { getState } = useConfig();
   const fieldsState = getState<any[]>('fields');
@@ -179,6 +200,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   // Load auto-saved data on component mount
   useEffect(() => {
     if (!isClient) return;
+    // A prefilled form (from a chat) starts fresh so another customer's draft never leaks in.
+    if (prefillRef.current) return;
 
     const savedData = localStorage.getItem('betsy_autosave');
     if (savedData) {
@@ -200,6 +223,23 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         console.error('Failed to load auto-saved data:', error);
       }
     }
+  }, [isClient]);
+
+  // Apply the prefill once, only to empty fields
+  useEffect(() => {
+    if (!isClient || prefillAppliedRef.current) return;
+    prefillAppliedRef.current = true;
+    const initial = prefillRef.current;
+    if (!initial) return;
+    setOrderInfo(prev => ({
+      ...prev,
+      customerInfo: {
+        ...prev.customerInfo,
+        name: prev.customerInfo.name || initial.name || '',
+        phone: prev.customerInfo.phone || initial.phone || '',
+        username: prev.customerInfo.username || initial.username || '',
+      },
+    }));
   }, [isClient]);
 
   // Mark as unsaved when data changes
@@ -470,6 +510,15 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
       resetForm();
 
+      if (onCreated) {
+        try {
+          await onCreated({ id: result.data?.id, orderId: result.data?.orderId });
+        } catch (hookError) {
+          // The order already exists; a hand-off failure must never look like a failed save.
+          console.warn('onCreated hand-off failed:', hookError);
+        }
+      }
+
     } catch (error) {
       setSubmitStatus({
         type: 'error',
@@ -579,7 +628,11 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
   return (
     <>
-      <Card role="main" aria-label="Nuevo pedido">
+      <Card
+        role="main"
+        aria-label="Nuevo pedido"
+        className={embedded ? 'border-0 bg-transparent shadow-none' : undefined}
+      >
         <CardHeader>
           <div className="flex justify-between items-start">
             <div className="flex-1">
@@ -596,14 +649,16 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                     <AlertCircle className="h-4 w-4 text-orange-500 dark:text-orange-400" />
                   )}
                 </CardTitle>
-                <Button
-                  onClick={() => onToggleForm(false)}
-                  variant="outline"
-                  size="sm"
-                  className="ml-2"
-                >
-                  Cerrar
-                </Button>
+                {!embedded && (
+                  <Button
+                    onClick={() => onToggleForm(false)}
+                    variant="outline"
+                    size="sm"
+                    className="ml-2"
+                  >
+                    Cerrar
+                  </Button>
+                )}
               </div>
               <p className="text-sm text-muted-foreground mt-1">
                 {autoSaveStatus === 'saved' && lastAutoSave &&
@@ -657,8 +712,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
           <form onSubmit={handleSubmit} className="space-y-8">
             {/* Customer Information */}
-            <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg">
-              <h3 className="text-lg font-semibold text-blue-800 dark:text-blue-400 mb-4">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+              <h3 className="mb-4 text-[15px] font-semibold text-slate-900">
                 👤 Información del Cliente
               </h3>
 
@@ -677,7 +732,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                 fieldErrors={fieldErrors}
               />
               {orderInfo.customerInfo.orderType === 'EA' && (
-                <div className="mt-4 rounded-lg border border-blue-200 dark:border-blue-800 bg-card p-4">
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
                   <ShippingMethodSelector
                     selectedMethod={orderInfo.orderShippingMethod}
                     error={fieldErrors.orderShippingMethod}
@@ -695,8 +750,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
             {/* Business Info Fields */}
             {businessInfoFields.length > 0 && (
-              <div className="bg-orange-50 dark:bg-orange-950/30 p-4 rounded-lg">
-                <h3 className="text-lg font-semibold text-orange-800 dark:text-orange-400 mb-4">
+              <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+                <h3 className="mb-4 text-[15px] font-semibold text-slate-900">
                   🏢 Información de Negocio
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -767,8 +822,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
             )}
 
             {/* Product Selection - Quick Pick */}
-            <div className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/30 p-4 rounded-lg">
-              <h3 className="text-lg font-semibold text-indigo-800 dark:text-indigo-400 mb-4 flex items-center gap-2">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+              <h3 className="mb-4 flex items-center gap-2 text-[15px] font-semibold text-slate-900">
                 📦 Selección Rápida de Productos
               </h3>
               <EnhancedSmartSuggestions
@@ -777,7 +832,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
             </div>
 
             {/* Products Section */}
-            <div className="bg-green-50 dark:bg-green-950/30 p-4 rounded-lg" data-field="products">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm" data-field="products">
               <ProductList
                 orderInfo={orderInfo}
                 onOrderInfoChange={handleOrderInfoChange}
@@ -785,7 +840,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               />
             </div>
 
-            <fieldset className="rounded-lg border border-border p-4 space-y-3">
+            <fieldset className="space-y-3 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
               <legend className="text-sm font-semibold">Estado de pago</legend>
               <div className="grid gap-2 sm:grid-cols-3">
                 {([
@@ -805,7 +860,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                       }))}
                       className={`rounded-lg border-2 p-3 text-left transition-colors ${
                         selected
-                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
+                          ? 'border-[#7C5CFF] bg-[#F1EEFF]'
                           : 'border-border bg-muted/40 hover:border-muted-foreground/40'
                       }`}
                     >
@@ -846,8 +901,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                 type="submit"
                 disabled={isSubmitting || orderInfo.products.length === 0}
                 className={`px-4 sm:px-8 py-2 flex items-center justify-center gap-2 w-full sm:w-auto transition-all duration-200 ${isSubmitting
-                  ? 'bg-blue-400 cursor-not-allowed'
-                  : 'bg-blue-500 hover:bg-blue-600 hover:shadow-lg'
+                  ? 'cursor-not-allowed bg-[#5B6CFF]/60'
+                  : 'bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF] hover:opacity-90 hover:shadow-lg'
                   } text-white`}
               >
                 {isSubmitting ? (

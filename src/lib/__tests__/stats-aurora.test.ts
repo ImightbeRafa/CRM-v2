@@ -42,8 +42,16 @@ describe('aurora-summary API', () => {
     assert.ok(blocks.length >= 5, `expected ≥5 query blocks, got ${blocks.length}`)
     for (const block of blocks) assert.match(block, /tenantId/, block.slice(0, 80))
   })
-  it('does not fabricate chat→pedido', () => {
-    assert.match(route, /chatOrderLink: \{ available: false/)
+  it('derives chat→pedido only from real links (ChatMessage.orderId), tenant-scoped', () => {
+    assert.match(route, /chatOrderLink: \{\s*available: linkAvailable/)
+    assert.match(route, /summarizeChatOrderLinks\(/)
+    assert.match(route, /prisma\.chatMessage\.findMany\(\{\s*where: \{\s*tenantId,\s*orderId: \{ not: null \}/)
+    assert.doesNotMatch(route, /available: true/)
+  })
+  it('KPI keeps the empty hint for the unavailable branch', () => {
+    const dash = read('src/components/aurora/estadisticas/AuroraStatsDashboard.tsx')
+    assert.match(dash, /chatLink\?\.available/)
+    assert.match(dash, /Sin datos: los pedidos todavía no se vinculan a un chat/)
   })
 })
 

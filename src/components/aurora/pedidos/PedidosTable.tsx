@@ -1,11 +1,7 @@
 import { Eye, Package } from 'lucide-react'
-import {
-  channelChip,
-  paymentChip,
-  shipChip,
-  type PedidoRow,
-} from '@/lib/pedidos-aurora'
-import { ChannelLabel, PaymentPill, ShipPill } from './PedidoChips'
+import { paymentChip, shipChip, type PedidoRow } from '@/lib/pedidos-aurora'
+import { canalLabel, type OrderLine } from '@/lib/order-channel-line'
+import { CanalCell, PaymentPill, ShipPill } from './PedidoChips'
 
 const CR_TZ = 'America/Costa_Rica'
 const AVATAR_TONES = [
@@ -41,7 +37,7 @@ export function formatPedidoDate(timestamp: string, now: Date = new Date()): str
   return d.toLocaleDateString('es-CR', { timeZone: CR_TZ, day: 'numeric', month: 'short' })
 }
 
-export type PedidoTableRow = PedidoRow & { timestamp: string }
+export type PedidoTableRow = PedidoRow & { id?: string; timestamp: string }
 
 const TH = 'px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400'
 
@@ -50,11 +46,14 @@ export function PedidosTable({
   formatCurrency,
   selectedId,
   onOpen,
+  lines,
 }: {
   rows: PedidoTableRow[]
   formatCurrency: (n: number) => string
   selectedId?: string | null
   onOpen: (orderId: string) => void
+  /** Line per `Order.id` (from /api/orders/lines); missing entries fall back to salesChannel / Manual. */
+  lines?: Record<string, OrderLine>
 }) {
   return (
     <div className="hidden overflow-x-auto md:block">
@@ -136,7 +135,7 @@ export function PedidosTable({
                   <ShipPill chip={shipChip(o)} />
                 </td>
                 <td className="px-3 py-3">
-                  <ChannelLabel chip={channelChip(o)} />
+                  <CanalCell canal={canalLabel(o, lines?.[o.id ?? o.orderId])} />
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-[12px] text-slate-400">
                   {formatPedidoDate(o.timestamp)}

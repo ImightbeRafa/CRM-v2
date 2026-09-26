@@ -1,8 +1,9 @@
 /**
  * Aurora Estadísticas · pure period / delta / formatting helpers (client + server safe).
- * Only depends on the Costa Rica date helpers; no DB, no React.
+ * Only depends on the Costa Rica date helpers and the pure payment-state rules; no DB, no React.
  */
 
+import { isCollectedRevenue } from '@/lib/order-payment-status'
 import {
   addDaysToStatsDateKey,
   getCurrentStatsDateKey,
@@ -234,4 +235,38 @@ export function bucketPairedSeries(series: PairedDailyPoint[], size: number): Pa
     })
   }
   return out
+}
+
+export type ChatOrderLinkRow = { orderId: string | null; socialAccountId: string }
+export type LinkedOrderFacts = Parameters<typeof isCollectedRevenue>[0] & { total: number | null }
+export type ChatOrderLinkSummary = {
+  linkedOrders: number
+  perLine: Map<string, { orders: number; revenue: number }>
+}
+
+/**
+ * Orders that came from a chat (ChatMessage.orderId), overall and per line.
+ * Each order counts once (first link wins); links whose order is outside `ordersById`
+ * (other period) are ignored. Revenue follows the summary's booked / collected rule.
+ */
+export function summarizeChatOrderLinks(
+  links: ChatOrderLinkRow[],
+  ordersById: Map<string, LinkedOrderFacts>,
+  collectedMode: boolean,
+): ChatOrderLinkSummary {
+  const seen = new Set<string>()
+  const perLine = new Map<string, { orders: number; revenue: number }>()
+  for (const link of links) {
+    if (!link.orderId || seen.has(link.orderId)) continue
+    const order = ordersById.get(link.orderId)
+    if (!order) continue
+    seen.add(link.orderId)
+    const total = safeAmount(order.total)
+    const counted = collectedMode ? (isCollectedRevenue(order) ? total : 0) : total
+    const line = perLine.get(link.socialAccountId) ?? { orders: 0, revenue: 0 }
+    line.orders += 1
+    line.revenue += counted
+    perLine.set(link.socialAccountId, line)
+  }
+  return { linkedOrders: seen.size, perLine }
 }

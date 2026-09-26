@@ -18,6 +18,7 @@ import {
   pctDelta,
   periodCompareLabel,
   resolveAuroraPeriod,
+  summarizeChatOrderLinks,
   safeCount,
   sharePercent,
 } from '../statistics-aurora'
@@ -179,5 +180,63 @@ describe('statistics-aurora chart buckets', () => {
     assert.equal(buckets.length, 13)
     assert.equal(buckets.reduce((a, b) => a + b.revenue, 0), 100)
     assert.equal(bucketPairedSeries(paired, 1), paired)
+  })
+})
+
+describe('summarizeChatOrderLinks', () => {
+  const orders = new Map([
+    ['o1', { total: 10000, status: 'Pendiente', contraEntrega: false, cePaymentConfirmed: false, customFields: { paymentStatus: 'paid' } }],
+    ['o2', { total: 5000, status: 'Pendiente', contraEntrega: false, cePaymentConfirmed: false, customFields: null }],
+    ['o3', { total: 2000, status: 'Pendiente', contraEntrega: false, cePaymentConfirmed: false, customFields: { paymentStatus: 'paid' } }],
+  ])
+
+  it('no links -> nothing linked', () => {
+    const r = summarizeChatOrderLinks([], orders, false)
+    assert.equal(r.linkedOrders, 0)
+    assert.equal(r.perLine.size, 0)
+  })
+
+  it('counts per line; booked mode sums every linked order', () => {
+    const r = summarizeChatOrderLinks(
+      [
+        { orderId: 'o1', socialAccountId: 'wa' },
+        { orderId: 'o2', socialAccountId: 'wa' },
+        { orderId: 'o3', socialAccountId: 'ig' },
+      ],
+      orders,
+      false,
+    )
+    assert.equal(r.linkedOrders, 3)
+    assert.deepEqual(r.perLine.get('wa'), { orders: 2, revenue: 15000 })
+    assert.deepEqual(r.perLine.get('ig'), { orders: 1, revenue: 2000 })
+  })
+
+  it('collected mode only counts revenue of paid orders (orders still counted)', () => {
+    const r = summarizeChatOrderLinks(
+      [
+        { orderId: 'o1', socialAccountId: 'wa' },
+        { orderId: 'o2', socialAccountId: 'wa' },
+      ],
+      orders,
+      true,
+    )
+    assert.equal(r.perLine.get('wa')?.orders, 2)
+    assert.equal(r.perLine.get('wa')?.revenue, 10000)
+  })
+
+  it('ignores orders outside the period map, null ids and duplicate links', () => {
+    const r = summarizeChatOrderLinks(
+      [
+        { orderId: 'o1', socialAccountId: 'wa' },
+        { orderId: 'o1', socialAccountId: 'ig' },
+        { orderId: 'zzz', socialAccountId: 'wa' },
+        { orderId: null, socialAccountId: 'wa' },
+      ],
+      orders,
+      false,
+    )
+    assert.equal(r.linkedOrders, 1)
+    assert.equal(r.perLine.get('ig'), undefined)
+    assert.equal(r.perLine.get('wa')?.orders, 1)
   })
 })

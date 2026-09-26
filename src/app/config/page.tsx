@@ -1,11 +1,21 @@
 'use client'
 
 import { useEffect, useState, Suspense, lazy } from 'react'
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useConfig } from '../contexts/ConfigContext'
-import { Settings, Users, Shield, Database, BarChart3, Package, UserCheck, FileSpreadsheet, List, Zap, Trash2, MessageCircle, Plug, Truck, Bot, Building2, Sparkles } from 'lucide-react'
+import { Settings, Users, Database, BarChart3, Zap } from 'lucide-react'
 import { MobileBottomNav } from '../components/MobileBottomNav'
+import { AuroraShell } from '@/components/aurora/AuroraShell'
+import { ConfigHub } from '@/components/aurora/config/ConfigHub'
+import { ConfigSubNav } from '@/components/aurora/config/ConfigSubNav'
+import {
+  CONFIG_HUB_TAB,
+  CONFIG_NAV_LABELS,
+  LEGACY_TAB_REDIRECTS,
+  resolveConfigTab,
+  configTabHref,
+  type ConfigTabId,
+} from '@/components/aurora/config/config-nav'
 import type { OrderStatus } from './components/StatusManager'
 import { useCurrentUser } from '../hooks/useCurrentUser'
 
@@ -21,21 +31,15 @@ const StatusManager = lazy(() => import('./components/StatusManager').then(m => 
 const TenantSettingsPanel = lazy(() => import('../components/TenantSettingsPanel').then(m => ({ default: m.TenantSettingsPanel })))
 const BusinessProfileSettings = lazy(() => import('./components/BusinessProfileSettings').then(m => ({ default: m.BusinessProfileSettings })))
 
-const CONFIG_TAB_IDS = [
-  'profile', 'fields', 'statuses', 'inventory', 'clients', 'shipping-config',
-  'users', 'social', 'ai-assistant', 'agentes', 'integrations', 'import', 'billing',
-  'bulk-delete', 'audit',
-] as const
 
 function ConfigPageInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState(() => {
+  const [activeTab, setActiveTab] = useState<string>(() => {
     const tabParam = typeof window !== 'undefined'
       ? new URLSearchParams(window.location.search).get('tab')
       : null
-    if (tabParam && (CONFIG_TAB_IDS as readonly string[]).includes(tabParam)) return tabParam
-    return 'fields'
+    return resolveConfigTab(tabParam)
   })
   const [newFieldType, setNewFieldType] = useState('text') // Track type for validation
   const { user: currentUser } = useCurrentUser()
@@ -139,16 +143,18 @@ function ConfigPageInner() {
     setMounted(true)
   }, [])
 
-  // Read tab from URL query parameter on mount and when URL changes
+  // Read tab from URL query parameter on mount and when URL changes.
+  // No `?tab=` means the CFG-01 hub; old pass-through tabs redirect to their real routes.
   useEffect(() => {
     if (!mounted) return
     const tabParam = searchParams?.get('tab')
-    if (tabParam) {
-      if ((CONFIG_TAB_IDS as readonly string[]).includes(tabParam)) {
-        setActiveTab(tabParam)
-      }
+    const redirect = tabParam ? LEGACY_TAB_REDIRECTS[tabParam] : undefined
+    if (redirect) {
+      router.replace(redirect)
+      return
     }
-  }, [searchParams, mounted])
+    setActiveTab(resolveConfigTab(tabParam))
+  }, [searchParams, mounted, router])
 
   useEffect(() => {
     if (!mounted) return
@@ -161,7 +167,7 @@ function ConfigPageInner() {
 
   const selectTab = (tabId: string) => {
     setActiveTab(tabId)
-    router.replace(`/config?tab=${encodeURIComponent(tabId)}`, { scroll: false })
+    router.replace(configTabHref(tabId as ConfigTabId | typeof CONFIG_HUB_TAB), { scroll: false })
   }
 
   // Bulk operation handlers
@@ -556,117 +562,25 @@ function ConfigPageInner() {
   }
 
 
-  const tabs = [
-    { id: 'profile', label: 'Perfil del Negocio', icon: Building2 },
-    { id: 'fields', label: 'Configuración de Campos', icon: Database },
-    { id: 'statuses', label: 'Estados de Órdenes', icon: Settings },
-    { id: 'inventory', label: 'Inventario', icon: Package },
-    { id: 'clients', label: 'Clientes', icon: UserCheck },
-    { id: 'shipping-config', label: 'Envíos (Correos CR)', icon: Truck },
-    { id: 'users', label: 'Usuarios', icon: Users },
-    { id: 'social', label: 'Cuentas Sociales', icon: MessageCircle },
-    { id: 'ai-assistant', label: 'AI Assistant', icon: Bot },
-    { id: 'agentes', label: 'Agentes Soft', icon: Sparkles },
-    { id: 'integrations', label: 'Integraciones API', icon: Plug },
-    { id: 'import', label: 'Importar Excel', icon: FileSpreadsheet },
-    { id: 'billing', label: 'Facturación', icon: BarChart3 },
-    { id: 'bulk-delete', label: 'Eliminación Masiva', icon: Trash2 },
-    { id: 'audit', label: 'Auditoría', icon: Shield }
-  ];
+  const activeTitle = activeTab === CONFIG_HUB_TAB ? null : (CONFIG_NAV_LABELS[activeTab] ?? null)
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-muted to-blue-50 dark:from-background dark:to-background">
-      <div className="max-w-7xl mx-auto p-4 md:p-6 pb-20 md:pb-6">
-        {/* Header */}
-        <div className="mb-6 md:mb-8">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div className="w-full md:w-auto">
-              <div className="flex items-center gap-2 md:gap-4 mb-2">
-            <a
-              href="/dashboard"
-                  className="inline-flex items-center gap-2 px-3 md:px-4 py-2 bg-muted hover:bg-accent text-muted-foreground rounded-lg transition-colors text-sm md:text-base"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              <span className="hidden sm:inline">Volver al Inicio</span>
-              <span className="sm:hidden">Inicio</span>
-            </a>
-          </div>
-              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-foreground mb-1 md:mb-2">Panel de Configuración</h1>
-              <p className="text-muted-foreground text-sm md:text-base lg:text-lg">Gestiona usuarios, configuración y auditoría del sistema</p>
-            </div>
-            <div className="flex items-center gap-3 justify-between md:justify-end">
-              <div className="p-2 md:p-3 bg-blue-100 rounded-xl">
-                <Database className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
-              </div>
-              <div className="text-left md:text-right">
-                <div className="text-xs md:text-sm text-muted-foreground">Sistema</div>
-                <div className="text-sm md:text-base font-semibold text-foreground">Betsy CRM</div>
-              </div>
-            </div>
-          </div>
-          </div>
-
-          {/* Tab Navigation */}
-        <div className="mb-6 md:mb-8">
-          {/* Desktop: Grid layout */}
-          <div className="hidden md:block">
-            <div className="grid grid-cols-5 gap-3 bg-card p-3 rounded-xl shadow-lg border border-border">
-              {tabs.map((tab) => {
-                const Icon = tab.icon
-                return (
-                <button
-                    key={tab.id}
-                    onClick={() => selectTab(tab.id)}
-                    className={`group rounded-lg transition-all duration-200 px-3 py-3.5 min-h-[60px] flex flex-col items-center justify-center gap-2 ${
-                      activeTab === tab.id
-                        ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md ring-1 ring-blue-400/50'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-accent hover:shadow-sm'
-                  }`}
-                >
-                  <Icon className={`w-5 h-5 flex-shrink-0 transition-transform duration-200 ${
-                    activeTab === tab.id ? '' : 'group-hover:scale-110'
-                  }`} />
-                  <span className={`text-xs font-medium text-center leading-tight max-w-full line-clamp-2 ${
-                    activeTab === tab.id ? 'font-semibold' : ''
-                  }`}>
-                    {tab.label}
-                  </span>
-                </button>
-                )
-              })}
-            </div>
-          </div>
-          
-          {/* Mobile: Scrollable tabs */}
-          <div className="md:hidden -mx-4 px-4 overflow-x-auto scrollbar-hide">
-            <div className="flex gap-2 pb-2 min-w-max">
-              {tabs.map((tab) => {
-                const Icon = tab.icon
-                const isActive = activeTab === tab.id
-                return (
-                <button
-                    key={tab.id}
-                    onClick={() => selectTab(tab.id)}
-                    className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 whitespace-nowrap min-h-[40px] ${
-                      isActive
-                        ? 'bg-blue-600 text-white shadow-md'
-                        : 'bg-card text-muted-foreground border border-border'
-                  }`}
-                >
-                    <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-muted-foreground'}`} />
-                    <span>{tab.label}</span>
-                </button>
-                )
-              })}
-            </div>
-          </div>
-          </div>
+    <AuroraShell>
+      <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white px-6 py-4">
+        <h1 className="text-[20px] font-semibold leading-tight text-slate-900">Configuración</h1>
+        <p className="text-[12px] text-slate-500">
+          {activeTitle ?? 'Negocio, canales, equipo, pagos y plan'}
+        </p>
+      </header>
+      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-4 p-4 pb-20 md:flex-row md:gap-6 md:p-6 md:pb-6">
+        <ConfigSubNav activeTab={activeTab} onSelectTab={selectTab} />
+        <div className="min-w-0 flex-1">
 
           {/* Tab Content */}
         <div className="space-y-6">
          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div>}>
+          {activeTab === CONFIG_HUB_TAB && <ConfigHub onOpenTab={selectTab} />}
+
           {/* Business Profile Tab */}
           {activeTab === 'profile' && (
             <BusinessProfileSettings />
@@ -799,94 +713,6 @@ function ConfigPageInner() {
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Social Tab */}
-          {activeTab === 'social' && (
-            <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 bg-blue-100 rounded-xl">
-                      <MessageCircle className="w-6 h-6 text-blue-600" />
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-bold">Cuentas Sociales</h2>
-                      <p className="text-muted-foreground">Vincula Instagram y WhatsApp para gestionar chats en Betsy</p>
-                    </div>
-                  </div>
-                  <a
-                    href="/config/social"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    Gestionar Cuentas
-                  </a>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  Solo usuarios Owner o Master pueden vincular cuentas sociales.
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* AI Assistant Tab */}
-          {activeTab === 'ai-assistant' && (
-            <div className="bg-card rounded-xl shadow-lg border border-border p-6">
-              <div className="text-center">
-                <Bot className="w-12 h-12 text-indigo-600 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-foreground mb-2">Betsy AI Sales Assistant</h3>
-                <p className="text-muted-foreground mb-6">
-                  Gestiona tu negocio con comandos naturales vía Telegram
-                </p>
-                <a
-                  href="/config/ai-assistant"
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg transition-colors font-medium"
-                >
-                  <Bot className="w-5 h-5" />
-                  Configurar AI Assistant
-                </a>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'agentes' && (
-            <div className="bg-card rounded-xl shadow-lg border border-border p-6">
-              <div className="text-center">
-                <Sparkles className="w-12 h-12 text-indigo-600 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-foreground mb-2">Agentes Soft (chat)</h3>
-                <p className="text-muted-foreground mb-6">
-                  Configurá voz, tono, Probar y controles de pánico del Agent Layer
-                </p>
-                <Link
-                  href="/config/agentes"
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium"
-                >
-                  <Sparkles className="w-5 h-5" />
-                  Abrir Agentes
-                </Link>
-              </div>
-            </div>
-          )}
-
-          {/* Import Tab */}
-          {/* Integrations Tab */}
-          {activeTab === 'integrations' && (
-            <div className="bg-card rounded-xl shadow-lg border border-border p-6">
-              <div className="text-center">
-                <Plug className="w-12 h-12 text-blue-600 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-foreground mb-2">Integraciones API</h3>
-                <p className="text-muted-foreground mb-6">
-                  Conecta tu sitio web para sincronizar órdenes automáticamente
-                </p>
-                <a
-                  href="/config/integrations"
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
-                >
-                  <Plug className="w-5 h-5" />
-                  Ir a Integraciones
-                </a>
               </div>
             </div>
           )}
@@ -1244,6 +1070,7 @@ function ConfigPageInner() {
           </div>
           )}
          </Suspense>
+        </div>
         </div>
       </div>
 
@@ -1818,7 +1645,7 @@ function ConfigPageInner() {
       {/* Tenant Settings Gear (only visible on config page) */}
       <TenantSettingsPanel />
       <MobileBottomNav />
-    </div>
+    </AuroraShell>
   )
 }
 

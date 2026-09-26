@@ -12,7 +12,11 @@ import {
   getMetaWhatsAppAppSecret,
   metaEnvFingerprint,
 } from '@/lib/meta-api'
-import { encodeWhatsAppRefreshToken } from '@/lib/social-account-meta'
+import {
+  encodeWhatsAppRefreshToken,
+  resolveExistingWhatsAppPhoneForWaba,
+  whatsappAccountsForWabaWhere,
+} from '@/lib/social-account-meta'
 import { encryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { identityPersistPayload } from '@/lib/social-account-identity'
 import {
@@ -266,19 +270,39 @@ export async function POST(request: NextRequest) {
         // Reconnect path: tenant already has a SocialAccount for this WABA
         // (e.g. soft-unlinked Forge). Reuse its phone number id so we can
         // persist the new token even when Graph phone listing is empty.
+        // One WABA can host several lines, so never pick a row by WABA alone:
+        // reuse only when exactly one line exists, else ask for a phone_number_id.
         const dbEarly = prisma as any
-        const existingByWaba = await dbEarly.socialAccount.findFirst({
-          where: {
-            tenantId,
-            platform: 'whatsapp',
-            wabaId: String(claimedWabaId),
-          },
-          select: { id: true, accountId: true },
-        })
-        if (existingByWaba?.accountId) {
-          resolvedPhoneClaim = String(existingByWaba.accountId)
+        const wabaWhere = whatsappAccountsForWabaWhere(tenantId, String(claimedWabaId))
+        const wabaAccounts: Array<{ id: string; accountId: string | null }> = wabaWhere
+          ? await dbEarly.socialAccount.findMany({
+              where: wabaWhere,
+              select: { id: true, accountId: true },
+            })
+          : []
+        const existingPhone = resolveExistingWhatsAppPhoneForWaba(wabaAccounts)
+        if (!existingPhone.ok && existingPhone.reason === 'ambiguous_waba_accounts') {
+          console.warn('[wa/exchange] Multiple WhatsApp lines on WABA — refusing to pick one', {
+            candidateCount: existingPhone.candidateCount,
+            reason: fromWaba.reason || 'graph_phone_unresolved',
+          })
+          return NextResponse.json(
+            {
+              success: false,
+              message:
+                'La WABA tiene varios números conectados; no se pudo elegir cuál reconectar. Indicá el phone_number_id del número a conectar.',
+              reason: 'ambiguous_waba_accounts',
+              whatsappBusinessAccountId: claimedWabaId,
+              candidateCount: existingPhone.candidateCount,
+              requiresPhoneNumberId: true,
+            },
+            { status: 422 },
+          )
+        }
+        if (existingPhone.ok) {
+          resolvedPhoneClaim = existingPhone.accountId
           console.log('[wa/exchange] Using existing SocialAccount phone for WABA reconnect', {
-            socialAccountId: existingByWaba.id,
+            socialAccountId: existingPhone.socialAccountId,
             reason: fromWaba.reason || 'graph_phone_unresolved',
           })
         } else if (coexistenceFinish) {

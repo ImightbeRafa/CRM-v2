@@ -5,13 +5,17 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import {
   buildWhatsAppEmbeddedSignupLoginOptions,
-  extractWaEmbeddedSignupAssets,
+  closeWhatsAppDirectOauthPopup,
+  decideWhatsAppDirectOauthPopupClosed,
   isFbSdkEmbeddedSignup36008,
   isWaEmbeddedSignupFinishEvent,
   isWaEmbeddedSignupMessage,
+  navigateWhatsAppDirectOauthPopup,
+  openWhatsAppDirectOauthPlaceholder,
   parseWaDirectOauthMessage,
   shouldIgnoreWaSessionEvent,
   waSignupReadyToExchange,
+  type WaDirectOauthPopupCloseDecision,
   type WaEmbeddedSignupMessage,
 } from '@/lib/whatsapp-embedded-signup'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
@@ -116,6 +120,7 @@ export default function SocialConfigPage() {
     retryAfter?: boolean
   }>({})
   const tryExchangeWhatsAppSignupRef = useRef<() => Promise<void>>(async () => {})
+  const waDirectOauthWatchRef = useRef<number | null>(null)
 
   const META_WA_APP_ID =
     (process.env.NEXT_PUBLIC_META_WA_APP_ID as string | undefined) ||
@@ -169,6 +174,40 @@ export default function SocialConfigPage() {
     if (json.account) {
       fetchAccounts()
       fetchMetaStatus()
+    }
+  }
+
+  function clearWaDirectOauthWatch() {
+    if (waDirectOauthWatchRef.current == null) return
+    window.clearInterval(waDirectOauthWatchRef.current)
+    waDirectOauthWatchRef.current = null
+  }
+
+  function applyDirectOauthPopupClosed(decision: WaDirectOauthPopupCloseDecision) {
+    switch (decision.reason) {
+      case 'exchanging':
+        return
+      case 'code_without_assets':
+        setStatusMessage(
+          'Completá el registro en la ventana de Meta, o vinculá el número manualmente. No se intercambia el código sin WABA/teléfono.',
+        )
+        setShowManualWhatsApp(true)
+        setConnectingWhatsApp(false)
+        return
+      case 'assets_without_code':
+        setStatusMessage(
+          'La ventana se cerró antes de completar el código OAuth. Reintentá o vinculá el número manualmente.',
+        )
+        setShowManualWhatsApp(true)
+        setConnectingWhatsApp(false)
+        return
+      case 'closed':
+        setConnectingWhatsApp(false)
+        return
+      default: {
+        const _exhaustive: never = decision
+        return _exhaustive
+      }
     }
   }
 
@@ -342,10 +381,16 @@ export default function SocialConfigPage() {
       }
     }
     window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
+    return () => {
+      window.removeEventListener('message', onMessage)
+      if (waDirectOauthWatchRef.current != null) {
+        window.clearInterval(waDirectOauthWatchRef.current)
+        waDirectOauthWatchRef.current = null
+      }
+    }
   }, [])
 
-  async function launchWhatsAppDirectOauthFallback() {
+  async function launchWhatsAppDirectOauthFallback(popup: Window | null) {
     setConnectingWhatsApp(true)
     setStatusMessage('FB.login no pudo abrir Embedded Signup. Probando el flujo directo…')
     waSignupPendingRef.current = {}
@@ -353,6 +398,7 @@ export default function SocialConfigPage() {
       const res = await fetch('/api/auth/whatsapp/direct-oauth', { credentials: 'same-origin' })
       const json = await res.json().catch(() => ({}))
       if (!res.ok || !json.oauthUrl) {
+        closeWhatsAppDirectOauthPopup(popup)
         setStatusMessage(
           json.error ||
             json.details ||
@@ -363,8 +409,8 @@ export default function SocialConfigPage() {
         return
       }
 
-      const popup = window.open(String(json.oauthUrl), 'whatsapp_direct_oauth', 'width=640,height=760')
-      if (!popup) {
+      if (!navigateWhatsAppDirectOauthPopup(popup, String(json.oauthUrl))) {
+        closeWhatsAppDirectOauthPopup(popup)
         setStatusMessage(
           'El navegador bloqueó la ventana emergente. Permite popups e intenta de nuevo.',
         )
@@ -372,22 +418,16 @@ export default function SocialConfigPage() {
         return
       }
 
-      const checkClosed = window.setInterval(() => {
-        if (!popup.closed) return
-        window.clearInterval(checkClosed)
-        const pending = waSignupPendingRef.current
-        if (pending.exchanging) return
-        const assets = extractWaEmbeddedSignupAssets(pending.message || undefined)
-        if (assets.phoneNumberId || assets.wabaId) return
-        if (pending.code) {
-          setStatusMessage(
-            'Completá el registro en la ventana de Meta, o vinculá el número manualmente. No se intercambia el código sin WABA/teléfono.',
-          )
-          setShowManualWhatsApp(true)
-        }
-        setConnectingWhatsApp(false)
+      clearWaDirectOauthWatch()
+      waDirectOauthWatchRef.current = window.setInterval(() => {
+        if (!popup || !popup.closed) return
+        clearWaDirectOauthWatch()
+        applyDirectOauthPopupClosed(
+          decideWhatsAppDirectOauthPopupClosed(waSignupPendingRef.current),
+        )
       }, 1000)
     } catch {
+      closeWhatsAppDirectOauthPopup(popup)
       setStatusMessage('Error al iniciar el OAuth directo de WhatsApp.')
       setConnectingWhatsApp(false)
     }
@@ -405,15 +445,23 @@ export default function SocialConfigPage() {
     setConnectingWhatsApp(true)
     setStatusMessage('')
     waSignupPendingRef.current = {}
+    clearWaDirectOauthWatch()
+
+    // Reserve the fallback window on the click gesture. A second window.open
+    // after FB.login + await fetch is blocked by popup blockers (error 36008).
+    const reservedPopup = openWhatsAppDirectOauthPlaceholder((url, name, features) =>
+      window.open(url, name, features),
+    )
 
     FB.login(
       (response: any) => {
         const handleResponse = async () => {
           try {
             if (isFbSdkEmbeddedSignup36008(response?.error) || isFbSdkEmbeddedSignup36008(response)) {
-              await launchWhatsAppDirectOauthFallback()
+              await launchWhatsAppDirectOauthFallback(reservedPopup)
               return
             }
+            closeWhatsAppDirectOauthPopup(reservedPopup)
             if (!response || response.status === 'unknown') {
               setStatusMessage('Conexión de WhatsApp cancelada.')
               setConnectingWhatsApp(false)
@@ -450,6 +498,7 @@ export default function SocialConfigPage() {
             // Settle the spinner; a late FINISH message re-arms it via tryExchange.
             setConnectingWhatsApp(false)
           } catch (err: unknown) {
+            closeWhatsAppDirectOauthPopup(reservedPopup)
             const message = err instanceof Error ? err.message : 'Error inesperado'
             setStatusMessage(message)
             setConnectingWhatsApp(false)

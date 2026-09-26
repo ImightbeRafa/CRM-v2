@@ -5,18 +5,25 @@ import {
   buildWhatsAppCoexistenceLoginExtras,
   buildWhatsAppDirectOauthDialogUrl,
   buildWhatsAppEmbeddedSignupLoginOptions,
+  closeWhatsAppDirectOauthPopup,
+  decideWhatsAppDirectOauthPopupClosed,
   extractWaEmbeddedSignupAssets,
   isFbSdkEmbeddedSignup36008,
   isWaCoexistenceFinishEvent,
   isWaEmbeddedSignupFinishEvent,
   isWaEmbeddedSignupMessage,
+  navigateWhatsAppDirectOauthPopup,
+  openWhatsAppDirectOauthPlaceholder,
   parseWaDirectOauthMessage,
   shouldDeferWhatsAppCodeExchange,
   shouldIgnoreWaSessionEvent,
   waSignupReadyToExchange,
   WA_COEXISTENCE_FEATURE_TYPE,
   WA_DIRECT_OAUTH_MESSAGE_TYPE,
+  WA_DIRECT_OAUTH_PLACEHOLDER_URL,
+  WA_DIRECT_OAUTH_POPUP_NAME,
   WA_SESSION_INFO_VERSION,
+  type OpenNamedWindow,
 } from '../whatsapp-embedded-signup'
 import { selectCoexistencePhoneNumber, WHATSAPP_SUBSCRIBED_FIELDS_DEFAULT } from '../meta-api'
 import { buildWebhookStoredMetadata, parseMetaChatPayload } from '../meta-chat'
@@ -441,6 +448,79 @@ test('social page consumes wa_direct_oauth and does not spend the code before as
   assert.doesNotMatch(page, /tryExchangeWhatsAppSignupRef\.current\(true\)/)
   assert.doesNotMatch(page, /tryExchangeWhatsAppSignupRef\.current\(false\)/)
   assert.doesNotMatch(page, /forceTokenOnly/)
+})
+
+test('36008 fallback reserves popup on the click and navigates that handle after fetch', () => {
+  const opens: string[] = []
+  const popup = {
+    closed: false,
+    location: {
+      href: WA_DIRECT_OAUTH_PLACEHOLDER_URL,
+      replace(url: string) {
+        this.href = url
+      },
+    },
+    close() {
+      this.closed = true
+    },
+  }
+  const openWindow: OpenNamedWindow = (url, name) => {
+    opens.push(`${name}:${url}`)
+    return popup as unknown as Window
+  }
+
+  const reserved = openWhatsAppDirectOauthPlaceholder(openWindow)
+  const oauthUrl = 'https://www.facebook.com/v24.0/dialog/oauth?client_id=app-1'
+  assert.equal(navigateWhatsAppDirectOauthPopup(reserved, oauthUrl), true)
+  assert.deepEqual(opens, [`${WA_DIRECT_OAUTH_POPUP_NAME}:${WA_DIRECT_OAUTH_PLACEHOLDER_URL}`])
+  assert.equal(popup.location.href, oauthUrl)
+
+  closeWhatsAppDirectOauthPopup(reserved)
+  assert.equal(popup.closed, true)
+  assert.equal(navigateWhatsAppDirectOauthPopup(reserved, 'https://example.test'), false)
+  assert.equal(navigateWhatsAppDirectOauthPopup(null, oauthUrl), false)
+
+  const page = readFileSync('src/app/config/social/page.tsx', 'utf8')
+  const reserveAt = page.indexOf('openWhatsAppDirectOauthPlaceholder(')
+  const loginAt = page.indexOf('FB.login(')
+  const fallbackAt = page.indexOf('launchWhatsAppDirectOauthFallback(reservedPopup)')
+  assert.ok(reserveAt > 0 && loginAt > reserveAt, 'placeholder must open before FB.login')
+  assert.ok(fallbackAt > loginAt)
+  assert.match(page, /navigateWhatsAppDirectOauthPopup\(popup/)
+  assert.doesNotMatch(page, /window\.open\(\s*String\(json\.oauthUrl\)/)
+  assert.doesNotMatch(page, /forceTokenOnly/)
+})
+
+test('direct OAuth popup close settles connecting except in-flight exchange', () => {
+  assert.deepEqual(decideWhatsAppDirectOauthPopupClosed({ exchanging: true, code: 'AQB' }), {
+    settleConnecting: false,
+    reason: 'exchanging',
+  })
+  assert.deepEqual(
+    decideWhatsAppDirectOauthPopupClosed({
+      code: null,
+      message: {
+        type: 'WA_EMBEDDED_SIGNUP',
+        event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+        data: { waba_id: '1' },
+      },
+    }),
+    { settleConnecting: true, reason: 'assets_without_code' },
+  )
+  assert.deepEqual(decideWhatsAppDirectOauthPopupClosed({ code: 'AQB...' }), {
+    settleConnecting: true,
+    reason: 'code_without_assets',
+  })
+  assert.deepEqual(decideWhatsAppDirectOauthPopupClosed({}), {
+    settleConnecting: true,
+    reason: 'closed',
+  })
+
+  const page = readFileSync('src/app/config/social/page.tsx', 'utf8')
+  assert.match(page, /decideWhatsAppDirectOauthPopupClosed/)
+  const assetsWithoutCodeAt = page.indexOf("case 'assets_without_code'")
+  const setConnectingAt = page.indexOf('setConnectingWhatsApp(false)', assetsWithoutCodeAt)
+  assert.ok(assetsWithoutCodeAt > 0 && setConnectingAt > assetsWithoutCodeAt)
 })
 
 test('direct-oauth route requires config_id for Embedded Signup parity', () => {

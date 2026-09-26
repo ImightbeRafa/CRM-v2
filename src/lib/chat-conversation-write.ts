@@ -519,9 +519,10 @@ export async function dualWriteChatMessage(
 
 /**
  * Update outbound row after Graph call (pending → sent/failed).
- * Marks the sender's read state current when userId is provided.
+ * Echo-first duplicates are already `sent`; still merge send metadata and
+ * mark the sender's read state current when userId is provided.
  */
-export async function finalizeOutboundDelivery(args: {
+export type FinalizeOutboundDeliveryArgs = {
   messageId: string
   tenantId: string
   conversationId: string
@@ -530,86 +531,116 @@ export async function finalizeOutboundDelivery(args: {
   deliveryStatus: 'sent' | 'failed'
   errorCode?: string | null
   providerResponse?: unknown
-}): Promise<void> {
-  const now = new Date()
-  await prisma.$transaction(async (tx) => {
-    const existing = await tx.chatMessage.findFirst({
-      where: { id: args.messageId, tenantId: args.tenantId },
-      select: {
-        id: true,
-        deliveryStatus: true,
-        metadata: true,
-        providerMessageId: true,
-      },
-    })
-    if (!existing) return
+  now?: Date
+}
 
-    if (
-      !isDeliveryStatusMonotonicUpgrade(
-        existing.deliveryStatus,
-        args.deliveryStatus,
-      )
-    ) {
-      return
+export type FinalizeOutboundDeliveryResult = 'missing' | 'updated' | 'reconciled'
+
+export async function finalizeOutboundDeliveryWithClient(
+  tx: Prisma.TransactionClient,
+  args: FinalizeOutboundDeliveryArgs,
+): Promise<FinalizeOutboundDeliveryResult> {
+  const now = args.now ?? new Date()
+  const existing = await tx.chatMessage.findFirst({
+    where: { id: args.messageId, tenantId: args.tenantId },
+    select: {
+      id: true,
+      deliveryStatus: true,
+      metadata: true,
+      providerMessageId: true,
+    },
+  })
+  if (!existing) return 'missing'
+
+  const canUpgrade = isDeliveryStatusMonotonicUpgrade(
+    existing.deliveryStatus,
+    args.deliveryStatus,
+  )
+
+  const meta =
+    existing.metadata &&
+    typeof existing.metadata === 'object' &&
+    !Array.isArray(existing.metadata)
+      ? { ...(existing.metadata as Record<string, unknown>) }
+      : {}
+  if (args.providerMessageId) meta.providerMessageId = args.providerMessageId
+  if (args.providerResponse !== undefined) {
+    meta.providerResponse = args.providerResponse
+  }
+
+  const nextProviderId = args.providerMessageId || existing.providerMessageId
+  const shouldPatchMessage =
+    canUpgrade ||
+    Boolean(args.providerMessageId && args.providerMessageId !== existing.providerMessageId) ||
+    args.providerResponse !== undefined
+
+  if (shouldPatchMessage) {
+    const data: Prisma.ChatMessageUpdateInput = {
+      providerMessageId: nextProviderId,
+      metadata: meta as Prisma.InputJsonValue,
     }
-
-    const meta =
-      existing.metadata &&
-      typeof existing.metadata === 'object' &&
-      !Array.isArray(existing.metadata)
-        ? { ...(existing.metadata as Record<string, unknown>) }
-        : {}
-    if (args.providerMessageId) meta.providerMessageId = args.providerMessageId
-    if (args.providerResponse !== undefined) {
-      meta.providerResponse = args.providerResponse
+    if (canUpgrade) {
+      data.deliveryStatus = args.deliveryStatus
+      data.statusUpdatedAt = now
+      data.errorCode = args.errorCode ?? undefined
+      if (args.deliveryStatus === 'failed') data.failedAt = now
     }
-
     await tx.chatMessage.update({
       where: { id: existing.id },
-      data: {
-        deliveryStatus: args.deliveryStatus,
-        statusUpdatedAt: now,
-        providerMessageId: args.providerMessageId || existing.providerMessageId,
-        failedAt: args.deliveryStatus === 'failed' ? now : undefined,
-        errorCode: args.errorCode ?? undefined,
-        metadata: meta as Prisma.InputJsonValue,
-      },
+      data,
     })
+  }
 
+  const conversation = await tx.chatConversation.findUnique({
+    where: { id: args.conversationId },
+    select: {
+      inboundCount: true,
+      lastMessageId: true,
+      lastOutboundAt: true,
+    },
+  })
+  if (
+    conversation &&
+    shouldAdvanceConversationTimestamp(conversation.lastOutboundAt, now)
+  ) {
     await tx.chatConversation.update({
       where: { id: args.conversationId },
       data: { lastOutboundAt: now },
     })
+  }
 
-    if (args.userId) {
-      const conversation = await tx.chatConversation.findUnique({
-        where: { id: args.conversationId },
-        select: { inboundCount: true, lastMessageId: true },
-      })
-      if (conversation) {
-        await tx.chatConversationReadState.upsert({
-          where: {
-            conversationId_userId: {
-              conversationId: args.conversationId,
-              userId: args.userId,
-            },
-          },
-          create: {
-            tenantId: args.tenantId,
-            conversationId: args.conversationId,
-            userId: args.userId,
-            readInboundCount: conversation.inboundCount,
-            lastReadAt: now,
-            lastReadMessageId: conversation.lastMessageId,
-          },
-          update: {
-            readInboundCount: conversation.inboundCount,
-            lastReadAt: now,
-            lastReadMessageId: conversation.lastMessageId,
-          },
-        })
-      }
-    }
+  if (args.userId && conversation) {
+    await tx.chatConversationReadState.upsert({
+      where: {
+        conversationId_userId: {
+          conversationId: args.conversationId,
+          userId: args.userId,
+        },
+      },
+      create: {
+        tenantId: args.tenantId,
+        conversationId: args.conversationId,
+        userId: args.userId,
+        readInboundCount: conversation.inboundCount,
+        lastReadAt: now,
+        lastReadMessageId: conversation.lastMessageId,
+      },
+      update: {
+        readInboundCount: conversation.inboundCount,
+        lastReadAt: now,
+        lastReadMessageId: conversation.lastMessageId,
+      },
+    })
+  }
+
+  return canUpgrade ? 'updated' : 'reconciled'
+}
+
+export async function finalizeOutboundDelivery(
+  args: FinalizeOutboundDeliveryArgs,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await finalizeOutboundDeliveryWithClient(tx, args)
   })
 }
 

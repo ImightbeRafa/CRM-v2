@@ -58,8 +58,10 @@ function firstUsable(
 export function getMetaWhatsAppAppId(
   env: Record<string, string | undefined> = process.env,
 ): string {
+  // Prefer dedicated WA id, then the public id baked into the client Embedded Signup
+  // bundle, and only then META_APP_ID (which may still be a staff-app leftover).
   return firstUsable(
-    [env.META_WA_APP_ID, env.META_APP_ID, env.NEXT_PUBLIC_META_WA_APP_ID, env.NEXT_PUBLIC_META_APP_ID],
+    [env.META_WA_APP_ID, env.NEXT_PUBLIC_META_WA_APP_ID, env.NEXT_PUBLIC_META_APP_ID, env.META_APP_ID],
     isUsableMetaAppId,
   )
 }

@@ -105,6 +105,7 @@ const nextConfig = {
   async redirects() {
     return [
       { source: '/canales', destination: '/config/social', permanent: false },
+      { source: '/agentes', destination: '/config/agentes', permanent: false },
       { source: '/pedidos', destination: '/ventas', permanent: false },
       { source: '/pedidos/:path*', destination: '/ventas/:path*', permanent: false },
     ];

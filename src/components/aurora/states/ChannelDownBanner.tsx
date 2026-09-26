@@ -11,7 +11,7 @@ type ChannelDownBannerProps = {
 /** STATE-01 · "Error al enviar + canal caído" — red strip with a repair link. */
 export function ChannelDownBanner({
   message,
-  href = '/config/social',
+  href = '/config?tab=social',
   actionLabel = 'Reparar',
   className = '',
 }: ChannelDownBannerProps) {

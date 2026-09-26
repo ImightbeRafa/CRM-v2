@@ -778,9 +778,9 @@ export default function SocialConfigPage() {
     <AuroraShell>
       <header className="sticky top-0 z-20 flex flex-col gap-3 border-b border-slate-200/70 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-[20px] font-semibold leading-tight text-slate-900">Canales</h1>
+          <h1 className="text-[20px] font-semibold leading-tight text-slate-900">Cuentas conectadas</h1>
           <p className="text-[12px] text-slate-500">
-            Cada número de WhatsApp es un canal · salud, agente y actividad
+            Cada número de WhatsApp es un canal independiente
           </p>
         </div>
         <div className="flex items-center gap-3">

@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react'
+import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader';
+import { AuroraEmptyState, auroraButtonPrimary } from '@/components/aurora/states/AuroraEmptyState';
+import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton';
 import { 
   Trash2, 
   Search, 
@@ -200,19 +203,19 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Pendiente': return 'bg-yellow-100 dark:bg-yellow-950/30 text-yellow-800 dark:text-yellow-400'
-      case 'En Proceso': return 'bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400'
-      case 'Enviado': return 'bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400'
-      case 'Entregado': return 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400'
-      case 'Cancelado': return 'bg-red-100 dark:bg-red-950/30 text-red-800 dark:text-red-400'
+      case 'Pendiente': return 'bg-yellow-100 text-yellow-800'
+      case 'En Proceso': return 'bg-blue-100 text-blue-800'
+      case 'Enviado': return 'bg-green-100 text-green-800'
+      case 'Entregado': return 'bg-emerald-100 text-emerald-800'
+      case 'Cancelado': return 'bg-red-100 text-red-800'
       default: return 'bg-muted text-foreground'
     }
   }
 
   const getOrderTypeColor = (type: string) => {
     switch (type) {
-      case 'EA': return 'bg-purple-100 dark:bg-purple-950/30 text-purple-800 dark:text-purple-400'
-      case 'RA': return 'bg-orange-100 dark:bg-orange-950/30 text-orange-800 dark:text-orange-400'
+      case 'EA': return 'bg-purple-100 text-purple-800'
+      case 'RA': return 'bg-orange-100 text-orange-800'
       default: return 'bg-muted text-foreground'
     }
   }
@@ -220,13 +223,13 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
   if (!isMaster) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex items-center gap-4 p-6 bg-yellow-50 dark:bg-yellow-950/30 rounded-xl border border-yellow-200 dark:border-yellow-800">
-          <div className="p-2 bg-yellow-100 dark:bg-yellow-950/40 rounded-lg">
-            <AlertTriangle className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+        <div className="flex items-center gap-4 p-6 bg-yellow-50 rounded-xl border border-yellow-200">
+          <div className="p-2 bg-yellow-100 rounded-lg">
+            <AlertTriangle className="w-6 h-6 text-yellow-600" />
           </div>
           <div>
-            <span className="text-yellow-800 dark:text-yellow-400 font-semibold text-lg">Acceso Restringido</span>
-            <p className="text-yellow-700 dark:text-yellow-300 text-sm mt-1">
+            <span className="text-yellow-800 font-semibold text-lg">Acceso Restringido</span>
+            <p className="text-yellow-700 text-sm mt-1">
               Solo los usuarios maestros pueden acceder a la eliminación masiva de órdenes.
             </p>
           </div>
@@ -238,61 +241,48 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-red-500 via-red-600 to-pink-600 rounded-xl p-6 text-white shadow-lg">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-white bg-opacity-20 rounded-xl">
-              <Trash2 className="w-8 h-8" />
-            </div>
-            <div>
-              <h2 className="text-3xl font-bold">Eliminación Masiva de Órdenes</h2>
-              <p className="text-red-100 mt-1 text-lg">
-                Elimina órdenes del sistema con razón de eliminación
-              </p>
-              {selectedOrders.size > 0 && (
-                <p className="text-yellow-300 mt-1 text-sm font-semibold">
-                  {selectedOrders.size} órdenes seleccionadas
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <div className="text-2xl font-bold">{filteredOrders.length}</div>
-              <div className="text-red-100 text-sm">
-                {filteredOrders.length === orders.length ? 'órdenes totales' : `de ${orders.length} órdenes`}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              {selectedOrders.size > 0 && (
-                <button
-                  onClick={() => setShowDeleteDialog(true)}
-                  disabled={isDeleting}
-                  className="flex items-center gap-2 px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-all duration-200 disabled:opacity-50"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  {isDeleting ? 'Eliminando...' : `Eliminar (${selectedOrders.size})`}
-                </button>
-              )}
+      <ConfigPanelHeader
+        className="!mb-0"
+        title="Eliminación masiva"
+        subtitle="Elimina pedidos del sistema indicando el motivo. Queda registrado en Auditoría."
+        actions={
+          <>
+            {selectedOrders.size > 0 && (
               <button
-                onClick={() => setShowFilters(!showFilters)}
-                className="flex items-center gap-2 px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-all duration-200"
+                onClick={() => setShowDeleteDialog(true)}
+                disabled={isDeleting}
+                className="flex items-center gap-2 rounded-[10px] bg-red-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
               >
-                <Filter className="w-4 h-4" />
-                Filtros
+                <Trash2 className="w-4 h-4" />
+                {isDeleting ? 'Eliminando...' : `Eliminar (${selectedOrders.size})`}
               </button>
-              <button
-                onClick={loadOrders}
-                className="flex items-center gap-2 px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-all duration-200"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Actualizar
-              </button>
-            </div>
-          </div>
-        </div>
+            )}
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-800 hover:bg-slate-50"
+            >
+              <Filter className="w-4 h-4" />
+              Filtros
+            </button>
+            <button
+              onClick={loadOrders}
+              className="flex items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-800 hover:bg-slate-50"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Actualizar
+            </button>
+          </>
+        }
+      />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-red-50 px-4 py-3 text-[13px] text-red-800 ring-1 ring-red-100">
+        <span>Esta acción elimina pedidos de forma permanente. Revisá la selección antes de confirmar.</span>
+        <span className="font-semibold">
+          {filteredOrders.length === orders.length
+            ? `${filteredOrders.length} pedidos totales`
+            : `${filteredOrders.length} de ${orders.length} pedidos`}
+          {selectedOrders.size > 0 ? ` · ${selectedOrders.size} seleccionados` : ''}
+        </span>
       </div>
-
 
       {/* Search and Filters */}
       <div className="bg-card rounded-xl p-6 shadow-lg border border-border">
@@ -344,26 +334,18 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
 
       {/* Orders List */}
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="flex items-center gap-3">
-            <RefreshCw className="w-6 h-6 animate-spin text-red-500" />
-            <span className="text-muted-foreground">Cargando órdenes...</span>
-          </div>
-        </div>
+        <AuroraListSkeleton rows={5} label="Cargando pedidos" />
       ) : orders.length === 0 ? (
-        <div className="text-center py-12">
-          <div className="p-4 bg-muted rounded-full w-20 h-20 mx-auto mb-4 flex items-center justify-center">
-            <Package className="w-10 h-10 text-muted-foreground" />
-          </div>
-          <h3 className="text-xl font-semibold text-foreground mb-2">No hay órdenes</h3>
-          <p className="text-muted-foreground">No se encontraron órdenes en el sistema.</p>
-          <button
-            onClick={loadOrders}
-            className="mt-4 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-          >
-            Intentar de nuevo
-          </button>
-        </div>
+        <AuroraEmptyState
+          tone="neutral"
+          title="No hay pedidos"
+          description="No se encontraron pedidos en el sistema."
+          actions={
+            <button type="button" onClick={loadOrders} className={auroraButtonPrimary}>
+              Intentar de nuevo
+            </button>
+          }
+        />
       ) : filteredOrders.length === 0 ? (
         <div className="text-center py-12">
           <div className="p-4 bg-muted rounded-full w-20 h-20 mx-auto mb-4 flex items-center justify-center">
@@ -376,7 +358,7 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
       ) : (
         <div>
           {/* Select All Bar */}
-          <div className="bg-gradient-to-r from-red-50 to-pink-50 dark:from-red-950/30 dark:to-pink-950/30 border-b border-border px-6 py-4 flex items-center justify-between">
+          <div className="bg-slate-50 border-b border-border px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <input
                 type="checkbox"
@@ -406,7 +388,7 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
           
           <div className="divide-y divide-border">
             {paginatedOrders.map((order) => (
-              <div key={order.id} className="p-6 hover:bg-gradient-to-r hover:from-muted hover:to-red-950/20 transition-all duration-200 group">
+              <div key={order.id} className="p-6 hover:bg-slate-50 transition-colors group">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-4">
                     <input
@@ -572,8 +554,8 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-card rounded-xl p-6 max-w-md w-full mx-4 border border-border">
             <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-red-100 dark:bg-red-950/30 rounded-lg">
-                <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+              <div className="p-2 bg-red-100 rounded-lg">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-foreground">Confirmar Eliminación</h3>

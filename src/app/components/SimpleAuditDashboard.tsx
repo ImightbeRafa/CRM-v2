@@ -1,5 +1,7 @@
 'use client'
 
+import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader'
+import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton'
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Clock, User, Trash2, Edit, Plus, AlertTriangle, Shield, Download,
@@ -128,31 +130,31 @@ function getActionAccent(action: string) {
     case 'CREATE':
       return {
         border: 'border-l-emerald-500',
-        badge: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 ring-emerald-500/20',
-        icon: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+        badge: 'bg-emerald-500/10 text-emerald-700 ring-emerald-500/20',
+        icon: 'bg-emerald-500/10 text-emerald-600',
         dot: 'bg-emerald-500',
       }
     case 'UPDATE':
     case 'BULK_UPDATE':
       return {
         border: 'border-l-blue-500',
-        badge: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 ring-blue-500/20',
-        icon: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+        badge: 'bg-blue-500/10 text-blue-700 ring-blue-500/20',
+        icon: 'bg-blue-500/10 text-blue-600',
         dot: 'bg-blue-500',
       }
     case 'DELETE':
     case 'BULK_DELETE':
       return {
         border: 'border-l-red-500',
-        badge: 'bg-red-500/10 text-red-700 dark:text-red-400 ring-red-500/20',
-        icon: 'bg-red-500/10 text-red-600 dark:text-red-400',
+        badge: 'bg-red-500/10 text-red-700 ring-red-500/20',
+        icon: 'bg-red-500/10 text-red-600',
         dot: 'bg-red-500',
       }
     case 'BULK_TOGGLE':
       return {
         border: 'border-l-purple-500',
-        badge: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 ring-purple-500/20',
-        icon: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+        badge: 'bg-purple-500/10 text-purple-700 ring-purple-500/20',
+        icon: 'bg-purple-500/10 text-purple-600',
         dot: 'bg-purple-500',
       }
     default:
@@ -306,9 +308,9 @@ function KeyValueGrid({
   if (entries.length === 0) return null
   const toneClass =
     tone === 'create'
-      ? 'bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/20'
+      ? 'bg-emerald-500/5 border-emerald-500/20'
       : tone === 'delete'
-        ? 'bg-red-500/5 dark:bg-red-500/10 border-red-500/20'
+        ? 'bg-red-500/5 border-red-500/20'
         : 'bg-muted/50 border-border'
 
   return (
@@ -697,10 +699,10 @@ export function SimpleAuditDashboard({ isMaster, canRestore = false }: SimpleAud
   // ----- Access control -----
   if (!isMaster) {
     return (
-      <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6 dark:bg-yellow-500/5">
+      <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-yellow-500/15 rounded-lg">
-            <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-500" />
+            <AlertTriangle className="w-5 h-5 text-yellow-600" />
           </div>
           <div>
             <span className="text-foreground font-semibold">Acceso Restringido</span>
@@ -716,36 +718,24 @@ export function SimpleAuditDashboard({ isMaster, canRestore = false }: SimpleAud
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="bg-card border border-border rounded-xl p-5">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-brand-gradient text-white">
-              <Shield className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">Auditoría</h2>
-              <p className="text-sm text-muted-foreground">
-                Registro de cambios del sistema
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Stats pills */}
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted text-xs font-medium text-muted-foreground">
+      <ConfigPanelHeader
+        className="!mb-0"
+        title="Auditoría"
+        subtitle="Todo lo que cambió en la cuenta, quién lo hizo y cuándo"
+        actions={
+          <>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
               <Activity className="w-3.5 h-3.5" />
               {total} {total === 1 ? 'registro' : 'registros'}
             </span>
-
-            {/* Actions */}
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
+              className="relative inline-flex items-center gap-1.5 rounded-[10px] border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 hover:bg-slate-50"
             >
               <Filter className="w-3.5 h-3.5" />
               Filtros
               {activeFilterCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[#5B3FE0] text-white text-[10px] font-bold flex items-center justify-center">
                   {activeFilterCount}
                 </span>
               )}
@@ -753,25 +743,25 @@ export function SimpleAuditDashboard({ isMaster, canRestore = false }: SimpleAud
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-[10px] border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
               {refreshing ? '' : 'Actualizar'}
             </button>
             <button
               onClick={handleExport}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-[10px] border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 hover:bg-slate-50"
             >
               <Download className="w-3.5 h-3.5" />
               CSV
             </button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Filters */}
       {restoreError && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700">
           {restoreError}
         </div>
       )}
@@ -865,10 +855,7 @@ export function SimpleAuditDashboard({ isMaster, canRestore = false }: SimpleAud
       {/* Log list */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent" />
-            <span className="text-sm text-muted-foreground">Cargando auditoría...</span>
-          </div>
+          <AuroraListSkeleton rows={5} label="Cargando auditoría" />
         ) : logs.length === 0 ? (
           <div className="text-center py-16 px-4">
             <div className="p-3 bg-muted rounded-full w-14 h-14 mx-auto mb-3 flex items-center justify-center">

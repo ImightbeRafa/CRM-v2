@@ -283,7 +283,7 @@ export function SoftConversationList({
             description="Conectá WhatsApp o Instagram para ver acá los chats de tus clientes."
             actions={
               <>
-                <a href="/config/social" className={auroraButtonPrimary}>
+                <a href="/config?tab=social" className={auroraButtonPrimary}>
                   Ir a Canales
                 </a>
                 {!demoMode && onLoadDemo ? (

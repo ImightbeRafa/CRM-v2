@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import BetsyLogo from "@/BetsyLogo.png";
 import { AuroraShell } from "@/components/aurora/AuroraShell";
+import { AuroraMobileNav } from "@/components/aurora/AuroraMobileNav";
 import { AuroraHome } from "./components/AuroraHome";
 
 function displayName(session: NonNullable<ReturnType<typeof useSession>["data"]>) {
@@ -60,7 +61,7 @@ export default function EnhancedHomeContent() {
   const isLogisticsAdmin = Boolean((session.user as { isLogisticsAdmin?: boolean })?.isLogisticsAdmin);
 
   return (
-    <AuroraShell>
+    <AuroraShell bottomNav={<AuroraMobileNav />}>
       <AuroraHome
         firstName={displayName(session)}
         tenantName={session.user?.currentTenant?.name}

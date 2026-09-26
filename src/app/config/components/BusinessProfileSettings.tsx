@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Building2, User, Phone, MapPin, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader';
+import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton';
 
 // Costa Rica provinces
 const CR_PROVINCES = [
@@ -149,30 +151,17 @@ export function BusinessProfileSettings() {
 
   if (loading) {
     return (
-      <div className="bg-card rounded-xl shadow-lg border border-border p-8">
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <span className="ml-3 text-muted-foreground">Cargando perfil...</span>
-        </div>
+      <div>
+        <ConfigPanelHeader title="General" subtitle="Identidad y datos de contacto de tu negocio" />
+        <AuroraListSkeleton rows={4} label="Cargando perfil" />
       </div>
     );
   }
 
   return (
-    <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-white bg-opacity-20 rounded-xl">
-            <Building2 className="w-8 h-8" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold">Perfil del Negocio</h2>
-            <p className="text-blue-100">Información de contacto y ubicación de tu negocio</p>
-          </div>
-        </div>
-      </div>
-
+    <div>
+      <ConfigPanelHeader title="General" subtitle="Identidad y datos de contacto de tu negocio" />
+    <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
       <div className="p-6">
         {/* Profile Status */}
         <div className={`mb-6 p-4 rounded-lg flex items-start gap-3 ${
@@ -336,7 +325,7 @@ export function BusinessProfileSettings() {
             <button
               type="submit"
               disabled={saving}
-              className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-6 py-2.5 bg-[#5B3FE0] hover:bg-[#4A32C4] text-white font-medium rounded-[10px] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {saving ? (
                 <>
@@ -381,6 +370,6 @@ export function BusinessProfileSettings() {
         )}
       </div>
     </div>
+    </div>
   );
 }
-

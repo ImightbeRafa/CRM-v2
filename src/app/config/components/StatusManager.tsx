@@ -4,8 +4,10 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
-import { Badge } from '@/app/components/ui/badge';
-import { Plus, Edit, Trash2, CheckCircle, GripVertical } from 'lucide-react';
+import { Plus, Edit, Trash2, GripVertical } from 'lucide-react';
+import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader';
+import { AuroraEmptyState, auroraButtonPrimary } from '@/components/aurora/states/AuroraEmptyState';
+import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton';
 import { useToast } from '@/app/hooks/use-toast';
 
 export interface OrderStatus {
@@ -85,65 +87,65 @@ export function StatusManager({ statuses, loading = false, onRefresh }: StatusMa
     }
   };
 
-  return (
-    <Card className="overflow-hidden">
-      <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-600 p-6 text-white">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-card/20 rounded-xl">
-              <CheckCircle className="w-8 h-8" />
-            </div>
-            <div>
-              <CardTitle className="text-2xl font-bold">Estados de Órdenes</CardTitle>
-              <p className="text-gray-100 mt-1">Configura el flujo de estados de producción</p>
-            </div>
-          </div>
-          <Button
-            onClick={() => {
-              setEditingStatus(null);
-              setShowForm(true);
-              setFormData({ key: '', label: '', color: '#60A5FA', order: statuses.length });
-            }}
-            className="bg-card/20 hover:bg-card/30 text-white border-white"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Nuevo Estado
-          </Button>
-        </div>
-      </CardHeader>
+  const openCreate = () => {
+    setEditingStatus(null);
+    setShowForm(true);
+    setFormData({ key: '', label: '', color: '#60A5FA', order: statuses.length });
+  };
 
-      <CardContent className="p-6">
+  return (
+    <div data-testid="config-statuses-panel">
+      <ConfigPanelHeader
+        title="Estados"
+        subtitle="Configura el flujo de estados de tus pedidos"
+        actions={
+          <Button onClick={openCreate} className="bg-[#5B3FE0] text-white hover:bg-[#4A32C4]">
+            <Plus className="w-4 h-4 mr-2" />
+            Nuevo estado
+          </Button>
+        }
+      />
+
+      <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
         {loading ? (
-          <div className="text-center py-8 text-muted-foreground">Cargando...</div>
+          <AuroraListSkeleton rows={4} label="Cargando estados" />
         ) : statuses.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            No hay estados configurados. Haz click en &quot;Nuevo Estado&quot; para agregar uno.
-          </div>
+          <AuroraEmptyState
+            tone="neutral"
+            title="Todavía no hay estados de pedido"
+            description="Creá el primero para ordenar el flujo de tus pedidos."
+            actions={
+              <button type="button" onClick={openCreate} className={auroraButtonPrimary}>
+                Nuevo estado
+              </button>
+            }
+          />
         ) : (
-          <div className="grid gap-3">
+          <ul className="divide-y divide-slate-100">
             {statuses.map((status) => (
-              <div
+              <li
                 key={status.id}
-                className="flex items-center justify-between p-4 border border-border rounded-lg hover:shadow-md transition-shadow bg-card"
+                className="grid grid-cols-[minmax(0,1fr)_88px] items-center gap-3 px-5 py-3.5"
               >
-                <div className="flex items-center gap-4">
-                  <GripVertical className="h-5 w-5 text-muted-foreground cursor-move" />
-                  <div
-                    className="w-4 h-4 rounded-full border-2 border-border"
-                    style={{ backgroundColor: status.color || '#gray' }}
+                <div className="flex min-w-0 items-center gap-3">
+                  <GripVertical className="h-5 w-5 shrink-0 text-slate-300" aria-hidden />
+                  <span
+                    className="h-3.5 w-3.5 shrink-0 rounded-full ring-1 ring-black/10"
+                    style={{ backgroundColor: status.color || '#94A3B8' }}
                   />
-                  <div>
-                    <p className="font-semibold text-foreground">{status.label}</p>
-                    <p className="text-sm text-muted-foreground">{status.key}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[14px] font-semibold text-slate-900" title={status.label}>{status.label}</p>
+                    <p className="truncate text-[12px] text-slate-500" title={status.key}>{status.key}</p>
                   </div>
-                  <Badge variant="outline" className="text-xs">
-                    Orden: {status.order}
-                  </Badge>
+                  <span className="hidden shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600 sm:inline-block">
+                    Orden {status.order}
+                  </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-end gap-1">
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
+                    aria-label={`Editar ${status.label}`}
                     onClick={() => {
                       setEditingStatus(status);
                       setFormData({
@@ -158,18 +160,20 @@ export function StatusManager({ statuses, loading = false, onRefresh }: StatusMa
                     <Edit className="h-4 w-4" />
                   </Button>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
+                    aria-label={`Eliminar ${status.label}`}
                     onClick={() => handleDelete(status.id)}
-                    className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                    className="text-red-600 hover:bg-red-50"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
+      </div>
 
         {/* Form Modal */}
         {showForm && (
@@ -243,8 +247,7 @@ export function StatusManager({ statuses, loading = false, onRefresh }: StatusMa
             </Card>
           </div>
         )}
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 

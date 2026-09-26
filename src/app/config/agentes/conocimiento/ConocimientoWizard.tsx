@@ -76,7 +76,7 @@ export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardPr
       onBack()
       return
     }
-    router.push('/config/agentes')
+    router.push('/config?tab=agentes')
   }, [onBack, router])
 
   const load = useCallback(async () => {

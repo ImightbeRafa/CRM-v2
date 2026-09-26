@@ -22,7 +22,6 @@ import {
   Warehouse,
 } from 'lucide-react'
 import { useDashboardStats } from '@/app/hooks/useDashboardStats'
-import { MobileBottomNav } from '@/app/components/MobileBottomNav'
 import { SetupChecklist } from './SetupChecklist'
 
 type RecentOrder = {
@@ -180,7 +179,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
       ? [{ href: '/logistics/guias', label: 'Generar guías', icon: <FileText className="h-4 w-4" />, tone: 'bg-sky-50 text-sky-600' }]
       : []),
     { href: '/produccion', label: 'Producción', icon: <Factory className="h-4 w-4" />, tone: 'bg-slate-100 text-slate-500' },
-    { href: '/estadisticas', label: 'Estadísticas', icon: <BarChart3 className="h-4 w-4" />, tone: 'bg-slate-100 text-slate-500', soon: true },
+    { href: '/estadisticas', label: 'Estadísticas', icon: <BarChart3 className="h-4 w-4" />, tone: 'bg-slate-100 text-slate-500' },
     { href: '/help', label: 'Centro de ayuda', icon: <HelpCircle className="h-4 w-4" />, tone: 'bg-emerald-50 text-emerald-600' },
   ]
 
@@ -231,7 +230,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
   ]
 
   return (
-    <div className="mx-auto w-full max-w-[1200px] px-4 pb-24 pt-5 md:px-8 md:pb-10 md:pt-6">
+    <div className="mx-auto w-full max-w-[1200px] px-4 pb-6 pt-5 md:px-8 md:pb-10 md:pt-6">
       {/* Header + toolbar */}
       <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
@@ -357,11 +356,11 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
 
         {/* Agentes — runtime on hold, no metrics API yet */}
         <Card className="border-[#C9BFFF] p-5">
-          <CardTitle icon={<Bot className="h-4 w-4" />} action={<Link href="/config/agentes" className="text-[12px] font-semibold text-[#6D4AFF] hover:underline">Ver agentes</Link>}>
+          <CardTitle icon={<Bot className="h-4 w-4" />} action={<Link href="/config?tab=agentes" className="text-[12px] font-semibold text-[#6D4AFF] hover:underline">Ver agentes</Link>}>
             Agentes esta semana
           </CardTitle>
           <div className="mt-6 flex flex-col items-start gap-2">
-            <span className="rounded-md border border-slate-200 px-1.5 py-px text-[10px] font-medium text-slate-500">Pronto</span>
+            <span className="rounded-md border border-slate-200 px-1.5 py-px text-[10px] font-medium text-slate-500">IA en pausa</span>
             <p className="text-[13px] text-slate-500">
               Acá vas a ver las conversaciones resueltas, pedidos creados y traspasos a humano de tus agentes.
             </p>
@@ -423,14 +422,11 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
               <Link
                 key={q.label}
                 href={q.href}
-                className={`flex items-center gap-2 rounded-xl border border-slate-200 px-2.5 py-2.5 text-[12px] font-medium transition-colors hover:bg-slate-50 ${
-                  q.soon ? 'bg-slate-50 text-slate-400' : 'text-slate-800'
-                }`}
+                className="flex items-center gap-2 rounded-xl border border-slate-200 px-2.5 py-2.5 text-[12px] font-medium text-slate-800 transition-colors hover:bg-slate-50"
               >
                 <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${q.tone}`}>{q.icon}</span>
                 <span className="min-w-0">
                   <span className="block truncate">{q.label}</span>
-                  {q.soon && <span className="block text-[10px] text-slate-400">Pronto</span>}
                 </span>
               </Link>
             ))}
@@ -438,7 +434,6 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
         </Card>
       </div>
 
-      <MobileBottomNav />
     </div>
   )
 }

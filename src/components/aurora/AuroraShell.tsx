@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 import { AuroraSidebar } from './AuroraSidebar'
 
 type AuroraShellProps = {
@@ -14,19 +14,31 @@ type AuroraShellProps = {
   bottomNav?: ReactNode
 }
 
+/** True inside an AuroraShell: nested shells (e.g. Config panels) render only their children. */
+const AuroraShellContext = createContext(false)
+
 /** Shared Aurora chrome: dark sidebar + light content area. Sidebar is desktop-only. */
 export function AuroraShell({ children, fullBleed = false, bottomNav }: AuroraShellProps) {
+  const nested = useContext(AuroraShellContext)
+  if (nested) return <>{children}</>
+
   return (
-    <div className="flex h-[100dvh] w-full overflow-hidden bg-[#F7F8FA]">
-      <AuroraSidebar />
-      <main
-        className={`flex min-h-0 min-w-0 flex-1 flex-col ${
-          fullBleed ? 'overflow-hidden' : 'overflow-y-auto'
-        }`}
-      >
-        {children}
-        {bottomNav}
-      </main>
-    </div>
+    <AuroraShellContext.Provider value={true}>
+      <div className="flex h-[100dvh] w-full overflow-hidden bg-[#F7F8FA]">
+        <AuroraSidebar />
+        <main
+          className={`flex min-h-0 min-w-0 flex-1 flex-col ${
+            fullBleed ? 'overflow-hidden' : 'overflow-y-auto'
+          }`}
+        >
+          {children}
+          {bottomNav && !fullBleed ? (
+            <div className="sticky bottom-0 z-30 mt-auto md:hidden">{bottomNav}</div>
+          ) : (
+            bottomNav
+          )}
+        </main>
+      </div>
+    </AuroraShellContext.Provider>
   )
 }

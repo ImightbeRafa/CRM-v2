@@ -8,6 +8,8 @@ import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { useToast } from '@/app/hooks/use-toast';
 import { SmartFieldWizard } from './SmartFieldWizard';
+import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton';
+import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader';
 import { 
   Database,
   Plus,
@@ -439,43 +441,25 @@ export function SimpleFieldsManager() {
   const getCategoryBadge = (field: Field) => {
     const category = detectCategory(field);
     switch (category) {
-      case 'producto': return { label: 'Producto', color: 'bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400' };
-      case 'negocio': return { label: 'Negocio', color: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400' };
-      case 'envio': return { label: 'Envío', color: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400' };
+      case 'producto': return { label: 'Producto', color: 'bg-purple-100 text-purple-700' };
+      case 'negocio': return { label: 'Negocio', color: 'bg-blue-100 text-blue-700' };
+      case 'envio': return { label: 'Envío', color: 'bg-green-100 text-green-700' };
       default: return { label: 'Personalizado', color: 'bg-muted text-muted-foreground' };
     }
   };
 
   return (
     <div className="space-y-6">
-      {/* Header Card */}
-      <Card className="border-2 border-purple-200 dark:border-purple-800 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-purple-100 dark:bg-purple-950/40 rounded-xl">
-                <Sparkles className="w-8 h-8 text-purple-600" />
-              </div>
-              <div>
-                <CardTitle className="text-2xl font-bold text-foreground">
-                  Campos Personalizados
-                </CardTitle>
-                <p className="text-muted-foreground mt-1">
-                  Gestiona todos los campos de tu formulario de ventas
-                </p>
-              </div>
-            </div>
-            <Button
-              onClick={() => setShowWizard(true)}
-              size="lg"
-              className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 shadow-lg"
-            >
-              <Plus className="w-5 h-5 mr-2" />
-              Nuevo Campo
-            </Button>
-          </div>
-        </CardHeader>
-      </Card>
+      <ConfigPanelHeader
+        title="Campos"
+        subtitle="Los datos que pedís al crear un pedido"
+        actions={
+          <Button onClick={() => setShowWizard(true)} className="bg-[#5B3FE0] text-white hover:bg-[#4A32C4]">
+            <Plus className="w-4 h-4 mr-2" />
+            Nuevo campo
+          </Button>
+        }
+      />
 
       {/* Fields List */}
       <Card>
@@ -493,10 +477,7 @@ export function SimpleFieldsManager() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
-              <span className="ml-3 text-muted-foreground">Cargando campos...</span>
-            </div>
+            <AuroraListSkeleton rows={4} label="Cargando campos" />
           ) : fields.length === 0 ? (
             <div className="text-center py-12">
               <Sparkles className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
@@ -509,10 +490,10 @@ export function SimpleFieldsManager() {
               <Button
                 onClick={() => setShowWizard(true)}
                 size="lg"
-                className="bg-purple-600 hover:bg-purple-700"
+                className="bg-[#5B3FE0] text-white hover:bg-[#4A32C4]"
               >
                 <Plus className="w-5 h-5 mr-2" />
-                Crear Primer Campo
+                Crear primer campo
               </Button>
             </div>
           ) : (
@@ -570,7 +551,7 @@ export function SimpleFieldsManager() {
                           console.log('🔍 Setting editing field:', field);
                           setEditingField(field);
                         }}
-                        className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40"
+                        className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
                       >
                         <Edit className="w-4 h-4 mr-1" />
                         Editar
@@ -579,7 +560,7 @@ export function SimpleFieldsManager() {
                         variant="ghost"
                         size="sm"
                         onClick={() => handleDeleteField(field.id)}
-                        className="text-red-600 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40"
+                        className="text-red-600 hover:text-red-800 hover:bg-red-50"
                       >
                         <Trash2 className="w-4 h-4 mr-1" />
                         Eliminar
@@ -719,7 +700,7 @@ export function SimpleFieldsManager() {
 
                 {/* Show option set selector when type is 'select' */}
                 {newFieldType === 'select' && (
-                  <div className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-2 border-purple-300 dark:border-purple-700 rounded-xl p-5 space-y-4">
+                  <div className="bg-[#F1EEFF] border border-[#5B3FE0]/30 rounded-xl p-5 space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <label className="block text-sm font-semibold text-muted-foreground mb-1">
@@ -737,7 +718,7 @@ export function SimpleFieldsManager() {
                           <select
                             value={newFieldOptionSetId}
                             onChange={(e) => setNewFieldOptionSetId(e.target.value)}
-                            className="flex-1 p-2.5 border-2 border-purple-300 dark:border-purple-700 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-background text-foreground shadow-sm font-medium"
+                            className="flex-1 p-2.5 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-background text-foreground shadow-sm font-medium"
                             required
                           >
                             <option value="">-- Seleccionar conjunto existente --</option>
@@ -755,7 +736,7 @@ export function SimpleFieldsManager() {
                             variant="outline"
                             size="sm"
                             onClick={() => setShowQuickOptionSetCreator(true)}
-                            className="flex-1 border-2 border-purple-400 dark:border-purple-600 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-950/50 font-semibold"
+                            className="flex-1 border-2 border-purple-400 text-purple-700 hover:bg-purple-100 font-semibold"
                           >
                             + Crear conjunto nuevo
                           </Button>
@@ -767,23 +748,23 @@ export function SimpleFieldsManager() {
                               const optionsTab = document.querySelector('[data-section="options"]');
                               if (optionsTab) (optionsTab as HTMLElement).click();
                             }}
-                            className="flex-1 border-2 border-indigo-400 dark:border-indigo-600 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-950/50"
+                            className="flex-1 border-2 border-indigo-400 text-indigo-700 hover:bg-indigo-100"
                           >
                             📋 Ver todos los conjuntos
                           </Button>
                         </div>
 
                         {!newFieldOptionSetId && (
-                          <div className="bg-amber-50 dark:bg-amber-950/30 border-l-4 border-amber-400 dark:border-amber-600 p-3 rounded">
-                            <p className="text-xs text-amber-800 dark:text-amber-300 font-medium flex items-center gap-2">
+                          <div className="bg-amber-50 border-l-4 border-amber-400 p-3 rounded">
+                            <p className="text-xs text-amber-800 font-medium flex items-center gap-2">
                               <span className="text-lg">⚠️</span>
                               Debes seleccionar o crear un conjunto de opciones antes de guardar
                             </p>
                           </div>
                         )}
                         {newFieldOptionSetId && (
-                          <div className="bg-green-50 dark:bg-green-950/30 border-l-4 border-green-400 dark:border-green-600 p-3 rounded">
-                            <p className="text-xs text-green-800 dark:text-green-300 font-medium flex items-center gap-2">
+                          <div className="bg-green-50 border-l-4 border-green-400 p-3 rounded">
+                            <p className="text-xs text-green-800 font-medium flex items-center gap-2">
                               <span className="text-lg">✓</span>
                               Conjunto &quot;{optionSets.find(s => s.id === newFieldOptionSetId)?.name}&quot; seleccionado
                             </p>
@@ -1157,7 +1138,7 @@ export function SimpleFieldsManager() {
                               <span className="flex-1 text-sm font-medium">{option.label}</span>
                               <Badge variant="outline" className="text-xs">{option.value}</Badge>
                               {option.priceDelta !== 0 && (
-                                <Badge className="text-xs bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400">
+                                <Badge className="text-xs bg-green-100 text-green-700">
                                   {option.priceDelta > 0 ? '+' : ''}₡{option.priceDelta}
                                 </Badge>
                               )}
@@ -1186,7 +1167,7 @@ export function SimpleFieldsManager() {
                     </div>
 
                     {/* Add New Option Form */}
-                    <div className="flex items-center gap-2 p-2 bg-blue-50 dark:bg-blue-950/30 rounded-md border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-md border border-blue-200">
                       <Input
                         value={newOptionLabel}
                         onChange={(e) => setNewOptionLabel(e.target.value)}

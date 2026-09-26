@@ -6,9 +6,17 @@ import {
   type ChannelFilter,
   type SoftConversation,
   type SoftSocialAccount,
-  accountDisplayLabel,
 } from '@/lib/chat-soft-copilot'
+import type { LineCounts } from '@/lib/chat-line-filter'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
+import { AuroraLineFilter } from '@/components/chats/AuroraLineFilter'
+import {
+  AuroraEmptyState,
+  AuroraErrorState,
+  AuroraListSkeleton,
+  auroraButtonPrimary,
+  auroraButtonSecondary,
+} from '@/components/aurora/states'
 
 interface SoftConversationListProps {
   conversations: SoftConversation[]
@@ -31,6 +39,12 @@ interface SoftConversationListProps {
   hasMoreConversations?: boolean
   loadingMoreConversations?: boolean
   onLoadMoreConversations?: () => void
+  /** Per-line open counts for the line dropdown (Aurora). */
+  countsByAccount?: Map<string, LineCounts>
+  totalOpen?: number
+  /** First page failed to load — show STATE-01 error with retry. */
+  loadError?: boolean
+  onRetryLoad?: () => void
 }
 
 function conversationKey(c: SoftConversation) {
@@ -39,16 +53,7 @@ function conversationKey(c: SoftConversation) {
 
 function avatarClass(platform: string, isDemo?: boolean) {
   if (isDemo) return 'bg-slate-400'
-  return platform === 'instagram' ? 'bg-pink-500' : 'bg-green-500'
-}
-
-function EmptyGlyph({ kind }: { kind: 'channels' | 'chats' | 'results' }) {
-  const label = kind === 'channels' ? '∅' : kind === 'results' ? '⌕' : '…'
-  return (
-    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8ecff] text-lg font-semibold text-[#5b6cff]">
-      {label}
-    </div>
-  )
+  return platform === 'instagram' ? 'bg-pink-500' : 'bg-emerald-500'
 }
 
 export function SoftConversationList({
@@ -72,39 +77,35 @@ export function SoftConversationList({
   hasMoreConversations,
   loadingMoreConversations,
   onLoadMoreConversations,
+  countsByAccount,
+  totalOpen,
+  loadError,
+  onRetryLoad,
 }: SoftConversationListProps) {
   const chips: Array<{ id: ChannelFilter; label: string; activeClass: string; idleClass: string }> = [
     {
+      id: 'todos',
+      label: 'Todos',
+      activeClass: 'bg-[#EEF0FF] text-[#4A46E5] ring-1 ring-[#5B6CFF]/25',
+      idleClass: 'bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50',
+    },
+    {
       id: 'whatsapp',
-      label: 'WA',
-      activeClass: 'bg-green-100 text-green-800 ring-1 ring-green-200',
-      idleClass: 'bg-green-50/80 text-green-800',
+      label: 'WhatsApp',
+      activeClass: 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200',
+      idleClass: 'bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50',
     },
     {
       id: 'instagram',
-      label: 'IG',
-      activeClass: 'bg-pink-100 text-pink-800 ring-1 ring-pink-200',
-      idleClass: 'bg-pink-50/80 text-pink-800',
-    },
-    {
-      id: 'todos',
-      label: 'Todos',
-      activeClass: 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200',
-      idleClass: 'bg-slate-50 text-slate-600',
+      label: 'Instagram',
+      activeClass: 'bg-pink-50 text-pink-800 ring-1 ring-pink-200',
+      idleClass: 'bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50',
     },
   ]
 
-  const waAccounts = accounts.filter((a) => a.platform === 'whatsapp')
-  const igAccounts = accounts.filter((a) => a.platform === 'instagram')
-  const otherAccounts = accounts.filter(
-    (a) => a.platform !== 'whatsapp' && a.platform !== 'instagram',
-  )
-  const selectedAccount =
-    selectedAccountId !== 'all' ? accounts.find((a) => a.id === selectedAccountId) : null
-
   return (
     <section
-      className={`flex h-full min-h-0 flex-col border-r border-slate-100 bg-white ${
+      className={`flex h-full min-h-0 flex-col border-r border-slate-200/70 bg-white ${
         compact ? 'w-full' : 'w-full md:w-[300px] lg:w-[320px]'
       } shrink-0`}
     >
@@ -115,7 +116,7 @@ export function SoftConversationList({
           </h2>
           {!compact && syncAgeSeconds != null ? (
             <p className="mt-0.5 text-[10px] text-slate-400">
-              Actualizando… hace {syncAgeSeconds}s
+              Sincronizado hace {syncAgeSeconds}s
             </p>
           ) : null}
         </div>
@@ -146,7 +147,17 @@ export function SoftConversationList({
         </div>
       ) : null}
 
-      <div className="mt-3 flex flex-wrap gap-1.5 px-4">
+      <div className="mt-3 px-4">
+        <AuroraLineFilter
+          accounts={accounts}
+          selectedAccountId={selectedAccountId}
+          onSelect={onAccountFilter}
+          totalOpen={totalOpen ?? openCount}
+          countsByAccount={countsByAccount ?? new Map()}
+        />
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-1.5 px-4">
         {chips.map((chip) => {
           const active = channelFilter === chip.id
           return (
@@ -164,101 +175,65 @@ export function SoftConversationList({
         })}
       </div>
 
-      <div className="mt-2 px-4">
-        <label className="block">
-          <span className="sr-only">Filtrar por cuenta</span>
-          <div className="flex items-center gap-2">
-            {selectedAccount ? (
-              <ChannelLogo platform={selectedAccount.platform} size={14} className="shrink-0" />
-            ) : null}
-            <select
-              value={selectedAccountId}
-              onChange={(e) =>
-                onAccountFilter(e.target.value === 'all' ? 'all' : e.target.value)
-              }
-              className="w-full appearance-none rounded-lg border-0 bg-slate-50 px-3 py-2 text-[11px] text-slate-600 outline-none ring-1 ring-slate-100 focus:ring-2 focus:ring-[#5b6cff]/30"
-            >
-              <option value="all">Cuenta: Todas</option>
-              {waAccounts.length > 0 ? (
-                <optgroup label="WhatsApp">
-                  {waAccounts.map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {accountDisplayLabel(acc)}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null}
-              {igAccounts.length > 0 ? (
-                <optgroup label="Instagram">
-                  {igAccounts.map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {accountDisplayLabel(acc)}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null}
-              {otherAccounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {accountDisplayLabel(acc)}
-                </option>
-              ))}
-            </select>
-          </div>
-        </label>
-      </div>
-
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
         {loading && conversations.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-slate-400">Cargando…</p>
+          <AuroraListSkeleton />
+        ) : loadError && conversations.length === 0 ? (
+          <AuroraErrorState
+            title="No pudimos cargar los chats"
+            description="Revisá tu conexión. Tus conversaciones están a salvo; no se perdió nada."
+            onRetry={onRetryLoad}
+          />
         ) : emptyReason === 'no-channels' ? (
-          <div className="px-4 py-10 text-center">
-            <EmptyGlyph kind="channels" />
-            <p className="text-sm font-medium text-slate-700">No hay canales conectados</p>
-            <p className="mt-1 text-xs leading-relaxed text-slate-500">
-              Conectá WhatsApp o Instagram en Cuentas para ver chats de clientes.
-            </p>
-            <a
-              href="/config/social"
-              className="mt-3 inline-block rounded-lg bg-[#5b6cff] px-3 py-2 text-[12px] font-medium text-white hover:opacity-95"
-            >
-              Ir a Cuentas
-            </a>
-            {!demoMode && onLoadDemo ? (
-              <button
-                type="button"
-                onClick={onLoadDemo}
-                className="mt-3 block w-full text-[11px] font-medium text-[#5b6cff] hover:underline"
-              >
-                O cargar chats DEMO (locales)
-              </button>
-            ) : null}
-          </div>
+          <AuroraEmptyState
+            tone="neutral"
+            icon="∅"
+            title="No hay canales conectados"
+            description="Conectá WhatsApp o Instagram para ver acá los chats de tus clientes."
+            actions={
+              <>
+                <a href="/config/social" className={auroraButtonPrimary}>
+                  Ir a Canales
+                </a>
+                {!demoMode && onLoadDemo ? (
+                  <button type="button" onClick={onLoadDemo} className={auroraButtonSecondary}>
+                    Cargar chats DEMO (locales)
+                  </button>
+                ) : null}
+              </>
+            }
+          />
         ) : emptyReason === 'no-results' ? (
-          <div className="px-4 py-10 text-center">
-            <EmptyGlyph kind="results" />
-            <p className="text-sm font-medium text-slate-700">Sin resultados</p>
-            <p className="mt-1 text-xs text-slate-500">
-              Probá otra búsqueda, quitá etiquetas o cambiá el bucket.
-            </p>
-            <p className="mt-2 text-[10px] text-slate-400">Esc limpia el foco · ⌘K busca</p>
-          </div>
+          <AuroraEmptyState
+            tone="neutral"
+            icon="⌕"
+            title="Sin resultados"
+            description="Probá otra búsqueda, quitá etiquetas o cambiá de bandeja o de línea."
+          />
         ) : emptyReason === 'no-chats' ? (
-          <div className="px-4 py-10 text-center">
-            <EmptyGlyph kind="chats" />
-            <p className="text-sm font-medium text-slate-700">Todavía no hay chats</p>
-            <p className="mt-1 text-xs leading-relaxed text-slate-500">
-              Cuando un cliente escriba por WA o IG, aparece acá.
-            </p>
-            {!demoMode && onLoadDemo ? (
-              <button
-                type="button"
-                onClick={onLoadDemo}
-                className="mt-4 rounded-lg bg-[#e8ecff] px-3 py-2 text-[12px] font-medium text-[#5b6cff] hover:bg-[#dde3ff]"
-              >
-                Cargar chats DEMO
-              </button>
-            ) : null}
-          </div>
+          <AuroraEmptyState
+            icon="✓"
+            title="Todo al día"
+            description="No hay conversaciones abiertas. Cuando un cliente escriba por WhatsApp o Instagram, aparece acá."
+            actions={
+              <>
+                {selectedAccountId !== 'all' ? (
+                  <button
+                    type="button"
+                    onClick={() => onAccountFilter('all')}
+                    className={auroraButtonPrimary}
+                  >
+                    Ver todas las líneas
+                  </button>
+                ) : null}
+                {!demoMode && onLoadDemo ? (
+                  <button type="button" onClick={onLoadDemo} className={auroraButtonSecondary}>
+                    Cargar chats DEMO
+                  </button>
+                ) : null}
+              </>
+            }
+          />
         ) : (
           <ul className="divide-y divide-slate-50">
             {conversations.map((conv) => {
@@ -273,7 +248,7 @@ export function SoftConversationList({
                     data-soft-conv-key={key}
                     onClick={() => onSelect(conv)}
                     className={`flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors ${
-                      selected ? 'bg-[#f8faff] ring-1 ring-inset ring-[#5b6cff]/15' : 'hover:bg-slate-50/80'
+                      selected ? 'bg-[#F1F3FF] ring-1 ring-inset ring-[#5B6CFF]/20' : 'hover:bg-slate-50/80'
                     }`}
                   >
                     <div
@@ -313,7 +288,7 @@ export function SoftConversationList({
                           ) : null}
                         </p>
                         {unread > 0 ? (
-                          <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#5b6cff] px-1 text-[10px] font-bold text-white">
+                          <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#5B6CFF] px-1 text-[10px] font-bold text-white">
                             {unread > 9 ? '9+' : unread}
                           </span>
                         ) : null}

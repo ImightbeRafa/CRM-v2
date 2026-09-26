@@ -58,15 +58,15 @@ export function SoftCopilotRail({
   onResumeAi,
 }: SoftCopilotRailProps) {
   return (
-    <aside className="hidden h-full w-[268px] shrink-0 flex-col overflow-hidden border-l border-slate-100 bg-[#fafbfd] xl:flex">
+    <aside className="hidden h-full w-[268px] shrink-0 flex-col overflow-hidden border-l border-slate-200/70 bg-white xl:flex">
       <div className="p-3">
-        <div className="flex rounded-[10px] bg-white p-1 shadow-sm ring-1 ring-slate-100">
+        <div className="flex rounded-xl bg-slate-50 p-1 ring-1 ring-slate-200/70">
           <button
             type="button"
             onClick={() => onTabChange('detalle')}
             className={`flex-1 rounded-lg py-1.5 text-xs transition-colors ${
               tab === 'detalle'
-                ? 'bg-indigo-50 font-semibold text-indigo-700'
+                ? 'bg-white font-semibold text-[#4A46E5] shadow-sm'
                 : 'text-slate-400'
             }`}
           >
@@ -77,7 +77,7 @@ export function SoftCopilotRail({
             onClick={() => onTabChange('copilot')}
             className={`flex-1 rounded-lg py-1.5 text-xs transition-colors ${
               tab === 'copilot'
-                ? 'bg-indigo-50 font-semibold text-indigo-700'
+                ? 'bg-white font-semibold text-[#4A46E5] shadow-sm'
                 : 'text-slate-400'
             }`}
           >
@@ -89,20 +89,20 @@ export function SoftCopilotRail({
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         {tab === 'copilot' ? (
           <div className="space-y-4">
-            <div className="rounded-[14px] bg-white p-3 shadow-sm ring-1 ring-slate-100">
-              <p className="text-[11px] font-medium text-slate-400">Estado agente</p>
+            <div className="rounded-2xl bg-white p-3 ring-1 ring-slate-200/70">
+              <p className="text-[11px] font-medium text-slate-400">Estado del agente</p>
               <p className="mt-1 text-sm font-semibold text-slate-900">
                 {agentModeLabel(agentMode)}
               </p>
               <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-                La IA responde sola. Vos monitoreás, pausás o tomás el control.
+                El agente responde solo. Vos monitoreás, pausás o tomás el control.
               </p>
               <div className="mt-3 flex flex-col gap-1.5">
                 <button
                   type="button"
                   disabled={!conversation || agentMode === 'human'}
                   onClick={onTakeOver}
-                  className="w-full rounded-lg bg-[#5b6cff] py-2 text-xs font-medium text-white disabled:opacity-40"
+                  className="w-full rounded-lg bg-[#5B6CFF] py-2 text-xs font-medium text-white disabled:opacity-40"
                 >
                   Tomar control
                 </button>
@@ -112,7 +112,7 @@ export function SoftCopilotRail({
                   onClick={onPauseAi}
                   className="w-full rounded-lg bg-slate-100 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-40"
                 >
-                  Pausar IA
+                  Pausar
                 </button>
                 <button
                   type="button"
@@ -126,10 +126,10 @@ export function SoftCopilotRail({
             </div>
 
             <div>
-              <p className="text-[11px] font-medium text-slate-400">Log de herramientas</p>
+              <p className="text-[11px] font-medium text-slate-400">Actividad del agente</p>
               {toolLog.length === 0 ? (
                 <p className="mt-2 rounded-lg bg-white px-3 py-3 text-xs text-slate-400 ring-1 ring-slate-100">
-                  Sin acciones aún. La IA registra tools acá.
+                  Sin acciones aún. Las acciones del agente se registran acá.
                 </p>
               ) : (
                 <ul className="mt-2 space-y-1.5">
@@ -251,7 +251,7 @@ export function SoftCopilotRail({
               </>
             ) : (
               <div className="px-1 py-8 text-center">
-                <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-[#e8ecff] text-sm font-semibold text-[#5b6cff]">
+                <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-[#EEF0FF] text-sm font-semibold text-[#5B6CFF]">
                   i
                 </div>
                 <p className="text-xs text-slate-400">Seleccioná un chat para ver el detalle.</p>

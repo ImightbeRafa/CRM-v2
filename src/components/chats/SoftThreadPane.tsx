@@ -23,6 +23,11 @@ import {
   softAiOutboundLabel,
 } from '@/lib/soft-ai/agent-inbox-projection'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
+import {
+  AuroraEmptyState,
+  AuroraThreadSkeleton,
+  ChannelDownBanner,
+} from '@/components/aurora/states'
 import { formatThreadChannelMeta, platformFullName } from '@/lib/social-account-identity'
 import {
   CHAT_INBOX_V2_THREAD_RENDER_WINDOW,
@@ -74,6 +79,10 @@ interface SoftThreadPaneProps {
   onPauseAi?: () => void
   onResumeAi?: () => void
   aiBusy?: boolean
+  /** Messages for the selected chat are still loading (STATE-01 skeleton). */
+  threadLoading?: boolean
+  /** Selected line is down / needs repair (STATE-01 canal caído). */
+  channelDownMessage?: string | null
 }
 
 function statusLabel(status: ConversationStatus) {
@@ -185,6 +194,8 @@ export function SoftThreadPane({
   onPauseAi,
   onResumeAi,
   aiBusy,
+  threadLoading,
+  channelDownMessage,
 }: SoftThreadPaneProps) {
   const [pickerOpenLocal, setPickerOpenLocal] = useState(false)
   const pickerOpen = showTemplatePicker ?? pickerOpenLocal
@@ -200,17 +211,13 @@ export function SoftThreadPane({
 
   if (!conversation) {
     return (
-      <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white px-6 text-center">
-        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8ecff] text-lg font-semibold text-[#5b6cff]">
-          ⌘
-        </div>
-        <p className="text-base font-medium text-slate-700">Seleccioná un chat</p>
-        <p className="mt-1 max-w-sm text-sm text-slate-500">
-          Elegí una conversación para monitorear la IA, ver el log de tools o tomar el control.
-        </p>
-        <p className="mt-3 text-[11px] text-slate-400">
-          ↑↓ navegar · Enter abrir · Esc volver · ⌘K buscar
-        </p>
+      <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-[#FAFBFC] px-6 text-center">
+        <AuroraEmptyState
+          icon="💬"
+          title="Seleccioná un chat"
+          description="Elegí una conversación para leer el hilo, responder o tomar el control del agente."
+        />
+        <p className="text-[11px] text-slate-400">↑↓ navegar · Enter abrir · Esc volver · ⌘K buscar</p>
       </section>
     )
   }
@@ -239,7 +246,7 @@ export function SoftThreadPane({
     .join(' · ')
 
   const closedWindow = conversation.platform === 'whatsapp' && !windowOpen
-  // F37-03: unlock composer whenever paused / human takeover (incl. Soft DEMO).
+  // F37-03: unlock composer whenever paused / human takeover (incl. DEMO).
   const composerEnabled = isSoftHumanComposerEnabled(agentMode)
 
   function openPicker() {
@@ -255,14 +262,15 @@ export function SoftThreadPane({
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
-      <header className="shrink-0 border-b border-slate-100 px-4 py-3 sm:px-5">
+      {channelDownMessage ? <ChannelDownBanner message={channelDownMessage} /> : null}
+      <header className="shrink-0 border-b border-slate-200/70 px-4 py-3 sm:px-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             {onBack ? (
               <button
                 type="button"
                 onClick={onBack}
-                className="mb-1 text-xs font-medium text-[#5b6cff]"
+                className="mb-1 text-xs font-medium text-[#5B6CFF]"
               >
                 ← Chats
               </button>
@@ -291,7 +299,7 @@ export function SoftThreadPane({
               >
                 {statusLabel(conversation.status)}
               </span>
-              <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-700">
+              <span className="rounded-md bg-[#EEF0FF] px-2 py-0.5 text-[10px] font-medium text-[#4A46E5]">
                 {agentModeLabel(agentMode)}
               </span>
               {conversation.tags.map(tagChip)}
@@ -301,7 +309,7 @@ export function SoftThreadPane({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200"
+              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
             >
               Cerrar
             </button>
@@ -312,7 +320,7 @@ export function SoftThreadPane({
       <div
         ref={messagesContainerRef}
         onScroll={onMessagesScroll}
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-5"
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#FAFBFC] px-4 py-4 sm:px-5"
       >
         {hasMoreMessages && onLoadOlder ? (
           <div className="flex justify-center pb-1">
@@ -327,11 +335,13 @@ export function SoftThreadPane({
           </div>
         ) : null}
 
-        {renderedMessages.length === 0 ? (
+        {renderedMessages.length === 0 && threadLoading ? (
+          <AuroraThreadSkeleton />
+        ) : renderedMessages.length === 0 ? (
           <div className="py-12 text-center">
             <p className="text-sm text-slate-400">Sin mensajes en este chat</p>
             <p className="mt-1 text-[11px] text-slate-400">
-              La IA responde cuando llegue el primer inbound.
+              Los mensajes nuevos aparecen acá apenas lleguen.
             </p>
           </div>
         ) : (
@@ -361,9 +371,9 @@ export function SoftThreadPane({
                     className={`rounded-[14px] px-3.5 py-2.5 text-[13px] ${
                       outbound
                         ? softAi
-                          ? 'bg-indigo-100 text-indigo-950'
-                          : 'bg-blue-100 text-blue-950'
-                        : 'bg-slate-100 text-slate-900'
+                          ? 'bg-[#F0EEFF] text-slate-900 ring-1 ring-[#5B6CFF]/15'
+                          : 'bg-[#E8F0FE] text-slate-900 ring-1 ring-blue-200/60'
+                        : 'bg-white text-slate-900 ring-1 ring-slate-200/80'
                     }`}
                   >
                     {showMedia ? <SoftThreadMedia msg={msg} /> : null}
@@ -388,16 +398,26 @@ export function SoftThreadPane({
                           : softAiOutboundLabel(msg.metadata)
                       ) : failed || msg.deliveryStatus === 'failed' ? (
                         <>
-                          Falló ✕{' '}
+                          No enviado ⓘ{' '}
                           <button
                             type="button"
                             onClick={() => {
                               if (onRetryMessage) onRetryMessage(msg.id)
                               else onRetry?.()
                             }}
-                            className="underline underline-offset-2"
+                            className="font-semibold text-[#5B6CFF] underline-offset-2 hover:underline"
                           >
                             Reintentar
+                          </button>
+                          {' · '}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void navigator.clipboard?.writeText(msg.content || '')
+                            }}
+                            className="text-slate-500 underline-offset-2 hover:underline"
+                          >
+                            Copiar texto
                           </button>
                         </>
                       ) : (
@@ -413,65 +433,65 @@ export function SoftThreadPane({
 
         {conversation.pendingSuggestionText ? (
           <div
-            className="rounded-[14px] bg-violet-50 px-4 py-3 text-[12px] text-violet-950 ring-1 ring-violet-100"
+            className="rounded-2xl bg-[#F0EEFF] px-4 py-3 text-[12px] text-slate-900 ring-1 ring-[#5B6CFF]/15"
             data-testid="soft-ai-suggestion"
           >
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
-              Sugerencia de IA
+              Sugerencia del agente
             </p>
             <p className="whitespace-pre-wrap">{conversation.pendingSuggestionText}</p>
             <p className="mt-2 text-[10px] text-violet-600">
-              Solo lectura en A1 — Usar / Editar / Descartar llegan en A3.
+              Solo lectura por ahora: usá el texto como referencia al responder.
             </p>
           </div>
         ) : null}
 
         {conversation.isDemo ? (
           <div className="rounded-[14px] bg-amber-50 px-4 py-2.5 text-[11px] text-amber-900 ring-1 ring-amber-100">
-            Chat <span className="font-semibold">DEMO</span> · local · IA sin Meta · quitalo desde
-            la lista
+            Chat <span className="font-semibold">DEMO</span> · local · sin conexión a Meta · quitalo
+            desde la lista
           </div>
         ) : null}
 
-        <div className="sticky bottom-0 rounded-[14px] bg-indigo-50/95 px-4 py-3 text-[12px] text-indigo-950 shadow-[0_-6px_16px_rgba(238,242,255,0.85)] ring-1 ring-indigo-100/80 backdrop-blur-[2px]">
+        <div className="sticky bottom-0 rounded-2xl bg-white px-4 py-3 text-[12px] text-slate-800 shadow-[0_-6px_16px_rgba(250,251,252,0.9)] ring-1 ring-[#5B6CFF]/30">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="font-semibold text-indigo-800">
-              Monitor · {agentModeLabel(agentMode)}
-              {aiBusy ? ' · pensando…' : ''}
+            <p className="font-semibold text-slate-900">
+              Agente · {agentModeLabel(agentMode)}
+              {aiBusy ? ' · procesando…' : ''}
             </p>
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
+                disabled={agentMode === 'paused'}
+                onClick={onPauseAi}
+                className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Pausar
+              </button>
+              <button
+                type="button"
                 disabled={agentMode === 'human'}
                 onClick={onTakeOver}
-                className="rounded-lg bg-[#5b6cff] px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-40"
+                className="rounded-lg bg-[#5B6CFF] px-2.5 py-1 text-[11px] font-medium text-white hover:bg-[#4A5AF0] disabled:opacity-40"
               >
                 Tomar control
               </button>
               <button
                 type="button"
-                disabled={agentMode === 'paused'}
-                onClick={onPauseAi}
-                className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 disabled:opacity-40"
-              >
-                Pausar IA
-              </button>
-              <button
-                type="button"
                 disabled={agentMode === 'ai_active'}
                 onClick={onResumeAi}
-                className="rounded-lg bg-emerald-100 px-2.5 py-1 text-[11px] font-medium text-emerald-900 disabled:opacity-40"
+                className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-100 hover:bg-emerald-100 disabled:opacity-40"
               >
                 Reanudar IA
               </button>
             </div>
           </div>
-          <p className="mt-1.5 leading-relaxed text-indigo-900/80">
+          <p className="mt-1.5 leading-relaxed text-slate-500">
             {agentMode === 'ai_active'
-              ? 'IA responde de punta a punta (tools + reply). Monitoreá el log en el rail.'
+              ? 'El agente responde solo. Pausalo o tomá el control para intervenir.'
               : agentMode === 'paused'
-                ? 'IA pausada — no auto-responde. Podés escribir vos o reanudar.'
-                : 'Control humano — la IA no responde hasta que reanudés.'}
+                ? 'Agente en pausa — no responde solo. Podés escribir vos o reanudarlo.'
+                : 'Control humano — el agente no responde hasta que lo reanudes.'}
           </p>
         </div>
 
@@ -479,7 +499,7 @@ export function SoftThreadPane({
       </div>
 
       {closedWindow || showTemplateCta ? (
-        <div className="shrink-0 border-t border-slate-100 px-4 py-4 sm:px-5">
+        <div className="shrink-0 border-t border-slate-200/70 px-4 py-4 sm:px-5">
           <div className="rounded-2xl bg-red-50 px-4 py-4 text-center">
             <p className="text-sm font-semibold text-red-800">Ventana de 24h cerrada</p>
             <p className="mt-1 text-xs text-red-700">
@@ -487,7 +507,7 @@ export function SoftThreadPane({
             </p>
             <button
               type="button"
-              className="mt-3 rounded-xl bg-[#5b6cff] px-4 py-2.5 text-sm font-medium text-white"
+              className="mt-3 rounded-xl bg-[#5B6CFF] px-4 py-2.5 text-sm font-medium text-white"
               onClick={openPicker}
             >
               Elegir plantilla…
@@ -562,10 +582,10 @@ export function SoftThreadPane({
           ) : null}
         </div>
       ) : (
-        <div className="shrink-0 border-t border-slate-100 px-4 py-3 sm:px-5">
+        <div className="shrink-0 border-t border-slate-200/70 px-4 py-3 sm:px-5">
           {!composerEnabled ? (
             <p className="mb-2 text-[11px] text-slate-500">
-              Composer humano desactivado mientras la IA está activa — usá Tomar control o Pausar.
+              El agente está respondiendo — usá Tomar control o Pausar para escribir vos.
             </p>
           ) : null}
 
@@ -606,15 +626,15 @@ export function SoftThreadPane({
                   ? compact
                     ? 'Mensaje… Enter envía'
                     : 'Escribí un mensaje… Enter envía · Shift+Enter nueva línea'
-                  : 'Tomá control o pausá la IA para escribir'
+                  : 'Tomá control o pausá el agente para escribir'
               }
               disabled={sending || !composerEnabled}
-              className="min-w-0 flex-1 resize-none rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5b6cff]/35 disabled:opacity-60"
+              className="min-w-0 flex-1 resize-none rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/35 disabled:opacity-60"
             />
             <button
               type="submit"
               disabled={sending || !messageInput.trim() || !composerEnabled}
-              className="shrink-0 rounded-xl bg-[#5b6cff] px-4 py-3 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+              className="shrink-0 rounded-xl bg-[#5B6CFF] px-4 py-3 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
             >
               {sending ? '…' : 'Enviar'}
             </button>

@@ -54,6 +54,7 @@ import {
   writeAgentStateMap,
   type SoftAiAgentStateMap,
 } from '@/lib/soft-ai/agent-state'
+import { lineHealth, summarizeLineCounts } from '@/lib/chat-line-filter'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
@@ -81,6 +82,8 @@ export function SoftCopilotInboxV2() {
   const [search, setSearch] = useState('')
   const [activeTag, setActiveTag] = useState<SoftTag | null>(null)
   const [loading, setLoading] = useState(true)
+  const [listError, setListError] = useState(false)
+  const [threadLoadingId, setThreadLoadingId] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [messageInput, setMessageInput] = useState('')
   const [sendError, setSendError] = useState<string | null>(null)
@@ -183,6 +186,7 @@ export function SoftCopilotInboxV2() {
       const head = BigInt(parsed.data.maxRevision)
       if (head > maxRevisionRef.current) maxRevisionRef.current = head
     }
+    setListError(false)
     setLastSyncAt(Date.now())
     lastFullReconcileRef.current = Date.now()
   }, [])
@@ -271,7 +275,7 @@ export function SoftCopilotInboxV2() {
     }
   }, [applyThreadTail])
 
-  const loadThreadMessages = useCallback(async (conversationId: string) => {
+  const fetchThreadMessages = useCallback(async (conversationId: string) => {
     const qs = `limit=${CHAT_INBOX_V2_THREAD_FETCH_LIMIT}`
     const res = await fetch(
       `/api/chat/conversations/${encodeURIComponent(conversationId)}/messages?${qs}`,
@@ -312,6 +316,15 @@ export function SoftCopilotInboxV2() {
     })
   }, [])
 
+  const loadThreadMessages = useCallback(async (conversationId: string) => {
+    setThreadLoadingId(conversationId)
+    try {
+      await fetchThreadMessages(conversationId)
+    } finally {
+      setThreadLoadingId((cur) => (cur === conversationId ? null : cur))
+    }
+  }, [fetchThreadMessages])
+
   useEffect(() => {
     void (async () => {
       setLoading(true)
@@ -320,11 +333,24 @@ export function SoftCopilotInboxV2() {
       try {
         await fetchListPage({ replace: true })
       } catch {
-        // keep empty map
+        setListError(true)
       }
       setLoading(false)
     })()
   }, [fetchAccounts, fetchListPage, runLocalImportOnce])
+
+  async function retryInitialLoad() {
+    setLoading(true)
+    setListError(false)
+    try {
+      await fetchAccounts()
+      await fetchListPage({ replace: true })
+    } catch {
+      setListError(true)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     const tick = () => {
@@ -472,6 +498,16 @@ export function SoftCopilotInboxV2() {
     () => conversations.filter((c) => c.status !== 'hecho').length,
     [conversations],
   )
+
+  const lineCounts = useMemo(() => summarizeLineCounts(conversations), [conversations])
+
+  const selectedAccountHealth = useMemo(() => {
+    if (!selectedConversation) return null
+    const account = accounts.find((a) => a.id === selectedConversation.socialAccountId)
+    if (!account) return null
+    const health = lineHealth(account)
+    return health.needsAction ? { account, health } : null
+  }, [accounts, selectedConversation])
 
   const whatsappCount = accounts.filter((a) => a.platform === 'whatsapp').length
   const instagramCount = accounts.filter((a) => a.platform === 'instagram').length
@@ -890,10 +926,22 @@ export function SoftCopilotInboxV2() {
     onPauseAi: () => void setAgentControl('pause'),
     onResumeAi: () => void setAgentControl('resume'),
     aiBusy: controlBusy,
+    threadLoading: Boolean(selectedConversationId && threadLoadingId === selectedConversationId),
+    channelDownMessage: selectedAccountHealth
+      ? `${accountDisplayLabel(selectedAccountHealth.account)} · ${selectedAccountHealth.health.label.toLowerCase()}. Los mensajes de este chat pueden no enviarse.`
+      : null,
   }
 
   return (
     <AuroraShell fullBleed>
+      <header className="flex shrink-0 items-end justify-between gap-4 border-b border-slate-200/70 bg-white px-5 py-3">
+        <div className="min-w-0">
+          <h1 className="text-[18px] font-semibold leading-tight text-slate-900">Chats</h1>
+          <p className="truncate text-[12px] text-slate-500">
+            Bandeja unificada · WhatsApp e Instagram
+          </p>
+        </div>
+      </header>
       <SoftTokenHealthBanners accounts={accounts} />
       <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-white">
         <SoftInboxBuckets
@@ -919,6 +967,10 @@ export function SoftCopilotInboxV2() {
             selectedAccountId={accountFilter}
             onAccountFilter={setAccountFilter}
             openCount={openCount}
+            countsByAccount={lineCounts.byAccount}
+            totalOpen={lineCounts.total.open}
+            loadError={listError}
+            onRetryLoad={() => void retryInitialLoad()}
             syncAgeSeconds={syncAgeSeconds}
             loading={loading}
             emptyReason={emptyReason}
@@ -958,6 +1010,10 @@ export function SoftCopilotInboxV2() {
               selectedAccountId={accountFilter}
               onAccountFilter={setAccountFilter}
               openCount={openCount}
+              countsByAccount={lineCounts.byAccount}
+              totalOpen={lineCounts.total.open}
+              loadError={listError}
+              onRetryLoad={() => void retryInitialLoad()}
               syncAgeSeconds={syncAgeSeconds}
               loading={loading}
               emptyReason={emptyReason}

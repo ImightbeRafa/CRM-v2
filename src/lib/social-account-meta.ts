@@ -40,6 +40,32 @@ export function parseSocialRefreshToken(refreshToken?: string | null): {
   return { whatsappBusinessAccountId: null, pageId: null }
 }
 
+/** Exact refreshToken values that belong to a WABA (canonical + legacy numeric). */
+export function whatsappRefreshTokensForWabaId(wabaId?: string | null): string[] {
+  const id = (wabaId || '').trim()
+  if (!id) return []
+  const tokens = [`${WABA_PREFIX}${id}`]
+  if (/^\d{5,}$/.test(id)) {
+    tokens.push(id)
+  }
+  return tokens
+}
+
+/** Prisma where for PARTNER_REMOVED — exact `in`, never prefix `startsWith`. */
+export function partnerRemovedWhatsAppWhere(wabaId?: string | null): {
+  platform: 'whatsapp'
+  isActive: true
+  refreshToken: { in: string[] }
+} | null {
+  const tokens = whatsappRefreshTokensForWabaId(wabaId)
+  if (!tokens.length) return null
+  return {
+    platform: 'whatsapp',
+    isActive: true,
+    refreshToken: { in: tokens },
+  }
+}
+
 /** Match an account whose refreshToken encodes `page:<pageId>`. */
 export function matchAccountByEncodedPageId<T extends { refreshToken?: string | null }>(
   accounts: T[],

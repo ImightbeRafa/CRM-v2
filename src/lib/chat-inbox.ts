@@ -37,6 +37,14 @@ export interface ChatConversation {
 
 export const CHAT_POLL_INTERVAL_MS = 4000
 
+/** Tagged coexistence outbound rows that used to persist the customer in `from`. */
+export function isLegacyCoexistenceOutboundPeer(meta: Record<string, unknown> | null | undefined): boolean {
+  if (!meta) return false
+  if (meta.smbEcho === true || meta.historical === true) return true
+  const field = typeof meta.webhookField === 'string' ? meta.webhookField : ''
+  return field === 'history' || field === 'smb_message_echoes'
+}
+
 /** Peer id for conversation grouping / reply recipient. */
 export function getConversationPeerId(msg: {
   direction: string
@@ -51,7 +59,9 @@ export function getConversationPeerId(msg: {
     return from || waId || 'unknown'
   }
   if (msg.direction === 'outbound') {
-    return to || 'unknown'
+    if (to) return to
+    if (isLegacyCoexistenceOutboundPeer(meta) && from) return from
+    return 'unknown'
   }
   return from || to || waId || 'unknown'
 }

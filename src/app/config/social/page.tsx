@@ -11,6 +11,7 @@ import {
   isWaEmbeddedSignupMessage,
   parseWaDirectOauthMessage,
   shouldIgnoreWaSessionEvent,
+  waSignupReadyToExchange,
   type WaEmbeddedSignupMessage,
 } from '@/lib/whatsapp-embedded-signup'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
@@ -114,9 +115,7 @@ export default function SocialConfigPage() {
     /** Set when FINISH arrives while an exchange is in flight — retry after. */
     retryAfter?: boolean
   }>({})
-  const tryExchangeWhatsAppSignupRef = useRef<(forceTokenOnly?: boolean) => Promise<void>>(
-    async () => {},
-  )
+  const tryExchangeWhatsAppSignupRef = useRef<() => Promise<void>>(async () => {})
 
   const META_WA_APP_ID =
     (process.env.NEXT_PUBLIC_META_WA_APP_ID as string | undefined) ||
@@ -173,7 +172,7 @@ export default function SocialConfigPage() {
     }
   }
 
-  async function tryExchangeWhatsAppSignup(forceTokenOnly = false) {
+  async function tryExchangeWhatsAppSignup() {
     const pending = waSignupPendingRef.current
     if (pending.exchanging) {
       // FINISH (or a second callback) arrived while Graph exchange is in flight.
@@ -183,18 +182,12 @@ export default function SocialConfigPage() {
       return
     }
 
-    const hasCred = Boolean(pending.code || pending.accessToken)
-    if (!hasCred) return
-
-    const assets = extractWaEmbeddedSignupAssets(pending.message || undefined)
-    const hasAssets = Boolean(assets.phoneNumberId || assets.wabaId)
-    // Prefer correlated exchange (code + session). Token-only only when FB.login
-    // finished and we still have no session (legacy / waiting path).
-    if (!hasAssets && !forceTokenOnly) return
-    if (!hasAssets && forceTokenOnly && pending.message) return
+    // Single-use codes are never spent until FINISH phone/WABA assets exist.
+    if (!waSignupReadyToExchange(pending)) return
 
     pending.exchanging = true
     pending.retryAfter = false
+    setConnectingWhatsApp(true)
     try {
       const exchangeRes = await fetch('/api/auth/whatsapp/exchange', {
         method: 'POST',
@@ -207,8 +200,9 @@ export default function SocialConfigPage() {
       })
       const exchangeData = await exchangeRes.json().catch(() => ({}))
 
-      // Soft exchange burns the one-time code server-side. Keep the returned
-      // business token so a later FINISH postMessage can complete the upsert.
+      // A ready exchange (assets present) can still hit waitingForPhoneNumber when
+      // Graph has no phone yet. The code is burned server-side, so keep the returned
+      // business token for a later FINISH payload.
       if (
         exchangeData.waitingForPhoneNumber &&
         typeof exchangeData.accessToken === 'string' &&
@@ -218,8 +212,8 @@ export default function SocialConfigPage() {
         pending.code = null
       }
 
-      if (exchangeData.waitingForPhoneNumber && !hasAssets) {
-        // Keep pending credentials; session postMessage may still arrive.
+      if (exchangeData.waitingForPhoneNumber) {
+        // Keep pending credentials; another FINISH payload may still arrive.
         await applyWhatsAppExchangeResult(exchangeRes, exchangeData)
         return
       }
@@ -234,14 +228,10 @@ export default function SocialConfigPage() {
     } finally {
       pending.exchanging = false
       const again = waSignupPendingRef.current
-      const againAssets = extractWaEmbeddedSignupAssets(again.message || undefined)
-      const canRetry =
-        Boolean(again.retryAfter) &&
-        Boolean(again.code || again.accessToken) &&
-        Boolean(againAssets.phoneNumberId || againAssets.wabaId)
+      const canRetry = Boolean(again.retryAfter) && waSignupReadyToExchange(again)
       again.retryAfter = false
       if (canRetry) {
-        void tryExchangeWhatsAppSignupRef.current(false)
+        void tryExchangeWhatsAppSignupRef.current()
         return
       }
       setConnectingWhatsApp(false)
@@ -320,9 +310,9 @@ export default function SocialConfigPage() {
               return
             }
             waSignupPendingRef.current.code = code
-            // Never forceTokenOnly here — exchanging a single-use code without
-            // FINISH phone/WABA assets cannot complete the connection.
-            void tryExchangeWhatsAppSignupRef.current(false)
+            // Never spend the single-use code until FINISH phone/WABA assets exist;
+            // current() no-ops via waSignupReadyToExchange when assets are missing.
+            void tryExchangeWhatsAppSignupRef.current()
           }
         }
         return
@@ -346,7 +336,7 @@ export default function SocialConfigPage() {
         }
 
         waSignupPendingRef.current.message = data as WaEmbeddedSignupMessage
-        void tryExchangeWhatsAppSignupRef.current(false)
+        void tryExchangeWhatsAppSignupRef.current()
       } catch {
         // ignore non-JSON SDK noise
       }
@@ -447,28 +437,18 @@ export default function SocialConfigPage() {
             waSignupPendingRef.current.code = code || null
             waSignupPendingRef.current.accessToken = token || null
 
-            // Prefer correlated exchange (code/token + FINISH session assets).
-            // Embedded Signup codes are single-use: wait longer for Meta's
-            // WA_EMBEDDED_SIGNUP postMessage before any soft token-only exchange.
-            if (waSignupPendingRef.current.message) {
-              await tryExchangeWhatsAppSignup(false)
+            // Never spend a single-use Embedded Signup code until FINISH assets exist.
+            // A late WA_EMBEDDED_SIGNUP message triggers the exchange from onMessage.
+            if (waSignupReadyToExchange(waSignupPendingRef.current)) {
+              await tryExchangeWhatsAppSignup()
               return
             }
 
-            for (let i = 0; i < 20; i++) {
-              await new Promise((r) => setTimeout(r, 250))
-              if (waSignupPendingRef.current.message) {
-                await tryExchangeWhatsAppSignup(false)
-                return
-              }
-            }
-
-            // Last resort: soft exchange. Server returns accessToken so a late
-            // FINISH can still complete without the burned code.
             setStatusMessage(
-              'Esperando el número/WABA de Meta… Si la ventana ya cerró, completá el registro o usá vínculo manual.',
+              'Esperando confirmación de Meta (número o WABA). Completá el registro en la ventana…',
             )
-            await tryExchangeWhatsAppSignup(true)
+            // Settle the spinner; a late FINISH message re-arms it via tryExchange.
+            setConnectingWhatsApp(false)
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : 'Error inesperado'
             setStatusMessage(message)

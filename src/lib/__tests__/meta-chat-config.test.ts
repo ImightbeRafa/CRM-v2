@@ -17,6 +17,8 @@ import {
   encodeInstagramRefreshToken,
   encodeWhatsAppRefreshToken,
   parseSocialRefreshToken,
+  partnerRemovedWhatsAppWhere,
+  whatsappRefreshTokensForWabaId,
 } from '../social-account-meta'
 
 test('Instagram OAuth scopes include Page listing required by the callback', () => {
@@ -110,6 +112,12 @@ test('social refreshToken encodes WABA and Page ids without access tokens', () =
     whatsappBusinessAccountId: '445566',
     pageId: null,
   })
+  assert.deepEqual(whatsappRefreshTokensForWabaId('445566'), ['waba:445566', '445566'])
+  assert.deepEqual(partnerRemovedWhatsAppWhere('445566')?.refreshToken.in, [
+    'waba:445566',
+    '445566',
+  ])
+  assert.equal(partnerRemovedWhatsAppWhere('445566')?.refreshToken.in.includes('waba:4455667'), false)
 })
 
 test('getInstagramLoginConfigId reads dedicated env only (not WA config)', () => {

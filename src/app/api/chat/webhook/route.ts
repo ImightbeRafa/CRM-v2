@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import {
+  buildWebhookStoredMetadata,
   parseMetaChatPayload,
   type ParsedMetaChatMessage,
   type ParsedMetaChatReceipt,
@@ -11,7 +12,7 @@ import {
   maskMetaSecret,
   verifyMetaWebhookSignature,
 } from '@/lib/meta-api'
-import { getPageIdFromMetaChatMetadata } from '@/lib/social-account-meta'
+import { getPageIdFromMetaChatMetadata, partnerRemovedWhatsAppWhere } from '@/lib/social-account-meta'
 import { resolveWebhookSocialAccount } from '@/lib/chat-webhook-account'
 import { chatWebhookInvalidSignatureRateLimit } from '@/lib/rate-limit'
 import { enqueueSoftAiAfterInbound } from '@/lib/soft-ai/inbound-hook'
@@ -124,13 +125,7 @@ async function storeMessage(event: ParsedMetaChatMessage) {
     mediaMimeType: event.mediaMimeType || null,
     mediaFilename: event.mediaFilename || null,
     metadata: {
-      ...event.metadata,
-      from: direction === 'inbound' ? event.senderId : undefined,
-      to: direction === 'outbound' ? event.senderId : undefined,
-      name: event.senderName,
-      platform: event.platform,
-      providerMessageId: event.providerMessageId,
-      direction,
+      ...buildWebhookStoredMetadata(event),
       providerMediaId: event.providerMediaId,
       mediaMimeType: event.mediaMimeType,
       mediaFilename: event.mediaFilename,
@@ -291,14 +286,17 @@ export async function POST(request: NextRequest) {
       for (const ev of parsed.accountEvents) {
         if (ev.event !== 'PARTNER_REMOVED' || !ev.wabaId) continue
         try {
-          const wabaPrefix = `waba:${ev.wabaId}`
+          const where = partnerRemovedWhatsAppWhere(ev.wabaId)
+          if (!where) continue
           const updated = await db.socialAccount.updateMany({
-            where: {
-              platform: 'whatsapp',
-              isActive: true,
-              refreshToken: { startsWith: wabaPrefix },
+            where,
+            data: {
+              isActive: false,
+              disconnectedAt: new Date(),
+              tokenStatus: 'revoked',
+              lastErrorCode: 'PARTNER_REMOVED',
+              lastErrorAt: new Date(),
             },
-            data: { isActive: false, disconnectedAt: new Date(), tokenStatus: 'revoked', lastErrorCode: 'PARTNER_REMOVED', lastErrorAt: new Date() },
           })
           console.warn('[chat/webhook][POST] PARTNER_REMOVED deactivated WhatsApp accounts', {
             wabaId: ev.wabaId,

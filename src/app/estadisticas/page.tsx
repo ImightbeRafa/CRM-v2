@@ -1,7 +1,8 @@
 import { requirePermission } from "@/lib/auth-helpers"
-import EstadisticasDashboard from "./components/EstadisticasDashboard";
-import { AppShell } from "@/app/components/AppShell";
-import { readTenantUiReadiness } from '@/lib/feature-flags';
+import { readTenantUiReadiness } from '@/lib/feature-flags'
+import { AuroraShell } from '@/components/aurora/AuroraShell'
+import { AuroraMobileNav } from '@/components/aurora/AuroraMobileNav'
+import { AuroraStatsDashboard } from '@/components/aurora/estadisticas/AuroraStatsDashboard'
 
 export default async function EstadisticasPage() {
   const { session } = await requirePermission('view_statistics')
@@ -11,10 +12,8 @@ export default async function EstadisticasPage() {
     : { statistics: { enabled: false, mode: 'observe' as const } };
 
   return (
-    <AppShell>
-      <div className="w-full px-3 md:px-4 lg:px-6 py-3 md:py-4">
-        <EstadisticasDashboard statisticsV2={readiness.statistics} />
-      </div>
-    </AppShell>
+    <AuroraShell bottomNav={<AuroraMobileNav />}>
+      <AuroraStatsDashboard statistics={readiness.statistics} />
+    </AuroraShell>
   );
 }

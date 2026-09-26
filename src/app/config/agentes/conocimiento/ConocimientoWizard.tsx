@@ -45,9 +45,22 @@ export type ConocimientoWizardProps = {
   cardId?: string | null
   /** When set, back stays in-page (no route remount). */
   onBack?: () => void
+  /** `inline`: rendered inside the agent's Conocimiento tab (no page chrome, no back link, no sources list). */
+  variant?: 'page' | 'inline'
+  /** Agent that approved sources get bound to. Defaults to the first agent (standalone page only). */
+  agentId?: string | null
+  /** Called after a draft is created, approved or rejected so the host can reload its lists. */
+  onChanged?: () => void
 }
 
-export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardProps = {}) {
+export function ConocimientoWizardInner({
+  cardId,
+  onBack,
+  variant = 'page',
+  agentId: agentIdProp,
+  onChanged,
+}: ConocimientoWizardProps = {}) {
+  const inline = variant === 'inline'
   const router = useRouter()
   const search = useSearchParams()
   const { data: session } = useSession()
@@ -64,7 +77,8 @@ export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardPr
   const [sourceId, setSourceId] = useState<string | null>(null)
   const [sources, setSources] = useState<SourceRow[]>([])
   const [schemaReady, setSchemaReady] = useState(true)
-  const [agentId, setAgentId] = useState<string | null>(null)
+  const [firstAgentId, setFirstAgentId] = useState<string | null>(null)
+  const agentId = agentIdProp ?? firstAgentId
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [okMsg, setOkMsg] = useState<string | null>(null)
@@ -76,24 +90,26 @@ export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardPr
       onBack()
       return
     }
-    router.push('/config?tab=agentes')
+    router.push('/config?tab=agentes&seccion=conocimiento')
   }, [onBack, router])
 
   const load = useCallback(async () => {
     try {
       const [kRes, aRes] = await Promise.all([
         fetch('/api/chat/knowledge'),
-        fetch('/api/chat/agents'),
+        agentIdProp ? Promise.resolve(null) : fetch('/api/chat/agents'),
       ])
       const kData = await kRes.json()
-      const aData = await aRes.json()
       setSchemaReady(kData.schemaReady !== false)
       setSources(kData.sources || [])
-      if (aData.agents?.[0]?.id) setAgentId(aData.agents[0].id)
+      if (aRes) {
+        const aData = await aRes.json()
+        if (aData.agents?.[0]?.id) setFirstAgentId(aData.agents[0].id)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al cargar')
     }
-  }, [])
+  }, [agentIdProp])
 
   useEffect(() => {
     void load()
@@ -120,6 +136,7 @@ export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardPr
       setSourceId(data.source.id)
       setStep('revisar')
       await load()
+      onChanged?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
     } finally {
@@ -149,6 +166,7 @@ export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardPr
       setOkMsg('Fuente aprobada. Solo versiones approved entran al prompt.')
       setStep('aprobar')
       await load()
+      onChanged?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
     } finally {
@@ -172,6 +190,7 @@ export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardPr
       setSourceId(null)
       setBody('')
       await load()
+      onChanged?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
     } finally {
@@ -180,34 +199,67 @@ export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardPr
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 !text-slate-900 [color-scheme:light]">
-      <div className="mx-auto max-w-3xl p-4 md:p-6">
-        <button
-          type="button"
-          onClick={handleBack}
-          className="mb-4 inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Volver a agentes
-        </button>
+    <div
+      className={
+        inline
+          ? '!text-slate-900 [color-scheme:light]'
+          : 'min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 !text-slate-900 [color-scheme:light]'
+      }
+    >
+      <div className={inline ? '' : 'mx-auto max-w-3xl p-4 md:p-6'}>
+        {inline ? (
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-[15px] font-semibold text-[#0E0D17]">Agregar conocimiento</h3>
+              <p className="mt-0.5 text-[12px] text-slate-500">
+                Pegá texto, revisalo y aprobá. Solo lo aprobado entra al agente, como datos y no como instrucciones.
+              </p>
+            </div>
+            <ol className="flex shrink-0 gap-1.5 text-[11px] font-medium" aria-label="Pasos">
+              {(['pegar', 'revisar', 'aprobar'] as Step[]).map((s, i) => (
+                <li
+                  key={s}
+                  aria-current={step === s ? 'step' : undefined}
+                  className={`rounded-full px-2.5 py-1 ${
+                    step === s ? 'bg-[#5B6CFF] text-white' : 'bg-[#EEF0FF] text-[#4A5AE8]'
+                  }`}
+                >
+                  {i + 1} {s === 'pegar' ? 'Pegar' : s === 'revisar' ? 'Revisar' : 'Aprobar'}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={handleBack}
+              className="mb-4 inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Volver a agentes
+            </button>
 
-        <div className="mb-6 flex items-start gap-3">
-          <div className="rounded-xl bg-indigo-100 p-2.5 text-indigo-700">
-            <BookOpen className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold text-slate-900">Conocimiento del agente</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Pegá texto → Revisá → Aprobá. Solo fuentes aprobadas entran al prompt como datos (no
-              instrucciones). El inventario en vivo manda para precios.
-            </p>
-          </div>
-        </div>
+            <div className="mb-6 flex items-start gap-3">
+              <div className="rounded-xl bg-indigo-100 p-2.5 text-indigo-700">
+                <BookOpen className="h-5 w-5" />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold text-slate-900">Conocimiento del agente</h1>
+                <p className="mt-1 text-sm text-slate-600">
+                  Pegá texto → Revisá → Aprobá. Solo fuentes aprobadas entran al prompt como datos (no
+                  instrucciones). El inventario en vivo manda para precios.
+                </p>
+              </div>
+            </div>
+          </>
+        )}
 
         {!schemaReady ? (
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            SQL 028 aún no aplicado — podés preparar el wizard, pero crear/aprobar falla hasta el
-            apply gated.
+            {inline
+              ? 'Conocimiento no disponible todavía: no se puede guardar ni aprobar hasta que se habilite.'
+              : 'SQL 028 aún no aplicado — podés preparar el wizard, pero crear/aprobar falla hasta el apply gated.'}
           </div>
         ) : null}
 
@@ -222,7 +274,7 @@ export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardPr
           </div>
         ) : null}
 
-        <div className="mb-4 flex gap-2 text-xs font-semibold uppercase tracking-wide">
+        <div className={`mb-4 flex gap-2 text-xs font-semibold uppercase tracking-wide ${inline ? 'hidden' : ''}`}>
           {(['pegar', 'revisar', 'aprobar'] as Step[]).map((s) => (
             <span
               key={s}
@@ -238,7 +290,7 @@ export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardPr
         </div>
 
         {step === 'pegar' ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className={inline ? '' : 'rounded-2xl border border-slate-200 bg-white p-4 shadow-sm'}>
             <label className="block text-xs font-medium text-slate-700">Tipo</label>
             <select
               className={`mt-1 ${FIELD_CLASS}`}
@@ -305,20 +357,22 @@ export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardPr
                 review.overLimit
               }
               onClick={() => void createDraft()}
-              className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-indigo-400 disabled:text-white"
+              className={`mt-4 rounded-lg ${inline ? 'bg-[#5B6CFF] disabled:bg-[#5B6CFF]/50' : 'bg-indigo-600 disabled:bg-indigo-400'} px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:text-white`}
               title={
                 !schemaReady
-                  ? 'SQL 028 aún no aplicado — no se puede guardar'
+                  ? inline
+                    ? 'Conocimiento no disponible todavía'
+                    : 'SQL 028 aún no aplicado — no se puede guardar'
                   : undefined
               }
             >
-              {schemaReady ? 'Guardar borrador y revisar' : 'Guardar (espera SQL 028)'}
+              {schemaReady ? 'Guardar borrador y revisar' : inline ? 'Guardar (no disponible todavía)' : 'Guardar (espera SQL 028)'}
             </button>
           </div>
         ) : null}
 
         {step === 'revisar' || step === 'aprobar' ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className={inline ? '' : 'rounded-2xl border border-slate-200 bg-white p-4 shadow-sm'}>
             <h2 className="text-sm font-semibold text-slate-900">
               Vista previa (como lo verá el agente — datos, no instrucciones)
             </h2>
@@ -378,6 +432,7 @@ export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardPr
           </div>
         ) : null}
 
+        {inline ? null : (
         <div className="mt-8">
           <h2 className="text-sm font-semibold text-slate-900">Fuentes del tenant</h2>
           <ul className="mt-2 space-y-2">
@@ -398,6 +453,7 @@ export function ConocimientoWizardInner({ cardId, onBack }: ConocimientoWizardPr
             )}
           </ul>
         </div>
+        )}
       </div>
     </div>
   )

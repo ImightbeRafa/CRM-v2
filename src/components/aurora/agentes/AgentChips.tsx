@@ -35,3 +35,20 @@ export function AgentNoChannelsChip() {
     <span className={`${CHIP} bg-red-50 text-red-600 ring-red-100`}>Sin canales</span>
   )
 }
+
+const PILL_BASE = 'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium'
+
+/** Header pill (rounded-full). Only real `ChatAgent.status` values; there is no "Pausado" status. */
+export function AgentStatusPill({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    live: { label: 'En vivo', cls: 'bg-emerald-50 text-emerald-700' },
+    draft: { label: 'Borrador', cls: 'bg-slate-100 text-slate-600' },
+    archived: { label: 'Archivado', cls: 'bg-amber-50 text-amber-700' },
+  }
+  const s = map[status] ?? { label: status, cls: 'bg-slate-100 text-slate-600' }
+  return (
+    <span className={`${PILL_BASE} ${s.cls}`} data-testid="agent-status-pill">
+      {s.label}
+    </span>
+  )
+}

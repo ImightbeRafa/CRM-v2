@@ -126,7 +126,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         'Importar desde Excel',
         'Registro de auditoría',
         'Instagram y WhatsApp',
-        'Asistente IA (Telegram)',
+        'Asistente IA',
         'Soporte prioritario'
       ],
       limits: {

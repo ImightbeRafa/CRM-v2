@@ -24,3 +24,11 @@ export const CONFIG_PATH_REDIRECTS = [
   { source: '/canales', destination: '/config?tab=social', permanent: false },
   { source: '/agentes', destination: '/config?tab=agentes', permanent: false },
 ]
+
+/**
+ * Non-config Aurora path aliases (same rules: 307, query preserved by Next).
+ * Kept apart from CONFIG_PATH_REDIRECTS, whose destinations must all be canonical `/config?tab=`.
+ */
+export const AURORA_ALIAS_REDIRECTS = [
+  { source: '/inicio', destination: '/dashboard', permanent: false },
+]

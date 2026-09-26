@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import test from 'node:test'
 import {
   CONFIG_HUB_TAB,
@@ -7,7 +9,7 @@ import {
   normalizeConfigSearch,
   normalizeTabParam,
 } from '../../components/aurora/config/config-nav'
-import { CONFIG_PATH_REDIRECTS } from '../../components/aurora/config/config-redirects.mjs'
+import { AURORA_ALIAS_REDIRECTS, CONFIG_PATH_REDIRECTS } from '../../components/aurora/config/config-redirects.mjs'
 
 const BRIEF_ALIASES: Record<string, string> = {
   hub: CONFIG_HUB_TAB,
@@ -107,4 +109,14 @@ test('static redirect list: 307s, ordered, canonical destinations, live pages ex
   assert.equal(byS['/agentes'], '/config?tab=agentes')
   assert.equal(byS['/config/agentes'], '/config?tab=agentes')
   assert.equal(byS['/config/integrations'], '/config?tab=integrations')
+})
+
+test('/inicio redirects to /dashboard (307, not permanent) and is wired into next.config.js', () => {
+  const rule = AURORA_ALIAS_REDIRECTS.find((r) => r.source === '/inicio')
+  assert.ok(rule)
+  assert.equal(rule.destination, '/dashboard')
+  assert.equal(rule.permanent, false)
+  assert.ok(!AURORA_ALIAS_REDIRECTS.some((r) => r.destination.includes('?')), 'no query on destination: Next preserves the request query')
+  const cfg = readFileSync(resolve(process.cwd(), 'next.config.js'), 'utf8')
+  assert.match(cfg, /\.\.\.AURORA_ALIAS_REDIRECTS/)
 })

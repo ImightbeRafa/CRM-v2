@@ -1,7 +1,15 @@
+# Cloudflare Containers — PRODUCTION STATUS (2026-09-26)
+
+> **SoT for agents:** Notion [Betsy CRM — hosting SoT](https://www.notion.so/3e7bc39c41ae813a8cc4d4410be6b773) — child of the visual board. This file is the repo ops mirror.
+>
+> **Live host:** Cloudflare Containers Worker `betsy-crm-daytime-smoke` serving `https://www.betsycrm.com` (zone route).
+> **Vercel:** domains may still be listed for rollback only. **Builds frozen** (`commandForIgnoringBuildStep=exit 1`, previews disabled). Production crons empty. **Do not deploy Betsy on Vercel.**
+> **Writer:** Claudio (Claude Code). Deploy via `wrangler deploy`. No Vercel Preview for product PRs.
+> **Staff Meta / `/api/bot/whatsapp/webhook`:** out of scope — never touch in Betsy CRM hosting work.
+
 # Cloudflare Containers — daytime + madrugada cutover prep
 
-Temp hostname: `https://betsy-crm-daytime-smoke.rafaeser.workers.dev`.
-`www.betsycrm.com` stays on Vercel until CoS coordinates the flip (after Meta secrets + Vercel cron disable).
+**FLIPPED 2026-09-26:** `www.betsycrm.com` is on Cloudflare. Temp hostname still exists: `https://betsy-crm-daytime-smoke.rafaeser.workers.dev` (do not point Meta webhooks here).
 
 Image start: `node server.js` (Next standalone), port 3000.
 

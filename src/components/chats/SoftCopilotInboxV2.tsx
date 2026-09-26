@@ -54,7 +54,7 @@ import {
   writeAgentStateMap,
   type SoftAiAgentStateMap,
 } from '@/lib/soft-ai/agent-state'
-import { SoftSlimNav } from '@/components/chats/SoftSlimNav'
+import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
 import {
@@ -893,10 +893,9 @@ export function SoftCopilotInboxV2() {
   }
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-[#dde7f5] p-0 md:p-4 lg:p-6">
+    <AuroraShell fullBleed>
       <SoftTokenHealthBanners accounts={accounts} />
-      <div className="mx-auto flex h-full w-full max-w-[1440px] min-h-0 overflow-hidden rounded-none bg-white shadow-none md:rounded-[20px] md:shadow-sm">
-      <SoftSlimNav />
+      <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-white">
         <SoftInboxBuckets
           bucket={bucket}
           onBucketChange={setBucket}
@@ -977,6 +976,6 @@ export function SoftCopilotInboxV2() {
           )}
         </div>
       </div>
-    </div>
+    </AuroraShell>
   )
 }

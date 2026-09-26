@@ -20,6 +20,7 @@
     "test:channels-ui": "npx tsx --test src/lib/__tests__/channels-health.test.ts src/lib/__tests__/chat-line-filter.test.ts",
     "test:agentes-ui": "npx tsx --test src/lib/__tests__/agent-channel-bind.test.ts",
     "test:config-ui": "npx tsx --test src/lib/__tests__/config-hub.test.ts",
+    "test:chat-mobile": "npx tsx --test src/lib/__tests__/chat-mobile-aurora.test.ts",
     "test:pedidos-ui": "npx tsx --test src/lib/__tests__/pedidos-aurora.test.ts",
     "test:lifecycle": "npx tsx --test src/lib/__tests__/order-lifecycle.test.ts",
     "test:pagination": "npx tsx --test src/lib/__tests__/server-pagination.test.ts",

@@ -20,6 +20,8 @@ interface SoftCopilotRailProps {
   onTakeOver: () => void
   onPauseAi: () => void
   onResumeAi: () => void
+  /** Mobile details sheet: always visible, full width, no left border. */
+  sheet?: boolean
 }
 
 const ALL_TAGS: SoftTag[] = ['Envío', 'VIP', 'Nuevo']
@@ -56,9 +58,16 @@ export function SoftCopilotRail({
   onTakeOver,
   onPauseAi,
   onResumeAi,
+  sheet = false,
 }: SoftCopilotRailProps) {
   return (
-    <aside className="hidden h-full w-[268px] shrink-0 flex-col overflow-hidden border-l border-slate-200/70 bg-white xl:flex">
+    <aside
+      className={
+        sheet
+          ? 'flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-white'
+          : 'hidden h-full w-[268px] shrink-0 flex-col overflow-hidden border-l border-slate-200/70 bg-white xl:flex'
+      }
+    >
       <div className="p-3">
         <div className="flex rounded-xl bg-slate-50 p-1 ring-1 ring-slate-200/70">
           <button

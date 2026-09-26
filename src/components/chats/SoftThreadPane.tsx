@@ -7,7 +7,10 @@ import {
   type KeyboardEvent,
   type Ref,
 } from 'react'
+import Link from 'next/link'
+import { Check, CheckCheck, ChevronLeft, Hand, Pause, Play, Send, Sparkles, User } from 'lucide-react'
 import {
+  initialsFromName,
   isWhatsAppWindowOpen,
   type ConversationStatus,
   type SoftConversation,
@@ -83,6 +86,28 @@ interface SoftThreadPaneProps {
   threadLoading?: boolean
   /** Selected line is down / needs repair (STATE-01 canal caído). */
   channelDownMessage?: string | null
+  /** Mobile (compact): open the details / status sheet (CHAT-M02 person button). */
+  onOpenDetails?: () => void
+  /** Mobile (compact): agent tool actions logged today, shown in the agent banner. */
+  agentActionsToday?: number
+}
+
+function formatMessageTime(iso: string | undefined | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+function DeliveryTicks({ status }: { status?: string | null }) {
+  if (status === 'failed' || status === 'pending' || !status) return null
+  const Icon = status === 'sent' ? Check : CheckCheck
+  return (
+    <Icon
+      aria-label={status === 'read' ? 'Leído' : status === 'delivered' ? 'Entregado' : 'Enviado'}
+      className={`h-3 w-3 ${status === 'read' ? 'text-[#5B3FE0]' : 'text-slate-400'}`}
+    />
+  )
 }
 
 function statusLabel(status: ConversationStatus) {
@@ -196,6 +221,8 @@ export function SoftThreadPane({
   aiBusy,
   threadLoading,
   channelDownMessage,
+  onOpenDetails,
+  agentActionsToday = 0,
 }: SoftThreadPaneProps) {
   const [pickerOpenLocal, setPickerOpenLocal] = useState(false)
   const pickerOpen = showTemplatePicker ?? pickerOpenLocal
@@ -263,64 +290,166 @@ export function SoftThreadPane({
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
       {channelDownMessage ? <ChannelDownBanner message={channelDownMessage} /> : null}
-      <header className="shrink-0 border-b border-slate-200/70 px-4 py-3 sm:px-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            {onBack ? (
-              <button
-                type="button"
-                onClick={onBack}
-                className="mb-1 text-xs font-medium text-[#5B6CFF]"
-              >
-                ← Chats
-              </button>
-            ) : null}
-            <h2 className="truncate text-base font-semibold text-slate-900">
+      {compact ? (
+        <header className="flex shrink-0 items-center gap-3 border-b border-slate-200/70 bg-white px-3 py-2.5">
+          <button
+            type="button"
+            onClick={onBack ?? onClose}
+            aria-label="Volver a chats"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-800 active:bg-slate-100"
+          >
+            <ChevronLeft className="h-6 w-6" aria-hidden />
+          </button>
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[14px] font-bold text-blue-700">
+            {initialsFromName(conversation.recipientName)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-[16px] font-bold leading-tight text-slate-900">
               {conversation.recipientName || conversation.recipientId}
             </h2>
             <p
-              className={`mt-0.5 flex items-center gap-1.5 truncate text-[11px] ${
+              className={`mt-0.5 flex items-center gap-1.5 truncate text-[12px] ${
                 closedWindow ? 'font-medium text-red-600' : 'text-slate-500'
               }`}
             >
-              <ChannelLogo platform={conversation.platform} size={16} className="shrink-0" />
+              <ChannelLogo platform={conversation.platform} size={12} className="shrink-0" />
               <span className="truncate">
-                {compact && closedWindow
-                  ? `${platformFullName(conversation.platform)} · ${conversation.accountLabel} · ventana 24h CERRADA`
-                  : metaLine}
+                {conversation.accountLabel}
+                {closedWindow ? ' · ventana 24h cerrada' : ''}
               </span>
             </p>
-            <p className="mt-1 truncate text-[11px] text-slate-500" data-testid="soft-agent-label">
-              {conversation.agentLabel || 'Sin agente'}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <span
-                className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${statusChipClass(conversation.status)}`}
-              >
-                {statusLabel(conversation.status)}
-              </span>
-              <span className="rounded-md bg-[#EEF0FF] px-2 py-0.5 text-[10px] font-medium text-[#4A46E5]">
-                {agentModeLabel(agentMode)}
-              </span>
-              {conversation.tags.map(tagChip)}
-            </div>
           </div>
-          {!compact ? (
+          {onOpenDetails ? (
             <button
               type="button"
-              onClick={onClose}
-              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+              onClick={onOpenDetails}
+              aria-label="Detalles del chat"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F1EFEA] text-slate-800"
             >
-              Cerrar
+              <User className="h-5 w-5" aria-hidden />
             </button>
           ) : null}
+        </header>
+      ) : (
+        <header className="shrink-0 border-b border-slate-200/70 px-4 py-3 sm:px-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              {onBack ? (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="mb-1 text-xs font-medium text-[#5B6CFF]"
+                >
+                  ← Chats
+                </button>
+              ) : null}
+              <h2 className="truncate text-base font-semibold text-slate-900">
+                {conversation.recipientName || conversation.recipientId}
+              </h2>
+              <p
+                className={`mt-0.5 flex items-center gap-1.5 truncate text-[11px] ${
+                  closedWindow ? 'font-medium text-red-600' : 'text-slate-500'
+                }`}
+              >
+                <ChannelLogo platform={conversation.platform} size={16} className="shrink-0" />
+                <span className="truncate">
+                  {compact && closedWindow
+                    ? `${platformFullName(conversation.platform)} · ${conversation.accountLabel} · ventana 24h CERRADA`
+                    : metaLine}
+                </span>
+              </p>
+              <p className="mt-1 truncate text-[11px] text-slate-500" data-testid="soft-agent-label">
+                {conversation.agentLabel || 'Sin agente'}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span
+                  className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${statusChipClass(conversation.status)}`}
+                >
+                  {statusLabel(conversation.status)}
+                </span>
+                <span className="rounded-md bg-[#EEF0FF] px-2 py-0.5 text-[10px] font-medium text-[#4A46E5]">
+                  {agentModeLabel(agentMode)}
+                </span>
+                {conversation.tags.map(tagChip)}
+              </div>
+            </div>
+            {!compact ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+              >
+                Cerrar
+              </button>
+            ) : null}
+          </div>
+        </header>
+      )}
+
+      {compact ? (
+        <div className="shrink-0 bg-[#F5F4F0] px-3 pt-3" data-testid="soft-agent-banner">
+          <div className="rounded-2xl bg-gradient-to-r from-[#5B6CFF] via-[#A855F7] to-[#EC4899] p-[1.5px]">
+            <div className="flex items-center gap-3 rounded-[14.5px] bg-white px-3 py-2.5">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#5B6CFF] to-[#EC4899] text-white">
+                <Sparkles className="h-5 w-5" aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[14px] font-bold text-slate-900">
+                  {agentMode === 'ai_active'
+                    ? `${conversation.agentLabel || 'Agente'} está atendiendo`
+                    : agentMode === 'paused'
+                      ? 'Agente en pausa'
+                      : 'Control humano'}
+                </p>
+                <p className="truncate text-[12px] text-slate-500">
+                  {agentModeLabel(agentMode)}
+                  {aiBusy ? ' · procesando…' : ` · ${agentActionsToday} ${agentActionsToday === 1 ? 'acción' : 'acciones'} hoy`}
+                </p>
+              </div>
+              {agentMode === 'ai_active' ? (
+                <button
+                  type="button"
+                  onClick={onPauseAi}
+                  disabled={aiBusy}
+                  aria-label="Pausar agente"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-slate-800 ring-1 ring-slate-200 disabled:opacity-50"
+                >
+                  <Pause className="h-4 w-4" aria-hidden />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onResumeAi}
+                  disabled={aiBusy}
+                  aria-label="Reanudar IA"
+                  className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-white px-3 text-[13px] font-semibold text-emerald-800 ring-1 ring-emerald-200 disabled:opacity-50"
+                >
+                  <Play className="h-4 w-4" aria-hidden />
+                  Reanudar
+                </button>
+              )}
+              {agentMode !== 'human' ? (
+                <button
+                  type="button"
+                  onClick={onTakeOver}
+                  disabled={aiBusy}
+                  className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF] px-3.5 text-[14px] font-semibold text-white disabled:opacity-50"
+                >
+                  <Hand className="h-4 w-4" aria-hidden />
+                  Tomar
+                </button>
+              ) : null}
+            </div>
+          </div>
         </div>
-      </header>
+      ) : null}
 
       <div
         ref={messagesContainerRef}
         onScroll={onMessagesScroll}
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#FAFBFC] px-4 py-4 sm:px-5"
+        className={`min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-5 ${
+          compact ? 'bg-[#F5F4F0]' : 'bg-[#FAFBFC]'
+        }`}
       >
         {hasMoreMessages && onLoadOlder ? (
           <div className="flex justify-center pb-1">
@@ -366,9 +495,9 @@ export function SoftThreadPane({
                 data-testid="soft-thread-message"
                 className={`flex ${outbound ? 'justify-end' : 'justify-start'}`}
               >
-                <div className="max-w-[85%] sm:max-w-md">
+                <div className={compact ? 'max-w-[82%]' : 'max-w-[85%] sm:max-w-md'}>
                   <div
-                    className={`rounded-[14px] px-3.5 py-2.5 text-[13px] ${
+                    className={`rounded-[14px] px-3.5 py-2.5 ${compact ? 'text-[15px] leading-snug' : 'text-[13px]'} ${
                       outbound
                         ? softAi
                           ? 'bg-[#F0EEFF] text-slate-900 ring-1 ring-[#5B6CFF]/15'
@@ -383,8 +512,28 @@ export function SoftThreadPane({
                     {showMedia && isPlaceholder && !msg.providerMediaId && !msg.mediaBlobPath ? (
                       <p className="text-[11px] opacity-70">Adjunto no disponible</p>
                     ) : null}
+                    {compact ? (
+                      <p
+                        className={`mt-1 flex items-center gap-1 text-[11px] ${
+                          outbound ? 'justify-start text-[#5B3FE0]' : 'text-slate-400'
+                        }`}
+                        data-testid="soft-thread-message-meta"
+                      >
+                        {outbound && softAi ? (
+                          <>
+                            <Sparkles className="h-3 w-3" aria-hidden />
+                            <span className="font-medium">{conversation.agentLabel || 'Agente'}</span>
+                            <span aria-hidden>·</span>
+                          </>
+                        ) : null}
+                        <span className={outbound && !softAi ? 'text-slate-500' : undefined}>
+                          {formatMessageTime(msg.sentAt)}
+                        </span>
+                        {outbound ? <DeliveryTicks status={msg.deliveryStatus} /> : null}
+                      </p>
+                    ) : null}
                   </div>
-                  {outbound ? (
+                  {outbound && (!compact || failed || msg.deliveryStatus === 'failed') ? (
                     <p
                       className={`mt-1 text-right text-[10px] ${
                         failed || msg.deliveryStatus === 'failed'
@@ -431,6 +580,18 @@ export function SoftThreadPane({
           })
         )}
 
+        {compact && conversation.orderId ? (
+          <div className="flex justify-center" data-testid="soft-thread-order-chip">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-[13px] font-medium text-slate-800 ring-1 ring-emerald-200">
+              <Check className="h-4 w-4 rounded-full bg-emerald-500 p-0.5 text-white" aria-hidden />
+              Pedido vinculado
+              <Link href="/ventas" className="font-semibold text-[#5B3FE0]">
+                Ver
+              </Link>
+            </span>
+          </div>
+        ) : null}
+
         {conversation.pendingSuggestionText ? (
           <div
             className="rounded-2xl bg-[#F0EEFF] px-4 py-3 text-[12px] text-slate-900 ring-1 ring-[#5B6CFF]/15"
@@ -453,7 +614,11 @@ export function SoftThreadPane({
           </div>
         ) : null}
 
-        <div className="sticky bottom-0 rounded-2xl bg-white px-4 py-3 text-[12px] text-slate-800 shadow-[0_-6px_16px_rgba(250,251,252,0.9)] ring-1 ring-[#5B6CFF]/30">
+        <div
+          className={`sticky bottom-0 rounded-2xl bg-white px-4 py-3 text-[12px] text-slate-800 shadow-[0_-6px_16px_rgba(250,251,252,0.9)] ring-1 ring-[#5B6CFF]/30 ${
+            compact ? 'hidden' : ''
+          }`}
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="font-semibold text-slate-900">
               Agente · {agentModeLabel(agentMode)}
@@ -582,8 +747,12 @@ export function SoftThreadPane({
           ) : null}
         </div>
       ) : (
-        <div className="shrink-0 border-t border-slate-200/70 px-4 py-3 sm:px-5">
-          {!composerEnabled ? (
+        <div
+          className={`shrink-0 border-t border-slate-200/70 bg-white px-4 py-3 sm:px-5 ${
+            compact ? 'pb-[max(0.75rem,env(safe-area-inset-bottom))]' : ''
+          }`}
+        >
+          {!composerEnabled && !compact ? (
             <p className="mb-2 text-[11px] text-slate-500">
               El agente está respondiendo — usá Tomar control o Pausar para escribir vos.
             </p>
@@ -606,7 +775,7 @@ export function SoftThreadPane({
             </div>
           ) : null}
 
-          <form onSubmit={onSend} className="flex gap-2">
+          <form onSubmit={onSend} className={compact ? 'flex items-end gap-2' : 'flex gap-2'}>
             <textarea
               ref={composerRef}
               rows={1}
@@ -624,19 +793,28 @@ export function SoftThreadPane({
               placeholder={
                 composerEnabled
                   ? compact
-                    ? 'Mensaje… Enter envía'
+                    ? 'Escribí un mensaje'
                     : 'Escribí un mensaje… Enter envía · Shift+Enter nueva línea'
                   : 'Tomá control o pausá el agente para escribir'
               }
               disabled={sending || !composerEnabled}
-              className="min-w-0 flex-1 resize-none rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/35 disabled:opacity-60"
+              className={
+                compact
+                  ? 'max-h-28 min-w-0 flex-1 resize-none rounded-3xl border-0 bg-[#F1EFEA] px-4 py-3 text-[16px] leading-snug text-slate-900 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/35 disabled:opacity-60'
+                  : 'min-w-0 flex-1 resize-none rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/35 disabled:opacity-60'
+              }
             />
             <button
               type="submit"
+              aria-label="Enviar"
               disabled={sending || !messageInput.trim() || !composerEnabled}
-              className="shrink-0 rounded-xl bg-[#5B6CFF] px-4 py-3 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+              className={
+                compact
+                  ? 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#5B6CFF] to-[#7C5CFF] text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40'
+                  : 'shrink-0 rounded-xl bg-[#5B6CFF] px-4 py-3 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50'
+              }
             >
-              {sending ? '…' : 'Enviar'}
+              {compact ? <Send className="h-5 w-5" aria-hidden /> : sending ? '…' : 'Enviar'}
             </button>
           </form>
           {!compact ? (

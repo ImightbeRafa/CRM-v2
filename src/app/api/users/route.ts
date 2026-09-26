@@ -7,6 +7,7 @@ import { logCreate, logDelete } from '@/lib/auditLogger'
 import { checkUserLimit } from '@/lib/plan-enforcement'
 import { getTenantSeatUsageWithClient } from '@/lib/plan-enforcement'
 import { inviteMembershipAction, resolveDefaultTenantAfterRemoval } from '@/lib/membership-lifecycle'
+import { createTeamInvite } from '@/lib/team-invite-service'
 import { Prisma } from '@prisma/client'
 
 // Force dynamic rendering for authentication
@@ -50,7 +51,9 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             username: true,
+            name: true,
             email: true,
+            image: true,
             active: true,
             createdAt: true,
             updatedAt: true
@@ -66,7 +69,9 @@ export async function GET(request: NextRequest) {
     const usersWithRoles = memberships.map(membership => ({
       id: membership.user.id,
       username: membership.user.username || membership.user.email,
+      name: membership.user.name,
       email: membership.user.email,
+      image: membership.user.image,
       role: membership.role,
       active: membership.user.active,
       createdAt: membership.user.createdAt,
@@ -88,12 +93,41 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response
     
     const { tenantId } = auth
-    const { email, username, role = 'VIEWER', active = true, password } = await request.json()
+    const body = await request.json()
+    const { email, username, role = 'VIEWER', active = true, password, invite = false } = body
     
     // Validate required fields
     const missingField = validateRequiredFields({ email }, ['email'])
     if (missingField) {
       return createErrorResponse(missingField, 400)
+    }
+
+    // Email-invite mode: create TenantInvite (join on accept) — no orphan tenant, no password required.
+    if (invite === true || body.inviteMode === true) {
+      const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } })
+      const inviter = await prisma.user.findUnique({
+        where: { id: auth.userId },
+        select: { name: true, username: true, email: true },
+      })
+      const result = await createTeamInvite({
+        tenantId,
+        email,
+        role,
+        invitedByUserId: auth.userId,
+        tenantName: tenant?.name,
+        inviterName: inviter?.name || inviter?.username || inviter?.email || null,
+      })
+      if (!result.ok) return createErrorResponse(result.error, result.status)
+      return createSuccessResponse(
+        {
+          inviteId: result.inviteId,
+          email: result.email,
+          role: result.role,
+          emailSent: result.emailSent,
+          invite: true,
+        },
+        result.emailSent ? 'Invitación enviada' : 'Invitación creada (email pendiente de RESEND)',
+      )
     }
     
     // Validate password is provided for new users

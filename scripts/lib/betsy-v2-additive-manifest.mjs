@@ -16,6 +16,8 @@ export const FILES = {
   '027b': '027b_chat_agent_introduction_names.sql',
   '028': '028_chat_agent_knowledge_actions.sql',
   '029': '029_chat_agent_playbooks_assets.sql',
+  '030': '030_tenant_invites.sql',
+  '031': '031_chat_message_sender_user.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -38,9 +40,12 @@ export const EXPECTED_TABLES = {
     'ChatAgentPendingAction',
   ],
   '029': ['ChatAgentShortcut', 'ChatAgentAsset', 'ChatAgentShortcutAsset'],
+  '030': ['TenantInvite'],
+  '031': [],
 };
 
 export const EXPECTED_COLUMNS = {
+  '031': [['ChatMessage', 'senderUserId']],
   '027b': [['ChatAgent', 'introductionNames']],
   '019': [
     ['Order', 'clientId'],
@@ -182,6 +187,8 @@ export const EXPECTED_INDEXES_028 = [
 /** 027b introductionNames is gated like 027 — never part of DEFAULT_APPLY_FILES. */
 /** 028 Soft Agent knowledge / suggestions / pending actions is gated — never DEFAULT_APPLY_FILES. */
 /** 029 playbooks / brand facts / assets is gated — never DEFAULT_APPLY_FILES. Do not apply without CoS. */
+/** 030 TenantInvite is gated — never DEFAULT_APPLY_FILES. */
+/** 031 ChatMessage.senderUserId is gated — never DEFAULT_APPLY_FILES. */
 export const EXPECTED_SEQUENCE_024 = 'ChatConversation_revision_seq';
 export const EXPECTED_TRIGGER_024 = 'ChatConversation_revision_trg';
 
@@ -214,6 +221,7 @@ export const VERIFY_CATALOG_TABLES = [
   'ChatAgentShortcut',
   'ChatAgentAsset',
   'ChatAgentShortcutAsset',
+  'TenantInvite',
 ];
 
 export const VERIFY_CATALOG_COLUMNS = [
@@ -241,4 +249,5 @@ export const VERIFY_CATALOG_COLUMNS = [
   ['ChatConversationReadState', 'readInboundCount'],
   ['ChatMessage', 'mediaBlobPath'],
   ['ChatMessage', 'mediaCacheStatus'],
+  ['ChatMessage', 'senderUserId'],
 ];

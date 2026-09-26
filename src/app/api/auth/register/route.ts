@@ -7,6 +7,7 @@ import { withoutTenantIsolation } from '@/lib/tenantContext';
 import { authRateLimit } from '@/lib/rate-limit';
 import { sendCAPIEvent } from '@/lib/meta-capi';
 import { provisionOwnedTenantForExistingUser } from '@/lib/tenant-provisioning';
+import { acceptTeamInviteForUser, findPendingInviteForEmail } from '@/lib/team-invite-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,6 +89,44 @@ export async function POST(request: Request) {
 
     const hashedPassword = await hashPassword(password);
     const emailPrefix = normalizedEmail.split('@')[0];
+
+    // Invite path: never create an orphan owned tenant when a pending invite exists.
+    try {
+      const pending = await findPendingInviteForEmail(normalizedEmail)
+      if (pending) {
+        const invitedUser = await prisma.user.create({
+          data: {
+            username: name,
+            name: name,
+            email: normalizedEmail,
+            password: hashedPassword,
+            active: true,
+            emailVerified: null,
+            defaultTenantId: pending.tenantId,
+          },
+          select: { id: true, email: true },
+        })
+        const accepted = await acceptTeamInviteForUser({
+          inviteId: pending.id,
+          token: pending.token,
+          userId: invitedUser.id,
+          userEmail: normalizedEmail,
+        })
+        if (!accepted.ok) {
+          return NextResponse.json({ error: accepted.error }, { status: accepted.status })
+        }
+        try {
+          await sendVerificationEmail({ email: normalizedEmail, name })
+        } catch {}
+        return NextResponse.json(
+          { success: true, message: `Te uniste a ${accepted.tenantName}. Revisa tu email para verificar la cuenta.`, joinedTenantId: accepted.tenantId },
+          { status: 201 },
+        )
+      }
+    } catch (inviteErr) {
+      console.warn('[register] TenantInvite lookup/accept skipped:', inviteErr)
+    }
+
     const tenantSlug = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now();
 
     const result = await withoutTenantIsolation(async () => {

@@ -51,6 +51,8 @@ export interface DualWriteMessageInput {
   providerMediaId?: string | null
   mediaMimeType?: string | null
   mediaFilename?: string | null
+  /** Human agent who sent this outbound (null for Soft AI / webhooks). */
+  senderUserId?: string | null
 }
 
 export type DualWriteResult =
@@ -435,6 +437,8 @@ export async function dualWriteChatMessage(
             providerMessageId,
             peerId: peer.peerId,
             messageType: input.messageType ?? null,
+            // ChatMessage.senderUserId column is gated on SQL 031. Human attribution
+            // is persisted in metadata.senderUserId/Name/Image (Respond.io-style snapshot).
             deliveryStatus,
             statusUpdatedAt: new Date(),
             providerMediaId: input.providerMediaId?.trim() || null,

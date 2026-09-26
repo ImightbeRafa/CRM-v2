@@ -42,6 +42,13 @@ While `DISABLE_CRONS=1` (or `true`) on the Worker, `scheduled` logs and returns 
 
 Client bundles embed `NEXT_PUBLIC_*` at **Docker build** time. The daytime Dockerfile does not bake production public Meta IDs into the client bundle. Server-side `process.env.NEXT_PUBLIC_*` still works if secrets are forwarded. For full Embedded Signup UI on CF, rebuild the image with build-args for those public IDs (or accept client stubs until a dedicated image rebuild).
 
+
+## Instance size + NEXT_PUBLIC bake (post-flip fix 2026-09-26)
+
+- `instance_type`: **`standard-2`** (1 vCPU / 6 GiB). Default `lite` (256 MiB) OOMs / starves Next.js.
+- `sleepAfter`: **`24h`** (unchanged in `src/cf-container-worker.ts`).
+- Dockerfile accepts `ARG`/`ENV` for `NEXT_PUBLIC_*` Meta Embedded Signup IDs; Wrangler `containers.image_vars` supplies Vercel Production public values at image build. Runtime Meta secrets remain Worker secrets forwarded via `CONTAINER_ENV_KEYS`.
+
 ## Madrugada cutover order (CoS)
 
 1. **Secrets complete** on Worker (Meta + all prod keys). Verify smoke still OK on workers.dev.

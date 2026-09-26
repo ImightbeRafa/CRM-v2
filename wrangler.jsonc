@@ -22,7 +22,19 @@
     {
       "class_name": "BetsyCrmContainer",
       "image": "./Dockerfile",
-      "max_instances": 1
+      // Next.js + Prisma + optional Chromium needs >> lite (256MiB / 1/16 vCPU).
+      "instance_type": "standard-2",
+      "max_instances": 1,
+      // Build-time NEXT_PUBLIC_* (public Meta Embedded Signup IDs). Runtime secrets stay on Worker.
+      "image_vars": {
+        "NEXT_PUBLIC_APP_URL": "https://www.betsycrm.com",
+        "NEXT_PUBLIC_FB_LOGIN_CONFIG_ID": "1886311709005467",
+        "NEXT_PUBLIC_IG_LOGIN_CONFIG_ID": "2496407814189162",
+        "NEXT_PUBLIC_META_APP_ID": "1038331905909624",
+        "NEXT_PUBLIC_META_GRAPH_API_VERSION": "v24.0",
+        "NEXT_PUBLIC_META_WA_APP_ID": "1038331905909624",
+        "NEXT_PUBLIC_TILOPAY_API_KEY": "7067-2615-6995-8721-7143"
+      }
     }
   ],
   "durable_objects": {

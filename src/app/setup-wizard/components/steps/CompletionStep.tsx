@@ -24,7 +24,7 @@ const NEXT_STEPS = [
     title: 'Crear tu primer pedido',
     description: 'Registra una orden en el módulo de Ventas',
     href: '/ventas',
-    color: 'from-blue-500 to-blue-600',
+    color: 'from-[#5B6CFF] to-[#7C5CFF]',
   },
   {
     icon: Users,
@@ -68,7 +68,7 @@ export function CompletionStep({ markCompleted }: WizardStepProps) {
   if (completing) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-[#5B6CFF]" />
       </div>
     );
   }
@@ -101,7 +101,7 @@ export function CompletionStep({ markCompleted }: WizardStepProps) {
             transition={{ delay: 0.1 * (idx + 1) }}
           >
             <Card
-              className="p-4 hover:shadow-lg transition-shadow cursor-pointer group border-2 hover:border-blue-200"
+              className="p-4 hover:shadow-lg transition-shadow cursor-pointer group border-2 hover:border-[#D9D2FF]"
               onClick={() => router.push(step.href)}
             >
               <div className="flex items-start gap-3">
@@ -109,12 +109,12 @@ export function CompletionStep({ markCompleted }: WizardStepProps) {
                   <step.icon className="h-5 w-5 text-white" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-foreground group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors">
+                  <h3 className="font-semibold text-foreground group-hover:text-[#4B36B8] transition-colors">
                     {step.title}
                   </h3>
                   <p className="text-sm text-muted-foreground">{step.description}</p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-blue-500 transition-colors mt-1" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-[#7C5CFF] transition-colors mt-1" />
               </div>
             </Card>
           </motion.div>
@@ -131,7 +131,7 @@ export function CompletionStep({ markCompleted }: WizardStepProps) {
         <Button
           size="lg"
           onClick={() => router.push('/dashboard')}
-          className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 h-12 px-8 text-base"
+          className="bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF] hover:opacity-90 h-12 px-8 text-base"
         >
           <Sparkles className="h-5 w-5 mr-2" />
           Ir al Dashboard

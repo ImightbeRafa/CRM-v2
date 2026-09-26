@@ -4,8 +4,12 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
-import { LogOut, MessageSquare, MoreHorizontal, Package, Radio, X } from 'lucide-react'
+import { Bell, ChevronDown, LogOut, MessageSquare, MoreHorizontal, Package, Radio, X } from 'lucide-react'
 import { AURORA_NAV, getActiveAuroraHref } from './aurora-nav'
+import { AuroraAlertsList } from './shell/AuroraAlertsList'
+import { useAuroraAlerts } from './shell/useAuroraAlerts'
+import { useAuroraViewer } from './shell/useAuroraViewer'
+import { useTenantPlan } from './shell/useTenantPlan'
 
 type AuroraMobileNavProps = {
   /** Conversations with unread messages; badge is hidden at 0. */
@@ -28,6 +32,10 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
   const pathname = usePathname()
   const { data: session } = useSession()
   const [moreOpen, setMoreOpen] = useState(false)
+  const [alertsOpen, setAlertsOpen] = useState(false)
+  const viewer = useAuroraViewer()
+  const plan = useTenantPlan()
+  const { alerts } = useAuroraAlerts()
   const user = session?.user
   const membershipRole = user?.currentTenant?.role
   const isMaster = user?.role === 'MASTER'
@@ -150,6 +158,38 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
               >
                 <X className="h-4 w-4" aria-hidden />
               </button>
+            </div>
+            <div className="mb-3 rounded-2xl bg-slate-50 px-3 py-2.5" data-testid="aurora-mobile-profile">
+              <p className="truncate text-[14px] font-semibold text-slate-900">{viewer.name}</p>
+              {viewer.email ? <p className="truncate text-[12px] text-slate-500">{viewer.email}</p> : null}
+              <p className="mt-0.5 truncate text-[11px] text-slate-400">
+                {[viewer.tenantName, viewer.roleLabel, plan ? `Plan ${plan}` : ''].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+            <div className="mb-3">
+              <button
+                type="button"
+                onClick={() => setAlertsOpen((v) => !v)}
+                aria-expanded={alertsOpen}
+                className="flex w-full items-center gap-3 rounded-xl px-2 py-3 text-[14px] font-medium text-slate-800"
+              >
+                <span className="relative">
+                  <Bell className="h-5 w-5 shrink-0" aria-hidden />
+                  {alerts.length > 0 ? (
+                    <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
+                  ) : null}
+                </span>
+                <span className="min-w-0 flex-1 text-left">Avisos</span>
+                {alerts.length > 0 ? (
+                  <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">{alerts.length}</span>
+                ) : null}
+                <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${alertsOpen ? 'rotate-180' : ''}`} aria-hidden />
+              </button>
+              {alertsOpen ? (
+                <div className="mt-1 overflow-hidden rounded-xl border border-slate-100">
+                  <AuroraAlertsList alerts={alerts} onNavigate={() => setMoreOpen(false)} />
+                </div>
+              ) : null}
             </div>
             {moreItems.map((section) => (
               <div key={section.title} className="mb-3">

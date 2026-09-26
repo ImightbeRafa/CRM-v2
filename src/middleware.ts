@@ -244,7 +244,7 @@ function redirectToLogin(url: URL): NextResponse {
 
   // For app routes, redirect to login page
   const loginUrl = new URL('/auth/signin', url.origin);
-  loginUrl.searchParams.set('callbackUrl', url.pathname);
+  loginUrl.searchParams.set('callbackUrl', url.pathname + url.search);
   return NextResponse.redirect(loginUrl);
 }
 

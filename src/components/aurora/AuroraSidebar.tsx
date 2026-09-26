@@ -2,9 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useSession, signOut } from 'next-auth/react'
-import { ArrowUpRight, ChevronsUpDown, LogOut } from 'lucide-react'
+import { useSession } from 'next-auth/react'
+import { ArrowUpRight } from 'lucide-react'
 import { AURORA_NAV, getActiveAuroraHref } from './aurora-nav'
+import { AuroraProfileMenu } from './shell/AuroraProfileMenu'
+import { useTenantPlan } from './shell/useTenantPlan'
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -30,6 +32,9 @@ export function AuroraSidebar() {
   const roleLabel = ROLE_LABELS[roleKey] ?? (roleKey ? roleKey.charAt(0) + roleKey.slice(1).toLowerCase() : '')
   const userName = user?.name?.trim() || user?.email?.split('@')[0] || 'Usuario'
   const activeHref = getActiveAuroraHref(pathname)
+  const plan = useTenantPlan()
+  // Real plan tier (Tenant.plan) when known; otherwise the viewer's role, as before.
+  const tenantSubline = plan ? `Plan ${plan}` : roleLabel
 
   return (
     <aside className="hidden h-full w-[176px] shrink-0 flex-col bg-[#0E0D17] text-white md:flex lg:w-[200px]">
@@ -48,11 +53,10 @@ export function AuroraSidebar() {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold leading-tight">{tenantName}</span>
-          {roleLabel && (
-            <span className="block truncate text-[10px] leading-tight text-white/50">{roleLabel}</span>
+          {tenantSubline && (
+            <span className="block truncate text-[10px] leading-tight text-white/50">{tenantSubline}</span>
           )}
         </span>
-        <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-white/40" aria-hidden />
       </div>
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-3" aria-label="Navegación principal">
@@ -100,15 +104,7 @@ export function AuroraSidebar() {
           <span className="block truncate text-[12px] font-semibold leading-tight">{userName}</span>
           {roleLabel && <span className="block truncate text-[10px] leading-tight text-white/50">{roleLabel}</span>}
         </span>
-        <button
-          type="button"
-          onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-          className="rounded-md p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
-          title="Cerrar sesión"
-          aria-label="Cerrar sesión"
-        >
-          <LogOut className="h-4 w-4" />
-        </button>
+        <AuroraProfileMenu />
       </div>
     </aside>
   )

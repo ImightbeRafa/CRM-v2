@@ -106,7 +106,7 @@ export function FirstProductStep({ markCompleted, markUnsavedChanges }: WizardSt
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-[#5B6CFF]" />
       </div>
     );
   }

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getAllDocs } from '@/lib/docs';
+import { getHelpDocs } from '@/lib/help-docs';
 import {
   BookOpen, Rocket, Truck, Code, Settings, CreditCard,
   HelpCircle, ShoppingCart, Factory, BarChart3, Plug, Clock, ArrowRight,
@@ -22,17 +22,17 @@ const CATEGORY_LABELS: Record<string, string> = {
   'estadisticas': 'Estadísticas',
 };
 
-const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string; iconBg: string }> = {
-  'getting-started': { bg: 'bg-blue-50 dark:bg-blue-950/30', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', iconBg: 'bg-blue-100 dark:bg-blue-950/50' },
-  'shipping': { bg: 'bg-orange-50 dark:bg-orange-950/30', text: 'text-orange-700 dark:text-orange-300', border: 'border-orange-200 dark:border-orange-800', iconBg: 'bg-orange-100 dark:bg-orange-950/50' },
-  'api': { bg: 'bg-violet-50 dark:bg-violet-950/30', text: 'text-violet-700 dark:text-violet-300', border: 'border-violet-200 dark:border-violet-800', iconBg: 'bg-violet-100 dark:bg-violet-950/50' },
-  'config': { bg: 'bg-muted', text: 'text-muted-foreground', border: 'border-border', iconBg: 'bg-muted' },
-  'billing': { bg: 'bg-emerald-50 dark:bg-emerald-950/30', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-800', iconBg: 'bg-emerald-100 dark:bg-emerald-950/50' },
-  'general': { bg: 'bg-sky-50 dark:bg-sky-950/30', text: 'text-sky-700 dark:text-sky-300', border: 'border-sky-200 dark:border-sky-800', iconBg: 'bg-sky-100 dark:bg-sky-950/50' },
-  'ventas': { bg: 'bg-pink-50 dark:bg-pink-950/30', text: 'text-pink-700 dark:text-pink-300', border: 'border-pink-200 dark:border-pink-800', iconBg: 'bg-pink-100 dark:bg-pink-950/50' },
-  'produccion': { bg: 'bg-amber-50 dark:bg-amber-950/30', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800', iconBg: 'bg-amber-100 dark:bg-amber-950/50' },
-  'estadisticas': { bg: 'bg-cyan-50 dark:bg-cyan-950/30', text: 'text-cyan-700 dark:text-cyan-300', border: 'border-cyan-200 dark:border-cyan-800', iconBg: 'bg-cyan-100 dark:bg-cyan-950/50' },
-  'integraciones': { bg: 'bg-indigo-50 dark:bg-indigo-950/30', text: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-200 dark:border-indigo-800', iconBg: 'bg-indigo-100 dark:bg-indigo-950/50' },
+const CATEGORY_TINT: Record<string, string> = {
+  'getting-started': 'bg-[#F1EEFF] text-[#5B3FE0]',
+  'shipping': 'bg-orange-50 text-orange-700',
+  'api': 'bg-violet-50 text-violet-700',
+  'config': 'bg-slate-100 text-slate-600',
+  'billing': 'bg-emerald-50 text-emerald-700',
+  'general': 'bg-sky-50 text-sky-700',
+  'ventas': 'bg-pink-50 text-pink-700',
+  'produccion': 'bg-amber-50 text-amber-700',
+  'estadisticas': 'bg-cyan-50 text-cyan-700',
+  'integraciones': 'bg-indigo-50 text-indigo-700',
 };
 
 function getCategoryIcon(cat: string) {
@@ -52,21 +52,19 @@ function getCategoryIcon(cat: string) {
 }
 
 export default function HelpIndex() {
-  const docs = getAllDocs('private');
+  const docs = getHelpDocs();
   const categories = Array.from(new Set(docs.map(d => d.category)));
 
   const featuredDoc = docs.find(d => d.category === 'getting-started');
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-10">
+    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       {/* Hero */}
-      <div className="text-center mb-10">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 mb-4 shadow-lg shadow-blue-200 dark:shadow-blue-950/40">
-          <BookOpen className="h-7 w-7 text-white" />
-        </div>
-        <h1 className="text-3xl font-bold text-foreground mb-2">Centro de Ayuda</h1>
-        <p className="text-muted-foreground max-w-lg mx-auto">
-          Guías y tutoriales para usar todas las funciones de BetsyCRM. Encuentra respuestas rápidas a tus preguntas.
+      <div className="mb-8">
+        <h1 className="mb-1 text-[20px] font-semibold text-slate-900">¿En qué te ayudamos?</h1>
+        <p className="max-w-lg text-[14px] text-slate-500">
+          Guías y tutoriales para usar todas las funciones de BetsyCRM. Encontrá respuestas rápidas a tus preguntas.
         </p>
       </div>
 
@@ -77,17 +75,17 @@ export default function HelpIndex() {
       {featuredDoc && (
         <Link
           href={`/help/${featuredDoc.slug}`}
-          className="group block mb-10 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-6 text-white hover:shadow-xl hover:shadow-blue-200/50 dark:hover:shadow-blue-950/40 transition-all"
+          className="group mb-8 block rounded-2xl bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF] p-6 text-white shadow-sm transition-opacity hover:opacity-95"
         >
           <div className="flex items-start justify-between">
             <div>
-              <span className="inline-block px-2.5 py-0.5 text-xs font-medium bg-white/20 rounded-full mb-3">
-                Comienza aquí
+              <span className="mb-3 inline-block rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium">
+                Comenzá acá
               </span>
-              <h2 className="text-xl font-bold mb-2">{featuredDoc.title}</h2>
-              <p className="text-blue-100 text-sm max-w-md">{featuredDoc.description}</p>
+              <h2 className="mb-2 text-xl font-bold">{featuredDoc.title}</h2>
+              <p className="max-w-md text-sm text-white/80">{featuredDoc.description}</p>
             </div>
-            <ArrowRight className="h-5 w-5 text-white/60 group-hover:text-white group-hover:translate-x-1 transition-all shrink-0 mt-1" />
+            <ArrowRight className="mt-1 h-5 w-5 shrink-0 text-white/60 transition-all group-hover:translate-x-1 group-hover:text-white" />
           </div>
         </Link>
       )}
@@ -96,50 +94,51 @@ export default function HelpIndex() {
       {categories.map(cat => {
         const catDocs = docs.filter(d => d.category === cat);
         if (catDocs.length === 0) return null;
-        const colors = CATEGORY_COLORS[cat] || CATEGORY_COLORS['general'];
+        const tint = CATEGORY_TINT[cat] || CATEGORY_TINT['general'];
         return (
-          <div key={cat} className="mb-8">
-            <div className="flex items-center gap-3 mb-4">
-              <div className={`p-2 rounded-lg ${colors.iconBg} ${colors.text}`}>
+          <section key={cat} className="mb-8">
+            <div className="mb-3 flex items-center gap-3">
+              <div className={`rounded-lg p-2 ${tint}`}>
                 {getCategoryIcon(cat)}
               </div>
               <div>
-                <h2 className="text-lg font-bold text-foreground">
+                <h2 className="text-[16px] font-semibold text-slate-900">
                   {CATEGORY_LABELS[cat] || cat}
                 </h2>
-                <p className="text-xs text-muted-foreground">{catDocs.length} {catDocs.length === 1 ? 'artículo' : 'artículos'}</p>
+                <p className="text-xs text-slate-500">{catDocs.length} {catDocs.length === 1 ? 'artículo' : 'artículos'}</p>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {catDocs.map(doc => (
                 <Link
                   key={doc.slug}
                   href={`/help/${doc.slug}`}
-                  className="group flex items-start gap-3 bg-card border border-border rounded-xl p-4 hover:shadow-md hover:border-blue-300 hover:bg-accent/40 dark:hover:border-blue-800 transition-all"
+                  className="group flex items-start gap-3 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm transition-all hover:border-[#C9BFFF] hover:shadow-md"
                 >
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-medium text-foreground group-hover:text-blue-600 dark:group-hover:text-blue-300 transition-colors text-sm mb-1">
+                    <h3 className="mb-1 text-sm font-medium text-slate-900 transition-colors group-hover:text-[#5B3FE0]">
                       {doc.title}
                     </h3>
-                    <p className="text-xs text-muted-foreground line-clamp-2">{doc.description}</p>
+                    <p className="line-clamp-2 text-xs text-slate-500">{doc.description}</p>
                   </div>
-                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0 mt-0.5">
+                  <div className="mt-0.5 flex shrink-0 items-center gap-1 text-[10px] text-slate-400">
                     <Clock className="h-3 w-3" />
                     {doc.readingTime}m
                   </div>
                 </Link>
               ))}
             </div>
-          </div>
+          </section>
         );
       })}
 
       {docs.length === 0 && (
-        <div className="text-center py-16 border rounded-2xl bg-muted">
-          <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">Estamos preparando las guías de ayuda. Vuelve pronto.</p>
+        <div className="rounded-2xl border border-slate-200/70 bg-white py-16 text-center shadow-sm">
+          <BookOpen className="mx-auto mb-4 h-12 w-12 text-slate-300" />
+          <p className="text-slate-500">Estamos preparando las guías de ayuda. Volvé pronto.</p>
         </div>
       )}
+    </div>
     </div>
   );
 }

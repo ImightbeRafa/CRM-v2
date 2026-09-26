@@ -65,6 +65,7 @@ import {
 import { SoftTokenHealthBanners } from '@/components/chats/SoftTokenHealthBanners'
 import { SoftCopilotRail } from '@/components/chats/SoftCopilotRail'
 import { AuroraMobileNav } from '@/components/aurora/AuroraMobileNav'
+import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 
 const TAG_FILTERS: SoftTag[] = ['Envío', 'VIP', 'Nuevo']
 
@@ -966,6 +967,7 @@ export function SoftCopilotInboxV2() {
             Bandeja unificada · WhatsApp e Instagram
           </p>
         </div>
+        <AuroraTopActions />
       </header>
       <SoftTokenHealthBanners accounts={accounts} />
       <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-white">

@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
+import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import { CONFIG_HUB, CONFIG_HUB_TAB, CONFIG_NAV_LABELS } from './config-nav'
 
 /**
- * Breadcrumb `Configuración › <panel>[ › crumb…]` (Figma top bar; global search / bell have no
- * backing feature). `trail` adds deeper crumbs (Agentes IA › <agente> › <pestaña>); the panel
- * label then becomes a link back to the panel root.
+ * Breadcrumb `Configuración › <panel>[ › crumb…]` (Figma top bar) with ⌘K search + bell on the
+ * right. `trail` adds deeper crumbs (Agentes IA › <agente> › <pestaña>); the panel label then
+ * becomes a link back to the panel root.
  */
 export function ConfigTopbar({
   activeTab,
@@ -20,7 +21,7 @@ export function ConfigTopbar({
   return (
     <header
       data-testid="config-topbar"
-      className="flex h-14 shrink-0 items-center border-b border-slate-200/70 bg-white px-4 md:px-8"
+      className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-slate-200/70 bg-white px-4 md:px-8"
     >
       <nav aria-label="Ruta" className="flex min-w-0 items-center gap-1.5 text-[14px]">
         <Link
@@ -63,6 +64,7 @@ export function ConfigTopbar({
           </span>
         )}
       </nav>
+      <AuroraTopActions />
     </header>
   )
 }

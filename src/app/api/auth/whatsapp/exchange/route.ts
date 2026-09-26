@@ -197,35 +197,58 @@ export async function POST(request: NextRequest) {
           wabaId: claimedWabaId,
           coexistence: fromWaba.coexistence,
         })
-      } else if (coexistenceFinish) {
-        console.warn('[wa/exchange] Coexistence finish but could not resolve phone from WABA', {
-          reason: fromWaba.reason,
-          phoneCount: fromWaba.phones?.length ?? 0,
-        })
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              fromWaba.reason === 'ambiguous_coexistence_phones' ||
-              fromWaba.reason === 'ambiguous_phones_on_waba' ||
-              fromWaba.reason === 'ambiguous_biz_app_phones'
-                ? 'La WABA tiene varios números; no se pudo elegir cuál conectar. Vinculá manualmente el Phone Number ID.'
-                : 'Coexistence completó en Meta pero no se encontró un número en la WABA. Verificá que el número esté en la app de WhatsApp Business (2.24.17+).',
-            reason: fromWaba.reason || 'coexistence_phone_resolve_failed',
-            whatsappBusinessAccountId: claimedWabaId,
-            phoneCount: fromWaba.phones?.length ?? 0,
+      } else {
+        // Reconnect path: tenant already has a SocialAccount for this WABA
+        // (e.g. soft-unlinked Forge). Reuse its phone number id so we can
+        // persist the new token even when Graph phone listing is empty.
+        const dbEarly = prisma as any
+        const existingByWaba = await dbEarly.socialAccount.findFirst({
+          where: {
+            tenantId,
+            platform: 'whatsapp',
+            wabaId: String(claimedWabaId),
           },
-          { status: 422 },
-        )
+          select: { id: true, accountId: true },
+        })
+        if (existingByWaba?.accountId) {
+          resolvedPhoneClaim = String(existingByWaba.accountId)
+          console.log('[wa/exchange] Using existing SocialAccount phone for WABA reconnect', {
+            socialAccountId: existingByWaba.id,
+            reason: fromWaba.reason || 'graph_phone_unresolved',
+          })
+        } else if (coexistenceFinish) {
+          console.warn('[wa/exchange] Coexistence finish but could not resolve phone from WABA', {
+            reason: fromWaba.reason,
+            phoneCount: fromWaba.phones?.length ?? 0,
+          })
+          return NextResponse.json(
+            {
+              success: false,
+              message:
+                fromWaba.reason === 'ambiguous_coexistence_phones' ||
+                fromWaba.reason === 'ambiguous_phones_on_waba' ||
+                fromWaba.reason === 'ambiguous_biz_app_phones'
+                  ? 'La WABA tiene varios números; no se pudo elegir cuál conectar. Vinculá manualmente el Phone Number ID.'
+                  : 'Coexistence completó en Meta pero no se encontró un número en la WABA. Verificá que el número esté en la app de WhatsApp Business (2.24.17+).',
+              reason: fromWaba.reason || 'coexistence_phone_resolve_failed',
+              whatsappBusinessAccountId: claimedWabaId,
+              phoneCount: fromWaba.phones?.length ?? 0,
+            },
+            { status: 422 },
+          )
+        }
       }
     }
 
     if (!resolvedPhoneClaim) {
       console.log('[wa/exchange] Token obtained, waiting for phone_number_id from message event')
+      // Return the business token so the client can complete a later FINISH
+      // correlation after this single-use code was consumed. Never log the value.
       return NextResponse.json({
         success: true,
         tokenReceived: true,
         waitingForPhoneNumber: true,
+        accessToken: businessToken,
         message: 'Token received, waiting for WhatsApp phone number from setup completion',
       })
     }

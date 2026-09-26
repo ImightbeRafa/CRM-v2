@@ -1,5 +1,7 @@
 {
   "name": "betsy-crm-daytime-smoke",
+  "workers_dev": true,
+  "preview_urls": true,
   "main": "src/cf-container-worker.ts",
   "compatibility_date": "2026-09-25",
   "triggers": {
@@ -36,7 +38,10 @@
       "tag": "v1",
       "new_sqlite_classes": ["BetsyCrmContainer"]
     }
+  ],
+  // www traffic flip: zone route on already-proxied hostname (custom_domain blocked by
+  // existing Vercel-managed DNS records; OAuth token lacks Zone DNS delete).
+  "routes": [
+    { "pattern": "www.betsycrm.com/*", "zone_name": "betsycrm.com" }
   ]
-  // Custom domain www.betsycrm.com intentionally NOT attached here.
-  // Attach only at flip after Vercel crons are disabled (see docs/ops).
 }

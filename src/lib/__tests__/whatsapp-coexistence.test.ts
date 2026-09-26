@@ -455,7 +455,7 @@ test('36008 fallback reserves popup on the click and navigates that handle after
   const popup = {
     closed: false,
     location: {
-      href: WA_DIRECT_OAUTH_PLACEHOLDER_URL,
+      href: WA_DIRECT_OAUTH_PLACEHOLDER_URL as string,
       replace(url: string) {
         this.href = url
       },

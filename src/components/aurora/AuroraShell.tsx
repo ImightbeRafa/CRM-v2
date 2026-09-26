@@ -10,10 +10,12 @@ type AuroraShellProps = {
    * `true`: main area is a non-scrolling flex column; child owns scrolling (Chats).
    */
   fullBleed?: boolean
+  /** Pinned below the content on narrow viewports (mobile bottom nav). Opt-in per page. */
+  bottomNav?: ReactNode
 }
 
 /** Shared Aurora chrome: dark sidebar + light content area. Sidebar is desktop-only. */
-export function AuroraShell({ children, fullBleed = false }: AuroraShellProps) {
+export function AuroraShell({ children, fullBleed = false, bottomNav }: AuroraShellProps) {
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden bg-[#F7F8FA]">
       <AuroraSidebar />
@@ -23,6 +25,7 @@ export function AuroraShell({ children, fullBleed = false }: AuroraShellProps) {
         }`}
       >
         {children}
+        {bottomNav}
       </main>
     </div>
   )

@@ -54,7 +54,7 @@ import {
   writeAgentStateMap,
   type SoftAiAgentStateMap,
 } from '@/lib/soft-ai/agent-state'
-import { lineHealth, summarizeLineCounts } from '@/lib/chat-line-filter'
+import { lineHealth, lineIsDown, summarizeLineCounts } from '@/lib/chat-line-filter'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
@@ -64,6 +64,7 @@ import {
 } from '@/components/chats/SoftThreadPane'
 import { SoftTokenHealthBanners } from '@/components/chats/SoftTokenHealthBanners'
 import { SoftCopilotRail } from '@/components/chats/SoftCopilotRail'
+import { AuroraMobileNav } from '@/components/aurora/AuroraMobileNav'
 
 const TAG_FILTERS: SoftTag[] = ['Envío', 'VIP', 'Nuevo']
 
@@ -92,6 +93,7 @@ export function SoftCopilotInboxV2() {
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null)
   const [syncAgeSeconds, setSyncAgeSeconds] = useState<number | null>(null)
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list')
+  const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [threadBeforeCursor, setThreadBeforeCursor] = useState<Record<string, string | null>>({})
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
@@ -125,6 +127,11 @@ export function SoftCopilotInboxV2() {
 
   useEffect(() => {
     setAgentStateMap(readAgentStateMap())
+  }, [])
+
+  // CHAT-M01: mobile bandeja opens on "Todos" (abiertos); desktop keeps "Tus chats".
+  useEffect(() => {
+    if (window.matchMedia('(max-width: 767px)').matches) setBucket('abiertos')
   }, [])
 
   const fetchAccounts = useCallback(async () => {
@@ -501,6 +508,16 @@ export function SoftCopilotInboxV2() {
 
   const lineCounts = useMemo(() => summarizeLineCounts(conversations), [conversations])
 
+  const unreadChatCount = useMemo(
+    () => conversations.filter((c) => c.status !== 'hecho' && (c.unreadCount || 0) > 0).length,
+    [conversations],
+  )
+  const channelsAlert = useMemo(() => accounts.some((a) => lineIsDown(a)), [accounts])
+  const agentActionsToday = useMemo(() => {
+    const today = new Date().toDateString()
+    return selectedAgentState.toolLog.filter((t) => new Date(t.at).toDateString() === today).length
+  }, [selectedAgentState.toolLog])
+
   const selectedAccountHealth = useMemo(() => {
     if (!selectedConversation) return null
     const account = accounts.find((a) => a.id === selectedConversation.socialAccountId)
@@ -522,6 +539,7 @@ export function SoftCopilotInboxV2() {
     setFailedOutboundId(null)
     setMessageInput('')
     setTemplatePickerOpen(false)
+    setMobileDetailsOpen(false)
     nearBottomRef.current = true
     setMobileView('thread')
     void loadThreadMessages(dto.id).then(() => {
@@ -933,8 +951,15 @@ export function SoftCopilotInboxV2() {
   }
 
   return (
-    <AuroraShell fullBleed>
-      <header className="flex shrink-0 items-end justify-between gap-4 border-b border-slate-200/70 bg-white px-5 py-3">
+    <AuroraShell
+      fullBleed
+      bottomNav={
+        mobileView === 'list' ? (
+          <AuroraMobileNav chatsBadge={unreadChatCount} channelsAlert={channelsAlert} />
+        ) : undefined
+      }
+    >
+      <header className="hidden shrink-0 items-end justify-between gap-4 border-b border-slate-200/70 bg-white px-5 py-3 md:flex">
         <div className="min-w-0">
           <h1 className="text-[18px] font-semibold leading-tight text-slate-900">Chats</h1>
           <p className="truncate text-[12px] text-slate-500">
@@ -1018,6 +1043,10 @@ export function SoftCopilotInboxV2() {
               loading={loading}
               emptyReason={emptyReason}
               compact
+              bucket={bucket}
+              onBucketChange={setBucket}
+              search={search}
+              onSearchChange={setSearch}
               hasMoreConversations={Boolean(listNextCursor)}
               loadingMoreConversations={loadingMoreConversations}
               onLoadMoreConversations={() => void loadMoreConversations()}
@@ -1026,10 +1055,47 @@ export function SoftCopilotInboxV2() {
             <SoftThreadPane
               {...threadSharedProps}
               onClose={() => setMobileView('list')}
-              onBack={() => setMobileView('list')}
+              onBack={() => {
+                setMobileDetailsOpen(false)
+                setMobileView('list')
+              }}
+              onOpenDetails={() => setMobileDetailsOpen(true)}
+              agentActionsToday={agentActionsToday}
               compact
             />
           )}
+          {mobileView === 'thread' && mobileDetailsOpen && selectedConversation ? (
+            <div
+              className="fixed inset-0 z-40 flex flex-col bg-white md:hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Detalles del chat"
+            >
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-200/70 px-4 py-3">
+                <h2 className="text-[16px] font-bold text-slate-900">Detalles</h2>
+                <button
+                  type="button"
+                  onClick={() => setMobileDetailsOpen(false)}
+                  className="rounded-full bg-slate-100 px-3.5 py-1.5 text-[13px] font-semibold text-slate-700"
+                >
+                  Cerrar
+                </button>
+              </div>
+              <SoftCopilotRail
+                sheet
+                conversation={selectedConversation}
+                tab={railTab}
+                onTabChange={setRailTab}
+                onStatusChange={updateStatus}
+                onToggleTag={toggleTag}
+                agentMode={threadSharedProps.agentMode}
+                toolLog={selectedAgentState.toolLog}
+                onTakeOver={() => void setAgentControl('take_over')}
+                onPauseAi={() => void setAgentControl('pause')}
+                onResumeAi={() => void setAgentControl('resume')}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     </AuroraShell>

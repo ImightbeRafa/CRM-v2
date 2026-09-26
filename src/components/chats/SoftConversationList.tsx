@@ -1,9 +1,12 @@
 'use client'
 
+import { useState } from 'react'
+import { Clock, Search, Sparkles, X } from 'lucide-react'
 import {
   formatRelativeEs,
   initialsFromName,
   type ChannelFilter,
+  type InboxBucket,
   type SoftConversation,
   type SoftSocialAccount,
 } from '@/lib/chat-soft-copilot'
@@ -45,6 +48,34 @@ interface SoftConversationListProps {
   /** First page failed to load — show STATE-01 error with retry. */
   loadError?: boolean
   onRetryLoad?: () => void
+  /** Mobile (compact) bandeja tabs + search — CHAT-M01. */
+  bucket?: InboxBucket
+  onBucketChange?: (bucket: InboxBucket) => void
+  search?: string
+  onSearchChange?: (value: string) => void
+}
+
+/** CHAT-M01 segmented tabs → existing inbox buckets (no new staffing model). */
+const MOBILE_TABS: Array<{ id: InboxBucket; label: string }> = [
+  { id: 'abiertos', label: 'Todos' },
+  { id: 'tus_chats', label: 'Míos' },
+  { id: 'sin_asignar', label: 'Sin asignar' },
+  { id: 'ia_manejando', label: 'IA' },
+]
+
+const AVATAR_TINTS = [
+  'bg-blue-100 text-blue-700',
+  'bg-pink-100 text-pink-700',
+  'bg-emerald-100 text-emerald-700',
+  'bg-amber-100 text-amber-700',
+  'bg-violet-100 text-violet-700',
+  'bg-sky-100 text-sky-700',
+]
+
+function avatarTint(seed: string) {
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0
+  return AVATAR_TINTS[h % AVATAR_TINTS.length]
 }
 
 function conversationKey(c: SoftConversation) {
@@ -81,7 +112,12 @@ export function SoftConversationList({
   totalOpen,
   loadError,
   onRetryLoad,
+  bucket,
+  onBucketChange,
+  search,
+  onSearchChange,
 }: SoftConversationListProps) {
+  const [searchOpen, setSearchOpen] = useState(false)
   const chips: Array<{ id: ChannelFilter; label: string; activeClass: string; idleClass: string }> = [
     {
       id: 'todos',
@@ -105,27 +141,55 @@ export function SoftConversationList({
 
   return (
     <section
-      className={`flex h-full min-h-0 flex-col border-r border-slate-200/70 bg-white ${
-        compact ? 'w-full' : 'w-full md:w-[300px] lg:w-[320px]'
+      className={`flex h-full min-h-0 flex-col ${
+        compact
+          ? 'w-full bg-[#F5F4F0]'
+          : 'w-full border-r border-slate-200/70 bg-white md:w-[300px] lg:w-[320px]'
       } shrink-0`}
     >
-      <div className="flex items-start justify-between gap-2 px-4 pt-4">
-        <div>
-          <h2 className="text-[15px] font-semibold text-slate-900">
-            {compact ? 'Chats' : `Abiertos · ${openCount}`}
-          </h2>
-          {!compact && syncAgeSeconds != null ? (
-            <p className="mt-0.5 text-[10px] text-slate-400">
-              Sincronizado hace {syncAgeSeconds}s
-            </p>
+      {compact ? (
+        <div className="flex items-center justify-between gap-2 px-4 pt-4">
+          <h2 className="text-[28px] font-bold leading-tight tracking-tight text-slate-900">Chats</h2>
+          {onSearchChange ? (
+            <button
+              type="button"
+              aria-label={searchOpen ? 'Cerrar búsqueda' : 'Buscar chats'}
+              aria-pressed={searchOpen}
+              onClick={() => {
+                if (searchOpen) onSearchChange('')
+                setSearchOpen((v) => !v)
+              }}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-700 ring-1 ring-slate-200/70"
+            >
+              {searchOpen ? <X className="h-5 w-5" aria-hidden /> : <Search className="h-5 w-5" aria-hidden />}
+            </button>
           ) : null}
         </div>
-        {compact ? (
-          <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">⌘K</span>
-        ) : (
+      ) : (
+        <div className="flex items-start justify-between gap-2 px-4 pt-4">
+          <div>
+            <h2 className="text-[15px] font-semibold text-slate-900">{`Abiertos · ${openCount}`}</h2>
+            {syncAgeSeconds != null ? (
+              <p className="mt-0.5 text-[10px] text-slate-400">Sincronizado hace {syncAgeSeconds}s</p>
+            ) : null}
+          </div>
           <span className="text-[11px] text-slate-500">Más nuevos</span>
-        )}
-      </div>
+        </div>
+      )}
+
+      {compact && searchOpen && onSearchChange ? (
+        <div className="px-4 pt-3">
+          <input
+            autoFocus
+            type="search"
+            value={search ?? ''}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Buscar chats"
+            aria-label="Buscar chats"
+            className="w-full rounded-2xl border-0 bg-white px-4 py-2.5 text-[16px] text-slate-800 outline-none ring-1 ring-slate-200/70 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/40"
+          />
+        </div>
+      ) : null}
 
       {hasDemoInList ? (
         <div className="mx-4 mt-3 flex items-start justify-between gap-2 rounded-[10px] bg-amber-50 px-3 py-2 ring-1 ring-amber-100">
@@ -154,10 +218,37 @@ export function SoftConversationList({
           onSelect={onAccountFilter}
           totalOpen={totalOpen ?? openCount}
           countsByAccount={countsByAccount ?? new Map()}
+          variant={compact ? 'card' : 'pill'}
         />
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-1.5 px-4">
+      {compact && bucket && onBucketChange ? (
+        <div
+          role="tablist"
+          aria-label="Bandeja"
+          className="mx-4 mt-3 grid grid-cols-4 gap-0.5 rounded-2xl bg-[#EAE8E2] p-1"
+        >
+          {MOBILE_TABS.map((tab) => {
+            const active = bucket === tab.id
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => onBucketChange(tab.id)}
+                className={`truncate rounded-xl px-1 py-2 text-[13px] font-semibold transition-colors ${
+                  active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                }`}
+              >
+                {tab.label}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+
+      <div className={`mt-2 flex-wrap gap-1.5 px-4 ${compact ? 'hidden' : 'flex'}`}>
         {chips.map((chip) => {
           const active = channelFilter === chip.id
           return (
@@ -175,7 +266,7 @@ export function SoftConversationList({
         })}
       </div>
 
-      <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
+      <div className={`min-h-0 flex-1 overflow-y-auto ${compact ? 'mt-3 px-2' : 'mt-3'}`}>
         {loading && conversations.length === 0 ? (
           <AuroraListSkeleton />
         ) : loadError && conversations.length === 0 ? (
@@ -235,12 +326,93 @@ export function SoftConversationList({
             }
           />
         ) : (
-          <ul className="divide-y divide-slate-50">
+          <ul className={compact ? 'space-y-1 pb-3' : 'divide-y divide-slate-50'}>
             {conversations.map((conv) => {
               const key = conversationKey(conv)
               const selected = selectedKey === key
               const unread = conv.unreadCount || 0
               const isDemo = Boolean(conv.isDemo)
+              if (compact) {
+                const name = conversationDisplayName(conv)
+                const aiHandled = conv.agentStateDot === 'IA'
+                return (
+                  <li key={key}>
+                    <button
+                      type="button"
+                      data-soft-conv-key={key}
+                      onClick={() => onSelect(conv)}
+                      className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors ${
+                        selected ? 'bg-white shadow-[0_1px_4px_rgba(15,23,42,0.08)]' : 'active:bg-white/70'
+                      }`}
+                    >
+                      <div className="relative shrink-0">
+                        <div
+                          className={`flex h-[52px] w-[52px] items-center justify-center rounded-full text-[16px] font-bold ${
+                            isDemo ? 'bg-slate-200 text-slate-600' : avatarTint(name)
+                          }`}
+                        >
+                          {initialsFromName(conv.recipientName)}
+                        </div>
+                        <span className="absolute -bottom-0.5 -right-0.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white ring-2 ring-[#F5F4F0]">
+                          <ChannelLogo platform={conv.platform} size={14} />
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="truncate text-[16px] font-semibold text-slate-900">{name}</p>
+                          <span
+                            className={`shrink-0 text-[12px] ${
+                              unread > 0 ? 'font-semibold text-[#5B3FE0]' : 'text-slate-400'
+                            }`}
+                          >
+                            {formatRelativeEs(conv.lastMessageAt)}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-2">
+                          <p className="min-w-0 flex-1 truncate text-[14px] text-slate-500">
+                            {conv.lastMessage || '—'}
+                          </p>
+                          {isDemo ? (
+                            <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900">
+                              Demo
+                            </span>
+                          ) : null}
+                          {aiHandled ? (
+                            <span
+                              className="flex shrink-0 items-center gap-1 rounded-lg bg-[#F1EEFF] px-2 py-1 text-[12px] font-semibold text-[#5B3FE0]"
+                              data-testid="soft-agent-dot"
+                            >
+                              <Sparkles className="h-3 w-3" aria-hidden />
+                              IA
+                            </span>
+                          ) : conv.agentStateDot ? (
+                            <span
+                              className="shrink-0 rounded-lg bg-slate-100 px-2 py-1 text-[12px] font-semibold text-slate-600"
+                              data-testid="soft-agent-dot"
+                            >
+                              {conv.agentStateDot}
+                            </span>
+                          ) : null}
+                          {conv.status === 'nuevo' ? (
+                            <span className="flex shrink-0 items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-[12px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                              <Clock className="h-3 w-3" aria-hidden />
+                              Sin asignar
+                            </span>
+                          ) : null}
+                          {unread > 0 ? (
+                            <span
+                              aria-label={`${unread} sin leer`}
+                              className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-[#5B3FE0] px-1.5 text-[12px] font-bold text-white"
+                            >
+                              {unread > 9 ? '9+' : unread}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                )
+              }
               return (
                 <li key={key}>
                   <button

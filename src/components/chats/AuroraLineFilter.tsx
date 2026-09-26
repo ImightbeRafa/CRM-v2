@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { accountChannelAddress, accountDisplayLabel, type SoftSocialAccount } from '@/lib/chat-soft-copilot'
 import {
   filterLineAccounts,
@@ -17,6 +18,8 @@ interface AuroraLineFilterProps {
   onSelect: (id: string | 'all') => void
   totalOpen: number
   countsByAccount: Map<string, LineCounts>
+  /** `card` = CHAT-M01 mobile tenant/line card; default is the desktop pill. */
+  variant?: 'pill' | 'card'
 }
 
 function CountPill({ value, active }: { value: number; active?: boolean }) {
@@ -38,6 +41,7 @@ export function AuroraLineFilter({
   onSelect,
   totalOpen,
   countsByAccount,
+  variant = 'pill',
 }: AuroraLineFilterProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -81,41 +85,74 @@ export function AuroraLineFilter({
   }
 
   const selectedDown = selected ? lineIsDown(selected) : false
+  const selectedOpen = selected ? countsByAccount.get(selected.id)?.open ?? 0 : totalOpen
 
   return (
     <div ref={rootRef} className="relative" data-testid="aurora-line-filter">
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className={`flex w-full items-center gap-2 rounded-full px-3 py-1.5 text-left text-[12px] font-medium ring-1 transition-colors ${
-          selected
-            ? 'bg-[#EEF0FF] text-[#4A46E5] ring-[#5B6CFF]/25'
-            : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50'
-        }`}
-      >
-        {selected ? (
-          <ChannelLogo platform={selected.platform} size={14} className="shrink-0" />
-        ) : (
-          <span aria-hidden className="text-slate-400">
-            ◌
+      {variant === 'card' ? (
+        <button
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full items-center gap-3 rounded-2xl bg-[#F1EEFF] px-3.5 py-2.5 text-left ring-1 ring-[#A48BFF]/40"
+        >
+          {selected ? (
+            <ChannelLogo platform={selected.platform} size={22} className="shrink-0" />
+          ) : (
+            <span aria-hidden className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-slate-400">
+              ◌
+            </span>
+          )}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[14px] font-semibold text-[#3B2A9E]">
+              {selected ? accountDisplayLabel(selected) : 'Todas las líneas'}
+            </span>
+            <span className="block truncate text-[11px] text-slate-500">
+              {[selected ? accountChannelAddress(selected) : null, `${selectedOpen} abiertos`]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
           </span>
-        )}
-        <span className="min-w-0 flex-1 truncate">
-          {selected ? accountDisplayLabel(selected) : 'Todas las líneas'}
-        </span>
-        {selectedDown ? (
-          <span aria-label="Línea caída" className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
-        ) : null}
-        <span aria-hidden className="text-[10px] text-slate-400">
-          ▾
-        </span>
-      </button>
+          {selectedDown ? (
+            <span aria-label="Línea caída" className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
+          ) : null}
+          <ChevronDown className="h-4 w-4 shrink-0 text-[#5B3FE0]" aria-hidden />
+        </button>
+      ) : (
+        <button
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className={`flex w-full items-center gap-2 rounded-full px-3 py-1.5 text-left text-[12px] font-medium ring-1 transition-colors ${
+            selected
+              ? 'bg-[#EEF0FF] text-[#4A46E5] ring-[#5B6CFF]/25'
+              : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          {selected ? (
+            <ChannelLogo platform={selected.platform} size={14} className="shrink-0" />
+          ) : (
+            <span aria-hidden className="text-slate-400">
+              ◌
+            </span>
+          )}
+          <span className="min-w-0 flex-1 truncate">
+            {selected ? accountDisplayLabel(selected) : 'Todas las líneas'}
+          </span>
+          {selectedDown ? (
+            <span aria-label="Línea caída" className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+          ) : null}
+          <span aria-hidden className="text-[10px] text-slate-400">
+            ▾
+          </span>
+        </button>
+      )}
 
       {open ? (
         <div
-          className="absolute left-0 right-0 top-full z-30 mt-1.5 max-h-[420px] overflow-y-auto rounded-2xl bg-white p-2 shadow-[0_12px_32px_rgba(15,23,42,0.14)] ring-1 ring-slate-200"
+          className="absolute left-0 right-0 top-full z-30 mt-1.5 max-h-[min(420px,60dvh)] overflow-y-auto rounded-2xl bg-white p-2 shadow-[0_12px_32px_rgba(15,23,42,0.14)] ring-1 ring-slate-200"
           role="listbox"
           aria-label="Filtrar por línea"
         >

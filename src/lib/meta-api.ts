@@ -12,37 +12,175 @@ export function buildMetaGraphUrl(path: string): string {
 }
 
 /**
+ * Vercel `env pull` writes `[SENSITIVE]` for dashboard-Sensitive keys.
+ * If that file is bulk-uploaded to Cloudflare, Graph OAuth uses the literal
+ * placeholder and every code exchange fails with "Failed to obtain access token".
+ */
+export function isUnusableMetaEnvValue(value: string | undefined | null): boolean {
+  const v = (value || '').trim()
+  if (!v) return true
+  if (v === '[SENSITIVE]' || v === '[REDACTED]') return true
+  if (/^(changeme|placeholder|your[_-]?secret|xxx+)$/i.test(v)) return true
+  return false
+}
+
+/** Meta app ids are numeric strings (typically 15–16 digits). */
+export function isUsableMetaAppId(value: string | undefined | null): boolean {
+  const v = (value || '').trim()
+  if (isUnusableMetaEnvValue(v)) return false
+  return /^\d{10,20}$/.test(v)
+}
+
+export function isUsableMetaAppSecret(value: string | undefined | null): boolean {
+  const v = (value || '').trim()
+  if (isUnusableMetaEnvValue(v)) return false
+  // Real Meta app secrets are opaque; reject obvious short placeholders.
+  return v.length >= 16
+}
+
+function firstUsable(
+  values: Array<string | undefined>,
+  predicate: (v: string) => boolean,
+): string {
+  for (const raw of values) {
+    const v = (raw || '').trim()
+    if (predicate(v)) return v
+  }
+  return ''
+}
+
+/**
  * CRM WhatsApp Meta app id (dedicated Inbox WA app).
  * Falls back to META_APP_ID when unset (dev / single-app setups).
  * Production should set META_WA_APP_ID to the customer-inbox WA app.
+ * Skips Vercel `[SENSITIVE]` placeholders so a bad WA id does not mask META_APP_ID.
  */
 export function getMetaWhatsAppAppId(
   env: Record<string, string | undefined> = process.env,
 ): string {
-  return (env.META_WA_APP_ID || env.META_APP_ID || '').trim()
+  return firstUsable(
+    [env.META_WA_APP_ID, env.META_APP_ID, env.NEXT_PUBLIC_META_WA_APP_ID, env.NEXT_PUBLIC_META_APP_ID],
+    isUsableMetaAppId,
+  )
 }
 
 /** Browser-facing WA app id for FB.login Embedded Signup. */
 export function getPublicMetaWhatsAppAppId(
   env: Record<string, string | undefined> = process.env,
 ): string {
-  return (
-    env.NEXT_PUBLIC_META_WA_APP_ID ||
-    env.META_WA_APP_ID ||
-    env.NEXT_PUBLIC_META_APP_ID ||
-    env.META_APP_ID ||
-    ''
-  ).trim()
+  return firstUsable(
+    [
+      env.NEXT_PUBLIC_META_WA_APP_ID,
+      env.META_WA_APP_ID,
+      env.NEXT_PUBLIC_META_APP_ID,
+      env.META_APP_ID,
+    ],
+    isUsableMetaAppId,
+  )
 }
 
 /**
  * CRM WhatsApp Meta app secret (HMAC + appsecret_proof for WA Graph).
  * Falls back to META_APP_SECRET when unset.
+ * Skips `[SENSITIVE]` / short placeholders from a bad secret bulk.
  */
 export function getMetaWhatsAppAppSecret(
   env: Record<string, string | undefined> = process.env,
 ): string {
-  return (env.META_WA_APP_SECRET || env.META_APP_SECRET || '').trim()
+  return firstUsable(
+    [env.META_WA_APP_SECRET, env.META_APP_SECRET, env.INSTAGRAM_APP_SECRET],
+    isUsableMetaAppSecret,
+  )
+}
+
+/** Safe fingerprint for diagnostics — never returns secret values. */
+export function metaEnvFingerprint(
+  env: Record<string, string | undefined> = process.env,
+): {
+  waAppIdUsable: boolean
+  waAppIdSource: string | null
+  waAppIdLast4: string | null
+  waSecretUsable: boolean
+  waSecretSource: string | null
+  waSecretLenBucket: string
+  metaAppIdUsable: boolean
+  metaAppIdLast4: string | null
+  metaSecretUsable: boolean
+  encryptionKeyUsable: boolean
+  placeholderKeys: string[]
+} {
+  const keys = [
+    'META_WA_APP_ID',
+    'META_WA_APP_SECRET',
+    'META_APP_ID',
+    'META_APP_SECRET',
+    'INSTAGRAM_APP_SECRET',
+    'ENCRYPTION_KEY',
+    'NEXT_PUBLIC_META_WA_APP_ID',
+    'NEXT_PUBLIC_META_APP_ID',
+  ] as const
+  const placeholderKeys: string[] = []
+  for (const key of keys) {
+    const v = (env[key] || '').trim()
+    if (v === '[SENSITIVE]' || v === '[REDACTED]') placeholderKeys.push(key)
+  }
+
+  const waIdSources: Array<[string, string | undefined]> = [
+    ['META_WA_APP_ID', env.META_WA_APP_ID],
+    ['META_APP_ID', env.META_APP_ID],
+    ['NEXT_PUBLIC_META_WA_APP_ID', env.NEXT_PUBLIC_META_WA_APP_ID],
+    ['NEXT_PUBLIC_META_APP_ID', env.NEXT_PUBLIC_META_APP_ID],
+  ]
+  let waAppIdSource: string | null = null
+  let waAppId = ''
+  for (const [name, raw] of waIdSources) {
+    if (isUsableMetaAppId(raw)) {
+      waAppIdSource = name
+      waAppId = (raw || '').trim()
+      break
+    }
+  }
+
+  const waSecretSources: Array<[string, string | undefined]> = [
+    ['META_WA_APP_SECRET', env.META_WA_APP_SECRET],
+    ['META_APP_SECRET', env.META_APP_SECRET],
+    ['INSTAGRAM_APP_SECRET', env.INSTAGRAM_APP_SECRET],
+  ]
+  let waSecretSource: string | null = null
+  let waSecret = ''
+  for (const [name, raw] of waSecretSources) {
+    if (isUsableMetaAppSecret(raw)) {
+      waSecretSource = name
+      waSecret = (raw || '').trim()
+      break
+    }
+  }
+
+  const metaAppId = firstUsable([env.META_APP_ID, env.NEXT_PUBLIC_META_APP_ID], isUsableMetaAppId)
+  const metaSecret = firstUsable([env.META_APP_SECRET], isUsableMetaAppSecret)
+  const enc = (env.ENCRYPTION_KEY || '').trim()
+
+  const lenBucket = (n: number) => {
+    if (n <= 0) return 'missing'
+    if (n < 16) return 'too_short'
+    if (n === 32) return '32'
+    if (n >= 16 && n < 32) return '16_31'
+    return '33_plus'
+  }
+
+  return {
+    waAppIdUsable: Boolean(waAppId),
+    waAppIdSource,
+    waAppIdLast4: waAppId ? waAppId.slice(-4) : null,
+    waSecretUsable: Boolean(waSecret),
+    waSecretSource,
+    waSecretLenBucket: lenBucket(waSecret.length),
+    metaAppIdUsable: Boolean(metaAppId),
+    metaAppIdLast4: metaAppId ? metaAppId.slice(-4) : null,
+    metaSecretUsable: Boolean(metaSecret),
+    encryptionKeyUsable: isUsableMetaAppSecret(enc) || (enc.length >= 32 && !isUnusableMetaEnvValue(enc)),
+    placeholderKeys,
+  }
 }
 
 export type MetaAppSecretProofPurpose = 'default' | 'whatsapp'
@@ -52,7 +190,7 @@ function resolveAppSecretForProof(
   env: Record<string, string | undefined> = process.env,
 ): string {
   if (purpose === 'whatsapp') return getMetaWhatsAppAppSecret(env)
-  return (env.META_APP_SECRET || '').trim()
+  return firstUsable([env.META_APP_SECRET, env.INSTAGRAM_APP_SECRET], isUsableMetaAppSecret)
 }
 
 /**

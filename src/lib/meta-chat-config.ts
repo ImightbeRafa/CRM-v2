@@ -74,7 +74,13 @@ const STAFF_BOT_ENV: MetaChatEnvKey[] = [
 
 export function envFlag(key: MetaChatEnvKey): { key: MetaChatEnvKey; set: boolean } {
   const value = (process.env[key] || '').trim()
-  return { key, set: value.length > 0 }
+  // Treat Vercel Sensitive pull placeholders as unset (would break Graph OAuth).
+  const unusable =
+    !value ||
+    value === '[SENSITIVE]' ||
+    value === '[REDACTED]' ||
+    /^(changeme|placeholder|your[_-]?secret|xxx+)$/i.test(value)
+  return { key, set: !unusable }
 }
 
 /** Prefer NEXTAUTH_URL (www in prod). Never invent an apex-only default when NEXTAUTH_URL is set. */

@@ -10,6 +10,7 @@ import {
   initiateWhatsAppSmbAppDataSync,
   getMetaWhatsAppAppId,
   getMetaWhatsAppAppSecret,
+  metaEnvFingerprint,
 } from '@/lib/meta-api'
 import { encodeWhatsAppRefreshToken } from '@/lib/social-account-meta'
 import { encryptSocialAccessToken } from '@/lib/social-account-crypto'
@@ -86,10 +87,41 @@ export async function POST(request: NextRequest) {
     } else if (code) {
       const appId = getMetaWhatsAppAppId()
       const appSecret = getMetaWhatsAppAppSecret()
+      const fp = metaEnvFingerprint()
 
       if (!appId || !appSecret) {
-        console.error('[wa/exchange] Missing META_WA_APP_ID/META_APP_ID or META_WA_APP_SECRET/META_APP_SECRET')
-        return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+        console.error('[wa/exchange] Missing or unusable Meta app id/secret', {
+          waAppIdUsable: fp.waAppIdUsable,
+          waSecretUsable: fp.waSecretUsable,
+          placeholderKeys: fp.placeholderKeys,
+          waAppIdSource: fp.waAppIdSource,
+          waSecretSource: fp.waSecretSource,
+        })
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              fp.placeholderKeys.length > 0
+                ? 'Server Meta secrets are placeholders ([SENSITIVE] from Vercel pull). Re-put real Inbox app secrets on the Worker, then redeploy the container.'
+                : 'Server configuration error: Meta WA app id/secret missing or unusable',
+            exchangeError: {
+              errorCode: 'meta_env_unusable',
+              errorMessage:
+                fp.placeholderKeys.length > 0
+                  ? 'META secrets look like Vercel [SENSITIVE] placeholders'
+                  : 'META_WA_APP_ID/META_APP_ID or META_WA_APP_SECRET/META_APP_SECRET missing',
+              placeholderKeys: fp.placeholderKeys,
+            },
+            debugInfo: {
+              codeProvided: true,
+              accessTokenProvided: false,
+              messageProvided: !!message,
+              ...fp,
+              hint: 'Put real META_APP_SECRET / META_WA_APP_SECRET / META_WA_APP_ID / ENCRYPTION_KEY on Worker (not [SENSITIVE]), then wrangler deploy --keep-vars --containers-rollout=immediate',
+            },
+          },
+          { status: 500 },
+        )
       }
 
       console.log('[wa/exchange] Exchanging Embedded Signup code', {
@@ -97,6 +129,11 @@ export async function POST(request: NextRequest) {
         hasConfigId: Boolean(process.env.NEXT_PUBLIC_FB_LOGIN_CONFIG_ID),
         hasNextAuthUrl: Boolean(process.env.NEXTAUTH_URL),
         usingDedicatedWaApp: Boolean((process.env.META_WA_APP_ID || '').trim()),
+        waAppIdSource: fp.waAppIdSource,
+        waAppIdLast4: fp.waAppIdLast4,
+        waSecretSource: fp.waSecretSource,
+        waSecretLenBucket: fp.waSecretLenBucket,
+        placeholderKeys: fp.placeholderKeys,
         coexistenceFinish,
         sessionEvent: sessionAssets.event,
       })
@@ -165,15 +202,23 @@ export async function POST(request: NextRequest) {
     }
 
     if (!businessToken) {
+      const fpFail = metaEnvFingerprint()
+      const graphMsg =
+        exchangeError && typeof exchangeError === 'object'
+          ? String((exchangeError as { errorMessage?: string }).errorMessage || '')
+          : ''
       return NextResponse.json(
         {
           success: false,
-          message: 'Failed to obtain access token',
+          message: graphMsg
+            ? `Failed to obtain access token: ${graphMsg}`
+            : 'Failed to obtain access token',
           exchangeError: exchangeError || 'No error details available',
           debugInfo: {
             codeProvided: !!code,
             accessTokenProvided: !!accessToken,
             messageProvided: !!message,
+            ...fpFail,
             hint: 'Check server logs for detailed error information',
           },
         },

@@ -149,10 +149,17 @@ export default function SocialConfigPage() {
       setStatusMessage('Conexión de WhatsApp cancelada en Meta.')
       return
     }
+    const graphDetail =
+      typeof json.exchangeError === 'object' && json.exchangeError?.errorMessage
+        ? String(json.exchangeError.errorMessage)
+        : ''
     const errorMsg =
+      (json.message && graphDetail && !String(json.message).includes(graphDetail)
+        ? `${json.message} (${graphDetail})`
+        : null) ||
       json.message ||
       json.error ||
-      json.exchangeError?.errorMessage ||
+      graphDetail ||
       'No se pudo conectar WhatsApp (revisa suscripción a webhooks).'
     setStatusMessage(errorMsg)
     if (json.subscribed === false || /suscri/i.test(errorMsg)) {

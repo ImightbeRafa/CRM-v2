@@ -3,13 +3,19 @@ function Bar({ className = '' }: { className?: string }) {
 }
 
 /** STATE-01 · "Cargando bandeja" — list rows. */
-export function AuroraListSkeleton({ rows = 7 }: { rows?: number }) {
+export function AuroraListSkeleton({
+  rows = 7,
+  label = 'Cargando chats',
+}: {
+  rows?: number
+  label?: string
+}) {
   return (
     <div
       className="space-y-4 px-4 py-3"
       role="status"
       aria-busy="true"
-      aria-label="Cargando chats"
+      aria-label={label}
       data-testid="aurora-list-skeleton"
     >
       {Array.from({ length: rows }).map((_, i) => (

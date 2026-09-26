@@ -197,6 +197,7 @@ export async function GET(request: NextRequest) {
           courier: true,
           expectedDate: true,
           funnel: true,
+          salesChannel: true,
           agreedDate: true,
           pickupDate: true,
           saleDate: true,

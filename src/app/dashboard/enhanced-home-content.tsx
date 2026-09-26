@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
 import { SetupChecklist } from "./components/SetupChecklist";
+import { canAccessLogistics } from "@/lib/logistics-access";
 
 const pageTransition = {
   initial: { opacity: 0, y: 12 },

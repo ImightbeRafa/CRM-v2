@@ -3,14 +3,14 @@ import { getToken } from 'next-auth/jwt';
 import { prisma } from '@/lib/db';
 import { escapeHtml } from '@/lib/validation';
 import { PII_NO_STORE_HEADERS } from '@/lib/security';
-import { useSparticuzChromium } from '@/lib/use-sparticuz-chromium';
+import { shouldUseSparticuzChromium } from '@/lib/use-sparticuz-chromium';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
 
 // Helper to get Puppeteer browser
 async function getBrowser() {
-  if (useSparticuzChromium()) {
+  if (shouldUseSparticuzChromium()) {
     // Production: use puppeteer-core with @sparticuz/chromium
     const chromium = await import('@sparticuz/chromium');
     const puppeteer = await import('puppeteer-core');

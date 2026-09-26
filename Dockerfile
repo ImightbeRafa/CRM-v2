@@ -8,7 +8,7 @@ WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 COPY prisma ./prisma
 ENV PUPPETEER_SKIP_DOWNLOAD=1
 RUN npm ci
@@ -27,7 +27,20 @@ ENV DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build
 ENV NEXTAUTH_SECRET=build-only-not-a-runtime-secret
 ENV NEXTAUTH_URL=http://localhost:3000
 ENV RESEND_API_KEY=build-only
-RUN npm run build
+# Stub keys so Next "collect page data" does not crash on module-level clients.
+# Runtime secrets are injected by the Worker / Containers env — never bake real values here.
+ENV OPENAI_API_KEY=build-only
+ENV XAI_API_KEY=build-only
+ENV TELEGRAM_BOT_TOKEN=0:build-only
+ENV WHATSAPP_ACCESS_TOKEN=build-only
+ENV META_APP_SECRET=build-only
+ENV CRON_SECRET=build-only
+ENV EMPLOYEE_CODE_SECRET=build-only
+ENV ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
+ENV BOT_JWT_SECRET=build-only
+ENV UPSTASH_REDIS_REST_URL=https://example.upstash.io
+ENV UPSTASH_REDIS_REST_TOKEN=build-only
+RUN npx prisma generate && npx next build --no-lint
 
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app

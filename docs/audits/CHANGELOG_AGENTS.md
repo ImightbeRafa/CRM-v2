@@ -1148,3 +1148,19 @@ Append-only. Newest entries at the top.
   table. Status board NEXT updated. PR #53 marked ready for squash-merge; A1 next.
 - Prove: docs only — `git diff --stat` = `docs/**`; no SQL, Prisma, or app code. Sol
   verification not run (Rafael: not required); Executor self-check of § refs and links.
+
+# 2026-09-26 — Aurora PR-I: Estadísticas STAT-01 + Agentes detail (Conocimiento tab)
+
+- `/estadisticas` now renders in `AuroraShell` (no classic top/bottom nav). New read-only,
+  tenant-scoped `GET /api/estadisticas/aurora-summary?period=` (`view_statistics`); every
+  number comes from Order / ChatConversation / SocialAccount / ChatAgentTurn queries or the
+  existing `status-breakdown` endpoint. Chat→pedido, per-line Pedidos/Ventas and "Con
+  intención de compra" have no data source and render "—" / "Sin datos". No brands.
+- Agent detail lives in `/config?tab=agentes&agente=<id|slug>&seccion=<key>`; Conocimiento is a
+  tab (completeness cards, inline Pegar → Revisar → Aprobar bound to the open agent, real
+  Fuentes table). Crear agente = draft form → existing `POST /api/chat/agents`. Publicar
+  cambios only flushes saves; it never touches `status`, so the runtime stays OFF.
+- CoS fixes: no "Telegram" in the Plan list; mobile bottom nav stays visible under the global
+  banner (`--app-top-offset`); Config panel clears the settings FAB; one cream canvas token;
+  `/inicio` → `/dashboard` (307).
+- Prove: `npm run test:stats-ui`, `test:agentes-ui`, `test:config-ui`; no schema / SQL / runtime files touched.

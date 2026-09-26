@@ -1590,7 +1590,7 @@ function ConfigPageInner() {
 
 export default function ConfigPageClient() {
   return (
-    <Suspense fallback={<div className="min-h-[100dvh] bg-[#F6F5F2]"><AuroraListSkeleton rows={6} label="Cargando configuración" /></div>}>
+    <Suspense fallback={<div className="min-h-[100dvh] bg-[var(--aurora-canvas)]"><AuroraListSkeleton rows={6} label="Cargando configuración" /></div>}>
       <ConfigPageInner />
     </Suspense>
   )

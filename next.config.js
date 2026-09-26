@@ -2,7 +2,7 @@
 /** @type {import('next').NextConfig} */
 import withBundleAnalyzer from '@next/bundle-analyzer';
 import { withSentryConfig } from '@sentry/nextjs';
-import { CONFIG_PATH_REDIRECTS } from './src/components/aurora/config/config-redirects.mjs';
+import { AURORA_ALIAS_REDIRECTS, CONFIG_PATH_REDIRECTS } from './src/components/aurora/config/config-redirects.mjs';
 
 const bundleAnalyzer = withBundleAnalyzer({
   enabled: process.env.ANALYZE === 'true',
@@ -106,6 +106,7 @@ const nextConfig = {
   async redirects() {
     return [
       ...CONFIG_PATH_REDIRECTS,
+      ...AURORA_ALIAS_REDIRECTS,
       { source: '/pedidos', destination: '/ventas', permanent: false },
       { source: '/pedidos/:path*', destination: '/ventas/:path*', permanent: false },
     ];

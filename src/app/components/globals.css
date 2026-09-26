@@ -4,6 +4,8 @@
  
 @layer base {
   :root {
+    /* Aurora page canvas (cream). Shared by AuroraShell and the Config panel. */
+    --aurora-canvas: #F6F5F2;
     --background: 40 20% 98.5%;
     --foreground: 230 25% 10%;
  

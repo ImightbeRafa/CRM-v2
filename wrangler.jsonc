@@ -2,6 +2,20 @@
   "name": "betsy-crm-daytime-smoke",
   "main": "src/cf-container-worker.ts",
   "compatibility_date": "2026-09-25",
+  "triggers": {
+    // Unique schedules matching vercel.json (9 paths; "0 2 * * *" fans out to 2).
+    // Handler no-ops while DISABLE_CRONS=1 — safe to deploy before DNS flip.
+    "crons": [
+      "0 2 * * *",
+      "0 14 * * *",
+      "*/5 * * * *",
+      "*/1 * * * *",
+      "30 3 * * *",
+      "0 5 * * *",
+      "0 18 * * SUN",
+      "0 6 * * *"
+    ]
+  },
   "containers": [
     {
       "class_name": "BetsyCrmContainer",
@@ -23,4 +37,6 @@
       "new_sqlite_classes": ["BetsyCrmContainer"]
     }
   ]
+  // Custom domain www.betsycrm.com intentionally NOT attached here.
+  // Attach only at flip after Vercel crons are disabled (see docs/ops).
 }

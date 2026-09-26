@@ -8,6 +8,8 @@ import { withoutTenantIsolation } from './tenantContext'
 import { rateLimit } from './rate-limit'
 import { selectActiveTenantId } from './membership-lifecycle'
 import { provisionOwnedTenantForExistingUser } from './tenant-provisioning'
+import { shouldJoinInviteInsteadOfProvisioning } from './team-invite'
+import { acceptTeamInviteForUser, findPendingInviteForEmail } from './team-invite-service'
 
 type MemberRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES' | 'PRODUCTION' | 'MEMBER' | 'VIEWER';
 
@@ -340,10 +342,41 @@ export const authOptions: NextAuthOptions = {
                 return true; // SUCCESS - User has active memberships
               }
 
-              // Removed assistants must NOT be silently put back into the old tenant.
-              // Google already proved control of this email, so provision a new owned tenant.
-              console.log(`[OAuth] ⚠️ User ${updatedUser.email} has no active memberships; provisioning a new owned tenant`);
+              // Prefer pending team invite over orphan owned-tenant provisioning.
+              console.log(`[OAuth] ⚠️ User ${updatedUser.email} has no active memberships; checking team invites`);
               try {
+                let pending = null as Awaited<ReturnType<typeof findPendingInviteForEmail>>
+                try {
+                  pending = await findPendingInviteForEmail(updatedUser.email)
+                } catch (inviteLookupError) {
+                  console.warn('[OAuth] TenantInvite lookup failed (SQL 030 may be pending):', inviteLookupError)
+                }
+                const decision = shouldJoinInviteInsteadOfProvisioning({
+                  activeMembershipCount: 0,
+                  pendingInvite: pending ? { tenantId: pending.tenantId, role: pending.role } : null,
+                })
+                if (decision === 'join_invite' && pending) {
+                  const accepted = await acceptTeamInviteForUser({
+                    inviteId: pending.id,
+                    token: pending.token,
+                    userId: updatedUser.id,
+                    userEmail: updatedUser.email,
+                  })
+                  if (!accepted.ok) {
+                    console.error(`[OAuth] ❌ Invite accept failed for ${updatedUser.email}:`, accepted.error)
+                    return false
+                  }
+                  (user as any).role = 'REGULAR'
+                  ;(user as any).tenantId = accepted.tenantId
+                  ;(user as any).memberships = [{
+                    role: accepted.role,
+                    tenantId: accepted.tenantId,
+                    tenant: pending.tenant,
+                  }]
+                  console.log(`[OAuth] ✅ Joined inviting tenant ${accepted.tenantId} via invite`)
+                  return true
+                }
+
                 const newTenant = await withoutTenantIsolation(async () => {
                   return prisma.$transaction(async (tx) => {
                     return provisionOwnedTenantForExistingUser(tx, {
@@ -369,9 +402,54 @@ export const authOptions: NextAuthOptions = {
               }
             }
 
-            // If we get here, user doesn't exist - create new user with tenant
+            // If we get here, user doesn't exist - prefer joining a pending invite over orphan tenant
             console.log(`[OAuth] Creating new user: ${normalizedEmail}`);
             try {
+              let pendingForNew = null as Awaited<ReturnType<typeof findPendingInviteForEmail>>
+              try {
+                pendingForNew = await findPendingInviteForEmail(normalizedEmail)
+              } catch (inviteLookupError) {
+                console.warn('[OAuth] TenantInvite lookup failed for new user:', inviteLookupError)
+              }
+              if (pendingForNew) {
+                const emailPrefix = normalizedEmail.split('@')[0];
+                const createdForInvite = await prisma.user.create({
+                  data: {
+                    email: normalizedEmail,
+                    username: user.name || emailPrefix,
+                    name: user.name || undefined,
+                    image: user.image || undefined,
+                    provider: account?.provider || 'google',
+                    providerId: account?.providerAccountId,
+                    emailVerified: new Date(),
+                    active: true,
+                    defaultTenantId: pendingForNew.tenantId,
+                  },
+                })
+                const accepted = await acceptTeamInviteForUser({
+                  inviteId: pendingForNew.id,
+                  token: pendingForNew.token,
+                  userId: createdForInvite.id,
+                  userEmail: normalizedEmail,
+                })
+                if (!accepted.ok) {
+                  console.error('[OAuth] ❌ Failed to accept invite for new Google user:', accepted.error)
+                  return false
+                }
+                user.id = createdForInvite.id
+                ;(user as any).email_verified = true
+                ;(user as any).active = true
+                ;(user as any).role = 'REGULAR'
+                ;(user as any).tenantId = accepted.tenantId
+                ;(user as any).memberships = [{
+                  role: accepted.role,
+                  tenantId: accepted.tenantId,
+                  tenant: pendingForNew.tenant,
+                }]
+                console.log(`[OAuth] ✅ New Google user joined inviting tenant ${accepted.tenantId}`)
+                return true
+              }
+
               const emailPrefix = normalizedEmail.split('@')[0];
               const tenantName = `${user.name || emailPrefix}'s Organization`;
               const tenantSlug = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now();

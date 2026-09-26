@@ -23,6 +23,8 @@
  * (BETSY_V2_APPLY_FILES=028). Never part of DEFAULT_APPLY_FILES.
  * 029 playbooks, brand facts, and asset tables are gated the same way
  * (BETSY_V2_APPLY_FILES=029). Never part of DEFAULT_APPLY_FILES. Not applied.
+ * 030 TenantInvite + 031 ChatMessage.senderUserId gated the same way
+ * (BETSY_V2_APPLY_FILES=030,031). Never part of DEFAULT_APPLY_FILES.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

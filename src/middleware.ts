@@ -4,6 +4,7 @@ import { withTenantContext } from '@/lib/tenantContext';
 import { TenantError } from '@/lib/errors';
 import { isIntegrationOriginAllowed } from '@/lib/integration-cors';
 import { cronsDisabled } from '@/lib/cron-kill-switch';
+import { canAccessLogistics } from '@/lib/logistics-access';
 
 const CSP_HEADER = [
   "default-src 'self'",
@@ -22,8 +23,10 @@ const CSP_HEADER = [
 
 const PUBLIC_ROUTES = [
   '/auth/signin',
+  '/auth/accept-invite',
   '/auth/error',
   '/api/auth',
+  '/api/invites/accept',
   '/home',
   '/_next',
   '/favicon.ico',
@@ -184,13 +187,20 @@ export default async function middleware(request: Request) {
     requestHeaders.set('x-user-role', role);
     if (tenantId) requestHeaders.set('x-tenant-id', tenantId);
 
-    // Logistics dashboard — check early before tenant validation
+    // Logistics — DeepSleep members who are logistics admins only
     if (pathname.startsWith('/logistics') || pathname.startsWith('/api/logistics/')) {
-      const isLogisticsAdmin = (token as any)?.isLogisticsAdmin === true;
-      if (!isLogisticsAdmin) {
+      const membershipTenantIds = Array.from(new Set([
+        ...(((token as any)?.allTenantIds as string[]) || []),
+        ...((((token as any)?.memberships as any[]) || []).map((m: any) => m?.tenantId || m?.tenant?.id).filter(Boolean)),
+      ]));
+      const allowed = canAccessLogistics({
+        isLogisticsAdmin: (token as any)?.isLogisticsAdmin === true,
+        membershipTenantIds,
+      });
+      if (!allowed) {
         if (pathname.startsWith('/api/logistics/')) {
           return new NextResponse(
-            JSON.stringify({ error: 'Forbidden', message: 'Logistics admin access required' }),
+            JSON.stringify({ error: 'Forbidden', message: 'DeepSleep logistics access required' }),
             { status: 403, headers: { 'Content-Type': 'application/json' } }
           );
         }

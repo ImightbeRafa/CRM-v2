@@ -81,7 +81,12 @@ export default function EnhancedHomeContent() {
     || session.user?.membershipRole === 'OWNER'
     || session.user?.currentTenant?.role === 'OWNER';
   const isMaster = session.user?.role === 'MASTER';
-  const isLogisticsAdmin = Boolean((session.user as { isLogisticsAdmin?: boolean })?.isLogisticsAdmin);
+  const isLogisticsAdmin = canAccessLogistics({
+    isLogisticsAdmin: Boolean((session.user as { isLogisticsAdmin?: boolean })?.isLogisticsAdmin),
+    membershipTenantIds:
+      (session.user as { allTenantIds?: string[] }).allTenantIds ||
+      ((session.user as { memberships?: Array<{ tenantId?: string }> }).memberships || []).map((m) => m.tenantId),
+  });
   const greeting = displayName(session);
 
   return (

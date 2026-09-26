@@ -52,6 +52,7 @@ model Tenant {
   
   // Relations
   memberships    Membership[]
+  invites        TenantInvite[]
   orders         Order[]
   clients        Client[]
   inventoryItems InventoryItem[]
@@ -165,6 +166,30 @@ enum MemberRole {
   SALES      // /ventas only
   PRODUCTION // /produccion only
   VIEWER     // Read-only access
+}
+
+// Pending team invite. Accept (email or Google) must join inviting tenant.
+// SQL 030 gated — do not assume table exists until BETSY_V2_APPLY_FILES=030.
+model TenantInvite {
+  id              String    @id @default(cuid())
+  tenantId        String
+  email           String
+  role            MemberRole @default(VIEWER)
+  token           String    @unique
+  invitedByUserId String
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  acceptedUserId  String?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant       Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy    User   @relation("TenantInviteInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  acceptedUser User?  @relation("TenantInviteAcceptor", fields: [acceptedUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([email])
 }
 
 enum SubscriptionTier {
@@ -314,6 +339,9 @@ model User {
   feedbackTickets FeedbackTicket[]
   assignedChatConversations ChatConversation[] @relation("ChatConversationAssignee")
   chatConversationReadStates ChatConversationReadState[]
+  sentChatMessages ChatMessage[] @relation("ChatMessageSender")
+  invitesSent TenantInvite[] @relation("TenantInviteInviter")
+  invitesAccepted TenantInvite[] @relation("TenantInviteAcceptor")
   
   @@map("User")
   @@index([email])
@@ -987,6 +1015,7 @@ model ChatMessage {
   mediaCachedAt        DateTime?
   mediaErrorCode       String?
   duplicateOfMessageId String?
+  senderUserId         String?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -997,6 +1026,7 @@ model ChatMessage {
   conversation   ChatConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   duplicateOf    ChatMessage?      @relation("ChatMessageDuplicates", fields: [duplicateOfMessageId], references: [id], onDelete: SetNull)
   duplicates     ChatMessage[]     @relation("ChatMessageDuplicates")
+  senderUser     User?             @relation("ChatMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
   automationJobs ChatAutomationJob[]
   agentTurns     ChatAgentTurn[]
   agentSuggestions ChatAgentSuggestion[]
@@ -1006,7 +1036,9 @@ model ChatMessage {
   @@index([conversationId, sentAt(sort: Desc), id(sort: Desc)], map: "ChatMessage_conversationId_sentAt_id_idx")
   @@index([socialAccountId, providerMessageId], map: "ChatMessage_socialAccountId_providerMessageId_idx")
   @@index([tenantId, createdAt, id], map: "ChatMessage_tenantId_createdAt_id_idx")
+  @@index([tenantId, senderUserId], map: "ChatMessage_tenantId_senderUserId_idx")
 }
+
 
 // Soft Agent Layer (A1) — first-class agents, bindings, durable turns.
 // SQL 027 is gated; do not assume tables exist until BETSY_V2_APPLY_FILES=027.

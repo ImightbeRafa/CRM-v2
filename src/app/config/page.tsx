@@ -72,6 +72,7 @@ function ConfigPageInner() {
   const [editingShipping, setEditingShipping] = useState<any>(null)
   const [editingUser, setEditingUser] = useState<any>(null)
   const [showPassword, setShowPassword] = useState(false)
+  const [inviteMode, setInviteMode] = useState(true)
   const { getState, refresh } = useConfig()
 
   const statusesState = getState<OrderStatus[]>('statuses')
@@ -404,7 +405,13 @@ function ConfigPageInner() {
             active: userData.active,
             ...(userData.password && userData.password.length > 0 ? { password: userData.password } : {})
           }
-        : {
+        : inviteMode
+          ? {
+              email: userData.email,
+              role: userData.role,
+              invite: true,
+            }
+          : {
             email: userData.email,
             username: userData.username, // Required field for tracking
             role: userData.role,
@@ -425,7 +432,13 @@ function ConfigPageInner() {
         setShowUserForm(false)
         setEditingUser(null)
         setShowPassword(false)
-        alert(isEditing ? '✅ Usuario actualizado exitosamente' : '✅ Usuario creado exitosamente')
+        setInviteMode(true)
+        const inviteMsg = result?.data?.invite
+          ? (result?.data?.emailSent
+              ? '✅ Invitación enviada por email'
+              : '✅ Invitación creada (email no enviado — revisa RESEND)')
+          : null
+        alert(isEditing ? '✅ Usuario actualizado exitosamente' : (inviteMsg || '✅ Usuario creado exitosamente'))
       } else {
         alert(`❌ Error: ${result.error || 'Error al guardar usuario'}`)
       }
@@ -754,12 +767,22 @@ function ConfigPageInner() {
                       {users.map((user) => (
                         <div key={user.id} className="flex items-center justify-between p-4 bg-muted rounded-lg hover:bg-accent transition-colors">
                           <div className="flex items-center gap-4">
-                            <div className="p-2 bg-purple-100 rounded-lg">
-                              <Users className="w-5 h-5 text-purple-600" />
-                            </div>
+                            {user.image ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={user.image}
+                                alt={user.name || user.username || user.email}
+                                className="h-10 w-10 rounded-full object-cover ring-2 ring-purple-200"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-100 text-sm font-semibold text-purple-700">
+                                {(user.name || user.username || user.email || '?').slice(0, 1).toUpperCase()}
+                              </div>
+                            )}
                             <div className="flex-1">
                               <div className="flex items-center gap-3">
-                                <div className="font-medium text-foreground">{user.username}</div>
+                                <div className="font-medium text-foreground">{user.name || user.username}</div>
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                                   user.role === 'MASTER' 
                                     ? 'bg-purple-100 text-purple-800' 
@@ -1681,10 +1704,30 @@ function ConfigPageInner() {
               {editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
             </h3>
             {!editingUser && (
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-700">
-                  <strong>Nota:</strong> Por favor establezca una contraseña segura de al menos 8 caracteres para el nuevo usuario.
-                </p>
+              <div className="mb-4 space-y-3">
+                <div className="flex gap-2 rounded-lg border border-border p-1">
+                  <button
+                    type="button"
+                    onClick={() => setInviteMode(true)}
+                    className={`flex-1 rounded-md px-3 py-2 text-sm font-medium ${inviteMode ? 'bg-indigo-600 text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                  >
+                    Invitar por email
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInviteMode(false)}
+                    className={`flex-1 rounded-md px-3 py-2 text-sm font-medium ${!inviteMode ? 'bg-indigo-600 text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                  >
+                    Crear con contraseña
+                  </button>
+                </div>
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-700">
+                    {inviteMode
+                      ? 'Se enviará un enlace para unirse a este tenant con Google o email. No crea un tenant nuevo.'
+                      : 'Establece una contraseña de al menos 8 caracteres para el nuevo usuario.'}
+                  </p>
+                </div>
               </div>
             )}
             <form onSubmit={handleUserSubmit}>
@@ -1703,6 +1746,7 @@ function ConfigPageInner() {
                   />
                   <p className="text-xs text-muted-foreground mt-1">Email único para iniciar sesión</p>
                 </div>
+                {(editingUser || !inviteMode) && (
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">
                     Nombre de Usuario <span className="text-red-500">*</span>
@@ -1713,11 +1757,12 @@ function ConfigPageInner() {
                     defaultValue={editingUser?.username || ''}
                     placeholder="Ej: PedroPascal02"
                     className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                    required
+                    required={Boolean(editingUser) || !inviteMode}
                   />
                   <p className="text-xs text-muted-foreground mt-1">Usado para identificar quién realiza acciones (ventas, órdenes, etc.)</p>
                 </div>
-                {!editingUser && (
+                )}
+                {!editingUser && !inviteMode && (
                   <div>
                     <label className="block text-sm font-medium text-muted-foreground mb-1">
                       Contraseña <span className="text-red-500">*</span>
@@ -1773,7 +1818,9 @@ function ConfigPageInner() {
                     className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                     required
                   >
-                    <option value="OWNER">OWNER - Propietario (Acceso completo + facturación)</option>
+                    {(editingUser || !inviteMode) && (
+                      <option value="OWNER">OWNER - Propietario (Acceso completo + facturación)</option>
+                    )}
                     <option value="ADMIN">ADMIN - Administrador (Acceso completo)</option>
                     <option value="MANAGER">MANAGER - Gerente (Ventas + Producción + Estadísticas)</option>
                     <option value="SALES">SALES - Ventas (Solo módulo de ventas)</option>
@@ -1807,7 +1854,7 @@ function ConfigPageInner() {
                   type="submit"
                   className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
                 >
-                  {editingUser ? 'Actualizar' : 'Crear'}
+                  {editingUser ? 'Actualizar' : inviteMode ? 'Enviar invitación' : 'Crear'}
                 </button>
               </div>
             </form>

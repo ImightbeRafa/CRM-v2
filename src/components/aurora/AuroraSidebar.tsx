@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
-import { ChevronsUpDown, LogOut } from 'lucide-react'
+import { ArrowUpRight, ChevronsUpDown, LogOut } from 'lucide-react'
 import { AURORA_NAV, getActiveAuroraHref } from './aurora-nav'
 
 function initials(name: string): string {
@@ -32,7 +32,7 @@ export function AuroraSidebar() {
   const activeHref = getActiveAuroraHref(pathname)
 
   return (
-    <aside className="hidden h-full w-[176px] shrink-0 flex-col bg-[#0E0B16] text-white md:flex lg:w-[200px]">
+    <aside className="hidden h-full w-[176px] shrink-0 flex-col bg-[#0E0D17] text-white md:flex lg:w-[200px]">
       <div className="flex items-center gap-2 px-4 pb-4 pt-5">
         <Link href="/dashboard" className="text-[22px] font-bold tracking-tight text-[#8F7BFF]">
           Betsy
@@ -66,10 +66,10 @@ export function AuroraSidebar() {
               </p>
               <ul className="space-y-0.5">
                 {items.map((item) => {
-                  const active = item.href === activeHref
+                  const active = !item.shortcut && item.href === activeHref
                   const Icon = item.icon
                   return (
-                    <li key={item.href}>
+                    <li key={item.label}>
                       <Link
                         href={item.href}
                         aria-current={active ? 'page' : undefined}
@@ -81,11 +81,7 @@ export function AuroraSidebar() {
                       >
                         <Icon className="h-4 w-4 shrink-0" aria-hidden />
                         <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                        {item.badge && (
-                          <span className="rounded-md border border-white/15 px-1.5 py-px text-[9px] font-medium text-white/50">
-                            {item.badge}
-                          </span>
-                        )}
+                        {item.shortcut && <ArrowUpRight className="h-3 w-3 shrink-0 text-white/35" aria-hidden />}
                       </Link>
                     </li>
                   )

@@ -1,6 +1,7 @@
 'use client'
 
-import React, { Suspense, useCallback, useEffect, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { FlaskConical, Plus } from 'lucide-react'
 import { useSession } from 'next-auth/react'
 import { hasSessionPermission } from '@/lib/session-permissions'
@@ -138,7 +139,22 @@ function apiErrorMessage(data: unknown, fallback: string): string {
   return fallback
 }
 
+type AgentDeepLink = { agente: string | null; seccion: string | null; card: string | null }
+
+/** Reads `?agente=&seccion=&card=` (own Suspense boundary: `useSearchParams` needs one at build). */
+function AgentDeepLinkReader({ onChange }: { onChange: (link: AgentDeepLink) => void }) {
+  const params = useSearchParams()
+  const agente = params?.get('agente') ?? null
+  const seccion = params?.get('seccion') ?? null
+  const card = params?.get('card') ?? null
+  useEffect(() => {
+    onChange({ agente, seccion, card })
+  }, [agente, seccion, card, onChange])
+  return null
+}
+
 export default function AgentesConfigPage() {
+  const router = useRouter()
   const { data: session } = useSession()
   const canEdit = hasSessionPermission(session, 'update_config')
 
@@ -218,14 +234,34 @@ export default function AgentesConfigPage() {
     }
   }, [])
 
+  const [deepLink, setDeepLink] = useState<AgentDeepLink>({ agente: null, seccion: null, card: null })
+  const deepLinkRef = useRef(deepLink)
+  deepLinkRef.current = deepLink
+  const appliedDeepLink = useRef<string | null>(null)
+
   const closeKnowledge = useCallback(() => {
     setKnowledgePanel({ open: false, cardId: null })
     void load({ silent: true })
-  }, [load])
+    // Drop `seccion` from the URL so a refresh doesn't reopen the wizard.
+    if (deepLinkRef.current.seccion) {
+      const agente = deepLinkRef.current.agente
+      router.replace(`/config?tab=agentes${agente ? `&agente=${encodeURIComponent(agente)}` : ''}`, { scroll: false })
+    }
+  }, [load, router])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  // Deep link (?agente=<id>&seccion=conocimiento[&card=]): applied once per distinct link, after load.
+  useEffect(() => {
+    if (loading) return
+    const key = JSON.stringify(deepLink)
+    if (appliedDeepLink.current === key) return
+    appliedDeepLink.current = key
+    if (deepLink.agente && agents.some((a) => a.id === deepLink.agente)) setSelectedId(deepLink.agente)
+    if (deepLink.seccion === 'conocimiento') openKnowledge(deepLink.card)
+  }, [deepLink, loading, agents, openKnowledge])
 
   useEffect(() => {
     setChannelId(null)
@@ -360,11 +396,14 @@ export default function AgentesConfigPage() {
 
   return (
     <AuroraShell>
+      <Suspense fallback={null}>
+        <AgentDeepLinkReader onChange={setDeepLink} />
+      </Suspense>
       <header className="sticky top-0 z-20 flex flex-col gap-3 border-b border-slate-200/70 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-[20px] font-semibold leading-tight text-slate-900">Agentes</h1>
+          <h1 className="text-[20px] font-semibold leading-tight text-slate-900">Agentes IA</h1>
           <p className="text-[12px] text-slate-500">
-            Voz, tono, herramientas y conocimiento de tus agentes de IA
+            Quién atiende cada línea, con qué voz y qué puede hacer
           </p>
         </div>
         {canEdit && !isEmpty && !knowledgePanel.open ? (

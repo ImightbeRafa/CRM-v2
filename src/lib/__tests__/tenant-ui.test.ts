@@ -74,7 +74,7 @@ describe('Betsy v2 tenant UI', () => {
   });
 
   it('resolves real config tab IDs instead of stale aliases', () => {
-    const config = source('src/app/config/page.tsx');
+    const config = source('src/app/config/ConfigPageClient.tsx');
     assert.match(config, /'inventory'/);
     assert.match(config, /'shipping-config'/);
     assert.match(config, /router\.replace/);

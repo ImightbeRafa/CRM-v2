@@ -16,7 +16,7 @@ describe('PR-G mobile chats (CHAT-M01 / CHAT-M02)', () => {
     for (const label of ['Chats', 'Pedidos', 'Canales', 'Más']) assert.ok(nav.includes(label), label)
     assert.match(nav, /href="\/chats"/)
     assert.match(nav, /href="\/ventas"/)
-    assert.match(nav, /href="\/config\/social"/)
+    assert.match(nav, /CANALES_HREF = '\/config\?tab=social'/)
   })
 
   it('shell exposes an opt-in bottomNav slot; inbox passes it only on the list view', () => {

@@ -12,7 +12,11 @@ type AuroraMobileNavProps = {
   chatsBadge?: number
   /** Amber dot on Canales when any line needs repair. */
   channelsAlert?: boolean
+  /** Active Config tab (only passed by ConfigShell; avoids `useSearchParams` here). */
+  configTab?: string
 }
+
+const CANALES_HREF = '/config?tab=social'
 
 const TAB_BASE = 'flex min-w-0 flex-1 flex-col items-center gap-0.5 pb-1 pt-1.5 text-[11px] font-medium'
 
@@ -20,7 +24,7 @@ const TAB_BASE = 'flex min-w-0 flex-1 flex-col items-center gap-0.5 pb-1 pt-1.5 
  * CHAT-M01 bottom nav (< md only): Chats · Pedidos · Canales · Más.
  * Más opens a sheet with the rest of the Aurora sidebar destinations.
  */
-export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false }: AuroraMobileNavProps) {
+export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configTab }: AuroraMobileNavProps) {
   const pathname = usePathname()
   const { data: session } = useSession()
   const [moreOpen, setMoreOpen] = useState(false)
@@ -43,8 +47,9 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false }: Auror
     return () => document.removeEventListener('keydown', onKey)
   }, [moreOpen])
 
-  const primary = new Set(['/chats', '/ventas', '/config/social'])
-  const moreActive = activeHref != null && !primary.has(activeHref)
+  const canalesActive = pathname === '/config/social' || (pathname === '/config' && configTab === 'social')
+  const primary = new Set(['/chats', '/ventas', CANALES_HREF])
+  const moreActive = !canalesActive && activeHref != null && !primary.has(activeHref)
   const moreItems = AURORA_NAV.map((section) => ({
     ...section,
     items: section.items.filter((i) => !primary.has(i.href) && (!i.adminOnly || isAdmin)),
@@ -96,11 +101,11 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false }: Auror
         </Link>
         {isAdmin ? (
           <Link
-            href="/config/social"
-            aria-current={activeHref === '/config/social' ? 'page' : undefined}
-            className={tabClass(activeHref === '/config/social')}
+            href={CANALES_HREF}
+            aria-current={canalesActive ? 'page' : undefined}
+            className={tabClass(canalesActive)}
           >
-            <span className={pill(activeHref === '/config/social')}>
+            <span className={pill(canalesActive)}>
               <Radio className="h-5 w-5" aria-hidden />
               {channelsAlert ? (
                 <span
@@ -154,9 +159,9 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false }: Auror
                 <ul>
                   {section.items.map((item) => {
                     const Icon = item.icon
-                    const active = item.href === activeHref
+                    const active = !item.shortcut && item.href === activeHref && !(item.href === '/config' && canalesActive)
                     return (
-                      <li key={item.href}>
+                      <li key={item.label}>
                         <Link
                           href={item.href}
                           aria-current={active ? 'page' : undefined}
@@ -166,11 +171,6 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false }: Auror
                         >
                           <Icon className="h-5 w-5 shrink-0" aria-hidden />
                           <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                          {item.badge ? (
-                            <span className="rounded-md border border-slate-200 px-1.5 py-px text-[10px] text-slate-500">
-                              {item.badge}
-                            </span>
-                          ) : null}
                         </Link>
                       </li>
                     )

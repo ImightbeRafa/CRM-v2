@@ -1,300 +1,240 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
-import { ArrowUpRight, CreditCard, Plus, Truck, Users } from 'lucide-react'
-import { ChannelLogo } from '@/components/social/ChannelLogo'
-import { classifyChannelHealth, formatRelativeEs, isOwnerChannel, type ChannelHealthTone } from '@/app/config/social/channel-health'
-import type { SocialAccount } from '@/app/config/social/types'
-import { formatInstagramHandle, resolveChannelDisplayName } from '@/lib/social-account-identity'
+import { useCallback, useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
+import { AlertCircle, Check, ChevronRight, Globe, Radio, Truck, UsersRound } from 'lucide-react'
+import { hasSessionPermission } from '@/lib/session-permissions'
+import { AuroraErrorState } from '../states/AuroraErrorState'
+import { AuroraListSkeleton } from '../states/AuroraSkeleton'
+import { CONFIG_NAV, configTabHref, type ConfigNavGroup, type ConfigTabId } from './config-nav'
+import { ConfigCard } from './panels/ConfigCard'
+import { ConfigPanelHeader } from './panels/ConfigPanelHeader'
+import { useChannelsSummary } from './useChannelsNeedingAction'
 
-const TONE_CLASS: Record<ChannelHealthTone, string> = {
-  ok: 'bg-emerald-50 text-emerald-700',
-  neutral: 'bg-slate-100 text-slate-600',
-  warn: 'bg-amber-50 text-amber-700',
-  bad: 'bg-red-50 text-red-700',
+type SetupItem = { id: string; label: string; description: string; completed: boolean; href: string }
+type SetupStatus = { completedCount: number; totalCount: number; items: SetupItem[] }
+
+const GROUP_META: Record<string, { icon: typeof Globe; subtitle: string }> = {
+  Negocio: { icon: Globe, subtitle: 'Identidad, catálogo y datos de clientes' },
+  Comunicación: { icon: Radio, subtitle: 'Líneas, agentes e integraciones' },
+  Operación: { icon: Truck, subtitle: 'Envíos y manejo de datos' },
+  Cuenta: { icon: UsersRound, subtitle: 'Personas, plan y registro' },
 }
 
-const MAX_CHANNEL_ROWS = 6
-const MAX_TEAM_ROWS = 4
-
-type TeamUser = { id: string; username: string; email: string; role: string; active: boolean }
-
-const ROLE_LABEL: Record<string, string> = { OWNER: 'Owner', ADMIN: 'Admin', MASTER: 'Master' }
-
-function roleLabel(role: string): string {
-  return ROLE_LABEL[role] ?? role.charAt(0) + role.slice(1).toLowerCase()
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/[\s@._-]+/).filter(Boolean)
-  if (parts.length === 0) return '·'
-  return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase()
-}
-
-function channelName(acc: SocialAccount): string {
-  return resolveChannelDisplayName({
-    id: acc.id,
-    platform: acc.platform,
-    accountId: acc.accountId,
-    displayName: acc.displayName,
-    providerDisplayName: acc.providerDisplayName,
-    providerUsername: acc.providerUsername,
-    displayPhoneNumber: acc.displayPhoneNumber,
-    phoneNumberId: acc.phoneNumberId,
-  })
-}
-
-function channelSecondary(acc: SocialAccount): string {
-  if (acc.platform === 'instagram') return formatInstagramHandle(acc.providerUsername) || 'Instagram Business'
-  return acc.displayPhoneNumber?.trim() || 'WhatsApp'
-}
-
-const card = 'rounded-2xl border border-slate-200/70 bg-white shadow-sm'
-
-function ChannelsCard() {
-  const [accounts, setAccounts] = useState<SocialAccount[] | null>(null)
+/** Resumen: readiness from real setup checks + a card per sub-nav group. */
+function ReadinessCard({ onOpenTab }: { onOpenTab: (tab: string) => void }) {
+  const [status, setStatus] = useState<SetupStatus | null>(null)
   const [failed, setFailed] = useState(false)
+  const { summary } = useChannelsSummary()
+  const [nonce, setNonce] = useState(0)
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/chat/accounts?includeInactive=1')
-      .then((r) => r.json())
-      .then((json) => {
-        if (cancelled) return
-        if (json.success) setAccounts((json.accounts as SocialAccount[]).filter(isOwnerChannel))
-        else setFailed(true)
-      })
+    setFailed(false)
+    fetch('/api/dashboard/setup-status')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('setup-status'))))
+      .then((json: SetupStatus) => !cancelled && setStatus(json))
       .catch(() => !cancelled && setFailed(true))
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [nonce])
 
-  const rows = accounts ?? []
-  // Problem rows first so the summary surfaces what needs action.
-  const sorted = [...rows].sort(
-    (a, b) => Number(classifyChannelHealth(b).needsAction) - Number(classifyChannelHealth(a).needsAction),
-  )
-  const shown = sorted.slice(0, MAX_CHANNEL_ROWS)
-  const needsAction = rows.filter((a) => classifyChannelHealth(a).needsAction).length
+  if (failed) {
+    return (
+      <ConfigCard>
+        <AuroraErrorState
+          title="No pudimos cargar el estado de tu cuenta"
+          description="Podés seguir usando los ajustes de abajo."
+          onRetry={() => setNonce((n) => n + 1)}
+        />
+      </ConfigCard>
+    )
+  }
+  if (!status) {
+    return (
+      <ConfigCard>
+        <AuroraListSkeleton rows={3} label="Cargando estado de la cuenta" />
+      </ConfigCard>
+    )
+  }
 
-  return (
-    <section className={`${card} p-5`} data-testid="config-hub-channels">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-[16px] font-semibold text-slate-900">Cuentas conectadas</h2>
-          <p className="text-[12px] text-slate-500">
-            {accounts
-              ? `${rows.length} ${rows.length === 1 ? 'canal' : 'canales'} · cada número de WhatsApp es un canal independiente${
-                  needsAction ? ` · ${needsAction} requieren acción` : ''
-                }`
-              : 'Cada número de WhatsApp es un canal independiente'}
-          </p>
-        </div>
-        <Link
-          href="/config/social"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-medium text-slate-800 hover:bg-slate-50"
-        >
-          <Plus className="h-3.5 w-3.5" aria-hidden />
-          Agregar línea
-        </Link>
-      </div>
+  const needsAction = summary?.needsAction ?? 0
+  const total = status.totalCount
+  const pct = total > 0 ? Math.round((status.completedCount / total) * 100) : 0
+  const headline =
+    pct >= 100 ? 'Tu cuenta está lista' : pct >= 50 ? 'Tu cuenta está casi lista' : 'Terminemos de configurar tu cuenta'
+  const missing = total - status.completedCount
 
-      {accounts === null && !failed ? (
-        <p className="rounded-xl border border-slate-100 px-4 py-6 text-center text-sm text-slate-400">Cargando canales…</p>
-      ) : failed ? (
-        <p className="rounded-xl border border-slate-100 px-4 py-6 text-center text-sm text-slate-500">
-          No pudimos cargar los canales. Abrilos en Canales.
-        </p>
-      ) : shown.length === 0 ? (
-        <p className="rounded-xl border border-slate-100 px-4 py-6 text-center text-sm text-slate-500">
-          Todavía no hay canales conectados.
-        </p>
-      ) : (
-        <ul className="divide-y divide-slate-100 rounded-xl border border-slate-100">
-          {shown.map((acc) => {
-            const health = classifyChannelHealth(acc)
-            const bad = health.tone === 'bad'
-            return (
-              <li
-                key={acc.id}
-                data-testid="config-hub-channel-row"
-                className={`flex items-center gap-3 px-4 py-3 ${bad ? 'bg-red-50/40' : ''}`}
-              >
-                <span
-                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                    acc.platform === 'instagram'
-                      ? 'bg-gradient-to-br from-[#F58529] via-[#DD2A7B] to-[#8134AF]'
-                      : 'bg-emerald-50'
-                  }`}
-                >
-                  <ChannelLogo
-                    platform={acc.platform}
-                    size={16}
-                    className={acc.platform === 'instagram' ? 'brightness-0 invert' : ''}
-                  />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-semibold text-slate-900">{channelName(acc)}</p>
-                  <p className="truncate text-[12px] text-slate-500">{channelSecondary(acc)}</p>
-                </div>
-                <span className={`hidden rounded-md px-2 py-1 text-[12px] font-medium sm:inline-flex ${TONE_CLASS[health.tone]}`}>
-                  {health.label}
-                </span>
-                <span className={`hidden w-20 text-right text-[12px] md:block ${bad ? 'text-red-600' : 'text-slate-400'}`}>
-                  {formatRelativeEs(acc.lastWebhookAt) ?? '—'}
-                </span>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-
-      <Link
-        href="/config/social"
-        className="mt-4 inline-flex items-center gap-1 text-[13px] font-medium text-[#6D4AE8] hover:underline"
-      >
-        Ver todo en Canales
-        <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-      </Link>
-    </section>
-  )
-}
-
-function TeamCard({ onOpenTab }: { onOpenTab: (tab: string) => void }) {
-  const [users, setUsers] = useState<TeamUser[] | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/users')
-      .then((r) => r.json())
-      .then((json) => {
-        if (!cancelled) setUsers(json.status === 'success' ? (json.data as TeamUser[]) : [])
-      })
-      .catch(() => !cancelled && setUsers([]))
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  return (
-    <section className={`${card} p-5`} data-testid="config-hub-team">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-[16px] font-semibold text-slate-900">Equipo</h2>
-          <p className="text-[12px] text-slate-500">
-            {users ? `${users.length} ${users.length === 1 ? 'usuario' : 'usuarios'}` : 'Cargando…'}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => onOpenTab('users')}
-          className="inline-flex items-center gap-1.5 rounded-[10px] border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-medium text-slate-800 hover:bg-slate-50"
-        >
-          <Users className="h-3.5 w-3.5" aria-hidden />
-          Gestionar
-        </button>
-      </div>
-      {users && users.length === 0 ? (
-        <p className="py-4 text-sm text-slate-500">Sin usuarios para mostrar.</p>
-      ) : (
-        <ul className="space-y-3">
-          {(users ?? []).slice(0, MAX_TEAM_ROWS).map((u) => (
-            <li key={u.id} className="flex items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#5B6CFF] to-[#A855F7] text-[11px] font-bold text-white">
-                {initials(u.username)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-semibold text-slate-900">{u.username}</p>
-                <p className="truncate text-[12px] text-slate-500">{u.active ? u.email : 'Inactivo'}</p>
-              </div>
-              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600">
-                {roleLabel(u.role)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  )
-}
-
-function PlanCard({ onOpenTab }: { onOpenTab: (tab: string) => void }) {
   return (
     <section
-      className="flex flex-col justify-between rounded-2xl bg-[#0E0B16] p-5 text-white shadow-sm ring-1 ring-[#A855F7]/40"
-      data-testid="config-hub-plan"
+      data-testid="config-hub-readiness"
+      className="grid gap-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-[#5B3FE0]/40 md:grid-cols-[minmax(0,260px)_minmax(0,1fr)]"
     >
-      <div>
-        <div className="mb-4 flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#5B6CFF] to-[#A855F7]">
-            <CreditCard className="h-4 w-4" aria-hidden />
-          </span>
-          <h2 className="text-[16px] font-semibold">Plan y facturación</h2>
-        </div>
-        <p className="text-[13px] leading-relaxed text-white/60">
-          Revisá tu suscripción, métodos de pago y facturas del negocio.
+      <div className="flex flex-col justify-center">
+        <p className="bg-gradient-to-r from-[#5B6CFF] to-[#DD2A7B] bg-clip-text text-[44px] font-bold leading-none text-transparent">
+          {pct}%
         </p>
+        <p className="mt-3 text-[16px] font-semibold text-[#0E0D17]">{headline}</p>
+        {missing > 0 && (
+          <p className="mt-1 text-[13px] text-slate-500">
+            Falta{missing === 1 ? '' : 'n'} {missing} {missing === 1 ? 'paso' : 'pasos'} para terminar la configuración base.
+          </p>
+        )}
+        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+          <div className="h-full rounded-full bg-gradient-to-r from-[#5B6CFF] to-[#DD2A7B]" style={{ width: `${pct}%` }} />
+        </div>
       </div>
-      <button
-        type="button"
-        onClick={() => onOpenTab('billing')}
-        className="mt-6 inline-flex items-center justify-center gap-2 rounded-[10px] bg-white/10 px-4 py-2.5 text-[13px] font-medium hover:bg-white/15"
-      >
-        <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-        Gestionar plan
-      </button>
-    </section>
-  )
-}
-
-function PaymentsCard({ onOpenTab }: { onOpenTab: (tab: string) => void }) {
-  const rows = [
-    { key: 'shipping', icon: Truck, title: 'Correos de Costa Rica', sub: 'Guías y credenciales de envío', tab: 'shipping-config' },
-    { key: 'billing', icon: CreditCard, title: 'Suscripción y cobros', sub: 'Plan, pagos y facturas', tab: 'billing' },
-  ]
-  return (
-    <section className={`${card} p-5`} data-testid="config-hub-payments">
-      <h2 className="text-[16px] font-semibold text-slate-900">Pagos y envíos</h2>
-      <p className="mb-4 text-[12px] text-slate-500">Cómo cobrás y despachás tus pedidos</p>
-      <ul className="space-y-3">
-        {rows.map((r) => {
-          const Icon = r.icon
-          return (
-            <li key={r.key}>
+      <ul className="divide-y divide-slate-100 self-center">
+        {status.items.map((item) => (
+          <li key={item.id}>
+            <Link href={item.href} className="flex items-center gap-3 py-2.5 text-[14px] hover:text-[#5B3FE0]">
+              <span
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
+                  item.completed ? 'bg-emerald-500 text-white' : 'border-2 border-amber-400'
+                }`}
+                aria-hidden
+              >
+                {item.completed ? <Check className="h-3 w-3" /> : null}
+              </span>
+              <span className={`min-w-0 flex-1 ${item.completed ? 'text-slate-600' : 'font-medium text-slate-900'}`}>
+                {item.label}
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" aria-hidden />
+            </Link>
+          </li>
+        ))}
+        {needsAction > 0 && (
+          <li>
+            <div className="flex items-center gap-3 py-2.5 text-[14px]">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-amber-400" aria-hidden />
+              <span className="min-w-0 flex-1 font-medium text-slate-900">
+                {needsAction} {needsAction === 1 ? 'canal requiere' : 'canales requieren'} acción
+              </span>
               <button
                 type="button"
-                onClick={() => onOpenTab(r.tab)}
-                className="flex w-full items-center gap-3 rounded-xl px-1 py-1 text-left hover:bg-slate-50"
+                onClick={() => onOpenTab('social')}
+                className="shrink-0 rounded-lg bg-[#5B3FE0] px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-[#4A32C4]"
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#F1EEFF] text-[#6D4AE8]">
-                  <Icon className="h-4 w-4" aria-hidden />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-semibold text-slate-900">{r.title}</span>
-                  <span className="block truncate text-[12px] text-slate-500">{r.sub}</span>
-                </span>
-                <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300" aria-hidden />
+                Reparar
               </button>
-            </li>
-          )
-        })}
+            </div>
+          </li>
+        )}
       </ul>
     </section>
   )
 }
 
-/** CFG-01: connected accounts summary, team, plan and payments/shipping shortcuts. */
-export function ConfigHub({ onOpenTab }: { onOpenTab: (tab: string) => void }) {
+function GroupCard({
+  group,
+  hints,
+  onOpenTab,
+}: {
+  group: ConfigNavGroup
+  hints: Partial<Record<ConfigTabId, React.ReactNode>>
+  onOpenTab: (tab: string) => void
+}) {
+  const meta = GROUP_META[group.title]
+  const Icon = meta?.icon ?? Globe
   return (
-    <div className="space-y-4" data-testid="config-hub">
-      <ChannelsCard />
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <TeamCard onOpenTab={onOpenTab} />
-        <PlanCard onOpenTab={onOpenTab} />
+    <ConfigCard className="p-5" data-testid={`config-hub-group-${group.title.toLowerCase()}`}>
+      <div className="mb-3 flex items-center gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#F1EEFF] text-[#5B3FE0]">
+          <Icon className="h-4 w-4" aria-hidden />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold text-[#0E0D17]">{group.title}</h2>
+          {meta ? <p className="truncate text-[12px] text-slate-500">{meta.subtitle}</p> : null}
+        </div>
       </div>
-      <PaymentsCard onOpenTab={onOpenTab} />
+      <ul>
+        {group.items.map((item) => (
+          <li key={item.key}>
+            <Link
+              href={configTabHref(item.tab)}
+              scroll={false}
+              onClick={(e) => {
+                // Same-page navigation through the shell so the optimistic highlight follows.
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
+                onOpenTab(item.tab)
+                e.preventDefault()
+              }}
+              className="flex items-center gap-3 rounded-lg py-2.5 text-[14px] text-slate-800 hover:text-[#5B3FE0]"
+            >
+              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              {hints[item.tab] ? <span className="shrink-0 text-[12px] text-slate-500">{hints[item.tab]}</span> : null}
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" aria-hidden />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </ConfigCard>
+  )
+}
+
+/** Resumen (`/config`): readiness + group shortcuts. Counts appear only where a real API backs them. */
+export function ConfigHub({ onOpenTab }: { onOpenTab: (tab: string) => void }) {
+  const { data: session } = useSession()
+  const { summary } = useChannelsSummary()
+  const canSeeChannels = hasSessionPermission(session, 'update_config')
+  const [userCount, setUserCount] = useState<number | null>(null)
+  const tenantName = session?.user?.currentTenant?.name?.trim()
+
+  const loadUsers = useCallback(() => {
+    let cancelled = false
+    fetch('/api/users')
+      .then((r) => r.json())
+      .then((json) => {
+        if (!cancelled && json.status === 'success' && Array.isArray(json.data)) setUserCount(json.data.length)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  useEffect(() => loadUsers(), [loadUsers])
+
+  const hints: Partial<Record<ConfigTabId, React.ReactNode>> = {}
+  if (canSeeChannels && summary) {
+    const n = summary.accounts.length
+    hints.social =
+      summary.needsAction > 0 ? (
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
+          <AlertCircle className="h-3 w-3" aria-hidden />
+          {summary.needsAction} {summary.needsAction === 1 ? 'requiere' : 'requieren'} acción
+        </span>
+      ) : (
+        `${n} ${n === 1 ? 'canal' : 'canales'}`
+      )
+  }
+  if (userCount !== null) hints.users = `${userCount} ${userCount === 1 ? 'persona' : 'personas'}`
+
+  return (
+    <div data-testid="config-hub">
+      <ConfigPanelHeader
+        title="Configuración"
+        subtitle={tenantName ? `Estado de tu cuenta y acceso a cada ajuste de ${tenantName}` : 'Estado de tu cuenta y acceso a cada ajuste'}
+      />
+      <div className="space-y-4">
+        <ReadinessCard onOpenTab={onOpenTab} />
+        <div className="grid gap-4 md:grid-cols-2">
+          {CONFIG_NAV.map((group) => (
+            <GroupCard
+              key={group.title}
+              group={{
+                ...group,
+                items: group.items.filter(
+                  (i) => !i.permission || !session || hasSessionPermission(session, i.permission),
+                ),
+              }}
+              hints={hints}
+              onOpenTab={onOpenTab}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

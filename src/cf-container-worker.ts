@@ -7,6 +7,7 @@ import { env } from "cloudflare:workers";
 
 interface Env {
   BETSY_CRM_CONTAINER: DurableObjectNamespace<BetsyCrmContainer>;
+  // Kill switch + auth / DB core
   DISABLE_CRONS?: string;
   NEXTAUTH_URL?: string;
   NEXTAUTH_SECRET?: string;
@@ -14,8 +15,25 @@ interface Env {
   DATABASE_URL?: string;
   DIRECT_URL?: string;
   RESEND_API_KEY?: string;
+  // Already on Worker secrets; must reach the container for login+/chats+/agentes
+  ENCRYPTION_KEY?: string;
+  CRON_SECRET?: string;
+  OPENAI_API_KEY?: string;
+  XAI_API_KEY?: string;
+  // Optional / set when available (forward if present as wrangler secrets)
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  BOT_JWT_SECRET?: string;
+  UPSTASH_REDIS_REST_URL?: string;
+  UPSTASH_REDIS_REST_TOKEN?: string;
+  OPENAI_MODEL?: string;
+  XAI_MODEL?: string;
 }
 
+/** Non-public Worker env names forwarded into the container process.
+ * Prefer listing every secret we put on the Worker so new puts are picked up
+ * after redeploy --keep-vars without another code change for known keys.
+ */
 const CONTAINER_ENV_KEYS = [
   "DISABLE_CRONS",
   "NEXTAUTH_URL",
@@ -24,6 +42,17 @@ const CONTAINER_ENV_KEYS = [
   "DATABASE_URL",
   "DIRECT_URL",
   "RESEND_API_KEY",
+  "ENCRYPTION_KEY",
+  "CRON_SECRET",
+  "OPENAI_API_KEY",
+  "XAI_API_KEY",
+  "GOOGLE_CLIENT_ID",
+  "GOOGLE_CLIENT_SECRET",
+  "BOT_JWT_SECRET",
+  "UPSTASH_REDIS_REST_URL",
+  "UPSTASH_REDIS_REST_TOKEN",
+  "OPENAI_MODEL",
+  "XAI_MODEL",
 ] as const;
 
 function getContainerEnvVars(source: Env): Record<string, string> {

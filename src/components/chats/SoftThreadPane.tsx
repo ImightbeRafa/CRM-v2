@@ -31,6 +31,7 @@ import {
 } from '@/lib/chat-human-attribution'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
 import { describeChatMessage, isPlaceholderToken, type ChatMessageNotice } from '@/lib/chat-message-display'
+import { ChatAssigneePicker, type ChatAssignee } from '@/components/chats/ChatAssigneePicker'
 import {
   AuroraEmptyState,
   AuroraThreadSkeleton,
@@ -97,6 +98,13 @@ interface SoftThreadPaneProps {
   agentActionsToday?: number
   /** Opens "Crear pedido" for this chat (the inbox links the order to the thread afterwards). */
   onCreateOrder?: () => void
+  /** Chat owner picker (Asignarme / teammates / Sin asignar). Hidden when absent. */
+  assignment?: {
+    assignees: ChatAssignee[]
+    viewerUserId: string | null
+    onAssign: (userId: string | null) => void
+    busy?: boolean
+  }
 }
 
 function formatMessageTime(iso: string | undefined | null): string {
@@ -313,6 +321,7 @@ export function SoftThreadPane({
   onOpenDetails,
   agentActionsToday = 0,
   onCreateOrder,
+  assignment,
 }: SoftThreadPaneProps) {
   const [pickerOpenLocal, setPickerOpenLocal] = useState(false)
   const pickerOpen = showTemplatePicker ?? pickerOpenLocal
@@ -462,6 +471,18 @@ export function SoftThreadPane({
               <p className="mt-1 truncate text-[11px] text-slate-500" data-testid="soft-agent-label">
                 {conversation.agentLabel || 'Sin agente'}
               </p>
+              {compact && assignment && !conversation.isDemo ? (
+                <div className="mt-2">
+                  <ChatAssigneePicker
+                    compact
+                    current={conversation.assignee}
+                    assignees={assignment.assignees}
+                    viewerUserId={assignment.viewerUserId}
+                    onAssign={assignment.onAssign}
+                    busy={assignment.busy}
+                  />
+                </div>
+              ) : null}
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <span
                   className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${statusChipClass(conversation.status)}`}
@@ -476,6 +497,15 @@ export function SoftThreadPane({
             </div>
             {!compact ? (
               <div className="flex shrink-0 items-center gap-2">
+                {assignment && !conversation.isDemo ? (
+                  <ChatAssigneePicker
+                    current={conversation.assignee}
+                    assignees={assignment.assignees}
+                    viewerUserId={assignment.viewerUserId}
+                    onAssign={assignment.onAssign}
+                    busy={assignment.busy}
+                  />
+                ) : null}
                 {conversation.orderId ? (
                   <Link
                     href={`/ventas?pedido=${encodeURIComponent(conversation.orderId)}`}

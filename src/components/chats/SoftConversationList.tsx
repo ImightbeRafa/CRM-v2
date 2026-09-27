@@ -14,6 +14,7 @@ import type { LineCounts } from '@/lib/chat-line-filter'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
 import { AuroraLineFilter } from '@/components/chats/AuroraLineFilter'
 import { chatPreviewText } from '@/lib/chat-message-display'
+import { AuroraAvatar } from '@/components/aurora/shell/AuroraAvatar'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import {
   AuroraEmptyState,
@@ -464,6 +465,15 @@ export function SoftConversationList({
                           ) : null}
                           <ChannelLogo platform={conv.platform} size={12} className="shrink-0" />
                           <span className="truncate">{conv.accountLabel}</span>
+                          {conv.assignee ? (
+                            <span className="ml-1 shrink-0" title={`Responsable: ${conv.assignee.name || 'asignado'}`}>
+                              <AuroraAvatar
+                                name={conv.assignee.name || '?'}
+                                image={conv.assignee.image}
+                                className="h-4 w-4 text-[8px]"
+                              />
+                            </span>
+                          ) : null}
                           {conv.orderNumber ? (
                             <span
                               className="ml-1 shrink-0 rounded bg-emerald-50 px-1 py-px text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-200"

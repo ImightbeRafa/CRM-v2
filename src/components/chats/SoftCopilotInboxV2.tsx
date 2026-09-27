@@ -57,6 +57,7 @@ import {
 import { lineHealth, lineIsDown, summarizeLineCounts } from '@/lib/chat-line-filter'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
+import type { ChatAssignee } from '@/components/chats/ChatAssigneePicker'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
 import {
   SoftThreadPane,
@@ -120,6 +121,9 @@ export function SoftCopilotInboxV2() {
   const maxRevisionRef = useRef<bigint>(BigInt(0))
   const lastFullReconcileRef = useRef(0)
   const importStartedRef = useRef(false)
+  const [assignees, setAssignees] = useState<ChatAssignee[]>([])
+  const [viewerUserId, setViewerUserId] = useState<string | null>(null)
+  const [assignBusy, setAssignBusy] = useState(false)
   /** Server search hits for the active query; re-merged after a reconcile replaces the list. */
   const searchHitsRef = useRef<ChatConversationListItemDto[]>([])
   const pollInFlightRef = useRef(false)
@@ -428,6 +432,25 @@ export function SoftCopilotInboxV2() {
     return () => window.clearInterval(id)
   }, [lastSyncAt])
 
+  // Team for the owner picker (id / name / photo only; same gate as the inbox).
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch('/api/chat/assignees', { credentials: 'same-origin', cache: 'no-store' })
+        const parsed = await parseApiJson<{ success?: boolean; viewerUserId?: string; assignees?: ChatAssignee[] }>(res)
+        if (cancelled || !parsed.ok || !res.ok || !parsed.data.success) return
+        setAssignees(parsed.data.assignees ?? [])
+        setViewerUserId(parsed.data.viewerUserId ?? null)
+      } catch {
+        // picker shows "Cargando equipo…"; assigning to self still needs viewerUserId
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   // ⌘K / Ctrl+K focuses the visible chat search (desktop rail or mobile list).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -637,6 +660,7 @@ export function SoftCopilotInboxV2() {
   async function patchConversation(partial: {
     status?: ConversationStatus
     tags?: SoftTag[]
+    assignedUserId?: string | null
   }) {
     if (!selectedConversationId) return
     const res = await fetch(
@@ -653,6 +677,15 @@ export function SoftCopilotInboxV2() {
     )
     if (parsed.ok && res.ok && parsed.data.success && parsed.data.conversation) {
       setDtoMap((prev) => mergeListDtoIntoMap(prev, [parsed.data.conversation!]))
+    }
+  }
+
+  async function assignTo(userId: string | null) {
+    setAssignBusy(true)
+    try {
+      await patchConversation({ assignedUserId: userId })
+    } finally {
+      setAssignBusy(false)
     }
   }
 
@@ -1054,6 +1087,7 @@ export function SoftCopilotInboxV2() {
     onPauseAi: () => void setAgentControl('pause'),
     onResumeAi: () => void setAgentControl('resume'),
     onCreateOrder: () => setCreateOrderOpen(true),
+    assignment: { assignees, viewerUserId, onAssign: (id: string | null) => void assignTo(id), busy: assignBusy },
     aiBusy: controlBusy,
     threadLoading: Boolean(selectedConversationId && threadLoadingId === selectedConversationId),
     channelDownMessage: selectedAccountHealth

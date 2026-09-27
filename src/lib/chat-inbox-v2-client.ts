@@ -86,6 +86,9 @@ export function listDtoToSoftConversation(
     tags: coerceSoftTags(dto.tags),
     orderId,
     orderNumber,
+    assignee: dto.assignedUser
+      ? { id: dto.assignedUser.id, name: dto.assignedUser.name, image: dto.assignedUser.image ?? null }
+      : null,
     agentLabel: dto.agentLabel ?? null,
     agentEmoji: dto.agentEmoji ?? null,
     agentStateDot: dto.agentStateDot ?? null,

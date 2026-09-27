@@ -29,6 +29,8 @@ export interface SoftConversation extends ChatConversation {
   orderId?: string | null
   /** Human order number (`Order.orderId`) of the linked order, when known; display only. */
   orderNumber?: string | null
+  /** Chat owner (ChatConversation.assignedUserId); display only. */
+  assignee?: { id: string; name: string | null; image: string | null } | null
   /** Local Soft demo seed only — never persisted to ChatMessage. */
   isDemo?: boolean
   /** Soft Agent Layer trust labels (optional; A1). */

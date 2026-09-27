@@ -68,7 +68,7 @@ export type ConversationRow = {
   lastInboundAt: Date | null
   inboundCount: number
   revision: bigint
-  assignedUser?: { id: string; name: string | null } | null
+  assignedUser?: { id: string; name: string | null; image?: string | null } | null
   socialAccount?: SocialAccountChannelRow | null
   readInboundCount?: number
 }
@@ -89,7 +89,7 @@ export type ChatConversationListItemDto = {
   waWindowOpen: boolean
   aiMode: SoftAiAgentMode | null
   assignedUserId: string | null
-  assignedUser: { id: string; name: string | null } | null
+  assignedUser: { id: string; name: string | null; image: string | null } | null
   /** Latest order linked from this chat (internal id + human number); set by the list/changes routes. */
   linkedOrder?: { id: string; orderNumber: string } | null
   channel: {
@@ -182,7 +182,12 @@ export function mapConversationToListDto(row: ConversationRow): ChatConversation
     aiMode: normalizeAiMode(row.aiMode),
     assignedUserId: row.assignedUserId,
     assignedUser: row.assignedUser
-      ? { id: row.assignedUser.id, name: row.assignedUser.name }
+      ? {
+          id: row.assignedUser.id,
+          // Never ship an email stored as name; https photos only.
+          name: row.assignedUser.name ? row.assignedUser.name.split('@')[0] : null,
+          image: /^https:\/\//.test(row.assignedUser.image ?? '') ? row.assignedUser.image ?? null : null,
+        }
       : null,
     channel: account
       ? {
@@ -290,7 +295,7 @@ export function conversationSelect(): Prisma.ChatConversationSelect {
     lastInboundAt: true,
     inboundCount: true,
     revision: true,
-    assignedUser: { select: { id: true, name: true } },
+    assignedUser: { select: { id: true, name: true, image: true } },
     socialAccount: {
       select: {
         id: true,

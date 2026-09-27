@@ -1,0 +1,45 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+
+export const dynamic = 'force-dynamic'
+
+/** Only https photo URLs are passed to the client (Google / provider avatars). */
+function safeImage(value: string | null | undefined): string | null {
+  if (!value) return null
+  try {
+    return new URL(value).protocol === 'https:' ? value : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * GET /api/chat/assignees — who a chat can be assigned to.
+ * Same gate as the inbox (update_sales), unlike GET /api/users (manage_users), so sales
+ * agents can pick a teammate. Returns id / name / photo only: no email, no role.
+ */
+export async function GET(request: NextRequest) {
+  const auth = await authenticateAPIWithPermission(request, 'update_sales')
+  if (!auth.ok) return auth.response
+
+  const memberships = await prisma.membership.findMany({
+    where: { tenantId: auth.tenantId, isActive: true, user: { active: true } },
+    select: { user: { select: { id: true, name: true, username: true, image: true } } },
+    take: 200,
+  })
+
+  const assignees = memberships
+    .map(({ user }) => ({
+      id: user.id,
+      // Some accounts store the email as name/username: never send it, show the part before "@".
+      name: (user.name || user.username || '').split('@')[0].trim() || 'Sin nombre',
+      image: safeImage(user.image),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+
+  return NextResponse.json(
+    { success: true, viewerUserId: auth.userId, assignees },
+    { headers: { 'Cache-Control': 'no-store' } },
+  )
+}

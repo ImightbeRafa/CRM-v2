@@ -220,6 +220,21 @@ describe('chat-media: SecureDog F1–F3 regressions', async () => {
 
   it('media route uses the safe serve headers', async () => {
     const { readFileSync } = await import('node:fs')
-    assert.match(readFileSync('src/app/api/chat/media/[messageId]/route.ts', 'utf8'), /\.\.\.safeMediaServeHeaders\(contentType\)/)
+    assert.match(readFileSync('src/app/api/chat/media/[messageId]/route.ts', 'utf8'), /\.\.\.safeMediaServeHeaders\(contentType, filename\)/)
+  })
+})
+
+describe('chat-media: SecureDog follow-ups', async () => {
+  const { safeMediaServeHeaders } = await import('../chat-media')
+  it('echoes only the base type and keeps a sanitised download filename', () => {
+    assert.equal(safeMediaServeHeaders('VIDEO/MP4;charset=x')['Content-Type'], 'video/mp4')
+    const doc = safeMediaServeHeaders(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Cotización "final"\r\n/../x.docx',
+    )
+    assert.equal(doc['Content-Type'], 'application/octet-stream')
+    assert.equal(doc['Content-Disposition'], `attachment; filename*=UTF-8''${encodeURIComponent('Cotización final..x.docx')}`)
+    assert.doesNotMatch(doc['Content-Disposition'], /[\r\n"]/)
+    assert.equal(safeMediaServeHeaders('text/html')['Content-Disposition'], 'attachment')
   })
 })

@@ -176,13 +176,20 @@ export async function downloadMetaMediaWithCap(opts: {
     opts.sendAuth === false ? {} : { Authorization: `Bearer ${opts.accessToken}` }
   let currentUrl = opts.url
   let res: Response
+  // One budget for the whole download (all redirect hops together).
+  const signal = AbortSignal.timeout(60_000)
   for (let hop = 0; ; hop += 1) {
     res = await fetchImpl(currentUrl, {
       headers,
-      signal: AbortSignal.timeout(60_000),
+      signal,
       ...(opts.strictHosts ? { redirect: 'manual' as const } : {}),
     })
     if (!opts.strictHosts || res.status < 300 || res.status >= 400) break
+    try {
+      await res.body?.cancel()
+    } catch {
+      // ignore: we never read redirect bodies
+    }
     const location = res.headers.get('location')
     const next = location ? new URL(location, currentUrl).toString() : ''
     if (hop >= 3 || !isAllowedMetaMediaDownloadUrl(next)) {
@@ -446,20 +453,31 @@ const INLINE_MEDIA_TYPE = /^(image\/(jpeg|png|gif|webp)|audio\/[a-z0-9.+-]+|vide
  * is forced to download as octet-stream. Non-PDF responses also get a sandbox CSP so
  * nothing served here can run script as the logged-in user.
  */
-export function safeMediaServeHeaders(contentType: string | null | undefined): Record<string, string> {
+export function safeMediaServeHeaders(
+  contentType: string | null | undefined,
+  filename?: string | null,
+): Record<string, string> {
+  // Only the base type is echoed (lower-case, no parameters, no CR/LF).
   const essence = String(contentType || '').split(';')[0].trim().toLowerCase()
+  const disposition = (kind: 'inline' | 'attachment') => {
+    const safe = String(filename || '')
+      .replace(/[\u0000-\u001f\u007f"\\/]/g, '')
+      .trim()
+      .slice(0, 150)
+    return safe ? `${kind}; filename*=UTF-8''${encodeURIComponent(safe)}` : kind
+  }
   if (INLINE_MEDIA_TYPE.test(essence)) {
     return essence === 'application/pdf'
-      ? { 'Content-Type': essence, 'Content-Disposition': 'inline' }
+      ? { 'Content-Type': essence, 'Content-Disposition': disposition('inline') }
       : {
-          'Content-Type': String(contentType).trim(),
-          'Content-Disposition': 'inline',
+          'Content-Type': essence,
+          'Content-Disposition': disposition('inline'),
           'Content-Security-Policy': "sandbox; default-src 'none'",
         }
   }
   return {
     'Content-Type': 'application/octet-stream',
-    'Content-Disposition': 'attachment',
+    'Content-Disposition': disposition('attachment'),
     'Content-Security-Policy': "sandbox; default-src 'none'",
   }
 }

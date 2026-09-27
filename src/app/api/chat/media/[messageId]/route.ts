@@ -20,9 +20,14 @@ export const dynamic = 'force-dynamic'
 type RouteContext = { params: Promise<{ messageId: string }> }
 
 /** 200 full body, or 206 for a single `Range` (iOS Safari needs this for audio/video). */
-function mediaResponse(request: NextRequest, bytes: Buffer, contentType: string): NextResponse {
+function mediaResponse(
+  request: NextRequest,
+  bytes: Buffer,
+  contentType: string,
+  filename?: string | null,
+): NextResponse {
   const base = {
-    ...safeMediaServeHeaders(contentType),
+    ...safeMediaServeHeaders(contentType, filename),
     'Cache-Control': 'private, max-age=3600',
     'X-Content-Type-Options': 'nosniff',
     'Accept-Ranges': 'bytes',
@@ -91,6 +96,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           request,
           blob.bytes,
           blob.contentType || existingRef.mediaMimeType || 'application/octet-stream',
+          existingRef.mediaFilename,
         )
       } catch (error) {
         console.warn('[chat/media] Blob read failed, will try Meta re-cache', error)
@@ -199,7 +205,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
       }
     }
 
-    return mediaResponse(request, cached.bytes, cached.ref.mediaMimeType || 'application/octet-stream')
+    return mediaResponse(
+      request,
+      cached.bytes,
+      cached.ref.mediaMimeType || 'application/octet-stream',
+      message.mediaFilename,
+    )
   } catch (error) {
     console.error('[chat/media GET]', error)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

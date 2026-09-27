@@ -1,5 +1,6 @@
 'use client';
 
+import { useAuroraConfirm } from '@/components/aurora/ui/AuroraConfirmDialog';
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
@@ -40,6 +41,7 @@ interface IntegrationStats {
 
 /** Integraciones API panel (`/config?tab=integrations`): API keys, connection test, docs and stats. */
 export function IntegrationsPanel() {
+  const { confirm: auroraConfirm, dialog: auroraConfirmDialog } = useAuroraConfirm();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [stats, setStats] = useState<IntegrationStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -108,9 +110,13 @@ export function IntegrationsPanel() {
   };
 
   const revokeApiKey = async (keyId: string) => {
-    if (!confirm('¿Estás seguro de que quieres revocar esta API key? Esta acción no se puede deshacer.')) {
-      return;
-    }
+    const ok = await auroraConfirm({
+      title: '¿Revocar esta API key?',
+      description: 'Las integraciones que la usen dejan de funcionar. Esta acción no se puede deshacer.',
+      confirmLabel: 'Revocar',
+      tone: 'danger',
+    });
+    if (!ok) return;
 
     try {
       const response = await fetch(`/api/config/api-keys/${keyId}`, {
@@ -188,6 +194,7 @@ export function IntegrationsPanel() {
 
   return (
     <div className="space-y-6">
+      {auroraConfirmDialog}
       <ConfigPanelHeader
         title="Integraciones API"
         subtitle="Conectá tu sitio web para enviar pedidos automáticamente a Betsy CRM"

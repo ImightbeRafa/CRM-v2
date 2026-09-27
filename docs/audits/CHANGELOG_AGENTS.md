@@ -1164,3 +1164,20 @@ Append-only. Newest entries at the top.
   banner (`--app-top-offset`); Config panel clears the settings FAB; one cream canvas token;
   `/inicio` → `/dashboard` (307).
 - Prove: `npm run test:stats-ui`, `test:agentes-ui`, `test:config-ui`; no schema / SQL / runtime files touched.
+
+# 2026-09-26 — Aurora PR-J: rest of site (Pedidos detail/crear, modals, shell menus, auth/onboarding/help)
+
+- **Pedidos:** detail drawer (`/ventas?pedido=`), Crear pedido drawer (`?nuevo=1`) around the existing
+  `EnhancedSalesForm`, Canal column = the specific line (order → `ChatMessage.orderId` → `SocialAccount`,
+  read-only `GET /api/orders/lines`), line filter. No schema change.
+- **Chats → pedido (X2):** "Crear pedido" in a chat opens the same drawer; on success
+  `POST /api/chat/order-link` sets `ChatMessage.orderId` (tenant-scoped, `update_sales`, idempotent,
+  conditional `updateMany(orderId: null)`). Estadísticas Chat→pedido and per-line Pedidos/Ventas now read it.
+- **Modals over existing flows:** Conectar línea (coexistence copy), Reconectar / Reparar, Desvincular, Invitar
+  persona (`POST/PUT /api/users`), Aurora confirm dialogs. Embedded Signup / IG callbacks untouched.
+- **Shell:** bell with derived alerts, profile menu, name-only tenant block, one `AuroraPageHeader`. No search
+  field (no real search backend).
+- **Auth (X1):** `safeReturnPath()` open-redirect guard on signin; middleware keeps the query in `callbackUrl`.
+  Auth screens, onboarding wizard and Ayuda restyled to Aurora; logic untouched.
+- **Global:** `tailwind.config.ts` `darkMode` is now a custom variant that never applies `dark:` inside `.aurora-light`.
+- Prove: `npm run test:site-ui`, `test:security`, `test:pedidos-ui`, `test:stats-ui`, `test:config-ui`; no SQL / Prisma / runtime files touched.

@@ -90,11 +90,11 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
   const canEdit = viewer.can('update_sales')
   const updateStatus = useUpdateOrderStatus()
 
-  const statuses = (getState<Array<{ key?: string; label: string }>>('statuses').data ?? []) as Array<{ key?: string; label: string }>
+  const statusRows = getState<Array<{ key?: string; label: string }>>('statuses').data
   const statusOptions = useMemo(() => {
-    const labels = statuses.map((s) => s.label)
+    const labels = (statusRows ?? []).map((s) => s.label)
     return labels.includes(sale.status) ? labels : [sale.status, ...labels]
-  }, [statuses, sale.status])
+  }, [statusRows, sale.status])
 
   // Products (productDetails is excluded from the list payload; load it here).
   const [products, setProducts] = useState<ProductRow[] | null>(null)

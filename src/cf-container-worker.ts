@@ -176,6 +176,10 @@ function getContainerEnvVars(source: Env): Record<string, string> {
     }
   }
 
+  // Behind Cloudflare the edge sets cf-connecting-ip and overwrites any client value,
+  // while X-Forwarded-For keeps client-supplied entries. Rate limits key on this.
+  envVars.TRUSTED_IP_HEADER = "cf-connecting-ip";
+
   return envVars;
 }
 

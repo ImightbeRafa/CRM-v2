@@ -20,6 +20,10 @@ function createRedisLimiter(config: { prefix: string; maxRequests: number; windo
     limiter: Ratelimit.slidingWindow(config.maxRequests, `${windowSec} s`),
     prefix: `ratelimit:${config.prefix}`,
     analytics: false,
+    // Give up on Redis after 1 s (falls back to memory) instead of stalling the request,
+    // and remember already-blocked identifiers locally so they skip the Redis round trip.
+    timeout: 1000,
+    ephemeralCache: new Map(),
   });
 }
 
@@ -30,6 +34,22 @@ interface RateLimitEntry {
 }
 
 const memoryStore = new Map<string, RateLimitEntry>();
+const MEMORY_STORE_MAX = 10_000;
+
+/** Drop expired entries (and, if still huge, the oldest ones) so unique IPs cannot grow the map forever. */
+function pruneMemoryStore(now: number) {
+  if (memoryStore.size < MEMORY_STORE_MAX) return;
+  for (const [key, entry] of memoryStore) {
+    if (now > entry.resetTime) memoryStore.delete(key);
+  }
+  if (memoryStore.size >= MEMORY_STORE_MAX) {
+    let excess = memoryStore.size - Math.floor(MEMORY_STORE_MAX / 2);
+    for (const key of memoryStore.keys()) {
+      if (excess-- <= 0) break;
+      memoryStore.delete(key);
+    }
+  }
+}
 
 function memoryRateLimit(
   identifier: string,
@@ -40,6 +60,7 @@ function memoryRateLimit(
 
   const entry = memoryStore.get(key);
   if (!entry || now > entry.resetTime) {
+    pruneMemoryStore(now);
     memoryStore.set(key, { count: 1, resetTime: now + config.windowMs });
     return {
       allowed: true,
@@ -111,6 +132,14 @@ const generalRedisLimiter = createRedisLimiter({ prefix: 'general', maxRequests:
 const exportRedisLimiter = createRedisLimiter({ prefix: 'export', maxRequests: 10, windowMs: 60 * 60 * 1000 });
 
 export function getClientIP(request: Request): string {
+  // Set by the deploy (cf-container-worker → cf-connecting-ip). When present, it is the
+  // only header we trust: X-Forwarded-For's first entry is client-controlled behind a proxy.
+  const trusted = (process.env.TRUSTED_IP_HEADER || '').trim().toLowerCase();
+  if (trusted) {
+    const value = request.headers.get(trusted)?.split(',')[0]?.trim();
+    if (value) return value;
+  }
+
   const forwarded = request.headers.get('x-forwarded-for');
   const realIP = request.headers.get('x-real-ip');
   const cfConnectingIP = request.headers.get('cf-connecting-ip');

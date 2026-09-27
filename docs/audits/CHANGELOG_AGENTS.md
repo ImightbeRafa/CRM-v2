@@ -1,3 +1,25 @@
+## 2026-09-27 — Release-candidate slices on `rafa/aurora-on-live` (PR #88, draft)
+
+- **Chats `[unsupported]` / `[type]`:** display-only `src/lib/chat-message-display.ts`. Meta 131051
+  "unsupported" → "Mensaje no compatible" + what to do (names the kind when `unsupported.type` exists);
+  reactions, contacts, location (maps link), orders, system, IG story mention / share / reel. List
+  previews map tokens to Spanish. Parser and agent input untouched. Not a Betsy bug: Meta sends no content.
+- **Ctrl/⌘K:** V2 inbox had lost the legacy handler. Now focuses the visible chat search; hint shows
+  ⌘K / Ctrl K; search also calls `/api/chat/conversations?q=` (debounced, add-only merge).
+- **Media:** `/api/chat/media` serves Instagram attachments (pre-signed CDN URL from the stored payload,
+  https Meta hosts only, no token sent), single-range 206 for iOS audio/video, cap 25 MB. Player has
+  per-type fallback + Descargar; voice notes always downloadable (iPhone cannot play ogg/opus).
+  Message DTO now sends a URL-free projection of `metadata.rawMessage` (Meta CDN links no longer reach
+  the browser). Outbound media still unsupported (unchanged).
+- **032 perf indexes (NOT applied):** ChatMessage (tenantId, orderId) partial; pg_trgm GIN on Order
+  customerName/orderId/phone/product and ChatConversation peerName/peerId/lastMessagePreview. Gated
+  `BETSY_V2_APPLY_FILES=032`, apply in the madrugada; apply script verifies 8 valid indexes.
+- **Crear pedido:** Aurora restyle, class/markup only (`sales-form-styles.ts`), audited no logic change.
+- Prod check (read-only): `GET /api/invites/accept?token=<random>` on www → 404 JSON ⇒ 030 `TenantInvite` exists.
+- Prove: build passes; chat-harden 296/2, security 122/1, pedidos-ui 15/0, tenant-ui 9/0, site-ui 45/0,
+  chat-mobile 6/0 (remaining failures pre-exist on a parent tip).
+- Still open: Railway preview must be pointed at `rafa/aurora-on-live`; browser walkthrough; outbound media.
+
 ## 2026-09-27 — Aurora onto the live line (Claude Code, handover step 1–3)
 
 - Branch `rafa/aurora-on-live` = `claudio/team-users-sota` (#77, live CF line, 19 commits ahead

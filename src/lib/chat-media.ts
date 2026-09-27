@@ -37,6 +37,28 @@ export function isMetaCdnUrl(value: unknown): boolean {
   }
 }
 
+/** Hosts we are willing to DOWNLOAD from (exact or dot-boundary subdomain only). */
+const META_MEDIA_DOWNLOAD_DOMAINS = ['fbcdn.net', 'cdninstagram.com', 'fbsbx.com']
+
+/**
+ * Strict allow-list for server-side downloads of Instagram attachment URLs.
+ * `isMetaCdnUrl` is intentionally broad (it only strips URLs from metadata) and must
+ * never gate a fetch: it accepts e.g. `scontent.evil.com` or `evilfbcdn.net`.
+ */
+export function isAllowedMetaMediaDownloadUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'https:' || url.username || url.password) return false
+  if (url.port && url.port !== '443') return false
+  const host = url.hostname.toLowerCase()
+  return META_MEDIA_DOWNLOAD_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`))
+}
+
 export function chatMediaBlobPath(tenantId: string, messageId: string): string {
   return `${CHAT_MEDIA_BLOB_PREFIX}/${tenantId}/${messageId}`
 }
@@ -135,17 +157,39 @@ export async function downloadMetaMediaWithCap(opts: {
   fetchImpl?: typeof fetch
   /** Instagram attachment URLs are pre-signed CDN links: never send the page token there. */
   sendAuth?: boolean
+  /**
+   * Untrusted URL (Instagram payload): follow redirects manually and re-check every hop
+   * against `isAllowedMetaMediaDownloadUrl` (max 3). Default: platform fetch behavior.
+   */
+  strictHosts?: boolean
 }): Promise<{ bytes: Buffer; contentType: string | null }> {
   const maxBytes = opts.maxBytes ?? CHAT_MEDIA_MAX_BYTES
   if (isMetaCdnUrl(opts.url) === false && !opts.url.startsWith('https://')) {
     throw new Error('Invalid media download URL')
   }
+  if (opts.strictHosts && !isAllowedMetaMediaDownloadUrl(opts.url)) {
+    throw new Error('Media host not allowed')
+  }
 
   const fetchImpl = opts.fetchImpl ?? fetch
-  const res = await fetchImpl(opts.url, {
-    headers: opts.sendAuth === false ? {} : { Authorization: `Bearer ${opts.accessToken}` },
-    signal: AbortSignal.timeout(60_000),
-  })
+  const headers: Record<string, string> =
+    opts.sendAuth === false ? {} : { Authorization: `Bearer ${opts.accessToken}` }
+  let currentUrl = opts.url
+  let res: Response
+  for (let hop = 0; ; hop += 1) {
+    res = await fetchImpl(currentUrl, {
+      headers,
+      signal: AbortSignal.timeout(60_000),
+      ...(opts.strictHosts ? { redirect: 'manual' as const } : {}),
+    })
+    if (!opts.strictHosts || res.status < 300 || res.status >= 400) break
+    const location = res.headers.get('location')
+    const next = location ? new URL(location, currentUrl).toString() : ''
+    if (hop >= 3 || !isAllowedMetaMediaDownloadUrl(next)) {
+      throw new Error('Media redirect not allowed')
+    }
+    currentUrl = next
+  }
   if (!res.ok) {
     throw new Error(`Media download failed (${res.status})`)
   }
@@ -351,13 +395,7 @@ export function instagramAttachmentUrl(metadata: unknown): string | null {
   const attachments = meta?.rawMessage?.attachments
   const url = Array.isArray(attachments) ? attachments[0]?.payload?.url : null
   if (typeof url !== 'string') return null
-  try {
-    const parsed = new URL(url)
-    if (parsed.protocol !== 'https:') return null
-  } catch {
-    return null
-  }
-  return isMetaCdnUrl(url) ? url : null
+  return isAllowedMetaMediaDownloadUrl(url) ? url : null
 }
 
 /** Download a pre-signed Instagram attachment (no token sent) and cache it privately. */
@@ -370,13 +408,14 @@ export async function cacheInstagramAttachmentToBlob(opts: {
   putFn?: typeof putChatMediaToBlob
 }): Promise<CacheChatMediaResult> {
   try {
-    if (!isMetaCdnUrl(opts.url) || !opts.url.startsWith('https://')) {
+    if (!isAllowedMetaMediaDownloadUrl(opts.url)) {
       return { ok: false, status: 'failed', error: 'Invalid Instagram attachment URL' }
     }
     const downloaded = await downloadMetaMediaWithCap({
       url: opts.url,
       accessToken: '',
       sendAuth: false,
+      strictHosts: true,
       fetchImpl: opts.fetchImpl,
     })
     const contentType = downloaded.contentType || opts.mimeHint || 'application/octet-stream'
@@ -396,6 +435,32 @@ export async function cacheInstagramAttachmentToBlob(opts: {
     const code = error && typeof error === 'object' && 'code' in error ? String((error as { code: string }).code) : ''
     if (code === 'too_large') return { ok: false, status: 'too_large', error: 'Media exceeds 25MB cap' }
     return { ok: false, status: 'failed', error: error instanceof Error ? error.message : 'Media cache failed' }
+  }
+}
+
+const INLINE_MEDIA_TYPE = /^(image\/(jpeg|png|gif|webp)|audio\/[a-z0-9.+-]+|video\/[a-z0-9.+-]+|application\/pdf)$/
+
+/**
+ * Headers for serving customer-controlled bytes from the Betsy origin. Only plain
+ * images, audio, video and PDF render inline; anything else (HTML, SVG, XML, unknown)
+ * is forced to download as octet-stream. Non-PDF responses also get a sandbox CSP so
+ * nothing served here can run script as the logged-in user.
+ */
+export function safeMediaServeHeaders(contentType: string | null | undefined): Record<string, string> {
+  const essence = String(contentType || '').split(';')[0].trim().toLowerCase()
+  if (INLINE_MEDIA_TYPE.test(essence)) {
+    return essence === 'application/pdf'
+      ? { 'Content-Type': essence, 'Content-Disposition': 'inline' }
+      : {
+          'Content-Type': String(contentType).trim(),
+          'Content-Disposition': 'inline',
+          'Content-Security-Policy': "sandbox; default-src 'none'",
+        }
+  }
+  return {
+    'Content-Type': 'application/octet-stream',
+    'Content-Disposition': 'attachment',
+    'Content-Security-Policy': "sandbox; default-src 'none'",
   }
 }
 
@@ -423,6 +488,9 @@ export function parseSingleByteRange(
     start = Number(startRaw)
     end = endRaw === '' ? size - 1 : Math.min(Number(endRaw), size - 1)
   }
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= size) return 'unsatisfiable'
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 'unsatisfiable'
+  // RFC 9110: a syntactically invalid range (last < first) is ignored → full 200.
+  if (startRaw !== '' && endRaw !== '' && Number(endRaw) < start) return null
+  if (start >= size) return 'unsatisfiable'
   return { start, end }
 }

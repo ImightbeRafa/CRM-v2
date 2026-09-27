@@ -138,3 +138,88 @@ describe('chat-media: Range + Instagram attachments', async () => {
     if (res.ok) assert.equal(res.ref.mediaBlobPath, 'chat-media/t1/m1')
   })
 })
+
+describe('chat-media: SecureDog F1–F3 regressions', async () => {
+  const {
+    isAllowedMetaMediaDownloadUrl,
+    instagramAttachmentUrl,
+    cacheInstagramAttachmentToBlob,
+    safeMediaServeHeaders,
+    parseSingleByteRange,
+  } = await import('../chat-media')
+
+  it('F1: download allow-list matches only exact / dot-boundary Meta CDN hosts', () => {
+    for (const bad of [
+      'https://scontent.evil.com/a.jpg',
+      'https://evilfbcdn.net/a.jpg',
+      'https://xcdninstagram.com/a.jpg',
+      'https://notfacebook.com/a.jpg',
+      'https://www.facebook.com/a.jpg',
+      'https://scontent.127.0.0.1.nip.io/a.jpg',
+      'http://scontent.xx.fbcdn.net/a.jpg',
+      'https://user:pw@scontent.xx.fbcdn.net/a.jpg',
+      'https://scontent.xx.fbcdn.net:8443/a.jpg',
+    ]) {
+      assert.equal(isAllowedMetaMediaDownloadUrl(bad), false, bad)
+      assert.equal(instagramAttachmentUrl({ rawMessage: { attachments: [{ payload: { url: bad } }] } }), null, bad)
+    }
+    for (const good of [
+      'https://scontent.xx.fbcdn.net/v/a.jpg',
+      'https://scontent-mia3-1.cdninstagram.com/v/a.jpg',
+      'https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=1',
+      'https://fbcdn.net/a.jpg',
+    ]) {
+      assert.equal(isAllowedMetaMediaDownloadUrl(good), true, good)
+    }
+  })
+
+  it('F1: Instagram download refuses redirects to non-Meta hosts, follows Meta ones', async () => {
+    const put = async (o: { tenantId: string; messageId: string; bytes: Buffer }) => ({
+      pathname: `chat-media/${o.tenantId}/${o.messageId}`,
+      size: o.bytes.length,
+    })
+    const evil = (async () =>
+      new Response(null, { status: 302, headers: { location: 'http://169.254.169.254/latest/meta-data' } })) as unknown as typeof fetch
+    const blocked = await cacheInstagramAttachmentToBlob({
+      tenantId: 't', messageId: 'm', url: 'https://scontent.xx.fbcdn.net/a.jpg', fetchImpl: evil, putFn: put,
+    })
+    assert.equal(blocked.ok, false)
+
+    let calls = 0
+    const hop = (async (url: string, init?: RequestInit) => {
+      calls += 1
+      assert.equal(init?.redirect, 'manual')
+      if (calls === 1) return new Response(null, { status: 302, headers: { location: 'https://lookaside.fbsbx.com/b.jpg' } })
+      assert.equal(url, 'https://lookaside.fbsbx.com/b.jpg')
+      return new Response(new Uint8Array([1]), { status: 200, headers: { 'content-type': 'image/jpeg' } })
+    }) as unknown as typeof fetch
+    const followed = await cacheInstagramAttachmentToBlob({
+      tenantId: 't', messageId: 'm', url: 'https://scontent.xx.fbcdn.net/a.jpg', fetchImpl: hop, putFn: put,
+    })
+    assert.equal(followed.ok, true)
+  })
+
+  it('F2: only plain image/audio/video/pdf render inline; everything else downloads sandboxed', () => {
+    for (const t of ['text/html', 'image/svg+xml', 'application/xhtml+xml', 'text/xml', '', 'application/javascript']) {
+      const h = safeMediaServeHeaders(t)
+      assert.equal(h['Content-Type'], 'application/octet-stream', t)
+      assert.equal(h['Content-Disposition'], 'attachment', t)
+      assert.match(h['Content-Security-Policy'], /sandbox/, t)
+    }
+    for (const t of ['image/jpeg', 'image/webp', 'audio/ogg; codecs=opus', 'video/mp4']) {
+      const h = safeMediaServeHeaders(t)
+      assert.equal(h['Content-Disposition'], 'inline', t)
+      assert.match(h['Content-Security-Policy'], /sandbox/, t)
+    }
+    assert.equal(safeMediaServeHeaders('application/pdf')['Content-Type'], 'application/pdf')
+  })
+
+  it('F3: invalid range (last < first) is ignored → full 200', () => {
+    assert.equal(parseSingleByteRange('bytes=5-3', 100), null)
+  })
+
+  it('media route uses the safe serve headers', async () => {
+    const { readFileSync } = await import('node:fs')
+    assert.match(readFileSync('src/app/api/chat/media/[messageId]/route.ts', 'utf8'), /\.\.\.safeMediaServeHeaders\(contentType\)/)
+  })
+})

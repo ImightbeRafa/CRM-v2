@@ -9,6 +9,7 @@ import {
   cacheProviderMediaToBlob,
   instagramAttachmentUrl,
   parseSingleByteRange,
+  safeMediaServeHeaders,
   readChatMediaFromBlob,
   readMediaBlobRefFromMessage,
 } from '@/lib/chat-media'
@@ -21,7 +22,7 @@ type RouteContext = { params: Promise<{ messageId: string }> }
 /** 200 full body, or 206 for a single `Range` (iOS Safari needs this for audio/video). */
 function mediaResponse(request: NextRequest, bytes: Buffer, contentType: string): NextResponse {
   const base = {
-    'Content-Type': contentType,
+    ...safeMediaServeHeaders(contentType),
     'Cache-Control': 'private, max-age=3600',
     'X-Content-Type-Options': 'nosniff',
     'Accept-Ranges': 'bytes',

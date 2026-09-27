@@ -190,6 +190,7 @@ export function SoftConversationList({
             value={search ?? ''}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Buscar chats"
+            data-chat-search
             aria-label="Buscar chats"
             className="w-full rounded-2xl border-0 bg-white px-4 py-2.5 text-[16px] text-slate-800 outline-none ring-1 ring-slate-200/70 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/40"
           />

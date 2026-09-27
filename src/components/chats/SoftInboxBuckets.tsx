@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import type { SoftAiMonitorStats, SoftTag, InboxBucket } from '@/lib/chat-soft-copilot'
 
 interface SoftInboxBucketsProps {
@@ -35,18 +36,33 @@ export function SoftInboxBuckets({
   onTagClick,
   activeTag,
 }: SoftInboxBucketsProps) {
+  // Real shortcut (see SoftCopilotInboxV2): ⌘K on Mac, Ctrl K elsewhere. Set after mount
+  // so server and client render the same markup.
+  const [shortcut, setShortcut] = useState('Ctrl K')
+  useEffect(() => {
+    if (/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent)) setShortcut('⌘K')
+  }, [])
+
   return (
     <aside className="hidden h-full w-[220px] shrink-0 flex-col overflow-y-auto border-r border-slate-200/70 bg-white px-3 py-4 lg:flex">
       <h2 className="px-1 text-[15px] font-semibold text-slate-900">Bandeja</h2>
 
       <label className="relative mt-3 block">
-        <span className="sr-only">Buscar</span>
+        <span className="sr-only">Buscar chats</span>
         <input
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Buscar…  ⌘K"
-          className="w-full rounded-xl border-0 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none ring-1 ring-slate-200/70 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-[#5B6CFF]/40"
+          placeholder="Buscar…"
+          data-chat-search
+          aria-keyshortcuts="Control+K Meta+K"
+          className="peer w-full rounded-xl border-0 bg-slate-50 py-2 pl-3 pr-14 text-xs text-slate-800 outline-none ring-1 ring-slate-200/70 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-[#5B6CFF]/40"
         />
+        <kbd
+          aria-hidden
+          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-sans text-[10px] font-medium text-slate-400 transition-opacity peer-focus:opacity-0"
+        >
+          {shortcut}
+        </kbd>
       </label>
 
       <div className="mt-4 space-y-1">

@@ -422,6 +422,54 @@ export function SoftCopilotInboxV2() {
     return () => window.clearInterval(id)
   }, [lastSyncAt])
 
+  // ⌘K / Ctrl+K focuses the visible chat search (desktop rail or mobile list).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return
+      const input = Array.from(document.querySelectorAll<HTMLInputElement>('input[data-chat-search]')).find(
+        (el) => el.offsetParent !== null,
+      )
+      if (!input) return
+      e.preventDefault()
+      input.focus()
+      input.select()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Search also asks the server (`?q=`), so chats not loaded yet are found. The local
+  // filter stays instant; server hits are merged into the same list.
+  useEffect(() => {
+    const q = search.trim()
+    if (q.length < 2) return
+    const controller = new AbortController()
+    const t = window.setTimeout(async () => {
+      try {
+        const qs = new URLSearchParams({ limit: String(CHAT_INBOX_V2_LIST_PAGE_LIMIT), q })
+        const res = await fetch(`/api/chat/conversations?${qs.toString()}`, {
+          credentials: 'same-origin',
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+        const parsed = await parseApiJson<{ success?: boolean; conversations?: ChatConversationListItemDto[] }>(res)
+        if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.conversations?.length) return
+        // Only add chats the list does not have yet — never overwrite a row the live
+        // changes feed may have updated after this request started.
+        setDtoMap((prev) => {
+          const missing = parsed.data.conversations!.filter((c) => !prev.has(c.id))
+          return missing.length ? mergeListDtoIntoMap(prev, missing) : prev
+        })
+      } catch {
+        // aborted or offline: the local filter still works
+      }
+    }, 300)
+    return () => {
+      window.clearTimeout(t)
+      controller.abort()
+    }
+  }, [search])
+
   async function loadMoreConversations() {
     if (!listNextCursor || loadingMoreConversations) return
     setLoadingMoreConversations(true)

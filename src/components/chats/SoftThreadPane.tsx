@@ -8,7 +8,7 @@ import {
   type Ref,
 } from 'react'
 import Link from 'next/link'
-import { Check, CheckCheck, ChevronLeft, Hand, Pause, Play, Send, ShoppingBag, Sparkles, User } from 'lucide-react'
+import { Check, CheckCheck, ChevronLeft, Hand, Info, Pause, Play, Send, ShoppingBag, Sparkles, User } from 'lucide-react'
 import {
   initialsFromName,
   isWhatsAppWindowOpen,
@@ -30,6 +30,7 @@ import {
   humanOutboundSender,
 } from '@/lib/chat-human-attribution'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
+import { describeChatMessage, type ChatMessageNotice } from '@/lib/chat-message-display'
 import {
   AuroraEmptyState,
   AuroraThreadSkeleton,
@@ -136,6 +137,31 @@ function tagChip(tag: SoftTag) {
     >
       {tag}
     </span>
+  )
+}
+
+/** Placeholder messages (reaction, contact, unsupported…) shown as a labeled notice. */
+function SoftThreadNotice({ notice }: { notice: ChatMessageNotice }) {
+  return (
+    <div data-testid="soft-thread-notice" className={notice.tone === 'muted' ? 'text-slate-600' : undefined}>
+      <p className={`flex items-center gap-1.5 font-medium ${notice.tone === 'muted' ? 'italic' : ''}`}>
+        {notice.tone === 'muted' ? <Info className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden /> : null}
+        {notice.title}
+      </p>
+      {notice.detail ? (
+        <p className="mt-0.5 whitespace-pre-line text-[12px] leading-snug text-slate-500">{notice.detail}</p>
+      ) : null}
+      {notice.href ? (
+        <a
+          href={notice.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-1 inline-block text-[12px] font-semibold text-[#5B6CFF] underline-offset-2 hover:underline"
+        >
+          {notice.hrefLabel || 'Abrir'}
+        </a>
+      ) : null}
+    </div>
   )
 }
 
@@ -529,6 +555,7 @@ export function SoftThreadPane({
                 msg.content === '[document]' ||
                 msg.content === '[video]' ||
                 msg.content === '[sticker]')
+            const notice = showMedia ? null : describeChatMessage(msg)
             const humanSender = !softAi && outbound ? humanOutboundSender(msg.metadata) : null
             const humanLabel = humanSender ? humanOutboundLabel(msg.metadata) : null
             return (
@@ -569,7 +596,9 @@ export function SoftThreadPane({
                     }`}
                   >
                     {showMedia ? <SoftThreadMedia msg={msg} /> : null}
-                    {!isPlaceholder ? (
+                    {notice ? (
+                      <SoftThreadNotice notice={notice} />
+                    ) : !isPlaceholder ? (
                       <p className={showMedia ? 'mt-1' : undefined}>{msg.content}</p>
                     ) : null}
                     {showMedia && isPlaceholder && !msg.providerMediaId && !msg.mediaBlobPath ? (

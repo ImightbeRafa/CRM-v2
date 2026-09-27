@@ -13,6 +13,7 @@ import {
 import type { LineCounts } from '@/lib/chat-line-filter'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
 import { AuroraLineFilter } from '@/components/chats/AuroraLineFilter'
+import { chatPreviewText } from '@/lib/chat-message-display'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import {
   AuroraEmptyState,
@@ -374,7 +375,7 @@ export function SoftConversationList({
                         </div>
                         <div className="mt-1 flex items-center gap-2">
                           <p className="min-w-0 flex-1 truncate text-[14px] text-slate-500">
-                            {conv.lastMessage || '—'}
+                            {chatPreviewText(conv.lastMessage) || '—'}
                           </p>
                           {isDemo ? (
                             <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900">
@@ -442,7 +443,7 @@ export function SoftConversationList({
                         </span>
                       </div>
                       <p className="mt-0.5 truncate text-xs text-slate-500">
-                        {conv.lastMessage || '—'}
+                        {chatPreviewText(conv.lastMessage) || '—'}
                       </p>
                       <div className="mt-1 flex items-center justify-between gap-2">
                         <p className="flex min-w-0 items-center gap-1 truncate text-[11px] text-slate-400">

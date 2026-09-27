@@ -2,6 +2,7 @@ import {
   barPercent,
   bucketPairedSeries,
   chartBucketSize,
+  evenTickIndices,
   formatCompactMoney,
   formatDayLabel,
   formatDeltaLabel,
@@ -28,7 +29,9 @@ export function DailySalesBars({ series, symbol }: { series: PairedDailyPoint[];
     )
   }
 
-  const labelEvery = Math.max(1, Math.ceil(points.length / 7))
+  // ≤ 8 evenly spaced labels on desktop, ≤ 4 on mobile; labels overflow their column instead of truncating.
+  const desktopTicks = new Set(evenTickIndices(points.length, 8))
+  const mobileTicks = new Set(evenTickIndices(points.length, 4))
   const labelStyle = points.length <= 7 && bucket === 1 ? 'weekday' : 'short'
 
   return (
@@ -67,8 +70,16 @@ export function DailySalesBars({ series, symbol }: { series: PairedDailyPoint[];
                   </span>
                 ) : null}
               </span>
-              <span className="mt-2 h-4 truncate text-center text-[11px] text-slate-400">
-                {i % labelEvery === 0 ? formatDayLabel(p.date, labelStyle) : ''}
+              <span className="relative mt-2 block h-4" aria-hidden>
+                {desktopTicks.has(i) ? (
+                  <span
+                    className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] text-slate-400 ${
+                      mobileTicks.has(i) ? '' : 'hidden md:block'
+                    }`}
+                  >
+                    {formatDayLabel(p.date, labelStyle)}
+                  </span>
+                ) : null}
               </span>
             </li>
           )

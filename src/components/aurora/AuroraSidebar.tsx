@@ -6,7 +6,6 @@ import { useSession } from 'next-auth/react'
 import { ArrowUpRight } from 'lucide-react'
 import { AURORA_NAV, getActiveAuroraHref } from './aurora-nav'
 import { AuroraProfileMenu } from './shell/AuroraProfileMenu'
-import { useTenantPlan } from './shell/useTenantPlan'
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -32,9 +31,6 @@ export function AuroraSidebar() {
   const roleLabel = ROLE_LABELS[roleKey] ?? (roleKey ? roleKey.charAt(0) + roleKey.slice(1).toLowerCase() : '')
   const userName = user?.name?.trim() || user?.email?.split('@')[0] || 'Usuario'
   const activeHref = getActiveAuroraHref(pathname)
-  const plan = useTenantPlan()
-  // Real plan tier (Tenant.plan) when known; otherwise the viewer's role, as before.
-  const tenantSubline = plan ? `Plan ${plan}` : roleLabel
 
   return (
     <aside className="hidden h-full w-[176px] shrink-0 flex-col bg-[#0E0D17] text-white md:flex lg:w-[200px]">
@@ -53,9 +49,6 @@ export function AuroraSidebar() {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold leading-tight">{tenantName}</span>
-          {tenantSubline && (
-            <span className="block truncate text-[10px] leading-tight text-white/50">{tenantSubline}</span>
-          )}
         </span>
       </div>
 

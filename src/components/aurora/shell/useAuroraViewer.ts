@@ -18,7 +18,7 @@ export type AuroraViewer = {
   can: (permission: Permission) => boolean
 }
 
-/** Session-derived facts shared by the Aurora shell menus (bell, profile, tenant block, ⌘K). */
+/** Session-derived facts shared by the Aurora shell menus (bell, profile menu, tenant name). */
 export function useAuroraViewer(): AuroraViewer {
   const { data: session } = useSession()
   const user = session?.user

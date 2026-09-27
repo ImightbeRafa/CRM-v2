@@ -4,7 +4,7 @@ import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import { CONFIG_HUB, CONFIG_HUB_TAB, CONFIG_NAV_LABELS } from './config-nav'
 
 /**
- * Breadcrumb `Configuración › <panel>[ › crumb…]` (Figma top bar) with ⌘K search + bell on the
+ * Breadcrumb `Configuración › <panel>[ › crumb…]` (Figma top bar) with the notifications bell on the
  * right. `trail` adds deeper crumbs (Agentes IA › <agente> › <pestaña>); the panel label then
  * becomes a link back to the panel root.
  */

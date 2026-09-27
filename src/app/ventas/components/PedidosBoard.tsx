@@ -82,7 +82,7 @@ export const PedidosBoard = React.memo(function PedidosBoard({
   onPedidoChange,
 }: {
   onCreate: () => void
-  /** `?buscar=` from the ⌘K palette. */
+  /** `?buscar=` deep link seeds the Pedidos search. */
   initialSearch?: string | null
   /** `?pedido=` deep link (public orderId or Order.id). */
   pedidoRef?: string | null
@@ -125,7 +125,7 @@ export const PedidosBoard = React.memo(function PedidosBoard({
     setPage(1)
   }, [tab, searchTerm, range, lineFilter])
 
-  // ⌘K → /ventas?buscar=<q> while already on this page.
+  // /ventas?buscar=<q> while already on this page.
   useEffect(() => {
     if (initialSearch) {
       setSearchTerm(initialSearch)

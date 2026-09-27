@@ -51,7 +51,7 @@ export function ChannelsEditor({
     const data = await res.json()
     if (requestRef.current !== requestId) return
     if (!res.ok) {
-      setError(typeof data.error === 'string' ? data.error : 'No se pudieron cargar los canales')
+      setError(typeof data.error === 'string' ? data.error : 'No se pudieron cargar las líneas')
       onChannelsRef.current?.([])
       return
     }
@@ -80,7 +80,7 @@ export function ChannelsEditor({
         }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Error al guardar canal')
+      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Error al guardar la línea')
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
@@ -95,7 +95,7 @@ export function ChannelsEditor({
     <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/70" data-testid="agent-channels">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="text-[14px] font-semibold text-slate-900">Canales</h2>
+          <h2 className="text-[14px] font-semibold text-slate-900">Líneas</h2>
           <p className={`mt-0.5 ${HINT}`}>
             Cada número de WhatsApp y cada Instagram se activa por separado. Lista vacía = el agente
             no atiende a nadie.
@@ -120,13 +120,13 @@ export function ChannelsEditor({
           className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-900 ring-1 ring-amber-100"
           data-testid="agent-attends-nobody"
         >
-          Este agente no atiende ningún canal todavía. Activá «Atiende» en los números que querés
+          Este agente no atiende ninguna línea todavía. Activá «Atiende» en los números que querés
           que use.
         </p>
       ) : null}
       {channels.length === 0 ? (
         <p className="mt-3 text-sm text-slate-600">
-          No hay canales conectados. Conectá un número de WhatsApp o Instagram en Canales.
+          No hay líneas conectadas. Conectá un número de WhatsApp o Instagram en Cuentas conectadas.
         </p>
       ) : (
         <ul className="mt-3 divide-y divide-slate-100">

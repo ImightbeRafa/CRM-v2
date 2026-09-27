@@ -4,7 +4,7 @@ import React, { Suspense, useCallback } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AuroraShell } from '@/components/aurora/AuroraShell';
 import { AuroraMobileNav } from '@/components/aurora/AuroraMobileNav';
-import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions';
+import { AuroraPageHeader } from '@/components/aurora/shell/AuroraPageHeader';
 import { PedidosBoard } from '@/app/ventas/components/PedidosBoard';
 import SalesErrorBoundary from '@/app/ventas/components/SalesErrorBoundary';
 import { DOMErrorBoundary } from '@/app/components/DOMErrorBoundary';
@@ -39,15 +39,10 @@ function VentasInner() {
 
   return (
     <AuroraShell fullBleed bottomNav={<AuroraMobileNav />}>
-      <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200/70 bg-white px-4 py-4 sm:px-6">
-        <div className="min-w-0">
-          <h1 className="text-[20px] font-semibold leading-tight text-slate-900">Pedidos</h1>
-          <p className="mt-0.5 text-[13px] text-slate-500">
-            Ventas, pagos SINPE y envíos con Correos de Costa Rica
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <AuroraTopActions />
+      <AuroraPageHeader
+        title="Pedidos"
+        subtitle="Ventas, pagos SINPE y envíos con Correos de Costa Rica"
+        actions={
           <button
             type="button"
             onClick={openCreate}
@@ -56,8 +51,8 @@ function VentasInner() {
             <Plus className="h-4 w-4" aria-hidden />
             Crear pedido
           </button>
-        </div>
-      </header>
+        }
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="w-full space-y-4 px-4 py-4 sm:px-6">

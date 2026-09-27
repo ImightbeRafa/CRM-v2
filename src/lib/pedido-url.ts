@@ -2,7 +2,7 @@
  * `/ventas` URL state for the Aurora Pedidos surface:
  *   ?pedido=<ref>  opens the detail drawer (ref = public orderId or Order.id)
  *   ?nuevo=1       opens "Crear pedido"
- *   ?buscar=<q>    seeds the Pedidos search (from the ⌘K palette)
+ *   ?buscar=<q>    seeds the Pedidos search 
  */
 export interface PedidoParams {
   pedido: string | null

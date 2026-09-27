@@ -19,6 +19,7 @@ import {
   periodCompareLabel,
   resolveAuroraPeriod,
   summarizeChatOrderLinks,
+  evenTickIndices,
   safeCount,
   sharePercent,
 } from '../statistics-aurora'
@@ -238,5 +239,26 @@ describe('summarizeChatOrderLinks', () => {
     assert.equal(r.linkedOrders, 1)
     assert.equal(r.perLine.get('ig'), undefined)
     assert.equal(r.perLine.get('wa')?.orders, 1)
+  })
+})
+
+describe('evenTickIndices (x-axis label thinning)', () => {
+  it('shows every label when there are few points', () => {
+    assert.deepEqual(evenTickIndices(5, 8), [0, 1, 2, 3, 4])
+    assert.deepEqual(evenTickIndices(0, 8), [])
+  })
+  it('caps at max, evenly spaced, keeping first and last', () => {
+    for (const n of [12, 30, 31, 90]) {
+      const ticks = evenTickIndices(n, 8)
+      assert.ok(ticks.length <= 8, `n=${n}`)
+      assert.equal(ticks[0], 0)
+      assert.equal(ticks[ticks.length - 1], n - 1)
+      const gaps = ticks.slice(1).map((t, i) => t - ticks[i])
+      assert.ok(Math.max(...gaps) - Math.min(...gaps) <= 1, `even gaps n=${n}`)
+    }
+  })
+  it('mobile cap of 4 is a subset-sized thinning', () => {
+    assert.ok(evenTickIndices(30, 4).length <= 4)
+    assert.deepEqual(evenTickIndices(30, 1), [0])
   })
 })

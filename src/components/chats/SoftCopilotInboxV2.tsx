@@ -66,6 +66,9 @@ import { SoftTokenHealthBanners } from '@/components/chats/SoftTokenHealthBanner
 import { SoftCopilotRail } from '@/components/chats/SoftCopilotRail'
 import { AuroraMobileNav } from '@/components/aurora/AuroraMobileNav'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
+import dynamic from 'next/dynamic'
+import type { CreatedOrderRef } from '@/app/ventas/components/EnhancedSalesForm'
+import { useToast } from '@/app/hooks/use-toast'
 
 const TAG_FILTERS: SoftTag[] = ['Envío', 'VIP', 'Nuevo']
 
@@ -73,7 +76,15 @@ function softKey(c: SoftConversation) {
   return conversationStorageKey(c.socialAccountId, c.recipientId)
 }
 
+// Same Aurora "Crear pedido" drawer as /ventas; loaded on demand.
+const CrearPedidoDrawer = dynamic(
+  () => import('@/components/aurora/pedidos/CrearPedidoDrawer').then((m) => m.CrearPedidoDrawer),
+  { ssr: false },
+)
+
 export function SoftCopilotInboxV2() {
+  const { toast } = useToast()
+  const [createOrderOpen, setCreateOrderOpen] = useState(false)
   const [accounts, setAccounts] = useState<SoftSocialAccount[]>([])
   const [dtoMap, setDtoMap] = useState<Map<string, ChatConversationListItemDto>>(new Map())
   const [threadMessages, setThreadMessages] = useState<Record<string, ChatInboxMessage[]>>({})
@@ -896,6 +907,32 @@ export function SoftCopilotInboxV2() {
   })()
 
   const selectedDto = selectedConversationId ? dtoMap.get(selectedConversationId) : null
+
+  // Order created from this chat: link it (ChatMessage.orderId) and refresh the thread.
+  // The order is never rolled back if linking fails.
+  const handleOrderCreated = async (order: CreatedOrderRef) => {
+    const conv = selectedConversation
+    const conversationId = selectedConversationId
+    const label = `#${order.orderId}`
+    if (!conv || !conversationId) return
+    try {
+      const res = await fetch('/api/chat/order-link', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          socialAccountId: conv.socialAccountId,
+          peerId: conv.recipientId,
+          order: order.id ?? order.orderId,
+        }),
+      })
+      if (!res.ok) throw new Error(String(res.status))
+      toast({ variant: 'success' as any, title: `Pedido ${label} creado y vinculado al chat` })
+      await fetchThreadMessages(conversationId)
+    } catch {
+      toast({ title: `Pedido ${label} creado`, description: 'No se pudo vincular al chat.' })
+    }
+  }
   const waWindowOpen = selectedDto?.waWindowOpen ?? true
 
   const threadSharedProps = {
@@ -944,6 +981,7 @@ export function SoftCopilotInboxV2() {
     onTakeOver: () => void setAgentControl('take_over'),
     onPauseAi: () => void setAgentControl('pause'),
     onResumeAi: () => void setAgentControl('resume'),
+    onCreateOrder: () => setCreateOrderOpen(true),
     aiBusy: controlBusy,
     threadLoading: Boolean(selectedConversationId && threadLoadingId === selectedConversationId),
     channelDownMessage: selectedAccountHealth
@@ -1100,6 +1138,19 @@ export function SoftCopilotInboxV2() {
           ) : null}
         </div>
       </div>
+      {createOrderOpen && selectedConversation ? (
+        <CrearPedidoDrawer
+          open
+          onOpenChange={setCreateOrderOpen}
+          subtitle={`Desde el chat con ${selectedConversation.recipientName || selectedConversation.recipientId}`}
+          prefill={{
+            name: selectedConversation.recipientName || undefined,
+            phone: selectedConversation.platform === 'whatsapp' ? selectedConversation.recipientId : undefined,
+            username: selectedConversation.platform === 'instagram' ? selectedConversation.recipientName || undefined : undefined,
+          }}
+          onCreated={handleOrderCreated}
+        />
+      ) : null}
     </AuroraShell>
   )
 }

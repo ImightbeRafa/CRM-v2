@@ -9,7 +9,6 @@ import { AURORA_NAV, getActiveAuroraHref } from './aurora-nav'
 import { AuroraAlertsList } from './shell/AuroraAlertsList'
 import { useAuroraAlerts } from './shell/useAuroraAlerts'
 import { useAuroraViewer } from './shell/useAuroraViewer'
-import { useTenantPlan } from './shell/useTenantPlan'
 
 type AuroraMobileNavProps = {
   /** Conversations with unread messages; badge is hidden at 0. */
@@ -34,7 +33,6 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
   const [moreOpen, setMoreOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
   const viewer = useAuroraViewer()
-  const plan = useTenantPlan()
   const { alerts } = useAuroraAlerts()
   const user = session?.user
   const membershipRole = user?.currentTenant?.role
@@ -162,8 +160,9 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
             <div className="mb-3 rounded-2xl bg-slate-50 px-3 py-2.5" data-testid="aurora-mobile-profile">
               <p className="truncate text-[14px] font-semibold text-slate-900">{viewer.name}</p>
               {viewer.email ? <p className="truncate text-[12px] text-slate-500">{viewer.email}</p> : null}
-              <p className="mt-0.5 truncate text-[11px] text-slate-400">
-                {[viewer.tenantName, viewer.roleLabel, plan ? `Plan ${plan}` : ''].filter(Boolean).join(' · ')}
+              {viewer.roleLabel ? <p className="mt-0.5 truncate text-[11px] text-slate-400">{viewer.roleLabel}</p> : null}
+              <p className="mt-1 truncate text-[11px] font-medium text-slate-500" data-testid="aurora-mobile-tenant">
+                {viewer.tenantName}
               </p>
             </div>
             <div className="mb-3">

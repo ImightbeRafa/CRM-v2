@@ -220,6 +220,21 @@ export function chartBucketSize(dayCount: number): number {
   return dayCount > 31 ? 7 : 1
 }
 
+/**
+ * Indices of the x-axis labels to show: at most `max`, evenly spaced, always including the
+ * first and last point (no per-column truncation needed).
+ */
+export function evenTickIndices(count: number, max: number): number[] {
+  const n = Math.max(0, Math.floor(count))
+  const m = Math.max(1, Math.floor(max))
+  if (n === 0) return []
+  if (n <= m) return Array.from({ length: n }, (_, i) => i)
+  if (m === 1) return [0]
+  const out = new Set<number>()
+  for (let i = 0; i < m; i++) out.add(Math.round((i * (n - 1)) / (m - 1)))
+  return [...out].sort((a, b) => a - b)
+}
+
 /** Sums consecutive points into buckets of `size`; the bucket is labelled by its first day. */
 export function bucketPairedSeries(series: PairedDailyPoint[], size: number): PairedDailyPoint[] {
   if (size <= 1) return series

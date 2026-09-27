@@ -8,7 +8,7 @@ import {
   type Ref,
 } from 'react'
 import Link from 'next/link'
-import { Check, CheckCheck, ChevronLeft, Hand, Pause, Play, Send, Sparkles, User } from 'lucide-react'
+import { Check, CheckCheck, ChevronLeft, Hand, Pause, Play, Send, ShoppingBag, Sparkles, User } from 'lucide-react'
 import {
   initialsFromName,
   isWhatsAppWindowOpen,
@@ -90,6 +90,8 @@ interface SoftThreadPaneProps {
   onOpenDetails?: () => void
   /** Mobile (compact): agent tool actions logged today, shown in the agent banner. */
   agentActionsToday?: number
+  /** Opens "Crear pedido" for this chat (the inbox links the order to the thread afterwards). */
+  onCreateOrder?: () => void
 }
 
 function formatMessageTime(iso: string | undefined | null): string {
@@ -223,6 +225,7 @@ export function SoftThreadPane({
   channelDownMessage,
   onOpenDetails,
   agentActionsToday = 0,
+  onCreateOrder,
 }: SoftThreadPaneProps) {
   const [pickerOpenLocal, setPickerOpenLocal] = useState(false)
   const pickerOpen = showTemplatePicker ?? pickerOpenLocal
@@ -273,6 +276,7 @@ export function SoftThreadPane({
     .join(' · ')
 
   const closedWindow = conversation.platform === 'whatsapp' && !windowOpen
+  const canCreateOrder = Boolean(onCreateOrder) && !conversation.orderId && !conversation.isDemo
   // F37-03: unlock composer whenever paused / human takeover (incl. DEMO).
   const composerEnabled = isSoftHumanComposerEnabled(agentMode)
 
@@ -319,6 +323,16 @@ export function SoftThreadPane({
               </span>
             </p>
           </div>
+          {canCreateOrder ? (
+            <button
+              type="button"
+              onClick={onCreateOrder}
+              aria-label="Crear pedido"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F1EEFF] text-[#5B3FE0]"
+            >
+              <ShoppingBag className="h-5 w-5" aria-hidden />
+            </button>
+          ) : null}
           {onOpenDetails ? (
             <button
               type="button"
@@ -374,13 +388,35 @@ export function SoftThreadPane({
               </div>
             </div>
             {!compact ? (
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
-              >
-                Cerrar
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                {conversation.orderId ? (
+                  <Link
+                    href={`/ventas?pedido=${encodeURIComponent(conversation.orderId)}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200 hover:bg-emerald-100"
+                    data-testid="soft-thread-order-link"
+                  >
+                    <Check className="h-3.5 w-3.5" aria-hidden />
+                    Pedido vinculado
+                  </Link>
+                ) : canCreateOrder ? (
+                  <button
+                    type="button"
+                    onClick={onCreateOrder}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF] px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90"
+                    data-testid="soft-thread-create-order"
+                  >
+                    <ShoppingBag className="h-3.5 w-3.5" aria-hidden />
+                    Crear pedido
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                >
+                  Cerrar
+                </button>
+              </div>
             ) : null}
           </div>
         </header>
@@ -585,7 +621,7 @@ export function SoftThreadPane({
             <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-[13px] font-medium text-slate-800 ring-1 ring-emerald-200">
               <Check className="h-4 w-4 rounded-full bg-emerald-500 p-0.5 text-white" aria-hidden />
               Pedido vinculado
-              <Link href="/ventas" className="font-semibold text-[#5B3FE0]">
+              <Link href={`/ventas?pedido=${encodeURIComponent(conversation.orderId)}`} className="font-semibold text-[#5B3FE0]">
                 Ver
               </Link>
             </span>

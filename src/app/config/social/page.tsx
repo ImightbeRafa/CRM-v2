@@ -15,6 +15,9 @@ import {
 } from '@/lib/whatsapp-embedded-signup'
 import { Plus, Search } from 'lucide-react'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
+import { ConnectLineModal } from '@/components/aurora/channels/ConnectLineModal'
+import { ReconnectChannelModal, type ReconnectKind } from '@/components/aurora/channels/ReconnectChannelModal'
+import { AuroraConfirmDialog, useAuroraConfirm } from '@/components/aurora/ui/AuroraConfirmDialog'
 import {
   formatInstagramHandle,
   resolveChannelDisplayName,
@@ -100,6 +103,11 @@ export default function SocialConfigPage() {
   const [diagOpen, setDiagOpen] = useState(false)
   const [agentNameByAccountId, setAgentNameByAccountId] = useState<Record<string, string>>({})
   const [agentsKnown, setAgentsKnown] = useState(false)
+  // Aurora modals (render layer only; the connect flows themselves are unchanged)
+  const [connectOpen, setConnectOpen] = useState(false)
+  const [reconnectTarget, setReconnectTarget] = useState<{ acc: SocialAccount; kind: ReconnectKind } | null>(null)
+  const [unlinkTarget, setUnlinkTarget] = useState<SocialAccount | null>(null)
+  const { confirm: auroraConfirm, dialog: auroraConfirmDialog } = useAuroraConfirm()
   const diagRef = useRef<HTMLDetailsElement>(null)
   const waSignupPendingRef = useRef<{
     code?: string | null
@@ -574,8 +582,9 @@ export default function SocialConfigPage() {
     }
   }
 
-  async function handleUnlinkAccount(id: string, platform: string) {
+  async function handleUnlinkAccount(id: string, platform: string, skipConfirm = false) {
     if (
+      !skipConfirm &&
       !confirm(
         `¿Desvincular esta cuenta de ${platform}? El historial de conversaciones se conserva; solo se deja de recibir y enviar mensajes hasta que la reconectes.`,
       )
@@ -731,25 +740,26 @@ export default function SocialConfigPage() {
     )
   }
 
-  function confirmAddAnother(platform: 'instagram' | 'whatsapp', existingCount: number): boolean {
-    if (existingCount <= 0) return true
-    const label = platform === 'instagram' ? 'Instagram' : 'WhatsApp'
-    return confirm(
-      `Ya tenés ${existingCount} cuenta${existingCount === 1 ? '' : 's'} de ${label} conectada${existingCount === 1 ? '' : 's'}.\n\n` +
-        `¿Agregar otra ${label}?\n\n` +
-        `• Un ID distinto se suma como cuenta nueva.\n` +
-        `• El mismo ID se actualiza (no duplica).`,
-    )
-  }
-
   async function handleAddInstagram() {
-    if (!confirmAddAnother('instagram', igAccounts.length)) return
+    if (igAccounts.length > 0) {
+      const ok = await auroraConfirm({
+        title: 'Agregar otra cuenta de Instagram',
+        description: (
+          <>
+            Ya tenés {igAccounts.length} cuenta{igAccounts.length === 1 ? '' : 's'} de Instagram conectada
+            {igAccounts.length === 1 ? '' : 's'}. Un ID distinto se suma como cuenta nueva; el mismo ID se
+            actualiza (no duplica).
+          </>
+        ),
+        confirmLabel: 'Continuar',
+      })
+      if (!ok) return
+    }
     await handleLinkInstagram()
   }
 
   function handleAddWhatsApp() {
-    if (!confirmAddAnother('whatsapp', waAccounts.length)) return
-    launchWhatsAppEmbeddedSignup()
+    setConnectOpen(true)
   }
 
   function handleReconnect(acc: SocialAccount) {
@@ -884,9 +894,9 @@ export default function SocialConfigPage() {
             onCancelRename={cancelRename}
             onSaveRename={(acc) => void saveRename(acc)}
             onDiagnose={openDiagnostics}
-            onRepair={(acc) => void handleResubscribe(acc.id)}
-            onReconnect={handleReconnect}
-            onUnlink={(acc) => void handleUnlinkAccount(acc.id, acc.platform)}
+            onRepair={(acc) => setReconnectTarget({ acc, kind: 'repair' })}
+            onReconnect={(acc) => setReconnectTarget({ acc, kind: 'reconnect' })}
+            onUnlink={(acc) => setUnlinkTarget(acc)}
             onAddLine={handleAddWhatsApp}
           >
             <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
@@ -1039,6 +1049,62 @@ export default function SocialConfigPage() {
           </div>
         </details>
       </div>
+
+      <ConnectLineModal
+        open={connectOpen}
+        onOpenChange={setConnectOpen}
+        existingCount={waAccounts.length}
+        disabled={addLineDisabled}
+        disabledReason={addLineTitle}
+        connecting={connectingWhatsApp}
+        statusMessage={statusMessage}
+        onLaunch={launchWhatsAppEmbeddedSignup}
+        onManual={() => setShowManualWhatsApp(true)}
+      />
+      {reconnectTarget ? (
+        <ReconnectChannelModal
+          open
+          onOpenChange={(open) => !open && setReconnectTarget(null)}
+          kind={reconnectTarget.kind}
+          lineName={accountResolvedName(reconnectTarget.acc)}
+          platform={reconnectTarget.acc.platform === 'instagram' ? 'instagram' : 'whatsapp'}
+          problem={classifyChannelHealth(reconnectTarget.acc).label}
+          busy={
+            reconnectTarget.kind === 'repair'
+              ? resubscribing === reconnectTarget.acc.id
+              : reconnectTarget.acc.platform === 'instagram'
+                ? connectingInstagram
+                : connectingWhatsApp
+          }
+          statusMessage={statusMessage}
+          onLaunch={() =>
+            reconnectTarget.kind === 'repair'
+              ? void handleResubscribe(reconnectTarget.acc.id)
+              : handleReconnect(reconnectTarget.acc)
+          }
+        />
+      ) : null}
+      <AuroraConfirmDialog
+        open={unlinkTarget !== null}
+        tone="danger"
+        title="Desvincular línea"
+        description={
+          <>
+            ¿Desvincular <strong>{unlinkTarget ? accountResolvedName(unlinkTarget) : ''}</strong>? El historial de
+            conversaciones se conserva; solo se deja de recibir y enviar mensajes hasta que la reconectes.
+          </>
+        }
+        confirmLabel="Desvincular"
+        busy={unlinking !== null}
+        onCancel={() => setUnlinkTarget(null)}
+        onConfirm={async () => {
+          const target = unlinkTarget
+          if (!target) return
+          await handleUnlinkAccount(target.id, target.platform, true)
+          setUnlinkTarget(null)
+        }}
+      />
+      {auroraConfirmDialog}
     </AuroraShell>
   )
 }

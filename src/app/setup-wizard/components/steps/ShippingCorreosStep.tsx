@@ -124,7 +124,7 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-[#5B6CFF]" />
       </div>
     );
   }
@@ -132,12 +132,12 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
   return (
     <div className="space-y-6">
       {/* Info banner */}
-      <Card className="p-4 bg-blue-50 border-blue-200">
+      <Card className="p-4 bg-[#F1EEFF] border-[#D9D2FF]">
         <div className="flex items-start gap-3">
-          <Info className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-blue-800">
+          <Info className="h-5 w-5 text-[#5B6CFF] flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-[#4B36B8]">
             <p className="font-medium mb-1">Correos de Costa Rica</p>
-            <p className="text-blue-700">
+            <p className="text-[#4B36B8]">
               Las credenciales del Web Service son administradas a nivel de plataforma.
               Aquí solo necesitás configurar los datos de tu remitente (dirección de origen).
             </p>

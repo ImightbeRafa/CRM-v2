@@ -3,6 +3,8 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
+import { AuthShell } from '@/components/aurora/auth/AuthShell'
+import { Loader2 } from 'lucide-react'
 
 export default function SetupTenantPage() {
   const router = useRouter()
@@ -22,12 +24,12 @@ export default function SetupTenantPage() {
 
   // Show loading state while checking session
   return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
-        <p className="mt-4 text-gray-600">Redirigiendo...</p>
-      </div>
-    </div>
+    <AuthShell
+      brandPanel={false}
+      icon={<Loader2 className="h-10 w-10 animate-spin text-[#5B6CFF]" aria-hidden />}
+      title="Redirigiendo..."
+    >
+      <span className="sr-only" role="status">Redirigiendo</span>
+    </AuthShell>
   )
 }
-

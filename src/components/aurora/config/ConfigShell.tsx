@@ -54,7 +54,7 @@ export function ConfigShell({ activeTab, onSelectTab, children }: ConfigShellPro
           data-testid="config-panel"
           className="aurora-light min-w-0 flex-1 overflow-y-auto bg-[var(--aurora-canvas)] text-slate-900 [color-scheme:light]"
         >
-          <div className="mx-auto w-full max-w-[1100px] px-4 pb-48 pt-5 md:px-10 md:pb-28 md:pt-8">{children}</div>
+          <div className="mx-auto w-full max-w-[1100px] pl-4 pr-12 pb-48 pt-5 md:px-10 md:pb-28 md:pt-8">{children}</div>
         </section>
       </div>
     </AuroraShell>

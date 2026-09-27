@@ -10,7 +10,7 @@ interface HelpIndexClientProps {
 
 export function HelpIndexClient({ docs }: HelpIndexClientProps) {
   return (
-    <div className="max-w-md mx-auto mb-8">
+    <div className="mb-8 max-w-md">
       <SearchDocsWrapper docs={docs} basePath="/help" />
     </div>
   );

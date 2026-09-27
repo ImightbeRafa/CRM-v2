@@ -4,8 +4,12 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
-import { LogOut, MessageSquare, MoreHorizontal, Package, Radio, X } from 'lucide-react'
+import { Bell, ChevronDown, LogOut, MessageSquare, MoreHorizontal, Package, Radio, X } from 'lucide-react'
 import { AURORA_NAV, getActiveAuroraHref } from './aurora-nav'
+import { AuroraAvatar } from './shell/AuroraAvatar'
+import { AuroraAlertsList } from './shell/AuroraAlertsList'
+import { useAuroraAlerts } from './shell/useAuroraAlerts'
+import { useAuroraViewer } from './shell/useAuroraViewer'
 
 type AuroraMobileNavProps = {
   /** Conversations with unread messages; badge is hidden at 0. */
@@ -18,7 +22,9 @@ type AuroraMobileNavProps = {
 
 const CANALES_HREF = '/config?tab=social'
 
-const TAB_BASE = 'flex min-w-0 flex-1 flex-col items-center gap-0.5 pb-1 pt-1.5 text-[11px] font-medium'
+const FOCUS = 'outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#8F7BFF]/60'
+
+const TAB_BASE = `flex min-w-0 flex-1 flex-col items-center gap-0.5 pb-1 pt-1.5 text-[11px] font-medium transition-colors duration-150 ${FOCUS}`
 
 /**
  * CHAT-M01 bottom nav (< md only): Chats · Pedidos · Canales · Más.
@@ -28,6 +34,9 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
   const pathname = usePathname()
   const { data: session } = useSession()
   const [moreOpen, setMoreOpen] = useState(false)
+  const [alertsOpen, setAlertsOpen] = useState(false)
+  const viewer = useAuroraViewer()
+  const { alerts } = useAuroraAlerts()
   const user = session?.user
   const membershipRole = user?.currentTenant?.role
   const isMaster = user?.role === 'MASTER'
@@ -60,7 +69,7 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
   }
 
   function pill(active: boolean) {
-    return `relative flex h-8 w-14 items-center justify-center rounded-full transition-colors ${
+    return `relative flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-150 ${
       active ? 'bg-[#E9E5FF]' : ''
     }`
   }
@@ -146,10 +155,46 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
                 type="button"
                 onClick={() => setMoreOpen(false)}
                 aria-label="Cerrar"
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600"
+                className={`flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition-colors duration-150 hover:bg-slate-200 ${FOCUS}`}
               >
                 <X className="h-4 w-4" aria-hidden />
               </button>
+            </div>
+            <div className="mb-3 flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5" data-testid="aurora-mobile-profile">
+              <AuroraAvatar name={viewer.name} image={viewer.image} className="h-10 w-10 text-[13px]" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[14px] font-semibold text-slate-900">{viewer.name}</p>
+                {viewer.email ? <p className="truncate text-[12px] text-slate-500">{viewer.email}</p> : null}
+                {viewer.roleLabel ? <p className="mt-0.5 truncate text-[11px] text-slate-400">{viewer.roleLabel}</p> : null}
+                <p className="mt-1 truncate text-[11px] font-medium text-slate-500" data-testid="aurora-mobile-tenant">
+                  {viewer.tenantName}
+                </p>
+              </div>
+            </div>
+            <div className="mb-3">
+              <button
+                type="button"
+                onClick={() => setAlertsOpen((v) => !v)}
+                aria-expanded={alertsOpen}
+                className={`flex w-full items-center gap-3 rounded-lg px-2 py-3 text-[14px] font-medium text-slate-800 transition-colors duration-150 hover:bg-slate-50 ${FOCUS}`}
+              >
+                <span className="relative">
+                  <Bell className="h-5 w-5 shrink-0" aria-hidden />
+                  {alerts.length > 0 ? (
+                    <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
+                  ) : null}
+                </span>
+                <span className="min-w-0 flex-1 text-left">Avisos</span>
+                {alerts.length > 0 ? (
+                  <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">{alerts.length}</span>
+                ) : null}
+                <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${alertsOpen ? 'rotate-180' : ''}`} aria-hidden />
+              </button>
+              {alertsOpen ? (
+                <div className="mt-1 overflow-hidden rounded-xl border border-slate-100">
+                  <AuroraAlertsList alerts={alerts} onNavigate={() => setMoreOpen(false)} />
+                </div>
+              ) : null}
             </div>
             {moreItems.map((section) => (
               <div key={section.title} className="mb-3">
@@ -165,8 +210,8 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
                         <Link
                           href={item.href}
                           aria-current={active ? 'page' : undefined}
-                          className={`flex items-center gap-3 rounded-xl px-2 py-3 text-[14px] font-medium ${
-                            active ? 'bg-[#F1EEFF] text-[#5B3FE0]' : 'text-slate-800'
+                          className={`flex items-center gap-3 rounded-lg px-2 py-3 text-[14px] font-medium transition-colors duration-150 ${FOCUS} ${
+                            active ? 'bg-[#F1EEFF] text-[#5B3FE0]' : 'text-slate-800 hover:bg-slate-50'
                           }`}
                         >
                           <Icon className="h-5 w-5 shrink-0" aria-hidden />
@@ -181,7 +226,7 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
             <button
               type="button"
               onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-              className="flex w-full items-center gap-3 rounded-xl px-2 py-3 text-[14px] font-medium text-slate-600"
+              className={`flex w-full items-center gap-3 rounded-lg px-2 py-3 text-[14px] font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-50 ${FOCUS}`}
             >
               <LogOut className="h-5 w-5 shrink-0" aria-hidden />
               Cerrar sesión

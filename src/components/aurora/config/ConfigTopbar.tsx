@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
+import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import { CONFIG_HUB, CONFIG_HUB_TAB, CONFIG_NAV_LABELS } from './config-nav'
 
 /**
- * Breadcrumb `Configuración › <panel>[ › crumb…]` (Figma top bar; global search / bell have no
- * backing feature). `trail` adds deeper crumbs (Agentes IA › <agente> › <pestaña>); the panel
- * label then becomes a link back to the panel root.
+ * Breadcrumb `Configuración › <panel>[ › crumb…]` (Figma top bar) with the notifications bell on the
+ * right. `trail` adds deeper crumbs (Agentes IA › <agente> › <pestaña>); the panel label then
+ * becomes a link back to the panel root.
  */
 export function ConfigTopbar({
   activeTab,
@@ -20,12 +21,12 @@ export function ConfigTopbar({
   return (
     <header
       data-testid="config-topbar"
-      className="flex h-14 shrink-0 items-center border-b border-slate-200/70 bg-white px-4 md:px-8"
+      className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-slate-200/70 bg-white px-4 md:px-8"
     >
       <nav aria-label="Ruta" className="flex min-w-0 items-center gap-1.5 text-[14px]">
         <Link
           href="/config"
-          className={`shrink-0 text-slate-500 hover:text-slate-900 ${deeper ? 'hidden sm:inline' : ''}`}
+          className={`shrink-0 rounded-md text-slate-500 transition-colors duration-150 outline-none hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-[#8F7BFF]/60 focus-visible:ring-offset-2 ${deeper ? 'hidden sm:inline' : ''}`}
         >
           Configuración
         </Link>
@@ -37,7 +38,7 @@ export function ConfigTopbar({
           <>
             <Link
               href={`/config?tab=${encodeURIComponent(activeTab)}`}
-              className="hidden shrink-0 text-slate-500 hover:text-slate-900 md:inline"
+              className="hidden shrink-0 rounded-md text-slate-500 transition-colors duration-150 outline-none hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-[#8F7BFF]/60 focus-visible:ring-offset-2 md:inline"
             >
               {label}
             </Link>
@@ -63,6 +64,7 @@ export function ConfigTopbar({
           </span>
         )}
       </nav>
+      <AuroraTopActions />
     </header>
   )
 }

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
-import { Progress } from '@/app/components/ui/progress';
+import { AuroraStepper } from '@/components/aurora/ui/AuroraStepper';
 import { 
   Check, 
   ChevronRight, 
@@ -203,7 +203,6 @@ export function SetupWizard() {
   }, [currentStepIndex, steps, loadingProgress, serverProgressEnabled]);
 
   const currentStep = steps[currentStepIndex];
-  const progress = ((currentStepIndex + 1) / steps.length) * 100;
   const StepComponent = currentStep.component;
 
   const persistProgress = useCallback(async (
@@ -377,23 +376,23 @@ export function SetupWizard() {
 
   if (loadingProgress) {
     return (
-      <div className="min-h-screen bg-muted/30 flex items-center justify-center">
-        <div className="rounded-2xl border border-border bg-card px-8 py-7 text-center shadow-lg">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-blue-600" />
-          <p className="mt-3 text-sm text-muted-foreground">Cargando tu guía de configuración…</p>
+      <div className="aurora-light flex min-h-dvh items-center justify-center bg-[var(--aurora-canvas)] text-slate-900">
+        <div className="rounded-2xl border border-slate-200/70 bg-white px-8 py-7 text-center shadow-sm">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-[#5B6CFF]" />
+          <p className="mt-3 text-sm text-slate-500">Cargando tu guía de configuración…</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-background dark:via-blue-950/20 dark:to-indigo-950/20">
+    <div className="aurora-light min-h-dvh bg-[var(--aurora-canvas)] text-slate-900 [color-scheme:light]">
       {/* Header */}
-      <div className="bg-card/80 backdrop-blur-sm border-b border-border sticky top-0 z-50">
+      <div className="sticky top-0 z-40 border-b border-slate-200/70 bg-white">
         <div className="max-w-5xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl">
+              <div className="rounded-xl bg-gradient-to-br from-[#5B6CFF] to-[#7C5CFF] p-2">
                 <Sparkles className="h-5 w-5 text-white" />
               </div>
               <div>
@@ -424,52 +423,24 @@ export function SetupWizard() {
           </div>
 
           {/* Step indicators */}
-          <div className="mt-3 flex items-center gap-1">
-            {steps.map((step, idx) => {
-              const Icon = step.icon;
-              const isCurrent = idx === currentStepIndex;
-              const isDone = step.completed;
-              const isSkipped = skippedSteps.includes(step.id);
-              return (
-                <div key={step.id} className="flex items-center flex-1">
-                  <button
-                    onClick={() => {
-                      if (isDone || idx < currentStepIndex) {
-                        if (hasUnsavedChanges) {
-                          setPendingNavigationIndex(idx);
-                          setShowNavigationDialog(true);
-                        } else {
-                          navigateTo(idx);
-                        }
-                      }
-                    }}
-                    disabled={!isDone && idx > currentStepIndex}
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-all ${
-                      isCurrent
-                        ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300 dark:bg-blue-950/30 dark:text-blue-400 dark:ring-blue-800'
-                        : isDone
-                        ? 'bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-950/30 dark:text-green-400 dark:hover:bg-green-950/50 cursor-pointer'
-                        : isSkipped
-                        ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 cursor-pointer'
-                        : 'text-muted-foreground cursor-default'
-                    }`}
-                  >
-                    <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      isCurrent ? 'bg-blue-600 text-white'
-                      : isDone ? 'bg-green-600 text-white'
-                      : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {isDone ? <Check className="h-3 w-3" /> : <span className="text-[10px]">{idx + 1}</span>}
-                    </div>
-                    <span className="hidden sm:inline truncate">{step.title}</span>
-                  </button>
-                  {idx < steps.length - 1 && (
-                    <div className={`flex-1 h-0.5 mx-1 rounded ${isDone ? 'bg-green-300 dark:bg-green-700' : 'bg-muted'}`} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <AuroraStepper
+            className="mt-3"
+            currentIndex={currentStepIndex}
+            steps={steps.map(step => ({
+              id: step.id,
+              title: step.title,
+              done: step.completed,
+              skipped: skippedSteps.includes(step.id),
+            }))}
+            onSelect={(idx) => {
+              if (hasUnsavedChanges) {
+                setPendingNavigationIndex(idx);
+                setShowNavigationDialog(true);
+              } else {
+                void navigateTo(idx);
+              }
+            }}
+          />
         </div>
       </div>
 
@@ -490,10 +461,10 @@ export function SetupWizard() {
             exit="exit"
             transition={{ duration: 0.25, ease: 'easeInOut' }}
           >
-            <Card className="shadow-xl border-0 overflow-hidden">
-              <CardHeader className="bg-gradient-to-r from-card to-blue-50/50 dark:to-blue-950/20 border-b border-border pb-6">
+            <Card className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-sm">
+              <CardHeader className="border-b border-slate-100 bg-white pb-6">
                 <div className="flex items-start gap-4">
-                  <div className="p-3 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl shadow-lg">
+                  <div className="rounded-xl bg-gradient-to-br from-[#5B6CFF] to-[#7C5CFF] p-3 shadow-sm">
                     {React.createElement(currentStep.icon, { className: 'h-6 w-6 text-white' })}
                   </div>
                   <div className="flex-1">
@@ -525,7 +496,7 @@ export function SetupWizard() {
               </CardContent>
 
               {/* Navigation Footer */}
-              <div className="border-t border-border bg-muted/80 px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-6 py-4">
                 <Button variant="outline" onClick={handleBack} disabled={currentStepIndex === 0 || savingProgress}>
                   <ChevronLeft className="h-4 w-4 mr-1" />
                   Anterior
@@ -538,12 +509,13 @@ export function SetupWizard() {
                     <Button
                       onClick={handleNext}
                       disabled={savingProgress || (!canProceed && !currentStep.optional && !currentStep.completed)}
+                      className="bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF] text-white hover:opacity-90"
                     >
                       Siguiente
                       <ChevronRight className="h-4 w-4 ml-1" />
                     </Button>
                   ) : (
-                    <Button onClick={handleExit} disabled={savingProgress} className="bg-green-600 hover:bg-green-700">
+                    <Button onClick={handleExit} disabled={savingProgress} className="bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF] text-white hover:opacity-90">
                       Ir al Dashboard
                       <ArrowRight className="h-4 w-4 ml-1" />
                     </Button>

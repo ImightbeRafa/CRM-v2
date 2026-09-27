@@ -47,7 +47,7 @@ export function UsersPanel({
   const addButton = (
     <button type="button" onClick={onAdd} className="inline-flex items-center gap-2 rounded-[10px] bg-[#5B3FE0] px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-[#4A32C4]">
       <Plus className="h-4 w-4" aria-hidden />
-      Agregar persona
+      Invitar persona
     </button>
   )
 
@@ -71,7 +71,7 @@ export function UsersPanel({
             description="Agregá a quien va a atender chats o gestionar pedidos."
             actions={
               <button type="button" onClick={onAdd} className={auroraButtonPrimary}>
-                Agregar persona
+                Invitar persona
               </button>
             }
           />
@@ -145,7 +145,7 @@ export function UsersPanel({
                 description="Sumá a tu equipo para repartir chats y pedidos."
                 actions={
                   <button type="button" onClick={onAdd} className={auroraButtonPrimary}>
-                    Agregar persona
+                    Invitar persona
                   </button>
                 }
               />

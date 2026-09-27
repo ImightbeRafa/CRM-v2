@@ -1,14 +1,13 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CheckCircle, Edit3, Loader2, Package, RefreshCw, Search } from 'lucide-react'
-import { useSalesStream } from '@/app/hooks/useSalesStream'
+import { parseOrder, useSalesStream } from '@/app/hooks/useSalesStream'
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext'
 import { useUpdateOrderStatus } from '@/app/hooks/useOrderMutations'
 import { useToast } from '@/app/hooks/use-toast'
 import { MobileOrderCard } from '@/app/components/ui/MobileOrderCard'
 import { SwipeableRow } from '@/app/components/ui/SwipeableRow'
-import { OrderDetails } from '@/app/produccion/components/OrderDetail'
 import type { Sale } from '@/app/produccion/types/sales'
 import {
   AuroraEmptyState,
@@ -19,6 +18,15 @@ import {
 import { PedidosKpiCards } from '@/components/aurora/pedidos/PedidosKpiCards'
 import { PedidosTable } from '@/components/aurora/pedidos/PedidosTable'
 import { PedidosPager } from '@/components/aurora/pedidos/PedidosPager'
+import { PedidoDetailDrawer } from '@/components/aurora/pedidos/PedidoDetailDrawer'
+import { useOrderLines } from '@/app/ventas/components/useOrderLines'
+import {
+  LINE_FILTER_ALL,
+  LINE_FILTER_MANUAL,
+  distinctLines,
+  filterByLine,
+} from '@/lib/order-channel-line'
+import { resolvePedidoRef } from '@/lib/pedido-url'
 import {
   PEDIDOS_TABS,
   countByTab,
@@ -28,6 +36,14 @@ import {
   summarizePedidos,
   type PedidosTab,
 } from '@/lib/pedidos-aurora'
+
+// Classic dialogs reused unchanged for editing and guía generation; loaded on demand.
+const OrderDetails = lazy(() =>
+  import('@/app/produccion/components/OrderDetail').then((m) => ({ default: m.OrderDetails })),
+)
+const GuiaGenerator = lazy(() =>
+  import('@/app/produccion/components/GuiaGenerator').then((m) => ({ default: m.GuiaGenerator })),
+)
 
 const CR_TZ = 'America/Costa_Rica'
 const PAGE_SIZE = 10
@@ -51,16 +67,38 @@ function getRangeCR(days: number) {
   return { dateFrom: new Date(start).toISOString(), dateTo: new Date(end).toISOString() }
 }
 
+async function fetchSaleList(path: string): Promise<Sale[]> {
+  const res = await fetch(path, { credentials: 'include' })
+  if (!res.ok) throw new Error(String(res.status))
+  const json = await res.json()
+  const rows = Array.isArray(json?.data) ? json.data : []
+  return rows.map(parseOrder).filter((s: Sale | null): s is Sale => s !== null)
+}
+
 export const PedidosBoard = React.memo(function PedidosBoard({
   onCreate,
+  initialSearch,
+  pedidoRef,
+  onPedidoChange,
 }: {
   onCreate: () => void
+  /** `?buscar=` deep link seeds the Pedidos search. */
+  initialSearch?: string | null
+  /** `?pedido=` deep link (public orderId or Order.id). */
+  pedidoRef?: string | null
+  /** Keep the URL in sync when the drawer opens / closes. */
+  onPedidoChange?: (ref: string | null) => void
 }) {
-  const [range, setRange] = useState<RangeKey>('hoy')
+  const [range, setRange] = useState<RangeKey>(initialSearch ? '30d' : 'hoy')
   const [tab, setTab] = useState<PedidosTab>('todos')
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchTerm, setSearchTerm] = useState(initialSearch ?? '')
+  const [lineFilter, setLineFilter] = useState<string>(LINE_FILTER_ALL)
   const [page, setPage] = useState(1)
-  const [selectedSale, setSelectedSale] = useState<Sale | null>(null)
+  const [selectedRef, setSelectedRef] = useState<string | null>(pedidoRef ?? null)
+  const [resolvedSale, setResolvedSale] = useState<Sale | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [guiaOpen, setGuiaOpen] = useState(false)
+  const resolvingRef = useRef<string | null>(null)
   const { formatCurrency } = useTenantSettings()
   const { toast } = useToast()
   const updateStatus = useUpdateOrderStatus()
@@ -72,17 +110,68 @@ export const PedidosBoard = React.memo(function PedidosBoard({
     filters,
   })
 
+  const lines = useOrderLines(useMemo(() => sales.map((s) => s.id).filter(Boolean), [sales]))
+  const lineOptions = useMemo(() => distinctLines(lines), [lines])
+
   const kpis = useMemo(() => summarizePedidos(sales), [sales])
   const tabCounts = useMemo(() => countByTab(sales), [sales])
   const visible = useMemo(
-    () => searchPedidos(sales.filter((s) => matchesTab(s, tab)), searchTerm),
-    [sales, tab, searchTerm],
+    () => filterByLine(searchPedidos(sales.filter((s) => matchesTab(s, tab)), searchTerm), lines, lineFilter),
+    [sales, tab, searchTerm, lines, lineFilter],
   )
   const paged = paginate(visible, page, PAGE_SIZE)
 
   useEffect(() => {
     setPage(1)
-  }, [tab, searchTerm, range])
+  }, [tab, searchTerm, range, lineFilter])
+
+  // /ventas?buscar=<q> while already on this page.
+  useEffect(() => {
+    if (initialSearch) {
+      setSearchTerm(initialSearch)
+      setRange('30d')
+    }
+  }, [initialSearch])
+
+  // Keep the drawer in sync with `?pedido=` (deep link, browser back).
+  useEffect(() => {
+    setSelectedRef(pedidoRef ?? null)
+  }, [pedidoRef])
+  useEffect(() => {
+    if (!selectedRef) resolvingRef.current = null
+  }, [selectedRef])
+
+  const selectedSale = useMemo(() => {
+    if (!selectedRef) return null
+    return sales.find((s) => s.orderId === selectedRef || s.id === selectedRef) ?? (
+      resolvedSale && (resolvedSale.orderId === selectedRef || resolvedSale.id === selectedRef) ? resolvedSale : null
+    )
+  }, [sales, selectedRef, resolvedSale])
+
+  // Deep link to an order outside the loaded range: search by public id, then details by cuid.
+  useEffect(() => {
+    if (!selectedRef || isLoading || selectedSale || resolvingRef.current === selectedRef) return
+    resolvingRef.current = selectedRef
+    resolvePedidoRef<Sale>(selectedRef, {
+      loaded: sales,
+      search: (ref) => fetchSaleList(`/api/orders?search=${encodeURIComponent(ref)}&limit=5`),
+      details: async (ref) => {
+        const res = await fetch(`/api/orders/details?id=${encodeURIComponent(ref)}`, { credentials: 'include' })
+        if (!res.ok) return null
+        const json = await res.json()
+        return parseOrder(json?.data) ?? null
+      },
+    }).then((sale) => {
+      if (sale) {
+        setResolvedSale(sale)
+      } else {
+        toast({ variant: 'destructive', title: 'No encontramos ese pedido' })
+        setSelectedRef(null)
+        onPedidoChange?.(null)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRef, isLoading, selectedSale])
 
   const handleOrderUpdate = async (orderId: string, updatedData: Partial<Sale>): Promise<Sale> => {
     const response = await fetch('/api/orders/update', {
@@ -105,15 +194,26 @@ export const PedidosBoard = React.memo(function PedidosBoard({
     await handleOrderUpdate(selectedSale.orderId, { status: newStatus } as Partial<Sale>)
   }
 
-  const openOrder = (orderId: string) => {
-    const sale = sales.find((s) => s.orderId === orderId)
-    if (sale) setSelectedSale(sale)
-  }
+  const openOrder = useCallback(
+    (orderId: string) => {
+      setSelectedRef(orderId)
+      onPedidoChange?.(orderId)
+    },
+    [onPedidoChange],
+  )
 
-  const filtersActive = tab !== 'todos' || searchTerm.trim() !== ''
+  const closeOrder = useCallback(() => {
+    setSelectedRef(null)
+    setEditing(false)
+    setGuiaOpen(false)
+    onPedidoChange?.(null)
+  }, [onPedidoChange])
+
+  const filtersActive = tab !== 'todos' || searchTerm.trim() !== '' || lineFilter !== LINE_FILTER_ALL
   const clearFilters = () => {
     setTab('todos')
     setSearchTerm('')
+    setLineFilter(LINE_FILTER_ALL)
   }
 
   return (
@@ -150,8 +250,8 @@ export const PedidosBoard = React.memo(function PedidosBoard({
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
-            <label className="relative min-w-0 flex-1 lg:w-64 lg:flex-none">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="relative min-w-0 basis-full sm:flex-1 sm:basis-auto lg:w-64 lg:flex-none">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden />
               <input
                 type="search"
@@ -162,11 +262,27 @@ export const PedidosBoard = React.memo(function PedidosBoard({
                 className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 pl-9 pr-3 text-[13px] text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#5B6CFF] focus:bg-white"
               />
             </label>
+            {lineOptions.length > 0 ? (
+              <select
+                value={lineFilter}
+                onChange={(e) => setLineFilter(e.target.value)}
+                aria-label="Filtrar por línea"
+                className="h-9 min-w-0 max-w-[170px] flex-1 rounded-lg sm:flex-none border border-slate-200 bg-white px-2.5 text-[13px] text-slate-700 outline-none focus:border-[#5B6CFF]"
+              >
+                <option value={LINE_FILTER_ALL}>Todas las líneas</option>
+                {lineOptions.map((line) => (
+                  <option key={line.socialAccountId} value={line.socialAccountId}>
+                    {line.title}
+                  </option>
+                ))}
+                <option value={LINE_FILTER_MANUAL}>Manual</option>
+              </select>
+            ) : null}
             <select
               value={range}
               onChange={(e) => setRange(e.target.value as RangeKey)}
               aria-label="Rango de fechas"
-              className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] text-slate-700 outline-none focus:border-[#5B6CFF]"
+              className="h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] text-slate-700 outline-none focus:border-[#5B6CFF] sm:flex-none"
             >
               {RANGES.map((r) => (
                 <option key={r.key} value={r.key}>
@@ -223,13 +339,14 @@ export const PedidosBoard = React.memo(function PedidosBoard({
               formatCurrency={formatCurrency}
               selectedId={selectedSale?.orderId}
               onOpen={openOrder}
+              lines={lines}
             />
 
             {/* Mobile: swipeable cards (same behaviour as before the skin) */}
             <div className="space-y-2 px-3 pb-3 md:hidden">
               {paged.items.map((sale) => (
+                <div key={sale.orderId}>
                 <SwipeableRow
-                  key={sale.orderId}
                   leftAction={{
                     label: 'Completar',
                     icon: <CheckCircle className="h-5 w-5" />,
@@ -246,11 +363,19 @@ export const PedidosBoard = React.memo(function PedidosBoard({
                     label: 'Detalles',
                     icon: <Edit3 className="h-5 w-5" />,
                     color: '#5B6CFF',
-                    onAction: () => setSelectedSale(sale),
+                    onAction: () => openOrder(sale.orderId),
                   }}
                 >
                   <MobileOrderCard order={sale} formatCurrency={formatCurrency} />
                 </SwipeableRow>
+                <button
+                  type="button"
+                  onClick={() => openOrder(sale.orderId)}
+                  className="mt-1 ml-auto block px-1 py-1 text-[12px] font-medium text-[#5B3FE0]"
+                >
+                  Ver detalle
+                </button>
+                </div>
               ))}
             </div>
 
@@ -265,14 +390,41 @@ export const PedidosBoard = React.memo(function PedidosBoard({
         )}
       </section>
 
-      {selectedSale && (
-        <OrderDetails
-          order={selectedSale}
-          onClose={() => setSelectedSale(null)}
-          onUpdateStatus={handleStatusUpdate}
-          onUpdateOrder={handleOrderUpdate}
+      {selectedSale && !editing && !guiaOpen ? (
+        <PedidoDetailDrawer
+          sale={selectedSale}
+          line={lines[selectedSale.id] ?? null}
+          onClose={closeOrder}
+          onEdit={() => setEditing(true)}
+          onGenerateGuia={() => setGuiaOpen(true)}
+          onUpdated={refresh}
         />
-      )}
+      ) : null}
+
+      {/* Classic dialogs, reused unchanged. The drawer steps aside while one is open. */}
+      {selectedSale && editing ? (
+        <Suspense fallback={null}>
+          <OrderDetails
+            order={selectedSale}
+            onClose={() => setEditing(false)}
+            onUpdateStatus={handleStatusUpdate}
+            onUpdateOrder={handleOrderUpdate}
+          />
+        </Suspense>
+      ) : null}
+      {selectedSale && guiaOpen ? (
+        <Suspense fallback={null}>
+          <GuiaGenerator
+            open
+            orders={[selectedSale]}
+            onClose={() => {
+              setGuiaOpen(false)
+              refresh()
+            }}
+            onUpdateOrder={handleOrderUpdate}
+          />
+        </Suspense>
+      ) : null}
     </div>
   )
 })

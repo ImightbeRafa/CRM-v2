@@ -48,7 +48,7 @@ type Summary = {
   dailyPrevious: DailyPoint[]
   lines: LineRow[] | null
   funnel: { chatsOpened: number | null; aiResponded: number | null; ordersCreated: number }
-  chatOrderLink: { available: boolean }
+  chatOrderLink: { available: boolean; linkedOrders?: number; rate?: number | null }
 }
 
 type Loaded<T> = { state: CardLoad; data: T | null }
@@ -120,6 +120,7 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
   )
   const rangeLabel = s ? formatRangeLabel(s.range.startDate, s.range.endDate) : ''
   const kpiState = summaryState
+  const chatLink = s?.chatOrderLink
   const noPrev = 'Sin período anterior para comparar'
 
   return (
@@ -152,8 +153,12 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
             icon={<MessageSquare className="h-4 w-4" />}
             label="Chat → pedido"
             state={kpiState}
-            value="—"
-            emptyHint="Sin datos: los pedidos todavía no se vinculan a un chat"
+            value={chatLink?.available && chatLink.rate != null ? `${Math.round(chatLink.rate * 100)}%` : '—'}
+            emptyHint={
+              chatLink?.available
+                ? `${chatLink.linkedOrders} ${chatLink.linkedOrders === 1 ? 'pedido' : 'pedidos'} desde chats`
+                : 'Sin datos: los pedidos todavía no se vinculan a un chat'
+            }
             onRetry={reloadSummary}
           />
           <KpiCard
@@ -198,7 +203,7 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
             onRetry={reloadSummary}
             skeletonClass="h-[220px]"
           >
-            <LinePerformanceBody lines={s?.lines ?? null} />
+            <LinePerformanceBody lines={s?.lines ?? null} symbol={symbol} />
           </StatsCard>
           <StatsCard
             title="Embudo chat → pedido"

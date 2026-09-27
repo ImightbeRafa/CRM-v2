@@ -103,4 +103,35 @@ describe('/ventas Aurora wiring', () => {
     assert.match(src, /EnhancedSalesForm/)
     assert.doesNotMatch(src, /Ventas Soft|Soft/)
   })
+  it('create flow is the existing EnhancedSalesForm inside CrearPedidoDrawer, opened by ?nuevo=1', () => {
+    assert.match(src, /CrearPedidoDrawer/)
+    assert.match(src, /nuevo/)
+    const drawer = readFileSync(resolve(process.cwd(), 'src/components/aurora/pedidos/CrearPedidoDrawer.tsx'), 'utf8')
+    assert.match(drawer, /import\('@\/app\/ventas\/components\/EnhancedSalesForm'\)/)
+    assert.match(drawer, /AuroraDrawer/)
+  })
+  it('detail drawer reuses the status mutation, confirm-payment and the existing shipping APIs', () => {
+    const detail = readFileSync(resolve(process.cwd(), 'src/components/aurora/pedidos/PedidoDetailDrawer.tsx'), 'utf8')
+    assert.match(detail, /useUpdateOrderStatus/)
+    assert.match(detail, /\/api\/orders\/confirm-payment/)
+    assert.match(detail, /\/api\/shipping\/guias\/status/)
+    assert.match(detail, /\/api\/shipping\/guias\/download/)
+    assert.match(detail, /\/api\/orders\/details/)
+    for (const section of ['Cliente', 'Productos', 'Pago', 'Envío', 'Historial']) {
+      assert.match(detail, new RegExp(`title="${section}"`))
+    }
+    assert.doesNotMatch(detail, /PH-/)
+  })
+  it('board keeps the classic OrderDetails / GuiaGenerator dialogs (edit + guía) and the line filter', () => {
+    const board = readFileSync(resolve(process.cwd(), 'src/app/ventas/components/PedidosBoard.tsx'), 'utf8')
+    assert.match(board, /produccion\/components\/OrderDetail/)
+    assert.match(board, /produccion\/components\/GuiaGenerator/)
+    assert.match(board, /Todas las líneas/)
+    assert.match(board, /resolvePedidoRef/)
+  })
+  it('Canal column derives the specific line and never shows a bare WhatsApp', () => {
+    const table = readFileSync(resolve(process.cwd(), 'src/components/aurora/pedidos/PedidosTable.tsx'), 'utf8')
+    assert.match(table, /canalLabel\(/)
+    assert.match(table, /CanalCell/)
+  })
 })

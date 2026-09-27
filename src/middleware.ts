@@ -22,6 +22,8 @@ const CSP_HEADER = [
 const PUBLIC_ROUTES = [
   '/auth/signin',
   '/auth/error',
+  '/auth/forgot-password',
+  '/auth/reset-password',
   '/api/auth',
   '/home',
   '/_next',
@@ -244,7 +246,7 @@ function redirectToLogin(url: URL): NextResponse {
 
   // For app routes, redirect to login page
   const loginUrl = new URL('/auth/signin', url.origin);
-  loginUrl.searchParams.set('callbackUrl', url.pathname);
+  loginUrl.searchParams.set('callbackUrl', url.pathname + url.search);
   return NextResponse.redirect(loginUrl);
 }
 

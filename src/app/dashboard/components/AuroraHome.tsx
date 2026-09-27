@@ -1,5 +1,6 @@
 'use client'
 
+import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import Link from 'next/link'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -173,7 +174,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
   const hasDaily = dailyMax > 0
 
   const quick = [
-    { href: '/ventas', label: 'Crear pedido', icon: <Plus className="h-4 w-4" />, tone: 'bg-[#EEEAFF] text-[#6D4AFF]' },
+    { href: '/ventas?nuevo=1', label: 'Crear pedido', icon: <Plus className="h-4 w-4" />, tone: 'bg-[#EEEAFF] text-[#6D4AFF]' },
     { href: '/config?tab=inventory', label: 'Inventario', icon: <Warehouse className="h-4 w-4" />, tone: 'bg-blue-50 text-blue-600' },
     ...(isLogisticsAdmin
       ? [{ href: '/logistics/guias', label: 'Generar guías', icon: <FileText className="h-4 w-4" />, tone: 'bg-sky-50 text-sky-600' }]
@@ -250,12 +251,13 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
             Actualizar
           </button>
           <Link
-            href="/ventas"
+            href="/ventas?nuevo=1"
             className="inline-flex min-h-[40px] items-center gap-2 rounded-xl bg-gradient-to-r from-[#5B6CFF] to-[#7C4DFF] px-3.5 text-[13px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
           >
             <Plus className="h-4 w-4" aria-hidden />
             Crear pedido
           </Link>
+          <AuroraTopActions />
         </div>
       </header>
 

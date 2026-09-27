@@ -2,7 +2,9 @@ import type { Config } from "tailwindcss"
 import { fontFamily } from "tailwindcss/defaultTheme"
 
 const config = {
-  darkMode: ["class"],
+  // Same as the "class" strategy, except `dark:` utilities never apply inside `.aurora-light`
+  // (Aurora panels, drawers and modals stay light even when the app theme is dark).
+  darkMode: ["variant", "&:is(.dark *):not(:is(.aurora-light, .aurora-light *))"],
   content: [
     './src/pages/**/*.{ts,tsx}',
     './src/components/**/*.{ts,tsx}',

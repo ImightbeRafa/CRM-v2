@@ -4,7 +4,14 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { getTenantPrisma } from '@/lib/prisma-tenant'
 import { readTenantUiReadiness } from '@/lib/feature-flags'
 import { buildStatsDateRange, buildStatsOrderDateWhere, getOrderStatsDateKey } from '@/lib/statistics-dates'
-import { auroraPeriodRange, auroraPreviousRange, resolveAuroraPeriod, safeAmount } from '@/lib/statistics-aurora'
+import {
+  auroraPeriodRange,
+  auroraPreviousRange,
+  resolveAuroraPeriod,
+  safeAmount,
+  summarizeChatOrderLinks,
+  type ChatOrderLinkRow,
+} from '@/lib/statistics-aurora'
 import { isCollectedRevenue } from '@/lib/order-payment-status'
 import { channelIdentity } from '@/lib/agent-channel-bind'
 
@@ -17,6 +24,7 @@ const MAX_CACHE = 100
 const ORDER_TAKE = 25_001
 
 type OrderRow = {
+  id: string
   total: number | null
   saleDate: string | null
   timestamp: Date
@@ -82,6 +90,7 @@ export async function GET(request: NextRequest) {
     const prisma = getTenantPrisma(tenantId)
     const chatWindow = buildStatsDateRange(range.startDate, range.endDate)
     const orderSelect = {
+      id: true,
       total: true,
       saleDate: true,
       timestamp: true,
@@ -107,7 +116,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Elegí un período más corto' }, { status: 413 })
     }
 
-    const [chatGroups, accounts, aiTurns] = await Promise.all([
+    const [chatGroups, accounts, aiTurns, chatLinks] = await Promise.all([
       optional<ChatGroup[]>(() =>
         (prisma.chatConversation as any).groupBy({
           by: ['socialAccountId'],
@@ -141,10 +150,32 @@ export async function GET(request: NextRequest) {
           },
         }),
       ),
+      // Orders created from a chat: ChatMessage.orderId (set by POST /api/chat/order-link).
+      optional<ChatOrderLinkRow[]>(() =>
+        prisma.chatMessage.findMany({
+          where: {
+            tenantId,
+            orderId: { not: null },
+            order: { is: { tenantId, ...buildStatsOrderDateWhere(range.startDate, range.endDate) } },
+          },
+          select: { orderId: true, socialAccountId: true },
+          distinct: ['orderId'],
+        }),
+      ),
     ])
 
     const cur = summarize(currentOrders as OrderRow[], collectedMode)
     const prev = summarize(previousOrders as OrderRow[], collectedMode)
+
+    const linkSummary =
+      chatLinks === null
+        ? null
+        : summarizeChatOrderLinks(
+            chatLinks,
+            new Map((currentOrders as OrderRow[]).map((o) => [o.id, o])),
+            collectedMode,
+          )
+    const linkAvailable = linkSummary !== null && linkSummary.linkedOrders > 0
 
     const chatCounts = new Map((chatGroups ?? []).map((g) => [g.socialAccountId, g._count._all]))
     const lines =
@@ -166,6 +197,8 @@ export async function GET(request: NextRequest) {
               detail: identity.detail,
               isActive: account.isActive,
               chats: chatCounts.get(account.id) ?? 0,
+              orders: linkAvailable ? (linkSummary.perLine.get(account.id)?.orders ?? 0) : null,
+              revenue: linkAvailable ? (linkSummary.perLine.get(account.id)?.revenue ?? 0) : null,
             }
           })
 
@@ -188,8 +221,12 @@ export async function GET(request: NextRequest) {
         aiResponded: aiTurns === null ? null : aiTurns.length,
         ordersCreated: cur.orders,
       },
-      // ChatMessage.orderId exists but no chat UI writes it yet: chat→pedido is not derivable.
-      chatOrderLink: { available: false as const },
+      // Chat → pedido from ChatMessage.orderId; unavailable until at least one order is linked.
+      chatOrderLink: {
+        available: linkAvailable,
+        linkedOrders: linkSummary?.linkedOrders ?? 0,
+        rate: linkAvailable && chatsOpened ? linkSummary.linkedOrders / chatsOpened : null,
+      },
     }
 
     cache.set(key, { at: Date.now(), data })

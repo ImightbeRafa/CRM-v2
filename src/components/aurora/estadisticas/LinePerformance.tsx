@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { AuroraEmptyState, auroraButtonSecondary } from '../states'
+import { formatCompactMoney } from '@/lib/statistics-aurora'
 
 export type LineRow = {
   socialAccountId: string
@@ -8,6 +9,9 @@ export type LineRow = {
   detail: string | null
   isActive: boolean
   chats: number
+  /** Orders / sales linked to a chat of this line; `null` when no order is linked to any chat yet. */
+  orders?: number | null
+  revenue?: number | null
 }
 
 function PlatformDot({ platform }: { platform: string }) {
@@ -24,10 +28,23 @@ function PlatformDot({ platform }: { platform: string }) {
 const DASH = '—'
 
 /**
- * "Rendimiento por línea": one row per connected line. Chats are real; Pedidos / Conversión /
- * Ventas show "—" because orders are not linked to a chat yet.
+ * "Rendimiento por línea": one row per connected line. Chats are real. Pedidos / Conversión / Ventas
+ * come from orders linked to a chat (ChatMessage.orderId) and show "—" until one is linked.
  */
-export function LinePerformanceBody({ lines }: { lines: LineRow[] | null }) {
+function ordersCell(line: LineRow): string {
+  return line.orders === null || line.orders === undefined ? DASH : String(line.orders)
+}
+
+function conversionCell(line: LineRow): string {
+  if (line.orders === null || line.orders === undefined || line.chats <= 0) return DASH
+  return `${Math.round((line.orders / line.chats) * 100)}%`
+}
+
+function salesCell(line: LineRow, symbol: string): string {
+  return line.revenue === null || line.revenue === undefined ? DASH : formatCompactMoney(line.revenue, symbol)
+}
+
+export function LinePerformanceBody({ lines, symbol = '₡' }: { lines: LineRow[] | null; symbol?: string }) {
   if (lines === null) {
     return (
       <AuroraEmptyState
@@ -84,9 +101,11 @@ export function LinePerformanceBody({ lines }: { lines: LineRow[] | null }) {
                 </span>
               </td>
               <td className="py-3.5 text-right tabular-nums text-slate-600">{line.chats}</td>
-              <td className="py-3.5 text-right text-slate-300">{DASH}</td>
-              <td className="py-3.5 text-right text-slate-300">{DASH}</td>
-              <td className="py-3.5 text-right text-slate-300">{DASH}</td>
+              {[ordersCell(line), conversionCell(line), salesCell(line, symbol)].map((v, i) => (
+                <td key={i} className={`py-3.5 text-right tabular-nums ${v === DASH ? 'text-slate-300' : 'text-slate-600'}`}>
+                  {v}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
@@ -103,9 +122,9 @@ export function LinePerformanceBody({ lines }: { lines: LineRow[] | null }) {
             <dl className="mt-2 grid grid-cols-4 gap-2 text-[11px]">
               {[
                 ['Chats', String(line.chats)],
-                ['Pedidos', DASH],
-                ['Conv.', DASH],
-                ['Ventas', DASH],
+                ['Pedidos', ordersCell(line)],
+                ['Conv.', conversionCell(line)],
+                ['Ventas', salesCell(line, symbol)],
               ].map(([k, v]) => (
                 <div key={k}>
                   <dt className="text-slate-400">{k}</dt>
@@ -118,9 +137,11 @@ export function LinePerformanceBody({ lines }: { lines: LineRow[] | null }) {
           </li>
         ))}
       </ul>
-      <p className="mt-3 text-[11px] text-slate-400">
-        Pedidos y ventas por línea: sin vínculo chat → pedido todavía.
-      </p>
+      {sorted.every((line) => line.orders === null || line.orders === undefined) ? (
+        <p className="mt-3 text-[11px] text-slate-400">
+          Pedidos y ventas por línea aparecen cuando creás pedidos desde un chat.
+        </p>
+      ) : null}
     </div>
   )
 }

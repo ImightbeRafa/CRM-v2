@@ -1,8 +1,9 @@
 /**
  * Aurora Estadísticas · pure period / delta / formatting helpers (client + server safe).
- * Only depends on the Costa Rica date helpers; no DB, no React.
+ * Only depends on the Costa Rica date helpers and the pure payment-state rules; no DB, no React.
  */
 
+import { isCollectedRevenue } from '@/lib/order-payment-status'
 import {
   addDaysToStatsDateKey,
   getCurrentStatsDateKey,
@@ -219,6 +220,21 @@ export function chartBucketSize(dayCount: number): number {
   return dayCount > 31 ? 7 : 1
 }
 
+/**
+ * Indices of the x-axis labels to show: at most `max`, evenly spaced, always including the
+ * first and last point (no per-column truncation needed).
+ */
+export function evenTickIndices(count: number, max: number): number[] {
+  const n = Math.max(0, Math.floor(count))
+  const m = Math.max(1, Math.floor(max))
+  if (n === 0) return []
+  if (n <= m) return Array.from({ length: n }, (_, i) => i)
+  if (m === 1) return [0]
+  const out = new Set<number>()
+  for (let i = 0; i < m; i++) out.add(Math.round((i * (n - 1)) / (m - 1)))
+  return [...out].sort((a, b) => a - b)
+}
+
 /** Sums consecutive points into buckets of `size`; the bucket is labelled by its first day. */
 export function bucketPairedSeries(series: PairedDailyPoint[], size: number): PairedDailyPoint[] {
   if (size <= 1) return series
@@ -234,4 +250,38 @@ export function bucketPairedSeries(series: PairedDailyPoint[], size: number): Pa
     })
   }
   return out
+}
+
+export type ChatOrderLinkRow = { orderId: string | null; socialAccountId: string }
+export type LinkedOrderFacts = Parameters<typeof isCollectedRevenue>[0] & { total: number | null }
+export type ChatOrderLinkSummary = {
+  linkedOrders: number
+  perLine: Map<string, { orders: number; revenue: number }>
+}
+
+/**
+ * Orders that came from a chat (ChatMessage.orderId), overall and per line.
+ * Each order counts once (first link wins); links whose order is outside `ordersById`
+ * (other period) are ignored. Revenue follows the summary's booked / collected rule.
+ */
+export function summarizeChatOrderLinks(
+  links: ChatOrderLinkRow[],
+  ordersById: Map<string, LinkedOrderFacts>,
+  collectedMode: boolean,
+): ChatOrderLinkSummary {
+  const seen = new Set<string>()
+  const perLine = new Map<string, { orders: number; revenue: number }>()
+  for (const link of links) {
+    if (!link.orderId || seen.has(link.orderId)) continue
+    const order = ordersById.get(link.orderId)
+    if (!order) continue
+    seen.add(link.orderId)
+    const total = safeAmount(order.total)
+    const counted = collectedMode ? (isCollectedRevenue(order) ? total : 0) : total
+    const line = perLine.get(link.socialAccountId) ?? { orders: 0, revenue: 0 }
+    line.orders += 1
+    line.revenue += counted
+    perLine.set(link.socialAccountId, line)
+  }
+  return { linkedOrders: seen.size, perLine }
 }

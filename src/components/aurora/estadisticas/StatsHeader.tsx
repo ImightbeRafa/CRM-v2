@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Download } from 'lucide-react'
 import { useSession } from 'next-auth/react'
 import { hasSessionPermission } from '@/lib/session-permissions'
+import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import { AURORA_PERIODS, AURORA_PERIOD_LABELS, type AuroraPeriod } from '@/lib/statistics-aurora'
 
 export function PeriodSegmented({
@@ -71,6 +72,7 @@ export function StatsHeader({ period, onPeriod }: { period: AuroraPeriod; onPeri
             <span className="sr-only sm:hidden">Exportar</span>
           </Link>
         ) : null}
+        <AuroraTopActions />
       </div>
     </header>
   )

@@ -10,6 +10,9 @@ import { ConfigShell } from '@/components/aurora/config/ConfigShell'
 import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader'
 import { PanelGate } from '@/components/aurora/config/panels/PanelGate'
 import { UsersPanel } from '@/components/aurora/config/panels/UsersPanel'
+import { InviteMemberModal } from '@/components/aurora/config/InviteMemberModal'
+import { useAuroraConfirm } from '@/components/aurora/ui/AuroraConfirmDialog'
+import { useToast } from '@/app/hooks/use-toast'
 import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton'
 import {
   CONFIG_HUB_TAB,
@@ -87,7 +90,8 @@ function ConfigPageInner() {
   const [optionSetOptions, setOptionSetOptions] = useState<{ label: string; value: string; priceDelta: number; metadata: string }[]>([])
   const [editingShipping, setEditingShipping] = useState<any>(null)
   const [editingUser, setEditingUser] = useState<any>(null)
-  const [showPassword, setShowPassword] = useState(false)
+  const { toast } = useToast()
+  const { confirm: auroraConfirm, dialog: auroraConfirmDialog } = useAuroraConfirm()
   const { getState, refresh } = useConfig()
 
   const statusesState = getState<OrderStatus[]>('statuses')
@@ -391,74 +395,25 @@ function ConfigPageInner() {
   }
 
   const handleDeleteUser = async (id: string) => {
-    if (!confirm('⚠️ ¿Eliminar este usuario? Esta acción no se puede deshacer.')) return
+    const ok = await auroraConfirm({
+      title: '¿Quitar a esta persona?',
+      description: 'Pierde el acceso a Betsy. Esta acción no se puede deshacer.',
+      confirmLabel: 'Quitar',
+      tone: 'danger',
+    })
+    if (!ok) return
     try {
       const res = await fetch(`/api/users?id=${id}`, { method: 'DELETE' })
       const json = await res.json()
       if (json.status === 'success') {
         setUsers(prev => prev.filter(u => u.id !== id))
-        alert('✅ Usuario eliminado exitosamente')
+        toast({ variant: 'success' as any, title: 'Persona quitada del equipo' })
       } else {
-        alert(`❌ Error: ${json.error || 'Error al eliminar usuario'}`)
+        toast({ variant: 'destructive', title: 'No se pudo quitar', description: json.error || 'Error al eliminar usuario' })
       }
     } catch (error) {
       console.error('Error deleting user:', error)
-      alert('❌ Error al eliminar usuario')
-    }
-  }
-
-  const handleUserSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const formData = new FormData(e.target as HTMLFormElement)
-    const userData = {
-      email: formData.get('email'),
-      username: formData.get('username'),
-      role: formData.get('role'),
-      active: formData.get('active') === 'on',
-      password: (formData.get('password') as string) || ''
-    }
-
-    try {
-      const isEditing = Boolean(editingUser)
-      const url = '/api/users'
-      const method = isEditing ? 'PUT' : 'POST'
-      const body = isEditing
-        ? {
-            id: editingUser.id,
-            email: userData.email,
-            username: userData.username,
-            role: userData.role,
-            active: userData.active,
-            ...(userData.password && userData.password.length > 0 ? { password: userData.password } : {})
-          }
-        : {
-            email: userData.email,
-            username: userData.username, // Required field for tracking
-            role: userData.role,
-            active: userData.active,
-            password: userData.password // Password is required for new users
-          }
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      })
-
-      const result = await response.json()
-
-      if (response.ok) {
-        await loadData()
-        setShowUserForm(false)
-        setEditingUser(null)
-        setShowPassword(false)
-        alert(isEditing ? '✅ Usuario actualizado exitosamente' : '✅ Usuario creado exitosamente')
-      } else {
-        alert(`❌ Error: ${result.error || 'Error al guardar usuario'}`)
-      }
-    } catch (error) {
-      console.error('Error saving user:', error)
-      alert('❌ Error al guardar usuario')
+      toast({ variant: 'destructive', title: 'No se pudo quitar a la persona' })
     }
   }
 
@@ -1440,148 +1395,18 @@ function ConfigPageInner() {
       </div>
       )}
 
-      {/* User Form Modal */}
-      {showUserForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">
-              {editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
-            </h3>
-            {!editingUser && (
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-700">
-                  <strong>Nota:</strong> Por favor establezca una contraseña segura de al menos 8 caracteres para el nuevo usuario.
-                </p>
-              </div>
-            )}
-            <form onSubmit={handleUserSubmit}>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">
-                    Email <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    defaultValue={editingUser?.email || ''}
-                    placeholder="usuario@ejemplo.com"
-                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                    required
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Email único para iniciar sesión</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">
-                    Nombre de Usuario <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="username"
-                    defaultValue={editingUser?.username || ''}
-                    placeholder="Ej: PedroPascal02"
-                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                    required
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Usado para identificar quién realiza acciones (ventas, órdenes, etc.)</p>
-                </div>
-                {!editingUser && (
-                  <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">
-                      Contraseña <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        name="password"
-                        placeholder="Mínimo 8 caracteres"
-                        className="w-full p-2 pr-24 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                        required
-                        minLength={8}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(prev => !prev)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-purple-600 hover:text-purple-800"
-                      >
-                        {showPassword ? 'Ocultar' : 'Mostrar'}
-                      </button>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">La contraseña es requerida para nuevos usuarios. Mínimo 8 caracteres.</p>
-                  </div>
-                )}
-                {editingUser && (
-                  <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">Contraseña</label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        name="password"
-                        placeholder="Dejar en blanco para mantener la actual"
-                        className="w-full p-2 pr-24 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(prev => !prev)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-purple-600 hover:text-purple-800"
-                      >
-                        {showPassword ? 'Ocultar' : 'Mostrar'}
-                      </button>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">Dejar vacío para no cambiar la contraseña.</p>
-                  </div>
-                )}
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">
-                    Rol <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    name="role"
-                    defaultValue={editingUser?.role || 'VIEWER'}
-                    className="w-full p-2 border border-border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                    required
-                  >
-                    <option value="OWNER">OWNER - Propietario (Acceso completo + facturación)</option>
-                    <option value="ADMIN">ADMIN - Administrador (Acceso completo)</option>
-                    <option value="MANAGER">MANAGER - Gerente (Ventas + Producción + Estadísticas)</option>
-                    <option value="SALES">SALES - Ventas (Solo módulo de ventas)</option>
-                    <option value="PRODUCTION">PRODUCTION - Producción (Solo módulo de producción)</option>
-                    <option value="VIEWER">VIEWER - Visualizador (Solo lectura)</option>
-                  </select>
-                  <p className="text-xs text-muted-foreground mt-1">Define los permisos y accesos del usuario</p>
-                </div>
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    name="active"
-                    defaultChecked={editingUser?.active !== false}
-                    className="rounded border-border text-purple-600 focus:ring-purple-500"
-                  />
-                  <label className="ml-2 text-sm text-muted-foreground">Usuario activo</label>
-                </div>
-              </div>
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowUserForm(false)
-                    setEditingUser(null)
-                  }}
-                  className="px-4 py-2 text-muted-foreground hover:text-foreground"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
-                >
-                  {editingUser ? 'Actualizar' : 'Crear'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      
+      {/* Invitar persona (Aurora modal over POST/PUT /api/users) */}
+      <InviteMemberModal
+        open={showUserForm}
+        onOpenChange={(open) => {
+          setShowUserForm(open)
+          if (!open) setEditingUser(null)
+        }}
+        editingUser={editingUser}
+        onDone={loadData}
+      />
+      {auroraConfirmDialog}
+
       {/* Tenant Settings Gear (only visible on config page) */}
       <TenantSettingsPanel />
     </ConfigShell>

@@ -13,6 +13,7 @@ import {
 import type { LineCounts } from '@/lib/chat-line-filter'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
 import { AuroraLineFilter } from '@/components/chats/AuroraLineFilter'
+import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import {
   AuroraEmptyState,
   AuroraErrorState,
@@ -150,20 +151,23 @@ export function SoftConversationList({
       {compact ? (
         <div className="flex items-center justify-between gap-2 px-4 pt-4">
           <h2 className="text-[28px] font-bold leading-tight tracking-tight text-slate-900">Chats</h2>
-          {onSearchChange ? (
-            <button
-              type="button"
-              aria-label={searchOpen ? 'Cerrar búsqueda' : 'Buscar chats'}
-              aria-pressed={searchOpen}
-              onClick={() => {
-                if (searchOpen) onSearchChange('')
-                setSearchOpen((v) => !v)
-              }}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-700 ring-1 ring-slate-200/70"
-            >
-              {searchOpen ? <X className="h-5 w-5" aria-hidden /> : <Search className="h-5 w-5" aria-hidden />}
-            </button>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-2">
+            {onSearchChange ? (
+              <button
+                type="button"
+                aria-label={searchOpen ? 'Cerrar búsqueda' : 'Buscar chats'}
+                aria-pressed={searchOpen}
+                onClick={() => {
+                  if (searchOpen) onSearchChange('')
+                  setSearchOpen((v) => !v)
+                }}
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-700 ring-1 ring-slate-200/70"
+              >
+                {searchOpen ? <X className="h-5 w-5" aria-hidden /> : <Search className="h-5 w-5" aria-hidden />}
+              </button>
+            ) : null}
+            <AuroraTopActions />
+          </div>
         </div>
       ) : (
         <div className="flex items-start justify-between gap-2 px-4 pt-4">

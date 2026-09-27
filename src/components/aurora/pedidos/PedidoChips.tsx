@@ -1,5 +1,7 @@
 import { Banknote, Check, Clock, Store, Truck, Package, X } from 'lucide-react'
+import { ChannelLogo } from '@/components/social/ChannelLogo'
 import type { ChannelChip, PaymentChip, ShipChip } from '@/lib/pedidos-aurora'
+import type { CanalLabel } from '@/lib/order-channel-line'
 
 const PILL = 'inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium'
 
@@ -61,6 +63,26 @@ export function ChannelLabel({ chip }: { chip: ChannelChip | null }) {
     <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-600">
       <span className={`h-2 w-2 rounded-full ${CHANNEL_DOT[chip.family]}`} aria-hidden />
       {chip.label}
+    </span>
+  )
+}
+
+/** Canal column: the specific line (name / number) with its WA / IG logo, else a labelled fallback. */
+export function CanalCell({ canal }: { canal: CanalLabel }) {
+  const logoFamily = canal.family === 'whatsapp' || canal.family === 'instagram' ? canal.family : null
+  return (
+    <span className="inline-flex max-w-[190px] items-center gap-1.5 text-[12px] text-slate-600" data-testid="pedido-canal">
+      {logoFamily ? (
+        <ChannelLogo platform={logoFamily} size={14} colorful />
+      ) : (
+        <span className={`h-2 w-2 shrink-0 rounded-full ${CHANNEL_DOT[canal.family]}`} aria-hidden />
+      )}
+      <span className="min-w-0">
+        <span className="block truncate" title={canal.label}>
+          {canal.label}
+        </span>
+        {canal.detail ? <span className="block truncate text-[11px] text-slate-400">{canal.detail}</span> : null}
+      </span>
     </span>
   )
 }

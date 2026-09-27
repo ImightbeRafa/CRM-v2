@@ -14,6 +14,7 @@ import {
   listDtoToSoftConversation,
   mergeListDtoIntoMap,
   mergeThreadMessageWindow,
+  messageDtoToInbox,
   selectThreadRenderWindow,
   sortedConversationDtos,
   walkConversationListPages,
@@ -70,6 +71,35 @@ describe('chat-inbox-v2-client reducers', () => {
     assert.equal(conv.unreadCount, 2)
     assert.equal(conv.accountLabel, 'Forge')
     assert.equal(conv.recipientId, 'peer1')
+  })
+
+  it('carries the human order number next to the internal order id', () => {
+    const row = (id: string, orderId: string | null, orderNumber?: string | null) => ({
+      id,
+      direction: 'outbound',
+      content: 'x',
+      sentAt: '2026-01-01T00:00:00.000Z',
+      receivedAt: null,
+      deliveryStatus: null,
+      messageType: null,
+      clientId: null,
+      orderId,
+      orderNumber,
+      metadata: null,
+    })
+    const linked = messageDtoToInbox(row('m1', 'cuid-1', 'ORDER-123'))
+    assert.equal(linked.orderId, 'cuid-1')
+    assert.equal(linked.orderNumber, 'ORDER-123')
+    const conv = listDtoToSoftConversation(sampleDto('c1', '2026-01-01T00:00:00.000Z'), [
+      linked,
+      messageDtoToInbox(row('m2', 'cuid-1', null)),
+    ])
+    assert.equal(conv.orderId, 'cuid-1')
+    assert.equal(conv.orderNumber, 'ORDER-123')
+    const unlinked = listDtoToSoftConversation(sampleDto('c1', '2026-01-01T00:00:00.000Z'), [
+      messageDtoToInbox(row('m3', null)),
+    ])
+    assert.equal(unlinked.orderNumber, null)
   })
 
   it('buildLocalImportPayload merges status and tags keys', () => {

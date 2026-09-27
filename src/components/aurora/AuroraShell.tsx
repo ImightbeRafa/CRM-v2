@@ -26,7 +26,7 @@ export function AuroraShell({ children, fullBleed = false, bottomNav }: AuroraSh
   return (
     <AuroraShellContext.Provider value={true}>
       {/* Height leaves room for global banners (AppTopBanners sets --app-top-offset) so the mobile bottom nav stays visible. */}
-      <div className="flex h-[calc(100dvh-var(--app-top-offset,0px))] w-full overflow-hidden bg-[var(--aurora-canvas)]">
+      <div data-aurora-shell className="flex h-[calc(100dvh-var(--app-top-offset,0px))] w-full overflow-hidden bg-[var(--aurora-canvas)]">
         <AuroraSidebar />
         <main
           className={`flex min-h-0 min-w-0 flex-1 flex-col ${

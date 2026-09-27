@@ -109,7 +109,7 @@ export default function SubscriptionBanner() {
           {isOwner && (
             <a
               href="/config?tab=billing"
-              className="flex items-center gap-1 whitespace-nowrap rounded border border-current/20 bg-white px-2.5 py-1 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-muted md:px-3 md:py-1.5 md:text-sm"
+              className="flex items-center gap-1 whitespace-nowrap rounded-md border border-white/40 bg-white px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-sm transition-colors hover:bg-slate-100 md:px-3 md:py-1.5 md:text-sm"
             >
               <CreditCard className="h-3.5 w-3.5 md:h-4 md:w-4" />
               Renovar

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
-import { Bell, ChevronDown, LogOut, MessageSquare, MoreHorizontal, Package, Radio, X } from 'lucide-react'
+import { Bell, ChevronDown, LogOut, MessageCircleQuestion, MessageSquare, MoreHorizontal, Package, Radio, X } from 'lucide-react'
 import { AURORA_NAV, getActiveAuroraHref } from './aurora-nav'
 import { AuroraAvatar } from './shell/AuroraAvatar'
 import { AuroraAlertsList } from './shell/AuroraAlertsList'
@@ -223,6 +223,17 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
                 </ul>
               </div>
             ))}
+            <button
+              type="button"
+              onClick={() => {
+                setMoreOpen(false)
+                window.dispatchEvent(new Event('betsy:open-feedback'))
+              }}
+              className={`flex w-full items-center gap-3 rounded-lg px-2 py-3 text-[14px] font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-50 ${FOCUS}`}
+            >
+              <MessageCircleQuestion className="h-5 w-5 shrink-0" aria-hidden />
+              Enviar comentarios
+            </button>
             <button
               type="button"
               onClick={() => signOut({ callbackUrl: '/auth/signin' })}

@@ -10,7 +10,8 @@ import { canAccessLogistics } from "@/lib/logistics-access";
 
 function displayName(session: NonNullable<ReturnType<typeof useSession>["data"]>) {
   const name = session.user?.name?.trim();
-  if (name) return name.split(" ")[0];
+  // Some accounts store the email as `name`: greet with the part before "@".
+  if (name) return name.includes("@") ? name.split("@")[0] : name.split(" ")[0];
   const email = session.user?.email ?? "";
   return email.split("@")[0] || "Usuario";
 }

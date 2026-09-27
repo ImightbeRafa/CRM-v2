@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState } from 'react'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
-import { HelpCircle, LogOut, MoreHorizontal, Users } from 'lucide-react'
+import { HelpCircle, LogOut, MessageCircleQuestion, MoreHorizontal, Users } from 'lucide-react'
 import { AuroraAvatar } from './AuroraAvatar'
 import { useAuroraViewer } from './useAuroraViewer'
 import { useDismiss } from './useDismiss'
@@ -60,6 +60,18 @@ export function AuroraProfileMenu() {
               <HelpCircle className="h-4 w-4 text-slate-400" aria-hidden />
               Ayuda
             </Link>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                close()
+                window.dispatchEvent(new Event('betsy:open-feedback'))
+              }}
+              className={item}
+            >
+              <MessageCircleQuestion className="h-4 w-4 text-slate-400" aria-hidden />
+              Enviar comentarios
+            </button>
             <button
               type="button"
               role="menuitem"

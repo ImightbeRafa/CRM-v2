@@ -18,9 +18,22 @@ export const FILES = {
   '029': '029_chat_agent_playbooks_assets.sql',
   '030': '030_tenant_invites.sql',
   '031': '031_chat_message_sender_user.sql',
+  '032': '032_perf_indexes.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
+
+/** 032 performance indexes (gated: BETSY_V2_APPLY_FILES=032). Verified valid after apply. */
+export const EXPECTED_INDEXES_032 = [
+  'ChatMessage_tenantId_orderId_idx',
+  'Order_customerName_trgm_idx',
+  'Order_orderId_trgm_idx',
+  'Order_phone_trgm_idx',
+  'Order_product_trgm_idx',
+  'ChatConversation_peerName_trgm_idx',
+  'ChatConversation_peerId_trgm_idx',
+  'ChatConversation_lastMessagePreview_trgm_idx',
+];
 
 export const EXPECTED_TABLES = {
   '018': ['TenantFeatureFlag'],

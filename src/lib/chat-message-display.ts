@@ -21,6 +21,8 @@ export type ChatMessageNotice = {
 }
 
 type DisplayInput = {
+  /** Message id: IG notices link to `/api/chat/media/[id]` (never to a CDN URL). */
+  id?: string | null
   content?: string | null
   messageType?: string | null
   metadata?: unknown
@@ -163,9 +165,17 @@ function whatsappNotice(type: string, raw: Record<string, any> | null): ChatMess
   }
 }
 
-function instagramNotice(type: string, raw: Record<string, any> | null): ChatMessageNotice | null {
+function instagramNotice(
+  type: string,
+  raw: Record<string, any> | null,
+  messageId?: string | null,
+): ChatMessageNotice | null {
   const attachment = Array.isArray(raw?.attachments) ? raw.attachments[0] : null
-  const href = safeHttpsUrl(attachment?.payload?.url)
+  // Server raw payload (tests / legacy): https URL. Client DTO: `hasUrl` → our media route.
+  const href =
+    messageId && (attachment?.hasUrl === true || safeHttpsUrl(attachment?.payload?.url))
+      ? `/api/chat/media/${encodeURIComponent(messageId)}`
+      : undefined
   switch (type) {
     case 'story_mention':
       return { title: 'Te mencionó en su historia', href, hrefLabel: href ? 'Ver historia' : undefined, tone: 'info' }
@@ -208,9 +218,9 @@ export function describeChatMessage(input: DisplayInput): ChatMessageNotice | nu
   const raw = asRecord(meta?.rawMessage)
   const platform = typeof meta?.platform === 'string' ? meta.platform : ''
   const isInstagram = platform === 'instagram' || Array.isArray(raw?.attachments)
-  const notice = isInstagram ? instagramNotice(type, raw) : whatsappNotice(type, raw)
+  const notice = isInstagram ? instagramNotice(type, raw, input.id) : whatsappNotice(type, raw)
   if (notice) return notice
-  if (raw?.is_unsupported === true) return instagramNotice('unsupported', raw)
+  if (raw?.is_unsupported === true) return instagramNotice('unsupported', raw, input.id)
   // Any other `[type]` token: never show raw brackets.
   return { title: 'Mensaje de un tipo no soportado', detail: `Tipo: ${type}`, tone: 'muted' }
 }
@@ -248,4 +258,43 @@ export function chatPreviewText(lastMessage: string | null | undefined): string 
   const match = PLACEHOLDER.exec(text)
   if (!match || !KNOWN_TOKENS.has(match[1])) return text
   return PREVIEW_LABEL[match[1]] ?? 'Mensaje'
+}
+
+/**
+ * Client-safe projection of `metadata.rawMessage` for the message DTO. Keeps only what
+ * `describeChatMessage` reads and drops every URL, so Meta CDN links never reach the
+ * browser (media is served by `/api/chat/media/[id]`).
+ */
+export function projectRawMessageForClient(raw: unknown): Record<string, unknown> | undefined {
+  const r = asRecord(raw)
+  if (!r) return undefined
+  const out: Record<string, unknown> = {}
+  if (typeof r.type === 'string') out.type = r.type
+  if (asRecord(r.unsupported) && typeof r.unsupported.type === 'string') out.unsupported = { type: r.unsupported.type }
+  if (asRecord(r.reaction)) out.reaction = { emoji: typeof r.reaction.emoji === 'string' ? r.reaction.emoji : '' }
+  if (Array.isArray(r.contacts)) {
+    out.contacts = r.contacts.slice(0, 10).map((c: any) => ({
+      name: { formatted_name: c?.name?.formatted_name, first_name: c?.name?.first_name },
+      phones: Array.isArray(c?.phones) ? c.phones.slice(0, 1).map((ph: any) => ({ phone: ph?.phone, wa_id: ph?.wa_id })) : [],
+    }))
+  }
+  if (asRecord(r.location)) {
+    const { latitude, longitude, name, address } = r.location
+    out.location = { latitude, longitude, name, address }
+  }
+  if (asRecord(r.order)) {
+    out.order = { product_items: Array.isArray(r.order.product_items) ? r.order.product_items.map(() => ({})) : [] }
+  }
+  if (asRecord(r.system) && typeof r.system.body === 'string') out.system = { body: r.system.body }
+  if (asRecord(r.interactive) && typeof r.interactive.type === 'string') out.interactive = { type: r.interactive.type }
+  if (Array.isArray(r.attachments)) {
+    out.attachments = r.attachments.slice(0, 5).map((a: any) => ({
+      type: a?.type,
+      // Title is text, not a link. `hasUrl` lets the UI offer our own media route.
+      payload: { title: typeof a?.payload?.title === 'string' ? a.payload.title : undefined },
+      hasUrl: typeof a?.payload?.url === 'string',
+    }))
+  }
+  if (r.is_unsupported === true) out.is_unsupported = true
+  return out
 }

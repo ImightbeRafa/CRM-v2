@@ -6,7 +6,9 @@
 import { get, put, type BlobAccessType } from '@vercel/blob'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 
-export const CHAT_MEDIA_MAX_BYTES = 10 * 1024 * 1024
+// WhatsApp caps video/audio at 16 MB; 25 MB leaves headroom. Documents above this
+// show a "too large" notice instead of streaming.
+export const CHAT_MEDIA_MAX_BYTES = 25 * 1024 * 1024
 export const CHAT_MEDIA_BLOB_PREFIX = 'chat-media'
 
 export type ChatMediaCacheStatus = 'pending' | 'ready' | 'failed' | 'too_large'
@@ -131,6 +133,8 @@ export async function downloadMetaMediaWithCap(opts: {
   accessToken: string
   maxBytes?: number
   fetchImpl?: typeof fetch
+  /** Instagram attachment URLs are pre-signed CDN links: never send the page token there. */
+  sendAuth?: boolean
 }): Promise<{ bytes: Buffer; contentType: string | null }> {
   const maxBytes = opts.maxBytes ?? CHAT_MEDIA_MAX_BYTES
   if (isMetaCdnUrl(opts.url) === false && !opts.url.startsWith('https://')) {
@@ -139,7 +143,7 @@ export async function downloadMetaMediaWithCap(opts: {
 
   const fetchImpl = opts.fetchImpl ?? fetch
   const res = await fetchImpl(opts.url, {
-    headers: { Authorization: `Bearer ${opts.accessToken}` },
+    headers: opts.sendAuth === false ? {} : { Authorization: `Bearer ${opts.accessToken}` },
     signal: AbortSignal.timeout(60_000),
   })
   if (!res.ok) {
@@ -309,7 +313,7 @@ export async function cacheProviderMediaToBlob(opts: {
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String((error as { code: string }).code) : ''
     if (code === 'too_large') {
-      return { ok: false, status: 'too_large', error: 'Media exceeds 10MB cap' }
+      return { ok: false, status: 'too_large', error: 'Media exceeds 25MB cap' }
     }
     return {
       ok: false,
@@ -332,4 +336,93 @@ export function buildMediaCacheMetadataPatch(
     ...(ref.mediaMimeType ? { mediaMimeType: ref.mediaMimeType } : {}),
     ...(ref.mediaFilename ? { mediaFilename: ref.mediaFilename } : {}),
   }
+}
+
+/**
+ * Instagram sends attachments as pre-signed Meta CDN URLs (no media id). The URL is
+ * only read from the stored webhook payload at download time and is never returned
+ * to the client. Only https Meta CDN hosts are accepted (no SSRF to arbitrary hosts).
+ */
+export function instagramAttachmentUrl(metadata: unknown): string | null {
+  const meta =
+    metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? (metadata as Record<string, any>)
+      : null
+  const attachments = meta?.rawMessage?.attachments
+  const url = Array.isArray(attachments) ? attachments[0]?.payload?.url : null
+  if (typeof url !== 'string') return null
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:') return null
+  } catch {
+    return null
+  }
+  return isMetaCdnUrl(url) ? url : null
+}
+
+/** Download a pre-signed Instagram attachment (no token sent) and cache it privately. */
+export async function cacheInstagramAttachmentToBlob(opts: {
+  tenantId: string
+  messageId: string
+  url: string
+  mimeHint?: string | null
+  fetchImpl?: typeof fetch
+  putFn?: typeof putChatMediaToBlob
+}): Promise<CacheChatMediaResult> {
+  try {
+    if (!isMetaCdnUrl(opts.url) || !opts.url.startsWith('https://')) {
+      return { ok: false, status: 'failed', error: 'Invalid Instagram attachment URL' }
+    }
+    const downloaded = await downloadMetaMediaWithCap({
+      url: opts.url,
+      accessToken: '',
+      sendAuth: false,
+      fetchImpl: opts.fetchImpl,
+    })
+    const contentType = downloaded.contentType || opts.mimeHint || 'application/octet-stream'
+    const putFn = opts.putFn ?? putChatMediaToBlob
+    const stored = await putFn({
+      tenantId: opts.tenantId,
+      messageId: opts.messageId,
+      bytes: downloaded.bytes,
+      contentType,
+    })
+    return {
+      ok: true,
+      bytes: downloaded.bytes,
+      ref: { mediaBlobPath: stored.pathname, mediaCacheStatus: 'ready', mediaMimeType: contentType, mediaFilename: null },
+    }
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? String((error as { code: string }).code) : ''
+    if (code === 'too_large') return { ok: false, status: 'too_large', error: 'Media exceeds 25MB cap' }
+    return { ok: false, status: 'failed', error: error instanceof Error ? error.message : 'Media cache failed' }
+  }
+}
+
+/**
+ * Single `bytes=` range for media playback (iOS Safari probes with `bytes=0-1`).
+ * Returns null when there is no usable Range header (serve 200), or 'unsatisfiable'.
+ */
+export function parseSingleByteRange(
+  header: string | null,
+  size: number,
+): { start: number; end: number } | 'unsatisfiable' | null {
+  if (!header || size <= 0) return null
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (!match) return null // multi-range or malformed: fall back to full body
+  const [, startRaw, endRaw] = match
+  let start: number
+  let end: number
+  if (startRaw === '' && endRaw === '') return null
+  if (startRaw === '') {
+    const suffix = Number(endRaw)
+    if (suffix <= 0) return 'unsatisfiable'
+    start = Math.max(0, size - suffix)
+    end = size - 1
+  } else {
+    start = Number(startRaw)
+    end = endRaw === '' ? size - 1 : Math.min(Number(endRaw), size - 1)
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= size) return 'unsatisfiable'
+  return { start, end }
 }

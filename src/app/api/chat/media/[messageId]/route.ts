@@ -5,7 +5,10 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import {
   buildMediaCacheMetadataPatch,
+  cacheInstagramAttachmentToBlob,
   cacheProviderMediaToBlob,
+  instagramAttachmentUrl,
+  parseSingleByteRange,
   readChatMediaFromBlob,
   readMediaBlobRefFromMessage,
 } from '@/lib/chat-media'
@@ -14,6 +17,35 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 type RouteContext = { params: Promise<{ messageId: string }> }
+
+/** 200 full body, or 206 for a single `Range` (iOS Safari needs this for audio/video). */
+function mediaResponse(request: NextRequest, bytes: Buffer, contentType: string): NextResponse {
+  const base = {
+    'Content-Type': contentType,
+    'Cache-Control': 'private, max-age=3600',
+    'X-Content-Type-Options': 'nosniff',
+    'Accept-Ranges': 'bytes',
+  }
+  const range = parseSingleByteRange(request.headers.get('range'), bytes.length)
+  if (range === 'unsatisfiable') {
+    return new NextResponse(null, { status: 416, headers: { ...base, 'Content-Range': `bytes */${bytes.length}` } })
+  }
+  if (range) {
+    const slice = bytes.subarray(range.start, range.end + 1)
+    return new NextResponse(new Uint8Array(slice), {
+      status: 206,
+      headers: {
+        ...base,
+        'Content-Range': `bytes ${range.start}-${range.end}/${bytes.length}`,
+        'Content-Length': String(slice.length),
+      },
+    })
+  }
+  return new NextResponse(new Uint8Array(bytes), {
+    status: 200,
+    headers: { ...base, 'Content-Length': String(bytes.length) },
+  })
+}
 
 /**
  * GET /api/chat/media/[messageId]
@@ -54,17 +86,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (existingRef?.mediaCacheStatus === 'ready' && existingRef.mediaBlobPath) {
       try {
         const blob = await readChatMediaFromBlob({ pathname: existingRef.mediaBlobPath })
-        return new NextResponse(new Uint8Array(blob.bytes), {
-          status: 200,
-          headers: {
-            'Content-Type':
-              blob.contentType ||
-              existingRef.mediaMimeType ||
-              'application/octet-stream',
-            'Cache-Control': 'private, max-age=3600',
-            'X-Content-Type-Options': 'nosniff',
-          },
-        })
+        return mediaResponse(
+          request,
+          blob.bytes,
+          blob.contentType || existingRef.mediaMimeType || 'application/octet-stream',
+        )
       } catch (error) {
         console.warn('[chat/media] Blob read failed, will try Meta re-cache', error)
       }
@@ -79,31 +105,42 @@ export async function GET(request: NextRequest, context: RouteContext) {
         ? String((message.metadata as Record<string, unknown>).providerMediaId)
         : null)
 
-    if (!providerMediaId) {
+    // Instagram attachments have no media id: a pre-signed CDN URL in the stored payload.
+    const igUrl = providerMediaId ? null : instagramAttachmentUrl(message.metadata)
+    if (!providerMediaId && !igUrl) {
       return NextResponse.json(
         { error: 'No media available for this message' },
         { status: 404 },
       )
     }
 
-    const account = await prisma.socialAccount.findFirst({
-      where: { id: message.socialAccountId, tenantId: auth.tenantId },
-      select: { accessToken: true, platform: true },
-    })
-    const accessToken = account ? decryptSocialAccessToken(account.accessToken) : null
-    if (!accessToken) {
-      return NextResponse.json({ error: 'Missing channel token' }, { status: 400 })
+    let cached: Awaited<ReturnType<typeof cacheProviderMediaToBlob>>
+    if (providerMediaId) {
+      const account = await prisma.socialAccount.findFirst({
+        where: { id: message.socialAccountId, tenantId: auth.tenantId },
+        select: { accessToken: true, platform: true },
+      })
+      const accessToken = account ? decryptSocialAccessToken(account.accessToken) : null
+      if (!accessToken) {
+        return NextResponse.json({ error: 'Missing channel token' }, { status: 400 })
+      }
+      cached = await cacheProviderMediaToBlob({
+        tenantId: message.tenantId,
+        messageId: message.id,
+        providerMediaId,
+        accessToken,
+        purpose: account?.platform === 'instagram' ? 'instagram' : 'whatsapp',
+        mimeHint: message.mediaMimeType,
+        filenameHint: message.mediaFilename,
+      })
+    } else {
+      cached = await cacheInstagramAttachmentToBlob({
+        tenantId: message.tenantId,
+        messageId: message.id,
+        url: igUrl!,
+        mimeHint: message.mediaMimeType,
+      })
     }
-
-    const cached = await cacheProviderMediaToBlob({
-      tenantId: message.tenantId,
-      messageId: message.id,
-      providerMediaId,
-      accessToken,
-      purpose: account?.platform === 'instagram' ? 'instagram' : 'whatsapp',
-      mimeHint: message.mediaMimeType,
-      filenameHint: message.mediaFilename,
-    })
 
     if (!cached.ok) {
       const status = cached.status === 'too_large' ? 413 : 502
@@ -161,14 +198,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       }
     }
 
-    return new NextResponse(new Uint8Array(cached.bytes), {
-      status: 200,
-      headers: {
-        'Content-Type': cached.ref.mediaMimeType || 'application/octet-stream',
-        'Cache-Control': 'private, max-age=3600',
-        'X-Content-Type-Options': 'nosniff',
-      },
-    })
+    return mediaResponse(request, cached.bytes, cached.ref.mediaMimeType || 'application/octet-stream')
   } catch (error) {
     console.error('[chat/media GET]', error)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

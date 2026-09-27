@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { chatPreviewText, describeChatMessage } from '@/lib/chat-message-display'
+import { chatPreviewText, describeChatMessage, projectRawMessageForClient } from '@/lib/chat-message-display'
 
 test('WhatsApp unsupported (131051) becomes a plain "Mensaje no compatible" notice', () => {
   const notice = describeChatMessage({
@@ -56,14 +56,23 @@ test('reaction, contacts and location read the raw WhatsApp payload', () => {
   assert.equal(loc?.href, 'https://www.google.com/maps?q=9.93,-84.08')
 })
 
-test('Instagram story mention and share link only to https', () => {
+test('Instagram notices link to our media route, never to the CDN URL', () => {
   const story = describeChatMessage({
+    id: 'm1',
     content: '[story_mention]',
     metadata: { platform: 'instagram', rawMessage: { attachments: [{ type: 'story_mention', payload: { url: 'https://lookaside.fbsbx.com/x' } }] } },
   })
   assert.equal(story?.title, 'Te mencionó en su historia')
-  assert.equal(story?.href, 'https://lookaside.fbsbx.com/x')
+  assert.equal(story?.href, '/api/chat/media/m1')
+  // Client DTO shape (projected): hasUrl instead of the URL.
+  const projected = describeChatMessage({
+    id: 'm2',
+    content: '[story_mention]',
+    metadata: { platform: 'instagram', rawMessage: { attachments: [{ type: 'story_mention', hasUrl: true }] } },
+  })
+  assert.equal(projected?.href, '/api/chat/media/m2')
   const share = describeChatMessage({
+    id: 'm3',
     content: '[share]',
     metadata: { platform: 'instagram', rawMessage: { attachments: [{ type: 'share', payload: { url: 'javascript:alert(1)' } }] } },
   })
@@ -90,4 +99,25 @@ test('SoftThreadPane and SoftConversationList use the display helpers', () => {
   const list = readFileSync('src/components/chats/SoftConversationList.tsx', 'utf8')
   assert.doesNotMatch(list, /\{conv\.lastMessage \|\| '—'\}/)
   assert.match(list, /chatPreviewText\(conv\.lastMessage\)/)
+})
+
+test('projectRawMessageForClient drops every URL but keeps what the notices need', () => {
+  const projected = projectRawMessageForClient({
+    type: 'unsupported',
+    unsupported: { type: 'poll_creation' },
+    reaction: { emoji: '👍', message_id: 'wamid.X' },
+    attachments: [{ type: 'image', payload: { url: 'https://scontent.cdninstagram.com/a.jpg', title: 'Promo' } }],
+    image: { id: 'MEDIA1', url: 'https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=1' },
+  })
+  const json = JSON.stringify(projected)
+  assert.doesNotMatch(json, /https?:\/\//)
+  assert.doesNotMatch(json, /cdninstagram|fbsbx|MEDIA1/)
+  assert.deepEqual((projected as any).attachments[0], { type: 'image', payload: { title: 'Promo' }, hasUrl: true })
+  assert.equal((projected as any).unsupported.type, 'poll_creation')
+  assert.equal((projected as any).reaction.emoji, '👍')
+})
+
+test('mapMessageToDto sends the projected rawMessage', () => {
+  const src = readFileSync('src/lib/chat-conversation-api.ts', 'utf8')
+  assert.match(src, /rawMessage: projectRawMessageForClient\(metadata\.rawMessage\)/)
 })

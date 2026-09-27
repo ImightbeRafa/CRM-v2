@@ -165,54 +165,111 @@ function SoftThreadNotice({ notice }: { notice: ChatMessageNotice }) {
   )
 }
 
+/** IG attachments have no media id; the server keeps the CDN URL and serves it by message id. */
+function hasInstagramAttachment(msg: ChatInboxMessage): boolean {
+  const raw = (msg.metadata as { rawMessage?: { attachments?: Array<{ hasUrl?: boolean }> } } | null | undefined)?.rawMessage
+  return Boolean(raw?.attachments?.[0]?.hasUrl)
+}
+
 function messageHasMedia(msg: ChatInboxMessage): boolean {
   if (msg.providerMediaId || msg.mediaBlobPath) return true
   const type = (msg.messageType || '').toLowerCase()
-  return ['image', 'audio', 'voice', 'document', 'video', 'sticker'].includes(type)
+  return ['image', 'audio', 'voice', 'document', 'video', 'sticker', 'file'].includes(type)
+}
+
+const MEDIA_LABEL: Record<string, string> = {
+  image: 'la imagen',
+  audio: 'el audio',
+  video: 'el video',
+  file: 'el archivo',
+}
+
+/** Shown when the media request fails (expired WhatsApp media, too large, codec not supported). */
+function SoftThreadMediaFallback({ src, kind, filename }: { src: string; kind: string; filename?: string | null }) {
+  return (
+    <div
+      className="mt-1 flex items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-[12px] text-slate-600 ring-1 ring-slate-200/70"
+      data-testid="soft-thread-media-fallback"
+    >
+      <Info className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+      <span className="min-w-0 flex-1">
+        No se pudo mostrar {MEDIA_LABEL[kind] ?? 'el archivo'}
+        {filename ? <span className="block truncate text-slate-400">{filename}</span> : null}
+      </span>
+      <a
+        href={src}
+        download
+        className="shrink-0 font-semibold text-[#5B6CFF] underline-offset-2 hover:underline"
+      >
+        Descargar
+      </a>
+    </div>
+  )
 }
 
 function SoftThreadMedia({ msg }: { msg: ChatInboxMessage }) {
   const src = `/api/chat/media/${encodeURIComponent(msg.id)}`
   const mime = (msg.mediaMimeType || '').toLowerCase()
   const type = (msg.messageType || '').toLowerCase()
+  const [failed, setFailed] = useState(false)
 
-  if (type === 'image' || mime.startsWith('image/')) {
+  const kind =
+    type === 'image' || type === 'sticker' || mime.startsWith('image/')
+      ? 'image'
+      : type === 'video' || mime.startsWith('video/')
+        ? 'video'
+        : type === 'audio' || type === 'voice' || mime.startsWith('audio/')
+          ? 'audio'
+          : 'file'
+
+  if (failed) return <SoftThreadMediaFallback src={src} kind={kind} filename={msg.mediaFilename} />
+
+  if (kind === 'image') {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={src}
-        alt={msg.content || 'imagen'}
-        className="mt-1 max-h-64 max-w-full rounded-lg object-contain"
-        loading="lazy"
-      />
-    )
-  }
-  if (type === 'audio' || type === 'voice' || mime.startsWith('audio/')) {
-    return <audio controls preload="none" src={src} className="mt-1 w-full max-w-xs" />
-  }
-  if (type === 'document' || mime.includes('pdf') || Boolean(msg.mediaFilename)) {
-    return (
-      <a
-        href={src}
-        target="_blank"
-        rel="noreferrer"
-        className="mt-1 inline-flex items-center gap-1 text-[12px] font-medium underline underline-offset-2"
-      >
-        {msg.mediaFilename || 'Documento'}
+      <a href={src} target="_blank" rel="noreferrer" className="block">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={msg.content && !msg.content.startsWith('[') ? msg.content : 'imagen'}
+          className={`mt-1 max-w-full rounded-lg object-contain ${type === 'sticker' ? 'max-h-32' : 'max-h-64'}`}
+          loading="lazy"
+          onError={() => setFailed(true)}
+        />
       </a>
     )
   }
-  if (type === 'video' || mime.startsWith('video/')) {
-    return <video controls preload="none" src={src} className="mt-1 max-h-64 max-w-full rounded-lg" />
+  if (kind === 'audio') {
+    // WhatsApp voice notes are ogg/opus: iPhone Safari cannot play them, so the
+    // download link is always there (and the fallback replaces a failed player).
+    return (
+      <div className="mt-1 w-full max-w-xs">
+        <audio controls preload="metadata" src={src} className="w-full" onError={() => setFailed(true)} />
+        <a href={src} download className="mt-0.5 inline-block text-[11px] text-slate-400 underline-offset-2 hover:underline">
+          Descargar audio
+        </a>
+      </div>
+    )
+  }
+  if (kind === 'video') {
+    return (
+      <video
+        controls
+        playsInline
+        preload="metadata"
+        src={src}
+        className="mt-1 max-h-64 max-w-full rounded-lg bg-black/5"
+        onError={() => setFailed(true)}
+      />
+    )
   }
   return (
     <a
       href={src}
       target="_blank"
       rel="noreferrer"
-      className="mt-1 inline-flex text-[12px] font-medium underline underline-offset-2"
+      className="mt-1 inline-flex items-center gap-1 text-[12px] font-medium underline underline-offset-2"
     >
-      Ver archivo
+      {msg.mediaFilename || (type === 'document' || mime.includes('pdf') ? 'Documento' : 'Ver archivo')}
     </a>
   )
 }
@@ -554,6 +611,7 @@ export function SoftThreadPane({
                 msg.content === '[voice]' ||
                 msg.content === '[document]' ||
                 msg.content === '[video]' ||
+                msg.content === '[file]' ||
                 msg.content === '[sticker]')
             const notice = showMedia ? null : describeChatMessage(msg)
             const humanSender = !softAi && outbound ? humanOutboundSender(msg.metadata) : null
@@ -601,7 +659,7 @@ export function SoftThreadPane({
                     ) : !isPlaceholder ? (
                       <p className={showMedia ? 'mt-1' : undefined}>{msg.content}</p>
                     ) : null}
-                    {showMedia && isPlaceholder && !msg.providerMediaId && !msg.mediaBlobPath ? (
+                    {showMedia && isPlaceholder && !msg.providerMediaId && !msg.mediaBlobPath && !hasInstagramAttachment(msg) ? (
                       <p className="text-[11px] opacity-70">Adjunto no disponible</p>
                     ) : null}
                     {compact ? (

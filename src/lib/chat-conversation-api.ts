@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { projectRawMessageForClient } from '@/lib/chat-message-display'
 import type { Prisma } from '@prisma/client'
 import { type SoftTag } from '@/lib/chat-soft-copilot'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
@@ -239,7 +240,11 @@ export function mapMessageToDto(message: {
     clientId: message.clientId,
     orderId: message.orderId,
     orderNumber: message.order?.orderId ?? null,
-    metadata,
+    // rawMessage can hold Meta CDN URLs (IG attachments): send a URL-free projection.
+    metadata:
+      metadata && 'rawMessage' in metadata
+        ? { ...metadata, rawMessage: projectRawMessageForClient(metadata.rawMessage) }
+        : metadata,
     providerMediaId: message.providerMediaId ?? null,
     mediaMimeType: message.mediaMimeType ?? null,
     mediaFilename: message.mediaFilename ?? null,

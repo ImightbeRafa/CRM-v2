@@ -378,6 +378,15 @@ export function SoftConversationList({
                           <p className="min-w-0 flex-1 truncate text-[14px] text-slate-500">
                             {chatPreviewText(conv.lastMessage) || '—'}
                           </p>
+                          {conv.orderNumber ? (
+                            <span
+                              className="shrink-0 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200"
+                              title="Pedido vinculado"
+                              data-testid="conv-order-chip"
+                            >
+                              #{conv.orderNumber}
+                            </span>
+                          ) : null}
                           {isDemo ? (
                             <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900">
                               Demo
@@ -455,6 +464,15 @@ export function SoftConversationList({
                           ) : null}
                           <ChannelLogo platform={conv.platform} size={12} className="shrink-0" />
                           <span className="truncate">{conv.accountLabel}</span>
+                          {conv.orderNumber ? (
+                            <span
+                              className="ml-1 shrink-0 rounded bg-emerald-50 px-1 py-px text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-200"
+                              title="Pedido vinculado"
+                              data-testid="conv-order-chip"
+                            >
+                              #{conv.orderNumber}
+                            </span>
+                          ) : null}
                           {conv.agentEmoji || conv.agentStateDot ? (
                             <span
                               className="ml-1 shrink-0 rounded bg-slate-100 px-1 py-px text-[9px] font-semibold text-slate-600"

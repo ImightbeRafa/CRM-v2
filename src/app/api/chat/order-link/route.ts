@@ -87,6 +87,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No se pudo vincular; intentá de nuevo' }, { status: 409 })
     }
 
+    if (conversation) {
+      // Any UPDATE bumps `revision` (trigger 024), so open inboxes pick up the linked order.
+      await db.chatConversation
+        .updateMany({ where: { id: conversation.id, tenantId }, data: { updatedAt: new Date() } })
+        .catch((err: unknown) => console.warn('[chat/order-link] revision bump failed', err))
+    }
+
     return NextResponse.json({ linked: true, messageId: target.id, orderId: order.orderId })
   } catch (error) {
     console.error('[chat/order-link POST]', error)

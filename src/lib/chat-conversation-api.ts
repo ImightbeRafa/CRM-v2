@@ -90,6 +90,8 @@ export type ChatConversationListItemDto = {
   aiMode: SoftAiAgentMode | null
   assignedUserId: string | null
   assignedUser: { id: string; name: string | null } | null
+  /** Latest order linked from this chat (internal id + human number); set by the list/changes routes. */
+  linkedOrder?: { id: string; orderNumber: string } | null
   channel: {
     id: string
     platform: string

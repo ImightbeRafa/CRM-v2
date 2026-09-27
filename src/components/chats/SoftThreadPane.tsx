@@ -484,6 +484,9 @@ export function SoftThreadPane({
                   >
                     <Check className="h-3.5 w-3.5" aria-hidden />
                     Pedido vinculado
+                    {conversation.orderNumber ? (
+                      <span className="font-semibold">#{conversation.orderNumber}</span>
+                    ) : null}
                   </Link>
                 ) : canCreateOrder ? (
                   <button
@@ -735,6 +738,9 @@ export function SoftThreadPane({
             <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-[13px] font-medium text-slate-800 ring-1 ring-emerald-200">
               <Check className="h-4 w-4 rounded-full bg-emerald-500 p-0.5 text-white" aria-hidden />
               Pedido vinculado
+              {conversation.orderNumber ? (
+                <span className="font-semibold text-slate-900">#{conversation.orderNumber}</span>
+              ) : null}
               <Link href={`/ventas?pedido=${encodeURIComponent(conversation.orderId)}`} className="font-semibold text-[#5B3FE0]">
                 Ver
               </Link>

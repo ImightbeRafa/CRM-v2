@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { enrichConversationDtosWithLinkedOrders } from '@/lib/chat-linked-orders'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parsePageLimit } from '@/lib/cursor-pagination'
@@ -131,12 +132,15 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    const conversations = await enrichConversationDtosWithAgents(
+    const conversations = await enrichConversationDtosWithLinkedOrders(
+      auth.tenantId,
+      await enrichConversationDtosWithAgents(
       auth.tenantId,
       rows.map((row) =>
         mapConversationToListDto(
           mapRawConversationRow(row as Parameters<typeof mapRawConversationRow>[0]),
         ),
+      ),
       ),
     )
 

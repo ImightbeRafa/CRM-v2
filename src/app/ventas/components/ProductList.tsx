@@ -9,6 +9,7 @@ import ProductForm from './productForm';
 import { draftProductAddBlockedReason } from './orderFormValidation';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
+import { sfBtnPrimary } from './sales-form-styles';
 
 interface ProductListProps {
   orderInfo: OrderInfo;
@@ -203,17 +204,17 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
       {/* Header with Add Button */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-foreground">
+          <h3 className="text-[14px] font-semibold text-slate-900">
             Productos del Pedido ({orderInfo.products.length})
           </h3>
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-0.5 text-[12px] text-slate-500">
             Agregue productos individualmente al pedido. También puedes escribir un producto a mano aunque el inventario esté vacío.
           </p>
         </div>
         <Button
           type="button"
           onClick={addProduct}
-          className="bg-blue-500 hover:bg-blue-600 text-white w-full sm:w-auto"
+          className={`${sfBtnPrimary} w-full sm:w-auto`}
         >
           <Plus className="h-4 w-4 mr-2" />
           <span className="hidden sm:inline">Agregar Producto</span>
@@ -224,22 +225,22 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
       {/* Products List */}
       <div className="space-y-3">
         {orderInfo.products.length === 0 ? (
-          <Card className="border-dashed border-2 border-border">
+          <Card className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 shadow-none">
             <CardContent className="flex flex-col items-center justify-center py-8">
-              <div className="text-muted-foreground mb-2">
-                <Plus className="h-12 w-12 mx-auto" />
+              <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-[#F1EEFF] text-[#5B3FE0]">
+                <Plus className="h-5 w-5" />
               </div>
-              <p className="text-muted-foreground text-center">
+              <p className="text-center text-[13px] font-medium text-slate-700">
                 No hay productos agregados al pedido
               </p>
-              <p className="text-sm text-muted-foreground text-center">
+              <p className="text-center text-[12px] text-slate-500">
                 Haga clic en &quot;Agregar Producto&quot; para comenzar
               </p>
             </CardContent>
           </Card>
         ) : (
           orderInfo.products.map((product, index) => (
-            <Card key={product.id} className="relative">
+            <Card key={product.id} className="relative rounded-xl border-slate-200/80 shadow-sm transition-shadow hover:shadow-md">
               <CardHeader className="pb-3">
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
                   <div className="flex-1 w-full">
@@ -254,7 +255,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                     </div>
                   </div>
                   <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <span className="text-lg font-bold text-green-600">
+                    <span className="text-lg font-bold text-slate-900">
                       ₡{product.total.toFixed(2)}
                     </span>
                     <div className="flex gap-1 ml-auto sm:ml-0">
@@ -324,8 +325,8 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
 
               {/* Edit Form Overlay */}
               {editingProductId === product.id && showAddForm && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4" style={{ zIndex: 1000, position: 'absolute' }}>
-                  <div className="bg-card border-2 border-blue-500 rounded-lg w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-2xl">
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4" style={{ zIndex: 1000, position: 'absolute' }}>
+                  <div className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
                     <div className="p-4">
                       <div className="flex justify-between items-center mb-4">
                         <h4 className="text-lg font-semibold">Editar Producto #{index + 1}</h4>
@@ -370,7 +371,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                         <Button
                           type="button"
                           onClick={stopEditing}
-                          className="bg-blue-500 hover:bg-blue-600"
+                          className={sfBtnPrimary}
                         >
                           <Save className="h-4 w-4 mr-2" />
                           Guardar
@@ -387,9 +388,9 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
 
       {/* Order Summary */}
       {orderInfo.products.length > 0 && (
-        <Card className="bg-green-50 dark:bg-emerald-950/20 border-green-200 dark:border-emerald-800/40">
+        <Card className="rounded-xl border-0 bg-gradient-to-br from-[#F6F4FF] to-white shadow-none ring-1 ring-[#E4DEFF]">
           <CardHeader>
-            <CardTitle className="text-green-800 dark:text-emerald-400">Resumen del Pedido</CardTitle>
+            <CardTitle className="text-[14px] font-semibold text-slate-900">Resumen del Pedido</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Order Configuration */}
@@ -433,7 +434,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
               </div>
               <div className="flex flex-col space-y-1">
                 <span className="text-sm text-muted-foreground">Total:</span>
-                <p className="text-xl font-bold text-green-600 dark:text-emerald-400">{formatCurrency(orderTotals.total)}</p>
+                <p className="text-xl font-bold text-[#5B3FE0]">{formatCurrency(orderTotals.total)}</p>
               </div>
             </div>
           </CardContent>
@@ -443,7 +444,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
       {/* Add Product Modal */}
       {showAddModal && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4" 
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4" 
           style={{ zIndex: 1000, position: 'absolute' }}
           onClick={(e) => {
             if (e.target === e.currentTarget) {
@@ -452,7 +453,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
             }
           }}
         >
-          <div className="bg-card border-2 border-blue-500 rounded-lg w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-2xl">
+          <div className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
             <div className="p-4">
               <div className="flex justify-end items-center mb-4">
                 <Button
@@ -501,7 +502,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                 <Button
                   type="button"
                   onClick={confirmAddDraftProduct}
-                  className="bg-blue-500 hover:bg-blue-600"
+                  className={sfBtnPrimary}
                   disabled={Boolean(draftProductAddBlockedReason(draftProduct))}
                 >
                   <Plus className="h-4 w-4 mr-2" />

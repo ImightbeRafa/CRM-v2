@@ -7,6 +7,7 @@ import {
   CantonData,
 } from './costaRicaLocations';
 import { parseCustomerPaste } from '@/lib/customer-paste';
+import { sfHelp, sfError, sfInput, sfLabel, sfPanel } from './sales-form-styles';
 
 type CantonWithProvince = {
   province: string;
@@ -374,73 +375,76 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Customer Info Paste Area */}
-      <div className="space-y-2">
-        <label className="block font-medium">
+      <div>
+        <label className={sfLabel}>
           Información del Cliente (Pegar texto)
         </label>
         <textarea 
-          className="w-full h-32 p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          className={`${sfInput()} h-24 resize-y`}
           value={rawCustomerText}
           onChange={(e) => parseCustomerText(e.target.value)}
           onPaste={handlePaste}
-          placeholder="📋 Pegar información del cliente aquí...&#10;&#10;✅ Acepta múltiples formatos:&#10;• Con etiquetas: Nombre: Carlos | Tel: 88979856 | Email: test@mail.com&#10;• Con emojis: 📍 Nombre - Juan | ☎️ Teléfono: 88887777&#10;• Ubicación: Provincia/Cantón/Distrito: Alajuela, Alajuela, Carrizal&#10;• Sin etiquetas: Detecta emails (@), teléfonos (8+ dígitos), direcciones&#10;• Separadores flexibles: : - = | ~&#10;&#10;💡 Inteligente: Si no encuentra etiquetas, analiza el contenido automáticamente"
+          placeholder="Pegá aquí el mensaje del cliente (nombre, teléfono, dirección…)"
         />
+        <p className={sfHelp}>
+          Detecta nombre, teléfono, email y provincia / cantón / distrito, con o sin etiquetas.
+        </p>
       </div>
 
       {/* Customer Information Display */}
-      <div className="mt-4 space-y-4 border rounded-lg p-4 bg-muted">
-        <h3 className="font-medium text-lg">Info cliente:</h3>
+      <div className={`${sfPanel} space-y-4`}>
+        <h3 className="text-[13px] font-semibold text-slate-800">Info cliente</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Common fields */}
           <div data-field="name">
-            <label className="block text-sm text-muted-foreground">
+            <label className={sfLabel}>
               {customerInfo.orderType === 'EA' ? 'Cliente' : 'Nombre'} <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               name="name"
-              className={`w-full p-2 bg-card border rounded ${fieldErrors.name ? 'border-red-500' : ''}`}
+              className={sfInput(fieldErrors.name)}
               value={customerInfo.name}
               onChange={handleInputChange}
               placeholder="No detectado"
               aria-required="true"
               aria-invalid={Boolean(fieldErrors.name)}
             />
-            {fieldErrors.name && <p className="text-sm text-red-600 mt-1">{fieldErrors.name}</p>}
+            {fieldErrors.name && <p className={sfError}>{fieldErrors.name}</p>}
           </div>
           <div data-field="phone">
-            <label className="block text-sm text-muted-foreground">Teléfono <span className="text-red-500">*</span></label>
+            <label className={sfLabel}>Teléfono <span className="text-red-500">*</span></label>
             <input
               type="text"
               name="phone"
-              className={`w-full p-2 bg-card border rounded ${fieldErrors.phone ? 'border-red-500' : ''}`}
+              className={sfInput(fieldErrors.phone)}
               value={customerInfo.phone}
               onChange={handleInputChange}
               placeholder="No detectado"
               aria-required="true"
               aria-invalid={Boolean(fieldErrors.phone)}
             />
-            {fieldErrors.phone && <p className="text-sm text-red-600 mt-1">{fieldErrors.phone}</p>}
+            {fieldErrors.phone && <p className={sfError}>{fieldErrors.phone}</p>}
           </div>
           <div>
-            <label className="block text-sm text-muted-foreground">Email</label>
+            <label className={sfLabel}>Email</label>
             <input
               type="email"
               name="email"
-              className="w-full p-2 bg-card border rounded"
+              className={sfInput()}
               value={customerInfo.email}
               onChange={handleInputChange}
               placeholder="No detectado"
             />
           </div>
           <div>
-            <label className="block text-sm text-muted-foreground">Usuario</label>
+            <label className={sfLabel}>Usuario</label>
             <input
               type="text"
               name="username"
-              className="w-full p-2 bg-card border rounded"
+              className={sfInput()}
               value={customerInfo.username}
               onChange={handleInputChange}
               placeholder="Usuario de Instagram/Facebook"
@@ -451,10 +455,10 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
           {customerInfo.orderType === 'EA' && (
             <>
               <div data-field="province">
-                <label className="block text-sm text-muted-foreground">Provincia <span className="text-red-500">*</span></label>
+                <label className={sfLabel}>Provincia <span className="text-red-500">*</span></label>
                 <select
                   name="province"
-                  className={`w-full p-2 bg-card border rounded ${fieldErrors.province ? 'border-red-500' : ''}`}
+                  className={sfInput(fieldErrors.province)}
                   value={selectedProvince?.nombre || customerInfo.province}
                   onChange={handleProvinceChange}
                   aria-required="true"
@@ -467,10 +471,10 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                     </option>
                   ))}
                 </select>
-                {fieldErrors.province && <p className="text-sm text-red-600 mt-1">{fieldErrors.province}</p>}
+                {fieldErrors.province && <p className={sfError}>{fieldErrors.province}</p>}
               </div>
               <div data-field="canton">
-                <label className="block text-sm text-muted-foreground">Cantón <span className="text-red-500">*</span></label>
+                <label className={sfLabel}>Cantón <span className="text-red-500">*</span></label>
                 <div className="space-y-1">
                   <input
                     type="text"
@@ -489,12 +493,12 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                       }
                     }}
                     placeholder="Buscar cantón"
-                    className={`w-full p-2 bg-card border rounded ${fieldErrors.canton || cantonUnresolved ? 'border-red-500' : ''}`}
+                    className={sfInput(fieldErrors.canton || cantonUnresolved)}
                     aria-required="true"
                     aria-invalid={Boolean(fieldErrors.canton || cantonUnresolved)}
                   />
                   {cantonSuggestionsOpen && (
-                    <div className="max-h-48 overflow-y-auto border rounded bg-card shadow-sm">
+                    <div className="max-h-48 overflow-y-auto rounded-xl bg-white shadow-lg ring-1 ring-slate-200">
                       {displayedCantonResults.length > 0 ? (
                         displayedCantonResults.map((result) => (
                           <button
@@ -507,14 +511,14 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                                 canton: result.canton,
                               });
                             }}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
+                            className="w-full px-3 py-2 text-left text-sm transition-colors hover:bg-[#F1EEFF]"
                           >
                             <div className="font-medium text-foreground">{result.canton}</div>
                             <div className="text-xs text-muted-foreground">{result.province}</div>
                           </button>
                         ))
                       ) : (
-                        <div className="px-3 py-2 text-sm text-muted-foreground">
+                        <div className="px-3 py-2 text-sm text-slate-500">
                           No se encontraron cantones.
                         </div>
                       )}
@@ -522,13 +526,13 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                   )}
                 </div>
                 {(cantonUnresolved || fieldErrors.canton) && (
-                  <p className="text-sm text-red-600 mt-1">
+                  <p className={sfError}>
                     {fieldErrors.canton || 'Elige un cantón de la lista. El texto escrito no se guarda solo.'}
                   </p>
                 )}
               </div>
               <div data-field="district">
-                <label className="block text-sm text-muted-foreground">Distrito <span className="text-red-500">*</span></label>
+                <label className={sfLabel}>Distrito <span className="text-red-500">*</span></label>
                 <div className="space-y-1">
                   <input
                     type="text"
@@ -547,12 +551,12 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                       }
                     }}
                     placeholder="Buscar distrito"
-                    className={`w-full p-2 bg-card border rounded ${fieldErrors.district || districtUnresolved ? 'border-red-500' : ''}`}
+                    className={sfInput(fieldErrors.district || districtUnresolved)}
                     aria-required="true"
                     aria-invalid={Boolean(fieldErrors.district || districtUnresolved)}
                   />
                   {districtSuggestionsOpen && (
-                    <div className="max-h-48 overflow-y-auto border rounded bg-card shadow-sm">
+                    <div className="max-h-48 overflow-y-auto rounded-xl bg-white shadow-lg ring-1 ring-slate-200">
                       {displayedDistrictResults.length > 0 ? (
                         displayedDistrictResults.map((result) => (
                           <button
@@ -562,7 +566,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                               event.preventDefault();
                               applyDistrictMatch(result);
                             }}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
+                            className="w-full px-3 py-2 text-left text-sm transition-colors hover:bg-[#F1EEFF]"
                           >
                             <div className="font-medium text-foreground">{result.district}</div>
                             <div className="text-xs text-muted-foreground">
@@ -571,7 +575,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                           </button>
                         ))
                       ) : (
-                        <div className="px-3 py-2 text-sm text-muted-foreground">
+                        <div className="px-3 py-2 text-sm text-slate-500">
                           No se encontraron distritos.
                         </div>
                       )}
@@ -579,19 +583,19 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                   )}
                 </div>
                 {districtClearedNotice && (
-                  <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">{districtClearedNotice}</p>
+                  <p className="mt-1 text-[12px] text-amber-700">{districtClearedNotice}</p>
                 )}
                 {(districtUnresolved || fieldErrors.district) && (
-                  <p className="text-sm text-red-600 mt-1">
+                  <p className={sfError}>
                     {fieldErrors.district || 'Elige un distrito de la lista. El texto escrito no se guarda solo.'}
                   </p>
                 )}
               </div>
               <div className="col-span-1 sm:col-span-2" data-field="address">
-                <label className="block text-sm text-muted-foreground">Dirección <span className="text-red-500">*</span></label>
+                <label className={sfLabel}>Dirección <span className="text-red-500">*</span></label>
                 <textarea
                   name="address"
-                  className={`w-full p-2 bg-card border rounded ${fieldErrors.address ? 'border-red-500' : ''}`}
+                  className={sfInput(fieldErrors.address)}
                   value={customerInfo.address}
                   onChange={handleInputChange}
                   placeholder="No detectado"
@@ -599,7 +603,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                   aria-required="true"
                   aria-invalid={Boolean(fieldErrors.address)}
                 />
-                {fieldErrors.address && <p className="text-sm text-red-600 mt-1">{fieldErrors.address}</p>}
+                {fieldErrors.address && <p className={sfError}>{fieldErrors.address}</p>}
               </div>
             </>
           )}
@@ -608,14 +612,14 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
 
 
       {/* Date fields */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {customerInfo.orderType === 'RA' && (
           <div>
-            <label className="block font-medium">Fecha de Retiro</label>
+            <label className={sfLabel}>Fecha de Retiro</label>
             <input
               type="date"
               name="fechaRetiro"
-              className="w-full p-2 border rounded"
+              className={sfInput()}
               value={customerInfo.fechaRetiro}
               onChange={handleInputChange}
             />
@@ -624,11 +628,11 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
       </div>
 
       {/* Seller Comments (Order-level) */}
-      <div className="mt-4 space-y-2">
-        <label className="block font-medium">Comentarios del vendedor</label>
+      <div>
+        <label className={sfLabel}>Comentarios del vendedor</label>
         <textarea
           name="comments"
-          className="w-full p-2 border rounded"
+          className={sfInput()}
           value={customerInfo.comments ?? (customerInfo as any).comentarios ?? ''}
           onChange={handleInputChange}
           placeholder="Anota detalles importantes del pedido (colores, personalización, observaciones, etc.)"

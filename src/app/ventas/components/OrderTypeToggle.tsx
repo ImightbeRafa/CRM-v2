@@ -7,13 +7,15 @@ interface OrderTypeToggleProps {
 
 const OrderTypeToggle: React.FC<OrderTypeToggleProps> = ({ orderType, onOrderTypeChange }) => {
   return (
-    <div className="flex justify-center space-x-2 mb-6">
+    <div className="inline-flex rounded-xl bg-slate-100 p-1" role="radiogroup" aria-label="Tipo de pedido">
       <button
         type="button"
-        className={`px-4 py-2 rounded-l-lg ${
+        role="radio"
+        aria-checked={orderType === 'EA'}
+        className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold transition-all ${
           orderType === 'EA'
-            ? 'bg-blue-500 text-white'
-            : 'bg-muted text-muted-foreground'
+            ? 'bg-white text-[#5B3FE0] shadow-sm'
+            : 'text-slate-500 hover:text-slate-800'
         }`}
         onClick={() => onOrderTypeChange('EA')}
       >
@@ -21,10 +23,12 @@ const OrderTypeToggle: React.FC<OrderTypeToggleProps> = ({ orderType, onOrderTyp
       </button>
       <button
         type="button"
-        className={`px-4 py-2 rounded-r-lg ${
+        role="radio"
+        aria-checked={orderType === 'RA'}
+        className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold transition-all ${
           orderType === 'RA'
-            ? 'bg-blue-500 text-white'
-            : 'bg-muted text-muted-foreground'
+            ? 'bg-white text-[#5B3FE0] shadow-sm'
+            : 'text-slate-500 hover:text-slate-800'
         }`}
         onClick={() => onOrderTypeChange('RA')}
       >

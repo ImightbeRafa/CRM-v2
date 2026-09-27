@@ -16,6 +16,8 @@ import { CustomerInfo, ProductInfo, OrderInfo, SubmitStatus, ProductTemplate, Cu
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useConfig } from '@/app/contexts/ConfigContext';
 import { paymentChoiceToOrderFields, type ManualPaymentChoice } from '@/lib/order-payment-status';
+import { Building2, Package, UserRound } from 'lucide-react';
+import { sfInput, sfLabel, sfPanel, sfSection } from './sales-form-styles';
 
 export interface CreatedOrderRef {
   /** `Order.id` (cuid), when the API returned it. */
@@ -39,6 +41,29 @@ interface EnhancedSalesFormProps {
   prefill?: OrderFormPrefill;
   /** Rendered inside a drawer that already provides the frame and the close button. */
   embedded?: boolean;
+}
+
+/** Section heading with an Aurora icon badge (presentation only). */
+function SalesSectionTitle({
+  icon: Icon,
+  title,
+  subtitle,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  title: string
+  subtitle?: string
+}) {
+  return (
+    <div className="mb-4 flex items-start gap-3">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#EEF0FF] to-[#F6F4FF] text-[#5B3FE0] ring-1 ring-[#E4DEFF]">
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <h3 className="text-[15px] font-semibold leading-8 text-slate-900">{title}</h3>
+        {subtitle ? <p className="-mt-1 text-[12px] text-slate-500">{subtitle}</p> : null}
+      </div>
+    </div>
+  )
 }
 
 const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, onToggleForm, onCreated, prefill, embedded = false }) => {
@@ -633,11 +658,11 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         aria-label="Nuevo pedido"
         className={embedded ? 'border-0 bg-transparent shadow-none' : undefined}
       >
-        <CardHeader>
-          <div className="flex justify-between items-start">
-            <div className="flex-1">
+        <CardHeader className={embedded ? 'px-0 pb-4 pt-0' : undefined}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-3">
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2 text-[20px] font-semibold tracking-tight text-slate-900">
                   Nuevo pedido
                   {autoSaveStatus === 'saving' && (
                     <Clock className="h-4 w-4 text-blue-500 dark:text-blue-400 animate-spin" />
@@ -660,7 +685,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                   </Button>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="mt-1 min-h-[1rem] text-[12px] text-slate-500" aria-live="polite">
                 {autoSaveStatus === 'saved' && lastAutoSave &&
                   `Guardado automáticamente: ${lastAutoSave.toLocaleTimeString()}`
                 }
@@ -688,10 +713,10 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
           </div>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className={embedded ? 'px-0 pb-0' : undefined}>
           {submitStatus.message && (
             <Alert
-              className={`mb-4 ${submitStatus.type === 'success' ? 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800/50' : 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800/50'
+              className={`mb-4 rounded-xl ${submitStatus.type === 'success' ? 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800/50' : 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800/50'
                 }`}
             >
               <AlertTitle className={submitStatus.type === 'success' ? 'text-green-800 dark:text-green-400' : 'text-red-800 dark:text-red-400'}>
@@ -708,14 +733,12 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               </AlertDescription>
             </Alert>
           )}
-          <p className="text-xs text-muted-foreground mb-4">Los campos con <span className="text-red-500">*</span> son obligatorios.</p>
+          <p className="mb-4 text-[12px] text-slate-500">Los campos con <span className="text-red-500">*</span> son obligatorios.</p>
 
-          <form onSubmit={handleSubmit} className="space-y-8">
+          <form onSubmit={handleSubmit} className="space-y-4">
             {/* Customer Information */}
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-              <h3 className="mb-4 text-[15px] font-semibold text-slate-900">
-                👤 Información del Cliente
-              </h3>
+            <div className={sfSection}>
+              <SalesSectionTitle icon={UserRound} title="Información del Cliente" />
 
               {/* Recurring Customers - At top of customer form */}
               <RecurringCustomers
@@ -732,7 +755,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                 fieldErrors={fieldErrors}
               />
               {orderInfo.customerInfo.orderType === 'EA' && (
-                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                <div className={`mt-4 ${sfPanel}`}>
                   <ShippingMethodSelector
                     selectedMethod={orderInfo.orderShippingMethod}
                     error={fieldErrors.orderShippingMethod}
@@ -750,14 +773,12 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
             {/* Business Info Fields */}
             {businessInfoFields.length > 0 && (
-              <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-                <h3 className="mb-4 text-[15px] font-semibold text-slate-900">
-                  🏢 Información de Negocio
-                </h3>
+              <div className={sfSection}>
+                <SalesSectionTitle icon={Building2} title="Información de Negocio" />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {businessInfoFields.map((field) => (
-                    <div key={field.id} className="space-y-2" data-field={field.name}>
-                      <label className="block text-sm font-medium text-muted-foreground">
+                    <div key={field.id} data-field={field.name}>
+                      <label className={sfLabel}>
                         {field.label}
                         {field.required && <span className="text-red-500 ml-1">*</span>}
                       </label>
@@ -770,7 +791,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                             [field.name]: e.target.value
                           })}
                           placeholder={field.placeholder}
-                          className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className={sfInput()}
                           required={field.required}
                         />
                       )}
@@ -782,7 +803,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                             [field.name]: e.target.value
                           })}
                           placeholder={field.placeholder}
-                          className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className={sfInput()}
                           rows={3}
                           required={field.required}
                         />
@@ -794,7 +815,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                             ...orderInfo.customerInfo,
                             [field.name]: e.target.value
                           })}
-                          className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className={sfInput()}
                           required={field.required}
                         >
                           <option value="">{field.placeholder || 'Seleccionar...'}</option>
@@ -811,7 +832,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                             ...orderInfo.customerInfo,
                             [field.name]: e.target.value
                           })}
-                          className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className={sfInput()}
                           required={field.required}
                         />
                       )}
@@ -821,18 +842,17 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               </div>
             )}
 
-            {/* Product Selection - Quick Pick */}
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-              <h3 className="mb-4 flex items-center gap-2 text-[15px] font-semibold text-slate-900">
-                📦 Selección Rápida de Productos
-              </h3>
+            {/* Products: quick pick from inventory + the order lines */}
+            <div className={sfSection} data-field="products">
+              <SalesSectionTitle
+                icon={Package}
+                title="Selección Rápida de Productos"
+                subtitle="Elegí del inventario o agregá un producto a mano."
+              />
               <EnhancedSmartSuggestions
                 onProductSelect={handleProductSelect}
               />
-            </div>
-
-            {/* Products Section */}
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm" data-field="products">
+              <div className="my-5 border-t border-dashed border-slate-200" />
               <ProductList
                 orderInfo={orderInfo}
                 onOrderInfoChange={handleOrderInfoChange}
@@ -840,8 +860,9 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               />
             </div>
 
-            <fieldset className="space-y-3 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-              <legend className="text-sm font-semibold">Estado de pago</legend>
+            <fieldset className={sfSection}>
+              <legend className="sr-only">Estado de pago</legend>
+              <SalesSectionTitle icon={Banknote} title="Estado de pago" />
               <div className="grid gap-2 sm:grid-cols-3">
                 {([
                   { value: 'pendiente_pago', label: 'Pendiente de pago', help: 'Aún no se ha cobrado. No cuenta como ingreso cobrado.' },
@@ -858,17 +879,23 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                         paymentChoice: option.value,
                         contraEntrega: option.value === 'contra_entrega',
                       }))}
-                      className={`rounded-lg border-2 p-3 text-left transition-colors ${
+                      aria-pressed={selected}
+                      className={`rounded-xl p-3 text-left transition-all ${
                         selected
-                          ? 'border-[#7C5CFF] bg-[#F1EEFF]'
-                          : 'border-border bg-muted/40 hover:border-muted-foreground/40'
+                          ? 'bg-[#F6F4FF] shadow-sm ring-2 ring-[#7C5CFF]'
+                          : 'bg-white ring-1 ring-slate-200 hover:-translate-y-px hover:ring-slate-300'
                       }`}
                     >
-                      <span className="flex items-center gap-2 font-semibold">
-                        <Banknote className="h-4 w-4" />
+                      <span className={`flex items-center gap-2 text-[13px] font-semibold ${selected ? 'text-[#5B3FE0]' : 'text-slate-800'}`}>
+                        <span
+                          className={`flex h-4 w-4 items-center justify-center rounded-full ring-2 ${selected ? 'bg-[#7C5CFF] ring-[#7C5CFF]' : 'ring-slate-300'}`}
+                          aria-hidden
+                        >
+                          {selected ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
+                        </span>
                         {option.label}
                       </span>
-                      <p className="mt-1 text-xs text-muted-foreground">{option.help}</p>
+                      <p className="mt-1 text-[12px] leading-snug text-slate-500">{option.help}</p>
                     </button>
                   );
                 })}
@@ -876,7 +903,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
             </fieldset>
 
             {Object.keys(fieldErrors).length > 0 && (
-              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
                 <p className="font-medium mb-1">No se pudo guardar. Faltan estos datos:</p>
                 <ul className="list-disc pl-4 space-y-1">
                   {Object.values(fieldErrors).map((message) => (
@@ -886,21 +913,27 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               </div>
             )}
 
-            {/* Submit Button */}
-            <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-4">
+            {/* Submit bar: sticks to the bottom of the drawer while scrolling */}
+            <div
+              className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-3 ${
+                embedded
+                  ? 'sticky bottom-0 z-10 -mx-4 border-t border-slate-200/70 bg-white/90 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:-mx-5 sm:px-5'
+                  : ''
+              }`}
+            >
               <Button
                 type="button"
                 variant="outline"
                 onClick={resetForm}
                 disabled={isSubmitting}
-                className="px-4 sm:px-6 w-full sm:w-auto"
+                className="w-full rounded-xl border-slate-200 px-4 text-slate-700 hover:bg-slate-50 sm:w-auto sm:px-6"
               >
                 Limpiar Formulario
               </Button>
               <Button
                 type="submit"
                 disabled={isSubmitting || orderInfo.products.length === 0}
-                className={`px-4 sm:px-8 py-2 flex items-center justify-center gap-2 w-full sm:w-auto transition-all duration-200 ${isSubmitting
+                className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2 shadow-sm transition-all duration-200 sm:w-auto sm:px-8 ${isSubmitting
                   ? 'cursor-not-allowed bg-[#5B6CFF]/60'
                   : 'bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF] hover:opacity-90 hover:shadow-lg'
                   } text-white`}

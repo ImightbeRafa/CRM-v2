@@ -1,6 +1,7 @@
 'use client'
 
 import { useSession } from 'next-auth/react'
+import { safeAvatarUrl } from '@/lib/aurora-avatar'
 import { getRoleName, hasPermission, type Permission, type Role } from '@/lib/rbac'
 
 const ROLES: readonly Role[] = ['OWNER', 'ADMIN', 'MANAGER', 'SALES', 'PRODUCTION', 'VIEWER']
@@ -8,6 +9,8 @@ const ROLES: readonly Role[] = ['OWNER', 'ADMIN', 'MANAGER', 'SALES', 'PRODUCTIO
 export type AuroraViewer = {
   name: string
   email: string
+  /** Provider photo (Google) when it is an http(s) URL, else `null`. */
+  image: string | null
   tenantName: string
   /** Real membership role (`null` while the session loads). */
   role: Role | null
@@ -30,6 +33,7 @@ export function useAuroraViewer(): AuroraViewer {
   return {
     name: user?.name?.trim() || user?.email?.split('@')[0] || 'Usuario',
     email: user?.email || '',
+    image: safeAvatarUrl(user?.image),
     tenantName: user?.currentTenant?.name?.trim() || 'Mi espacio',
     role,
     isMaster,

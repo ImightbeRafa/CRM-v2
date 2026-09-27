@@ -26,7 +26,7 @@ export function ConfigTopbar({
       <nav aria-label="Ruta" className="flex min-w-0 items-center gap-1.5 text-[14px]">
         <Link
           href="/config"
-          className={`shrink-0 text-slate-500 hover:text-slate-900 ${deeper ? 'hidden sm:inline' : ''}`}
+          className={`shrink-0 rounded-md text-slate-500 transition-colors duration-150 outline-none hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-[#8F7BFF]/60 focus-visible:ring-offset-2 ${deeper ? 'hidden sm:inline' : ''}`}
         >
           Configuración
         </Link>
@@ -38,7 +38,7 @@ export function ConfigTopbar({
           <>
             <Link
               href={`/config?tab=${encodeURIComponent(activeTab)}`}
-              className="hidden shrink-0 text-slate-500 hover:text-slate-900 md:inline"
+              className="hidden shrink-0 rounded-md text-slate-500 transition-colors duration-150 outline-none hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-[#8F7BFF]/60 focus-visible:ring-offset-2 md:inline"
             >
               {label}
             </Link>

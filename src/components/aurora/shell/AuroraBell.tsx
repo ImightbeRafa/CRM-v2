@@ -27,7 +27,7 @@ export function AuroraBell() {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={dot ? `Avisos (${alerts.length})` : 'Avisos'}
-        className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50"
+        className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors duration-150 outline-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#8F7BFF]/60 focus-visible:ring-offset-2"
       >
         <Bell className="h-4 w-4" aria-hidden />
         {dot ? (
@@ -44,7 +44,7 @@ export function AuroraBell() {
           <div
             role="dialog"
             aria-label="Avisos"
-            className="aurora-light fixed inset-x-0 bottom-0 z-50 max-h-[70dvh] overflow-y-auto rounded-t-3xl border border-slate-200/70 bg-white pb-[max(0.5rem,env(safe-area-inset-bottom))] text-slate-900 shadow-xl md:absolute md:inset-x-auto md:bottom-auto md:right-0 md:top-11 md:max-h-[60vh] md:w-[340px] md:rounded-2xl md:pb-0"
+            className="aurora-light fixed inset-x-0 bottom-0 z-50 max-h-[70dvh] overflow-y-auto rounded-t-3xl border border-slate-200/70 bg-white pb-[max(0.5rem,env(safe-area-inset-bottom))] text-slate-900 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.25)] md:absolute md:inset-x-auto md:bottom-auto md:right-0 md:top-11 md:max-h-[60vh] md:w-[340px] md:rounded-xl md:pb-0"
           >
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <h2 className="text-[14px] font-semibold">Avisos</h2>

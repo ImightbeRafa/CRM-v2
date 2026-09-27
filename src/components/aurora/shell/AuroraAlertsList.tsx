@@ -24,7 +24,7 @@ export function AuroraAlertsList({ alerts, onNavigate }: { alerts: AuroraAlert[]
           <Link
             href={alert.href}
             onClick={onNavigate}
-            className="flex items-center gap-3 px-4 py-3 text-[13px] text-slate-800 transition-colors hover:bg-slate-50"
+            className="flex items-center gap-3 px-4 py-3 text-[13px] text-slate-800 transition-colors duration-150 outline-none hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#8F7BFF]/60"
           >
             <span
               aria-hidden

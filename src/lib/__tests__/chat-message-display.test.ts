@@ -121,3 +121,25 @@ test('mapMessageToDto sends the projected rawMessage', () => {
   const src = readFileSync('src/lib/chat-conversation-api.ts', 'utf8')
   assert.match(src, /rawMessage: projectRawMessageForClient\(metadata\.rawMessage\)/)
 })
+
+test('verifier #5: Instagram unsupported without platform key says Instagram, not WhatsApp', () => {
+  const notice = describeChatMessage({
+    content: '',
+    messageType: 'unsupported',
+    metadata: { instagramAccountId: '17841400000000000', rawMessage: { is_unsupported: true } },
+  })
+  assert.match(notice?.detail ?? '', /Instagram/)
+})
+
+test('verifier #2: [share]/[story_mention]/[ig_reel] tokens are never shown next to cached media', async () => {
+  const { isPlaceholderToken } = await import('@/lib/chat-message-display')
+  for (const t of ['[share]', '[story_mention]', '[ig_reel]', '[image]', '[file]']) assert.equal(isPlaceholderToken(t), true, t)
+  assert.equal(isPlaceholderToken('[ok]'), false)
+  assert.equal(isPlaceholderToken('hola [image]'), false)
+  assert.match(readFileSync('src/components/chats/SoftThreadPane.tsx', 'utf8'), /showMedia && isPlaceholderToken\(msg\.content\)/)
+})
+
+test('verifier #3: server search hits survive the reconcile replace', () => {
+  const src = readFileSync('src/components/chats/SoftCopilotInboxV2.tsx', 'utf8')
+  assert.match(src, /searchHitsRef\.current\.filter\(\(c\) => !fresh\.has\(c\.id\)\)/)
+})

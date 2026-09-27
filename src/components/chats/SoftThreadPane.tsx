@@ -30,7 +30,7 @@ import {
   humanOutboundSender,
 } from '@/lib/chat-human-attribution'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
-import { describeChatMessage, type ChatMessageNotice } from '@/lib/chat-message-display'
+import { describeChatMessage, isPlaceholderToken, type ChatMessageNotice } from '@/lib/chat-message-display'
 import {
   AuroraEmptyState,
   AuroraThreadSkeleton,
@@ -243,7 +243,7 @@ function SoftThreadMedia({ msg }: { msg: ChatInboxMessage }) {
     // download link is always there (and the fallback replaces a failed player).
     return (
       <div className="mt-1 w-full max-w-xs">
-        <audio controls preload="metadata" src={src} className="w-full" onError={() => setFailed(true)} />
+        <audio controls preload="none" src={src} className="w-full" onError={() => setFailed(true)} />
         <a href={src} download className="mt-0.5 inline-block text-[11px] text-slate-400 underline-offset-2 hover:underline">
           Descargar audio
         </a>
@@ -255,7 +255,7 @@ function SoftThreadMedia({ msg }: { msg: ChatInboxMessage }) {
       <video
         controls
         playsInline
-        preload="metadata"
+        preload="none"
         src={src}
         className="mt-1 max-h-64 max-w-full rounded-lg bg-black/5"
         onError={() => setFailed(true)}
@@ -604,15 +604,9 @@ export function SoftThreadPane({
               Boolean(msg.id?.startsWith('demo-ai-')) ||
               isSoftAiOutboundMetadata(msg.metadata)
             const showMedia = messageHasMedia(msg)
-            const isPlaceholder =
-              showMedia &&
-              (msg.content === '[image]' ||
-                msg.content === '[audio]' ||
-                msg.content === '[voice]' ||
-                msg.content === '[document]' ||
-                msg.content === '[video]' ||
-                msg.content === '[file]' ||
-                msg.content === '[sticker]')
+            // Any stored `[type]` token (media, share, story_mention, ig_reel…) is never shown
+            // as text next to the media (it stays after IG media gets cached).
+            const isPlaceholder = showMedia && isPlaceholderToken(msg.content)
             const notice = showMedia ? null : describeChatMessage(msg)
             const humanSender = !softAi && outbound ? humanOutboundSender(msg.metadata) : null
             const humanLabel = humanSender ? humanOutboundLabel(msg.metadata) : null

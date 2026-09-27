@@ -68,7 +68,7 @@ const KNOWN_TOKENS = new Set([
   ...MEDIA_TYPES,
   'unsupported', 'unknown', 'reaction', 'contact', 'contacts', 'location', 'order', 'system',
   'request_welcome', 'ephemeral', 'interactive', 'story_mention', 'share', 'reel', 'ig_reel',
-  'template', 'fallback', 'unsupported_type', 'attachment',
+  'template', 'fallback', 'unsupported_type', 'attachment', 'file',
 ])
 
 /** Types Meta delivers with no text, so `getWhatsAppContent` stores ''. */
@@ -217,7 +217,13 @@ export function describeChatMessage(input: DisplayInput): ChatMessageNotice | nu
   const meta = asRecord(input.metadata)
   const raw = asRecord(meta?.rawMessage)
   const platform = typeof meta?.platform === 'string' ? meta.platform : ''
-  const isInstagram = platform === 'instagram' || Array.isArray(raw?.attachments)
+  // IG inbound rows carry no `platform` key; recognise them by IG-only metadata / payload.
+  const isInstagram =
+    platform === 'instagram' ||
+    Array.isArray(raw?.attachments) ||
+    raw?.is_unsupported === true ||
+    typeof meta?.instagramAccountId === 'string' ||
+    meta?.webhookObject === 'page'
   const notice = isInstagram ? instagramNotice(type, raw, input.id) : whatsappNotice(type, raw)
   if (notice) return notice
   if (raw?.is_unsupported === true) return instagramNotice('unsupported', raw, input.id)
@@ -244,12 +250,19 @@ const PREVIEW_LABEL: Record<string, string> = {
   template: 'Enlace',
   fallback: 'Enlace',
   attachment: 'Adjunto',
+  file: 'Archivo',
   image: 'Foto',
   video: 'Video',
   audio: 'Audio',
   voice: 'Nota de voz',
   document: 'Documento',
   sticker: 'Sticker',
+}
+
+/** True when `content` is exactly a `[type]` token `meta-chat.ts` stores (not customer text). */
+export function isPlaceholderToken(content: string | null | undefined): boolean {
+  const match = PLACEHOLDER.exec((content || '').trim())
+  return Boolean(match && KNOWN_TOKENS.has(match[1]))
 }
 
 /** Conversation-list preview: turns a bare `[type]` last message into Spanish. */

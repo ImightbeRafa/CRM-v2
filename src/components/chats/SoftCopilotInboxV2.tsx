@@ -120,6 +120,8 @@ export function SoftCopilotInboxV2() {
   const maxRevisionRef = useRef<bigint>(BigInt(0))
   const lastFullReconcileRef = useRef(0)
   const importStartedRef = useRef(false)
+  /** Server search hits for the active query; re-merged after a reconcile replaces the list. */
+  const searchHitsRef = useRef<ChatConversationListItemDto[]>([])
   const pollInFlightRef = useRef(false)
   const selectedConversationIdRef = useRef<string | null>(null)
   const threadMessagesRef = useRef<Record<string, ChatInboxMessage[]>>({})
@@ -196,7 +198,11 @@ export function SoftCopilotInboxV2() {
     }
     setDtoMap((prev) =>
       opts?.replace
-        ? mergeListDtoIntoMap(new Map(), parsed.data.conversations!)
+        ? (() => {
+            const fresh = mergeListDtoIntoMap(new Map(), parsed.data.conversations!)
+            const keep = searchHitsRef.current.filter((c) => !fresh.has(c.id))
+            return keep.length ? mergeListDtoIntoMap(fresh, keep) : fresh
+          })()
         : mergeListDtoIntoMap(prev, parsed.data.conversations!),
     )
     setListNextCursor(parsed.data.nextCursor ?? null)
@@ -442,7 +448,10 @@ export function SoftCopilotInboxV2() {
   // filter stays instant; server hits are merged into the same list.
   useEffect(() => {
     const q = search.trim()
-    if (q.length < 2) return
+    if (q.length < 2) {
+      searchHitsRef.current = []
+      return
+    }
     const controller = new AbortController()
     const t = window.setTimeout(async () => {
       try {
@@ -454,6 +463,7 @@ export function SoftCopilotInboxV2() {
         })
         const parsed = await parseApiJson<{ success?: boolean; conversations?: ChatConversationListItemDto[] }>(res)
         if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.conversations?.length) return
+        searchHitsRef.current = parsed.data.conversations
         // Only add chats the list does not have yet — never overwrite a row the live
         // changes feed may have updated after this request started.
         setDtoMap((prev) => {

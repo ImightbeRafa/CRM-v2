@@ -463,6 +463,20 @@ export function SoftCopilotInboxV2() {
     }
   }, [dtoMap, selectedConversationId, threadMessages, accounts])
 
+  // SoftCopilotRail is locked and prints `conversation.orderId` verbatim, so the display value is
+  // mapped here: human order number when known, never the internal id (cuid).
+  const railConversation = useMemo(() => {
+    if (!selectedConversation) return null
+    return {
+      ...selectedConversation,
+      orderId: selectedConversation.orderNumber
+        ? `#${selectedConversation.orderNumber}`
+        : selectedConversation.orderId
+          ? 'vinculado'
+          : undefined,
+    }
+  }, [selectedConversation])
+
   const selectedKey = selectedConversation ? softKey(selectedConversation) : null
 
   const selectedAgentState = selectedKey
@@ -1051,7 +1065,7 @@ export function SoftCopilotInboxV2() {
             }}
           />
           <SoftCopilotRail
-            conversation={selectedConversation}
+            conversation={railConversation}
             tab={railTab}
             onTabChange={setRailTab}
             onStatusChange={updateStatus}
@@ -1104,7 +1118,7 @@ export function SoftCopilotInboxV2() {
               compact
             />
           )}
-          {mobileView === 'thread' && mobileDetailsOpen && selectedConversation ? (
+          {mobileView === 'thread' && mobileDetailsOpen && railConversation ? (
             <div
               className="fixed inset-0 z-40 flex flex-col bg-white md:hidden"
               role="dialog"
@@ -1123,7 +1137,7 @@ export function SoftCopilotInboxV2() {
               </div>
               <SoftCopilotRail
                 sheet
-                conversation={selectedConversation}
+                conversation={railConversation}
                 tab={railTab}
                 onTabChange={setRailTab}
                 onStatusChange={updateStatus}

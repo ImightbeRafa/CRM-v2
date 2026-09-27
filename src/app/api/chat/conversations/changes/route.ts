@@ -28,6 +28,7 @@ const messageSelect = {
   messageType: true,
   clientId: true,
   orderId: true,
+  order: { select: { orderId: true } },
   metadata: true,
   providerMediaId: true,
   mediaMimeType: true,

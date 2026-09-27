@@ -27,6 +27,8 @@ export interface SoftConversation extends ChatConversation {
   status: ConversationStatus
   tags: SoftTag[]
   orderId?: string | null
+  /** Human order number (`Order.orderId`) of the linked order, when known; display only. */
+  orderNumber?: string | null
   /** Local Soft demo seed only — never persisted to ChatMessage. */
   isDemo?: boolean
   /** Soft Agent Layer trust labels (optional; A1). */

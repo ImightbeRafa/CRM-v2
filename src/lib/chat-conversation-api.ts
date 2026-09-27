@@ -113,6 +113,8 @@ export type ChatMessageItemDto = {
   messageType: string | null
   clientId: string | null
   orderId: string | null
+  /** Human order number (`Order.orderId`) of the linked order; `orderId` above is the internal id. */
+  orderNumber?: string | null
   metadata: Record<string, unknown> | null
   providerMediaId?: string | null
   mediaMimeType?: string | null
@@ -208,6 +210,7 @@ export function mapMessageToDto(message: {
   messageType: string | null
   clientId: string | null
   orderId: string | null
+  order?: { orderId: string } | null
   metadata: unknown
   providerMediaId?: string | null
   mediaMimeType?: string | null
@@ -235,6 +238,7 @@ export function mapMessageToDto(message: {
     messageType: message.messageType,
     clientId: message.clientId,
     orderId: message.orderId,
+    orderNumber: message.order?.orderId ?? null,
     metadata,
     providerMediaId: message.providerMediaId ?? null,
     mediaMimeType: message.mediaMimeType ?? null,

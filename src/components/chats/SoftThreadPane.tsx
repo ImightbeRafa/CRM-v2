@@ -247,7 +247,7 @@ export function SoftThreadPane({
           title="Seleccioná un chat"
           description="Elegí una conversación para leer el hilo, responder o tomar el control del agente."
         />
-        <p className="text-[11px] text-slate-400">↑↓ navegar · Enter abrir · Esc volver · ⌘K buscar</p>
+        <p className="text-[11px] text-slate-400">↑↓ navegar · Enter abrir · Esc volver</p>
       </section>
     )
   }
@@ -855,7 +855,7 @@ export function SoftThreadPane({
           </form>
           {!compact ? (
             <p className="mt-2 text-[11px] text-slate-400">
-              Enter envía · Shift+Enter nueva línea · ⌘K busca · Esc cierra · ↑↓ lista
+              Enter envía · Shift+Enter nueva línea · Esc cierra · ↑↓ lista
             </p>
           ) : null}
         </div>

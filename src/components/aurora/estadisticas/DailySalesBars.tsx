@@ -71,10 +71,10 @@ export function DailySalesBars({ series, symbol }: { series: PairedDailyPoint[];
                 ) : null}
               </span>
               <span className="relative mt-2 block h-4" aria-hidden>
-                {desktopTicks.has(i) ? (
+                {desktopTicks.has(i) || mobileTicks.has(i) ? (
                   <span
                     className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] text-slate-400 ${
-                      mobileTicks.has(i) ? '' : 'hidden md:block'
+                      mobileTicks.has(i) ? (desktopTicks.has(i) ? '' : 'md:hidden') : 'hidden md:block'
                     }`}
                   >
                     {formatDayLabel(p.date, labelStyle)}

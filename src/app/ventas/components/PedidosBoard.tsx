@@ -250,8 +250,8 @@ export const PedidosBoard = React.memo(function PedidosBoard({
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
-            <label className="relative min-w-0 flex-1 lg:w-64 lg:flex-none">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="relative min-w-0 basis-full sm:flex-1 sm:basis-auto lg:w-64 lg:flex-none">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden />
               <input
                 type="search"
@@ -267,7 +267,7 @@ export const PedidosBoard = React.memo(function PedidosBoard({
                 value={lineFilter}
                 onChange={(e) => setLineFilter(e.target.value)}
                 aria-label="Filtrar por línea"
-                className="h-9 max-w-[170px] rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] text-slate-700 outline-none focus:border-[#5B6CFF]"
+                className="h-9 min-w-0 max-w-[170px] flex-1 rounded-lg sm:flex-none border border-slate-200 bg-white px-2.5 text-[13px] text-slate-700 outline-none focus:border-[#5B6CFF]"
               >
                 <option value={LINE_FILTER_ALL}>Todas las líneas</option>
                 {lineOptions.map((line) => (
@@ -282,7 +282,7 @@ export const PedidosBoard = React.memo(function PedidosBoard({
               value={range}
               onChange={(e) => setRange(e.target.value as RangeKey)}
               aria-label="Rango de fechas"
-              className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] text-slate-700 outline-none focus:border-[#5B6CFF]"
+              className="h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] text-slate-700 outline-none focus:border-[#5B6CFF] sm:flex-none"
             >
               {RANGES.map((r) => (
                 <option key={r.key} value={r.key}>

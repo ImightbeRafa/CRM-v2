@@ -22,6 +22,8 @@ const CSP_HEADER = [
 const PUBLIC_ROUTES = [
   '/auth/signin',
   '/auth/error',
+  '/auth/forgot-password',
+  '/auth/reset-password',
   '/api/auth',
   '/home',
   '/_next',

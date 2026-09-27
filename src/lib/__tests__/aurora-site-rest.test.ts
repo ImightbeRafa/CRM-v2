@@ -194,3 +194,10 @@ test('owner-facing copy: no "Telegram" and no user-visible "Soft" in the surface
     assert.doesNotMatch(src, /\bSoft\b/, `${file}: Soft`)
   }
 })
+
+test('Chats: the locked Rail gets the human order number, never the internal id', () => {
+  const v2 = read('src/components/chats/SoftCopilotInboxV2.tsx')
+  assert.match(v2, /`#\$\{selectedConversation\.orderNumber\}`/)
+  assert.equal((v2.match(/conversation=\{railConversation\}/g) ?? []).length, 2)
+  assert.doesNotMatch(v2, /<SoftCopilotRail[\s\S]{0,80}conversation=\{selectedConversation\}/)
+})

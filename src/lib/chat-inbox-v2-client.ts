@@ -47,6 +47,7 @@ export function messageDtoToInbox(row: ChatMessageItemDto): ChatInboxMessage {
     metadata: row.metadata,
     clientId: row.clientId ?? undefined,
     orderId: row.orderId ?? undefined,
+    orderNumber: row.orderNumber ?? undefined,
     messageType: row.messageType ?? undefined,
     providerMediaId: providerMediaId || undefined,
     mediaMimeType: mediaMimeType || undefined,
@@ -63,6 +64,10 @@ export function listDtoToSoftConversation(
 ): SoftConversation {
   const orderId =
     [...messages].reverse().find((m) => m.orderId)?.orderId ?? null
+  // Any message linked to the same order may carry its number (e.g. an optimistic send has none).
+  const orderNumber = orderId
+    ? [...messages].reverse().find((m) => m.orderId === orderId && m.orderNumber)?.orderNumber ?? null
+    : null
   return {
     recipientId: dto.peerId,
     recipientName: dto.recipientName ?? undefined,
@@ -77,6 +82,7 @@ export function listDtoToSoftConversation(
     status: dto.status as ConversationStatus,
     tags: coerceSoftTags(dto.tags),
     orderId,
+    orderNumber,
     agentLabel: dto.agentLabel ?? null,
     agentEmoji: dto.agentEmoji ?? null,
     agentStateDot: dto.agentStateDot ?? null,

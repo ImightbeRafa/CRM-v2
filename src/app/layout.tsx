@@ -5,11 +5,10 @@ import SessionProvider from "./components/Sessionprovider"
 import { ErrorBoundary } from "./components/ErrorBoundary"
 import { TenantSettingsProvider } from "./contexts/TenantSettingsContext"
 import { ConfigProvider } from "./contexts/ConfigContext"
-import SubscriptionBanner from "./components/SubscriptionBanner"
+import { AppTopBanners } from "./components/AppTopBanners"
 import { ClientProviders } from "./components/ClientProviders"
 import { ThemeProvider } from "./components/ThemeProvider"
 import MetaPixel from "./components/MetaPixel"
-import { PreviewDataWarning } from "./components/PreviewDataWarning"
 import { shouldShowPreviewDataWarning } from "@/lib/review-environment"
 import type { Metadata, Viewport } from 'next'
 
@@ -56,8 +55,7 @@ export default async function RootLayout({
               <TenantSettingsProvider>
                 <ConfigProvider>
                   <ClientProviders>
-                    <SubscriptionBanner />
-                    {shouldShowPreviewDataWarning() ? <PreviewDataWarning /> : null}
+                    <AppTopBanners showPreviewWarning={shouldShowPreviewDataWarning()} />
                     {children}
                   </ClientProviders>
                 </ConfigProvider>

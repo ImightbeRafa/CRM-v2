@@ -1,5 +1,6 @@
 'use client'
 
+import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
@@ -133,10 +134,7 @@ export function ShippingConfigManagement() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8 text-muted-foreground gap-2">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Cargando configuración de Correos CR...
-      </div>
+      <AuroraListSkeleton rows={4} label="Cargando configuración de Correos CR" />
     );
   }
 
@@ -145,9 +143,9 @@ export function ShippingConfigManagement() {
       {/* Header */}
       <div>
         <div className="flex items-center gap-3 mb-1">
-          <h2 className="text-2xl font-bold">Correos de Costa Rica</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Correos de Costa Rica</h2>
           {platformConfigured && (
-            <Badge variant="outline" className="border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-400">
+            <Badge variant="outline" className="border-emerald-300 text-emerald-700">
               <CheckCircle className="h-3 w-3 mr-1" />
               Servicio Activo
             </Badge>
@@ -160,19 +158,19 @@ export function ShippingConfigManagement() {
       </div>
 
       {platformConfigured === false && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300 px-4 py-3 text-sm">
+        <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 px-4 py-3 text-sm">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
           Las credenciales del Web Service de Correos CR no están configuradas a nivel de plataforma. Contacte al administrador.
         </div>
       )}
 
       {/* Datos del Remitente */}
-      <Card className="border-amber-200 dark:border-amber-800/60">
+      <Card className="border-amber-200">
         <CardContent className="p-5 space-y-4">
           <div>
             <div className="flex items-center gap-2 mb-0.5">
               <span className="text-base">📦</span>
-              <h3 className="font-semibold text-sm text-amber-800 dark:text-amber-300">Datos del Remitente</h3>
+              <h3 className="font-semibold text-sm text-amber-800">Datos del Remitente</h3>
             </div>
             <p className="text-xs text-muted-foreground ml-7">
               Información que aparece como remitente en cada guía generada
@@ -224,7 +222,7 @@ export function ShippingConfigManagement() {
 
       {/* Save error feedback */}
       {saveError && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 text-red-800 dark:border-red-700 dark:bg-red-950/30 dark:text-red-300 px-4 py-3 text-sm">
+        <div className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 text-red-800 px-4 py-3 text-sm">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
           {saveError}
         </div>

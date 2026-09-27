@@ -23,6 +23,8 @@ export interface BaseOrder {
   customFields?: Record<string, any> | string | null;
   contraEntrega?: boolean;
   cePaymentConfirmed?: boolean;
+  /** Sales channel (WhatsApp, Instagram, Website…); null when the order has none. */
+  salesChannel?: string | null;
   province?: string;
   canton?: string;
   district?: string;

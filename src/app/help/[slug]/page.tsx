@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation';
 import { serialize } from 'next-mdx-remote/serialize';
 import remarkGfm from 'remark-gfm';
-import { getDocBySlug, getAllDocs } from '@/lib/docs';
+import { getDocBySlug } from '@/lib/docs';
+import { getHelpDocs, isHelpHidden } from '@/lib/help-docs';
 import { DocRenderer } from '@/app/components/DocRenderer';
 import { DocsShell } from '@/app/components/docs/DocsShell';
 import { TableOfContents } from '@/app/components/docs/TableOfContents';
@@ -14,11 +15,11 @@ export default async function HelpPage({ params }: { params: Promise<{ slug: str
   const { slug } = await params;
   const doc = getDocBySlug(slug);
 
-  if (!doc || doc.visibility === 'public') {
+  if (!doc || doc.visibility === 'public' || isHelpHidden(slug)) {
     notFound();
   }
 
-  const allDocs = getAllDocs('private');
+  const allDocs = getHelpDocs();
   const mdxSource = await serialize(doc.content, {
     mdxOptions: { remarkPlugins: [remarkGfm] },
   });
@@ -28,6 +29,7 @@ export default async function HelpPage({ params }: { params: Promise<{ slug: str
       docs={allDocs}
       currentSlug={slug}
       basePath="/help"
+      embedded
       rightSidebar={<TableOfContents headings={doc.headings} />}
     >
       <DocsBreadcrumb

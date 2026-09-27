@@ -157,7 +157,7 @@ export function TenantSettingsPanel() {
       {/* Floating Settings Button */}
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-36 md:bottom-20 right-6 z-40 p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all hover:scale-110"
+        className="fixed bottom-36 md:bottom-20 right-2 md:right-6 z-40 p-2 md:p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all hover:scale-110"
         title="Configuración de la tienda"
       >
         <Settings className="w-5 h-5" />

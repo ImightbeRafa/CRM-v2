@@ -1,55 +1,42 @@
 import Link from 'next/link'
 import { Shield, ArrowLeft } from 'lucide-react'
+import {
+  AuthShell,
+  authPrimaryButtonClass,
+  authLinkClass,
+} from '@/components/aurora/auth/AuthShell'
 
 export default function UnauthorizedPage() {
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
-        <div className="flex justify-center mb-6">
-          <div className="bg-red-100 p-4 rounded-full">
-            <Shield className="w-12 h-12 text-red-600" />
-          </div>
-        </div>
-        
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          Access Denied
-        </h1>
-        
-        <p className="text-gray-600 mb-6">
-          You don&apos;t have permission to access this page. Please contact your administrator if you believe this is an error.
-        </p>
-        
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-          <p className="text-sm text-yellow-800">
-            <strong>Note:</strong> Different user roles have access to different sections:
-          </p>
-          <ul className="text-sm text-yellow-700 mt-2 space-y-1">
-            <li>• <strong>OWNER/ADMIN:</strong> Full access</li>
-            <li>• <strong>MANAGER:</strong> Sales, Production, Statistics</li>
-            <li>• <strong>SALES:</strong> Sales module only</li>
-            <li>• <strong>PRODUCTION:</strong> Production module only</li>
-            <li>• <strong>VIEWER:</strong> Read-only access</li>
-          </ul>
-        </div>
-        
-        <div className="flex flex-col gap-3">
-          <Link 
-            href="/dashboard"
-            className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Go to Dashboard
-          </Link>
-          
-          <Link 
-            href="/auth/signin"
-            className="text-gray-600 hover:text-gray-900 text-sm"
-          >
-            Sign in with a different account
-          </Link>
-        </div>
+    <AuthShell
+      brandPanel={false}
+      icon={
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
+          <Shield className="h-6 w-6" aria-hidden />
+        </span>
+      }
+      title="Acceso denegado"
+      subtitle="No tenés permiso para ver esta página. Si creés que es un error, hablá con quien administra tu cuenta."
+    >
+      <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left">
+        <p className="text-[13px] font-medium text-slate-800">Cada rol accede a secciones distintas:</p>
+        <ul className="mt-2 space-y-1 text-[13px] text-slate-600">
+          <li>• <strong>Owner / Admin:</strong> acceso completo</li>
+          <li>• <strong>Manager:</strong> ventas, producción y estadísticas</li>
+          <li>• <strong>Ventas:</strong> solo el módulo de ventas</li>
+          <li>• <strong>Producción:</strong> solo el módulo de producción</li>
+          <li>• <strong>Solo lectura:</strong> puede ver, no editar</li>
+        </ul>
       </div>
-    </div>
+      <div className="flex flex-col gap-3">
+        <Link href="/dashboard" className={authPrimaryButtonClass}>
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Ir al inicio
+        </Link>
+        <Link href="/auth/signin" className={`${authLinkClass} text-center text-[13px]`}>
+          Iniciar sesión con otra cuenta
+        </Link>
+      </div>
+    </AuthShell>
   )
 }
-

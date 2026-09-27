@@ -54,7 +54,8 @@ import {
   writeAgentStateMap,
   type SoftAiAgentStateMap,
 } from '@/lib/soft-ai/agent-state'
-import { SoftSlimNav } from '@/components/chats/SoftSlimNav'
+import { lineHealth, lineIsDown, summarizeLineCounts } from '@/lib/chat-line-filter'
+import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
 import {
@@ -63,6 +64,11 @@ import {
 } from '@/components/chats/SoftThreadPane'
 import { SoftTokenHealthBanners } from '@/components/chats/SoftTokenHealthBanners'
 import { SoftCopilotRail } from '@/components/chats/SoftCopilotRail'
+import { AuroraMobileNav } from '@/components/aurora/AuroraMobileNav'
+import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
+import dynamic from 'next/dynamic'
+import type { CreatedOrderRef } from '@/app/ventas/components/EnhancedSalesForm'
+import { useToast } from '@/app/hooks/use-toast'
 
 const TAG_FILTERS: SoftTag[] = ['Envío', 'VIP', 'Nuevo']
 
@@ -70,7 +76,15 @@ function softKey(c: SoftConversation) {
   return conversationStorageKey(c.socialAccountId, c.recipientId)
 }
 
+// Same Aurora "Crear pedido" drawer as /ventas; loaded on demand.
+const CrearPedidoDrawer = dynamic(
+  () => import('@/components/aurora/pedidos/CrearPedidoDrawer').then((m) => m.CrearPedidoDrawer),
+  { ssr: false },
+)
+
 export function SoftCopilotInboxV2() {
+  const { toast } = useToast()
+  const [createOrderOpen, setCreateOrderOpen] = useState(false)
   const [accounts, setAccounts] = useState<SoftSocialAccount[]>([])
   const [dtoMap, setDtoMap] = useState<Map<string, ChatConversationListItemDto>>(new Map())
   const [threadMessages, setThreadMessages] = useState<Record<string, ChatInboxMessage[]>>({})
@@ -81,6 +95,8 @@ export function SoftCopilotInboxV2() {
   const [search, setSearch] = useState('')
   const [activeTag, setActiveTag] = useState<SoftTag | null>(null)
   const [loading, setLoading] = useState(true)
+  const [listError, setListError] = useState(false)
+  const [threadLoadingId, setThreadLoadingId] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [messageInput, setMessageInput] = useState('')
   const [sendError, setSendError] = useState<string | null>(null)
@@ -89,6 +105,7 @@ export function SoftCopilotInboxV2() {
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null)
   const [syncAgeSeconds, setSyncAgeSeconds] = useState<number | null>(null)
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list')
+  const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [threadBeforeCursor, setThreadBeforeCursor] = useState<Record<string, string | null>>({})
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
@@ -122,6 +139,11 @@ export function SoftCopilotInboxV2() {
 
   useEffect(() => {
     setAgentStateMap(readAgentStateMap())
+  }, [])
+
+  // CHAT-M01: mobile bandeja opens on "Todos" (abiertos); desktop keeps "Tus chats".
+  useEffect(() => {
+    if (window.matchMedia('(max-width: 767px)').matches) setBucket('abiertos')
   }, [])
 
   const fetchAccounts = useCallback(async () => {
@@ -183,6 +205,7 @@ export function SoftCopilotInboxV2() {
       const head = BigInt(parsed.data.maxRevision)
       if (head > maxRevisionRef.current) maxRevisionRef.current = head
     }
+    setListError(false)
     setLastSyncAt(Date.now())
     lastFullReconcileRef.current = Date.now()
   }, [])
@@ -271,7 +294,7 @@ export function SoftCopilotInboxV2() {
     }
   }, [applyThreadTail])
 
-  const loadThreadMessages = useCallback(async (conversationId: string) => {
+  const fetchThreadMessages = useCallback(async (conversationId: string) => {
     const qs = `limit=${CHAT_INBOX_V2_THREAD_FETCH_LIMIT}`
     const res = await fetch(
       `/api/chat/conversations/${encodeURIComponent(conversationId)}/messages?${qs}`,
@@ -312,6 +335,15 @@ export function SoftCopilotInboxV2() {
     })
   }, [])
 
+  const loadThreadMessages = useCallback(async (conversationId: string) => {
+    setThreadLoadingId(conversationId)
+    try {
+      await fetchThreadMessages(conversationId)
+    } finally {
+      setThreadLoadingId((cur) => (cur === conversationId ? null : cur))
+    }
+  }, [fetchThreadMessages])
+
   useEffect(() => {
     void (async () => {
       setLoading(true)
@@ -320,11 +352,24 @@ export function SoftCopilotInboxV2() {
       try {
         await fetchListPage({ replace: true })
       } catch {
-        // keep empty map
+        setListError(true)
       }
       setLoading(false)
     })()
   }, [fetchAccounts, fetchListPage, runLocalImportOnce])
+
+  async function retryInitialLoad() {
+    setLoading(true)
+    setListError(false)
+    try {
+      await fetchAccounts()
+      await fetchListPage({ replace: true })
+    } catch {
+      setListError(true)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     const tick = () => {
@@ -418,6 +463,20 @@ export function SoftCopilotInboxV2() {
     }
   }, [dtoMap, selectedConversationId, threadMessages, accounts])
 
+  // SoftCopilotRail is locked and prints `conversation.orderId` verbatim, so the display value is
+  // mapped here: human order number when known, never the internal id (cuid).
+  const railConversation = useMemo(() => {
+    if (!selectedConversation) return null
+    return {
+      ...selectedConversation,
+      orderId: selectedConversation.orderNumber
+        ? `#${selectedConversation.orderNumber}`
+        : selectedConversation.orderId
+          ? 'vinculado'
+          : undefined,
+    }
+  }, [selectedConversation])
+
   const selectedKey = selectedConversation ? softKey(selectedConversation) : null
 
   const selectedAgentState = selectedKey
@@ -473,6 +532,26 @@ export function SoftCopilotInboxV2() {
     [conversations],
   )
 
+  const lineCounts = useMemo(() => summarizeLineCounts(conversations), [conversations])
+
+  const unreadChatCount = useMemo(
+    () => conversations.filter((c) => c.status !== 'hecho' && (c.unreadCount || 0) > 0).length,
+    [conversations],
+  )
+  const channelsAlert = useMemo(() => accounts.some((a) => lineIsDown(a)), [accounts])
+  const agentActionsToday = useMemo(() => {
+    const today = new Date().toDateString()
+    return selectedAgentState.toolLog.filter((t) => new Date(t.at).toDateString() === today).length
+  }, [selectedAgentState.toolLog])
+
+  const selectedAccountHealth = useMemo(() => {
+    if (!selectedConversation) return null
+    const account = accounts.find((a) => a.id === selectedConversation.socialAccountId)
+    if (!account) return null
+    const health = lineHealth(account)
+    return health.needsAction ? { account, health } : null
+  }, [accounts, selectedConversation])
+
   const whatsappCount = accounts.filter((a) => a.platform === 'whatsapp').length
   const instagramCount = accounts.filter((a) => a.platform === 'instagram').length
 
@@ -486,6 +565,7 @@ export function SoftCopilotInboxV2() {
     setFailedOutboundId(null)
     setMessageInput('')
     setTemplatePickerOpen(false)
+    setMobileDetailsOpen(false)
     nearBottomRef.current = true
     setMobileView('thread')
     void loadThreadMessages(dto.id).then(() => {
@@ -841,6 +921,32 @@ export function SoftCopilotInboxV2() {
   })()
 
   const selectedDto = selectedConversationId ? dtoMap.get(selectedConversationId) : null
+
+  // Order created from this chat: link it (ChatMessage.orderId) and refresh the thread.
+  // The order is never rolled back if linking fails.
+  const handleOrderCreated = async (order: CreatedOrderRef) => {
+    const conv = selectedConversation
+    const conversationId = selectedConversationId
+    const label = `#${order.orderId}`
+    if (!conv || !conversationId) return
+    try {
+      const res = await fetch('/api/chat/order-link', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          socialAccountId: conv.socialAccountId,
+          peerId: conv.recipientId,
+          order: order.id ?? order.orderId,
+        }),
+      })
+      if (!res.ok) throw new Error(String(res.status))
+      toast({ variant: 'success' as any, title: `Pedido ${label} creado y vinculado al chat` })
+      await fetchThreadMessages(conversationId)
+    } catch {
+      toast({ title: `Pedido ${label} creado`, description: 'No se pudo vincular al chat.' })
+    }
+  }
   const waWindowOpen = selectedDto?.waWindowOpen ?? true
 
   const threadSharedProps = {
@@ -889,14 +995,34 @@ export function SoftCopilotInboxV2() {
     onTakeOver: () => void setAgentControl('take_over'),
     onPauseAi: () => void setAgentControl('pause'),
     onResumeAi: () => void setAgentControl('resume'),
+    onCreateOrder: () => setCreateOrderOpen(true),
     aiBusy: controlBusy,
+    threadLoading: Boolean(selectedConversationId && threadLoadingId === selectedConversationId),
+    channelDownMessage: selectedAccountHealth
+      ? `${accountDisplayLabel(selectedAccountHealth.account)} · ${selectedAccountHealth.health.label.toLowerCase()}. Los mensajes de este chat pueden no enviarse.`
+      : null,
   }
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-[#dde7f5] p-0 md:p-4 lg:p-6">
+    <AuroraShell
+      fullBleed
+      bottomNav={
+        mobileView === 'list' ? (
+          <AuroraMobileNav chatsBadge={unreadChatCount} channelsAlert={channelsAlert} />
+        ) : undefined
+      }
+    >
+      <header className="hidden shrink-0 items-end justify-between gap-4 border-b border-slate-200/70 bg-white px-5 py-3 md:flex">
+        <div className="min-w-0">
+          <h1 className="text-[18px] font-semibold leading-tight text-slate-900">Chats</h1>
+          <p className="truncate text-[12px] text-slate-500">
+            Bandeja unificada · WhatsApp e Instagram
+          </p>
+        </div>
+        <AuroraTopActions />
+      </header>
       <SoftTokenHealthBanners accounts={accounts} />
-      <div className="mx-auto flex h-full w-full max-w-[1440px] min-h-0 overflow-hidden rounded-none bg-white shadow-none md:rounded-[20px] md:shadow-sm">
-      <SoftSlimNav />
+      <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-white">
         <SoftInboxBuckets
           bucket={bucket}
           onBucketChange={setBucket}
@@ -920,6 +1046,10 @@ export function SoftCopilotInboxV2() {
             selectedAccountId={accountFilter}
             onAccountFilter={setAccountFilter}
             openCount={openCount}
+            countsByAccount={lineCounts.byAccount}
+            totalOpen={lineCounts.total.open}
+            loadError={listError}
+            onRetryLoad={() => void retryInitialLoad()}
             syncAgeSeconds={syncAgeSeconds}
             loading={loading}
             emptyReason={emptyReason}
@@ -935,7 +1065,7 @@ export function SoftCopilotInboxV2() {
             }}
           />
           <SoftCopilotRail
-            conversation={selectedConversation}
+            conversation={railConversation}
             tab={railTab}
             onTabChange={setRailTab}
             onStatusChange={updateStatus}
@@ -959,10 +1089,18 @@ export function SoftCopilotInboxV2() {
               selectedAccountId={accountFilter}
               onAccountFilter={setAccountFilter}
               openCount={openCount}
+              countsByAccount={lineCounts.byAccount}
+              totalOpen={lineCounts.total.open}
+              loadError={listError}
+              onRetryLoad={() => void retryInitialLoad()}
               syncAgeSeconds={syncAgeSeconds}
               loading={loading}
               emptyReason={emptyReason}
               compact
+              bucket={bucket}
+              onBucketChange={setBucket}
+              search={search}
+              onSearchChange={setSearch}
               hasMoreConversations={Boolean(listNextCursor)}
               loadingMoreConversations={loadingMoreConversations}
               onLoadMoreConversations={() => void loadMoreConversations()}
@@ -971,12 +1109,62 @@ export function SoftCopilotInboxV2() {
             <SoftThreadPane
               {...threadSharedProps}
               onClose={() => setMobileView('list')}
-              onBack={() => setMobileView('list')}
+              onBack={() => {
+                setMobileDetailsOpen(false)
+                setMobileView('list')
+              }}
+              onOpenDetails={() => setMobileDetailsOpen(true)}
+              agentActionsToday={agentActionsToday}
               compact
             />
           )}
+          {mobileView === 'thread' && mobileDetailsOpen && railConversation ? (
+            <div
+              className="fixed inset-0 z-40 flex flex-col bg-white md:hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Detalles del chat"
+            >
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-200/70 px-4 py-3">
+                <h2 className="text-[16px] font-bold text-slate-900">Detalles</h2>
+                <button
+                  type="button"
+                  onClick={() => setMobileDetailsOpen(false)}
+                  className="rounded-full bg-slate-100 px-3.5 py-1.5 text-[13px] font-semibold text-slate-700"
+                >
+                  Cerrar
+                </button>
+              </div>
+              <SoftCopilotRail
+                sheet
+                conversation={railConversation}
+                tab={railTab}
+                onTabChange={setRailTab}
+                onStatusChange={updateStatus}
+                onToggleTag={toggleTag}
+                agentMode={threadSharedProps.agentMode}
+                toolLog={selectedAgentState.toolLog}
+                onTakeOver={() => void setAgentControl('take_over')}
+                onPauseAi={() => void setAgentControl('pause')}
+                onResumeAi={() => void setAgentControl('resume')}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
-    </div>
+      {createOrderOpen && selectedConversation ? (
+        <CrearPedidoDrawer
+          open
+          onOpenChange={setCreateOrderOpen}
+          subtitle={`Desde el chat con ${selectedConversation.recipientName || selectedConversation.recipientId}`}
+          prefill={{
+            name: selectedConversation.recipientName || undefined,
+            phone: selectedConversation.platform === 'whatsapp' ? selectedConversation.recipientId : undefined,
+            username: selectedConversation.platform === 'instagram' ? selectedConversation.recipientName || undefined : undefined,
+          }}
+          onCreated={handleOrderCreated}
+        />
+      ) : null}
+    </AuroraShell>
   )
 }

@@ -108,7 +108,7 @@ export function WelcomeBusinessStep({ markCompleted, markUnsavedChanges }: Wizar
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-[#5B6CFF]" />
       </div>
     );
   }
@@ -116,16 +116,16 @@ export function WelcomeBusinessStep({ markCompleted, markUnsavedChanges }: Wizar
   return (
     <div className="space-y-8">
       {/* Welcome banner */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-6 text-white">
+      <div className="bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF] rounded-2xl p-6 text-white">
         <h2 className="text-2xl font-bold mb-2">¡Bienvenido a BetsyCRM!</h2>
-        <p className="text-blue-100 mb-4">
+        <p className="text-white/80 mb-4">
           En pocos minutos tendrás todo configurado para empezar a gestionar tus pedidos.
         </p>
         <div className="grid grid-cols-2 gap-3">
           {FEATURES.map((f, i) => (
             <div key={i} className="flex items-center gap-2 text-sm">
-              <f.icon className="h-4 w-4 text-blue-200 flex-shrink-0" />
-              <span className="text-blue-50">{f.text}</span>
+              <f.icon className="h-4 w-4 text-white/70 flex-shrink-0" />
+              <span className="text-white/90">{f.text}</span>
             </div>
           ))}
         </div>

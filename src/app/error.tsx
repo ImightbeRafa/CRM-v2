@@ -2,7 +2,11 @@
 
 import { useEffect } from 'react';
 import * as Sentry from '@sentry/nextjs';
-import { Button } from '@/app/components/ui/button';
+import {
+  AuthShell,
+  authPrimaryButtonClass,
+  authSecondaryButtonClass,
+} from '@/components/aurora/auth/AuthShell';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 export default function Error({
@@ -17,55 +21,45 @@ export default function Error({
   }, [error]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center">
-        <div className="flex justify-center mb-4">
-          <div className="p-3 bg-red-100 rounded-full">
-            <AlertTriangle className="w-8 h-8 text-red-600" />
-          </div>
-        </div>
-        
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">
-          Something went wrong
-        </h1>
-        
-        <p className="text-gray-600 mb-6">
-          We apologize for the inconvenience. The error has been logged and our team will look into it.
-        </p>
-        
-        {process.env.NODE_ENV === 'development' && (
-          <details className="mb-6 text-left">
-            <summary className="text-sm text-gray-500 cursor-pointer mb-2">
-              Error Details (Development Only)
-            </summary>
-            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-32">
-              {error.message}
-              {error.stack && `\n\n${error.stack}`}
-            </pre>
-          </details>
-        )}
-        
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          <Button
-            onClick={reset}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Try Again
-          </Button>
-          
-          <Button
-            variant="outline"
-            onClick={() => window.location.href = '/'}
-          >
-            Go Home
-          </Button>
-        </div>
-        
-        <p className="text-xs text-gray-500 mt-6">
-          Error ID: {error.digest || 'unknown'}
-        </p>
+    <AuthShell
+      brandPanel={false}
+      icon={
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
+          <AlertTriangle className="h-6 w-6" aria-hidden />
+        </span>
+      }
+      title="Algo salió mal"
+      subtitle="Ya registramos el error y lo vamos a revisar. Podés intentar de nuevo."
+    >
+      {process.env.NODE_ENV === 'development' && (
+        <details className="mb-5 text-left">
+          <summary className="mb-2 cursor-pointer text-[13px] text-slate-500">
+            Detalles del error (solo desarrollo)
+          </summary>
+          <pre className="max-h-32 overflow-auto rounded-lg bg-slate-100 p-2 text-xs">
+            {error.message}
+            {error.stack && `\n\n${error.stack}`}
+          </pre>
+        </details>
+      )}
+
+      <div className="flex flex-col gap-3">
+        <button type="button" onClick={reset} className={authPrimaryButtonClass}>
+          <RefreshCw className="h-4 w-4" aria-hidden />
+          Intentar de nuevo
+        </button>
+        <button
+          type="button"
+          onClick={() => (window.location.href = '/')}
+          className={authSecondaryButtonClass}
+        >
+          Ir al inicio
+        </button>
       </div>
-    </div>
+
+      <p className="mt-5 text-center text-xs text-slate-400">
+        ID del error: {error.digest || 'desconocido'}
+      </p>
+    </AuthShell>
   );
 }

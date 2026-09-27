@@ -1,5 +1,7 @@
 "use client";
 
+import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader';
+import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
@@ -101,10 +103,10 @@ function getMargin(cost: number, price: number): number | null {
 
 function getStockStatus(item: InventoryItem) {
   if (item.currentStock === 0)
-    return { label: 'Sin Stock', className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400', icon: AlertTriangle };
+    return { label: 'Sin Stock', className: 'bg-red-100 text-red-800', icon: AlertTriangle };
   if (item.currentStock <= item.minStock)
-    return { label: 'Stock Bajo', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400', icon: AlertTriangle };
-  return { label: 'Normal', className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400', icon: CheckCircle };
+    return { label: 'Stock Bajo', className: 'bg-yellow-100 text-yellow-800', icon: AlertTriangle };
+  return { label: 'Normal', className: 'bg-green-100 text-green-800', icon: CheckCircle };
 }
 
 export function InventoryManagement() {
@@ -297,9 +299,9 @@ export function InventoryManagement() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-12">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mr-2" />
-        <span className="text-muted-foreground">Cargando inventario...</span>
+      <div>
+        <ConfigPanelHeader title="Productos" subtitle="Tu catálogo, precios y existencias" />
+        <AuroraListSkeleton rows={5} label="Cargando productos" />
       </div>
     );
   }
@@ -307,16 +309,17 @@ export function InventoryManagement() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Gestión de Inventario</h1>
-          <p className="text-muted-foreground">Controla el stock y precios de tus productos</p>
-        </div>
-        <Button onClick={openCreate} className="flex items-center gap-2">
-          <Plus className="h-4 w-4" />
-          Agregar Producto
-        </Button>
-      </div>
+      <ConfigPanelHeader
+        title="Productos"
+        subtitle="Tu catálogo, precios y existencias"
+        className="!mb-0"
+        actions={
+          <Button onClick={openCreate} className="flex items-center gap-2 bg-[#5B3FE0] text-white hover:bg-[#4A32C4]">
+            <Plus className="h-4 w-4" />
+            Agregar producto
+          </Button>
+        }
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -478,7 +481,7 @@ export function InventoryManagement() {
                               size="sm"
                               variant="ghost"
                               onClick={() => setDeleteTarget(item)}
-                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -665,7 +668,7 @@ export function InventoryManagement() {
                 <div className="flex items-center justify-between">
                   <Label htmlFor="dlg-price">Precio de Venta *</Label>
                   {margin !== null && (
-                    <Badge variant="outline" className={`text-[10px] ${margin > 0 ? 'border-green-300 text-green-700 dark:border-green-700 dark:text-green-400' : 'border-red-300 text-red-700 dark:border-red-700 dark:text-red-400'}`}>
+                    <Badge variant="outline" className={`text-[10px] ${margin > 0 ? 'border-green-300 text-green-700' : 'border-red-300 text-red-700'}`}>
                       Margen: {margin > 0 ? '+' : ''}{margin}%
                     </Badge>
                   )}
@@ -704,7 +707,7 @@ export function InventoryManagement() {
                   <button
                     type="button"
                     onClick={() => updateField('isFavorite', !formData.isFavorite)}
-                    className={`h-8 w-8 rounded-md border flex items-center justify-center transition-colors ${formData.isFavorite ? 'bg-yellow-50 border-yellow-300 dark:bg-yellow-900/30 dark:border-yellow-700' : 'border-input hover:bg-muted'}`}
+                    className={`h-8 w-8 rounded-md border flex items-center justify-center transition-colors ${formData.isFavorite ? 'bg-yellow-50 border-yellow-300' : 'border-input hover:bg-muted'}`}
                   >
                     <Star className={`h-4 w-4 ${formData.isFavorite ? 'text-yellow-500 fill-yellow-500' : 'text-muted-foreground'}`} />
                   </button>

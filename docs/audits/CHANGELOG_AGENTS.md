@@ -1,3 +1,28 @@
+## 2026-09-27 — Aurora onto the live line (Claude Code, handover step 1–3)
+
+- Branch `rafa/aurora-on-live` = `claudio/team-users-sota` (#77, live CF line, 19 commits ahead
+  of the Aurora stack) + merge of `aurora/pr-j-site-rest` (#78–#87). Replaces the unfinished
+  Claudio merge from 2026-09-26 (never pushed).
+- Conflicts resolved by keeping both sides:
+  - `dashboard/enhanced-home-content.tsx`: Aurora home + `canAccessLogistics` DeepSleep gate.
+  - `chats/SoftThreadPane.tsx`: Aurora bubbles + live human-sender avatar/label; the label also
+    shows in the mobile (compact) meta line; Google photos use `referrerPolicy="no-referrer"`.
+  - `config/page.tsx`: Aurora server wrapper. Live's classic-form invite changes were ported to
+    Aurora `InviteMemberModal` (default "Invitar por email" → `invite: true`, no OWNER by invite,
+    toast on `emailSent`; "Crear con contraseña" kept) and `UsersPanel` (`User.image` avatar with
+    initials fallback, `name || username`).
+- Aurora nav: Producción back under Principal (`/produccion`), Más sheet picks it up on mobile.
+- Tests updated for intentional changes only: `aurora-site-rest` (invite modal), `chat-inbox-v2-client`
+  (Reconectar link accepts `/config?tab=social`), `aurora-nav` (Producción).
+- Prove: tsc — 0 new errors (remaining are test-file typings present on the parents).
+  Suites: security 122/1, site-ui 45/0, config-ui 30/0, channels-ui 10/0, agentes-ui 34/0,
+  stats-ui 42/0, chat-mobile 6/0, pedidos-ui 15/0, lifecycle 8/0, chat-harden 283/2,
+  soft-ai-agent 129/1. Every remaining failure also fails on a parent (live or Aurora tip):
+  `runSoftAiLlmRuntime … shared assembly`, `webhook persists job…` (Vercel crons emptied for CF),
+  Embedded Signup FINISH-race source assert.
+- Not done here: Aurora skin for Producción / Exports / Logistics, broken-page fixes, Enviar
+  feedback button overlap, browser eye-test, SecureDog review. No deploy, no SQL, no www.
+
 ## 2026-09-25 — Cloudflare Containers daytime packaging
 
 - `Dockerfile` + `.dockerignore` for Next standalone (`prisma generate` via `npm run build`, `@sparticuz/chromium` + puppeteer runtime libs, Correos WSDL copied to both resolve paths).
@@ -1155,3 +1180,36 @@ Append-only. Newest entries at the top.
   table. Status board NEXT updated. PR #53 marked ready for squash-merge; A1 next.
 - Prove: docs only — `git diff --stat` = `docs/**`; no SQL, Prisma, or app code. Sol
   verification not run (Rafael: not required); Executor self-check of § refs and links.
+
+# 2026-09-26 — Aurora PR-I: Estadísticas STAT-01 + Agentes detail (Conocimiento tab)
+
+- `/estadisticas` now renders in `AuroraShell` (no classic top/bottom nav). New read-only,
+  tenant-scoped `GET /api/estadisticas/aurora-summary?period=` (`view_statistics`); every
+  number comes from Order / ChatConversation / SocialAccount / ChatAgentTurn queries or the
+  existing `status-breakdown` endpoint. Chat→pedido, per-line Pedidos/Ventas and "Con
+  intención de compra" have no data source and render "—" / "Sin datos". No brands.
+- Agent detail lives in `/config?tab=agentes&agente=<id|slug>&seccion=<key>`; Conocimiento is a
+  tab (completeness cards, inline Pegar → Revisar → Aprobar bound to the open agent, real
+  Fuentes table). Crear agente = draft form → existing `POST /api/chat/agents`. Publicar
+  cambios only flushes saves; it never touches `status`, so the runtime stays OFF.
+- CoS fixes: no "Telegram" in the Plan list; mobile bottom nav stays visible under the global
+  banner (`--app-top-offset`); Config panel clears the settings FAB; one cream canvas token;
+  `/inicio` → `/dashboard` (307).
+- Prove: `npm run test:stats-ui`, `test:agentes-ui`, `test:config-ui`; no schema / SQL / runtime files touched.
+
+# 2026-09-26 — Aurora PR-J: rest of site (Pedidos detail/crear, modals, shell menus, auth/onboarding/help)
+
+- **Pedidos:** detail drawer (`/ventas?pedido=`), Crear pedido drawer (`?nuevo=1`) around the existing
+  `EnhancedSalesForm`, Canal column = the specific line (order → `ChatMessage.orderId` → `SocialAccount`,
+  read-only `GET /api/orders/lines`), line filter. No schema change.
+- **Chats → pedido (X2):** "Crear pedido" in a chat opens the same drawer; on success
+  `POST /api/chat/order-link` sets `ChatMessage.orderId` (tenant-scoped, `update_sales`, idempotent,
+  conditional `updateMany(orderId: null)`). Estadísticas Chat→pedido and per-line Pedidos/Ventas now read it.
+- **Modals over existing flows:** Conectar línea (coexistence copy), Reconectar / Reparar, Desvincular, Invitar
+  persona (`POST/PUT /api/users`), Aurora confirm dialogs. Embedded Signup / IG callbacks untouched.
+- **Shell:** bell with derived alerts, profile menu, name-only tenant block, one `AuroraPageHeader`. No search
+  field (no real search backend).
+- **Auth (X1):** `safeReturnPath()` open-redirect guard on signin; middleware keeps the query in `callbackUrl`.
+  Auth screens, onboarding wizard and Ayuda restyled to Aurora; logic untouched.
+- **Global:** `tailwind.config.ts` `darkMode` is now a custom variant that never applies `dark:` inside `.aurora-light`.
+- Prove: `npm run test:site-ui`, `test:security`, `test:pedidos-ui`, `test:stats-ui`, `test:config-ui`; no SQL / Prisma / runtime files touched.

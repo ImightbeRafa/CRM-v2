@@ -25,6 +25,8 @@ const PUBLIC_ROUTES = [
   '/auth/signin',
   '/auth/accept-invite',
   '/auth/error',
+  '/auth/forgot-password',
+  '/auth/reset-password',
   '/api/auth',
   '/api/invites/accept',
   '/home',
@@ -266,7 +268,7 @@ function redirectToLogin(url: URL): NextResponse {
 
   // For app routes, redirect to login page
   const loginUrl = new URL('/auth/signin', url.origin);
-  loginUrl.searchParams.set('callbackUrl', url.pathname);
+  loginUrl.searchParams.set('callbackUrl', url.pathname + url.search);
   return NextResponse.redirect(loginUrl);
 }
 

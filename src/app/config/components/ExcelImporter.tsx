@@ -588,7 +588,7 @@ export function ExcelImporter() {
                         <Fragment key={row.rowIndex}>
                           <TableRow
                             key={row.rowIndex}
-                            className={`${hasErrors ? 'bg-red-50/50 dark:bg-red-950/10 hover:bg-red-50/80 dark:hover:bg-red-950/20' : ''} ${hasErrors ? 'cursor-pointer' : ''}`}
+                            className={`${hasErrors ? 'bg-red-50/50 hover:bg-red-50/80' : ''} ${hasErrors ? 'cursor-pointer' : ''}`}
                             onClick={hasErrors ? () => toggleErrorRow(row.rowIndex) : undefined}
                           >
                             <TableCell className="text-center text-xs text-muted-foreground sticky left-0 bg-inherit z-10">
@@ -615,7 +615,7 @@ export function ExcelImporter() {
                                 <TableCell
                                   key={col.key}
                                   className={`text-sm max-w-[200px] truncate ${
-                                    cellHasError ? 'text-red-600 font-medium bg-red-100/50 dark:bg-red-900/20' : ''
+                                    cellHasError ? 'text-red-600 font-medium bg-red-100/50' : ''
                                   }`}
                                   title={cellHasError ? row.errors.find(e => e.field === col.key)?.message : String(val ?? '')}
                                 >
@@ -627,13 +627,13 @@ export function ExcelImporter() {
                             })}
                           </TableRow>
                           {hasErrors && isExpanded && (
-                            <TableRow key={`${row.rowIndex}-errors`} className="bg-red-50/80 dark:bg-red-950/20">
+                            <TableRow key={`${row.rowIndex}-errors`} className="bg-red-50/80">
                               <TableCell colSpan={PREVIEW_COLUMNS.length + 2} className="py-2 px-4">
                                 <div className="flex flex-wrap gap-2">
                                   {row.errors.map((err, eIdx) => (
                                     <div
                                       key={eIdx}
-                                      className="inline-flex items-center gap-1.5 text-xs text-red-600 bg-red-100 dark:bg-red-900/30 px-2.5 py-1 rounded-md"
+                                      className="inline-flex items-center gap-1.5 text-xs text-red-600 bg-red-100 px-2.5 py-1 rounded-md"
                                     >
                                       <AlertCircle className="w-3 h-3 shrink-0" />
                                       <span className="font-medium">{err.field}:</span> {err.message}
@@ -718,7 +718,7 @@ export function ExcelImporter() {
             {hasErrors && importResult.errors.length > 0 && (
               <div className="mb-6">
                 <h3 className="text-sm font-medium mb-2 text-red-600">Errores de importación:</h3>
-                <div className="max-h-[300px] overflow-auto rounded-lg border border-red-200 dark:border-red-800">
+                <div className="max-h-[300px] overflow-auto rounded-lg border border-red-200">
                   <Table>
                     <TableHeader>
                       <TableRow>

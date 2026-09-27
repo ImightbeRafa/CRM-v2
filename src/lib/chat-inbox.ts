@@ -15,6 +15,8 @@ export interface ChatInboxMessage {
   /** CRM Client row id — never reuse for optimistic send correlation. */
   clientId?: string
   orderId?: string
+  /** Human order number (`Order.orderId`) for display; `orderId` stays the internal id. */
+  orderNumber?: string
   messageType?: string
   providerMediaId?: string
   mediaMimeType?: string

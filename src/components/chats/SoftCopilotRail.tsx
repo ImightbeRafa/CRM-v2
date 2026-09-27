@@ -96,14 +96,7 @@ export function SoftCopilotRail({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-        {!conversation ? (
-          <div className="flex h-full flex-col items-center justify-center px-4 text-center" data-testid="rail-empty">
-            <p className="text-[13px] font-medium text-slate-700">Ningún chat seleccionado</p>
-            <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
-              Elegí una conversación para ver sus detalles y el estado del agente.
-            </p>
-          </div>
-        ) : tab === 'copilot' ? (
+        {tab === 'copilot' ? (
           <div className="space-y-4">
             <div className="rounded-2xl bg-white p-3 ring-1 ring-slate-200/70">
               <p className="text-[11px] font-medium text-slate-400">Estado del agente</p>

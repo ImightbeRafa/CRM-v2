@@ -1122,18 +1122,31 @@ export function SoftCopilotInboxV2() {
               setMobileView('list')
             }}
           />
-          <SoftCopilotRail
-            conversation={railConversation}
-            tab={railTab}
-            onTabChange={setRailTab}
-            onStatusChange={updateStatus}
-            onToggleTag={toggleTag}
-            agentMode={threadSharedProps.agentMode}
-            toolLog={selectedAgentState.toolLog}
-            onTakeOver={() => void setAgentControl('take_over')}
-            onPauseAi={() => void setAgentControl('pause')}
-            onResumeAi={() => void setAgentControl('resume')}
-          />
+          {railConversation ? (
+            <SoftCopilotRail
+              conversation={railConversation}
+              tab={railTab}
+              onTabChange={setRailTab}
+              onStatusChange={updateStatus}
+              onToggleTag={toggleTag}
+              agentMode={threadSharedProps.agentMode}
+              toolLog={selectedAgentState.toolLog}
+              onTakeOver={() => void setAgentControl('take_over')}
+              onPauseAi={() => void setAgentControl('pause')}
+              onResumeAi={() => void setAgentControl('resume')}
+            />
+          ) : (
+            // SoftCopilotRail is a locked file: the no-chat state lives here instead.
+            <aside
+              className="hidden h-full w-[268px] shrink-0 flex-col items-center justify-center border-l border-slate-200/70 bg-white px-6 text-center xl:flex"
+              data-testid="rail-empty"
+            >
+              <p className="text-[13px] font-medium text-slate-700">Ningún chat seleccionado</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
+                Elegí una conversación para ver sus detalles y el estado del agente.
+              </p>
+            </aside>
+          )}
         </div>
         <div className="flex min-h-0 min-w-0 flex-1 md:hidden">
           {mobileView === 'list' ? (

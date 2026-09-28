@@ -8,7 +8,8 @@
 - Fix: WA probe uses the WA secret; IG probes the linked Page (the object sends use); timeouts / 5xx /
   rate limits (incl. 80001/80002/80008, `is_transient`) keep the stored status; `lastErrorCode` =
   `code/subcode`; failures logged with the Meta message token-redacted. Tests: `token-health-probe`.
-- Verifier: PASS WITH NOTES (notes 1–3 applied). Deployed to Cloudflare with Rafael's GO.
+- Verifier: PASS WITH NOTES (notes 1–3 applied). Deployed to Cloudflare (dc0827bc) with Rafael's GO.
+- Data: Rafael ran `scripts/reset-false-token-errors.mjs` (5 rows error/100 → valid). Next 06:00 UTC run re-checks with the fixed probe.
 
 ## 2026-09-28 — Browser walkthrough + release plan (PR #88)
 

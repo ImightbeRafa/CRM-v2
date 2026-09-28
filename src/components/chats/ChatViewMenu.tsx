@@ -60,7 +60,7 @@ export function ChatViewMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="-ml-1.5 flex max-w-full items-center gap-1 rounded-lg px-1.5 py-0.5 text-[15px] font-semibold text-slate-900 transition-colors hover:bg-slate-100"
+        className="-ml-1.5 flex max-w-full items-center gap-1 whitespace-nowrap rounded-lg px-1.5 py-0.5 text-[15px] font-semibold text-slate-900 transition-colors hover:bg-slate-100"
         data-testid="chat-view-menu"
       >
         <span className="truncate">{inboxViewLabel(bucket)}</span>

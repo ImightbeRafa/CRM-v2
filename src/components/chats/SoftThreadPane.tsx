@@ -407,7 +407,7 @@ export function SoftThreadPane({
           title="Seleccioná un chat"
           description="Elegí una conversación para leer el hilo, responder o tomar el control del agente."
         />
-        <p className="text-[11px] text-slate-400">↑↓ navegar · Enter abrir · Esc volver</p>
+        <p className="text-[11px] text-slate-500">↑↓ navegar · Enter abrir · Esc volver</p>
       </section>
     )
   }

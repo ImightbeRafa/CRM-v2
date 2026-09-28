@@ -127,12 +127,16 @@ function classifyHex(prop, hex) {
     return { name: `ink-${key}`, light: hex, dark }
   }
   if (l <= 0.82) return null
+  // Near-white / cream / grey tints (chroma < 6 %) go neutral. HSL saturation is misleading
+  // this close to white (#FAFBFC reads as 25 % "saturated").
+  const rgb = hexToRgb(hex)
+  const neutral = (Math.max(...rgb) - Math.min(...rgb)) / 255 < 0.06
   const hue = hslToHex(h, 0.85, 0.62)
   if (FILL_PROPS.has(prop)) {
-    return { name: `tint-${key}`, light: hex, dark: sat < 0.25 ? NEUTRAL_DARK.bg[50] : mix(hue, DARK.surface, 0.16) }
+    return { name: `tint-${key}`, light: hex, dark: neutral ? NEUTRAL_DARK.bg[50] : mix(hue, DARK.surface, 0.16) }
   }
   if (LINE_PROPS.has(prop)) {
-    return { name: `line-${key}`, light: hex, dark: sat < 0.25 ? NEUTRAL_DARK.bd[200] : mix(hue, DARK.surface, 0.32) }
+    return { name: `line-${key}`, light: hex, dark: neutral ? NEUTRAL_DARK.bd[200] : mix(hue, DARK.surface, 0.32) }
   }
   return null
 }

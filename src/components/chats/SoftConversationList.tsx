@@ -191,7 +191,7 @@ export function SoftConversationList({
       ) : (
         <div className="px-4 pt-4">
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               {bucket && onBucketChange ? (
                 <ChatViewMenu bucket={bucket} onBucketChange={onBucketChange} count={openCount} monitor={monitor} />
               ) : (
@@ -201,7 +201,7 @@ export function SoftConversationList({
                 <p className="mt-0.5 text-[10px] text-slate-400">Sincronizado hace {syncAgeSeconds}s</p>
               ) : null}
             </div>
-            <span className="pt-1 text-[11px] text-slate-500">Más nuevos</span>
+            <span className="shrink-0 pt-1 text-[11px] text-slate-500">Más nuevos</span>
           </div>
           {onSearchChange ? (
             <label className="relative mt-3 block">

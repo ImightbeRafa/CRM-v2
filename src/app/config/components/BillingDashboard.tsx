@@ -707,7 +707,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
             >
               {plan.id === currentPlan.name.toLowerCase() ? (
                 <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
-                  <Badge className="bg-green-500 text-white shadow-lg">
+                  <Badge className="bg-green-700 text-white shadow-lg">
                     <Check className="w-3 h-3 mr-1" />
                     Plan Actual
                   </Badge>

@@ -113,7 +113,7 @@
   },
   "tint-efeae2": {
     "light": "#EFEAE2",
-    "dark": "#392F26"
+    "dark": "#1B1B26"
   },
   "tint-f0eeff": {
     "light": "#F0EEFF",
@@ -133,11 +133,11 @@
   },
   "tint-f1f3ff": {
     "light": "#F1F3FF",
-    "dark": "#1F2240"
+    "dark": "#1B1B26"
   },
   "tint-f4f6fa": {
     "light": "#F4F6FA",
-    "dark": "#1F2740"
+    "dark": "#1B1B26"
   },
   "tint-f5f4f0": {
     "light": "#F5F4F0",
@@ -145,22 +145,22 @@
   },
   "tint-f5f4ff": {
     "light": "#F5F4FF",
-    "dark": "#211F40"
+    "dark": "#1B1B26"
   },
   "tint-f5f6ff": {
     "light": "#F5F6FF",
-    "dark": "#1F2140"
+    "dark": "#1B1B26"
   },
   "tint-f6f4ff": {
     "light": "#F6F4FF",
-    "dark": "#231F40"
+    "dark": "#1B1B26"
   },
   "tint-f6f5ff": {
     "light": "#F6F5FF",
-    "dark": "#211F40"
+    "dark": "#1B1B26"
   },
   "tint-fafbfc": {
     "light": "#FAFBFC",
-    "dark": "#1F2C40"
+    "dark": "#1B1B26"
   }
 }

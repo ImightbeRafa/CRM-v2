@@ -68,7 +68,7 @@
     --popover: 240 15.9% 13.5%;
     --popover-foreground: 240 15.2% 93.5%;
 
-    --primary: 234 100% 67.8%;
+    --primary: 234 70% 58%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 240 17.1% 16.1%;
@@ -85,7 +85,7 @@
 
     --border: 240 16.5% 17.8%;
     --input: 240 16.5% 17.8%;
-    --ring: 234 100% 67.8%;
+    --ring: 234 100% 70%;
 
     --brand-gradient: linear-gradient(135deg, hsl(217 91% 65%), hsl(263 70% 58%), hsl(330 81% 65%));
 

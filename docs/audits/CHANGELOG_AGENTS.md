@@ -1,3 +1,22 @@
+## 2026-09-28 — Release batch 2 on `rafa/aurora-on-live` (PR #88)
+
+- Walkthrough fixes: chats rail "Ningún chat seleccionado" (in SoftCopilotInboxV2; SoftCopilotRail
+  untouched), feedback in profile menu / Más instead of a FAB inside AuroraShell, banner "Renovar"
+  contrast, greeting never shows an email.
+- Security AUTH-01: rate limits key on `cf-connecting-ip` (worker sets TRUSTED_IP_HEADER); bounded
+  memory store; Upstash timeout 1 s + ephemeral cache. Docs: `docs/ops/upstash-redis.md`.
+- Chats: order numbers on linked chats (`chat-linked-orders.ts`, revision bump in order-link);
+  owner avatar + "Asignar" picker (`GET /api/chat/assignees`, update_sales); auto-assign on the first
+  delivered human reply (Rafael 2026-09-28).
+- Aurora shell for /produccion, /exports, /ventas/dashboard, /backups, /super-admin
+  (`AuroraClassicPage`, presentation only) and /auth/accept-invite (AuthShell). Logistics stays separate.
+- Perf: one accounts request per page; first inbox load no longer races a reconcile fetch.
+- Prove: tsc 0 new; build passes (`next build --no-lint`; integrated ESLint worker crashes on this
+  Windows box — lint run separately, 0 errors); chat-harden 315/2, security 126/1, site-ui 48/0,
+  tenant-ui 9/0, backups 8/0, chat-scale 15/0 (failures are pre-existing baseline).
+- Not done: outbound media, "+" new chat (Rafael: later), bell counts endpoint, states/a11y sweep.
+  Railway auto-deploy is disabled for this branch — preview still on b962456 until redeployed.
+
 ## 2026-09-27 — Release-candidate slices on `rafa/aurora-on-live` (PR #88, draft)
 
 - **Chats `[unsupported]` / `[type]`:** display-only `src/lib/chat-message-display.ts`. Meta 131051

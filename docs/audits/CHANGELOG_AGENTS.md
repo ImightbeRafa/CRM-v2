@@ -1,3 +1,26 @@
+## 2026-09-28 — Release batch 3 on `rafa/aurora-on-live` (PR #88)
+
+- Chats: send photos / videos / audio / documents on WhatsApp (`/api/chat/send-media`, magic-byte
+  validation, Meta limits) behind TenantFeatureFlag `chat_outbound_media_v1` — OFF for every tenant
+  until tested on a real line. `/api/chat/capabilities` exposes the switch.
+- Verifier batch-2 fixes (4d918d0): mobile owner picker, fresh accounts on inbox mount, no fake
+  reconcile after a failed first load, FAB/shell registration, Upstash timeout → memory limiter,
+  PATCH keeps linkedOrder/agent labels, owner-based buckets, accept-invite copy.
+- A11y: labels, composer aria-label, aria-current on chat rows, mobile "Más" focus trap/return, AA
+  contrast on essential metadata. Error states: Canales, Producción, Agentes, Inicio recent orders,
+  chat thread. Config: 72 alert() → Aurora toasts (`ui-notify`), 24 confirm() → global
+  `AuroraConfirmHost` (`auroraConfirm`).
+- SecureDog batch-2 fixes (61c1831): AUTH-02/03 limiter pruning + timeout, fail-closed trusted IP
+  header + IPv6 /64, INFRA-04 worker strips cf-container-target-port, DATA-01 chat send tenant
+  checks, DATA-P2 archived orders, AUTH-05 assignable members + audit, shared staffDisplayName.
+  Open in Notion: AUTH-04 (Railway XFF), INFRA-03 (workers_dev), AUTH-06 (latent middleware).
+- Windows build note: the TypeScript incremental cache (`tsconfig.tsbuildinfo`) and `.next` get
+  corrupted by crashed builds on this box (~280 bogus Prisma "not callable" errors). Prove with
+  `rm -rf .next tsconfig.tsbuildinfo && NODE_OPTIONS=--max-old-space-size=8192 npx next build --no-lint`
+  and `npx tsc --noEmit --incremental false`; lint separately (`npx next lint --dir src`, 0 errors).
+- Prove: clean build exit 0; tsc 0 errors outside tests; security 135/1, chat-harden 327/2,
+  site-ui 50/0, config-ui 30/0, agentes-ui 34/0, channels-ui 10/0 (failures = pre-existing baseline).
+
 ## 2026-09-28 — Release batch 2 on `rafa/aurora-on-live` (PR #88)
 
 - Walkthrough fixes: chats rail "Ningún chat seleccionado" (in SoftCopilotInboxV2; SoftCopilotRail

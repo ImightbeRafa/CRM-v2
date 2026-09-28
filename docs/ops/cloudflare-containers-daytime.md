@@ -86,7 +86,7 @@ Client bundles embed `NEXT_PUBLIC_*` at **Docker build** time. The daytime Docke
 
 ```bash
 # Export CRON_SECRET in your shell first (do not echo it).
-BASE=https://betsy-crm-daytime-smoke.rafaeser.workers.dev
+BASE=https://www.betsycrm.com   
 for path in \
   /api/cron/backup \
   /api/cron/backup/hot \

@@ -1,13 +1,39 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { Image as ImageIcon, Loader2, Pencil, Plus, Search, Trash2, X, Zap } from 'lucide-react'
+import { FileText, Image as ImageIcon, Loader2, Paperclip, Pencil, Plus, Search, Trash2, X, Zap } from 'lucide-react'
 import { EMOJI_CATEGORIES, EMOJI_RECENT_KEY, pushRecentEmoji, searchEmojis } from './emoji-data'
 import {
   QUICK_REPLY_MAX_TEXT,
   normalizeShortcut,
+  QUICK_REPLY_MAX_MEDIA,
   type ChatQuickReply,
+  type QuickReplyMedia,
 } from '@/lib/chat-quick-replies'
+
+export function quickReplyMediaUrl(path: string): string {
+  return `/api/chat/quick-replies/media?path=${encodeURIComponent(path)}`
+}
+
+/** Small square preview of a quick-reply file (photo thumbnail or document icon). */
+export function QuickReplyMediaThumb({ media, className = 'h-9 w-9' }: { media: QuickReplyMedia; className?: string }) {
+  if (media.mime.startsWith('image/')) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={quickReplyMediaUrl(media.path)}
+        alt={media.filename}
+        loading="lazy"
+        className={`${className} shrink-0 rounded-md object-cover ring-1 ring-slate-200`}
+      />
+    )
+  }
+  return (
+    <span className={`${className} flex shrink-0 items-center justify-center rounded-md bg-au-tint-eef0ff text-au-ink-5b6cff ring-1 ring-slate-200`}>
+      <FileText className="h-4 w-4" aria-hidden />
+    </span>
+  )
+}
 
 /** Grows the textarea with its content up to `maxPx`, then scrolls inside. */
 export function useAutoGrowTextarea(ref: RefObject<HTMLTextAreaElement | null>, value: string, maxPx: number) {
@@ -214,7 +240,15 @@ export function QuickReplySuggestions({
                 <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[11.5px] font-semibold text-slate-700">
                   /{item.shortcut}
                 </span>
-                <span className="line-clamp-2 min-w-0 flex-1 whitespace-pre-line text-[12.5px] leading-snug text-slate-600">{item.text}</span>
+                <span className="line-clamp-2 min-w-0 flex-1 whitespace-pre-line text-[12.5px] leading-snug text-slate-600">
+                  {item.text || (item.media?.length ? 'Solo archivos' : '')}
+                </span>
+                {item.media?.length ? (
+                  <span className="flex shrink-0 items-center gap-1">
+                    <QuickReplyMediaThumb media={item.media[0]} className="h-8 w-8" />
+                    {item.media.length > 1 ? <span className="text-[10.5px] font-semibold text-slate-500">+{item.media.length - 1}</span> : null}
+                  </span>
+                ) : null}
               </button>
             </li>
           ))}
@@ -244,9 +278,33 @@ export function QuickRepliesManager({
   const [draft, setDraft] = useState<ChatQuickReply[]>(items)
   // A save conflict reloads the list from the server: show it.
   useEffect(() => setDraft(items), [items])
-  const [editing, setEditing] = useState<{ id: string | null; shortcut: string; text: string } | null>(
-    initialShortcut !== undefined ? { id: null, shortcut: initialShortcut, text: '' } : null,
+  const [editing, setEditing] = useState<{ id: string | null; shortcut: string; text: string; media: QuickReplyMedia[] } | null>(
+    initialShortcut !== undefined ? { id: null, shortcut: initialShortcut, text: '', media: [] } : null,
   )
+  const [uploading, setUploading] = useState(false)
+  const mediaInputRef = useRef<HTMLInputElement | null>(null)
+
+  const uploadMedia = async (file: File) => {
+    if (!editing) return
+    setUploading(true)
+    setError(null)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/chat/quick-replies/media', { method: 'POST', credentials: 'same-origin', body: form })
+      const json = (await res.json().catch(() => null)) as { success?: boolean; media?: QuickReplyMedia; error?: string } | null
+      if (!res.ok || !json?.success || !json.media) {
+        setError(res.status === 403 ? 'Solo administradores pueden adjuntar archivos.' : json?.error || 'No se pudo subir el archivo.')
+        return
+      }
+      const media = json.media
+      setEditing((prev) => (prev ? { ...prev, media: [...prev.media, media].slice(0, QUICK_REPLY_MAX_MEDIA) } : prev))
+    } catch {
+      setError('Sin conexión. Probá de nuevo.')
+    } finally {
+      setUploading(false)
+    }
+  }
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
@@ -276,8 +334,9 @@ export function QuickRepliesManager({
     if (!editing) return
     const shortcut = normalizeShortcut(editing.shortcut)
     const text = editing.text.trim()
-    if (!shortcut || !text) {
-      setError('Completá el atajo y el texto.')
+    const media = editing.media
+    if (!shortcut || (!text && media.length === 0)) {
+      setError('Completá el atajo y el texto (o adjuntá un archivo).')
       return
     }
     if (draft.some((r) => r.shortcut === shortcut && r.id !== editing.id)) {
@@ -285,8 +344,8 @@ export function QuickRepliesManager({
       return
     }
     const next = editing.id
-      ? draft.map((r) => (r.id === editing.id ? { ...r, shortcut, text } : r))
-      : [...draft, { id: `qr_${Date.now().toString(36)}`, shortcut, text }]
+      ? draft.map((r) => (r.id === editing.id ? { ...r, shortcut, text, media } : r))
+      : [...draft, { id: `qr_${Date.now().toString(36)}`, shortcut, text, media }]
     if (await persist(next)) setEditing(null)
   }
 
@@ -356,6 +415,49 @@ export function QuickRepliesManager({
                   </span>
                 </span>
               </label>
+              <div>
+                <span className="text-[11.5px] font-medium text-slate-600">Archivos (opcional)</span>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2" data-testid="quick-reply-media">
+                  {editing.media.map((m) => (
+                    <span key={m.path} className="group relative">
+                      <QuickReplyMediaThumb media={m} className="h-14 w-14" />
+                      <button
+                        type="button"
+                        onClick={() => setEditing({ ...editing, media: editing.media.filter((x) => x.path !== m.path) })}
+                        aria-label={`Quitar ${m.filename}`}
+                        className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-white shadow ring-2 ring-white"
+                      >
+                        <X className="h-3 w-3" aria-hidden />
+                      </button>
+                    </span>
+                  ))}
+                  {editing.media.length < QUICK_REPLY_MAX_MEDIA ? (
+                    <>
+                      <input
+                        ref={mediaInputRef}
+                        type="file"
+                        accept=".jpg,.jpeg,.png,.pdf,.mp4"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          e.target.value = ''
+                          if (file) void uploadMedia(file)
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={uploading}
+                        onClick={() => mediaInputRef.current?.click()}
+                        className="flex h-14 items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 text-[12px] font-medium text-slate-600 hover:border-slate-400 hover:bg-white disabled:opacity-50"
+                      >
+                        {uploading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Paperclip className="h-4 w-4" aria-hidden />}
+                        Adjuntar foto o PDF
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-[11px] text-slate-400">Hasta {QUICK_REPLY_MAX_MEDIA}. Se envían primero; el texto va como descripción de la primera foto.</p>
+              </div>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setEditing(null)} className="rounded-xl px-3.5 py-2 text-[12.5px] font-medium text-slate-600 hover:bg-slate-200/60">
                   Cancelar
@@ -386,7 +488,7 @@ export function QuickRepliesManager({
                 {canManage ? (
                   <button
                     type="button"
-                    onClick={() => setEditing({ id: null, shortcut: '', text: '' })}
+                    onClick={() => setEditing({ id: null, shortcut: '', text: '', media: [] })}
                     className="inline-flex items-center gap-1 rounded-xl bg-[#5B6CFF] px-3 py-2 text-[12.5px] font-semibold text-white"
                   >
                     <Plus className="h-3.5 w-3.5" aria-hidden /> Nueva
@@ -409,12 +511,21 @@ export function QuickRepliesManager({
                       <span className="mt-0.5 shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[11.5px] font-semibold text-slate-700">
                         /{r.shortcut}
                       </span>
-                      <p className="line-clamp-3 min-w-0 flex-1 whitespace-pre-line text-[12.5px] leading-snug text-slate-600">{r.text}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="line-clamp-3 whitespace-pre-line text-[12.5px] leading-snug text-slate-600">{r.text || 'Solo archivos'}</p>
+                        {r.media?.length ? (
+                          <div className="mt-1.5 flex gap-1.5">
+                            {r.media.map((m) => (
+                              <QuickReplyMediaThumb key={m.path} media={m} className="h-9 w-9" />
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                       <span className={canManage ? 'flex shrink-0 gap-1' : 'hidden'}>
                         <button
                           type="button"
                           aria-label={`Editar /${r.shortcut}`}
-                          onClick={() => setEditing({ id: r.id, shortcut: r.shortcut, text: r.text })}
+                          onClick={() => setEditing({ id: r.id, shortcut: r.shortcut, text: r.text, media: r.media ?? [] })}
                           className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden />

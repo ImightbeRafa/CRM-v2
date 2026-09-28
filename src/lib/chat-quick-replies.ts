@@ -6,11 +6,58 @@
  * Enter or Tab to insert. `{nombre}` is replaced with the customer's first name.
  */
 
+/** A photo / PDF saved with a quick reply (private Blob, `chat-quick-replies/<tenantId>/…`). */
+export type QuickReplyMedia = {
+  path: string
+  mime: string
+  filename: string
+  size: number
+}
+
 export type ChatQuickReply = {
   id: string
   /** Lower-case, no spaces, e.g. `precio`, `sinpe`, `envio-gam`. */
   shortcut: string
+  /** May be empty when the reply is only images. */
   text: string
+  /** Sent before the text (the text rides as the first file's caption when it fits). */
+  media?: QuickReplyMedia[]
+}
+
+export const QUICK_REPLY_MEDIA_PREFIX = 'chat-quick-replies'
+export const QUICK_REPLY_MAX_MEDIA = 3
+/** WhatsApp caption limit: longer texts go as their own message after the files. */
+export const WA_CAPTION_MAX = 1024
+
+export function quickReplyMediaPrefix(tenantId: string): string {
+  return `${QUICK_REPLY_MEDIA_PREFIX}/${tenantId}/`
+}
+
+/** Only files this business uploaded for quick replies (never another tenant's path). */
+export function isQuickReplyMediaPath(path: unknown, tenantId?: string): path is string {
+  if (typeof path !== 'string') return false
+  if (!/^chat-quick-replies\/[A-Za-z0-9_-]{1,64}\/[A-Za-z0-9._-]{1,120}$/.test(path)) return false
+  return tenantId ? path.startsWith(quickReplyMediaPrefix(tenantId)) : true
+}
+
+function sanitizeMedia(raw: unknown, tenantId?: string): QuickReplyMedia[] {
+  if (!Array.isArray(raw)) return []
+  const out: QuickReplyMedia[] = []
+  for (const m of raw) {
+    if (!m || typeof m !== 'object') continue
+    const r = m as Record<string, unknown>
+    if (!isQuickReplyMediaPath(r.path, tenantId)) continue
+    const mime = String(r.mime || '').toLowerCase()
+    if (!/^(image\/(jpeg|png)|application\/pdf|video\/mp4)$/.test(mime)) continue
+    out.push({
+      path: r.path,
+      mime,
+      filename: String(r.filename || 'archivo').replace(/[\u0000-\u001f\u007f"\\/]/g, '').slice(0, 120) || 'archivo',
+      size: Math.max(0, Math.min(Number(r.size) || 0, 50 * 1024 * 1024)),
+    })
+    if (out.length >= QUICK_REPLY_MAX_MEDIA) break
+  }
+  return out
 }
 
 export const QUICK_REPLIES_SETTINGS_KEY = 'chatQuickReplies'
@@ -41,7 +88,7 @@ function newId(): string {
  * Validates and cleans a list coming from the browser or from stored settings. Drops empty or
  * duplicate shortcuts (first wins) and caps sizes. Returns `error` only for input the user must fix.
  */
-export function sanitizeQuickReplies(input: unknown): { items: ChatQuickReply[]; error?: string } {
+export function sanitizeQuickReplies(input: unknown, opts: { tenantId?: string } = {}): { items: ChatQuickReply[]; error?: string } {
   if (!Array.isArray(input)) return { items: [] }
   if (input.length > QUICK_REPLY_MAX_COUNT) {
     return { items: [], error: `Máximo ${QUICK_REPLY_MAX_COUNT} respuestas rápidas.` }
@@ -63,7 +110,8 @@ export function sanitizeQuickReplies(input: unknown): { items: ChatQuickReply[];
         return ok ? c : ''
       })
       .trim()
-    if (!shortcut || !text) continue
+    const media = sanitizeMedia(r.media, opts.tenantId)
+    if (!shortcut || (!text && media.length === 0)) continue
     if (text.length > QUICK_REPLY_MAX_TEXT) {
       return { items: [], error: `La respuesta /${shortcut} supera ${QUICK_REPLY_MAX_TEXT} caracteres.` }
     }
@@ -72,7 +120,7 @@ export function sanitizeQuickReplies(input: unknown): { items: ChatQuickReply[];
     }
     seen.add(shortcut)
     const id = typeof r.id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(r.id) ? r.id : newId()
-    items.push({ id, shortcut, text })
+    items.push(media.length ? { id, shortcut, text, media } : { id, shortcut, text })
   }
   return { items }
 }
@@ -125,9 +173,9 @@ export function applyQuickReply(
   slash: { query: string; start: number },
   reply: ChatQuickReply,
   customerName?: string | null,
-): { text: string; caret: number } {
+): { text: string; caret: number; media: QuickReplyMedia[] } {
   const body = fillQuickReply(reply.text, customerName)
   const end = slash.start + 1 + slash.query.length
   const next = text.slice(0, slash.start) + body + text.slice(end)
-  return { text: next, caret: slash.start + body.length }
+  return { text: next, caret: slash.start + body.length, media: reply.media ?? [] }
 }

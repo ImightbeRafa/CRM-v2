@@ -40,6 +40,7 @@ import { ChatMediaBubble } from '@/components/chats/ChatMediaBubble'
 import {
   EmojiPickerPopover,
   QuickRepliesManager,
+  QuickReplyMediaThumb,
   QuickReplySuggestions,
   RecentMediaPopover,
   useAutoGrowTextarea,
@@ -51,6 +52,7 @@ import {
   filterQuickReplies,
   slashQueryAt,
   type ChatQuickReply,
+  type QuickReplyMedia,
 } from '@/lib/chat-quick-replies'
 import {
   AuroraEmptyState,
@@ -130,6 +132,8 @@ interface SoftThreadPaneProps {
     onSendFile: (file: File, caption: string) => Promise<boolean>
     /** Re-send a photo already sent from any chat ("Recientes"). */
     onSendRecent?: (sourceMessageId: string, caption: string) => Promise<boolean>
+    /** Files of a quick reply, sent before the text (text = caption of the first when it fits). */
+    onSendQuickReplyMedia?: (media: QuickReplyMedia[], text: string) => Promise<boolean>
   }
   /** Team quick replies: `/atajo` in the composer. Hidden when absent. */
   quickReplies?: {
@@ -274,6 +278,7 @@ export function SoftThreadPane({
   const [pickerOpenLocal, setPickerOpenLocal] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [pendingRecent, setPendingRecent] = useState<RecentMediaItem | null>(null)
+  const [pendingQuickMedia, setPendingQuickMedia] = useState<QuickReplyMedia[]>([])
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const [slash, setSlash] = useState<{ query: string; start: number } | null>(null)
@@ -309,6 +314,7 @@ export function SoftThreadPane({
   useEffect(() => {
     setPendingFile(null)
     setPendingRecent(null)
+    setPendingQuickMedia([])
     setDropError(null)
     setDragActive(false)
     dragDepth.current = 0
@@ -338,6 +344,11 @@ export function SoftThreadPane({
     if (!slash) return
     const next = applyQuickReply(messageInput, slash, reply, conversation?.recipientName)
     onMessageInput(next.text)
+    if (next.media.length && attachments?.onSendQuickReplyMedia) {
+      setPendingFile(null)
+      setPendingRecent(null)
+      setPendingQuickMedia(next.media)
+    }
     setSlash(null)
     setCaret(next.caret)
   }
@@ -348,6 +359,14 @@ export function SoftThreadPane({
     if (next?.query !== slash?.query) setSlashIndex(0)
   }
   const submitComposer = (e: FormEvent) => {
+    if (pendingQuickMedia.length && attachments?.onSendQuickReplyMedia) {
+      e.preventDefault()
+      const media = pendingQuickMedia
+      void attachments.onSendQuickReplyMedia(media, messageInput).then((ok) => {
+        if (ok) setPendingQuickMedia([])
+      })
+      return
+    }
     if (pendingRecent && attachments?.onSendRecent) {
       e.preventDefault()
       const item = pendingRecent
@@ -429,6 +448,7 @@ export function SoftThreadPane({
     }
     setDropError(null)
     setPendingRecent(null)
+    setPendingQuickMedia([])
     setPendingFile(file)
     composerFocus()
   }
@@ -1084,6 +1104,30 @@ export function SoftThreadPane({
               {dropError}
             </p>
           ) : null}
+          {pendingQuickMedia.length ? (
+            <div
+              className="mb-2 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[12px] text-slate-700 ring-1 ring-slate-200"
+              data-testid="composer-quick-media"
+            >
+              <span className="flex shrink-0 gap-1">
+                {pendingQuickMedia.map((m) => (
+                  <QuickReplyMediaThumb key={m.path} media={m} className="h-9 w-9" />
+                ))}
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {pendingQuickMedia.length === 1 ? pendingQuickMedia[0].filename : `${pendingQuickMedia.length} archivos de la respuesta rápida`}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPendingQuickMedia([])}
+                disabled={sending}
+                aria-label="Quitar archivos"
+                className="rounded-md p-1 text-slate-500 hover:bg-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF]"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            </div>
+          ) : null}
           {pendingFile || pendingRecent ? (
             <div
               className="mb-2 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[12px] text-slate-700 ring-1 ring-slate-200"
@@ -1154,6 +1198,7 @@ export function SoftThreadPane({
                 onPick={(item) => {
                   setAttachMenuOpen(false)
                   setPendingFile(null)
+                  setPendingQuickMedia([])
                   setPendingRecent(item)
                   composerFocus()
                 }}
@@ -1201,6 +1246,7 @@ export function SoftThreadPane({
                     onChange={(e) => {
                       const file = e.target.files?.[0] ?? null
                       setPendingFile(file)
+                      if (file) setPendingQuickMedia([])
                       if (file) setPendingRecent(null)
                       e.target.value = ''
                       if (file) composerFocus()
@@ -1272,7 +1318,7 @@ export function SoftThreadPane({
                 }
                 if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
                 e.preventDefault()
-                if (sending || !composerEnabled || (!messageInput.trim() && !pendingFile && !pendingRecent)) return
+                if (sending || !composerEnabled || (!messageInput.trim() && !pendingFile && !pendingRecent && !pendingQuickMedia.length)) return
                 submitComposer(e as unknown as FormEvent)
               }}
               aria-label={pendingFile || pendingRecent ? 'Texto del archivo (opcional)' : 'Mensaje'}
@@ -1300,7 +1346,7 @@ export function SoftThreadPane({
             <button
               type="submit"
               aria-label="Enviar"
-              disabled={sending || (!messageInput.trim() && !pendingFile && !pendingRecent) || !composerEnabled}
+              disabled={sending || (!messageInput.trim() && !pendingFile && !pendingRecent && !pendingQuickMedia.length) || !composerEnabled}
               className={
                 compact
                   ? 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#5B6CFF] to-[#7C5CFF] text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40'

@@ -253,11 +253,13 @@ export async function putChatMediaToBlob(opts: {
   bytes: Buffer
   contentType: string
   token?: string
+  /** Explicit private path (quick-reply files); default `chat-media/<tenant>/<message>`. */
+  pathname?: string
 }): Promise<{ pathname: string; size: number }> {
   const token = opts.token ?? process.env.BLOB_READ_WRITE_TOKEN
   if (!token) throw new Error('BLOB_READ_WRITE_TOKEN is required for chat media cache')
 
-  const pathname = chatMediaBlobPath(opts.tenantId, opts.messageId)
+  const pathname = opts.pathname ?? chatMediaBlobPath(opts.tenantId, opts.messageId)
   const access: BlobAccessType = 'private'
   try {
     const result = await put(pathname, opts.bytes, {

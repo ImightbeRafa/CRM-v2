@@ -46,7 +46,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Lista inválida' }, { status: 400 })
     }
     const expected = typeof body.version === 'number' && Number.isInteger(body.version) ? body.version : -1
-    const { items, error } = sanitizeQuickReplies(body.items)
+    const { items, error } = sanitizeQuickReplies(body.items, { tenantId: auth.tenantId })
     if (error) return NextResponse.json({ error }, { status: 400 })
 
     const before = await prisma.tenant.findUnique({ where: { id: auth.tenantId }, select: { settings: true } })

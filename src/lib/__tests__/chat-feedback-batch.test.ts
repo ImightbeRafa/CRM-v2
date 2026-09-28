@@ -259,3 +259,44 @@ describe('drag & drop / paste images into a chat', () => {
     assert.match(pane, /onPaste=/)
   })
 })
+
+describe('quick replies with files', () => {
+  test('only this business’s quick-reply paths are accepted', async () => {
+    const { isQuickReplyMediaPath } = await import('../chat-quick-replies')
+    assert.equal(isQuickReplyMediaPath('chat-quick-replies/t1/abc.jpg', 't1'), true)
+    assert.equal(isQuickReplyMediaPath('chat-quick-replies/t2/abc.jpg', 't1'), false)
+    assert.equal(isQuickReplyMediaPath('chat-media/t1/msg', 't1'), false)
+    assert.equal(isQuickReplyMediaPath('chat-quick-replies/t1/../x.jpg', 't1'), false)
+  })
+  test('sanitize keeps up to 3 valid files, allows image-only replies, drops foreign paths', () => {
+    const media = (n: number, t = 't1') => ({ path: `chat-quick-replies/${t}/f${n}.jpg`, mime: 'image/jpeg', filename: `f${n}.jpg`, size: 10 })
+    const { items } = sanitizeQuickReplies(
+      [
+        { shortcut: 'catalogo', text: '', media: [media(1), media(2), media(3), media(4)] },
+        { shortcut: 'otro', text: 'hola', media: [media(5, 't2')] },
+        { shortcut: 'vacio', text: '', media: [media(6, 't2')] },
+      ],
+      { tenantId: 't1' },
+    )
+    assert.equal(items.length, 2)
+    assert.equal(items[0].media?.length, 3)
+    assert.equal(items[1].media, undefined)
+  })
+  test('upload is manager-only and classifies bytes; send reads only tenant paths', () => {
+    const upload = read('src/app/api/chat/quick-replies/media/route.ts')
+    assert.match(upload, /POST[\s\S]*authenticateAPIWithPermission\(request, 'update_config'\)/)
+    assert.match(upload, /classifyOutboundMedia\(\{ filename, bytes \}\)/)
+    assert.match(upload, /isQuickReplyMediaPath\(path, auth\.tenantId\)/)
+    assert.match(read('src/app/api/chat/send-media/route.ts'), /isQuickReplyMediaPath\(quickReplyMediaPath, tenantId\)/)
+    assert.match(read('src/app/api/chat/quick-replies/route.ts'), /sanitizeQuickReplies\(body\.items, \{ tenantId: auth\.tenantId \}\)/)
+  })
+  test('picking a reply with files stages them; text becomes the first caption when it fits', () => {
+    const out = applyQuickReply('/cat', { query: 'cat', start: 0 }, {
+      id: 'x', shortcut: 'catalogo', text: 'Catálogo',
+      media: [{ path: 'chat-quick-replies/t/a.jpg', mime: 'image/jpeg', filename: 'a.jpg', size: 1 }],
+    })
+    assert.equal(out.media.length, 1)
+    const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')
+    assert.match(inbox, /caption: i === 0 && captionFits \? caption : ''/)
+  })
+})

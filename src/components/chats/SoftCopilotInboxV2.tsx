@@ -59,7 +59,7 @@ import { lineHealth, lineIsDown, summarizeLineCounts } from '@/lib/chat-line-fil
 import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { WA_OUTBOUND_ACCEPT } from '@/lib/chat-outbound-media'
-import type { ChatQuickReply } from '@/lib/chat-quick-replies'
+import { WA_CAPTION_MAX, type ChatQuickReply, type QuickReplyMedia } from '@/lib/chat-quick-replies'
 import { hasOrderDraft } from '@/lib/order-draft'
 import { useSession } from 'next-auth/react'
 import { hasSessionPermission } from '@/lib/session-permissions'
@@ -1125,6 +1125,49 @@ export function SoftCopilotInboxV2() {
     return postChatMedia({ method: 'POST', credentials: 'same-origin', body: form })
   }
 
+  /**
+   * Quick reply with files: the files go first (the text rides as the first one's caption when it
+   * fits WhatsApp's 1024 limit), then a longer text as its own message. One request id per file
+   * and chat, so retrying after a partial failure never re-sends what already went out.
+   */
+  async function handleSendQuickReplyMedia(media: QuickReplyMedia[], text: string): Promise<boolean> {
+    if (!selectedConversation || media.length === 0) return false
+    const caption = text.trim()
+    const captionFits = caption.length > 0 && caption.length <= WA_CAPTION_MAX
+    const keys: string[] = []
+    for (let i = 0; i < media.length; i += 1) {
+      const m = media[i]
+      const key = `qr:${m.path}:${selectedConversation.recipientId}`
+      keys.push(key)
+      if (!pendingFileRequestIds.current.has(key)) pendingFileRequestIds.current.set(key, newClientRequestId())
+      const ok = await postChatMedia(
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            quickReplyMediaPath: m.path,
+            filename: m.filename,
+            socialAccountId: selectedConversation.socialAccountId,
+            recipient: selectedConversation.recipientId,
+            caption: i === 0 && captionFits ? caption : '',
+            clientRequestId: pendingFileRequestIds.current.get(key),
+          }),
+        },
+        '/api/chat/send-media',
+        { keepInput: true },
+      )
+      if (!ok) return false
+    }
+    for (const key of keys) pendingFileRequestIds.current.delete(key)
+    if (caption && !captionFits) {
+      await handleSendMessage({ preventDefault() {} } as FormEvent)
+    } else {
+      setMessageInput('')
+    }
+    return true
+  }
+
   /** "Recientes": re-send a photo already stored in this business's chats. */
   async function handleSendRecent(sourceMessageId: string, caption: string): Promise<boolean> {
     if (!selectedConversation) return false
@@ -1149,7 +1192,11 @@ export function SoftCopilotInboxV2() {
     return sent
   }
 
-  async function postChatMedia(init: RequestInit, url = '/api/chat/send-media'): Promise<boolean> {
+  async function postChatMedia(
+    init: RequestInit,
+    url = '/api/chat/send-media',
+    opts: { keepInput?: boolean } = {},
+  ): Promise<boolean> {
     if (!selectedConversation || !selectedConversationId || sendInFlightRef.current) return false
     const conversationId = selectedConversationId
     sendInFlightRef.current = true
@@ -1184,7 +1231,7 @@ export function SoftCopilotInboxV2() {
           [conversationId]: reconcileOptimisticOutbound(prev[conversationId] || [], persisted),
         }))
       }
-      setMessageInput('')
+      if (!opts.keepInput) setMessageInput('')
       if (selectedConversation.status === 'nuevo') updateStatus('en_curso')
       await fetchChanges()
       requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }))
@@ -1318,7 +1365,12 @@ export function SoftCopilotInboxV2() {
     orderDraftPending,
     assignment: { assignees, viewerUserId, onAssign: (id: string | null) => void assignTo(id), busy: assignBusy },
     attachments: outboundMedia
-      ? { accept: WA_OUTBOUND_ACCEPT, onSendFile: handleSendFile, onSendRecent: handleSendRecent }
+      ? {
+          accept: WA_OUTBOUND_ACCEPT,
+          onSendFile: handleSendFile,
+          onSendRecent: handleSendRecent,
+          onSendQuickReplyMedia: handleSendQuickReplyMedia,
+        }
       : undefined,
     quickReplies: { items: quickReplyItems, onSave: saveQuickReplies, canManage: canManageQuickReplies },
     aiBusy: controlBusy,

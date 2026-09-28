@@ -4,6 +4,8 @@ import { chatSendRateLimit, createIdentifierRateLimit } from '@/lib/rate-limit'
 import { isTenantFeatureNotDisabled } from '@/lib/feature-flags'
 import { CHAT_OUTBOUND_MEDIA_FLAG, WA_OUTBOUND_LIMITS } from '@/lib/chat-outbound-media'
 import { filenameForMime, loadStoredChatMediaBytes, sendWhatsAppMediaBytes, type SendMediaResult } from '@/lib/chat-send-media-core'
+import { readChatMediaFromBlob } from '@/lib/chat-media'
+import { isQuickReplyMediaPath } from '@/lib/chat-quick-replies'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -69,11 +71,35 @@ export async function POST(request: NextRequest) {
       if (Number(request.headers.get('content-length') || 0) > 8 * 1024) return jsonError('Solicitud demasiado grande.', 413)
       const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
       const sourceMessageId = String(body?.sourceMessageId || '').trim()
+      const quickReplyMediaPath = body?.quickReplyMediaPath
       const socialAccountId = String(body?.socialAccountId || '')
       const recipient = String(body?.recipient || '').trim()
       const clientRequestId = cleanRequestId(body?.clientRequestId)
-      if (!sourceMessageId || !socialAccountId || !recipient || recipient === 'unknown') {
+      if ((!sourceMessageId && !quickReplyMediaPath) || !socialAccountId || !recipient || recipient === 'unknown') {
         return jsonError('Faltan el archivo, la línea o el destinatario.', 400)
+      }
+      // A file saved with a quick reply (this business's private path only).
+      if (quickReplyMediaPath) {
+        if (!isQuickReplyMediaPath(quickReplyMediaPath, tenantId)) return jsonError('Archivo no encontrado', 404)
+        let stored: { bytes: Buffer; contentType: string | null }
+        try {
+          stored = await readChatMediaFromBlob({ pathname: quickReplyMediaPath })
+        } catch {
+          return jsonError('El archivo de la respuesta rápida ya no está disponible.', 404)
+        }
+        if (stored.bytes.length > MAX_REQUEST_BYTES) return jsonError('El archivo es demasiado grande.', 413)
+        const result = await sendWhatsAppMediaBytes({
+          tenantId,
+          userId,
+          socialAccountId,
+          recipient,
+          bytes: new Uint8Array(stored.bytes),
+          filename: filenameForMime(String(body?.filename || '').slice(0, 120) || quickReplyMediaPath.split('/').pop(), stored.contentType, 'archivo'),
+          caption: String(body?.caption || ''),
+          clientRequestId,
+          metadata: { quickReplyMedia: true },
+        })
+        return toResponse(result, clientRequestId)
       }
       const source = await loadStoredChatMediaBytes(tenantId, sourceMessageId)
       if (!source.ok) return jsonError(source.error, source.status)

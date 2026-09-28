@@ -6,8 +6,8 @@ const read = (p: string) => readFileSync(p, 'utf8')
 
 test('AuroraShell is context-aware: nested shells render only their children', () => {
   const src = read('src/components/aurora/AuroraShell.tsx')
-  assert.match(src, /createContext\(false\)/)
-  assert.match(src, /if \(nested\) return <>\{children\}<\/>/)
+  assert.match(src, /createContext<ShellContextValue>\(null\)/)
+  assert.match(src, /if \(ctx\?\.kind === 'page'\) return <>\{children\}<\/>/)
 })
 
 test('/config/social stays a real page inside the Config chrome, with the server permission gate', () => {

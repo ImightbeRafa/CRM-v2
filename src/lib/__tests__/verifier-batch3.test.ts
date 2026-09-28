@@ -16,7 +16,7 @@ test('F2: network failures while loading a thread show the error state; retry sh
 })
 
 test('F3: a retried file is deduplicated and a sent-but-unsaved file clears the chip', () => {
-  const route = readFileSync('src/app/api/chat/send-media/route.ts', 'utf8')
+  const route = readFileSync('src/lib/chat-send-media-core.ts', 'utf8')
   assert.match(route, /metadata: \{ path: \['clientRequestId'\], equals: clientRequestId \}/)
   assert.match(route, /\{ sent: true \}/)
   assert.match(inbox(), /pendingFileRequestIds\.current/)

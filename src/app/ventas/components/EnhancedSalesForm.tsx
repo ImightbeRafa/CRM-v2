@@ -18,6 +18,7 @@ import { useConfig } from '@/app/contexts/ConfigContext';
 import { paymentChoiceToOrderFields, type ManualPaymentChoice } from '@/lib/order-payment-status';
 import { Building2, Package, UserRound } from 'lucide-react';
 import { sfInput, sfLabel, sfPanel, sfSection } from './sales-form-styles';
+import { DRAFT_MAX_AGE_MS, orderDraftStorageKey } from '@/lib/order-draft';
 
 export interface CreatedOrderRef {
   /** `Order.id` (cuid), when the API returned it. */
@@ -41,6 +42,11 @@ interface EnhancedSalesFormProps {
   prefill?: OrderFormPrefill;
   /** Rendered inside a drawer that already provides the frame and the close button. */
   embedded?: boolean;
+  /**
+   * Own draft slot (e.g. `chat:<id>`): the unfinished order is kept per chat and
+   * restored when the chat's "Crear pedido" opens again. Without it the /ventas draft is used.
+   */
+  draftKey?: string;
 }
 
 /** Section heading with an Aurora icon badge (presentation only). */
@@ -66,8 +72,10 @@ function SalesSectionTitle({
   )
 }
 
-const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, onToggleForm, onCreated, prefill, embedded = false }) => {
+const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, onToggleForm, onCreated, prefill, embedded = false, draftKey }) => {
   const prefillRef = useRef(prefill);
+  const storageKey = orderDraftStorageKey(draftKey);
+  const storageKeyRef = useRef(storageKey);
   const prefillAppliedRef = useRef(false);
   const { user } = useCurrentUser();
   const { getState } = useConfig();
@@ -205,7 +213,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
       // Save to localStorage for now (can be enhanced to save to server)
       if (typeof window !== 'undefined') {
-        localStorage.setItem('betsy_autosave', JSON.stringify(autoSaveData));
+        localStorage.setItem(storageKeyRef.current, JSON.stringify(autoSaveData));
         setLastAutoSave(new Date());
         setAutoSaveStatus('saved');
       }
@@ -226,16 +234,47 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     return () => clearInterval(interval);
   }, [isClient, isMounted, autoSave]);
 
+  // Per-chat draft: saved quietly shortly after each change and when the drawer closes, so
+  // switching chats never loses a half-filled order.
+  const latestDraftRef = useRef<{ customerInfo: OrderInfo['customerInfo']; products: OrderInfo['products'] } | null>(null);
+  latestDraftRef.current = { customerInfo: orderInfo.customerInfo, products: orderInfo.products };
+  const submittedRef = useRef(false);
+  const writeChatDraft = useCallback(() => {
+    const latest = latestDraftRef.current;
+    if (!draftKey || submittedRef.current || !latest) return;
+    if (latest.products.length === 0 && !latest.customerInfo.address && !latest.customerInfo.province) return;
+    try {
+      localStorage.setItem(
+        storageKeyRef.current,
+        JSON.stringify({ customerInfo: latest.customerInfo, products: latest.products, timestamp: new Date().toISOString() }),
+      );
+    } catch {
+      // ignore (private mode / quota)
+    }
+  }, [draftKey]);
+  useEffect(() => {
+    if (!draftKey || !isClient) return;
+    const t = setTimeout(writeChatDraft, 600);
+    return () => clearTimeout(t);
+  }, [draftKey, isClient, orderInfo, writeChatDraft]);
+  useEffect(() => () => writeChatDraft(), [writeChatDraft]);
+
   // Load auto-saved data on component mount
   useEffect(() => {
     if (!isClient) return;
-    // A prefilled form (from a chat) starts fresh so another customer's draft never leaks in.
-    if (prefillRef.current) return;
+    // A prefilled form without its own draft slot starts fresh so another customer's draft
+    // never leaks in. A chat's own slot (`draftKey`) always belongs to that chat.
+    if (prefillRef.current && !draftKey) return;
 
-    const savedData = localStorage.getItem('betsy_autosave');
+    const savedData = localStorage.getItem(storageKeyRef.current);
     if (savedData) {
       try {
         const parsed = JSON.parse(savedData);
+        const age = Date.now() - new Date(parsed.timestamp || 0).getTime();
+        if (draftKey && !(age >= 0 && age < DRAFT_MAX_AGE_MS)) {
+          localStorage.removeItem(storageKeyRef.current);
+          return;
+        }
         if (parsed.customerInfo || parsed.products?.length > 0) {
           const savedCustomerInfo = {
             ...parsed.customerInfo,
@@ -252,7 +291,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         console.error('Failed to load auto-saved data:', error);
       }
     }
-  }, [isClient]);
+  }, [isClient, draftKey]);
 
   // Apply the prefill once, only to empty fields
   useEffect(() => {
@@ -527,7 +566,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       });
 
       // Clear auto-save data after successful submission
-      localStorage.removeItem('betsy_autosave');
+      submittedRef.current = true;
+      localStorage.removeItem(storageKeyRef.current);
 
       // Auto-hide success message after 5 seconds
       const timeoutId = setTimeout(() => {
@@ -600,7 +640,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
     // Clear localStorage
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('betsy_autosave');
+      localStorage.removeItem(storageKeyRef.current);
     }
   };
 

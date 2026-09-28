@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -10,7 +11,7 @@ import {
   type Ref,
 } from 'react'
 import Link from 'next/link'
-import { Check, CheckCheck, ChevronLeft, Hand, Info, Paperclip, Pause, Play, Send, ShoppingBag, Sparkles, User, X } from 'lucide-react'
+import { Check, CheckCheck, ChevronLeft, Hand, Info, Paperclip, Pause, Play, Send, ShoppingBag, Smile, Sparkles, User, X, Zap } from 'lucide-react'
 import {
   initialsFromName,
   isWhatsAppWindowOpen,
@@ -34,6 +35,21 @@ import {
 import { ChannelLogo } from '@/components/social/ChannelLogo'
 import { describeChatMessage, isPlaceholderToken, type ChatMessageNotice } from '@/lib/chat-message-display'
 import { ChatAssigneePicker, type ChatAssignee } from '@/components/chats/ChatAssigneePicker'
+import { ChatMediaBubble } from '@/components/chats/ChatMediaBubble'
+import {
+  EmojiPickerPopover,
+  QuickRepliesManager,
+  QuickReplySuggestions,
+  RecentMediaPopover,
+  useAutoGrowTextarea,
+  type RecentMediaItem,
+} from '@/components/chats/composer/ComposerExtras'
+import {
+  applyQuickReply,
+  filterQuickReplies,
+  slashQueryAt,
+  type ChatQuickReply,
+} from '@/lib/chat-quick-replies'
 import {
   AuroraEmptyState,
   AuroraErrorState,
@@ -104,10 +120,19 @@ interface SoftThreadPaneProps {
   agentActionsToday?: number
   /** Opens "Crear pedido" for this chat (the inbox links the order to the thread afterwards). */
   onCreateOrder?: () => void
+  /** An unfinished order is saved for this chat: the button reads "Continuar pedido". */
+  orderDraftPending?: boolean
   /** Attach + send a file (WhatsApp, flag-gated). Hidden when absent. */
   attachments?: {
     accept: string
     onSendFile: (file: File, caption: string) => Promise<boolean>
+    /** Re-send a photo already sent from any chat ("Recientes"). */
+    onSendRecent?: (sourceMessageId: string, caption: string) => Promise<boolean>
+  }
+  /** Team quick replies: `/atajo` in the composer. Hidden when absent. */
+  quickReplies?: {
+    items: ChatQuickReply[]
+    onSave: (items: ChatQuickReply[]) => Promise<string | null>
   }
   /** Chat owner picker (Asignarme / teammates / Sin asignar). Hidden when absent. */
   assignment?: {
@@ -196,103 +221,6 @@ function messageHasMedia(msg: ChatInboxMessage): boolean {
   return ['image', 'audio', 'voice', 'document', 'video', 'sticker', 'file'].includes(type)
 }
 
-const MEDIA_LABEL: Record<string, string> = {
-  image: 'la imagen',
-  audio: 'el audio',
-  video: 'el video',
-  file: 'el archivo',
-}
-
-/** Shown when the media request fails (expired WhatsApp media, too large, codec not supported). */
-function SoftThreadMediaFallback({ src, kind, filename }: { src: string; kind: string; filename?: string | null }) {
-  return (
-    <div
-      className="mt-1 flex items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-[12px] text-slate-600 ring-1 ring-slate-200/70"
-      data-testid="soft-thread-media-fallback"
-    >
-      <Info className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-      <span className="min-w-0 flex-1">
-        No se pudo mostrar {MEDIA_LABEL[kind] ?? 'el archivo'}
-        {filename ? <span className="block truncate text-slate-400">{filename}</span> : null}
-      </span>
-      <a
-        href={src}
-        download
-        className="shrink-0 font-semibold text-[#5B6CFF] underline-offset-2 hover:underline"
-      >
-        Descargar
-      </a>
-    </div>
-  )
-}
-
-function SoftThreadMedia({ msg }: { msg: ChatInboxMessage }) {
-  const src = `/api/chat/media/${encodeURIComponent(msg.id)}`
-  const mime = (msg.mediaMimeType || '').toLowerCase()
-  const type = (msg.messageType || '').toLowerCase()
-  const [failed, setFailed] = useState(false)
-
-  const kind =
-    type === 'image' || type === 'sticker' || mime.startsWith('image/')
-      ? 'image'
-      : type === 'video' || mime.startsWith('video/')
-        ? 'video'
-        : type === 'audio' || type === 'voice' || mime.startsWith('audio/')
-          ? 'audio'
-          : 'file'
-
-  if (failed) return <SoftThreadMediaFallback src={src} kind={kind} filename={msg.mediaFilename} />
-
-  if (kind === 'image') {
-    return (
-      <a href={src} target="_blank" rel="noreferrer" className="block">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={src}
-          alt={msg.content && !msg.content.startsWith('[') ? msg.content : 'imagen'}
-          className={`mt-1 max-w-full rounded-lg object-contain ${type === 'sticker' ? 'max-h-32' : 'max-h-64'}`}
-          loading="lazy"
-          onError={() => setFailed(true)}
-        />
-      </a>
-    )
-  }
-  if (kind === 'audio') {
-    // WhatsApp voice notes are ogg/opus: iPhone Safari cannot play them, so the
-    // download link is always there (and the fallback replaces a failed player).
-    return (
-      <div className="mt-1 w-full max-w-xs">
-        <audio controls preload="none" src={src} className="w-full" onError={() => setFailed(true)} />
-        <a href={src} download className="mt-0.5 inline-block text-[11px] text-slate-400 underline-offset-2 hover:underline">
-          Descargar audio
-        </a>
-      </div>
-    )
-  }
-  if (kind === 'video') {
-    return (
-      <video
-        controls
-        playsInline
-        preload="none"
-        src={src}
-        className="mt-1 max-h-64 max-w-full rounded-lg bg-black/5"
-        onError={() => setFailed(true)}
-      />
-    )
-  }
-  return (
-    <a
-      href={src}
-      target="_blank"
-      rel="noreferrer"
-      className="mt-1 inline-flex items-center gap-1 text-[12px] font-medium underline underline-offset-2"
-    >
-      {msg.mediaFilename || (type === 'document' || mime.includes('pdf') ? 'Documento' : 'Ver archivo')}
-    </a>
-  )
-}
-
 export function SoftThreadPane({
   conversation,
   messageInput,
@@ -322,7 +250,7 @@ export function SoftThreadPane({
   onOpenTemplatePicker,
   onCloseTemplatePicker,
   onSendTemplate,
-  agentMode = 'ai_active',
+  agentMode = 'human',
   onTakeOver,
   onPauseAi,
   onResumeAi,
@@ -334,21 +262,82 @@ export function SoftThreadPane({
   onOpenDetails,
   agentActionsToday = 0,
   onCreateOrder,
+  orderDraftPending,
   assignment,
   attachments,
+  quickReplies,
 }: SoftThreadPaneProps) {
   const [pickerOpenLocal, setPickerOpenLocal] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [pendingRecent, setPendingRecent] = useState<RecentMediaItem | null>(null)
+  const [emojiOpen, setEmojiOpen] = useState(false)
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false)
+  const [slash, setSlash] = useState<{ query: string; start: number } | null>(null)
+  const [slashIndex, setSlashIndex] = useState(0)
+  /** `false` = closed; string = open (optionally pre-filling a new shortcut). */
+  const [managerOpen, setManagerOpen] = useState<false | { shortcut?: string }>(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const composerFocus = () => {
-    const el = composerRef && typeof composerRef === 'object' ? composerRef.current : null
-    el?.focus()
-  }
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const setTextareaRef = useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      textareaRef.current = el
+      if (typeof composerRef === 'function') composerRef(el)
+      else if (composerRef && typeof composerRef === 'object') {
+        ;(composerRef as { current: HTMLTextAreaElement | null }).current = el
+      }
+    },
+    [composerRef],
+  )
+  useAutoGrowTextarea(textareaRef, messageInput, compact ? 160 : 240)
+  const composerFocus = () => textareaRef.current?.focus()
   // Switching chats drops a file picked for another conversation.
   useEffect(() => {
     setPendingFile(null)
+    setPendingRecent(null)
+    setSlash(null)
+    setEmojiOpen(false)
+    setAttachMenuOpen(false)
   }, [conversation?.recipientId, conversation?.socialAccountId])
+  const slashMatches = useMemo(
+    () => (slash && quickReplies ? filterQuickReplies(quickReplies.items, slash.query) : []),
+    [slash, quickReplies],
+  )
+  const setCaret = (pos: number) =>
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(pos, pos)
+    })
+  const insertAtCaret = (text: string) => {
+    const el = textareaRef.current
+    const start = el ? el.selectionStart : messageInput.length
+    const end = el ? el.selectionEnd : messageInput.length
+    onMessageInput(messageInput.slice(0, start) + text + messageInput.slice(end))
+    setCaret(start + text.length)
+  }
+  const pickQuickReply = (reply: ChatQuickReply) => {
+    if (!slash) return
+    const next = applyQuickReply(messageInput, slash, reply, conversation?.recipientName)
+    onMessageInput(next.text)
+    setSlash(null)
+    setCaret(next.caret)
+  }
+  const updateSlash = (value: string, caret: number) => {
+    if (!quickReplies) return
+    const next = slashQueryAt(value, caret)
+    setSlash(next)
+    if (next?.query !== slash?.query) setSlashIndex(0)
+  }
   const submitComposer = (e: FormEvent) => {
+    if (pendingRecent && attachments?.onSendRecent) {
+      e.preventDefault()
+      const item = pendingRecent
+      void attachments.onSendRecent(item.messageId, messageInput).then((ok) => {
+        if (ok) setPendingRecent(null)
+      })
+      return
+    }
     if (pendingFile && attachments) {
       e.preventDefault()
       const file = pendingFile
@@ -458,10 +447,13 @@ export function SoftThreadPane({
             <button
               type="button"
               onClick={onCreateOrder}
-              aria-label="Crear pedido"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F1EEFF] text-[#5B3FE0]"
+              aria-label={orderDraftPending ? 'Continuar pedido (borrador)' : 'Crear pedido'}
+              className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F1EEFF] text-[#5B3FE0]"
             >
               <ShoppingBag className="h-5 w-5" aria-hidden />
+              {orderDraftPending ? (
+                <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-white" aria-hidden />
+              ) : null}
             </button>
           ) : null}
           {onOpenDetails ? (
@@ -567,7 +559,10 @@ export function SoftThreadPane({
                     data-testid="soft-thread-create-order"
                   >
                     <ShoppingBag className="h-3.5 w-3.5" aria-hidden />
-                    Crear pedido
+                    {orderDraftPending ? 'Continuar pedido' : 'Crear pedido'}
+                    {orderDraftPending ? (
+                      <span className="rounded bg-white/25 px-1.5 py-px text-[10px] font-semibold">Borrador</span>
+                    ) : null}
                   </button>
                 ) : null}
                 <button
@@ -687,6 +682,7 @@ export function SoftThreadPane({
             // Any stored `[type]` token (media, share, story_mention, ig_reel…) is never shown
             // as text next to the media (it stays after IG media gets cached).
             const isPlaceholder = showMedia && isPlaceholderToken(msg.content)
+            const mediaFetchable = showMedia && Boolean(msg.providerMediaId || msg.mediaBlobPath || hasInstagramAttachment(msg))
             const notice = showMedia ? null : describeChatMessage(msg)
             const humanSender = !softAi && outbound ? humanOutboundSender(msg.metadata) : null
             const humanLabel = humanSender ? humanOutboundLabel(msg.metadata) : null
@@ -727,13 +723,13 @@ export function SoftThreadPane({
                         : 'bg-white text-slate-900 ring-1 ring-slate-200/80'
                     }`}
                   >
-                    {showMedia ? <SoftThreadMedia msg={msg} /> : null}
+                    {mediaFetchable ? <ChatMediaBubble msg={msg} outbound={outbound} /> : null}
                     {notice ? (
                       <SoftThreadNotice notice={notice} />
                     ) : !isPlaceholder ? (
-                      <p className={showMedia ? 'mt-1' : undefined}>{msg.content}</p>
+                      <p className={`whitespace-pre-wrap break-words ${showMedia ? 'mt-1' : ''}`}>{msg.content}</p>
                     ) : null}
-                    {showMedia && isPlaceholder && !msg.providerMediaId && !msg.mediaBlobPath && !hasInstagramAttachment(msg) ? (
+                    {showMedia && isPlaceholder && !mediaFetchable ? (
                       <p className="text-[11px] opacity-70">Adjunto no disponible</p>
                     ) : null}
                     {compact ? (
@@ -1008,17 +1004,33 @@ export function SoftThreadPane({
             </div>
           ) : null}
 
-          {pendingFile ? (
+          {pendingFile || pendingRecent ? (
             <div
               className="mb-2 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[12px] text-slate-700 ring-1 ring-slate-200"
               data-testid="composer-attachment"
             >
-              <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
-              <span className="min-w-0 flex-1 truncate">{pendingFile.name}</span>
-              <span className="shrink-0 text-slate-500">{(pendingFile.size / (1024 * 1024)).toFixed(1)} MB</span>
+              {pendingRecent ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`/api/chat/media/${encodeURIComponent(pendingRecent.messageId)}`}
+                  alt=""
+                  className="h-9 w-9 shrink-0 rounded-md object-cover ring-1 ring-slate-200"
+                />
+              ) : (
+                <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+              )}
+              <span className="min-w-0 flex-1 truncate">
+                {pendingRecent ? pendingRecent.filename || 'Imagen reciente' : pendingFile?.name}
+              </span>
+              {pendingFile ? (
+                <span className="shrink-0 text-slate-500">{(pendingFile.size / (1024 * 1024)).toFixed(1)} MB</span>
+              ) : null}
               <button
                 type="button"
-                onClick={() => setPendingFile(null)}
+                onClick={() => {
+                  setPendingFile(null)
+                  setPendingRecent(null)
+                }}
                 disabled={sending}
                 aria-label="Quitar archivo"
                 className="rounded-md p-1 text-slate-500 hover:bg-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF]"
@@ -1028,77 +1040,176 @@ export function SoftThreadPane({
             </div>
           ) : null}
 
-          <form onSubmit={submitComposer} className={compact ? 'flex items-end gap-2' : 'flex gap-2'}>
-            {attachments && conversation.platform === 'whatsapp' ? (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={attachments.accept}
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] ?? null
-                    setPendingFile(file)
-                    e.target.value = ''
-                    if (file) composerFocus()
-                  }}
-                />
+          <form onSubmit={submitComposer} className="relative flex items-end gap-2">
+            {slash && quickReplies ? (
+              <QuickReplySuggestions
+                items={slashMatches}
+                activeIndex={Math.min(slashIndex, Math.max(0, slashMatches.length - 1))}
+                query={slash.query}
+                onPick={pickQuickReply}
+                onHover={setSlashIndex}
+                onManage={() => {
+                  setManagerOpen(slashMatches.length ? {} : { shortcut: slash.query })
+                  setSlash(null)
+                }}
+              />
+            ) : null}
+            {emojiOpen ? (
+              <EmojiPickerPopover onPick={(emoji) => insertAtCaret(emoji)} onClose={() => setEmojiOpen(false)} />
+            ) : null}
+            {attachMenuOpen && attachments ? (
+              <RecentMediaPopover
+                sending={sending}
+                onClose={() => setAttachMenuOpen(false)}
+                onUpload={() => {
+                  setAttachMenuOpen(false)
+                  fileInputRef.current?.click()
+                }}
+                onPick={(item) => {
+                  setAttachMenuOpen(false)
+                  setPendingFile(null)
+                  setPendingRecent(item)
+                  composerFocus()
+                }}
+              />
+            ) : null}
+            <div className="flex shrink-0 items-center gap-0.5 pb-1">
+              <button
+                type="button"
+                data-popover-toggle
+                onClick={() => {
+                  setAttachMenuOpen(false)
+                  setEmojiOpen((v) => !v)
+                }}
+                disabled={sending || !composerEnabled}
+                aria-label="Emojis"
+                aria-expanded={emojiOpen}
+                title="Emojis"
+                className={`flex items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF] disabled:opacity-40 ${
+                  compact ? 'h-10 w-9' : 'h-9 w-9'
+                } ${emojiOpen ? 'bg-slate-100 text-[#5B6CFF]' : ''}`}
+                data-testid="composer-emoji"
+              >
+                <Smile className="h-5 w-5" aria-hidden />
+              </button>
+              {quickReplies && !compact ? (
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={sending || !composerEnabled}
-                  aria-label="Adjuntar archivo"
-                  title="Adjuntar foto, video, audio o documento"
-                  className={`flex shrink-0 items-center justify-center text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF] disabled:opacity-40 ${
-                    compact ? 'h-11 w-11 rounded-full' : 'h-auto w-11 rounded-xl ring-1 ring-slate-100'
-                  }`}
-                  data-testid="composer-attach"
+                  onClick={() => setManagerOpen({})}
+                  disabled={!composerEnabled}
+                  aria-label="Respuestas rápidas"
+                  title="Respuestas rápidas (escribí / en el mensaje)"
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF] disabled:opacity-40"
+                  data-testid="composer-quick-replies-button"
                 >
-                  <Paperclip className="h-5 w-5" aria-hidden />
+                  <Zap className="h-[18px] w-[18px]" aria-hidden />
                 </button>
-              </>
-            ) : null}
+              ) : null}
+              {attachments && conversation.platform === 'whatsapp' ? (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept={attachments.accept}
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null
+                      setPendingFile(file)
+                      if (file) setPendingRecent(null)
+                      e.target.value = ''
+                      if (file) composerFocus()
+                    }}
+                  />
+                  <button
+                    type="button"
+                    data-popover-toggle
+                    onClick={() => {
+                      setEmojiOpen(false)
+                      if (attachments.onSendRecent) setAttachMenuOpen((v) => !v)
+                      else fileInputRef.current?.click()
+                    }}
+                    disabled={sending || !composerEnabled}
+                    aria-label="Adjuntar archivo"
+                    aria-expanded={attachMenuOpen}
+                    title="Adjuntar foto, video, audio o documento"
+                    className={`flex items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF] disabled:opacity-40 ${
+                      compact ? 'h-10 w-9' : 'h-9 w-9'
+                    } ${attachMenuOpen ? 'bg-slate-100 text-[#5B6CFF]' : ''}`}
+                    data-testid="composer-attach"
+                  >
+                    <Paperclip className="h-5 w-5" aria-hidden />
+                  </button>
+                </>
+              ) : null}
+            </div>
             <textarea
-              ref={composerRef}
+              ref={setTextareaRef}
               rows={1}
               value={messageInput}
               onChange={(e) => {
                 onMessageInput(e.target.value)
+                updateSlash(e.target.value, e.target.selectionStart)
                 if (sendError) onClearError()
               }}
+              onSelect={(e) => updateSlash(e.currentTarget.value, e.currentTarget.selectionStart)}
+              onBlur={() => setSlash(null)}
               onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
-                if (e.key !== 'Enter' || e.shiftKey) return
+                if (slash && quickReplies) {
+                  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    const n = Math.max(1, slashMatches.length)
+                    setSlashIndex((i) => (e.key === 'ArrowDown' ? (i + 1) % n : (i - 1 + n) % n))
+                    return
+                  }
+                  if ((e.key === 'Enter' || e.key === 'Tab') && slashMatches.length) {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    pickQuickReply(slashMatches[Math.min(slashIndex, slashMatches.length - 1)])
+                    return
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setSlash(null)
+                    return
+                  }
+                }
+                if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
                 e.preventDefault()
-                if (sending || !composerEnabled || (!messageInput.trim() && !pendingFile)) return
+                if (sending || !composerEnabled || (!messageInput.trim() && !pendingFile && !pendingRecent)) return
                 submitComposer(e as unknown as FormEvent)
               }}
-              aria-label={pendingFile ? 'Texto del archivo (opcional)' : 'Mensaje'}
+              aria-label={pendingFile || pendingRecent ? 'Texto del archivo (opcional)' : 'Mensaje'}
               placeholder={
-                pendingFile
-                  ? /\.(mp3|m4a|aac|amr|ogg|opus)$/i.test(pendingFile.name)
+                pendingFile || pendingRecent
+                  ? pendingFile && /\.(mp3|m4a|aac|amr|ogg|opus)$/i.test(pendingFile.name)
                     ? 'Los audios se envían sin texto'
                     : 'Agregá un texto al archivo (opcional)'
                   : composerEnabled
                   ? compact
                     ? 'Escribí un mensaje'
+                    : quickReplies
+                    ? 'Escribí un mensaje… / para respuestas rápidas'
                     : 'Escribí un mensaje… Enter envía · Shift+Enter nueva línea'
                   : 'Tomá control o pausá el agente para escribir'
               }
               disabled={sending || !composerEnabled}
+              data-testid="composer-textarea"
               className={
                 compact
-                  ? 'max-h-28 min-w-0 flex-1 resize-none rounded-3xl border-0 bg-[#F1EFEA] px-4 py-3 text-[16px] leading-snug text-slate-900 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/35 disabled:opacity-60'
-                  : 'min-w-0 flex-1 resize-none rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/35 disabled:opacity-60'
+                  ? 'min-h-[44px] min-w-0 flex-1 resize-none overflow-hidden rounded-3xl border-0 bg-[#F1EFEA] px-4 py-3 text-[16px] leading-snug text-slate-900 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/35 disabled:opacity-60'
+                  : 'min-h-[46px] min-w-0 flex-1 resize-none overflow-hidden rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] leading-[1.45] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/35 disabled:opacity-60'
               }
             />
             <button
               type="submit"
               aria-label="Enviar"
-              disabled={sending || (!messageInput.trim() && !pendingFile) || !composerEnabled}
+              disabled={sending || (!messageInput.trim() && !pendingFile && !pendingRecent) || !composerEnabled}
               className={
                 compact
                   ? 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#5B6CFF] to-[#7C5CFF] text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40'
-                  : 'shrink-0 rounded-xl bg-[#5B6CFF] px-4 py-3 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50'
+                  : 'h-[46px] shrink-0 rounded-xl bg-[#5B6CFF] px-4 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50'
               }
             >
               {compact ? <Send className="h-5 w-5" aria-hidden /> : sending ? '…' : 'Enviar'}
@@ -1106,8 +1217,19 @@ export function SoftThreadPane({
           </form>
           {!compact ? (
             <p className="mt-2 text-[11px] text-slate-400">
-              Enter envía · Shift+Enter nueva línea · Esc cierra · ↑↓ lista
+              Enter envía · Shift+Enter nueva línea{quickReplies ? ' · / respuestas rápidas' : ''} · Esc cierra · ↑↓ lista
             </p>
+          ) : null}
+          {managerOpen && quickReplies ? (
+            <QuickRepliesManager
+              items={quickReplies.items}
+              onSave={quickReplies.onSave}
+              initialShortcut={managerOpen.shortcut}
+              onClose={() => {
+                setManagerOpen(false)
+                composerFocus()
+              }}
+            />
           ) : null}
         </div>
       )}

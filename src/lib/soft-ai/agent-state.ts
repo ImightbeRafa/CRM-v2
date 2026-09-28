@@ -19,9 +19,18 @@ export type SoftAiConversationState = {
 export type SoftAiAgentStateMap = Record<string, SoftAiConversationState>
 
 export function defaultAgentMode(isDemo?: boolean): SoftAiAgentMode {
-  // Soft DEMO / QA: AI on by default. Production Soft chrome starts ai_active
-  // only when the tenant flag is on (UI still shows controls).
-  return isDemo ? 'ai_active' : 'ai_active'
+  // Soft DEMO / QA: AI on by default. Real chats start Humano: the server only lets the
+  // agent reply on an explicit `aiMode = 'ai_active'` (NULL = no agent), so the UI must agree.
+  return isDemo ? 'ai_active' : 'human'
+}
+
+/**
+ * Mode shown for a real conversation. Server `aiMode` is the source of truth; NULL / unknown
+ * (and the legacy `human_takeover`) mean Humano — never "IA activa".
+ */
+export function conversationAgentMode(serverMode: string | null | undefined): SoftAiAgentMode {
+  if (serverMode === 'ai_active' || serverMode === 'paused') return serverMode
+  return 'human'
 }
 
 export function readAgentStateMap(): SoftAiAgentStateMap {

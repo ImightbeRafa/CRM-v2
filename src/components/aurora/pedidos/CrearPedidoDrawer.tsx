@@ -33,10 +33,12 @@ type CrearPedidoDrawerProps = {
   prefill?: OrderFormPrefill
   /** Shown under the title, e.g. "Desde el chat con María". */
   subtitle?: string
+  /** Per-chat draft slot (`chat:<id>`): an unfinished order survives closing / switching chats. */
+  draftKey?: string
 }
 
 /** "Crear pedido": Aurora drawer (full-screen sheet on mobile) around the existing sales form. */
-export function CrearPedidoDrawer({ open, onOpenChange, onCreated, prefill, subtitle }: CrearPedidoDrawerProps) {
+export function CrearPedidoDrawer({ open, onOpenChange, onCreated, prefill, subtitle, draftKey }: CrearPedidoDrawerProps) {
   const handleCreated = async (order: CreatedOrderRef) => {
     // The order exists: close now; the hand-off (list refresh, chat link) must not hold the drawer.
     onOpenChange(false)
@@ -64,6 +66,7 @@ export function CrearPedidoDrawer({ open, onOpenChange, onCreated, prefill, subt
                 }}
                 onCreated={handleCreated}
                 prefill={prefill}
+                draftKey={draftKey}
                 embedded
               />
             </Suspense>

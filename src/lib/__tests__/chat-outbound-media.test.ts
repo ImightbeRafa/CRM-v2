@@ -70,12 +70,13 @@ test('WhatsApp message body by media id: caption except audio, filename for docu
 })
 
 test('route: flag-gated, update_sales, tenant-scoped line lookup, WhatsApp only, never trusts client MIME', () => {
-  const src = readFileSync('src/app/api/chat/send-media/route.ts', 'utf8')
+  const src =
+    readFileSync('src/app/api/chat/send-media/route.ts', 'utf8') + readFileSync('src/lib/chat-send-media-core.ts', 'utf8')
   assert.match(src, /authenticateAPIWithPermission\(request, 'update_sales'\)/)
-  assert.match(src, /isTenantFeatureEnabled\(tenantId, CHAT_OUTBOUND_MEDIA_FLAG\)/)
+  assert.match(src, /isTenantFeatureNotDisabled\(tenantId, CHAT_OUTBOUND_MEDIA_FLAG\)/)
   assert.match(src, /socialAccount\.findFirst\(\{ where: \{ id: socialAccountId, tenantId \} \}\)/)
   assert.match(src, /found\.platform !== 'whatsapp'/)
-  assert.match(src, /classifyOutboundMedia\(\{ filename, bytes \}\)/)
+  assert.match(src, /classifyOutboundMedia\(\{ filename: opts\.filename, bytes \}\)/)
   assert.doesNotMatch(src, /file\.type/)
   const rbac = readFileSync('src/lib/rbac.ts', 'utf8')
   assert.match(rbac, /'POST \/api\/chat\/send-media': 'update_sales'/)

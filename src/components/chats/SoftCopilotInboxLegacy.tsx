@@ -83,7 +83,7 @@ export function SoftCopilotInboxLegacy() {
   const [messageInput, setMessageInput] = useState('')
   const [sendError, setSendError] = useState<string | null>(null)
   const [failedOutboundId, setFailedOutboundId] = useState<string | null>(null)
-  const [railTab, setRailTab] = useState<'detalle' | 'copilot'>('copilot')
+  const [railTab, setRailTab] = useState<'detalle' | 'cliente' | 'copilot'>('copilot')
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null)
   const [syncAgeSeconds, setSyncAgeSeconds] = useState<number | null>(null)
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list')

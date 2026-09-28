@@ -101,6 +101,10 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Synchronous guard: a double click / double Enter fires before isSubmitting re-renders.
+  const submittingRef = useRef(false);
+  // One id per draft: a retry after a lost response re-sends the same order instead of a new one.
+  const draftOrderIdRef = useRef<string | null>(null);
   const [submitStatus, setSubmitStatus] = useState<SubmitStatus>({ type: '', message: '' });
   const [rawCustomerText, setRawCustomerText] = useState('');
   const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
@@ -336,6 +340,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     }
     setFieldErrors({});
 
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setIsSubmitting(true);
     setSubmitStatus({ type: '', message: '' });
 
@@ -400,7 +406,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       }
 
       const orderData = {
-        orderId: `ORDER-${Date.now()}`,
+        orderId: (draftOrderIdRef.current ??= `ORDER-${Date.now()}`),
         orderType: orderInfo.customerInfo.orderType || 'EA',
         status: 'Pendiente',
         customerName: orderInfo.customerInfo.name,
@@ -457,63 +463,63 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         console.log('[SalesForm] orderData.comments:', orderData.comments);
       }
 
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify(orderData)
-      });
+      let response: Response;
+      try {
+        response = await fetch('/api/orders', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': `ventas:create:${orderData.orderId}`,
+          },
+          credentials: 'include',
+          body: JSON.stringify(orderData),
+          signal: AbortSignal.timeout(45_000),
+        });
+      } catch (networkError) {
+        // Retrying re-sends the same order id, so it cannot create a duplicate.
+        throw new Error(
+          networkError instanceof Error && networkError.name === 'TimeoutError'
+            ? 'La conexión tardó demasiado. Puede que el pedido se haya guardado: revisá la lista o volvé a tocar Guardar (no se duplica).'
+            : 'No hay conexión con el servidor. Volvé a tocar Guardar (no se duplica).'
+        );
+      }
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || errorData.message || 'Error al guardar el pedido');
+        // Gateway errors (502/524) return HTML, not JSON.
+        const errorData = await response.json().catch(() => ({} as Record<string, string>));
+        throw new Error(
+          errorData.error || errorData.message ||
+          (response.status >= 500
+            ? 'El servidor no respondió bien. Puede que el pedido se haya guardado: revisá la lista o volvé a tocar Guardar (no se duplica).'
+            : 'Error al guardar el pedido')
+        );
       }
 
       const result = await response.json();
 
-      // Update or create customer record with current info
-      try {
-        await fetch('/api/config/automatic-clients/update-from-order', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            customerId: selectedCustomerId, // If a customer was selected, update that specific one
-            name: orderInfo.customerInfo.name,
-            phone: orderInfo.customerInfo.phone,
-            email: orderInfo.customerInfo.email,
-            province: orderInfo.customerInfo.province,
-            canton: orderInfo.customerInfo.canton,
-            district: orderInfo.customerInfo.district,
-            address: orderInfo.customerInfo.address,
-            business: orderInfo.customerInfo.business,
-            username: orderInfo.customerInfo.username
-          })
-        });
-      } catch (clientUpdateError) {
+      // The order is saved: never make the seller wait on customer bookkeeping.
+      // Update (or create) this customer and its order stats in the background; the full
+      // tenant-wide client sync used to run here and could take minutes on large accounts.
+      void fetch('/api/config/automatic-clients/update-from-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        keepalive: true,
+        body: JSON.stringify({
+          customerId: selectedCustomerId, // If a customer was selected, update that specific one
+          name: orderInfo.customerInfo.name,
+          phone: orderInfo.customerInfo.phone,
+          email: orderInfo.customerInfo.email,
+          province: orderInfo.customerInfo.province,
+          canton: orderInfo.customerInfo.canton,
+          district: orderInfo.customerInfo.district,
+          address: orderInfo.customerInfo.address,
+          business: orderInfo.customerInfo.business,
+          username: orderInfo.customerInfo.username
+        })
+      }).catch((clientUpdateError) => {
         console.error('Failed to update client record:', clientUpdateError);
-      }
-
-      // Trigger automatic client sync after successful order creation
-      try {
-        const syncResponse = await fetch('/api/config/automatic-clients/sync', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include'
-        });
-
-        if (syncResponse.ok) {
-          console.log('Client sync completed successfully');
-        } else {
-          console.warn('Client sync failed, but order was created successfully');
-        }
-      } catch (syncError) {
-        console.warn('Client sync failed, but order was created successfully:', syncError);
-      }
+      });
 
       setSubmitStatus({
         type: 'success',
@@ -552,11 +558,13 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
           : '❌ Error al guardar el pedido. Por favor intente de nuevo.'
       });
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
 
   const resetForm = () => {
+    draftOrderIdRef.current = null;
     setOrderInfo({
       customerInfo: {
         name: '',

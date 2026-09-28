@@ -345,6 +345,14 @@ export async function POST(request: NextRequest) {
       });
     }
     
+    // A retry of the same draft re-sends its orderId: answer with the saved order.
+    if (body.orderId) {
+      const already = await tenantPrisma.order.findFirst({
+        where: { tenantId, orderId: String(body.orderId), customerName: body.customerName || 'Cliente sin nombre' },
+      })
+      if (already) return createSuccessResponse(already, 'Order already created')
+    }
+
     const order = await tenantPrisma.order.create({
       data: ({
         tenantId,

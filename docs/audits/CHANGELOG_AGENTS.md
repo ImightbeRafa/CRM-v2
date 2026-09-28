@@ -1,3 +1,16 @@
+## 2026-09-28 — Crear pedido stuck on "Guardando" (branch `rafa/fix-token-health`)
+
+- Symptom: order saved but the drawer kept spinning (and a second click could duplicate the order).
+- Cause: after `POST /api/orders` the form awaited `automatic-clients/sync`, which walks every order of
+  the tenant and does sequential per-customer queries (minutes on large tenants), then the hand-off.
+- Fix: no per-order full sync; `update-from-order` runs in the background and refreshes that customer's
+  stats (tenant-scoped aggregate by phone, trimmed too; never writes 0). One orderId per draft +
+  `Idempotency-Key` + 45 s timeout; legacy POST returns the saved order for a repeated orderId; HTML
+  gateway errors get a Spanish message; drawer closes as soon as the order exists (chat link after);
+  synchronous double-submit guard. Tests: `order-submit-flow` (in `test:pedidos-ui`).
+- Verifier: PASS WITH NOTES; notes 1, 4, 5 applied. Open (product call): the manual "Sincronizar" is
+  still the slow full sync, and client rows from website/Excel/`/api/sales` orders now appear only after it.
+
 ## 2026-09-28 — Token health false "Error de token" (branch `rafa/fix-token-health`)
 
 - Symptom: all channels showed "Error de token" after the 06:00 UTC `chat-token-health` cron; messages

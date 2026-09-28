@@ -38,12 +38,11 @@ type CrearPedidoDrawerProps = {
 /** "Crear pedido": Aurora drawer (full-screen sheet on mobile) around the existing sales form. */
 export function CrearPedidoDrawer({ open, onOpenChange, onCreated, prefill, subtitle }: CrearPedidoDrawerProps) {
   const handleCreated = async (order: CreatedOrderRef) => {
-    try {
-      await onCreated?.(order)
-    } finally {
-      // The order exists: close the drawer whatever the hand-off did.
-      onOpenChange(false)
-    }
+    // The order exists: close now; the hand-off (list refresh, chat link) must not hold the drawer.
+    onOpenChange(false)
+    void Promise.resolve()
+      .then(() => onCreated?.(order))
+      .catch((error) => console.warn('Crear pedido hand-off failed:', error))
   }
 
   return (

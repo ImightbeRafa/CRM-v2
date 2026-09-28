@@ -12,8 +12,8 @@ export type ChannelsSummary = {
 }
 
 const TTL_MS = 60_000
-let cache: { at: number; value: ChannelsSummary } | null = null
-let inflight: Promise<ChannelsSummary | null> | null = null
+let cache: { at: number; value: ChannelsSummary; raw: SocialAccount[] } | null = null
+let inflight: Promise<{ value: ChannelsSummary; raw: SocialAccount[] } | null> | null = null
 
 function summarize(accounts: SocialAccount[]): ChannelsSummary {
   const owned = accounts.filter(isOwnerChannel)
@@ -24,22 +24,34 @@ function summarize(accounts: SocialAccount[]): ChannelsSummary {
   return { accounts: owned, needsAction }
 }
 
-function load(): Promise<ChannelsSummary | null> {
-  if (cache && Date.now() - cache.at < TTL_MS) return Promise.resolve(cache.value)
+/** One shared request (60 s cache + in-flight dedupe) for the bell, nav and the chats inbox. */
+function loadShared(): Promise<{ value: ChannelsSummary; raw: SocialAccount[] } | null> {
+  if (cache && Date.now() - cache.at < TTL_MS) return Promise.resolve({ value: cache.value, raw: cache.raw })
   if (inflight) return inflight
-  inflight = fetch('/api/chat/accounts?includeInactive=1')
+  inflight = fetch('/api/chat/accounts?includeInactive=1', { credentials: 'same-origin', cache: 'no-store' })
     .then((r) => r.json())
     .then((json) => {
-      if (!json?.success) return null
-      const value = summarize(json.accounts as SocialAccount[])
-      cache = { at: Date.now(), value }
-      return value
+      if (!json?.success || !Array.isArray(json.accounts)) return null
+      const raw = json.accounts as SocialAccount[]
+      const value = summarize(raw)
+      cache = { at: Date.now(), value, raw }
+      return { value, raw }
     })
     .catch(() => null)
     .finally(() => {
       inflight = null
     })
   return inflight
+}
+
+function load(): Promise<ChannelsSummary | null> {
+  return loadShared().then((r) => r?.value ?? null)
+}
+
+/** Every chat account (incl. inactive), sharing the request above. `force` skips the cache. */
+export function loadChatAccounts(opts?: { force?: boolean }): Promise<SocialAccount[] | null> {
+  if (opts?.force) cache = null
+  return loadShared().then((r) => r?.raw ?? null)
 }
 
 /** Drop the cached summary (call after connecting / repairing a line). */

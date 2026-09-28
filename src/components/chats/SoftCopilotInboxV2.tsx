@@ -57,6 +57,7 @@ import {
 import { lineHealth, lineIsDown, summarizeLineCounts } from '@/lib/chat-line-filter'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
+import { loadChatAccounts } from '@/components/aurora/config/useChannelsNeedingAction'
 import type { ChatAssignee } from '@/components/chats/ChatAssigneePicker'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
 import {
@@ -152,12 +153,10 @@ export function SoftCopilotInboxV2() {
     if (window.matchMedia('(max-width: 767px)').matches) setBucket('abiertos')
   }, [])
 
-  const fetchAccounts = useCallback(async () => {
-    const res = await fetch('/api/chat/accounts?includeInactive=1', { credentials: 'same-origin', cache: 'no-store' })
-    const parsed = await parseApiJson<{ success?: boolean; accounts?: SoftSocialAccount[] }>(res)
-    if (parsed.ok && res.ok && parsed.data.success && Array.isArray(parsed.data.accounts)) {
-      setAccounts(parsed.data.accounts)
-    }
+  // Shared with the bell / mobile nav (one request, 60 s cache); `force` after a retry.
+  const fetchAccounts = useCallback(async (opts?: { force?: boolean }) => {
+    const accounts = await loadChatAccounts(opts)
+    if (accounts) setAccounts(accounts as unknown as SoftSocialAccount[])
   }, [])
 
   const runLocalImportOnce = useCallback(async () => {
@@ -357,14 +356,22 @@ export function SoftCopilotInboxV2() {
   useEffect(() => {
     void (async () => {
       setLoading(true)
-      await fetchAccounts()
-      await runLocalImportOnce()
+      // Block the poller during the first load: focus/visibility ticks would otherwise fire a
+      // second "reconcile" list fetch in parallel (lastFullReconcileRef is still 0).
+      pollInFlightRef.current = true
       try {
-        await fetchListPage({ replace: true })
-      } catch {
-        setListError(true)
+        await fetchAccounts()
+        await runLocalImportOnce()
+        try {
+          await fetchListPage({ replace: true })
+        } catch {
+          setListError(true)
+        }
+      } finally {
+        lastFullReconcileRef.current = Date.now()
+        pollInFlightRef.current = false
+        setLoading(false)
       }
-      setLoading(false)
     })()
   }, [fetchAccounts, fetchListPage, runLocalImportOnce])
 
@@ -372,7 +379,7 @@ export function SoftCopilotInboxV2() {
     setLoading(true)
     setListError(false)
     try {
-      await fetchAccounts()
+      await fetchAccounts({ force: true })
       await fetchListPage({ replace: true })
     } catch {
       setListError(true)

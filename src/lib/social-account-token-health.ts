@@ -5,6 +5,7 @@
 
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
+import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 
 export const SOCIAL_TOKEN_STATUSES = [
   'valid',
@@ -33,12 +34,54 @@ export type TokenHealthAccount = {
   providerDisplayName?: string | null
   providerUsername?: string | null
   displayPhoneNumber?: string | null
+  /** Non-secret asset ids (`page:<id>` for Instagram); never a token. */
+  refreshToken?: string | null
 }
 
 export type TokenProbeResult = {
   tokenStatus: SocialTokenStatus
   lastErrorCode: string | null
   httpStatus?: number | null
+  /**
+   * Timeout, network failure, Meta 5xx or rate limit: says nothing about the token.
+   * The caller keeps the stored tokenStatus and only records the error.
+   */
+  transient?: boolean
+}
+
+/** Meta throttling / temporary-outage codes (not a token problem). */
+const META_TRANSIENT_CODES = new Set([
+  '1', '2', '4', '17', '32', '341', '613',
+  '80001', // Pages rate limit
+  '80002', // Instagram rate limit
+  '80007', // WhatsApp Business Account rate limit
+  '80008', // WhatsApp Business Management rate limit
+])
+
+export function isTransientGraphFailure(
+  httpStatus: number | null,
+  code: string | null,
+  metaSaysTransient = false,
+): boolean {
+  if (httpStatus == null || metaSaysTransient) return true
+  if (httpStatus === 429 || httpStatus >= 500) return true
+  return code != null && META_TRANSIENT_CODES.has(code)
+}
+
+/** Meta can echo the token in 190 messages ("Malformed access token EAA…"): mask it. */
+export function redactMetaMessage(message: string, token: string): string {
+  return (token ? message.split(token).join('[token]') : message)
+    .replace(/\b(?:EA|IG)[A-Za-z0-9]{20,}/g, '[token]')
+    .slice(0, 200)
+}
+
+/** "100/33" style code for lastErrorCode (code plus subcode when Meta sends one). */
+function metaErrorLabel(json: unknown, httpStatus: number): string {
+  const nested = (json as { error?: { code?: unknown; error_subcode?: unknown } } | null)?.error
+  const code = nested?.code != null ? String(nested.code) : null
+  const sub = nested?.error_subcode != null ? String(nested.error_subcode) : null
+  if (!code) return `http_${httpStatus}`
+  return sub ? `${code}/${sub}` : code
 }
 
 /** Convert OAuth `expires_in` seconds into an absolute Date (null if missing/invalid). */
@@ -189,12 +232,20 @@ export async function probeSocialAccountToken(
     return { tokenStatus: 'revoked', lastErrorCode: 'missing_token', httpStatus: null }
   }
 
-  const path =
-    account.platform === 'instagram'
+  // Instagram sends go through the linked Facebook Page (`{pageId}/messages`) with this
+  // token, so probe that Page; fall back to the IG account when no page id is stored.
+  const igPageId = account.platform === 'instagram' ? parseSocialRefreshToken(account.refreshToken).pageId : null
+  const path = igPageId
+    ? `${encodeURIComponent(igPageId)}?fields=id`
+    : account.platform === 'instagram'
       ? `${encodeURIComponent(account.accountId)}?fields=username`
       : `${encodeURIComponent(account.accountId)}?fields=id`
 
-  const url = addAppSecretProofToUrl(buildMetaGraphUrl(path), plain)
+  // Same app secret as the real sends: WhatsApp lines belong to the WA app
+  // (META_WA_APP_SECRET); a proof from another app is rejected and looked like a token error.
+  const url = addAppSecretProofToUrl(buildMetaGraphUrl(path), plain, {
+    purpose: account.platform === 'whatsapp' ? 'whatsapp' : 'default',
+  })
 
   try {
     const res = await fetch(url, {
@@ -207,6 +258,18 @@ export async function probeSocialAccountToken(
     const errorCode = extractMetaErrorCode(json)
 
     if (!res.ok) {
+      const label = metaErrorLabel(json, res.status)
+      const metaError = (json as { error?: { message?: unknown; is_transient?: unknown } })?.error
+      const transient = isTransientGraphFailure(res.status, errorCode, metaError?.is_transient === true)
+      const message = redactMetaMessage(String(metaError?.message || ''), plain)
+      console.warn('[token-health] probe failed', {
+        socialAccountId: account.id,
+        platform: account.platform,
+        httpStatus: res.status,
+        code: label,
+        transient,
+        message,
+      })
       return {
         tokenStatus: classifyTokenStatus({
           graphOk: false,
@@ -214,8 +277,9 @@ export async function probeSocialAccountToken(
           graphHttpStatus: res.status,
           expiresAt: account.expiresAt,
         }),
-        lastErrorCode: errorCode || `http_${res.status}`,
+        lastErrorCode: label,
         httpStatus: res.status,
+        transient,
       }
     }
 
@@ -228,11 +292,9 @@ export async function probeSocialAccountToken(
       httpStatus: res.status,
     }
   } catch (error) {
-    return {
-      tokenStatus: 'error',
-      lastErrorCode: error instanceof Error ? error.name || 'network_error' : 'network_error',
-      httpStatus: null,
-    }
+    const name = error instanceof Error ? error.name || 'network_error' : 'network_error'
+    console.warn('[token-health] probe threw', { socialAccountId: account.id, platform: account.platform, error: name })
+    return { tokenStatus: 'error', lastErrorCode: name, httpStatus: null, transient: true }
   }
 }
 

@@ -31,6 +31,7 @@ async function runTokenHealthCheck() {
       platform: true,
       accountId: true,
       accessToken: true,
+      refreshToken: true,
       expiresAt: true,
       tokenStatus: true,
     },
@@ -44,6 +45,7 @@ async function runTokenHealthCheck() {
   let expiring = 0
   let valid = 0
   let errors = 0
+  let transient = 0
 
   for (let i = 0; i < accounts.length; i += BATCH_SIZE) {
     const batch = accounts.slice(i, i + BATCH_SIZE)
@@ -53,13 +55,15 @@ async function runTokenHealthCheck() {
         await db.socialAccount.update({
           where: { id: account.id },
           data: {
-            tokenStatus: probe.tokenStatus,
+            // A timeout / Meta outage says nothing about the token: keep the stored status
+            // (flipping to 'error' also pauses the line's AI agent).
+            ...(probe.transient ? {} : { tokenStatus: probe.tokenStatus }),
             tokenLastCheckedAt: now,
             lastErrorCode: probe.lastErrorCode,
             lastErrorAt: probe.lastErrorCode ? now : null,
           },
         })
-        return probe.tokenStatus
+        return probe.transient ? 'transient' : probe.tokenStatus
       }),
     )
 
@@ -69,6 +73,7 @@ async function runTokenHealthCheck() {
       else if (status === 'expired') expired += 1
       else if (status === 'expiring') expiring += 1
       else if (status === 'valid') valid += 1
+      else if (status === 'transient') transient += 1
       else errors += 1
     }
   }
@@ -94,6 +99,7 @@ async function runTokenHealthCheck() {
     expiring,
     valid,
     errors,
+    transient,
     expiredFlip: expiredFlip.count,
   }
 }

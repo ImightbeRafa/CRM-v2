@@ -1,3 +1,15 @@
+## 2026-09-28 — Token health false "Error de token" (branch `rafa/fix-token-health`)
+
+- Symptom: all channels showed "Error de token" after the 06:00 UTC `chat-token-health` cron; messages
+  kept flowing. DB (read-only, Rafael OK): every active line `tokenStatus=error`, `lastErrorCode=100`.
+- Cause: the probe signed `appsecret_proof` with the default (main app) secret; WhatsApp tokens belong to
+  the WA app (sends use `purpose: 'whatsapp'`). Side effect: `agent-claim-gates` pauses AI agents unless
+  status is valid/expiring, so Forge ventas stopped auto-replying.
+- Fix: WA probe uses the WA secret; IG probes the linked Page (the object sends use); timeouts / 5xx /
+  rate limits (incl. 80001/80002/80008, `is_transient`) keep the stored status; `lastErrorCode` =
+  `code/subcode`; failures logged with the Meta message token-redacted. Tests: `token-health-probe`.
+- Verifier: PASS WITH NOTES (notes 1–3 applied). Deployed to Cloudflare with Rafael's GO.
+
 ## 2026-09-28 — Browser walkthrough + release plan (PR #88)
 
 - Railway preview auto-deploy enabled (Rafael); Linux build of the final code: Success.

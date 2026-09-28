@@ -136,7 +136,7 @@ type Props = {
 
 export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }: Props) {
   const { stats, isLoading, error, refresh } = useDashboardStats()
-  const { data: recentOrders, isLoading: loadingOrders } = useRecentOrders()
+  const { data: recentOrders, isLoading: loadingOrders, isError: recentOrdersFailed, refetch: refetchRecentOrders } = useRecentOrders()
   // Date/greeting are client-clock dependent — set after mount to avoid SSR mismatch.
   const [now, setNow] = useState<Date | null>(null)
   useEffect(() => setNow(new Date()), [])
@@ -385,8 +385,19 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
                 <div key={i} className="h-10 animate-pulse rounded-lg bg-slate-100" />
               ))}
             </div>
+          ) : recentOrdersFailed && !recentOrders?.length ? (
+            <div role="alert" className="mt-6 rounded-xl border border-dashed border-red-200 bg-red-50/50 py-6 text-center">
+              <p className="text-[13px] text-red-700">No pudimos cargar los pedidos recientes.</p>
+              <button
+                type="button"
+                onClick={() => void refetchRecentOrders()}
+                className="mt-2 text-[12px] font-semibold text-[#5B3FE0] underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF]"
+              >
+                Reintentar
+              </button>
+            </div>
           ) : !recentOrders || recentOrders.length === 0 ? (
-            <p className="mt-6 rounded-xl border border-dashed border-slate-200 py-8 text-center text-[13px] text-slate-400">
+            <p className="mt-6 rounded-xl border border-dashed border-slate-200 py-8 text-center text-[13px] text-slate-500">
               Todavía no hay pedidos
             </p>
           ) : (

@@ -36,6 +36,7 @@ import { describeChatMessage, isPlaceholderToken, type ChatMessageNotice } from 
 import { ChatAssigneePicker, type ChatAssignee } from '@/components/chats/ChatAssigneePicker'
 import {
   AuroraEmptyState,
+  AuroraErrorState,
   AuroraThreadSkeleton,
   ChannelDownBanner,
 } from '@/components/aurora/states'
@@ -92,6 +93,9 @@ interface SoftThreadPaneProps {
   aiBusy?: boolean
   /** Messages for the selected chat are still loading (STATE-01 skeleton). */
   threadLoading?: boolean
+  /** Loading this chat's messages failed (shown instead of "Sin mensajes"). */
+  threadError?: boolean
+  onRetryThread?: () => void
   /** Selected line is down / needs repair (STATE-01 canal caído). */
   channelDownMessage?: string | null
   /** Mobile (compact): open the details / status sheet (CHAT-M02 person button). */
@@ -324,6 +328,8 @@ export function SoftThreadPane({
   onResumeAi,
   aiBusy,
   threadLoading,
+  threadError,
+  onRetryThread,
   channelDownMessage,
   onOpenDetails,
   agentActionsToday = 0,
@@ -651,6 +657,12 @@ export function SoftThreadPane({
 
         {renderedMessages.length === 0 && threadLoading ? (
           <AuroraThreadSkeleton />
+        ) : renderedMessages.length === 0 && threadError ? (
+          <AuroraErrorState
+            title="No pudimos cargar los mensajes"
+            description="La conversación sigue ahí; solo falló la consulta."
+            onRetry={onRetryThread}
+          />
         ) : renderedMessages.length === 0 ? (
           <div className="py-12 text-center">
             <p className="text-sm text-slate-400">Sin mensajes en este chat</p>

@@ -18,6 +18,7 @@ import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { useConfigTrail } from '@/components/aurora/config/ConfigShell'
 import {
   AuroraEmptyState,
+  AuroraErrorState,
   AuroraListSkeleton,
   auroraButtonPrimary,
   auroraButtonSecondary,
@@ -183,6 +184,8 @@ export default function AgentesConfigPage() {
 
   const selected = agents.find((a) => a.id === selectedId) || null
   const isEmpty = !loading && agents.length === 0
+  // Load failure (vs action errors): shown as an error state, never as "no agents yet".
+  const [loadFailed, setLoadFailed] = useState(false)
   const knowledgeCards = checklist.length ? checklist : DEFAULT_KNOWLEDGE_CARDS
   const detailVisible = view === 'detail' && !draftMode && selected !== null
 
@@ -199,6 +202,7 @@ export default function AgentesConfigPage() {
       setSchemaReady(data.schemaReady !== false)
       const nextAgents: AgentRow[] = data.agents || []
       setAgents(nextAgents)
+      setLoadFailed(false)
       if (kRes.ok) {
         const kData = await kRes.json()
         setKnowledgeSchemaReady(kData.schemaReady !== false)
@@ -227,6 +231,7 @@ export default function AgentesConfigPage() {
       return nextAgents
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al cargar')
+      setLoadFailed(true)
       return null
     } finally {
       if (!opts?.silent) setLoading(false)
@@ -646,7 +651,7 @@ export default function AgentesConfigPage() {
             {notice}
           </div>
         ) : null}
-        {error ? (
+        {error && !(loadFailed && agents.length === 0) ? (
           <div
             role="alert"
             className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-100"
@@ -658,6 +663,14 @@ export default function AgentesConfigPage() {
         {loading ? (
           <div className="rounded-2xl bg-white ring-1 ring-slate-200/70">
             <AuroraListSkeleton rows={4} />
+          </div>
+        ) : loadFailed && agents.length === 0 && !draftMode ? (
+          <div className="rounded-2xl bg-white ring-1 ring-slate-200/70">
+            <AuroraErrorState
+              title="No pudimos cargar tus agentes"
+              description="Tus agentes no se borraron; solo falló la consulta. Probá de nuevo."
+              onRetry={() => void load()}
+            />
           </div>
         ) : isEmpty && !draftMode ? (
           <div className="rounded-2xl bg-white ring-1 ring-slate-200/70">

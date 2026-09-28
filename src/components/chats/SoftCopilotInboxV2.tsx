@@ -127,6 +127,7 @@ export function SoftCopilotInboxV2() {
   const [viewerUserId, setViewerUserId] = useState<string | null>(null)
   const [assignBusy, setAssignBusy] = useState(false)
   const [outboundMedia, setOutboundMedia] = useState(false)
+  const [threadErrorId, setThreadErrorId] = useState<string | null>(null)
   /** Server search hits for the active query; re-merged after a reconcile replaces the list. */
   const searchHitsRef = useRef<ChatConversationListItemDto[]>([])
   const pollInFlightRef = useRef(false)
@@ -316,7 +317,11 @@ export function SoftCopilotInboxV2() {
       messages?: Array<Parameters<typeof messageDtoToInbox>[0]>
       nextBefore?: string | null
     }>(res)
-    if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.messages) return
+    if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.messages) {
+      setThreadErrorId(conversationId)
+      return
+    }
+    setThreadErrorId((cur) => (cur === conversationId ? null : cur))
     const incoming = parsed.data.messages.map(messageDtoToInbox)
     setThreadMessages((prev) => ({
       ...prev,
@@ -1165,6 +1170,10 @@ export function SoftCopilotInboxV2() {
     attachments: outboundMedia ? { accept: WA_OUTBOUND_ACCEPT, onSendFile: handleSendFile } : undefined,
     aiBusy: controlBusy,
     threadLoading: Boolean(selectedConversationId && threadLoadingId === selectedConversationId),
+    threadError: Boolean(selectedConversationId && threadErrorId === selectedConversationId),
+    onRetryThread: () => {
+      if (selectedConversationId) void fetchThreadMessages(selectedConversationId)
+    },
     channelDownMessage: selectedAccountHealth
       ? `${accountDisplayLabel(selectedAccountHealth.account)} · ${selectedAccountHealth.health.label.toLowerCase()}. Los mensajes de este chat pueden no enviarse.`
       : null,

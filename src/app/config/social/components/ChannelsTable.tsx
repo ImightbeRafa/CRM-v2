@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { AuroraErrorState } from '@/components/aurora/states'
 import { Bot, MoreHorizontal, RefreshCw, User } from 'lucide-react'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
 import { socialReconnectBannerLabel } from '@/lib/social-account-token-health'
@@ -21,6 +22,9 @@ const TONE_CLASS: Record<ChannelHealthTone, string> = {
 export interface ChannelsTableProps {
   accounts: SocialAccount[]
   loading: boolean
+  /** The account list failed to load (shown instead of the "no channels" empty state). */
+  loadError?: boolean
+  onRetry?: () => void
   /** Total owner channels before tab/search filtering (empty-state vs no-match). */
   totalCount: number
   agentNameByAccountId: Record<string, string>
@@ -48,7 +52,7 @@ export interface ChannelsTableProps {
 const btnBase = 'rounded-[10px] px-3 py-1.5 text-[12px] font-medium disabled:opacity-50'
 
 export function ChannelsTable(props: ChannelsTableProps) {
-  const { accounts, loading, totalCount } = props
+  const { accounts, loading, totalCount, loadError, onRetry } = props
   const [menuId, setMenuId] = useState<string | null>(null)
 
   return (
@@ -70,6 +74,16 @@ export function ChannelsTable(props: ChannelsTableProps) {
             <tr>
               <td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-400">
                 Cargando canales…
+              </td>
+            </tr>
+          ) : loadError && accounts.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="px-5 py-6">
+                <AuroraErrorState
+                  title="No pudimos cargar tus canales"
+                  description="Tus líneas siguen conectadas; solo falló la consulta. Probá de nuevo."
+                  onRetry={onRetry}
+                />
               </td>
             </tr>
           ) : accounts.length === 0 ? (

@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { AuroraErrorState } from '@/components/aurora/states';
 import dynamic from 'next/dynamic';
 import {
   Card,
@@ -739,6 +740,14 @@ export function EnhancedProductionDashboard({
           )}
         </Button>
       </div>
+
+      {error && !loading ? (
+        <AuroraErrorState
+          title="No pudimos cargar los pedidos de producción"
+          description="Puede ser la conexión. Tus pedidos no se perdieron; probá de nuevo."
+          onRetry={refresh}
+        />
+      ) : null}
 
       {/* Stats Overview */}
       <ProductionStats

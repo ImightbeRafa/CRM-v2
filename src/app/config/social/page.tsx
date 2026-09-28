@@ -84,6 +84,7 @@ export default function SocialConfigPage() {
   const router = useRouter()
   const [accounts, setAccounts] = useState<SocialAccount[]>([])
   const [loading, setLoading] = useState(true)
+  const [accountsLoadError, setAccountsLoadError] = useState(false)
   const [linking, setLinking] = useState(false)
   const [connectingInstagram, setConnectingInstagram] = useState(false)
   const [connectingWhatsApp, setConnectingWhatsApp] = useState(false)
@@ -550,11 +551,16 @@ export default function SocialConfigPage() {
   async function fetchAccounts() {
     try {
       const res = await fetch('/api/chat/accounts?includeInactive=1')
-      const json = await res.json()
-      if (json.success) setAccounts(json.accounts)
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Error al cargar cuentas sociales'
-      setStatusMessage(message)
+      const json = await res.json().catch(() => null)
+      if (res.ok && json?.success) {
+        setAccounts(json.accounts)
+        setAccountsLoadError(false)
+      } else {
+        // Never show "no channels" when the list simply failed to load.
+        setAccountsLoadError(true)
+      }
+    } catch {
+      setAccountsLoadError(true)
     } finally {
       setLoading(false)
     }
@@ -954,6 +960,11 @@ export default function SocialConfigPage() {
           <ChannelsTable
             accounts={visibleAccounts}
             loading={loading}
+            loadError={accountsLoadError}
+            onRetry={() => {
+              setLoading(true)
+              void fetchAccounts()
+            }}
             totalCount={ownerAccounts.length}
             agentNameByAccountId={agentNameByAccountId}
             agentsKnown={agentsKnown}

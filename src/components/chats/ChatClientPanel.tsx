@@ -253,7 +253,7 @@ export function ChatClientPanel({
     ) : null
 
   return (
-    <div className="space-y-4" data-testid="chat-client-panel">
+    <div className="aurora-light space-y-4 text-slate-900 [color-scheme:light]" data-testid="chat-client-panel">
       {notice ? (
         <p
           role="status"
@@ -334,7 +334,7 @@ export function ChatClientPanel({
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Nombre, usuario o teléfono"
-                  className="min-w-0 flex-1 bg-transparent text-[12px] outline-none"
+                  className="min-w-0 flex-1 bg-transparent text-[12px] text-slate-900 outline-none placeholder:text-slate-400"
                   aria-label="Buscar cliente"
                 />
               </label>

@@ -84,7 +84,7 @@ export function EmojiPickerPopover({ onPick, onClose }: { onPick: (emoji: string
       ref={ref}
       role="dialog"
       aria-label="Emojis"
-      className="absolute bottom-full left-0 z-40 mb-2 w-[min(340px,calc(100vw-2rem))] overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
+      className="aurora-light text-slate-900 [color-scheme:light] absolute bottom-full left-0 z-40 mb-2 w-[min(340px,calc(100vw-2rem))] overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
       data-testid="composer-emoji-picker"
     >
       <div className="border-b border-slate-100 p-2">
@@ -182,7 +182,7 @@ export function QuickReplySuggestions({
   }, [activeIndex])
   return (
     <div
-      className="absolute bottom-full left-0 right-0 z-40 mb-2 overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
+      className="aurora-light text-slate-900 [color-scheme:light] absolute bottom-full left-0 right-0 z-40 mb-2 overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
       data-testid="composer-quick-replies"
     >
       <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
@@ -300,7 +300,7 @@ export function QuickRepliesManager({
         role="dialog"
         aria-modal="true"
         aria-label="Respuestas rápidas"
-        className="flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl"
+        className="aurora-light text-slate-900 [color-scheme:light] flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
         data-testid="quick-replies-manager"
       >
@@ -336,7 +336,7 @@ export function QuickRepliesManager({
                       })
                     }
                     placeholder="precio"
-                    className="min-w-0 flex-1 bg-transparent px-1 py-2 font-mono text-[13px] outline-none"
+                    className="min-w-0 flex-1 bg-transparent px-1 py-2 font-mono text-[13px] text-slate-900 outline-none placeholder:text-slate-400"
                   />
                 </span>
               </label>
@@ -347,7 +347,7 @@ export function QuickRepliesManager({
                   onChange={(e) => setEditing({ ...editing, text: e.target.value.slice(0, QUICK_REPLY_MAX_TEXT) })}
                   rows={5}
                   placeholder={'Hola {nombre} 👋 el precio es ₡…'}
-                  className="mt-1 w-full resize-y rounded-xl bg-white px-3 py-2 text-[13px] leading-relaxed outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-[#5B6CFF]/40"
+                  className="mt-1 w-full resize-y rounded-xl bg-white px-3 py-2 text-[13px] leading-relaxed text-slate-900 outline-none placeholder:text-slate-400 ring-1 ring-slate-200 focus:ring-2 focus:ring-[#5B6CFF]/40"
                 />
                 <span className="mt-1 flex justify-between text-[11px] text-slate-400">
                   <span>{'{nombre}'} se reemplaza con el nombre del cliente.</span>
@@ -380,7 +380,7 @@ export function QuickRepliesManager({
                     value={filter}
                     onChange={(e) => setFilter(e.target.value)}
                     placeholder="Buscar"
-                    className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none"
+                    className="min-w-0 flex-1 bg-transparent text-[12.5px] text-slate-900 outline-none placeholder:text-slate-400"
                   />
                 </label>
                 {canManage ? (
@@ -480,7 +480,7 @@ export function RecentMediaPopover({
       ref={ref}
       role="dialog"
       aria-label="Adjuntar"
-      className="absolute bottom-full left-0 z-40 mb-2 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
+      className="aurora-light text-slate-900 [color-scheme:light] absolute bottom-full left-0 z-40 mb-2 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
       data-testid="composer-recent-media"
     >
       <button

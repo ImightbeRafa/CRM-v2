@@ -139,7 +139,7 @@ export function AuroraSidebar() {
         )}
       </div>
 
-      <nav className={`min-h-0 flex-1 overflow-y-auto ${collapsed ? 'px-2' : 'px-3'}`} aria-label="Navegación principal">
+      <nav className={`min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${collapsed ? 'px-2' : 'px-3'}`} aria-label="Navegación principal">
         {AURORA_NAV.map((section, sectionIndex) => {
           const items = section.items.filter((i) => !i.adminOnly || isAdmin)
           if (items.length === 0) return null

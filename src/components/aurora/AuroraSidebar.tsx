@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { staffDisplayName } from '@/lib/display-name'
 import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { ArrowUpRight } from 'lucide-react'
@@ -30,7 +31,7 @@ export function AuroraSidebar() {
   const isAdmin = isMaster || membershipRole === 'OWNER' || membershipRole === 'ADMIN'
   const roleKey = isMaster ? 'MASTER' : membershipRole ? String(membershipRole) : ''
   const roleLabel = ROLE_LABELS[roleKey] ?? (roleKey ? roleKey.charAt(0) + roleKey.slice(1).toLowerCase() : '')
-  const userName = user?.name?.trim() || user?.email?.split('@')[0] || 'Usuario'
+  const userName = staffDisplayName(user?.name) || user?.email?.split('@')[0] || 'Usuario'
   const activeHref = getActiveAuroraHref(pathname)
 
   return (

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { staffDisplayName } from '@/lib/display-name'
 import { Plus, Users } from 'lucide-react'
 import { AuroraEmptyState, auroraButtonPrimary } from '../../states/AuroraEmptyState'
 import { AuroraListSkeleton } from '../../states/AuroraSkeleton'
@@ -36,7 +37,7 @@ function initials(name: string): string {
 /** Google / `User.image` photo; initials when missing or the URL fails to load. */
 function UserAvatar({ user }: { user: UsersPanelUser }) {
   const [broken, setBroken] = useState(false)
-  const label = user.name || user.username
+  const label = staffDisplayName(user.name, user.username) || user.username
   if (user.image && !broken) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
@@ -122,7 +123,7 @@ export function UsersPanel({
                   <div className="flex min-w-0 items-center gap-3">
                     <UserAvatar user={user} />
                     <div className="min-w-0">
-                      <p className="truncate text-[14px] font-semibold text-slate-900">{user.name || user.username}</p>
+                      <p className="truncate text-[14px] font-semibold text-slate-900">{staffDisplayName(user.name, user.username) || user.username}</p>
                       {user.email ? <p className="truncate text-[12px] text-slate-500">{user.email}</p> : null}
                     </div>
                   </div>

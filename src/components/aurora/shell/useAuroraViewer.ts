@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react'
 import { safeAvatarUrl } from '@/lib/aurora-avatar'
+import { staffDisplayName } from '@/lib/display-name'
 import { getRoleName, hasPermission, type Permission, type Role } from '@/lib/rbac'
 
 const ROLES: readonly Role[] = ['OWNER', 'ADMIN', 'MANAGER', 'SALES', 'PRODUCTION', 'VIEWER']
@@ -31,7 +32,7 @@ export function useAuroraViewer(): AuroraViewer {
   const isAdmin = isMaster || role === 'OWNER' || role === 'ADMIN'
   const roleLabel = isMaster ? 'Master' : role ? getRoleName(role) : ''
   return {
-    name: user?.name?.trim() || user?.email?.split('@')[0] || 'Usuario',
+    name: staffDisplayName(user?.name) || user?.email?.split('@')[0] || 'Usuario',
     email: user?.email || '',
     image: safeAvatarUrl(user?.image),
     tenantName: user?.currentTenant?.name?.trim() || 'Mi espacio',

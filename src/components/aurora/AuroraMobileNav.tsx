@@ -172,7 +172,7 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
       </nav>
 
       {moreOpen ? (
-        <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="Más opciones">
+        <div className="fixed inset-0 z-[60] md:hidden" role="dialog" aria-modal="true" aria-label="Más opciones">
           <button
             type="button"
             aria-label="Cerrar"

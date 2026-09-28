@@ -65,16 +65,26 @@ async function ownershipOk(
     phone?: string | null
   },
 ): Promise<boolean> {
-  if (ctx.clientId && order.clientId && ctx.clientId === order.clientId) return true
-  const orderPhone = order.phone ? normalizePhone(order.phone) : ''
-  if (!orderPhone) return false
   const hints = [
     normalizePhone(ctx.peerId),
     ...(ctx.peerPhoneHints || []).map(normalizePhone),
   ].filter(Boolean)
-  return hints.some(
-    (h) => h === orderPhone || h.endsWith(orderPhone.slice(-8)) || orderPhone.endsWith(h.slice(-8)),
-  )
+  const phoneMatches = (raw: string | null | undefined) => {
+    const phone = raw ? normalizePhone(raw) : ''
+    if (!phone) return false
+    return hints.some((h) => h === phone || h.endsWith(phone.slice(-8)) || phone.endsWith(h.slice(-8)))
+  }
+  if (ctx.clientId && order.clientId && ctx.clientId === order.clientId) {
+    // Chats can be linked to a client by hand (Chats › Cliente). The link alone is a human claim:
+    // it proves ownership only when the linked client's phone is this chat's phone.
+    if (ctx.sandbox) return true
+    const client = await prisma.client.findFirst({
+      where: { id: ctx.clientId, tenantId: ctx.tenantId },
+      select: { phone: true, normalizedPhone: true },
+    })
+    if (client && (phoneMatches(client.normalizedPhone) || phoneMatches(client.phone))) return true
+  }
+  return phoneMatches(order.phone)
 }
 
 async function runSearchInventory(

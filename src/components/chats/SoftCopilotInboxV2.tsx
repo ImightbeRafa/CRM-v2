@@ -50,6 +50,7 @@ import {
 import {
   applyAgentControl,
   getConversationAgentState,
+  conversationAgentMode,
   readAgentStateMap,
   writeAgentStateMap,
   type SoftAiAgentStateMap,
@@ -58,6 +59,10 @@ import { lineHealth, lineIsDown, summarizeLineCounts } from '@/lib/chat-line-fil
 import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { WA_OUTBOUND_ACCEPT } from '@/lib/chat-outbound-media'
+import type { ChatQuickReply } from '@/lib/chat-quick-replies'
+import { hasOrderDraft } from '@/lib/order-draft'
+import { useSession } from 'next-auth/react'
+import { hasSessionPermission } from '@/lib/session-permissions'
 import { loadChatAccounts } from '@/components/aurora/config/useChannelsNeedingAction'
 import type { ChatAssignee } from '@/components/chats/ChatAssigneePicker'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
@@ -66,7 +71,8 @@ import {
   type SoftWaTemplateOption,
 } from '@/components/chats/SoftThreadPane'
 import { SoftTokenHealthBanners } from '@/components/chats/SoftTokenHealthBanners'
-import { SoftCopilotRail } from '@/components/chats/SoftCopilotRail'
+import { SoftCopilotRail, type RailTab } from '@/components/chats/SoftCopilotRail'
+import { ChatClientPanel } from '@/components/chats/ChatClientPanel'
 import { AuroraMobileNav } from '@/components/aurora/AuroraMobileNav'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import dynamic from 'next/dynamic'
@@ -105,7 +111,9 @@ export function SoftCopilotInboxV2() {
   const [messageInput, setMessageInput] = useState('')
   const [sendError, setSendError] = useState<string | null>(null)
   const [failedOutboundId, setFailedOutboundId] = useState<string | null>(null)
-  const [railTab, setRailTab] = useState<'detalle' | 'copilot'>('copilot')
+  const [railTab, setRailTab] = useState<RailTab>('copilot')
+  /** Bumped after an order / guía changes so the Cliente tab refetches. */
+  const [clientPanelRev, setClientPanelRev] = useState(0)
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null)
   const [syncAgeSeconds, setSyncAgeSeconds] = useState<number | null>(null)
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list')
@@ -128,6 +136,12 @@ export function SoftCopilotInboxV2() {
   const [viewerUserId, setViewerUserId] = useState<string | null>(null)
   const [assignBusy, setAssignBusy] = useState(false)
   const [outboundMedia, setOutboundMedia] = useState(false)
+  const [quickReplyItems, setQuickReplyItems] = useState<ChatQuickReply[]>([])
+  const quickRepliesVersion = useRef(0)
+  const { data: viewerSession } = useSession()
+  const canManageQuickReplies = hasSessionPermission(viewerSession, 'update_config')
+  /** Unsent composer text per chat (WhatsApp-style drafts; this tab only). */
+  const composerDrafts = useRef(new Map<string, string>())
   const [threadErrorId, setThreadErrorId] = useState<string | null>(null)
   const pendingFileRequestIds = useRef(new Map<string, string>())
   /** Server search hits for the active query; re-merged after a reconcile replaces the list. */
@@ -452,7 +466,55 @@ export function SoftCopilotInboxV2() {
     return () => window.clearInterval(id)
   }, [lastSyncAt])
 
-  // Per-business switches (e.g. sending files) — off unless the tenant flag is on.
+  // Team quick replies for the composer (`/atajo`).
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/chat/quick-replies', { credentials: 'same-origin', cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!cancelled && json?.success && Array.isArray(json.items)) {
+          setQuickReplyItems(json.items)
+          quickRepliesVersion.current = typeof json.version === 'number' ? json.version : 0
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const saveQuickReplies = useCallback(async (items: ChatQuickReply[]): Promise<string | null> => {
+    try {
+      const res = await fetch('/api/chat/quick-replies', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items, version: quickRepliesVersion.current }),
+      })
+      const json = (await res.json().catch(() => null)) as {
+        success?: boolean
+        items?: ChatQuickReply[]
+        version?: number
+        error?: string
+      } | null
+      if (res.status === 403) return 'Solo administradores pueden editar las respuestas rápidas.'
+      if (!res.ok || !json?.success) {
+        // Someone else saved first: show their list so nothing is overwritten blindly.
+        if (res.status === 409 && Array.isArray(json?.items)) {
+          setQuickReplyItems(json.items)
+          if (typeof json.version === 'number') quickRepliesVersion.current = json.version
+        }
+        return json?.error || 'No se pudieron guardar las respuestas rápidas.'
+      }
+      if (typeof json.version === 'number') quickRepliesVersion.current = json.version
+      setQuickReplyItems(Array.isArray(json.items) ? json.items : items)
+      return null
+    } catch {
+      return 'Sin conexión. Probá de nuevo.'
+    }
+  }, [])
+
+  // Per-business switches (e.g. sending files) — on unless the tenant turned them off.
   useEffect(() => {
     let cancelled = false
     fetch('/api/chat/capabilities', { credentials: 'same-origin', cache: 'no-store' })
@@ -676,10 +738,14 @@ export function SoftCopilotInboxV2() {
       (d) => d.socialAccountId === conv.socialAccountId && d.peerId === conv.recipientId,
     )
     if (!dto) return
+    if (selectedConversationId && selectedConversationId !== dto.id) {
+      if (messageInput.trim()) composerDrafts.current.set(selectedConversationId, messageInput)
+      else composerDrafts.current.delete(selectedConversationId)
+    }
     setSelectedConversationId(dto.id)
     setSendError(null)
     setFailedOutboundId(null)
-    setMessageInput('')
+    setMessageInput(composerDrafts.current.get(dto.id) ?? '')
     setTemplatePickerOpen(false)
     setMobileDetailsOpen(false)
     nearBottomRef.current = true
@@ -1044,24 +1110,53 @@ export function SoftCopilotInboxV2() {
 
   /** Upload + send a file (WhatsApp). Returns true when sent so the composer clears the chip. */
   async function handleSendFile(file: File, caption: string): Promise<boolean> {
+    if (!selectedConversation) return false
+    const form = new FormData()
+    form.append('file', file)
+    form.append('socialAccountId', selectedConversation.socialAccountId)
+    form.append('recipient', selectedConversation.recipientId)
+    form.append('caption', caption.trim())
+    // One id per picked file: a retry of the same file is deduplicated by the server.
+    const requestIdKey = `${file.name}:${file.size}:${file.lastModified}`
+    if (!pendingFileRequestIds.current.has(requestIdKey)) {
+      pendingFileRequestIds.current.set(requestIdKey, newClientRequestId())
+    }
+    form.append('clientRequestId', pendingFileRequestIds.current.get(requestIdKey)!)
+    return postChatMedia({ method: 'POST', credentials: 'same-origin', body: form })
+  }
+
+  /** "Recientes": re-send a photo already stored in this business's chats. */
+  async function handleSendRecent(sourceMessageId: string, caption: string): Promise<boolean> {
+    if (!selectedConversation) return false
+    const requestIdKey = `recent:${sourceMessageId}:${selectedConversation.recipientId}`
+    if (!pendingFileRequestIds.current.has(requestIdKey)) {
+      pendingFileRequestIds.current.set(requestIdKey, newClientRequestId())
+    }
+    // A retry of a failed send reuses the id (no double send); after success the next pick is new.
+    const sent = await postChatMedia({
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceMessageId,
+        socialAccountId: selectedConversation.socialAccountId,
+        recipient: selectedConversation.recipientId,
+        caption: caption.trim(),
+        clientRequestId: pendingFileRequestIds.current.get(requestIdKey),
+      }),
+    })
+    if (sent) pendingFileRequestIds.current.delete(requestIdKey)
+    return sent
+  }
+
+  async function postChatMedia(init: RequestInit, url = '/api/chat/send-media'): Promise<boolean> {
     if (!selectedConversation || !selectedConversationId || sendInFlightRef.current) return false
     const conversationId = selectedConversationId
     sendInFlightRef.current = true
     setSending(true)
     setSendError(null)
     try {
-      const form = new FormData()
-      form.append('file', file)
-      form.append('socialAccountId', selectedConversation.socialAccountId)
-      form.append('recipient', selectedConversation.recipientId)
-      form.append('caption', caption.trim())
-      // One id per picked file: a retry of the same file is deduplicated by the server.
-      const requestIdKey = `${file.name}:${file.size}:${file.lastModified}`
-      if (!pendingFileRequestIds.current.has(requestIdKey)) {
-        pendingFileRequestIds.current.set(requestIdKey, newClientRequestId())
-      }
-      form.append('clientRequestId', pendingFileRequestIds.current.get(requestIdKey)!)
-      const res = await fetch('/api/chat/send-media', { method: 'POST', credentials: 'same-origin', body: form })
+      const res = await fetch(url, init)
       const parsed = await parseApiJson<{
         success?: boolean
         error?: string
@@ -1146,12 +1241,32 @@ export function SoftCopilotInboxV2() {
       })
       if (!res.ok) throw new Error(String(res.status))
       toast({ variant: 'success' as any, title: `Pedido ${label} creado y vinculado al chat` })
+      setClientPanelRev((n) => n + 1)
       await fetchThreadMessages(conversationId)
     } catch {
       toast({ title: `Pedido ${label} creado`, description: 'No se pudo vincular al chat.' })
     }
   }
   const waWindowOpen = selectedDto?.waWindowOpen ?? true
+  // Re-read when the drawer closes: the form saves the chat's draft on close.
+  const orderDraftPending = useMemo(
+    () => (selectedConversationId && !createOrderOpen ? hasOrderDraft(`chat:${selectedConversationId}`) : false),
+    [selectedConversationId, createOrderOpen],
+  )
+  const clientPanel =
+    selectedConversationId && selectedConversation && !selectedConversation.isDemo ? (
+      <ChatClientPanel
+        key={selectedConversationId}
+        conversationId={selectedConversationId}
+        platform={selectedConversation.platform === 'instagram' ? 'instagram' : 'whatsapp'}
+        revision={clientPanelRev}
+        onCreateOrder={() => setCreateOrderOpen(true)}
+        onGuiaSent={() => {
+          if (selectedConversationId) void fetchThreadMessages(selectedConversationId)
+          void fetchChanges()
+        }}
+      />
+    ) : null
 
   const threadSharedProps = {
     conversation: selectedConversation,
@@ -1195,13 +1310,17 @@ export function SoftCopilotInboxV2() {
     onSendTemplate: (tpl: SoftWaTemplateOption) => {
       void handleSendTemplate(tpl)
     },
-    agentMode: (selectedDto?.aiMode || selectedAgentState.mode) as typeof selectedAgentState.mode,
+    agentMode: selectedDto ? conversationAgentMode(selectedDto.aiMode) : selectedAgentState.mode,
     onTakeOver: () => void setAgentControl('take_over'),
     onPauseAi: () => void setAgentControl('pause'),
     onResumeAi: () => void setAgentControl('resume'),
     onCreateOrder: () => setCreateOrderOpen(true),
+    orderDraftPending,
     assignment: { assignees, viewerUserId, onAssign: (id: string | null) => void assignTo(id), busy: assignBusy },
-    attachments: outboundMedia ? { accept: WA_OUTBOUND_ACCEPT, onSendFile: handleSendFile } : undefined,
+    attachments: outboundMedia
+      ? { accept: WA_OUTBOUND_ACCEPT, onSendFile: handleSendFile, onSendRecent: handleSendRecent }
+      : undefined,
+    quickReplies: { items: quickReplyItems, onSave: saveQuickReplies, canManage: canManageQuickReplies },
     aiBusy: controlBusy,
     threadLoading: Boolean(selectedConversationId && threadLoadingId === selectedConversationId),
     threadError: Boolean(selectedConversationId && threadErrorId === selectedConversationId),
@@ -1286,6 +1405,7 @@ export function SoftCopilotInboxV2() {
               onTakeOver={() => void setAgentControl('take_over')}
               onPauseAi={() => void setAgentControl('pause')}
               onResumeAi={() => void setAgentControl('resume')}
+              clientPanel={clientPanel}
             />
           ) : (
             // SoftCopilotRail is a locked file: the no-chat state lives here instead.
@@ -1370,6 +1490,7 @@ export function SoftCopilotInboxV2() {
                 onTakeOver={() => void setAgentControl('take_over')}
                 onPauseAi={() => void setAgentControl('pause')}
                 onResumeAi={() => void setAgentControl('resume')}
+                clientPanel={clientPanel}
               />
             </div>
           ) : null}
@@ -1386,6 +1507,7 @@ export function SoftCopilotInboxV2() {
             username: selectedConversation.platform === 'instagram' ? selectedConversation.recipientName || undefined : undefined,
           }}
           onCreated={handleOrderCreated}
+          draftKey={selectedConversationId ? `chat:${selectedConversationId}` : undefined}
         />
       ) : null}
     </AuroraShell>

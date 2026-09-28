@@ -34,6 +34,9 @@ const nextConfig = {
     // Keep the three webpack targets isolated. The in-process compiler is unstable
     // on the Windows release workstation and can terminate Node without an error.
     webpackBuildWorker: true,
+    // Docker image build (Cloudflare deploy): the build worker segfaulted with 32 parallel
+    // workers. The Dockerfile sets NEXT_BUILD_CPUS to cap parallelism; local builds unchanged.
+    ...(process.env.NEXT_BUILD_CPUS ? { cpus: Math.max(1, Number(process.env.NEXT_BUILD_CPUS) || 4) } : {}),
   },
 
   // Image configuration

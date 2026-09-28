@@ -8,6 +8,7 @@ import { ConfigProvider } from "./contexts/ConfigContext"
 import { AppTopBanners } from "./components/AppTopBanners"
 import { ClientProviders } from "./components/ClientProviders"
 import { ThemeProvider } from "./components/ThemeProvider"
+import { AuroraFrame } from "@/components/aurora/AuroraShell"
 import MetaPixel from "./components/MetaPixel"
 import { shouldShowPreviewDataWarning } from "@/lib/review-environment"
 import type { Metadata, Viewport } from 'next'
@@ -56,7 +57,7 @@ export default async function RootLayout({
                 <ConfigProvider>
                   <ClientProviders>
                     <AppTopBanners showPreviewWarning={shouldShowPreviewDataWarning()} />
-                    {children}
+                    <AuroraFrame>{children}</AuroraFrame>
                   </ClientProviders>
                 </ConfigProvider>
               </TenantSettingsProvider>

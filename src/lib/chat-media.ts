@@ -305,9 +305,71 @@ export async function readChatMediaFromBlob(opts: {
   }
 }
 
+/**
+ * `ok: true` always carries the downloaded bytes. `ref.mediaCacheStatus` is `'ready'` only when the
+ * private Blob write worked; otherwise (`cacheError` set) the bytes are still served so the chat
+ * never shows "No se pudo mostrar" just because the cache store is missing or unreachable.
+ */
 export type CacheChatMediaResult =
-  | { ok: true; ref: ChatMediaBlobRef; bytes: Buffer }
+  | { ok: true; ref: ChatMediaBlobRef; bytes: Buffer; cacheError?: string }
   | { ok: false; status: ChatMediaCacheStatus; error: string }
+
+const GENERIC_CONTENT_TYPE = /^(application\/octet-stream|binary\/octet-stream|application\/binary|text\/plain)?$/i
+
+/**
+ * First specific media type among the candidates (Graph `mime_type` is authoritative; CDN
+ * responses sometimes say `application/octet-stream`, which the browser will not render
+ * under `nosniff`).
+ */
+export function pickMediaContentType(...candidates: Array<string | null | undefined>): string {
+  for (const raw of candidates) {
+    const value = String(raw || '').trim()
+    const essence = value.split(';')[0].trim()
+    if (essence && !GENERIC_CONTENT_TYPE.test(essence)) return value
+  }
+  return 'application/octet-stream'
+}
+
+async function storeDownloadedMedia(opts: {
+  tenantId: string
+  messageId: string
+  bytes: Buffer
+  contentType: string
+  filename: string | null
+  putFn?: typeof putChatMediaToBlob
+}): Promise<CacheChatMediaResult> {
+  const putFn = opts.putFn ?? putChatMediaToBlob
+  try {
+    const stored = await putFn({
+      tenantId: opts.tenantId,
+      messageId: opts.messageId,
+      bytes: opts.bytes,
+      contentType: opts.contentType,
+    })
+    if (isMetaCdnUrl(stored.pathname)) {
+      return { ok: false, status: 'failed', error: 'Blob path looked like Meta CDN' }
+    }
+    return {
+      ok: true,
+      bytes: opts.bytes,
+      ref: {
+        mediaBlobPath: stored.pathname,
+        mediaCacheStatus: 'ready',
+        mediaMimeType: opts.contentType,
+        mediaFilename: opts.filename,
+      },
+    }
+  } catch (error) {
+    const cacheError = error instanceof Error ? error.message : 'Blob write failed'
+    console.warn('[chat-media] cache write failed; serving without cache:', cacheError)
+    return {
+      ok: true,
+      bytes: opts.bytes,
+      cacheError,
+      ref: { mediaBlobPath: '', mediaCacheStatus: 'pending', mediaMimeType: opts.contentType, mediaFilename: opts.filename },
+    }
+  }
+}
 
 /**
  * Resolve → download (capped) → put private blob. Returns bytes for immediate streaming.
@@ -339,28 +401,14 @@ export async function cacheProviderMediaToBlob(opts: {
       accessToken: opts.accessToken,
       fetchImpl: opts.fetchImpl,
     })
-    const contentType =
-      downloaded.contentType || resolved.mimeType || opts.mimeHint || 'application/octet-stream'
-    const putFn = opts.putFn ?? putChatMediaToBlob
-    const stored = await putFn({
+    return await storeDownloadedMedia({
       tenantId: opts.tenantId,
       messageId: opts.messageId,
       bytes: downloaded.bytes,
-      contentType,
+      contentType: pickMediaContentType(resolved.mimeType, downloaded.contentType, opts.mimeHint),
+      filename: opts.filenameHint ?? null,
+      putFn: opts.putFn,
     })
-    if (isMetaCdnUrl(stored.pathname)) {
-      return { ok: false, status: 'failed', error: 'Blob path looked like Meta CDN' }
-    }
-    return {
-      ok: true,
-      bytes: downloaded.bytes,
-      ref: {
-        mediaBlobPath: stored.pathname,
-        mediaCacheStatus: 'ready',
-        mediaMimeType: contentType,
-        mediaFilename: opts.filenameHint ?? null,
-      },
-    }
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String((error as { code: string }).code) : ''
     if (code === 'too_large') {
@@ -425,19 +473,14 @@ export async function cacheInstagramAttachmentToBlob(opts: {
       strictHosts: true,
       fetchImpl: opts.fetchImpl,
     })
-    const contentType = downloaded.contentType || opts.mimeHint || 'application/octet-stream'
-    const putFn = opts.putFn ?? putChatMediaToBlob
-    const stored = await putFn({
+    return await storeDownloadedMedia({
       tenantId: opts.tenantId,
       messageId: opts.messageId,
       bytes: downloaded.bytes,
-      contentType,
+      contentType: pickMediaContentType(downloaded.contentType, opts.mimeHint),
+      filename: null,
+      putFn: opts.putFn,
     })
-    return {
-      ok: true,
-      bytes: downloaded.bytes,
-      ref: { mediaBlobPath: stored.pathname, mediaCacheStatus: 'ready', mediaMimeType: contentType, mediaFilename: null },
-    }
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String((error as { code: string }).code) : ''
     if (code === 'too_large') return { ok: false, status: 'too_large', error: 'Media exceeds 25MB cap' }

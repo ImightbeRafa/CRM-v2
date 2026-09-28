@@ -5,7 +5,7 @@
  */
 
 
-/** Per-business switch (TenantFeatureFlag key). Off until tested on a real line. */
+/** Per-business kill switch (TenantFeatureFlag key). On unless a row sets enabled=false (Rafael 2026-09-28). */
 export const CHAT_OUTBOUND_MEDIA_FLAG = 'chat_outbound_media_v1'
 
 export type OutboundMediaKind = 'image' | 'video' | 'audio' | 'document'

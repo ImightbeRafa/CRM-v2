@@ -63,6 +63,23 @@ export async function isTenantFeatureEnabled(tenantId: string, key: string): Pro
   }
 }
 
+/**
+ * Default-ON feature with a per-tenant kill switch: on unless a TenantFeatureFlag row for
+ * this tenant says `enabled = false`. A missing table also means on (nothing to switch off).
+ */
+export async function isTenantFeatureNotDisabled(tenantId: string, key: string): Promise<boolean> {
+  try {
+    const flag = await prisma.tenantFeatureFlag.findFirst({
+      where: { tenantId, scope: tenantId, key },
+      select: { enabled: true },
+    });
+    return flag ? flag.enabled === true : true;
+  } catch (error) {
+    if (isMissingFeatureFlagTable(error)) return true;
+    throw error;
+  }
+}
+
 type FeatureFlagConfig = Record<string, unknown>;
 
 export interface TenantFeatureReadiness {

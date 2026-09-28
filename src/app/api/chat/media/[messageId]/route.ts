@@ -9,6 +9,7 @@ import {
   cacheProviderMediaToBlob,
   instagramAttachmentUrl,
   parseSingleByteRange,
+  pickMediaContentType,
   safeMediaServeHeaders,
   readChatMediaFromBlob,
   readMediaBlobRefFromMessage,
@@ -95,7 +96,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return mediaResponse(
           request,
           blob.bytes,
-          blob.contentType || existingRef.mediaMimeType || 'application/octet-stream',
+          pickMediaContentType(existingRef.mediaMimeType, blob.contentType, message.mediaMimeType),
           existingRef.mediaFilename,
         )
       } catch (error) {
@@ -173,42 +174,47 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: cached.error }, { status })
     }
 
-    const meta =
-      message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata)
-        ? (message.metadata as Record<string, unknown>)
-        : {}
-    try {
-      await prisma.chatMessage.update({
-        where: { id: message.id },
-        data: {
-          mediaMimeType: cached.ref.mediaMimeType || message.mediaMimeType,
-          mediaFilename: cached.ref.mediaFilename || message.mediaFilename,
-          mediaBlobPath: cached.ref.mediaBlobPath,
-          mediaCacheStatus: cached.ref.mediaCacheStatus,
-          mediaSizeBytes: cached.bytes.length,
-          mediaCachedAt: new Date(),
-          mediaErrorCode: null,
-          metadata: buildMediaCacheMetadataPatch(meta, cached.ref) as Prisma.InputJsonValue,
-        },
-      })
-    } catch (error) {
-      // Fallback: metadata-only if columns not applied yet on shared DB
+    // Cache write failed (Blob store missing/unreachable): still serve what Meta returned.
+    if (cached.ref.mediaCacheStatus !== 'ready') {
+      console.warn('[chat/media] served without cache', { messageId: message.id, error: cached.cacheError })
+    } else {
+      const meta =
+        message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata)
+          ? (message.metadata as Record<string, unknown>)
+          : {}
       try {
         await prisma.chatMessage.update({
           where: { id: message.id },
           data: {
+            mediaMimeType: cached.ref.mediaMimeType || message.mediaMimeType,
+            mediaFilename: cached.ref.mediaFilename || message.mediaFilename,
+            mediaBlobPath: cached.ref.mediaBlobPath,
+            mediaCacheStatus: cached.ref.mediaCacheStatus,
+            mediaSizeBytes: cached.bytes.length,
+            mediaCachedAt: new Date(),
+            mediaErrorCode: null,
             metadata: buildMediaCacheMetadataPatch(meta, cached.ref) as Prisma.InputJsonValue,
           },
         })
-      } catch (metaErr) {
-        console.warn('[chat/media] Failed to persist mediaBlobPath', metaErr)
+      } catch (error) {
+        // Fallback: metadata-only if columns not applied yet on shared DB
+        try {
+          await prisma.chatMessage.update({
+            where: { id: message.id },
+            data: {
+              metadata: buildMediaCacheMetadataPatch(meta, cached.ref) as Prisma.InputJsonValue,
+            },
+          })
+        } catch (metaErr) {
+          console.warn('[chat/media] Failed to persist mediaBlobPath', metaErr)
+        }
       }
     }
 
     return mediaResponse(
       request,
       cached.bytes,
-      cached.ref.mediaMimeType || 'application/octet-stream',
+      pickMediaContentType(cached.ref.mediaMimeType, message.mediaMimeType),
       message.mediaFilename,
     )
   } catch (error) {

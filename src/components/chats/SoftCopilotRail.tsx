@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import {
   agentModeLabel,
   type SoftAiAgentMode,
@@ -7,7 +8,7 @@ import {
 } from '@/lib/soft-ai'
 import type { ConversationStatus, SoftConversation, SoftTag } from '@/lib/chat-soft-copilot'
 
-type RailTab = 'detalle' | 'copilot'
+export type RailTab = 'detalle' | 'cliente' | 'copilot'
 
 interface SoftCopilotRailProps {
   conversation: SoftConversation | null
@@ -22,6 +23,8 @@ interface SoftCopilotRailProps {
   onResumeAi: () => void
   /** Mobile details sheet: always visible, full width, no left border. */
   sheet?: boolean
+  /** "Cliente" tab body (linked client, purchases, order → guía flow). Tab hidden when absent. */
+  clientPanel?: ReactNode
 }
 
 const ALL_TAGS: SoftTag[] = ['Envío', 'VIP', 'Nuevo']
@@ -59,7 +62,9 @@ export function SoftCopilotRail({
   onPauseAi,
   onResumeAi,
   sheet = false,
+  clientPanel,
 }: SoftCopilotRailProps) {
+  const activeTab: RailTab = tab === 'cliente' && !clientPanel ? 'detalle' : tab
   return (
     <aside
       className={
@@ -74,18 +79,32 @@ export function SoftCopilotRail({
             type="button"
             onClick={() => onTabChange('detalle')}
             className={`flex-1 rounded-lg py-1.5 text-xs transition-colors ${
-              tab === 'detalle'
+              activeTab === 'detalle'
                 ? 'bg-white font-semibold text-[#4A46E5] shadow-sm'
                 : 'text-slate-400'
             }`}
           >
             Detalle
           </button>
+          {clientPanel ? (
+            <button
+              type="button"
+              onClick={() => onTabChange('cliente')}
+              data-testid="rail-tab-cliente"
+              className={`flex-1 rounded-lg py-1.5 text-xs transition-colors ${
+                activeTab === 'cliente'
+                  ? 'bg-white font-semibold text-[#4A46E5] shadow-sm'
+                  : 'text-slate-400'
+              }`}
+            >
+              Cliente
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => onTabChange('copilot')}
             className={`flex-1 rounded-lg py-1.5 text-xs transition-colors ${
-              tab === 'copilot'
+              activeTab === 'copilot'
                 ? 'bg-white font-semibold text-[#4A46E5] shadow-sm'
                 : 'text-slate-400'
             }`}
@@ -96,7 +115,9 @@ export function SoftCopilotRail({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-        {tab === 'copilot' ? (
+        {activeTab === 'cliente' ? (
+          clientPanel
+        ) : activeTab === 'copilot' ? (
           <div className="space-y-4">
             <div className="rounded-2xl bg-white p-3 ring-1 ring-slate-200/70">
               <p className="text-[11px] font-medium text-slate-400">Estado del agente</p>

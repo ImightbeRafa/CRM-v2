@@ -20,7 +20,8 @@ describe('/estadisticas page (STAT-01)', () => {
     assert.match(page, /readTenantUiReadiness/)
   })
   it('loading skeleton uses AuroraShell too', () => {
-    assert.match(read('src/app/estadisticas/loading.tsx'), /AuroraShell/)
+    assert.match(read('src/app/estadisticas/loading.tsx'), /AuroraRouteLoading/)
+    assert.match(read('src/components/aurora/states/AuroraRouteLoading.tsx'), /<AuroraShell /)
   })
   it('sidebar Estadísticas has no "Pronto" badge', () => {
     assert.doesNotMatch(read('src/components/aurora/aurora-nav.ts'), /pronto/i)

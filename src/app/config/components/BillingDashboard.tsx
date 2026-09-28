@@ -1,6 +1,8 @@
 'use client';
 
 import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader';
+import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
+import { notify } from '@/lib/ui-notify'
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
@@ -239,7 +241,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
 
   const handleChangePlan = async (planId: string) => {
     if (planId === 'free') {
-      if (!confirm('¿Deseas cambiar al plan gratuito? Perderás acceso a funcionalidades premium.')) {
+      if (!await auroraConfirm('¿Deseas cambiar al plan gratuito? Perderás acceso a funcionalidades premium.')) {
         return;
       }
       
@@ -255,14 +257,14 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         const result = await response.json();
         
         if (result.status === 'success') {
-          alert('✅ Plan cambiado a FREE exitosamente');
+          notify('✅ Plan cambiado a FREE exitosamente');
           await loadBillingData();
         } else {
-          alert(`❌ Error: ${result.error}`);
+          notify(`❌ Error: ${result.error}`);
         }
       } catch (error) {
         console.error('Error changing plan:', error);
-        alert('❌ Error al cambiar el plan');
+        notify('❌ Error al cambiar el plan');
       } finally {
         setLoading(false);
       }
@@ -282,26 +284,26 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
 
     // Prevent duplicate subscriptions to the same plan
     if (currentPlanId === planId && currentPlan.status === 'active') {
-      alert('Ya tienes este plan activo. No es necesario suscribirte nuevamente.');
+      notify('Ya tienes este plan activo. No es necesario suscribirte nuevamente.');
       return;
     }
 
     // Prevent downgrade through payment link (should use cancel instead)
     if (targetLevel < currentLevel && currentPlan.status === 'active') {
-      alert('Para cambiar a un plan menor, primero cancela tu suscripción actual desde la sección de facturación.');
+      notify('Para cambiar a un plan menor, primero cancela tu suscripción actual desde la sección de facturación.');
       return;
     }
 
     // Confirm upgrade from current plan
     if (currentLevel > 0 && targetLevel > currentLevel) {
-      const confirmUpgrade = confirm(`¿Deseas actualizar de ${currentPlan.name} a ${planId.toUpperCase()}? Tu suscripción actual se cancelará y se iniciará la nueva.`);
+      const confirmUpgrade = await auroraConfirm(`¿Deseas actualizar de ${currentPlan.name} a ${planId.toUpperCase()}? Tu suscripción actual se cancelará y se iniciará la nueva.`);
       if (!confirmUpgrade) {
         return;
       }
     }
 
     // Show important warning about email before redirecting
-    const emailWarning = confirm(
+    const emailWarning = await auroraConfirm(
       '⚠️ IMPORTANTE: Email para Pago\n\n' +
       'Cuando hagas el pago en TiloPay, DEBES usar el mismo email con el que inicias sesión en BetsyCRM.\n\n' +
       '¿Continuar al pago?'
@@ -322,7 +324,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       setSelectedPlan({ id: planId, amount });
       setShowCheckout(true);
     } else {
-      alert('Plan no disponible');
+      notify('Plan no disponible');
     }
   };
 
@@ -344,15 +346,15 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         if (result.data?.note) {
           message += '\n\n⚠️ ' + result.data.note;
         }
-        alert(message);
+        notify(message);
         await loadBillingData();
         setShowCancelDialog(false);
       } else {
-        alert(`❌ Error: ${result.error}`);
+        notify(`❌ Error: ${result.error}`);
       }
     } catch (error) {
       console.error('Error canceling subscription:', error);
-      alert('❌ Error al cancelar la suscripción');
+      notify('❌ Error al cancelar la suscripción');
     } finally {
       setLoading(false);
     }

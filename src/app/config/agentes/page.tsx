@@ -1,6 +1,7 @@
 'use client'
 
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus } from 'lucide-react'
 import { useSession } from 'next-auth/react'
@@ -482,7 +483,7 @@ export default function AgentesConfigPage() {
 
   async function panic(action: string) {
     if (!selectedId || !canEdit || saving) return
-    if (!window.confirm('¿Confirmás detener o limitar el agente en este canal?')) return
+    if (!await auroraConfirm('¿Confirmás detener o limitar el agente en este canal?')) return
     setSaving(true)
     setError(null)
     try {
@@ -886,11 +887,11 @@ export default function AgentesConfigPage() {
                           className={`mt-1 ${SELECT_CLASS}`}
                           value={selected.operationMode}
                           disabled={!canEdit || saving}
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const mode = e.target.value
                             if (
                               mode === 'ai_full' &&
-                              !window.confirm(
+                              !await auroraConfirm(
                                 'Responder (ai_full) queda en Sugerir hasta pasar la prueba dark-run. ¿Continuar?',
                               )
                             ) {
@@ -910,16 +911,17 @@ export default function AgentesConfigPage() {
                           className={`mt-1 ${SELECT_CLASS}`}
                           value={selected.status}
                           disabled={!canEdit || saving}
-                          onChange={(e) => {
+                          onChange={async (e) => {
+                            const nextStatus = e.target.value
                             if (
-                              e.target.value === 'live' &&
-                              !window.confirm(
+                              nextStatus === 'live' &&
+                              !await auroraConfirm(
                                 '¿Pasar a En vivo? Solo agentes En vivo corren en inbound real.',
                               )
                             ) {
                               return
                             }
-                            void patch({ status: e.target.value })
+                            void patch({ status: nextStatus })
                           }}
                         >
                           <option value="draft">Borrador</option>

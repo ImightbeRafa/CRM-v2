@@ -1,6 +1,7 @@
 'use client'
 
 import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader'
+import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton'
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
@@ -605,7 +606,7 @@ export function SimpleAuditDashboard({ isMaster, canRestore = false }: SimpleAud
 
   const handleRestore = useCallback(async (log: any) => {
     if (!canRestore || !log.restore?.eligible || restoringId) return
-    if (!window.confirm('¿Restaurar esta orden? No se repetirán facturas, guías, pagos ni inventario.')) return
+    if (!await auroraConfirm('¿Restaurar esta orden? No se repetirán facturas, guías, pagos ni inventario.')) return
     setRestoringId(log.id)
     setRestoreError(null)
     try {

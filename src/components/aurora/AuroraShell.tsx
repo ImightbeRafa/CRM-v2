@@ -3,6 +3,7 @@
 import { createContext, useContext, type ReactNode, useEffect } from 'react'
 import { AuroraSidebar } from './AuroraSidebar'
 import { AuroraToaster } from './ui/AuroraToaster'
+import { AuroraConfirmHost } from './ui/AuroraConfirmHost'
 
 type AuroraShellProps = {
   children: ReactNode
@@ -53,6 +54,7 @@ export function AuroraShell({ children, fullBleed = false, bottomNav }: AuroraSh
         </main>
       </div>
       <AuroraToaster />
+      <AuroraConfirmHost />
     </AuroraShellContext.Provider>
   )
 }

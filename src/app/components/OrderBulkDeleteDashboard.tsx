@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react'
+import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
+import { notify } from '@/lib/ui-notify'
 import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader';
 import { AuroraEmptyState, auroraButtonPrimary } from '@/components/aurora/states/AuroraEmptyState';
 import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton';
@@ -134,16 +136,16 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
 
   const handleBulkDelete = async () => {
     if (selectedOrders.size === 0) {
-      alert('Selecciona al menos una orden para eliminar')
+      notify('Selecciona al menos una orden para eliminar')
       return
     }
 
     if (!deleteReason.trim()) {
-      alert('Debes proporcionar una razón para la eliminación')
+      notify('Debes proporcionar una razón para la eliminación')
       return
     }
 
-    if (!confirm(`¿Estás seguro de que quieres eliminar ${selectedOrders.size} órdenes? Esta acción no se puede deshacer.`)) {
+    if (!await auroraConfirm(`¿Estás seguro de que quieres eliminar ${selectedOrders.size} órdenes? Esta acción no se puede deshacer.`)) {
       return
     }
 
@@ -171,13 +173,13 @@ export function OrderBulkDeleteDashboard({ isMaster }: OrderBulkDeleteDashboardP
         setSelectedOrders(new Set())
         setDeleteReason('')
         setShowDeleteDialog(false)
-        alert(`Eliminación completada: ${result.data.success} órdenes eliminadas, ${result.data.failed} fallidas`)
+        notify(`Eliminación completada: ${result.data.success} órdenes eliminadas, ${result.data.failed} fallidas`)
       } else {
-        alert(`Error: ${result.error || result.message}`)
+        notify(`Error: ${result.error || result.message}`)
       }
     } catch (error) {
       console.error('Error deleting orders:', error)
-      alert('Error al eliminar órdenes. Por favor intenta de nuevo.')
+      notify('Error al eliminar órdenes. Por favor intenta de nuevo.')
     } finally {
       setIsDeleting(false)
     }

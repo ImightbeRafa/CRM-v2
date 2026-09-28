@@ -1,6 +1,7 @@
 'use client';
 
 import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader';
+import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 import { AuroraEmptyState } from '@/components/aurora/states/AuroraEmptyState';
 import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -161,7 +162,7 @@ export function PaginatedClientManagement({ onUnavailable }: { onUnavailable: ()
     if (response.ok) { setShowForm(false); setEditing(null); await loadClients(); }
   };
   const removeClient = async (client: ManagedClient) => {
-    if (!confirm(`¿Desactivar a ${client.name}?`)) return;
+    if (!await auroraConfirm(`¿Desactivar a ${client.name}?`)) return;
     const response = await fetch(`/api/config/automatic-clients?id=${client.id}`, { method: 'DELETE', credentials: 'include' });
     if (response.ok) await loadClients();
   };

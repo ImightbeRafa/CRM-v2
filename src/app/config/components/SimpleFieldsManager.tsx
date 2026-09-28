@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
@@ -238,7 +239,7 @@ export function SimpleFieldsManager() {
   };
 
   const handleDeleteField = async (id: string) => {
-    if (!confirm('¿Eliminar este campo?')) return;
+    if (!await auroraConfirm('¿Eliminar este campo?')) return;
     
     try {
       const res = await fetch(`/api/config/fields?id=${id}`, { method: 'DELETE' });
@@ -388,7 +389,7 @@ export function SimpleFieldsManager() {
   };
 
   const handleDeleteOption = async (optionId: string) => {
-    if (!confirm('¿Eliminar esta opción?')) return;
+    if (!await auroraConfirm('¿Eliminar esta opción?')) return;
     
     try {
       const res = await fetch(`/api/config/options?id=${optionId}`, { 

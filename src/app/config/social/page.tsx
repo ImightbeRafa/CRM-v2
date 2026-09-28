@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { auroraConfirm as confirmDialog } from '@/components/aurora/ui/AuroraConfirmHost'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import {
@@ -667,7 +668,7 @@ export default function SocialConfigPage() {
   async function handleUnlinkAccount(id: string, platform: string, skipConfirm = false) {
     if (
       !skipConfirm &&
-      !confirm(
+      !await confirmDialog(
         `¿Desvincular esta cuenta de ${platform}? El historial de conversaciones se conserva; solo se deja de recibir y enviar mensajes hasta que la reconectes.`,
       )
     ) {

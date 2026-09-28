@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react';
+import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -163,7 +164,7 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
   };
 
   const handleDeleteProduct = async (id: string) => {
-    if (!confirm('¿Está seguro de que desea eliminar este producto frecuente?')) return;
+    if (!await auroraConfirm('¿Está seguro de que desea eliminar este producto frecuente?')) return;
     
     try {
       const response = await fetch(`/api/config/frequent-products?id=${id}`, {
@@ -179,7 +180,7 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
   };
 
   const handleDeleteCustomer = async (id: string) => {
-    if (!confirm('¿Está seguro de que desea eliminar este cliente frecuente?')) return;
+    if (!await auroraConfirm('¿Está seguro de que desea eliminar este cliente frecuente?')) return;
     
     try {
       const response = await fetch(`/api/config/frequent-customers?id=${id}`, {

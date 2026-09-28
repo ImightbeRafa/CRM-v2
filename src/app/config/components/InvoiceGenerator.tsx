@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { notify } from '@/lib/ui-notify'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
@@ -234,16 +235,16 @@ export function InvoiceGenerator({
       
       if (result.status === 'success') {
         setGeneratedInvoices([result.data]);
-        alert('✅ Factura generada exitosamente!');
+        notify('✅ Factura generada exitosamente!');
         if (onInvoiceGenerated) {
           onInvoiceGenerated([result.data.id]);
         }
       } else {
-        alert(`❌ Error: ${result.error}`);
+        notify(`❌ Error: ${result.error}`);
       }
     } catch (error) {
       console.error('Error generating invoice:', error);
-      alert('❌ Error al generar factura');
+      notify('❌ Error al generar factura');
     } finally {
       setIsGenerating(false);
     }
@@ -251,7 +252,7 @@ export function InvoiceGenerator({
 
   const handleGenerateBulk = async () => {
     if (selectedOrders.length === 0) {
-      alert('⚠️ Selecciona al menos una orden');
+      notify('⚠️ Selecciona al menos una orden');
       return;
     }
 
@@ -295,16 +296,16 @@ export function InvoiceGenerator({
       
       if (result.status === 'success') {
         setGeneratedInvoices(result.data);
-        alert(`✅ ${result.data.length} facturas generadas exitosamente!`);
+        notify(`✅ ${result.data.length} facturas generadas exitosamente!`);
         if (onInvoiceGenerated) {
           onInvoiceGenerated(result.data.map((inv: any) => inv.id));
         }
       } else {
-        alert(`❌ Error: ${result.error}`);
+        notify(`❌ Error: ${result.error}`);
       }
     } catch (error) {
       console.error('Error generating invoices:', error);
-      alert('❌ Error al generar facturas');
+      notify('❌ Error al generar facturas');
     } finally {
       setIsGenerating(false);
     }
@@ -312,17 +313,17 @@ export function InvoiceGenerator({
 
   const validateInvoice = (): boolean => {
     if (!currentInvoice.customerName.trim()) {
-      alert('⚠️ El nombre del cliente es requerido');
+      notify('⚠️ El nombre del cliente es requerido');
       return false;
     }
     
     if (currentInvoice.items.length === 0) {
-      alert('⚠️ Agrega al menos un artículo');
+      notify('⚠️ Agrega al menos un artículo');
       return false;
     }
     
     if (currentInvoice.items.some(item => !item.description.trim() || item.quantity <= 0 || item.unitPrice < 0)) {
-      alert('⚠️ Todos los artículos deben tener descripción, cantidad y precio válidos');
+      notify('⚠️ Todos los artículos deben tener descripción, cantidad y precio válidos');
       return false;
     }
     
@@ -341,7 +342,7 @@ export function InvoiceGenerator({
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error downloading PDF:', error);
-      alert('❌ Error al descargar PDF');
+      notify('❌ Error al descargar PDF');
     }
   };
 
@@ -359,13 +360,13 @@ export function InvoiceGenerator({
       const result = await response.json();
       
       if (result.status === 'success') {
-        alert('✅ Factura enviada por email!');
+        notify('✅ Factura enviada por email!');
       } else {
-        alert(`❌ Error: ${result.error}`);
+        notify(`❌ Error: ${result.error}`);
       }
     } catch (error) {
       console.error('Error emailing invoice:', error);
-      alert('❌ Error al enviar email');
+      notify('❌ Error al enviar email');
     }
   };
 

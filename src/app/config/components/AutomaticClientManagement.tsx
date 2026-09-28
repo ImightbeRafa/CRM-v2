@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useCallback, useState, useEffect } from 'react';
+import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
+import { notify } from '@/lib/ui-notify'
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -202,7 +204,7 @@ function LegacyAutomaticClientManagement() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('¿Está seguro de que desea eliminar este cliente?')) return;
+    if (!await auroraConfirm('¿Está seguro de que desea eliminar este cliente?')) return;
     
     try {
       const response = await fetch(`/api/config/automatic-clients?id=${id}`, {
@@ -276,11 +278,11 @@ function LegacyAutomaticClientManagement() {
 
       if (response.ok) {
         await loadClients();
-        alert('Clientes sincronizados exitosamente desde las ventas');
+        notify('Clientes sincronizados exitosamente desde las ventas');
       }
     } catch (error) {
       console.error('Error syncing clients:', error);
-      alert('Error al sincronizar clientes');
+      notify('Error al sincronizar clientes');
     }
   };
 

@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState, Suspense, lazy } from 'react'
+import { auroraConfirm as confirmDialog } from '@/components/aurora/ui/AuroraConfirmHost'
+import { notify } from '@/lib/ui-notify'
 import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useConfig } from '../contexts/ConfigContext'
@@ -213,16 +215,16 @@ function ConfigPageInner() {
         // Clear selection
         setSelectedUsers([])
         
-        alert(`Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`)
+        notify(`Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`)
       } else {
-        alert(`Error: ${result.error || result.message}`)
+        notify(`Error: ${result.error || result.message}`)
       }
     } catch (error) {
       console.error('Bulk delete error:', error)
       // Fallback: simulate deletion for demo
       setUsers(prev => prev.filter(user => !ids.includes(user.id)))
       setSelectedUsers([])
-      alert(`Eliminación simulada: ${ids.length} usuarios eliminados (modo demo)`)
+      notify(`Eliminación simulada: ${ids.length} usuarios eliminados (modo demo)`)
     }
   }
 
@@ -243,9 +245,9 @@ function ConfigPageInner() {
         // Clear selection
         setSelectedUsers([])
         
-        alert(`Actualización completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`)
+        notify(`Actualización completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`)
       } else {
-        alert(`Error: ${result.error || result.message}`)
+        notify(`Error: ${result.error || result.message}`)
       }
     } catch (error) {
       console.error('Bulk update error:', error)
@@ -254,7 +256,7 @@ function ConfigPageInner() {
         ids.includes(user.id) ? { ...user, ...updates } : user
       ))
       setSelectedUsers([])
-      alert(`Actualización simulada: ${ids.length} usuarios actualizados (modo demo)`)
+      notify(`Actualización simulada: ${ids.length} usuarios actualizados (modo demo)`)
     }
   }
 
@@ -275,9 +277,9 @@ function ConfigPageInner() {
         // Clear selection
         setSelectedUsers([])
         
-        alert(`Cambio de estado completado: ${result.data.success} exitosos, ${result.data.failed} fallidos`)
+        notify(`Cambio de estado completado: ${result.data.success} exitosos, ${result.data.failed} fallidos`)
       } else {
-        alert(`Error: ${result.error || result.message}`)
+        notify(`Error: ${result.error || result.message}`)
       }
     } catch (error) {
       console.error('Bulk toggle error:', error)
@@ -286,7 +288,7 @@ function ConfigPageInner() {
         ids.includes(user.id) ? { ...user, active } : user
       ))
       setSelectedUsers([])
-      alert(`Cambio de estado simulado: ${ids.length} usuarios ${active ? 'activados' : 'desactivados'} (modo demo)`)
+      notify(`Cambio de estado simulado: ${ids.length} usuarios ${active ? 'activados' : 'desactivados'} (modo demo)`)
     }
   }
 
@@ -297,19 +299,19 @@ function ConfigPageInner() {
   }
 
   const handleDeleteField = async (id: string) => {
-    if (!confirm('¿Eliminar este campo?')) return
+    if (!await confirmDialog('¿Eliminar este campo?')) return
     try {
       const res = await fetch(`/api/config/fields?id=${id}`, { method: 'DELETE' })
       const json = await res.json()
       if (json.status === 'success') {
         setFields(prev => prev.filter(f => f.id !== id))
-        alert('Campo eliminado exitosamente')
+        notify('Campo eliminado exitosamente')
       } else {
-        alert(json.error || 'Error al eliminar campo')
+        notify(json.error || 'Error al eliminar campo')
       }
     } catch (error) {
       console.error('Error deleting field:', error)
-      alert('Error al eliminar campo')
+      notify('Error al eliminar campo')
     }
   }
 
@@ -320,19 +322,19 @@ function ConfigPageInner() {
   }
 
   const handleDeleteBusinessField = async (id: string) => {
-    if (!confirm('¿Eliminar este campo de negocio?')) return
+    if (!await confirmDialog('¿Eliminar este campo de negocio?')) return
     try {
       const res = await fetch(`/api/config/business-info?id=${id}`, { method: 'DELETE' })
       const json = await res.json()
       if (json.status === 'success') {
         setBusinessFields(prev => prev.filter(f => f.id !== id))
-        alert('Campo de negocio eliminado exitosamente')
+        notify('Campo de negocio eliminado exitosamente')
       } else {
-        alert(json.error || 'Error al eliminar campo de negocio')
+        notify(json.error || 'Error al eliminar campo de negocio')
       }
     } catch (error) {
       console.error('Error deleting business field:', error)
-      alert('Error al eliminar campo de negocio')
+      notify('Error al eliminar campo de negocio')
     }
   }
 
@@ -349,19 +351,19 @@ function ConfigPageInner() {
   }
 
   const handleDeleteOptionSet = async (id: string) => {
-    if (!confirm('¿Eliminar este conjunto de opciones?')) return
+    if (!await confirmDialog('¿Eliminar este conjunto de opciones?')) return
     try {
       const res = await fetch(`/api/config/option-sets?id=${id}`, { method: 'DELETE' })
       const json = await res.json()
       if (json.status === 'success') {
         setOptionSets(prev => prev.filter(s => s.id !== id))
-        alert('Conjunto de opciones eliminado exitosamente')
+        notify('Conjunto de opciones eliminado exitosamente')
       } else {
-        alert(json.error || 'Error al eliminar conjunto de opciones')
+        notify(json.error || 'Error al eliminar conjunto de opciones')
       }
     } catch (error) {
       console.error('Error deleting option set:', error)
-      alert('Error al eliminar conjunto de opciones')
+      notify('Error al eliminar conjunto de opciones')
     }
   }
 
@@ -372,19 +374,19 @@ function ConfigPageInner() {
   }
 
   const handleDeleteShipping = async (id: string) => {
-    if (!confirm('¿Eliminar este método de envío?')) return
+    if (!await confirmDialog('¿Eliminar este método de envío?')) return
     try {
       const res = await fetch(`/api/config/shipping?id=${id}`, { method: 'DELETE' })
       const json = await res.json()
       if (json.status === 'success') {
         setShipping(prev => prev.filter(s => s.id !== id))
-        alert('Método de envío eliminado exitosamente')
+        notify('Método de envío eliminado exitosamente')
       } else {
-        alert(json.error || 'Error al eliminar método de envío')
+        notify(json.error || 'Error al eliminar método de envío')
       }
     } catch (error) {
       console.error('Error deleting shipping method:', error)
-      alert('Error al eliminar método de envío')
+      notify('Error al eliminar método de envío')
     }
   }
 
@@ -419,7 +421,7 @@ function ConfigPageInner() {
 
   // Bulk operations for configuration items
   const handleBulkDeleteFields = async (ids: string[], reason?: string) => {
-    if (!confirm(`¿Eliminar ${ids.length} campos? Esta acción no se puede deshacer.`)) return;
+    if (!await confirmDialog(`¿Eliminar ${ids.length} campos? Esta acción no se puede deshacer.`)) return;
     
     try {
       console.log(`🗑️ Deleting ${ids.length} fields...`);
@@ -440,18 +442,18 @@ function ConfigPageInner() {
       if (result.status === 'success') {
         await loadData(); // Reload data
         setSelectedFields([]);
-        alert(`✅ Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
+        notify(`✅ Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
       } else {
-        alert(`❌ Error: ${result.error || result.message}`);
+        notify(`❌ Error: ${result.error || result.message}`);
       }
     } catch (error) {
       console.error('Bulk delete fields error:', error);
-      alert('❌ Error al eliminar campos. Por favor intente de nuevo.');
+      notify('❌ Error al eliminar campos. Por favor intente de nuevo.');
     }
   }
 
   const handleBulkDeleteOptionSets = async (ids: string[], reason?: string) => {
-    if (!confirm(`¿Eliminar ${ids.length} conjuntos de opciones? Esta acción no se puede deshacer.`)) return;
+    if (!await confirmDialog(`¿Eliminar ${ids.length} conjuntos de opciones? Esta acción no se puede deshacer.`)) return;
     
     try {
       console.log(`🗑️ Deleting ${ids.length} option sets...`);
@@ -472,18 +474,18 @@ function ConfigPageInner() {
       if (result.status === 'success') {
         await loadData(); // Reload data
         setSelectedOptionSets([]);
-        alert(`✅ Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
+        notify(`✅ Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
       } else {
-        alert(`❌ Error: ${result.error || result.message}`);
+        notify(`❌ Error: ${result.error || result.message}`);
       }
     } catch (error) {
       console.error('Bulk delete option sets error:', error);
-      alert('❌ Error al eliminar conjuntos de opciones. Por favor intente de nuevo.');
+      notify('❌ Error al eliminar conjuntos de opciones. Por favor intente de nuevo.');
     }
   }
 
   const handleBulkDeleteShipping = async (ids: string[], reason?: string) => {
-    if (!confirm(`¿Eliminar ${ids.length} métodos de envío? Esta acción no se puede deshacer.`)) return;
+    if (!await confirmDialog(`¿Eliminar ${ids.length} métodos de envío? Esta acción no se puede deshacer.`)) return;
     
     try {
       console.log(`🗑️ Deleting ${ids.length} shipping methods...`);
@@ -504,13 +506,13 @@ function ConfigPageInner() {
       if (result.status === 'success') {
         await loadData(); // Reload data
         setSelectedShipping([]);
-        alert(`✅ Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
+        notify(`✅ Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
       } else {
-        alert(`❌ Error: ${result.error || result.message}`);
+        notify(`❌ Error: ${result.error || result.message}`);
       }
     } catch (error) {
       console.error('Bulk delete shipping error:', error);
-      alert('❌ Error al eliminar métodos de envío. Por favor intente de nuevo.');
+      notify('❌ Error al eliminar métodos de envío. Por favor intente de nuevo.');
     }
   }
 
@@ -527,13 +529,13 @@ function ConfigPageInner() {
       if (result.status === 'success') {
         setSelectedOrders([])
         await loadData() // Refresh all data
-        alert(`Eliminación masiva completada: ${result.data.success} órdenes eliminadas, ${result.data.failed} fallidas`)
+        notify(`Eliminación masiva completada: ${result.data.success} órdenes eliminadas, ${result.data.failed} fallidas`)
       } else {
-        alert(`Error: ${result.error || result.message}`)
+        notify(`Error: ${result.error || result.message}`)
       }
     } catch (error) {
       console.error('Bulk delete orders error:', error)
-      alert('Error al eliminar órdenes')
+      notify('Error al eliminar órdenes')
     }
   }
 
@@ -1004,13 +1006,13 @@ function ConfigPageInner() {
                   await loadData()
                   setShowFieldForm(false)
                   setEditingField(null)
-                  alert(editingField ? '✅ Campo actualizado' : '✅ Campo creado')
+                  notify(editingField ? '✅ Campo actualizado' : '✅ Campo creado')
                 } else {
-                  alert(`❌ Error: ${json.error || 'No se pudo guardar el campo'}`)
+                  notify(`❌ Error: ${json.error || 'No se pudo guardar el campo'}`)
                 }
               } catch (err) {
                 console.error('Field save error:', err)
-                alert('❌ Error al guardar campo')
+                notify('❌ Error al guardar campo')
               }
             }}>
               <div className="space-y-4">
@@ -1154,7 +1156,7 @@ function ConfigPageInner() {
                 })
                 const json = await res.json()
                 if (!(res.ok && json.status === 'success')) {
-                  alert(`❌ Error: ${json.error || 'No se pudo guardar el conjunto'}`)
+                  notify(`❌ Error: ${json.error || 'No se pudo guardar el conjunto'}`)
                   return
                 }
 
@@ -1181,10 +1183,10 @@ function ConfigPageInner() {
                 setShowOptionSetForm(false)
                 setEditingOptionSet(null)
                 setOptionSetOptions([])
-                alert(editingOptionSet ? '✅ Conjunto actualizado' : '✅ Conjunto creado')
+                notify(editingOptionSet ? '✅ Conjunto actualizado' : '✅ Conjunto creado')
               } catch (err) {
                 console.error('Option set save error:', err)
-                alert('❌ Error al guardar conjunto de opciones')
+                notify('❌ Error al guardar conjunto de opciones')
               }
             }}>
               <div className="space-y-4">
@@ -1331,13 +1333,13 @@ function ConfigPageInner() {
                   await loadData()
                   setShowShippingForm(false)
                   setEditingShipping(null)
-                  alert(editingShipping ? '✅ Método actualizado' : '✅ Método creado')
+                  notify(editingShipping ? '✅ Método actualizado' : '✅ Método creado')
                 } else {
-                  alert(`❌ Error: ${json.error || 'No se pudo guardar el método de envío'}`)
+                  notify(`❌ Error: ${json.error || 'No se pudo guardar el método de envío'}`)
                 }
               } catch (err) {
                 console.error('Shipping save error:', err)
-                alert('❌ Error al guardar método de envío')
+                notify('❌ Error al guardar método de envío')
               }
             }}>
               <div className="space-y-4">

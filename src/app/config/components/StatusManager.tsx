@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -65,7 +66,7 @@ export function StatusManager({ statuses, loading = false, onRefresh }: StatusMa
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('¿Estás seguro de eliminar este estado?')) return;
+    if (!await auroraConfirm('¿Estás seguro de eliminar este estado?')) return;
     
     try {
       const res = await fetch(`/api/config/status?id=${id}`, { method: 'DELETE' });

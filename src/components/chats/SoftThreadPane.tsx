@@ -1,13 +1,18 @@
 'use client'
 
 import {
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
   type Ref,
 } from 'react'
+import Link from 'next/link'
+import { Check, CheckCheck, ChevronLeft, Hand, Info, Paperclip, Pause, Play, Send, ShoppingBag, Sparkles, User, X } from 'lucide-react'
 import {
+  initialsFromName,
   isWhatsAppWindowOpen,
   type ConversationStatus,
   type SoftConversation,
@@ -27,6 +32,14 @@ import {
   humanOutboundSender,
 } from '@/lib/chat-human-attribution'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
+import { describeChatMessage, isPlaceholderToken, type ChatMessageNotice } from '@/lib/chat-message-display'
+import { ChatAssigneePicker, type ChatAssignee } from '@/components/chats/ChatAssigneePicker'
+import {
+  AuroraEmptyState,
+  AuroraErrorState,
+  AuroraThreadSkeleton,
+  ChannelDownBanner,
+} from '@/components/aurora/states'
 import { formatThreadChannelMeta, platformFullName } from '@/lib/social-account-identity'
 import {
   CHAT_INBOX_V2_THREAD_RENDER_WINDOW,
@@ -78,6 +91,49 @@ interface SoftThreadPaneProps {
   onPauseAi?: () => void
   onResumeAi?: () => void
   aiBusy?: boolean
+  /** Messages for the selected chat are still loading (STATE-01 skeleton). */
+  threadLoading?: boolean
+  /** Loading this chat's messages failed (shown instead of "Sin mensajes"). */
+  threadError?: boolean
+  onRetryThread?: () => void
+  /** Selected line is down / needs repair (STATE-01 canal caído). */
+  channelDownMessage?: string | null
+  /** Mobile (compact): open the details / status sheet (CHAT-M02 person button). */
+  onOpenDetails?: () => void
+  /** Mobile (compact): agent tool actions logged today, shown in the agent banner. */
+  agentActionsToday?: number
+  /** Opens "Crear pedido" for this chat (the inbox links the order to the thread afterwards). */
+  onCreateOrder?: () => void
+  /** Attach + send a file (WhatsApp, flag-gated). Hidden when absent. */
+  attachments?: {
+    accept: string
+    onSendFile: (file: File, caption: string) => Promise<boolean>
+  }
+  /** Chat owner picker (Asignarme / teammates / Sin asignar). Hidden when absent. */
+  assignment?: {
+    assignees: ChatAssignee[]
+    viewerUserId: string | null
+    onAssign: (userId: string | null) => void
+    busy?: boolean
+  }
+}
+
+function formatMessageTime(iso: string | undefined | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+function DeliveryTicks({ status }: { status?: string | null }) {
+  if (status === 'failed' || status === 'pending' || !status) return null
+  const Icon = status === 'sent' ? Check : CheckCheck
+  return (
+    <Icon
+      aria-label={status === 'read' ? 'Leído' : status === 'delivered' ? 'Entregado' : 'Enviado'}
+      className={`h-3 w-3 ${status === 'read' ? 'text-[#5B3FE0]' : 'text-slate-400'}`}
+    />
+  )
 }
 
 function statusLabel(status: ConversationStatus) {
@@ -103,54 +159,136 @@ function tagChip(tag: SoftTag) {
   )
 }
 
+/** Placeholder messages (reaction, contact, unsupported…) shown as a labeled notice. */
+function SoftThreadNotice({ notice }: { notice: ChatMessageNotice }) {
+  return (
+    <div data-testid="soft-thread-notice" className={notice.tone === 'muted' ? 'text-slate-600' : undefined}>
+      <p className={`flex items-center gap-1.5 font-medium ${notice.tone === 'muted' ? 'italic' : ''}`}>
+        {notice.tone === 'muted' ? <Info className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden /> : null}
+        {notice.title}
+      </p>
+      {notice.detail ? (
+        <p className="mt-0.5 whitespace-pre-line text-[12px] leading-snug text-slate-500">{notice.detail}</p>
+      ) : null}
+      {notice.href ? (
+        <a
+          href={notice.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-1 inline-block text-[12px] font-semibold text-[#5B6CFF] underline-offset-2 hover:underline"
+        >
+          {notice.hrefLabel || 'Abrir'}
+        </a>
+      ) : null}
+    </div>
+  )
+}
+
+/** IG attachments have no media id; the server keeps the CDN URL and serves it by message id. */
+function hasInstagramAttachment(msg: ChatInboxMessage): boolean {
+  const raw = (msg.metadata as { rawMessage?: { attachments?: Array<{ hasUrl?: boolean }> } } | null | undefined)?.rawMessage
+  return Boolean(raw?.attachments?.[0]?.hasUrl)
+}
+
 function messageHasMedia(msg: ChatInboxMessage): boolean {
   if (msg.providerMediaId || msg.mediaBlobPath) return true
   const type = (msg.messageType || '').toLowerCase()
-  return ['image', 'audio', 'voice', 'document', 'video', 'sticker'].includes(type)
+  return ['image', 'audio', 'voice', 'document', 'video', 'sticker', 'file'].includes(type)
+}
+
+const MEDIA_LABEL: Record<string, string> = {
+  image: 'la imagen',
+  audio: 'el audio',
+  video: 'el video',
+  file: 'el archivo',
+}
+
+/** Shown when the media request fails (expired WhatsApp media, too large, codec not supported). */
+function SoftThreadMediaFallback({ src, kind, filename }: { src: string; kind: string; filename?: string | null }) {
+  return (
+    <div
+      className="mt-1 flex items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-[12px] text-slate-600 ring-1 ring-slate-200/70"
+      data-testid="soft-thread-media-fallback"
+    >
+      <Info className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+      <span className="min-w-0 flex-1">
+        No se pudo mostrar {MEDIA_LABEL[kind] ?? 'el archivo'}
+        {filename ? <span className="block truncate text-slate-400">{filename}</span> : null}
+      </span>
+      <a
+        href={src}
+        download
+        className="shrink-0 font-semibold text-[#5B6CFF] underline-offset-2 hover:underline"
+      >
+        Descargar
+      </a>
+    </div>
+  )
 }
 
 function SoftThreadMedia({ msg }: { msg: ChatInboxMessage }) {
   const src = `/api/chat/media/${encodeURIComponent(msg.id)}`
   const mime = (msg.mediaMimeType || '').toLowerCase()
   const type = (msg.messageType || '').toLowerCase()
+  const [failed, setFailed] = useState(false)
 
-  if (type === 'image' || mime.startsWith('image/')) {
+  const kind =
+    type === 'image' || type === 'sticker' || mime.startsWith('image/')
+      ? 'image'
+      : type === 'video' || mime.startsWith('video/')
+        ? 'video'
+        : type === 'audio' || type === 'voice' || mime.startsWith('audio/')
+          ? 'audio'
+          : 'file'
+
+  if (failed) return <SoftThreadMediaFallback src={src} kind={kind} filename={msg.mediaFilename} />
+
+  if (kind === 'image') {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={src}
-        alt={msg.content || 'imagen'}
-        className="mt-1 max-h-64 max-w-full rounded-lg object-contain"
-        loading="lazy"
-      />
-    )
-  }
-  if (type === 'audio' || type === 'voice' || mime.startsWith('audio/')) {
-    return <audio controls preload="none" src={src} className="mt-1 w-full max-w-xs" />
-  }
-  if (type === 'document' || mime.includes('pdf') || Boolean(msg.mediaFilename)) {
-    return (
-      <a
-        href={src}
-        target="_blank"
-        rel="noreferrer"
-        className="mt-1 inline-flex items-center gap-1 text-[12px] font-medium underline underline-offset-2"
-      >
-        {msg.mediaFilename || 'Documento'}
+      <a href={src} target="_blank" rel="noreferrer" className="block">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={msg.content && !msg.content.startsWith('[') ? msg.content : 'imagen'}
+          className={`mt-1 max-w-full rounded-lg object-contain ${type === 'sticker' ? 'max-h-32' : 'max-h-64'}`}
+          loading="lazy"
+          onError={() => setFailed(true)}
+        />
       </a>
     )
   }
-  if (type === 'video' || mime.startsWith('video/')) {
-    return <video controls preload="none" src={src} className="mt-1 max-h-64 max-w-full rounded-lg" />
+  if (kind === 'audio') {
+    // WhatsApp voice notes are ogg/opus: iPhone Safari cannot play them, so the
+    // download link is always there (and the fallback replaces a failed player).
+    return (
+      <div className="mt-1 w-full max-w-xs">
+        <audio controls preload="none" src={src} className="w-full" onError={() => setFailed(true)} />
+        <a href={src} download className="mt-0.5 inline-block text-[11px] text-slate-400 underline-offset-2 hover:underline">
+          Descargar audio
+        </a>
+      </div>
+    )
+  }
+  if (kind === 'video') {
+    return (
+      <video
+        controls
+        playsInline
+        preload="none"
+        src={src}
+        className="mt-1 max-h-64 max-w-full rounded-lg bg-black/5"
+        onError={() => setFailed(true)}
+      />
+    )
   }
   return (
     <a
       href={src}
       target="_blank"
       rel="noreferrer"
-      className="mt-1 inline-flex text-[12px] font-medium underline underline-offset-2"
+      className="mt-1 inline-flex items-center gap-1 text-[12px] font-medium underline underline-offset-2"
     >
-      Ver archivo
+      {msg.mediaFilename || (type === 'document' || mime.includes('pdf') ? 'Documento' : 'Ver archivo')}
     </a>
   )
 }
@@ -189,8 +327,38 @@ export function SoftThreadPane({
   onPauseAi,
   onResumeAi,
   aiBusy,
+  threadLoading,
+  threadError,
+  onRetryThread,
+  channelDownMessage,
+  onOpenDetails,
+  agentActionsToday = 0,
+  onCreateOrder,
+  assignment,
+  attachments,
 }: SoftThreadPaneProps) {
   const [pickerOpenLocal, setPickerOpenLocal] = useState(false)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const composerFocus = () => {
+    const el = composerRef && typeof composerRef === 'object' ? composerRef.current : null
+    el?.focus()
+  }
+  // Switching chats drops a file picked for another conversation.
+  useEffect(() => {
+    setPendingFile(null)
+  }, [conversation?.recipientId, conversation?.socialAccountId])
+  const submitComposer = (e: FormEvent) => {
+    if (pendingFile && attachments) {
+      e.preventDefault()
+      const file = pendingFile
+      void attachments.onSendFile(file, messageInput).then((ok) => {
+        if (ok) setPendingFile(null)
+      })
+      return
+    }
+    onSend(e)
+  }
   const pickerOpen = showTemplatePicker ?? pickerOpenLocal
 
   const renderedMessages = useMemo(
@@ -204,17 +372,13 @@ export function SoftThreadPane({
 
   if (!conversation) {
     return (
-      <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white px-6 text-center">
-        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8ecff] text-lg font-semibold text-[#5b6cff]">
-          ⌘
-        </div>
-        <p className="text-base font-medium text-slate-700">Seleccioná un chat</p>
-        <p className="mt-1 max-w-sm text-sm text-slate-500">
-          Elegí una conversación para monitorear la IA, ver el log de tools o tomar el control.
-        </p>
-        <p className="mt-3 text-[11px] text-slate-400">
-          ↑↓ navegar · Enter abrir · Esc volver · ⌘K buscar
-        </p>
+      <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-[#FAFBFC] px-6 text-center">
+        <AuroraEmptyState
+          icon="💬"
+          title="Seleccioná un chat"
+          description="Elegí una conversación para leer el hilo, responder o tomar el control del agente."
+        />
+        <p className="text-[11px] text-slate-400">↑↓ navegar · Enter abrir · Esc volver</p>
       </section>
     )
   }
@@ -243,7 +407,8 @@ export function SoftThreadPane({
     .join(' · ')
 
   const closedWindow = conversation.platform === 'whatsapp' && !windowOpen
-  // F37-03: unlock composer whenever paused / human takeover (incl. Soft DEMO).
+  const canCreateOrder = Boolean(onCreateOrder) && !conversation.orderId && !conversation.isDemo
+  // F37-03: unlock composer whenever paused / human takeover (incl. DEMO).
   const composerEnabled = isSoftHumanComposerEnabled(agentMode)
 
   function openPicker() {
@@ -259,64 +424,229 @@ export function SoftThreadPane({
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
-      <header className="shrink-0 border-b border-slate-100 px-4 py-3 sm:px-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            {onBack ? (
-              <button
-                type="button"
-                onClick={onBack}
-                className="mb-1 text-xs font-medium text-[#5b6cff]"
-              >
-                ← Chats
-              </button>
-            ) : null}
-            <h2 className="truncate text-base font-semibold text-slate-900">
+      {channelDownMessage ? <ChannelDownBanner message={channelDownMessage} /> : null}
+      {compact ? (
+        <header className="flex shrink-0 items-center gap-3 border-b border-slate-200/70 bg-white px-3 py-2.5">
+          <button
+            type="button"
+            onClick={onBack ?? onClose}
+            aria-label="Volver a chats"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-800 active:bg-slate-100"
+          >
+            <ChevronLeft className="h-6 w-6" aria-hidden />
+          </button>
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[14px] font-bold text-blue-700">
+            {initialsFromName(conversation.recipientName)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-[16px] font-bold leading-tight text-slate-900">
               {conversation.recipientName || conversation.recipientId}
             </h2>
             <p
-              className={`mt-0.5 flex items-center gap-1.5 truncate text-[11px] ${
+              className={`mt-0.5 flex items-center gap-1.5 truncate text-[12px] ${
                 closedWindow ? 'font-medium text-red-600' : 'text-slate-500'
               }`}
             >
-              <ChannelLogo platform={conversation.platform} size={16} className="shrink-0" />
+              <ChannelLogo platform={conversation.platform} size={12} className="shrink-0" />
               <span className="truncate">
-                {compact && closedWindow
-                  ? `${platformFullName(conversation.platform)} · ${conversation.accountLabel} · ventana 24h CERRADA`
-                  : metaLine}
+                {conversation.accountLabel}
+                {closedWindow ? ' · ventana 24h cerrada' : ''}
               </span>
             </p>
-            <p className="mt-1 truncate text-[11px] text-slate-500" data-testid="soft-agent-label">
-              {conversation.agentLabel || 'Sin agente'}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <span
-                className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${statusChipClass(conversation.status)}`}
-              >
-                {statusLabel(conversation.status)}
-              </span>
-              <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-700">
-                {agentModeLabel(agentMode)}
-              </span>
-              {conversation.tags.map(tagChip)}
-            </div>
           </div>
-          {!compact ? (
+          {canCreateOrder ? (
             <button
               type="button"
-              onClick={onClose}
-              className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200"
+              onClick={onCreateOrder}
+              aria-label="Crear pedido"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F1EEFF] text-[#5B3FE0]"
             >
-              Cerrar
+              <ShoppingBag className="h-5 w-5" aria-hidden />
             </button>
           ) : null}
+          {onOpenDetails ? (
+            <button
+              type="button"
+              onClick={onOpenDetails}
+              aria-label="Detalles del chat"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F1EFEA] text-slate-800"
+            >
+              <User className="h-5 w-5" aria-hidden />
+            </button>
+          ) : null}
+        </header>
+      ) : null}
+      {compact && assignment && !conversation.isDemo ? (
+        <div
+          className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200/70 bg-white px-3 py-1.5"
+          data-testid="soft-thread-mobile-owner"
+        >
+          <span className="text-[12px] text-slate-500">Responsable</span>
+          <ChatAssigneePicker
+            compact
+            current={conversation.assignee}
+            assignees={assignment.assignees}
+            viewerUserId={assignment.viewerUserId}
+            onAssign={assignment.onAssign}
+            busy={assignment.busy}
+          />
         </div>
-      </header>
+      ) : null}
+      {!compact ? (
+        <header className="shrink-0 border-b border-slate-200/70 px-4 py-3 sm:px-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              {onBack ? (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="mb-1 text-xs font-medium text-[#5B6CFF]"
+                >
+                  ← Chats
+                </button>
+              ) : null}
+              <h2 className="truncate text-base font-semibold text-slate-900">
+                {conversation.recipientName || conversation.recipientId}
+              </h2>
+              <p
+                className={`mt-0.5 flex items-center gap-1.5 truncate text-[11px] ${
+                  closedWindow ? 'font-medium text-red-600' : 'text-slate-500'
+                }`}
+              >
+                <ChannelLogo platform={conversation.platform} size={16} className="shrink-0" />
+                <span className="truncate">
+                  {compact && closedWindow
+                    ? `${platformFullName(conversation.platform)} · ${conversation.accountLabel} · ventana 24h CERRADA`
+                    : metaLine}
+                </span>
+              </p>
+              <p className="mt-1 truncate text-[11px] text-slate-500" data-testid="soft-agent-label">
+                {conversation.agentLabel || 'Sin agente'}
+              </p>
+
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span
+                  className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${statusChipClass(conversation.status)}`}
+                >
+                  {statusLabel(conversation.status)}
+                </span>
+                <span className="rounded-md bg-[#EEF0FF] px-2 py-0.5 text-[10px] font-medium text-[#4A46E5]">
+                  {agentModeLabel(agentMode)}
+                </span>
+                {conversation.tags.map(tagChip)}
+              </div>
+            </div>
+            {!compact ? (
+              <div className="flex shrink-0 items-center gap-2">
+                {assignment && !conversation.isDemo ? (
+                  <ChatAssigneePicker
+                    current={conversation.assignee}
+                    assignees={assignment.assignees}
+                    viewerUserId={assignment.viewerUserId}
+                    onAssign={assignment.onAssign}
+                    busy={assignment.busy}
+                  />
+                ) : null}
+                {conversation.orderId ? (
+                  <Link
+                    href={`/ventas?pedido=${encodeURIComponent(conversation.orderId)}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200 hover:bg-emerald-100"
+                    data-testid="soft-thread-order-link"
+                  >
+                    <Check className="h-3.5 w-3.5" aria-hidden />
+                    Pedido vinculado
+                    {conversation.orderNumber ? (
+                      <span className="font-semibold">#{conversation.orderNumber}</span>
+                    ) : null}
+                  </Link>
+                ) : canCreateOrder ? (
+                  <button
+                    type="button"
+                    onClick={onCreateOrder}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF] px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90"
+                    data-testid="soft-thread-create-order"
+                  >
+                    <ShoppingBag className="h-3.5 w-3.5" aria-hidden />
+                    Crear pedido
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                >
+                  Cerrar
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </header>
+      ) : null}
+
+      {compact ? (
+        <div className="shrink-0 bg-[#F5F4F0] px-3 pt-3" data-testid="soft-agent-banner">
+          <div className="rounded-2xl bg-gradient-to-r from-[#5B6CFF] via-[#A855F7] to-[#EC4899] p-[1.5px]">
+            <div className="flex items-center gap-3 rounded-[14.5px] bg-white px-3 py-2.5">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#5B6CFF] to-[#EC4899] text-white">
+                <Sparkles className="h-5 w-5" aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[14px] font-bold text-slate-900">
+                  {agentMode === 'ai_active'
+                    ? `${conversation.agentLabel || 'Agente'} está atendiendo`
+                    : agentMode === 'paused'
+                      ? 'Agente en pausa'
+                      : 'Control humano'}
+                </p>
+                <p className="truncate text-[12px] text-slate-500">
+                  {agentModeLabel(agentMode)}
+                  {aiBusy ? ' · procesando…' : ` · ${agentActionsToday} ${agentActionsToday === 1 ? 'acción' : 'acciones'} hoy`}
+                </p>
+              </div>
+              {agentMode === 'ai_active' ? (
+                <button
+                  type="button"
+                  onClick={onPauseAi}
+                  disabled={aiBusy}
+                  aria-label="Pausar agente"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-slate-800 ring-1 ring-slate-200 disabled:opacity-50"
+                >
+                  <Pause className="h-4 w-4" aria-hidden />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onResumeAi}
+                  disabled={aiBusy}
+                  aria-label="Reanudar IA"
+                  className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-white px-3 text-[13px] font-semibold text-emerald-800 ring-1 ring-emerald-200 disabled:opacity-50"
+                >
+                  <Play className="h-4 w-4" aria-hidden />
+                  Reanudar
+                </button>
+              )}
+              {agentMode !== 'human' ? (
+                <button
+                  type="button"
+                  onClick={onTakeOver}
+                  disabled={aiBusy}
+                  className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF] px-3.5 text-[14px] font-semibold text-white disabled:opacity-50"
+                >
+                  <Hand className="h-4 w-4" aria-hidden />
+                  Tomar
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div
         ref={messagesContainerRef}
         onScroll={onMessagesScroll}
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-5"
+        className={`min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-5 ${
+          compact ? 'bg-[#F5F4F0]' : 'bg-[#FAFBFC]'
+        }`}
       >
         {hasMoreMessages && onLoadOlder ? (
           <div className="flex justify-center pb-1">
@@ -331,11 +661,19 @@ export function SoftThreadPane({
           </div>
         ) : null}
 
-        {renderedMessages.length === 0 ? (
+        {renderedMessages.length === 0 && threadLoading ? (
+          <AuroraThreadSkeleton />
+        ) : renderedMessages.length === 0 && threadError ? (
+          <AuroraErrorState
+            title="No pudimos cargar los mensajes"
+            description="La conversación sigue ahí; solo falló la consulta."
+            onRetry={onRetryThread}
+          />
+        ) : renderedMessages.length === 0 ? (
           <div className="py-12 text-center">
             <p className="text-sm text-slate-400">Sin mensajes en este chat</p>
             <p className="mt-1 text-[11px] text-slate-400">
-              La IA responde cuando llegue el primer inbound.
+              Los mensajes nuevos aparecen acá apenas lleguen.
             </p>
           </div>
         ) : (
@@ -346,14 +684,10 @@ export function SoftThreadPane({
               Boolean(msg.id?.startsWith('demo-ai-')) ||
               isSoftAiOutboundMetadata(msg.metadata)
             const showMedia = messageHasMedia(msg)
-            const isPlaceholder =
-              showMedia &&
-              (msg.content === '[image]' ||
-                msg.content === '[audio]' ||
-                msg.content === '[voice]' ||
-                msg.content === '[document]' ||
-                msg.content === '[video]' ||
-                msg.content === '[sticker]')
+            // Any stored `[type]` token (media, share, story_mention, ig_reel…) is never shown
+            // as text next to the media (it stays after IG media gets cached).
+            const isPlaceholder = showMedia && isPlaceholderToken(msg.content)
+            const notice = showMedia ? null : describeChatMessage(msg)
             const humanSender = !softAi && outbound ? humanOutboundSender(msg.metadata) : null
             const humanLabel = humanSender ? humanOutboundLabel(msg.metadata) : null
             return (
@@ -362,13 +696,14 @@ export function SoftThreadPane({
                 data-testid="soft-thread-message"
                 className={`flex ${outbound ? 'justify-end' : 'justify-start'}`}
               >
-                <div className={`flex max-w-[85%] items-end gap-2 sm:max-w-md ${outbound ? 'flex-row-reverse' : ''}`}>
+                <div className={`flex items-end gap-2 ${compact ? 'max-w-[82%]' : 'max-w-[85%] sm:max-w-md'} ${outbound ? 'flex-row-reverse' : ''}`}>
                   {humanSender?.name ? (
                     humanSender.image ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={humanSender.image}
                         alt={humanSender.name}
+                        referrerPolicy="no-referrer"
                         className="mb-5 h-7 w-7 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
                         data-testid="soft-thread-sender-avatar"
                       />
@@ -384,23 +719,46 @@ export function SoftThreadPane({
                   ) : null}
                   <div>
                   <div
-                    className={`rounded-[14px] px-3.5 py-2.5 text-[13px] ${
+                    className={`rounded-[14px] px-3.5 py-2.5 ${compact ? 'text-[15px] leading-snug' : 'text-[13px]'} ${
                       outbound
                         ? softAi
-                          ? 'bg-indigo-100 text-indigo-950'
-                          : 'bg-blue-100 text-blue-950'
-                        : 'bg-slate-100 text-slate-900'
+                          ? 'bg-[#F0EEFF] text-slate-900 ring-1 ring-[#5B6CFF]/15'
+                          : 'bg-[#E8F0FE] text-slate-900 ring-1 ring-blue-200/60'
+                        : 'bg-white text-slate-900 ring-1 ring-slate-200/80'
                     }`}
                   >
                     {showMedia ? <SoftThreadMedia msg={msg} /> : null}
-                    {!isPlaceholder ? (
+                    {notice ? (
+                      <SoftThreadNotice notice={notice} />
+                    ) : !isPlaceholder ? (
                       <p className={showMedia ? 'mt-1' : undefined}>{msg.content}</p>
                     ) : null}
-                    {showMedia && isPlaceholder && !msg.providerMediaId && !msg.mediaBlobPath ? (
+                    {showMedia && isPlaceholder && !msg.providerMediaId && !msg.mediaBlobPath && !hasInstagramAttachment(msg) ? (
                       <p className="text-[11px] opacity-70">Adjunto no disponible</p>
                     ) : null}
+                    {compact ? (
+                      <p
+                        className={`mt-1 flex items-center gap-1 text-[11px] ${
+                          outbound ? 'justify-start text-[#5B3FE0]' : 'text-slate-400'
+                        }`}
+                        data-testid="soft-thread-message-meta"
+                      >
+                        {outbound && softAi ? (
+                          <>
+                            <Sparkles className="h-3 w-3" aria-hidden />
+                            <span className="font-medium">{conversation.agentLabel || 'Agente'}</span>
+                            <span aria-hidden>·</span>
+                          </>
+                        ) : null}
+                        <span className={outbound && !softAi ? 'text-slate-500' : undefined}>
+                          {humanLabel ? `${humanLabel} · ` : null}
+                          {formatMessageTime(msg.sentAt)}
+                        </span>
+                        {outbound ? <DeliveryTicks status={msg.deliveryStatus} /> : null}
+                      </p>
+                    ) : null}
                   </div>
-                  {outbound ? (
+                  {outbound && (!compact || failed || msg.deliveryStatus === 'failed') ? (
                     <p
                       className={`mt-1 text-right text-[10px] ${
                         failed || msg.deliveryStatus === 'failed'
@@ -415,16 +773,26 @@ export function SoftThreadPane({
                           : softAiOutboundLabel(msg.metadata)
                       ) : failed || msg.deliveryStatus === 'failed' ? (
                         <>
-                          Falló ✕{' '}
+                          No enviado ⓘ{' '}
                           <button
                             type="button"
                             onClick={() => {
                               if (onRetryMessage) onRetryMessage(msg.id)
                               else onRetry?.()
                             }}
-                            className="underline underline-offset-2"
+                            className="font-semibold text-[#5B6CFF] underline-offset-2 hover:underline"
                           >
                             Reintentar
+                          </button>
+                          {' · '}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void navigator.clipboard?.writeText(msg.content || '')
+                            }}
+                            className="text-slate-500 underline-offset-2 hover:underline"
+                          >
+                            Copiar texto
                           </button>
                         </>
                       ) : (
@@ -442,67 +810,86 @@ export function SoftThreadPane({
           })
         )}
 
+        {compact && conversation.orderId ? (
+          <div className="flex justify-center" data-testid="soft-thread-order-chip">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-[13px] font-medium text-slate-800 ring-1 ring-emerald-200">
+              <Check className="h-4 w-4 rounded-full bg-emerald-500 p-0.5 text-white" aria-hidden />
+              Pedido vinculado
+              {conversation.orderNumber ? (
+                <span className="font-semibold text-slate-900">#{conversation.orderNumber}</span>
+              ) : null}
+              <Link href={`/ventas?pedido=${encodeURIComponent(conversation.orderId)}`} className="font-semibold text-[#5B3FE0]">
+                Ver
+              </Link>
+            </span>
+          </div>
+        ) : null}
+
         {conversation.pendingSuggestionText ? (
           <div
-            className="rounded-[14px] bg-violet-50 px-4 py-3 text-[12px] text-violet-950 ring-1 ring-violet-100"
+            className="rounded-2xl bg-[#F0EEFF] px-4 py-3 text-[12px] text-slate-900 ring-1 ring-[#5B6CFF]/15"
             data-testid="soft-ai-suggestion"
           >
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
-              Sugerencia de IA
+              Sugerencia del agente
             </p>
             <p className="whitespace-pre-wrap">{conversation.pendingSuggestionText}</p>
             <p className="mt-2 text-[10px] text-violet-600">
-              Solo lectura en A1 — Usar / Editar / Descartar llegan en A3.
+              Solo lectura por ahora: usá el texto como referencia al responder.
             </p>
           </div>
         ) : null}
 
         {conversation.isDemo ? (
           <div className="rounded-[14px] bg-amber-50 px-4 py-2.5 text-[11px] text-amber-900 ring-1 ring-amber-100">
-            Chat <span className="font-semibold">DEMO</span> · local · IA sin Meta · quitalo desde
-            la lista
+            Chat <span className="font-semibold">DEMO</span> · local · sin conexión a Meta · quitalo
+            desde la lista
           </div>
         ) : null}
 
-        <div className="sticky bottom-0 rounded-[14px] bg-indigo-50/95 px-4 py-3 text-[12px] text-indigo-950 shadow-[0_-6px_16px_rgba(238,242,255,0.85)] ring-1 ring-indigo-100/80 backdrop-blur-[2px]">
+        <div
+          className={`sticky bottom-0 rounded-2xl bg-white px-4 py-3 text-[12px] text-slate-800 shadow-[0_-6px_16px_rgba(250,251,252,0.9)] ring-1 ring-[#5B6CFF]/30 ${
+            compact ? 'hidden' : ''
+          }`}
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="font-semibold text-indigo-800">
-              Monitor · {agentModeLabel(agentMode)}
-              {aiBusy ? ' · pensando…' : ''}
+            <p className="font-semibold text-slate-900">
+              Agente · {agentModeLabel(agentMode)}
+              {aiBusy ? ' · procesando…' : ''}
             </p>
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
+                disabled={agentMode === 'paused'}
+                onClick={onPauseAi}
+                className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Pausar
+              </button>
+              <button
+                type="button"
                 disabled={agentMode === 'human'}
                 onClick={onTakeOver}
-                className="rounded-lg bg-[#5b6cff] px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-40"
+                className="rounded-lg bg-[#5B6CFF] px-2.5 py-1 text-[11px] font-medium text-white hover:bg-[#4A5AF0] disabled:opacity-40"
               >
                 Tomar control
               </button>
               <button
                 type="button"
-                disabled={agentMode === 'paused'}
-                onClick={onPauseAi}
-                className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 disabled:opacity-40"
-              >
-                Pausar IA
-              </button>
-              <button
-                type="button"
                 disabled={agentMode === 'ai_active'}
                 onClick={onResumeAi}
-                className="rounded-lg bg-emerald-100 px-2.5 py-1 text-[11px] font-medium text-emerald-900 disabled:opacity-40"
+                className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-100 hover:bg-emerald-100 disabled:opacity-40"
               >
                 Reanudar IA
               </button>
             </div>
           </div>
-          <p className="mt-1.5 leading-relaxed text-indigo-900/80">
+          <p className="mt-1.5 leading-relaxed text-slate-500">
             {agentMode === 'ai_active'
-              ? 'IA responde de punta a punta (tools + reply). Monitoreá el log en el rail.'
+              ? 'El agente responde solo. Pausalo o tomá el control para intervenir.'
               : agentMode === 'paused'
-                ? 'IA pausada — no auto-responde. Podés escribir vos o reanudar.'
-                : 'Control humano — la IA no responde hasta que reanudés.'}
+                ? 'Agente en pausa — no responde solo. Podés escribir vos o reanudarlo.'
+                : 'Control humano — el agente no responde hasta que lo reanudes.'}
           </p>
         </div>
 
@@ -510,7 +897,7 @@ export function SoftThreadPane({
       </div>
 
       {closedWindow || showTemplateCta ? (
-        <div className="shrink-0 border-t border-slate-100 px-4 py-4 sm:px-5">
+        <div className="shrink-0 border-t border-slate-200/70 px-4 py-4 sm:px-5">
           <div className="rounded-2xl bg-red-50 px-4 py-4 text-center">
             <p className="text-sm font-semibold text-red-800">Ventana de 24h cerrada</p>
             <p className="mt-1 text-xs text-red-700">
@@ -518,7 +905,7 @@ export function SoftThreadPane({
             </p>
             <button
               type="button"
-              className="mt-3 rounded-xl bg-[#5b6cff] px-4 py-2.5 text-sm font-medium text-white"
+              className="mt-3 rounded-xl bg-[#5B6CFF] px-4 py-2.5 text-sm font-medium text-white"
               onClick={openPicker}
             >
               Elegir plantilla…
@@ -584,7 +971,7 @@ export function SoftThreadPane({
               {chatSendErrorNeedsReconnect(sendError) ? (
                 <>
                   {' '}
-                  <a href="/config/social" className="font-semibold underline underline-offset-2">
+                  <a href="/config?tab=social" className="font-semibold underline underline-offset-2">
                     Reconectar
                   </a>
                 </>
@@ -593,10 +980,14 @@ export function SoftThreadPane({
           ) : null}
         </div>
       ) : (
-        <div className="shrink-0 border-t border-slate-100 px-4 py-3 sm:px-5">
-          {!composerEnabled ? (
+        <div
+          className={`shrink-0 border-t border-slate-200/70 bg-white px-4 py-3 sm:px-5 ${
+            compact ? 'pb-[max(0.75rem,env(safe-area-inset-bottom))]' : ''
+          }`}
+        >
+          {!composerEnabled && !compact ? (
             <p className="mb-2 text-[11px] text-slate-500">
-              Composer humano desactivado mientras la IA está activa — usá Tomar control o Pausar.
+              El agente está respondiendo — usá Tomar control o Pausar para escribir vos.
             </p>
           ) : null}
 
@@ -609,7 +1000,7 @@ export function SoftThreadPane({
               {chatSendErrorNeedsReconnect(sendError) ? (
                 <>
                   {' '}
-                  <a href="/config/social" className="font-semibold underline underline-offset-2">
+                  <a href="/config?tab=social" className="font-semibold underline underline-offset-2">
                     Reconectar
                   </a>
                 </>
@@ -617,7 +1008,56 @@ export function SoftThreadPane({
             </div>
           ) : null}
 
-          <form onSubmit={onSend} className="flex gap-2">
+          {pendingFile ? (
+            <div
+              className="mb-2 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[12px] text-slate-700 ring-1 ring-slate-200"
+              data-testid="composer-attachment"
+            >
+              <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{pendingFile.name}</span>
+              <span className="shrink-0 text-slate-500">{(pendingFile.size / (1024 * 1024)).toFixed(1)} MB</span>
+              <button
+                type="button"
+                onClick={() => setPendingFile(null)}
+                disabled={sending}
+                aria-label="Quitar archivo"
+                className="rounded-md p-1 text-slate-500 hover:bg-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF]"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            </div>
+          ) : null}
+
+          <form onSubmit={submitComposer} className={compact ? 'flex items-end gap-2' : 'flex gap-2'}>
+            {attachments && conversation.platform === 'whatsapp' ? (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={attachments.accept}
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null
+                    setPendingFile(file)
+                    e.target.value = ''
+                    if (file) composerFocus()
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending || !composerEnabled}
+                  aria-label="Adjuntar archivo"
+                  title="Adjuntar foto, video, audio o documento"
+                  className={`flex shrink-0 items-center justify-center text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF] disabled:opacity-40 ${
+                    compact ? 'h-11 w-11 rounded-full' : 'h-auto w-11 rounded-xl ring-1 ring-slate-100'
+                  }`}
+                  data-testid="composer-attach"
+                >
+                  <Paperclip className="h-5 w-5" aria-hidden />
+                </button>
+              </>
+            ) : null}
             <textarea
               ref={composerRef}
               rows={1}
@@ -629,30 +1069,44 @@ export function SoftThreadPane({
               onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
                 if (e.key !== 'Enter' || e.shiftKey) return
                 e.preventDefault()
-                if (sending || !composerEnabled || !messageInput.trim()) return
-                onSend(e as unknown as FormEvent)
+                if (sending || !composerEnabled || (!messageInput.trim() && !pendingFile)) return
+                submitComposer(e as unknown as FormEvent)
               }}
+              aria-label={pendingFile ? 'Texto del archivo (opcional)' : 'Mensaje'}
               placeholder={
-                composerEnabled
+                pendingFile
+                  ? /\.(mp3|m4a|aac|amr|ogg|opus)$/i.test(pendingFile.name)
+                    ? 'Los audios se envían sin texto'
+                    : 'Agregá un texto al archivo (opcional)'
+                  : composerEnabled
                   ? compact
-                    ? 'Mensaje… Enter envía'
+                    ? 'Escribí un mensaje'
                     : 'Escribí un mensaje… Enter envía · Shift+Enter nueva línea'
-                  : 'Tomá control o pausá la IA para escribir'
+                  : 'Tomá control o pausá el agente para escribir'
               }
               disabled={sending || !composerEnabled}
-              className="min-w-0 flex-1 resize-none rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5b6cff]/35 disabled:opacity-60"
+              className={
+                compact
+                  ? 'max-h-28 min-w-0 flex-1 resize-none rounded-3xl border-0 bg-[#F1EFEA] px-4 py-3 text-[16px] leading-snug text-slate-900 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/35 disabled:opacity-60'
+                  : 'min-w-0 flex-1 resize-none rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/35 disabled:opacity-60'
+              }
             />
             <button
               type="submit"
-              disabled={sending || !messageInput.trim() || !composerEnabled}
-              className="shrink-0 rounded-xl bg-[#5b6cff] px-4 py-3 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Enviar"
+              disabled={sending || (!messageInput.trim() && !pendingFile) || !composerEnabled}
+              className={
+                compact
+                  ? 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#5B6CFF] to-[#7C5CFF] text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40'
+                  : 'shrink-0 rounded-xl bg-[#5B6CFF] px-4 py-3 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50'
+              }
             >
-              {sending ? '…' : 'Enviar'}
+              {compact ? <Send className="h-5 w-5" aria-hidden /> : sending ? '…' : 'Enviar'}
             </button>
           </form>
           {!compact ? (
             <p className="mt-2 text-[11px] text-slate-400">
-              Enter envía · Shift+Enter nueva línea · ⌘K busca · Esc cierra · ↑↓ lista
+              Enter envía · Shift+Enter nueva línea · Esc cierra · ↑↓ lista
             </p>
           ) : null}
         </div>

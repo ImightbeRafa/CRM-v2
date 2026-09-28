@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { autoAssignOnFirstHumanReply } from '@/lib/chat-auto-assign'
 import { prisma } from '@/lib/db'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
@@ -128,6 +129,14 @@ export async function POST(request: NextRequest) {
 
     if (recipient === 'unknown') {
       return jsonError('Destinatario inválido. Selecciona una conversación con un cliente real.', 400)
+    }
+
+    // Links must point at this business's own records (ids are global cuids).
+    if (orderId && !(await db.order.findFirst({ where: { id: orderId, tenantId }, select: { id: true } }))) {
+      return jsonError('Pedido no encontrado', 404)
+    }
+    if (clientId && !(await db.client.findFirst({ where: { id: clientId, tenantId }, select: { id: true } }))) {
+      return jsonError('Cliente no encontrado', 404)
     }
 
     let account: {
@@ -448,6 +457,11 @@ export async function POST(request: NextRequest) {
       errorCode: providerMessageId ? null : 'missing_provider_message_id',
       providerResponse,
     })
+
+    // First human reply on an unassigned chat makes the sender its owner (delivered sends only).
+    if (providerMessageId && write.conversationId && senderUser) {
+      await autoAssignOnFirstHumanReply(db, { tenantId, conversationId: write.conversationId, userId })
+    }
 
     const saved = await db.chatMessage.findUnique({ where: { id: write.messageId } })
 

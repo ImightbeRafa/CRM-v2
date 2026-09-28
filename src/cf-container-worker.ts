@@ -176,6 +176,10 @@ function getContainerEnvVars(source: Env): Record<string, string> {
     }
   }
 
+  // Behind Cloudflare the edge sets cf-connecting-ip and overwrites any client value,
+  // while X-Forwarded-For keeps client-supplied entries. Rate limits key on this.
+  envVars.TRUSTED_IP_HEADER = "cf-connecting-ip";
+
   return envVars;
 }
 
@@ -230,7 +234,15 @@ async function runCronPaths(
 
 export default {
   async fetch(request: Request, env: Env) {
-    return getContainer(env.BETSY_CRM_CONTAINER).fetch(request);
+    // Clients must not choose the container port (@cloudflare/containers reads this header).
+    // Copying the headers keeps cf-connecting-ip for rate limits.
+    const headers = new Headers(request.headers);
+    headers.delete("cf-container-target-port");
+    // Defence in depth: internal identity headers are only ever set by the app's middleware.
+    for (const name of ["x-user-id", "x-user-role", "x-user-email", "x-tenant-id", "x-middleware-subrequest"]) {
+      headers.delete(name);
+    }
+    return getContainer(env.BETSY_CRM_CONTAINER).fetch(new Request(request, { headers }));
   },
 
   async scheduled(

@@ -66,6 +66,14 @@ export function FeedbackWidget() {
   const [loadingTickets, setLoadingTickets] = useState(false);
   const [expandedTicket, setExpandedTicket] = useState<string | null>(null);
 
+  const [inAuroraShell, setInAuroraShell] = useState(false);
+  useEffect(() => {
+    const check = () => setInAuroraShell(document.documentElement.dataset.auroraShell === '1');
+    check();
+    window.addEventListener('betsy:aurora-shell', check);
+    return () => window.removeEventListener('betsy:aurora-shell', check);
+  }, []);
+
   useEffect(() => {
     const onOpen = () => setIsOpen(true);
     window.addEventListener('betsy:open-feedback', onOpen);
@@ -73,7 +81,9 @@ export function FeedbackWidget() {
   }, []);
 
   const isExcluded = EXCLUDED_PATHS.some(p => pathname?.startsWith(p));
-  const hideFab = DENSE_TABLE_PATHS.some(p => pathname?.startsWith(p));
+  // Aurora pages open this from the profile menu / "Más" sheet instead of a floating
+  // button (it covered the sidebar avatar and the mobile nav).
+  const hideFab = inAuroraShell || DENSE_TABLE_PATHS.some(p => pathname?.startsWith(p));
   if (authStatus !== 'authenticated' || isExcluded) return null;
 
   const resetForm = () => {
@@ -132,7 +142,7 @@ export function FeedbackWidget() {
 
       {/* Panel */}
       {isOpen && (
-        <div className="fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-[380px] max-h-[70vh] md:max-h-[520px] bg-white rounded-2xl shadow-2xl border flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-200">
+        <div className="aurora-light [color-scheme:light] fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-[380px] max-h-[70vh] md:max-h-[520px] bg-white rounded-2xl shadow-2xl border flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-200">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
             <div className="flex gap-1">

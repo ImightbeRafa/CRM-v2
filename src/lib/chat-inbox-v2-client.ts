@@ -47,6 +47,7 @@ export function messageDtoToInbox(row: ChatMessageItemDto): ChatInboxMessage {
     metadata: row.metadata,
     clientId: row.clientId ?? undefined,
     orderId: row.orderId ?? undefined,
+    orderNumber: row.orderNumber ?? undefined,
     messageType: row.messageType ?? undefined,
     providerMediaId: providerMediaId || undefined,
     mediaMimeType: mediaMimeType || undefined,
@@ -61,8 +62,15 @@ export function listDtoToSoftConversation(
   dto: ChatConversationListItemDto,
   messages: ChatInboxMessage[],
 ): SoftConversation {
+  // Loaded messages win (freshest, e.g. a link made in this tab); else the server's linkedOrder
+  // covers links older than the loaded thread window and chats never opened.
   const orderId =
-    [...messages].reverse().find((m) => m.orderId)?.orderId ?? null
+    [...messages].reverse().find((m) => m.orderId)?.orderId ?? dto.linkedOrder?.id ?? null
+  // Any message linked to the same order may carry its number (e.g. an optimistic send has none).
+  const orderNumber = orderId
+    ? [...messages].reverse().find((m) => m.orderId === orderId && m.orderNumber)?.orderNumber ??
+      (dto.linkedOrder?.id === orderId ? dto.linkedOrder.orderNumber : null)
+    : null
   return {
     recipientId: dto.peerId,
     recipientName: dto.recipientName ?? undefined,
@@ -77,6 +85,10 @@ export function listDtoToSoftConversation(
     status: dto.status as ConversationStatus,
     tags: coerceSoftTags(dto.tags),
     orderId,
+    orderNumber,
+    assignee: dto.assignedUser
+      ? { id: dto.assignedUser.id, name: dto.assignedUser.name, image: dto.assignedUser.image ?? null }
+      : null,
     agentLabel: dto.agentLabel ?? null,
     agentEmoji: dto.agentEmoji ?? null,
     agentStateDot: dto.agentStateDot ?? null,

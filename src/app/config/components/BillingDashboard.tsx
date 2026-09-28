@@ -1,5 +1,8 @@
 'use client';
 
+import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader';
+import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
+import { notify } from '@/lib/ui-notify'
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
@@ -125,7 +128,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         'Importar desde Excel',
         'Registro de auditoría',
         'Instagram y WhatsApp',
-        'Asistente IA (Telegram)',
+        'Asistente IA',
         'Soporte prioritario'
       ],
       limits: {
@@ -238,7 +241,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
 
   const handleChangePlan = async (planId: string) => {
     if (planId === 'free') {
-      if (!confirm('¿Deseas cambiar al plan gratuito? Perderás acceso a funcionalidades premium.')) {
+      if (!await auroraConfirm('¿Deseas cambiar al plan gratuito? Perderás acceso a funcionalidades premium.')) {
         return;
       }
       
@@ -254,14 +257,14 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         const result = await response.json();
         
         if (result.status === 'success') {
-          alert('✅ Plan cambiado a FREE exitosamente');
+          notify('✅ Plan cambiado a FREE exitosamente');
           await loadBillingData();
         } else {
-          alert(`❌ Error: ${result.error}`);
+          notify(`❌ Error: ${result.error}`);
         }
       } catch (error) {
         console.error('Error changing plan:', error);
-        alert('❌ Error al cambiar el plan');
+        notify('❌ Error al cambiar el plan');
       } finally {
         setLoading(false);
       }
@@ -281,26 +284,26 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
 
     // Prevent duplicate subscriptions to the same plan
     if (currentPlanId === planId && currentPlan.status === 'active') {
-      alert('Ya tienes este plan activo. No es necesario suscribirte nuevamente.');
+      notify('Ya tienes este plan activo. No es necesario suscribirte nuevamente.');
       return;
     }
 
     // Prevent downgrade through payment link (should use cancel instead)
     if (targetLevel < currentLevel && currentPlan.status === 'active') {
-      alert('Para cambiar a un plan menor, primero cancela tu suscripción actual desde la sección de facturación.');
+      notify('Para cambiar a un plan menor, primero cancela tu suscripción actual desde la sección de facturación.');
       return;
     }
 
     // Confirm upgrade from current plan
     if (currentLevel > 0 && targetLevel > currentLevel) {
-      const confirmUpgrade = confirm(`¿Deseas actualizar de ${currentPlan.name} a ${planId.toUpperCase()}? Tu suscripción actual se cancelará y se iniciará la nueva.`);
+      const confirmUpgrade = await auroraConfirm(`¿Deseas actualizar de ${currentPlan.name} a ${planId.toUpperCase()}? Tu suscripción actual se cancelará y se iniciará la nueva.`);
       if (!confirmUpgrade) {
         return;
       }
     }
 
     // Show important warning about email before redirecting
-    const emailWarning = confirm(
+    const emailWarning = await auroraConfirm(
       '⚠️ IMPORTANTE: Email para Pago\n\n' +
       'Cuando hagas el pago en TiloPay, DEBES usar el mismo email con el que inicias sesión en BetsyCRM.\n\n' +
       '¿Continuar al pago?'
@@ -321,7 +324,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       setSelectedPlan({ id: planId, amount });
       setShowCheckout(true);
     } else {
-      alert('Plan no disponible');
+      notify('Plan no disponible');
     }
   };
 
@@ -343,15 +346,15 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         if (result.data?.note) {
           message += '\n\n⚠️ ' + result.data.note;
         }
-        alert(message);
+        notify(message);
         await loadBillingData();
         setShowCancelDialog(false);
       } else {
-        alert(`❌ Error: ${result.error}`);
+        notify(`❌ Error: ${result.error}`);
       }
     } catch (error) {
       console.error('Error canceling subscription:', error);
-      alert('❌ Error al cancelar la suscripción');
+      notify('❌ Error al cancelar la suscripción');
     } finally {
       setLoading(false);
     }
@@ -395,17 +398,18 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
 
   return (
     <div className="space-y-6">
+      <ConfigPanelHeader className="!mb-0" title="Plan" subtitle="Tu suscripción, uso del mes y facturas" />
       {/* Trial Expired Banner - Most prominent */}
       {trialStatus?.trialExpired && (
-        <Card className="border-red-500 bg-red-50 dark:bg-red-900/20">
+        <Card className="border-red-500 bg-red-50">
           <CardContent className="pt-6">
             <div className="flex items-start gap-4">
-              <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">
+                <h3 className="text-lg font-semibold text-red-900 mb-2">
                   {trialStatus.enforced ? 'Cuenta restringida por facturación' : 'Aviso de facturación'}
                 </h3>
-                <p className="text-red-800 dark:text-red-200 mb-4">
+                <p className="text-red-800 mb-4">
                   {trialStatus.enforced
                     ? 'Los cambios están pausados hasta renovar la suscripción.'
                     : 'La cuenta todavía puede trabajar. Renueva antes de que se apruebe la aplicación del bloqueo.'}
@@ -419,7 +423,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                     Activar Plan Pro ($20/mes)
                   </Button>
                 </div>
-                <p className="text-sm text-red-700 dark:text-red-300 mt-4">
+                <p className="text-sm text-red-700 mt-4">
                   <strong>Nota:</strong> Las páginas siguen disponibles. La restricción se aplica a escrituras y el propietario siempre puede pagar.
                 </p>
               </div>
@@ -431,24 +435,24 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       {/* Payment Status Message */}
       {paymentMessage && (
         <Card className={`border-2 ${
-          paymentMessage.type === 'success' ? 'border-green-500 bg-green-50 dark:bg-green-950/30' :
-          paymentMessage.type === 'error' ? 'border-red-500 bg-red-50 dark:bg-red-950/30' :
-          'border-yellow-500 bg-yellow-50 dark:bg-yellow-950/30'
+          paymentMessage.type === 'success' ? 'border-green-500 bg-green-50' :
+          paymentMessage.type === 'error' ? 'border-red-500 bg-red-50' :
+          'border-yellow-500 bg-yellow-50'
         }`}>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {paymentMessage.type === 'success' ? (
-                  <Check className="w-5 h-5 text-green-600 dark:text-green-400" />
+                  <Check className="w-5 h-5 text-green-600" />
                 ) : paymentMessage.type === 'error' ? (
-                  <X className="w-5 h-5 text-red-600 dark:text-red-400" />
+                  <X className="w-5 h-5 text-red-600" />
                 ) : (
-                  <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+                  <AlertCircle className="w-5 h-5 text-yellow-600" />
                 )}
                 <p className={`font-medium ${
-                  paymentMessage.type === 'success' ? 'text-green-900 dark:text-green-400' :
-                  paymentMessage.type === 'error' ? 'text-red-900 dark:text-red-400' :
-                  'text-yellow-900 dark:text-yellow-400'
+                  paymentMessage.type === 'success' ? 'text-green-900' :
+                  paymentMessage.type === 'error' ? 'text-red-900' :
+                  'text-yellow-900'
                 }`}>
                   {paymentMessage.type === 'success' ? '✅ ' : paymentMessage.type === 'error' ? '❌ ' : 'ℹ️ '}
                   {paymentMessage.message}
@@ -466,12 +470,12 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
           </CardContent>
         </Card>
       )}
-      {/* Current Plan Card */}
-      <Card>
-        <CardHeader className="bg-gradient-to-r from-muted to-muted border-b border-border">
+      {/* Current Plan Card (light hero; real data from /api/billing/current, /usage, /history) */}
+      <Card className="rounded-2xl border-0 bg-white shadow-sm ring-1 ring-[#5B3FE0]/30">
+        <CardHeader className="rounded-t-2xl border-b border-slate-100 bg-white">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-2xl text-foreground">Plan Actual</CardTitle>
+              <CardTitle className="text-2xl text-foreground">Plan actual</CardTitle>
               <CardDescription className="text-muted-foreground">
                 Gestiona tu suscripción y facturación
               </CardDescription>
@@ -485,8 +489,8 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
               >
                 🔄 Actualizar
               </Button>
-              <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
-                <CreditCard className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+              <div className="p-3 bg-blue-50 rounded-lg">
+                <CreditCard className="w-8 h-8 text-blue-600" />
               </div>
             </div>
           </div>
@@ -505,14 +509,14 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                 <div className="space-y-2">
                   {/* Price display */}
                   <div className="flex items-baseline gap-2">
-                    <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                    <p className="text-2xl font-bold text-blue-600">
                       {currentPlanDetails.price === 0 
                         ? 'Gratis' 
                         : `${formatCurrency(currentPlanDetails.price)}/mes`
                       }
                     </p>
                     {currentPlan.name === 'FREE' && (
-                      <Badge variant="default" className="bg-green-100 text-green-800 border-green-300 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800">
+                      <Badge variant="default" className="bg-green-100 text-green-800 border-green-300">
                         Activo
                       </Badge>
                     )}
@@ -528,19 +532,19 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                         </p>
                       )}
                       {trialStatus.trialExpired && (
-                        <p className="text-sm text-red-600 dark:text-red-400 font-medium">
+                        <p className="text-sm text-red-600 font-medium">
                           <AlertCircle className="inline w-4 h-4 mr-1" />
                           Período de prueba expirado
                         </p>
                       )}
                       {trialStatus.state === 'GRACE' && trialStatus.graceEndsAt && (
-                        <p className="text-sm text-orange-600 dark:text-orange-400 font-medium">
+                        <p className="text-sm text-orange-600 font-medium">
                           <Clock className="inline w-4 h-4 mr-1" />
                           Período de gracia hasta {formatDate(trialStatus.graceEndsAt)}
                         </p>
                       )}
                       {trialStatus.daysRemaining > 0 && trialStatus.daysRemaining <= 7 && (
-                        <p className="text-sm text-orange-600 dark:text-orange-400">
+                        <p className="text-sm text-orange-600">
                           <Clock className="inline w-4 h-4 mr-1" />
                           {trialStatus.daysRemaining === 1 
                             ? '¡Último día de prueba!' 
@@ -570,8 +574,8 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                   )}
                   
                   {currentPlan.cancelAtPeriodEnd && (
-                    <div className="p-3 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800/50 rounded-lg">
-                      <p className="text-sm text-yellow-800 dark:text-yellow-400">
+                    <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <p className="text-sm text-yellow-800">
                         <AlertCircle className="inline w-4 h-4 mr-1" />
                         Tu suscripción se cancelará al final del período actual
                       </p>
@@ -647,8 +651,8 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
               </div>
 
               {(usagePercentage.users >= 80 || usagePercentage.orders >= 80) && (
-                <div className="p-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800/50 rounded-lg">
-                  <p className="text-sm text-orange-800 dark:text-orange-400">
+                <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                  <p className="text-sm text-orange-800">
                     <AlertCircle className="inline w-4 h-4 mr-1" />
                     Te estás acercando al límite. Considera actualizar tu plan.
                   </p>
@@ -667,19 +671,19 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       </Card>
 
       {/* Important Disclaimer for TiloPay */}
-      <Card className="border-2 border-yellow-400 bg-yellow-50 dark:bg-yellow-950/30">
+      <Card className="border-2 border-yellow-400 bg-yellow-50">
         <CardContent className="pt-6">
           <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+            <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-yellow-900 dark:text-yellow-400 mb-2">
+              <h3 className="font-semibold text-yellow-900 mb-2">
                 ⚠️ Importante: Email para Pagos de TiloPay
               </h3>
-              <p className="text-sm text-yellow-800 dark:text-yellow-400 mb-2">
+              <p className="text-sm text-yellow-800 mb-2">
                 Cuando hagas el pago en TiloPay, <strong>debes usar el mismo email de tu cuenta de BetsyCRM</strong>.
               </p>
               
-              <p className="text-xs text-yellow-700 dark:text-yellow-300 font-medium mt-3">
+              <p className="text-xs text-yellow-700 font-medium mt-3">
                 ✓ Usa el email con el que inicias sesión en BetsyCRM<br/>
                 ✗ No uses un email diferente al hacer el pago
               </p>
@@ -710,7 +714,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                 </div>
               ) : plan.popular ? (
                 <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
-                  <Badge className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg">
+                  <Badge className="bg-[#5B3FE0] text-white shadow-sm">
                     ✨ Todo lo que Necesitas
                   </Badge>
                 </div>
@@ -718,7 +722,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
 
               <CardHeader>
                 <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                <div className="text-3xl font-bold text-blue-600">
                   {plan.id === 'enterprise' 
                     ? 'Contactar' 
                     : plan.price === 0 
@@ -783,14 +787,14 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                 >
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg ${
-                      transaction.status === 'success' ? 'bg-green-100 dark:bg-green-950/30' :
-                      transaction.status === 'pending' ? 'bg-yellow-100 dark:bg-yellow-950/30' :
-                      'bg-red-100 dark:bg-red-950/30'
+                      transaction.status === 'success' ? 'bg-green-100' :
+                      transaction.status === 'pending' ? 'bg-yellow-100' :
+                      'bg-red-100'
                     }`}>
                       <DollarSign className={`w-5 h-5 ${
-                        transaction.status === 'success' ? 'text-green-600 dark:text-green-400' :
-                        transaction.status === 'pending' ? 'text-yellow-600 dark:text-yellow-400' :
-                        'text-red-600 dark:text-red-400'
+                        transaction.status === 'success' ? 'text-green-600' :
+                        transaction.status === 'pending' ? 'text-yellow-600' :
+                        'text-red-600'
                       }`} />
                     </div>
                     <div>
@@ -831,7 +835,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
 
       {/* Cancel Subscription */}
       {currentPlan.name !== 'FREE' && !currentPlan.cancelAtPeriodEnd && (
-        <Card className="border-red-200 dark:border-red-900/50">
+        <Card className="border-red-200">
           <CardHeader>
             <CardTitle className="text-red-600">Zona de Peligro</CardTitle>
             <CardDescription>
@@ -874,8 +878,8 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="p-4 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800/50 rounded-lg">
-                <p className="text-sm text-yellow-800 dark:text-yellow-400">
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800">
                   <strong>Nota:</strong> Mantendrás acceso completo hasta el {' '}
                   {currentPlan.currentPeriodEnd && formatDate(currentPlan.currentPeriodEnd)}
                 </p>

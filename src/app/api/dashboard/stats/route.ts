@@ -69,7 +69,15 @@ export async function GET(request: NextRequest) {
     const whereClause: any = {};
     const completedStatuses = ['Completado', 'Entregado', 'Cancelado', 'Rechazado'];
 
-    const [ordersThisWeek, ordersLastWeek, pendingOrders, totalClients, clientsLastWeek, weeklyRevenueAgg, lastWeekRevenueAgg] = await Promise.all([
+    // Last-7-days revenue series (Costa Rica is UTC-6 year-round, no DST)
+    const CR_OFFSET_MS = 6 * 60 * 60 * 1000;
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const dayKey = (d: Date) => new Date(d.getTime() - CR_OFFSET_MS).toISOString().slice(0, 10);
+    const dailyKeys = Array.from({ length: 7 }, (_, i) => dayKey(new Date(now.getTime() - (6 - i) * DAY_MS)));
+    const dailyStart = new Date(Date.parse(`${dailyKeys[0]}T00:00:00.000Z`) + CR_OFFSET_MS);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * DAY_MS);
+
+    const [ordersThisWeek, ordersLastWeek, pendingOrders, totalClients, clientsLastWeek, weeklyRevenueAgg, lastWeekRevenueAgg, dailyOrders, pendingOver7Days, cePendingAgg] = await Promise.all([
       prisma.order.count({
         where: {
           ...whereClause,
@@ -122,7 +130,39 @@ export async function GET(request: NextRequest) {
         },
         _sum: { total: true },
       }),
+      prisma.order.findMany({
+        where: {
+          ...whereClause,
+          NOT: { contraEntrega: true, cePaymentConfirmed: false },
+          timestamp: { gte: dailyStart },
+        },
+        select: { timestamp: true, total: true },
+      }),
+      prisma.order.count({
+        where: {
+          ...whereClause,
+          status: { notIn: completedStatuses },
+          timestamp: { lt: sevenDaysAgo },
+        },
+      }),
+      prisma.order.aggregate({
+        where: {
+          ...whereClause,
+          contraEntrega: true,
+          cePaymentConfirmed: false,
+          status: { notIn: completedStatuses },
+        },
+        _count: { _all: true },
+        _sum: { total: true },
+      }),
     ]);
+
+    const dailyTotals = new Map<string, number>(dailyKeys.map((k) => [k, 0]));
+    for (const o of dailyOrders) {
+      const k = dayKey(o.timestamp);
+      if (dailyTotals.has(k)) dailyTotals.set(k, (dailyTotals.get(k) ?? 0) + (o.total || 0));
+    }
+    const dailyRevenue = dailyKeys.map((date) => ({ date, total: Math.round(dailyTotals.get(date) ?? 0) }));
 
     const ordersChange = ordersLastWeek > 0
       ? Math.round(((ordersThisWeek - ordersLastWeek) / ordersLastWeek) * 100)
@@ -144,6 +184,10 @@ export async function GET(request: NextRequest) {
       newClientsThisWeek,
       weeklyRevenue: Math.round(weeklyRevenue),
       revenueChange,
+      dailyRevenue,
+      pendingOver7Days,
+      cePendingCount: cePendingAgg._count._all,
+      cePendingTotal: Math.round(cePendingAgg._sum.total || 0),
       // Debug info (only in development)
       ...(process.env.NODE_ENV === 'development' && {
         _debug: {

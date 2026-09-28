@@ -4,6 +4,8 @@
  * profile edits do not rewrite history (same pattern as Soft AI agentName).
  */
 
+import { staffDisplayName } from '@/lib/display-name'
+
 export type HumanSenderSnapshot = {
   senderUserId: string
   senderName: string
@@ -17,11 +19,8 @@ export function buildHumanSenderSnapshot(input: {
   email?: string | null
   image?: string | null
 }): HumanSenderSnapshot {
-  const senderName =
-    (input.name && input.name.trim()) ||
-    (input.username && input.username.trim()) ||
-    (input.email && input.email.trim()) ||
-    'Agente'
+  // Never store an email as the visible name (DATA-P4); the email is not used as a fallback.
+  const senderName = staffDisplayName(input.name, input.username) || 'Agente'
   return {
     senderUserId: input.userId,
     senderName,
@@ -54,9 +53,8 @@ export function humanOutboundSender(metadata: unknown): {
   const meta = asMeta(metadata)
   if (!meta) return { name: null, image: null, userId: null }
   const userId = typeof meta.senderUserId === 'string' ? meta.senderUserId : null
-  const name = typeof meta.senderName === 'string' && meta.senderName.trim()
-    ? meta.senderName.trim()
-    : null
+  // Older rows may hold an email: clean at render time too.
+  const name = typeof meta.senderName === 'string' ? staffDisplayName(meta.senderName) : null
   const image = typeof meta.senderImage === 'string' && meta.senderImage.trim()
     ? meta.senderImage.trim()
     : null

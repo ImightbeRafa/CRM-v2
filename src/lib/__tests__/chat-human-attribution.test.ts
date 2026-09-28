@@ -8,7 +8,7 @@ import {
 } from '../chat-human-attribution'
 
 describe('chat-human-attribution', () => {
-  it('builds snapshot preferring name then username then email', () => {
+  it('builds snapshot preferring name then username, never the email', () => {
     assert.deepEqual(
       buildHumanSenderSnapshot({
         userId: 'u1',
@@ -29,7 +29,7 @@ describe('chat-human-attribution', () => {
     )
     assert.equal(
       buildHumanSenderSnapshot({ userId: 'u1', email: 'p@x.com' }).senderName,
-      'p@x.com',
+      'Agente',
     )
   })
 

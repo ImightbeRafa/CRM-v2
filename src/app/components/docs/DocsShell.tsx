@@ -11,14 +11,19 @@ interface DocsShellProps {
   basePath: string;
   children: React.ReactNode;
   rightSidebar?: React.ReactNode;
+  /**
+   * Inside an Aurora shell (Ayuda): the shell owns the viewport, so columns scroll on their own
+   * instead of sticking under the classic 57px header, and the FAB clears the mobile bottom nav.
+   */
+  embedded?: boolean;
 }
 
-export function DocsShell({ docs, currentSlug, basePath, children, rightSidebar }: DocsShellProps) {
+export function DocsShell({ docs, currentSlug, basePath, children, rightSidebar, embedded = false }: DocsShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const closeMobile = useCallback(() => setMobileOpen(false), []);
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className={`flex min-h-0 flex-1 ${embedded ? 'overflow-hidden' : ''}`}>
       {/* Mobile sidebar overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
@@ -40,21 +45,21 @@ export function DocsShell({ docs, currentSlug, basePath, children, rightSidebar 
       {/* Mobile toggle */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed bottom-4 left-4 z-40 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-colors"
+        className={`lg:hidden fixed ${embedded ? 'bottom-20' : 'bottom-4'} left-4 z-40 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-colors`}
         aria-label="Abrir menú de navegación"
       >
         <Menu className="h-5 w-5" />
       </button>
 
       {/* Desktop sidebar */}
-      <aside className="hidden lg:block w-64 shrink-0 border-r border-border bg-muted/35 overflow-y-auto sticky top-[57px] h-[calc(100vh-57px)]">
+      <aside className={`hidden lg:block w-64 shrink-0 border-r border-border bg-muted/35 overflow-y-auto ${embedded ? '' : 'sticky top-[57px] h-[calc(100vh-57px)]'}`}>
         <div className="p-4">
           <DocsSidebar docs={docs} currentSlug={currentSlug} basePath={basePath} />
         </div>
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 min-w-0 px-6 py-8 lg:px-10 bg-background">
+      <main className={`flex-1 min-w-0 bg-background ${embedded ? 'overflow-y-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-10' : 'px-6 py-8 lg:px-10'}`}>
         <div className="max-w-3xl mx-auto">
           {children}
         </div>
@@ -62,7 +67,7 @@ export function DocsShell({ docs, currentSlug, basePath, children, rightSidebar 
 
       {/* Right sidebar (ToC) */}
       {rightSidebar && (
-        <aside className="hidden xl:block w-56 shrink-0 overflow-y-auto sticky top-[57px] h-[calc(100vh-57px)]">
+        <aside className={`hidden xl:block w-56 shrink-0 overflow-y-auto ${embedded ? '' : 'sticky top-[57px] h-[calc(100vh-57px)]'}`}>
           <div className="p-4 pt-8">
             {rightSidebar}
           </div>

@@ -9,6 +9,11 @@ interface DashboardStats {
   ordersChange: number;
   newClientsThisWeek: number;
   revenueChange: number;
+  /** Last 7 days (oldest first), Costa Rica calendar days. Absent on older API responses. */
+  dailyRevenue?: { date: string; total: number }[];
+  pendingOver7Days?: number;
+  cePendingCount?: number;
+  cePendingTotal?: number;
 }
 
 const defaultStats: DashboardStats = {

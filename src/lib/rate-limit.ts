@@ -20,6 +20,10 @@ function createRedisLimiter(config: { prefix: string; maxRequests: number; windo
     limiter: Ratelimit.slidingWindow(config.maxRequests, `${windowSec} s`),
     prefix: `ratelimit:${config.prefix}`,
     analytics: false,
+    // Give up on Redis after 1 s (rateLimitAsync then uses the memory limiter) instead of stalling,
+    // and remember already-blocked identifiers locally so they skip the Redis round trip.
+    timeout: 1000,
+    ephemeralCache: new Map(),
   });
 }
 
@@ -27,9 +31,37 @@ function createRedisLimiter(config: { prefix: string; maxRequests: number; windo
 interface RateLimitEntry {
   count: number;
   resetTime: number;
+  /** Max requests for this key's window: entries over it are "blocking" and kept longest. */
+  limit: number;
 }
 
 const memoryStore = new Map<string, RateLimitEntry>();
+const MEMORY_STORE_MAX = 10_000;
+
+/**
+ * Keep the map bounded without letting a flood of junk keys evict a live block (e.g. a locked
+ * login): expired entries go first, then entries that are not blocking anyone; blocked entries
+ * are only dropped if the map is still full of them (then the oldest first).
+ */
+export function pruneMemoryStore(now: number, store: Map<string, RateLimitEntry> = memoryStore, max = MEMORY_STORE_MAX) {
+  if (store.size < max) return;
+  for (const [key, entry] of store) {
+    if (now > entry.resetTime) store.delete(key);
+  }
+  const target = Math.floor(max / 2);
+  if (store.size >= max) {
+    for (const [key, entry] of store) {
+      if (store.size <= target) break;
+      if (entry.count < entry.limit) store.delete(key);
+    }
+  }
+  if (store.size >= max) {
+    for (const key of store.keys()) {
+      if (store.size <= target) break;
+      store.delete(key);
+    }
+  }
+}
 
 function memoryRateLimit(
   identifier: string,
@@ -40,7 +72,8 @@ function memoryRateLimit(
 
   const entry = memoryStore.get(key);
   if (!entry || now > entry.resetTime) {
-    memoryStore.set(key, { count: 1, resetTime: now + config.windowMs });
+    pruneMemoryStore(now);
+    memoryStore.set(key, { count: 1, resetTime: now + config.windowMs, limit: config.maxRequests });
     return {
       allowed: true,
       headers: {
@@ -81,14 +114,19 @@ export function rateLimit(
 
 // --- Async rate limit using Redis when available ---
 
-async function rateLimitAsync(
+export async function rateLimitAsync(
   identifier: string,
-  limiter: Ratelimit | null,
+  limiter: Pick<Ratelimit, 'limit'> | null,
   fallbackConfig: { maxRequests: number; windowMs: number; prefix: string }
 ): Promise<{ allowed: boolean; headers: Record<string, string> }> {
   if (limiter) {
     try {
       const result = await limiter.limit(identifier);
+      // On timeout Upstash resolves { success: true, reason: 'timeout' } (fail-open):
+      // use the local limiter instead so auth limits keep working during Redis latency.
+      if ((result as { reason?: string }).reason === 'timeout') {
+        return memoryRateLimit(identifier, fallbackConfig);
+      }
       return {
         allowed: result.success,
         headers: {
@@ -110,7 +148,35 @@ const authRedisLimiter = createRedisLimiter({ prefix: 'auth', maxRequests: 5, wi
 const generalRedisLimiter = createRedisLimiter({ prefix: 'general', maxRequests: 100, windowMs: 15 * 60 * 1000 });
 const exportRedisLimiter = createRedisLimiter({ prefix: 'export', maxRequests: 10, windowMs: 60 * 60 * 1000 });
 
+/** IPv6 clients are bucketed by /64 (one customer network), so rotating addresses inside it does not reset limits. */
+export function normalizeClientIp(ip: string): string {
+  const value = ip.trim().replace(/^\[|\]$/g, '');
+  if (!value.includes(':')) return value;
+  // IPv4-mapped IPv6 (::ffff:1.2.3.4) is an IPv4 client.
+  const mapped = /^(?:0*:)*:?ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(value);
+  if (mapped) return mapped[1];
+  const [head] = value.split('%');
+  const parts = head.split('::');
+  const left = parts[0] ? parts[0].split(':') : [];
+  const right = parts.length > 1 && parts[1] ? parts[1].split(':') : [];
+  const groups = parts.length > 1 ? [...left, ...new Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right] : left;
+  const canon = (g: string) => {
+    const n = parseInt(g || '0', 16);
+    return Number.isFinite(n) ? n.toString(16) : '0';
+  };
+  return `${groups.slice(0, 4).map(canon).join(':')}::/64`;
+}
+
 export function getClientIP(request: Request): string {
+  // Set by the deploy (cf-container-worker → cf-connecting-ip). When present, it is the
+  // only header we trust: X-Forwarded-For's first entry is client-controlled behind a proxy.
+  const trusted = (process.env.TRUSTED_IP_HEADER || '').trim().toLowerCase();
+  if (trusted) {
+    const value = request.headers.get(trusted)?.split(',')[0]?.trim();
+    // Fail closed: when the edge header is missing, never fall back to spoofable headers.
+    return value ? normalizeClientIp(value) : 'trusted-header-missing';
+  }
+
   const forwarded = request.headers.get('x-forwarded-for');
   const realIP = request.headers.get('x-real-ip');
   const cfConnectingIP = request.headers.get('cf-connecting-ip');

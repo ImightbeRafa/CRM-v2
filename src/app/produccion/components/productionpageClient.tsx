@@ -3,7 +3,9 @@
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { ProductionErrorBoundary } from './ProductionErrorBoundary';
-import { AppShell } from '@/app/components/AppShell';
+import { AuroraShell } from '@/components/aurora/AuroraShell';
+import { AuroraMobileNav } from '@/components/aurora/AuroraMobileNav';
+import { AuroraPageHeader } from '@/components/aurora/shell/AuroraPageHeader';
 import { EnhancedProductionDashboard } from './EnhancedProductionDashboard';
 
 const BackupPage = dynamic(() => import('./BackupPage'), { ssr: false });
@@ -14,8 +16,11 @@ export function ProductionPageClient() {
 
   return (
     <ProductionErrorBoundary>
-      <AppShell>
-        <main className="w-full px-2 md:px-3 lg:px-4 py-2 md:py-3 space-y-4">
+      {/* Presentation only: aurora-light keeps the classic dashboard tokens light (no logic change). */}
+      <AuroraShell fullBleed bottomNav={<AuroraMobileNav />}>
+        <AuroraPageHeader title="Producción" subtitle="Preparación, guías de Correos y facturas de los pedidos" />
+        <div className="aurora-light min-h-0 flex-1 overflow-y-auto bg-[var(--aurora-canvas)] text-slate-900 [color-scheme:light]" data-testid="produccion-aurora">
+        <main className="w-full space-y-4 px-3 py-4 sm:px-6">
           <EnhancedProductionDashboard 
             onGenerateGuias={() => setIsGuiaGeneratorOpen(true)}
             isGuiaGeneratorOpen={isGuiaGeneratorOpen}
@@ -33,9 +38,8 @@ export function ProductionPageClient() {
           
           <BackupPage />
         </main>
-        
-        <div className="h-16 md:h-20" />
-      </AppShell>
+        </div>
+      </AuroraShell>
     </ProductionErrorBoundary>
   );
 }

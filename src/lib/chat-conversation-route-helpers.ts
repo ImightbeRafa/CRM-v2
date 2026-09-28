@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { hasPermission, type Role } from '@/lib/rbac'
 import type { ConversationRow } from '@/lib/chat-conversation-api'
 import { conversationSelect } from '@/lib/chat-conversation-api'
 import type { ChatConversationListQuery } from '@/lib/chat-conversation-query'
@@ -33,6 +34,15 @@ export async function isActiveTenantMember(tenantId: string, userId: string): Pr
     select: { id: true },
   })
   return Boolean(membership)
+}
+
+/** Active member whose role can use the chats inbox (update_sales). */
+export async function isAssignableChatMember(tenantId: string, userId: string): Promise<boolean> {
+  const membership = await prisma.membership.findFirst({
+    where: { tenantId, userId, isActive: true, user: { active: true } },
+    select: { role: true },
+  })
+  return Boolean(membership && hasPermission(membership.role as Role, 'update_sales'))
 }
 
 type RawConversationRow = {

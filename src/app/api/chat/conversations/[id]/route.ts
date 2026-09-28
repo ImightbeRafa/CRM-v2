@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logAuditEvent } from '@/lib/auditLogger'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import {
   mapConversationToListDto,
   patchConversationBodySchema,
 } from '@/lib/chat-conversation-api'
-import { isActiveTenantMember, loadConversationForTenant } from '@/lib/chat-conversation-route-helpers'
+import { isAssignableChatMember, loadConversationForTenant } from '@/lib/chat-conversation-route-helpers'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -38,7 +39,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const body = parsed.data
 
     if (body.assignedUserId) {
-      const ok = await isActiveTenantMember(auth.tenantId, body.assignedUserId)
+      const ok = await isAssignableChatMember(auth.tenantId, body.assignedUserId)
       if (!ok) {
         return NextResponse.json({ success: false, error: 'Invalid assignee' }, { status: 400 })
       }
@@ -56,6 +57,20 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       },
       select: { id: true },
     })
+
+    if (body.assignedUserId !== undefined && body.assignedUserId !== existing.assignedUserId) {
+      await logAuditEvent({
+        action: 'UPDATE',
+        entityType: 'ChatConversation',
+        entityId: existing.id,
+        description: body.assignedUserId ? 'Chat asignado' : 'Chat sin asignar',
+        oldValues: { assignedUserId: existing.assignedUserId },
+        newValues: { assignedUserId: body.assignedUserId },
+        userId: auth.userId,
+        userRole: auth.role,
+        tenantId: auth.tenantId,
+      }).catch(() => {})
+    }
 
     const row = await loadConversationForTenant({
       conversationId: updated.id,

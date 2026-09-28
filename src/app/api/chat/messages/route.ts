@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { projectRawMessageForClient } from '@/lib/chat-message-display'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { chatMessagesWhereForPeer } from '@/lib/chat-message-query'
@@ -62,7 +63,16 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      messages: data.reverse(), // oldest first for UI
+      // Same URL-free rawMessage projection as the V2 DTO (no Meta CDN links to the client).
+      messages: data.reverse().map((m: (typeof data)[number]) => {
+        const meta =
+          m.metadata && typeof m.metadata === 'object' && !Array.isArray(m.metadata)
+            ? (m.metadata as Record<string, unknown>)
+            : null
+        return meta && 'rawMessage' in meta
+          ? { ...m, metadata: { ...meta, rawMessage: projectRawMessageForClient(meta.rawMessage) } }
+          : m
+      }), // oldest first for UI
       nextCursor,
       hasMore,
     })

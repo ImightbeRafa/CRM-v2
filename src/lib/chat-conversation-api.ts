@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { staffDisplayName } from '@/lib/display-name'
+import { projectRawMessageForClient } from '@/lib/chat-message-display'
 import type { Prisma } from '@prisma/client'
 import { type SoftTag } from '@/lib/chat-soft-copilot'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
@@ -67,7 +69,7 @@ export type ConversationRow = {
   lastInboundAt: Date | null
   inboundCount: number
   revision: bigint
-  assignedUser?: { id: string; name: string | null } | null
+  assignedUser?: { id: string; name: string | null; image?: string | null } | null
   socialAccount?: SocialAccountChannelRow | null
   readInboundCount?: number
 }
@@ -88,7 +90,9 @@ export type ChatConversationListItemDto = {
   waWindowOpen: boolean
   aiMode: SoftAiAgentMode | null
   assignedUserId: string | null
-  assignedUser: { id: string; name: string | null } | null
+  assignedUser: { id: string; name: string | null; image: string | null } | null
+  /** Latest order linked from this chat (internal id + human number); set by the list/changes routes. */
+  linkedOrder?: { id: string; orderNumber: string } | null
   channel: {
     id: string
     platform: string
@@ -113,6 +117,8 @@ export type ChatMessageItemDto = {
   messageType: string | null
   clientId: string | null
   orderId: string | null
+  /** Human order number (`Order.orderId`) of the linked order; `orderId` above is the internal id. */
+  orderNumber?: string | null
   metadata: Record<string, unknown> | null
   providerMediaId?: string | null
   mediaMimeType?: string | null
@@ -177,7 +183,12 @@ export function mapConversationToListDto(row: ConversationRow): ChatConversation
     aiMode: normalizeAiMode(row.aiMode),
     assignedUserId: row.assignedUserId,
     assignedUser: row.assignedUser
-      ? { id: row.assignedUser.id, name: row.assignedUser.name }
+      ? {
+          id: row.assignedUser.id,
+          // Never ship an email stored as name; https photos only.
+          name: staffDisplayName(row.assignedUser.name),
+          image: /^https:\/\//.test(row.assignedUser.image ?? '') ? row.assignedUser.image ?? null : null,
+        }
       : null,
     channel: account
       ? {
@@ -208,6 +219,7 @@ export function mapMessageToDto(message: {
   messageType: string | null
   clientId: string | null
   orderId: string | null
+  order?: { orderId: string } | null
   metadata: unknown
   providerMediaId?: string | null
   mediaMimeType?: string | null
@@ -235,7 +247,12 @@ export function mapMessageToDto(message: {
     messageType: message.messageType,
     clientId: message.clientId,
     orderId: message.orderId,
-    metadata,
+    orderNumber: message.order?.orderId ?? null,
+    // rawMessage can hold Meta CDN URLs (IG attachments): send a URL-free projection.
+    metadata:
+      metadata && 'rawMessage' in metadata
+        ? { ...metadata, rawMessage: projectRawMessageForClient(metadata.rawMessage) }
+        : metadata,
     providerMediaId: message.providerMediaId ?? null,
     mediaMimeType: message.mediaMimeType ?? null,
     mediaFilename: message.mediaFilename ?? null,
@@ -279,7 +296,7 @@ export function conversationSelect(): Prisma.ChatConversationSelect {
     lastInboundAt: true,
     inboundCount: true,
     revision: true,
-    assignedUser: { select: { id: true, name: true } },
+    assignedUser: { select: { id: true, name: true, image: true } },
     socialAccount: {
       select: {
         id: true,

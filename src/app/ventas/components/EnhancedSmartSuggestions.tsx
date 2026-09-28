@@ -3,6 +3,7 @@ import { Search, Star, Package, AlertTriangle, CheckCircle } from 'lucide-react'
 import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
 import { ProductTemplate } from './types';
+import { sfInput } from './sales-form-styles';
 
 interface InventoryItem {
   id: string;
@@ -93,7 +94,7 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
     <div className="space-y-4">
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
           type="text"
           placeholder="Buscar productos del inventario..."
@@ -103,18 +104,18 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
             setShowSuggestions(true);
           }}
           onFocus={() => setShowSuggestions(true)}
-          className="w-full pl-10 pr-4 py-2 border border-indigo-200 dark:border-indigo-800 bg-background text-foreground rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          className={`${sfInput()} pl-9`}
         />
       </div>
 
         {/* Inventory Suggestions */}
         {showSuggestions && (
           <div className="space-y-3">
-            <h4 className="font-semibold text-muted-foreground flex items-center gap-2">
-              <Package className="h-4 w-4 text-blue-500" />
+            <h4 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+              <Package className="h-3.5 w-3.5" />
               Inventario ({filteredInventory.length})
             </h4>
-            <div className="max-h-64 overflow-y-auto space-y-2 border border-border rounded-lg p-2">
+            <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl bg-slate-50/80 p-2 ring-1 ring-slate-200/60">
               {filteredInventory.length > 0 ? (
                 filteredInventory.map((item) => {
                   const stockStatus = getStockStatus(item);
@@ -123,12 +124,12 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
                   return (
                     <div
                       key={item.id}
-                      className="flex items-center justify-between p-3 bg-card rounded-lg border border-border hover:border-blue-400 dark:hover:border-blue-600 cursor-pointer transition-colors"
+                      className="flex cursor-pointer items-center justify-between rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 transition-all hover:-translate-y-px hover:shadow-md hover:ring-[#7C5CFF]/40"
                       onClick={() => handleProductSelect(item)}
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{item.name}</span>
+                          <span className="font-medium text-slate-900">{item.name}</span>
                           {item.isFavorite && (
                             <Star className="h-3 w-3 text-yellow-500 fill-current" />
                           )}
@@ -150,7 +151,7 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
                           )}
                         </div>
                       </div>
-                      <Button size="sm" variant="outline" className="ml-2">
+                      <Button size="sm" variant="outline" className="ml-2 rounded-lg border-[#7C5CFF]/30 text-[#5B3FE0] hover:bg-[#F1EEFF]">
                         Agregar
                       </Button>
                     </div>
@@ -168,10 +169,10 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
 
         {/* Quick Actions */}
         {!showSuggestions && (
-          <div className="text-center">
+          <div className="flex flex-wrap items-center gap-3">
             <Button
               variant="outline"
-              className="text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
+              className="rounded-xl border-[#7C5CFF]/30 text-[#5B3FE0] hover:bg-[#F1EEFF]"
               onClick={() => setShowSuggestions(true)}
             >
               <Package className="h-4 w-4 mr-2" />
@@ -182,10 +183,11 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
 
         {/* Stats Summary */}
         {!showSuggestions && (
-          <div className="text-center pt-4 border-t border-border">
-            <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{inventoryItems.length}</div>
-            <div className="text-sm text-muted-foreground">Productos en inventario</div>
-            <p className="mt-2 text-xs text-muted-foreground">
+          <div>
+            <div className="text-[13px] text-slate-600">
+              <span className="font-semibold text-slate-900">{inventoryItems.length}</span> Productos en inventario
+            </div>
+            <p className="mt-1 text-[12px] text-slate-500">
               El inventario es opcional. Si no hay productos guardados, puedes escribir uno a mano más abajo; no se agrega al inventario.
             </p>
           </div>

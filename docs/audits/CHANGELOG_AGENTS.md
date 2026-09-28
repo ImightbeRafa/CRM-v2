@@ -1,3 +1,123 @@
+## 2026-09-28 — Browser walkthrough + release plan (PR #88)
+
+- Railway preview auto-deploy enabled (Rafael); Linux build of the final code: Success.
+- Walkthrough as PeterTesting on the preview (desktop + 745 px mobile): Inicio, Chats (Abiertos
+  default, empty rail state), Pedidos, Crear pedido drawer, Producción (Aurora, list renders),
+  Estadísticas, Config › Equipo + invite modal (email invite default, no Owner), Canales, Exportar,
+  Respaldos, Ayuda. Fixes in 3dbdbde: feedback panel light scope, staff names never an email (menu,
+  sidebar, Equipo), Respaldos readable error, Exportar in Spanish, "Más" sheet above the banner —
+  all re-verified on the redeployed preview.
+- Preview rate-limit probe (unknown email, no side effects): Railway overwrites X-Forwarded-For →
+  AUTH-04 not exploitable (Notion: Won't fix).
+- INFRA-03: `workers_dev` / `preview_urls` false (effective at next wrangler deploy); ops smoke on www.
+- Release runbook: `docs/ops/aurora-release-plan.md` (Docker + CLOUDFLARE_API_TOKEN on the deploy
+  machine, record current version, `wrangler deploy`, smoke, `wrangler rollback <id>`).
+
+## 2026-09-28 — Final review round on `rafa/aurora-on-live` (PR #88)
+
+- Verifier (Opus xhigh): PASS WITH NOTES → all 7 notes fixed in 1511d9c (default inbox view "Abiertos",
+  thread network-error state, send-media retry dedupe, audio caption, stale-data banners on Canales /
+  Producción, no double header on compact).
+- SecureDog (Opus max): OK for deploy; all batch-2 findings VERIFIED fixed. New notes fixed in 3953235:
+  MEDIA-08 filename/extension bypass (dormant, flag off), MEDIA-09 10 MB middleware body cap (uploads
+  ≤ 9.5 MB, Content-Length required), DATA-02 sender label never an email, IPv4-mapped/canonical IPv6,
+  worker strips internal identity headers. Notion register statuses updated.
+- `chat_outbound_media_v1` stays OFF for every tenant until tested on a real WhatsApp line.
+- Prove: `tsc --noEmit --incremental false` 0 errors outside tests; chat-harden 336/2, security 136/1
+  (pre-existing baseline); site-ui 50, config-ui 30, channels-ui 10, agentes-ui 34, pedidos-ui 15,
+  tenant-ui 9, backups 8, chat-mobile 6 — all green. Clean `next build` passed at e34b96e; later local
+  builds hit a native webpack-worker crash (0xC0000005) that also reproduces on the previous commit
+  (environment, not code). Confirm with the Linux build on Railway / the Cloudflare image.
+
+## 2026-09-28 — Release batch 3 on `rafa/aurora-on-live` (PR #88)
+
+- Chats: send photos / videos / audio / documents on WhatsApp (`/api/chat/send-media`, magic-byte
+  validation, Meta limits) behind TenantFeatureFlag `chat_outbound_media_v1` — OFF for every tenant
+  until tested on a real line. `/api/chat/capabilities` exposes the switch.
+- Verifier batch-2 fixes (4d918d0): mobile owner picker, fresh accounts on inbox mount, no fake
+  reconcile after a failed first load, FAB/shell registration, Upstash timeout → memory limiter,
+  PATCH keeps linkedOrder/agent labels, owner-based buckets, accept-invite copy.
+- A11y: labels, composer aria-label, aria-current on chat rows, mobile "Más" focus trap/return, AA
+  contrast on essential metadata. Error states: Canales, Producción, Agentes, Inicio recent orders,
+  chat thread. Config: 72 alert() → Aurora toasts (`ui-notify`), 24 confirm() → global
+  `AuroraConfirmHost` (`auroraConfirm`).
+- SecureDog batch-2 fixes (61c1831): AUTH-02/03 limiter pruning + timeout, fail-closed trusted IP
+  header + IPv6 /64, INFRA-04 worker strips cf-container-target-port, DATA-01 chat send tenant
+  checks, DATA-P2 archived orders, AUTH-05 assignable members + audit, shared staffDisplayName.
+  Open in Notion: AUTH-04 (Railway XFF), INFRA-03 (workers_dev), AUTH-06 (latent middleware).
+- Windows build note: the TypeScript incremental cache (`tsconfig.tsbuildinfo`) and `.next` get
+  corrupted by crashed builds on this box (~280 bogus Prisma "not callable" errors). Prove with
+  `rm -rf .next tsconfig.tsbuildinfo && NODE_OPTIONS=--max-old-space-size=8192 npx next build --no-lint`
+  and `npx tsc --noEmit --incremental false`; lint separately (`npx next lint --dir src`, 0 errors).
+- Prove: clean build exit 0; tsc 0 errors outside tests; security 135/1, chat-harden 327/2,
+  site-ui 50/0, config-ui 30/0, agentes-ui 34/0, channels-ui 10/0 (failures = pre-existing baseline).
+
+## 2026-09-28 — Release batch 2 on `rafa/aurora-on-live` (PR #88)
+
+- Walkthrough fixes: chats rail "Ningún chat seleccionado" (in SoftCopilotInboxV2; SoftCopilotRail
+  untouched), feedback in profile menu / Más instead of a FAB inside AuroraShell, banner "Renovar"
+  contrast, greeting never shows an email.
+- Security AUTH-01: rate limits key on `cf-connecting-ip` (worker sets TRUSTED_IP_HEADER); bounded
+  memory store; Upstash timeout 1 s + ephemeral cache. Docs: `docs/ops/upstash-redis.md`.
+- Chats: order numbers on linked chats (`chat-linked-orders.ts`, revision bump in order-link);
+  owner avatar + "Asignar" picker (`GET /api/chat/assignees`, update_sales); auto-assign on the first
+  delivered human reply (Rafael 2026-09-28).
+- Aurora shell for /produccion, /exports, /ventas/dashboard, /backups, /super-admin
+  (`AuroraClassicPage`, presentation only) and /auth/accept-invite (AuthShell). Logistics stays separate.
+- Perf: one accounts request per page; first inbox load no longer races a reconcile fetch.
+- Prove: tsc 0 new; build passes (`next build --no-lint`; integrated ESLint worker crashes on this
+  Windows box — lint run separately, 0 errors); chat-harden 315/2, security 126/1, site-ui 48/0,
+  tenant-ui 9/0, backups 8/0, chat-scale 15/0 (failures are pre-existing baseline).
+- Not done: outbound media, "+" new chat (Rafael: later), bell counts endpoint, states/a11y sweep.
+  Railway auto-deploy is disabled for this branch — preview still on b962456 until redeployed.
+
+## 2026-09-27 — Release-candidate slices on `rafa/aurora-on-live` (PR #88, draft)
+
+- **Chats `[unsupported]` / `[type]`:** display-only `src/lib/chat-message-display.ts`. Meta 131051
+  "unsupported" → "Mensaje no compatible" + what to do (names the kind when `unsupported.type` exists);
+  reactions, contacts, location (maps link), orders, system, IG story mention / share / reel. List
+  previews map tokens to Spanish. Parser and agent input untouched. Not a Betsy bug: Meta sends no content.
+- **Ctrl/⌘K:** V2 inbox had lost the legacy handler. Now focuses the visible chat search; hint shows
+  ⌘K / Ctrl K; search also calls `/api/chat/conversations?q=` (debounced, add-only merge).
+- **Media:** `/api/chat/media` serves Instagram attachments (pre-signed CDN URL from the stored payload,
+  https Meta hosts only, no token sent), single-range 206 for iOS audio/video, cap 25 MB. Player has
+  per-type fallback + Descargar; voice notes always downloadable (iPhone cannot play ogg/opus).
+  Message DTO now sends a URL-free projection of `metadata.rawMessage` (Meta CDN links no longer reach
+  the browser). Outbound media still unsupported (unchanged).
+- **032 perf indexes (NOT applied):** ChatMessage (tenantId, orderId) partial; pg_trgm GIN on Order
+  customerName/orderId/phone/product and ChatConversation peerName/peerId/lastMessagePreview. Gated
+  `BETSY_V2_APPLY_FILES=032`, apply in the madrugada; apply script verifies 8 valid indexes.
+- **Crear pedido:** Aurora restyle, class/markup only (`sales-form-styles.ts`), audited no logic change.
+- Prod check (read-only): `GET /api/invites/accept?token=<random>` on www → 404 JSON ⇒ 030 `TenantInvite` exists.
+- Prove: build passes; chat-harden 296/2, security 122/1, pedidos-ui 15/0, tenant-ui 9/0, site-ui 45/0,
+  chat-mobile 6/0 (remaining failures pre-exist on a parent tip).
+- Still open: Railway preview must be pointed at `rafa/aurora-on-live`; browser walkthrough; outbound media.
+
+## 2026-09-27 — Aurora onto the live line (Claude Code, handover step 1–3)
+
+- Branch `rafa/aurora-on-live` = `claudio/team-users-sota` (#77, live CF line, 19 commits ahead
+  of the Aurora stack) + merge of `aurora/pr-j-site-rest` (#78–#87). Replaces the unfinished
+  Claudio merge from 2026-09-26 (never pushed).
+- Conflicts resolved by keeping both sides:
+  - `dashboard/enhanced-home-content.tsx`: Aurora home + `canAccessLogistics` DeepSleep gate.
+  - `chats/SoftThreadPane.tsx`: Aurora bubbles + live human-sender avatar/label; the label also
+    shows in the mobile (compact) meta line; Google photos use `referrerPolicy="no-referrer"`.
+  - `config/page.tsx`: Aurora server wrapper. Live's classic-form invite changes were ported to
+    Aurora `InviteMemberModal` (default "Invitar por email" → `invite: true`, no OWNER by invite,
+    toast on `emailSent`; "Crear con contraseña" kept) and `UsersPanel` (`User.image` avatar with
+    initials fallback, `name || username`).
+- Aurora nav: Producción back under Principal (`/produccion`), Más sheet picks it up on mobile.
+- Tests updated for intentional changes only: `aurora-site-rest` (invite modal), `chat-inbox-v2-client`
+  (Reconectar link accepts `/config?tab=social`), `aurora-nav` (Producción).
+- Prove: tsc — 0 new errors (remaining are test-file typings present on the parents).
+  Suites: security 122/1, site-ui 45/0, config-ui 30/0, channels-ui 10/0, agentes-ui 34/0,
+  stats-ui 42/0, chat-mobile 6/0, pedidos-ui 15/0, lifecycle 8/0, chat-harden 283/2,
+  soft-ai-agent 129/1. Every remaining failure also fails on a parent (live or Aurora tip):
+  `runSoftAiLlmRuntime … shared assembly`, `webhook persists job…` (Vercel crons emptied for CF),
+  Embedded Signup FINISH-race source assert.
+- Not done here: Aurora skin for Producción / Exports / Logistics, broken-page fixes, Enviar
+  feedback button overlap, browser eye-test, SecureDog review. No deploy, no SQL, no www.
+
 ## 2026-09-25 — Cloudflare Containers daytime packaging
 
 - `Dockerfile` + `.dockerignore` for Next standalone (`prisma generate` via `npm run build`, `@sparticuz/chromium` + puppeteer runtime libs, Correos WSDL copied to both resolve paths).
@@ -1155,3 +1275,36 @@ Append-only. Newest entries at the top.
   table. Status board NEXT updated. PR #53 marked ready for squash-merge; A1 next.
 - Prove: docs only — `git diff --stat` = `docs/**`; no SQL, Prisma, or app code. Sol
   verification not run (Rafael: not required); Executor self-check of § refs and links.
+
+# 2026-09-26 — Aurora PR-I: Estadísticas STAT-01 + Agentes detail (Conocimiento tab)
+
+- `/estadisticas` now renders in `AuroraShell` (no classic top/bottom nav). New read-only,
+  tenant-scoped `GET /api/estadisticas/aurora-summary?period=` (`view_statistics`); every
+  number comes from Order / ChatConversation / SocialAccount / ChatAgentTurn queries or the
+  existing `status-breakdown` endpoint. Chat→pedido, per-line Pedidos/Ventas and "Con
+  intención de compra" have no data source and render "—" / "Sin datos". No brands.
+- Agent detail lives in `/config?tab=agentes&agente=<id|slug>&seccion=<key>`; Conocimiento is a
+  tab (completeness cards, inline Pegar → Revisar → Aprobar bound to the open agent, real
+  Fuentes table). Crear agente = draft form → existing `POST /api/chat/agents`. Publicar
+  cambios only flushes saves; it never touches `status`, so the runtime stays OFF.
+- CoS fixes: no "Telegram" in the Plan list; mobile bottom nav stays visible under the global
+  banner (`--app-top-offset`); Config panel clears the settings FAB; one cream canvas token;
+  `/inicio` → `/dashboard` (307).
+- Prove: `npm run test:stats-ui`, `test:agentes-ui`, `test:config-ui`; no schema / SQL / runtime files touched.
+
+# 2026-09-26 — Aurora PR-J: rest of site (Pedidos detail/crear, modals, shell menus, auth/onboarding/help)
+
+- **Pedidos:** detail drawer (`/ventas?pedido=`), Crear pedido drawer (`?nuevo=1`) around the existing
+  `EnhancedSalesForm`, Canal column = the specific line (order → `ChatMessage.orderId` → `SocialAccount`,
+  read-only `GET /api/orders/lines`), line filter. No schema change.
+- **Chats → pedido (X2):** "Crear pedido" in a chat opens the same drawer; on success
+  `POST /api/chat/order-link` sets `ChatMessage.orderId` (tenant-scoped, `update_sales`, idempotent,
+  conditional `updateMany(orderId: null)`). Estadísticas Chat→pedido and per-line Pedidos/Ventas now read it.
+- **Modals over existing flows:** Conectar línea (coexistence copy), Reconectar / Reparar, Desvincular, Invitar
+  persona (`POST/PUT /api/users`), Aurora confirm dialogs. Embedded Signup / IG callbacks untouched.
+- **Shell:** bell with derived alerts, profile menu, name-only tenant block, one `AuroraPageHeader`. No search
+  field (no real search backend).
+- **Auth (X1):** `safeReturnPath()` open-redirect guard on signin; middleware keeps the query in `callbackUrl`.
+  Auth screens, onboarding wizard and Ayuda restyled to Aurora; logic untouched.
+- **Global:** `tailwind.config.ts` `darkMode` is now a custom variant that never applies `dark:` inside `.aurora-light`.
+- Prove: `npm run test:site-ui`, `test:security`, `test:pedidos-ui`, `test:stats-ui`, `test:config-ui`; no SQL / Prisma / runtime files touched.

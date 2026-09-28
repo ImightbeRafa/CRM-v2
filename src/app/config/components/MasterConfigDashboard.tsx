@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react';
+import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -10,6 +11,15 @@ import { Star, Plus, Edit, Trash2, Users, Package, Settings, BarChart3, Truck } 
 import { InventoryManagement } from './InventoryManagement';
 import { AutomaticClientManagement } from './AutomaticClientManagement';
 import { ShippingConfigManagement } from './ShippingConfigManagement';
+import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader';
+import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton';
+
+/** Aurora panel header per locked tab (Config `?tab=inventory|clients|shipping-config`). */
+const PANEL_COPY: Record<'inventory' | 'clients' | 'shipping', { title: string; subtitle: string }> = {
+  inventory: { title: 'Productos', subtitle: 'Tu catálogo, precios y existencias' },
+  clients: { title: 'Clientes', subtitle: 'Tus clientes frecuentes y sus datos de contacto' },
+  shipping: { title: 'Envíos', subtitle: 'Métodos de envío y credenciales de tu courier' },
+};
 
 interface FrequentProduct {
   id: string;
@@ -154,7 +164,7 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
   };
 
   const handleDeleteProduct = async (id: string) => {
-    if (!confirm('¿Está seguro de que desea eliminar este producto frecuente?')) return;
+    if (!await auroraConfirm('¿Está seguro de que desea eliminar este producto frecuente?')) return;
     
     try {
       const response = await fetch(`/api/config/frequent-products?id=${id}`, {
@@ -170,7 +180,7 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
   };
 
   const handleDeleteCustomer = async (id: string) => {
-    if (!confirm('¿Está seguro de que desea eliminar este cliente frecuente?')) return;
+    if (!await auroraConfirm('¿Está seguro de que desea eliminar este cliente frecuente?')) return;
     
     try {
       const response = await fetch(`/api/config/frequent-customers?id=${id}`, {
@@ -214,12 +224,25 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
     setShowCustomerForm(true);
   };
 
+  const panelCopy = PANEL_COPY[activeTab];
+
   if (loading) {
-    return <div className="p-4">Cargando...</div>;
+    return lockToInitial && panelCopy ? (
+      <div>
+        <ConfigPanelHeader title={panelCopy.title} subtitle={panelCopy.subtitle} />
+        <AuroraListSkeleton rows={5} label={`Cargando ${panelCopy.title.toLowerCase()}`} />
+      </div>
+    ) : (
+      <div className="p-4">Cargando...</div>
+    );
   }
 
   return (
-    <div className="p-4 space-y-6">
+    <div className={lockToInitial ? 'space-y-6' : 'p-4 space-y-6'}>
+      {lockToInitial && panelCopy ? (
+        // Productos and Clientes render their own header (with the create action).
+        activeTab === 'inventory' || activeTab === 'clients' ? null : <ConfigPanelHeader title={panelCopy.title} subtitle={panelCopy.subtitle} />
+      ) : (
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Gestión Avanzada</h1>
         {!lockToInitial && (
@@ -251,6 +274,7 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
           </div>
         )}
       </div>
+      )}
 
       {activeTab === 'inventory' && (
         <InventoryManagement />

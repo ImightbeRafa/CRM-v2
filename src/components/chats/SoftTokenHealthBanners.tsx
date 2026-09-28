@@ -1,41 +1,41 @@
 'use client'
 
-import Link from 'next/link'
-import {
-  accountNeedsReconnect,
-  socialReconnectBannerLabel,
-  type TokenHealthAccount,
-} from '@/lib/social-account-token-health'
+import { accountDisplayLabel, type SoftSocialAccount } from '@/lib/chat-soft-copilot'
+import { lineHealth } from '@/lib/chat-line-filter'
+import { ChannelDownBanner } from '@/components/aurora/states'
 
 type Props = {
-  accounts: TokenHealthAccount[]
+  accounts: SoftSocialAccount[]
 }
 
+const MAX_VISIBLE = 2
+
 /**
- * Token-health reconnect banners for Soft /chats (Phase 5).
- * Renders outside SoftSlimNav / SoftInboxBuckets / SoftCopilotRail (chrome lock).
+ * Canal caído strip (STATE-01) for /chats: one banner per line that needs repair or
+ * reconnect, reusing the same health classification as Canales. Renders outside the
+ * bucket / list / rail chrome.
  */
 export function SoftTokenHealthBanners({ accounts }: Props) {
-  const unhealthy = accounts.filter(accountNeedsReconnect)
-  if (unhealthy.length === 0) return null
+  const down = accounts
+    .map((account) => ({ account, health: lineHealth(account) }))
+    .filter(({ health }) => health.needsAction)
+  if (down.length === 0) return null
+
+  const visible = down.slice(0, MAX_VISIBLE)
+  const hidden = down.length - visible.length
 
   return (
-    <div className="flex flex-col gap-2 px-3 pt-2" data-testid="soft-token-health-banners">
-      {unhealthy.map((account) => (
-        <div
+    <div data-testid="soft-token-health-banners">
+      {visible.map(({ account, health }) => (
+        <ChannelDownBanner
           key={account.id}
-          className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950"
-          role="status"
-        >
-          <span>{socialReconnectBannerLabel(account)}</span>
-          <Link
-            href="/config/social"
-            className="shrink-0 font-medium text-amber-900 underline underline-offset-2"
-          >
-            Reconectar
-          </Link>
-        </div>
+          message={`${accountDisplayLabel(account)} · ${health.label.toLowerCase()}. Los mensajes de esta línea pueden no enviarse ni recibirse.`}
+          actionLabel={health.action === 'repair' ? 'Reparar' : 'Reconectar'}
+        />
       ))}
+      {hidden > 0 ? (
+        <ChannelDownBanner message={`${hidden} ${hidden === 1 ? 'línea más necesita' : 'líneas más necesitan'} atención.`} actionLabel="Ver canales" />
+      ) : null}
     </div>
   )
 }

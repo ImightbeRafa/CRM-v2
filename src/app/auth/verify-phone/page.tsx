@@ -3,8 +3,14 @@
 import { useState, useRef, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/app/components/ui/card';
-import { Button } from '@/app/components/ui/button';
+import {
+  AuthShell,
+  authPrimaryButtonClass,
+  authSecondaryButtonClass,
+  authLinkClass,
+  authErrorClass,
+  authSuccessClass,
+} from '@/components/aurora/auth/AuthShell';
 import { CheckCircle2, Loader2, Phone, Mail, ArrowLeft, RefreshCw, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 
@@ -154,136 +160,125 @@ function VerifyPhoneInner() {
 
   if (status === 'success') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 flex items-center justify-center p-4">
-        <Card className="max-w-md w-full border-0 shadow-xl">
-          <CardHeader className="text-center pb-2">
-            <div className="flex justify-center mb-4">
-              <div className="bg-green-100 dark:bg-green-900/30 p-4 rounded-full">
-                <CheckCircle2 className="w-12 h-12 text-green-600 dark:text-green-400" />
-              </div>
-            </div>
-            <CardTitle className="text-2xl">Teléfono Verificado</CardTitle>
-            <CardDescription>{message}</CardDescription>
-          </CardHeader>
-          <CardContent className="text-center">
-            <p className="text-sm text-muted-foreground mb-4">Redirigiendo al dashboard...</p>
-            <Link href="/dashboard">
-              <Button>Ir al Dashboard</Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
+      <AuthShell
+        brandPanel={false}
+        icon={
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <CheckCircle2 className="h-6 w-6" aria-hidden />
+          </span>
+        }
+        title="Teléfono Verificado"
+        subtitle={message}
+      >
+        <div className="space-y-3 text-center">
+          <p className="text-[13px] text-slate-500">Redirigiendo al dashboard...</p>
+          <Link href="/dashboard" className={authPrimaryButtonClass}>
+            Ir al Dashboard
+          </Link>
+        </div>
+      </AuthShell>
     );
   }
 
+  const actionsDisabled = resendTimer > 0 || status === 'sending' || status === 'verifying';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 flex items-center justify-center p-4">
-      <Card className="max-w-md w-full border-0 shadow-xl">
-        <CardHeader className="text-center pb-2">
-          <div className="flex justify-center mb-4">
-            <div className="bg-blue-100 dark:bg-blue-900/30 p-4 rounded-full">
-              <ShieldCheck className="w-12 h-12 text-blue-600 dark:text-blue-400" />
-            </div>
+    <AuthShell
+      brandPanel={false}
+      icon={
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#F1EEFF] text-[#5B3FE0]">
+          <ShieldCheck className="h-6 w-6" aria-hidden />
+        </span>
+      }
+      title="Verifica tu Teléfono"
+      subtitle={
+        codeSent
+          ? method === 'whatsapp'
+            ? `Enviamos un código de 6 dígitos por WhatsApp a ${maskedPhone}`
+            : `Enviamos un código de 6 dígitos a tu correo electrónico`
+          : 'Enviando código de verificación...'
+      }
+    >
+      <div className="space-y-6">
+        {/* OTP Input */}
+        <div className="flex justify-center gap-2 sm:gap-3">
+          {digits.map((digit, i) => (
+            <input
+              key={i}
+              ref={el => { inputRefs.current[i] = el; }}
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              aria-label={`Dígito ${i + 1}`}
+              maxLength={i === 0 ? OTP_LENGTH : 1}
+              value={digit}
+              onChange={e => handleDigitChange(i, e.target.value)}
+              onKeyDown={e => handleKeyDown(i, e)}
+              disabled={status === 'verifying' || status === 'sending'}
+              className="h-14 w-11 rounded-xl border-2 border-slate-200 bg-white text-center text-2xl font-bold text-slate-900 outline-none transition-all focus:border-[#7C5CFF] focus:ring-2 focus:ring-[#7C5CFF]/20 disabled:opacity-50 sm:h-16 sm:w-12"
+            />
+          ))}
+        </div>
+
+        {/* Status messages */}
+        {status === 'verifying' && (
+          <div className="flex items-center justify-center gap-2 text-[#5B3FE0]">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-[13px]">Verificando código...</span>
           </div>
-          <CardTitle className="text-2xl">Verifica tu Teléfono</CardTitle>
-          <CardDescription>
-            {codeSent
-              ? method === 'whatsapp'
-                ? `Enviamos un código de 6 dígitos por WhatsApp a ${maskedPhone}`
-                : `Enviamos un código de 6 dígitos a tu correo electrónico`
-              : 'Enviando código de verificación...'}
-          </CardDescription>
-        </CardHeader>
+        )}
 
-        <CardContent className="space-y-6">
-          {/* OTP Input */}
-          <div className="flex justify-center gap-2 sm:gap-3">
-            {digits.map((digit, i) => (
-              <input
-                key={i}
-                ref={el => { inputRefs.current[i] = el; }}
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={i === 0 ? OTP_LENGTH : 1}
-                value={digit}
-                onChange={e => handleDigitChange(i, e.target.value)}
-                onKeyDown={e => handleKeyDown(i, e)}
-                disabled={status === 'verifying' || status === 'sending'}
-                className="w-11 h-14 sm:w-13 sm:h-16 text-center text-2xl font-bold rounded-xl border-2 
-                  border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 
-                  focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 
-                  outline-none transition-all disabled:opacity-50"
-              />
-            ))}
+        {status === 'sending' && (
+          <div className="flex items-center justify-center gap-2 text-[#5B3FE0]">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-[13px]">Enviando código...</span>
           </div>
+        )}
 
-          {/* Status messages */}
-          {status === 'verifying' && (
-            <div className="flex items-center justify-center gap-2 text-blue-600 dark:text-blue-400">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm">Verificando código...</span>
-            </div>
-          )}
+        {message && status === 'error' && (
+          <div className={`${authErrorClass} text-center`} role="alert">{message}</div>
+        )}
 
-          {status === 'sending' && (
-            <div className="flex items-center justify-center gap-2 text-blue-600 dark:text-blue-400">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm">Enviando código...</span>
-            </div>
-          )}
+        {message && status === 'idle' && codeSent && (
+          <div className={`${authSuccessClass} text-center`}>{message}</div>
+        )}
 
-          {message && status === 'error' && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-center">
-              <p className="text-sm text-red-700 dark:text-red-400">{message}</p>
-            </div>
-          )}
+        {/* Actions */}
+        <div className="space-y-3">
+          <button
+            type="button"
+            className={authSecondaryButtonClass}
+            disabled={actionsDisabled}
+            onClick={() => sendCode(method)}
+          >
+            <RefreshCw className="h-4 w-4" />
+            {resendTimer > 0
+              ? `Reenviar código (${resendTimer}s)`
+              : 'Reenviar código'}
+          </button>
 
-          {message && status === 'idle' && codeSent && (
-            <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 text-center">
-              <p className="text-sm text-green-700 dark:text-green-400">{message}</p>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="space-y-3">
-            <Button
-              variant="outline"
-              className="w-full"
-              disabled={resendTimer > 0 || status === 'sending' || status === 'verifying'}
-              onClick={() => sendCode(method)}
+          {method === 'whatsapp' && (
+            <button
+              type="button"
+              className={`${authLinkClass} flex w-full items-center justify-center gap-2 py-2 text-[13px] disabled:opacity-50`}
+              disabled={actionsDisabled}
+              onClick={() => sendCode('email')}
             >
-              <RefreshCw className="w-4 h-4 mr-2" />
-              {resendTimer > 0
-                ? `Reenviar código (${resendTimer}s)`
-                : 'Reenviar código'}
-            </Button>
+              <Mail className="h-4 w-4" />
+              Enviar por correo electrónico
+            </button>
+          )}
+        </div>
 
-            {method === 'whatsapp' && (
-              <Button
-                variant="ghost"
-                className="w-full text-muted-foreground"
-                disabled={resendTimer > 0 || status === 'sending' || status === 'verifying'}
-                onClick={() => sendCode('email')}
-              >
-                <Mail className="w-4 h-4 mr-2" />
-                Enviar por correo electrónico
-              </Button>
-            )}
-          </div>
-
-          {/* Skip / Back */}
-          <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
-            <Link href="/dashboard" className="block">
-              <Button variant="ghost" className="w-full text-muted-foreground text-sm">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Verificar después
-              </Button>
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+        {/* Skip / Back */}
+        <div className="border-t border-slate-100 pt-2 text-center">
+          <Link href="/dashboard" className={`${authLinkClass} inline-flex items-center justify-center gap-1.5 py-2 text-[13px]`}>
+            <ArrowLeft className="h-4 w-4" />
+            Verificar después
+          </Link>
+        </div>
+      </div>
+    </AuthShell>
   );
 }
 
@@ -291,16 +286,13 @@ export default function VerifyPhonePage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 flex items-center justify-center p-4">
-          <Card className="max-w-md w-full border-0 shadow-xl">
-            <CardHeader className="text-center">
-              <div className="flex justify-center mb-4">
-                <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
-              </div>
-              <CardTitle className="text-2xl">Cargando...</CardTitle>
-            </CardHeader>
-          </Card>
-        </div>
+        <AuthShell
+          brandPanel={false}
+          icon={<Loader2 className="h-10 w-10 animate-spin text-[#5B6CFF]" aria-hidden />}
+          title="Cargando..."
+        >
+          <span className="sr-only" role="status">Cargando</span>
+        </AuthShell>
       }
     >
       <VerifyPhoneInner />

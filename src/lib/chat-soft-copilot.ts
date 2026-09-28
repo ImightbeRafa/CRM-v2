@@ -27,6 +27,10 @@ export interface SoftConversation extends ChatConversation {
   status: ConversationStatus
   tags: SoftTag[]
   orderId?: string | null
+  /** Human order number (`Order.orderId`) of the linked order, when known; display only. */
+  orderNumber?: string | null
+  /** Chat owner (ChatConversation.assignedUserId); display only. */
+  assignee?: { id: string; name: string | null; image: string | null } | null
   /** Local Soft demo seed only — never persisted to ChatMessage. */
   isDemo?: boolean
   /** Soft Agent Layer trust labels (optional; A1). */
@@ -332,6 +336,8 @@ export function filterSoftConversations(
     channel: ChannelFilter
     accountId: string | 'all'
     search: string
+    /** When known, "Tus chats" = owned by the viewer and "Sin asignar" = no owner. */
+    viewerUserId?: string | null
   },
 ): SoftConversation[] {
   const q = opts.search.trim().toLowerCase()
@@ -342,8 +348,15 @@ export function filterSoftConversations(
     if (opts.bucket === 'hechos' && c.status !== 'hecho') return false
     if (opts.bucket === 'abiertos' && c.status === 'hecho') return false
     if (opts.bucket === 'tus_chats' && c.status === 'hecho') return false
-    // Sin asignar chrome: treat as open/new without inventing staffing product
-    if (opts.bucket === 'sin_asignar' && c.status !== 'nuevo') return false
+    if (opts.bucket === 'tus_chats' && opts.viewerUserId && c.assignee?.id !== opts.viewerUserId) return false
+    if (opts.bucket === 'sin_asignar') {
+      if (opts.viewerUserId) {
+        if (c.assignee || c.status === 'hecho') return false
+      } else if (c.status !== 'nuevo') {
+        // Legacy (no owner data): treat new chats as unassigned.
+        return false
+      }
+    }
     // IA manejando filtered by SoftCopilotInbox via agentMode map (status still open)
     if (opts.bucket === 'ia_manejando' && c.status === 'hecho') return false
     if (!q) return true

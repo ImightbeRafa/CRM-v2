@@ -1,89 +1,93 @@
 'use client';
 
-import React, { useState, Suspense, lazy } from 'react';
-import { AppShell } from '@/app/components/AppShell';
-import { SalesDashboard } from '@/app/ventas/components/SalesDashboard';
-import DailyStats from '@/app/ventas/components/DailyStats';
+import React, { Suspense, useCallback } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { AuroraShell } from '@/components/aurora/AuroraShell';
+import { AuroraMobileNav } from '@/components/aurora/AuroraMobileNav';
+import { AuroraPageHeader } from '@/components/aurora/shell/AuroraPageHeader';
+import { PedidosBoard } from '@/app/ventas/components/PedidosBoard';
 import SalesErrorBoundary from '@/app/ventas/components/SalesErrorBoundary';
 import { DOMErrorBoundary } from '@/app/components/DOMErrorBoundary';
-import { Button } from "@/app/components/ui/button";
-import { Loader2, Plus } from 'lucide-react';
+import { CrearPedidoDrawer } from '@/components/aurora/pedidos/CrearPedidoDrawer';
+import { AuroraListSkeleton } from '@/components/aurora/states';
+import { useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/app/hooks/use-toast';
+import { parsePedidoParams, withPedidoParams } from '@/lib/pedido-url';
+import { Plus } from 'lucide-react';
 
-// Lazy load the form
-const EnhancedSalesForm = lazy(() => import('./EnhancedSalesForm'));
+/**
+ * /ventas: Pedidos list + detail drawer (`?pedido=`) + create drawer (`?nuevo=1`).
+ * The create flow is the existing EnhancedSalesForm, framed by CrearPedidoDrawer.
+ */
+function VentasInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { pedido, nuevo, buscar } = parsePedidoParams(searchParams);
 
-// Loading skeleton component
-function FormSkeleton() {
+  const setParams = useCallback(
+    (changes: Record<string, string | null>) => {
+      const qs = withPedidoParams(new URLSearchParams(searchParams?.toString() ?? ''), changes);
+      router.replace(`${pathname}${qs}`, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+
+  const openCreate = useCallback(() => setParams({ nuevo: '1' }), [setParams]);
+
   return (
-    <div className="bg-card rounded-lg shadow-md p-6 animate-pulse">
-      <div className="h-8 bg-muted rounded w-1/3 mb-6"></div>
-      <div className="space-y-4">
-        <div className="h-10 bg-muted rounded"></div>
-        <div className="h-10 bg-muted rounded"></div>
-        <div className="h-10 bg-muted rounded"></div>
-        <div className="h-32 bg-muted rounded"></div>
+    <AuroraShell fullBleed bottomNav={<AuroraMobileNav />}>
+      <AuroraPageHeader
+        title="Pedidos"
+        subtitle="Ventas, pagos SINPE y envíos con Correos de Costa Rica"
+        actions={
+          <button
+            type="button"
+            onClick={openCreate}
+            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF] px-4 text-[13px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            Crear pedido
+          </button>
+        }
+      />
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="w-full space-y-4 px-4 py-4 sm:px-6">
+          <DOMErrorBoundary>
+            <SalesErrorBoundary>
+              <PedidosBoard
+                onCreate={openCreate}
+                initialSearch={buscar}
+                pedidoRef={pedido}
+                onPedidoChange={(ref) => setParams({ pedido: ref })}
+              />
+            </SalesErrorBoundary>
+          </DOMErrorBoundary>
+        </div>
       </div>
-      <div className="mt-6 flex items-center gap-2 text-blue-600 dark:text-blue-400">
-        <Loader2 className="h-5 w-5 animate-spin" />
-        <span className="text-sm">Cargando formulario...</span>
-      </div>
-    </div>
+
+      <CrearPedidoDrawer
+        open={nuevo}
+        onOpenChange={(open) => {
+          if (!open) setParams({ nuevo: null });
+        }}
+        onCreated={(order) => {
+          queryClient.invalidateQueries({ queryKey: ['sales'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+          toast({ variant: 'success' as any, title: 'Pedido creado', description: `#${order.orderId}` });
+        }}
+      />
+    </AuroraShell>
   );
 }
 
 export default function VentasContent() {
-  const [showOrderForm, setShowOrderForm] = useState(false);
-
   return (
-    <AppShell>
-      <div className="w-full px-2 sm:px-3 md:px-4 py-3 sm:py-4" style={{ overflow: 'visible' }}>
-        <DOMErrorBoundary>
-          <SalesErrorBoundary>
-            <div className="flex flex-col xl:flex-row gap-4 lg:gap-8 transition-all duration-300">
-            {/* Form Section - Only shows when open */}
-            {showOrderForm && (
-              <section className="xl:w-2/3 transition-all duration-300">
-                <div className="sticky top-4 xl:top-6">
-                  <Suspense fallback={<FormSkeleton />}>
-                    <EnhancedSalesForm 
-                      showOrderForm={showOrderForm}
-                      onToggleForm={setShowOrderForm}
-                    />
-                  </Suspense>
-                </div>
-              </section>
-            )}
-            
-            {/* Dashboard Section - Full width when form is hidden */}
-            <section className={`space-y-4 lg:space-y-6 transition-all duration-300 ${
-              showOrderForm ? 'xl:w-1/3' : 'xl:flex-1'
-            }`} style={{ zIndex: 1, position: 'relative', overflow: 'visible' }}>
-              {/* Add Order Button - Apple-like Minimalistic Design */}
-              {!showOrderForm && (
-                <div className="flex justify-end">
-                  <Button
-                    onClick={() => setShowOrderForm(true)}
-                    size="icon"
-                    aria-label="Agregar orden"
-                    className="w-12 h-12 rounded-2xl bg-black text-white shadow-lg hover:bg-black/80 transition-transform duration-150 hover:scale-105"
-                  >
-                    <Plus className="h-5 w-5" aria-hidden="true" />
-                  </Button>
-                </div>
-              )}
-              
-              <div className="bg-card rounded-lg shadow-sm">
-                <DailyStats />
-              </div>
-              
-              <div className="bg-card rounded-lg shadow-sm">
-                <SalesDashboard />
-              </div>
-            </section>
-            </div>
-          </SalesErrorBoundary>
-        </DOMErrorBoundary>
-      </div>
-    </AppShell>
+    <Suspense fallback={<AuroraShell><AuroraListSkeleton rows={6} label="Cargando pedidos" /></AuroraShell>}>
+      <VentasInner />
+    </Suspense>
   );
 }

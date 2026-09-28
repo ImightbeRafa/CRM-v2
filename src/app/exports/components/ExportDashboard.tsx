@@ -61,7 +61,7 @@ export default function ExportDashboard() {
       const response = await fetch(`/api/exports/${type}?${params.toString()}`);
       
       if (!response.ok) {
-        throw new Error(`Export failed: ${response.statusText}`);
+        throw new Error(`No se pudo exportar (${response.status}).`);
       }
 
       // Get filename from response headers
@@ -85,7 +85,7 @@ export default function ExportDashboard() {
       setLoading(null);
 
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Export failed');
+      setError(err instanceof Error ? err.message : 'No se pudo exportar');
       setLoading(null);
     }
   };
@@ -120,7 +120,7 @@ export default function ExportDashboard() {
         <CardContent className="space-y-4">
           {/* Format Selection */}
           <div>
-            <label className="text-sm font-medium">Export Format</label>
+            <label className="text-sm font-medium">Formato</label>
             <div className="flex gap-2 mt-1">
               {['json', 'csv', 'xlsx'].map((format) => (
                 <Button
@@ -138,7 +138,7 @@ export default function ExportDashboard() {
           {/* Date Range */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium">Start Date</label>
+              <label className="text-sm font-medium">Desde</label>
               <input
                 type="date"
                 className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"
@@ -147,7 +147,7 @@ export default function ExportDashboard() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium">End Date</label>
+              <label className="text-sm font-medium">Hasta</label>
               <input
                 type="date"
                 className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"
@@ -180,7 +180,7 @@ export default function ExportDashboard() {
                           checked={options.includeOrders || false}
                           onChange={(e) => setOptions({ ...options, includeOrders: e.target.checked })}
                         />
-                        Include Order History
+                        Incluir historial de pedidos
                       </label>
                       <label className="flex items-center gap-2">
                         <input
@@ -188,24 +188,24 @@ export default function ExportDashboard() {
                           checked={options.includeStats || false}
                           onChange={(e) => setOptions({ ...options, includeStats: e.target.checked })}
                         />
-                        Include Statistics
+                        Incluir estadísticas
                       </label>
                     </div>
                   )}
                   
                   {type === 'sales' && (
                     <div>
-                      <label className="text-sm font-medium">Group By</label>
+                      <label className="text-sm font-medium">Agrupar por</label>
                       <select
                         className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"
                         value={options.groupBy || 'none'}
                         onChange={(e) => setOptions({ ...options, groupBy: e.target.value as any })}
                       >
-                        <option value="none">No Grouping</option>
-                        <option value="day">Day</option>
-                        <option value="week">Week</option>
-                        <option value="month">Month</option>
-                        <option value="year">Year</option>
+                        <option value="none">Sin agrupar</option>
+                        <option value="day">Día</option>
+                        <option value="week">Semana</option>
+                        <option value="month">Mes</option>
+                        <option value="year">Año</option>
                       </select>
                     </div>
                   )}
@@ -218,7 +218,7 @@ export default function ExportDashboard() {
                           checked={options.includeUsers || false}
                           onChange={(e) => setOptions({ ...options, includeUsers: e.target.checked })}
                         />
-                        Include User Data
+                        Incluir usuarios
                       </label>
                       <label className="flex items-center gap-2">
                         <input
@@ -226,7 +226,7 @@ export default function ExportDashboard() {
                           checked={options.includeSystemData || false}
                           onChange={(e) => setOptions({ ...options, includeSystemData: e.target.checked })}
                         />
-                        Include System Data
+                        Incluir datos del sistema
                       </label>
                     </div>
                   )}
@@ -246,7 +246,7 @@ export default function ExportDashboard() {
             ) : (
               <Download className="h-4 w-4" />
             )}
-            {loading === type ? 'Exporting...' : `Export ${title}`}
+            {loading === type ? 'Exportando…' : `Exportar ${title.toLowerCase()}`}
           </Button>
         </CardContent>
       </Card>
@@ -274,8 +274,8 @@ export default function ExportDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {/* Orders Export */}
         <ExportCard
-          title="Orders"
-          description="Export order data with client and seller information"
+          title="Pedidos"
+          description="Pedidos con datos de cliente y vendedor"
           icon={<ShoppingCart className="h-5 w-5" />}
           type="orders"
           defaultOptions={{
@@ -288,8 +288,8 @@ export default function ExportDashboard() {
 
         {/* Sales Export */}
         <ExportCard
-          title="Sales"
-          description="Export sales data with analytics and grouping options"
+          title="Ventas"
+          description="Ventas con totales y agrupación por período"
           icon={<BarChart3 className="h-5 w-5" />}
           type="sales"
           defaultOptions={{
@@ -303,8 +303,8 @@ export default function ExportDashboard() {
 
         {/* Clients Export */}
         <ExportCard
-          title="Clients"
-          description="Export client data with order history and statistics"
+          title="Clientes"
+          description="Clientes con historial de pedidos y estadísticas"
           icon={<Users className="h-5 w-5" />}
           type="clients"
           defaultOptions={{
@@ -319,8 +319,8 @@ export default function ExportDashboard() {
 
         {/* Database Export */}
         <ExportCard
-          title="Database"
-          description="Export complete database (Admin only)"
+          title="Base de datos"
+          description="Base de datos completa (solo administradores)"
           icon={<Database className="h-5 w-5" />}
           type="database"
           defaultOptions={{
@@ -339,13 +339,13 @@ export default function ExportDashboard() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Info className="h-5 w-5" />
-            Export Information
+            Información
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <div>
-              <h4 className="font-medium">Supported Formats</h4>
+              <h4 className="font-medium">Formatos disponibles</h4>
               <div className="flex gap-2 mt-2">
                 <Badge variant="outline">JSON</Badge>
                 <Badge variant="outline">CSV</Badge>
@@ -355,22 +355,22 @@ export default function ExportDashboard() {
             </div>
             
             <div>
-              <h4 className="font-medium">Data Security</h4>
+              <h4 className="font-medium">Seguridad</h4>
               <ul className="text-sm text-gray-600 mt-2 space-y-1">
-                <li>• All exports are tenant-isolated</li>
-                <li>• User data requires admin permissions</li>
-                <li>• Exports include metadata and timestamps</li>
-                <li>• Large exports may take several minutes</li>
+                <li>• Cada exportación incluye solo los datos de tu negocio</li>
+                <li>• Los datos de usuarios requieren permisos de administrador</li>
+                <li>• Las exportaciones incluyen fechas y metadatos</li>
+                <li>• Las exportaciones grandes pueden tardar varios minutos</li>
               </ul>
             </div>
             
             <div>
-              <h4 className="font-medium">Usage Tips</h4>
+              <h4 className="font-medium">Consejos</h4>
               <ul className="text-sm text-gray-600 mt-2 space-y-1">
-                <li>• Use date ranges to limit export size</li>
-                <li>• XLSX format includes multiple sheets</li>
-                <li>• CSV format is best for data analysis</li>
-                <li>• JSON format preserves all data relationships</li>
+                <li>• Usá rangos de fechas para exportar menos datos</li>
+                <li>• XLSX incluye varias hojas</li>
+                <li>• CSV es el mejor para análisis</li>
+                <li>• JSON conserva todas las relaciones de los datos</li>
               </ul>
             </div>
           </div>

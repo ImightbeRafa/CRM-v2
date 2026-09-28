@@ -96,12 +96,20 @@ export default function BackupDashboard() {
       setError(null);
       const response = await fetch('/api/backups/status');
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const body = await response.json().catch(() => null);
+        const detail = typeof body?.detail === 'string' ? body.detail : '';
+        throw new Error(
+          /BLOB_READ_WRITE_TOKEN/.test(detail)
+            ? 'Los respaldos no están configurados en este entorno (falta el almacenamiento privado).'
+            : response.status === 403
+              ? 'No tenés permiso para ver los respaldos.'
+              : `No se pudo cargar el estado de los respaldos (${response.status}).`,
+        );
       }
       const data = await response.json();
       setBackupStatus(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch backup status');
+      setError(err instanceof Error ? err.message : 'No se pudo cargar el estado de los respaldos.');
     } finally {
       setLoading(false);
     }

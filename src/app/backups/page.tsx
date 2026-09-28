@@ -1,4 +1,5 @@
 import { requirePermission } from '@/lib/auth-helpers';
+import { AuroraClassicPage } from '@/components/aurora/AuroraClassicPage';
 import { redirect } from 'next/navigation';
 import BackupDashboard from './components/BackupDashboard';
 
@@ -11,10 +12,8 @@ export default async function BackupsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <BackupDashboard />
-      </div>
-    </div>
+    <AuroraClassicPage title="Respaldos" subtitle="Copias de seguridad de tus datos" testId="backups-aurora">
+      <BackupDashboard />
+    </AuroraClassicPage>
   );
 }

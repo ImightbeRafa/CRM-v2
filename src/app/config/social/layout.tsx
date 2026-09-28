@@ -1,4 +1,5 @@
 import { requirePermission } from '@/lib/auth-helpers'
+import { ConfigShell } from '@/components/aurora/config/ConfigShell'
 
 export default async function SocialConfigLayout({
   children,
@@ -6,5 +7,6 @@ export default async function SocialConfigLayout({
   children: React.ReactNode
 }) {
   await requirePermission('update_config')
-  return <>{children}</>
+  // Real page (Embedded Signup fallback) with the same Config chrome as `/config?tab=social`.
+  return <ConfigShell activeTab="social">{children}</ConfigShell>
 }

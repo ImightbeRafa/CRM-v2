@@ -42,6 +42,7 @@ export function parseOrder(data: any): Sale | null {
     comments: data.comments || '',
     total: Number(data.total) || 0,
     funnel: data.funnel || '',
+    salesChannel: data.salesChannel || null,
     customFields: data.customFields ?? null,
     contraEntrega: data.contraEntrega === true,
     cePaymentConfirmed: data.cePaymentConfirmed === true,

@@ -25,6 +25,8 @@
  * (BETSY_V2_APPLY_FILES=029). Never part of DEFAULT_APPLY_FILES. Not applied.
  * 030 TenantInvite + 031 ChatMessage.senderUserId gated the same way
  * (BETSY_V2_APPLY_FILES=030,031). Never part of DEFAULT_APPLY_FILES.
+ * 032 performance indexes (pg_trgm + ChatMessage orderId) gated the same way
+ * (BETSY_V2_APPLY_FILES=032). Apply in the madrugada; index builds briefly block writes.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -35,6 +37,7 @@ import {
   EXPECTED_COLUMNS,
   EXPECTED_INDEXES_024,
   EXPECTED_INDEXES_025,
+  EXPECTED_INDEXES_032,
   EXPECTED_SEQUENCE_024,
   EXPECTED_TABLES,
   EXPECTED_TRIGGER_024,
@@ -171,6 +174,19 @@ async function verify(id) {
   }
   if (id === '024') await verify024Extras();
   if (id === '025') await verify025Extras();
+  if (id === '032') {
+    for (const indexName of EXPECTED_INDEXES_032) {
+      const rows = await sql`
+        SELECT i.indisvalid
+        FROM pg_class idx
+        JOIN pg_index i ON i.indexrelid = idx.oid
+        JOIN pg_namespace n ON n.oid = idx.relnamespace
+        WHERE n.nspname = 'public' AND idx.relname = ${indexName}
+      `;
+      if (rows.length !== 1) fail(`Postcondition failed: index ${indexName} missing after 032.`);
+      if (rows[0].indisvalid !== true) fail(`Postcondition failed: index ${indexName} is invalid.`);
+    }
+  }
   const flags = await sql`
     SELECT COUNT(*)::int AS n FROM public."TenantFeatureFlag" WHERE enabled = true
   `.catch(() => [{ n: 0 }]);

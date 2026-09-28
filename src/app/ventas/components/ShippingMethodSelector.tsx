@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Truck } from 'lucide-react';
+import { sfError, sfHelp, sfInput } from './sales-form-styles';
 
 interface ShippingOption {
   id: string;
@@ -76,7 +77,7 @@ export function ShippingMethodSelector({ selectedMethod, onMethodChange, error }
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground" data-field="orderShippingMethod">
+      <div className="flex items-center gap-2 text-sm text-slate-500" data-field="orderShippingMethod">
         <Truck className="w-4 h-4 animate-pulse" />
         <span>Cargando métodos de envío...</span>
       </div>
@@ -89,8 +90,8 @@ export function ShippingMethodSelector({ selectedMethod, onMethodChange, error }
 
   return (
     <div className="flex flex-col space-y-2" data-field="orderShippingMethod">
-      <label htmlFor="shippingMethod" className="text-sm font-medium text-foreground flex items-center gap-2">
-        <Truck className="w-4 h-4" />
+      <label htmlFor="shippingMethod" className="flex items-center gap-2 text-[13px] font-semibold text-slate-800">
+        <Truck className="h-4 w-4 text-[#5B3FE0]" />
         Mensajería <span className="text-red-500">*</span>
       </label>
       {shippingOptions.length > 0 ? (
@@ -100,9 +101,7 @@ export function ShippingMethodSelector({ selectedMethod, onMethodChange, error }
           onChange={handleChange}
           aria-required="true"
           aria-invalid={Boolean(error)}
-          className={`w-full px-3 py-2 border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
-            error ? 'border-red-500' : 'border-border'
-          }`}
+          className={sfInput(error)}
         >
           <option value="">Seleccionar mensajería...</option>
           {shippingOptions.map((option) => (
@@ -113,7 +112,7 @@ export function ShippingMethodSelector({ selectedMethod, onMethodChange, error }
           <option value="__manual__">Otra (escribir)</option>
         </select>
       ) : (
-        <p className="text-xs text-muted-foreground">
+        <p className={sfHelp}>
           No hay mensajerías configuradas. Escribe el nombre del courier.
         </p>
       )}
@@ -128,17 +127,15 @@ export function ShippingMethodSelector({ selectedMethod, onMethodChange, error }
           placeholder="Nombre de la mensajería"
           aria-required="true"
           aria-invalid={Boolean(error)}
-          className={`w-full px-3 py-2 border rounded-md bg-background text-sm ${
-            error ? 'border-red-500' : 'border-border'
-          }`}
+          className={sfInput(error)}
         />
       )}
       {selectedMethod && shippingOptions.some(option => option.value === selectedMethod) && (
-        <p className="text-xs text-muted-foreground">
+        <p className={sfHelp}>
           Costo de envío: ₡{(shippingOptions.find(option => option.value === selectedMethod)?.priceDelta || 0).toLocaleString('es-CR')}
         </p>
       )}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className={sfError}>{error}</p>}
     </div>
   );
 }

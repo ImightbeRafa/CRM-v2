@@ -367,7 +367,8 @@ export function SoftCopilotInboxV2() {
       // second "reconcile" list fetch in parallel (lastFullReconcileRef is still 0).
       pollInFlightRef.current = true
       try {
-        await fetchAccounts()
+        // Fresh on mount (a line connected seconds ago must show up); still shares an in-flight request.
+        await fetchAccounts({ force: true })
         await runLocalImportOnce()
         try {
           await fetchListPage({ replace: true })
@@ -375,7 +376,7 @@ export function SoftCopilotInboxV2() {
           setListError(true)
         }
       } finally {
-        lastFullReconcileRef.current = Date.now()
+        // fetchListPage sets lastFullReconcileRef on success; after a failure the next tick reconciles.
         pollInFlightRef.current = false
         setLoading(false)
       }
@@ -623,6 +624,7 @@ export function SoftCopilotInboxV2() {
       channel: channelFilter,
       accountId: accountFilter,
       search,
+      viewerUserId,
     })
     if (bucket === 'ia_manejando') {
       list = list.filter((c) => {
@@ -634,7 +636,7 @@ export function SoftCopilotInboxV2() {
     }
     if (activeTag) list = list.filter((c) => c.tags.includes(activeTag))
     return list
-  }, [conversations, bucket, channelFilter, accountFilter, search, activeTag, dtoMap])
+  }, [conversations, bucket, channelFilter, accountFilter, search, activeTag, dtoMap, viewerUserId])
 
   const openCount = useMemo(
     () => conversations.filter((c) => c.status !== 'hecho').length,
@@ -704,7 +706,22 @@ export function SoftCopilotInboxV2() {
       res,
     )
     if (parsed.ok && res.ok && parsed.data.success && parsed.data.conversation) {
-      setDtoMap((prev) => mergeListDtoIntoMap(prev, [parsed.data.conversation!]))
+      // PATCH responses are not enriched: keep the linked order / agent labels we already had.
+      setDtoMap((prev) => {
+        const incoming = parsed.data.conversation!
+        const before = prev.get(incoming.id)
+        const merged = before
+          ? {
+              ...incoming,
+              linkedOrder: incoming.linkedOrder ?? before.linkedOrder,
+              agentLabel: incoming.agentLabel ?? before.agentLabel,
+              agentEmoji: incoming.agentEmoji ?? before.agentEmoji,
+              agentStateDot: incoming.agentStateDot ?? before.agentStateDot,
+              pendingSuggestionText: incoming.pendingSuggestionText ?? before.pendingSuggestionText,
+            }
+          : incoming
+        return mergeListDtoIntoMap(prev, [merged])
+      })
     }
   }
 

@@ -94,7 +94,7 @@ function AcceptInviteInner() {
     <AuthShell
       title={headline}
       subtitle={
-        preview ? `Invitación para ${preview.email} · rol ${preview.role}` : 'Revisando tu invitación…'
+        preview ? `Invitación para ${preview.email} · rol ${preview.role}` : error ? undefined : 'Revisando tu invitación…'
       }
     >
       {error ? (

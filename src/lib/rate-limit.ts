@@ -20,7 +20,7 @@ function createRedisLimiter(config: { prefix: string; maxRequests: number; windo
     limiter: Ratelimit.slidingWindow(config.maxRequests, `${windowSec} s`),
     prefix: `ratelimit:${config.prefix}`,
     analytics: false,
-    // Give up on Redis after 1 s (falls back to memory) instead of stalling the request,
+    // Give up on Redis after 1 s (rateLimitAsync then uses the memory limiter) instead of stalling,
     // and remember already-blocked identifiers locally so they skip the Redis round trip.
     timeout: 1000,
     ephemeralCache: new Map(),
@@ -110,6 +110,11 @@ async function rateLimitAsync(
   if (limiter) {
     try {
       const result = await limiter.limit(identifier);
+      // On timeout Upstash resolves { success: true, reason: 'timeout' } (fail-open):
+      // use the local limiter instead so auth limits keep working during Redis latency.
+      if ((result as { reason?: string }).reason === 'timeout') {
+        return memoryRateLimit(identifier, fallbackConfig);
+      }
       return {
         allowed: result.success,
         headers: {

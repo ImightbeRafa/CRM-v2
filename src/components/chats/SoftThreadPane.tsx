@@ -475,6 +475,22 @@ export function SoftThreadPane({
             </button>
           ) : null}
         </header>
+      ) : null}
+      {compact && assignment && !conversation.isDemo ? (
+        <div
+          className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200/70 bg-white px-3 py-1.5"
+          data-testid="soft-thread-mobile-owner"
+        >
+          <span className="text-[12px] text-slate-500">Responsable</span>
+          <ChatAssigneePicker
+            compact
+            current={conversation.assignee}
+            assignees={assignment.assignees}
+            viewerUserId={assignment.viewerUserId}
+            onAssign={assignment.onAssign}
+            busy={assignment.busy}
+          />
+        </div>
       ) : (
         <header className="shrink-0 border-b border-slate-200/70 px-4 py-3 sm:px-5">
           <div className="flex items-start justify-between gap-3">
@@ -506,18 +522,7 @@ export function SoftThreadPane({
               <p className="mt-1 truncate text-[11px] text-slate-500" data-testid="soft-agent-label">
                 {conversation.agentLabel || 'Sin agente'}
               </p>
-              {compact && assignment && !conversation.isDemo ? (
-                <div className="mt-2">
-                  <ChatAssigneePicker
-                    compact
-                    current={conversation.assignee}
-                    assignees={assignment.assignees}
-                    viewerUserId={assignment.viewerUserId}
-                    onAssign={assignment.onAssign}
-                    busy={assignment.busy}
-                  />
-                </div>
-              ) : null}
+
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <span
                   className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${statusChipClass(conversation.status)}`}

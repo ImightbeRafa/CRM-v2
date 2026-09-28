@@ -410,7 +410,7 @@ export function SoftConversationList({
                               {conv.agentStateDot}
                             </span>
                           ) : null}
-                          {conv.status === 'nuevo' ? (
+                          {conv.status === 'nuevo' && !conv.assignee ? (
                             <span className="flex shrink-0 items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-[12px] font-semibold text-amber-700 ring-1 ring-amber-200">
                               <Clock className="h-3 w-3" aria-hidden />
                               Sin asignar

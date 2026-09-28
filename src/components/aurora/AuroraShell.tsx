@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, type ReactNode, useEffect } from 'react'
 import { AuroraSidebar } from './AuroraSidebar'
 import { AuroraToaster } from './ui/AuroraToaster'
 
@@ -21,6 +21,17 @@ const AuroraShellContext = createContext(false)
 /** Shared Aurora chrome: dark sidebar + light content area. Sidebar is desktop-only. */
 export function AuroraShell({ children, fullBleed = false, bottomNav }: AuroraShellProps) {
   const nested = useContext(AuroraShellContext)
+  // Let global widgets (feedback FAB) know an Aurora shell is on screen, whenever it mounts.
+  useEffect(() => {
+    if (nested) return
+    const root = document.documentElement
+    root.dataset.auroraShell = '1'
+    window.dispatchEvent(new Event('betsy:aurora-shell'))
+    return () => {
+      delete root.dataset.auroraShell
+      window.dispatchEvent(new Event('betsy:aurora-shell'))
+    }
+  }, [nested])
   if (nested) return <>{children}</>
 
   return (

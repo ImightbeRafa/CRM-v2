@@ -68,11 +68,11 @@ export function FeedbackWidget() {
 
   const [inAuroraShell, setInAuroraShell] = useState(false);
   useEffect(() => {
-    const check = () => setInAuroraShell(Boolean(document.querySelector('[data-aurora-shell]')));
+    const check = () => setInAuroraShell(document.documentElement.dataset.auroraShell === '1');
     check();
-    const raf = window.requestAnimationFrame(check);
-    return () => window.cancelAnimationFrame(raf);
-  }, [pathname]);
+    window.addEventListener('betsy:aurora-shell', check);
+    return () => window.removeEventListener('betsy:aurora-shell', check);
+  }, []);
 
   useEffect(() => {
     const onOpen = () => setIsOpen(true);

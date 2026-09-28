@@ -1,14 +1,16 @@
 'use client'
 
 import {
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
   type Ref,
 } from 'react'
 import Link from 'next/link'
-import { Check, CheckCheck, ChevronLeft, Hand, Info, Pause, Play, Send, ShoppingBag, Sparkles, User } from 'lucide-react'
+import { Check, CheckCheck, ChevronLeft, Hand, Info, Paperclip, Pause, Play, Send, ShoppingBag, Sparkles, User, X } from 'lucide-react'
 import {
   initialsFromName,
   isWhatsAppWindowOpen,
@@ -98,6 +100,11 @@ interface SoftThreadPaneProps {
   agentActionsToday?: number
   /** Opens "Crear pedido" for this chat (the inbox links the order to the thread afterwards). */
   onCreateOrder?: () => void
+  /** Attach + send a file (WhatsApp, flag-gated). Hidden when absent. */
+  attachments?: {
+    accept: string
+    onSendFile: (file: File, caption: string) => Promise<boolean>
+  }
   /** Chat owner picker (Asignarme / teammates / Sin asignar). Hidden when absent. */
   assignment?: {
     assignees: ChatAssignee[]
@@ -322,8 +329,30 @@ export function SoftThreadPane({
   agentActionsToday = 0,
   onCreateOrder,
   assignment,
+  attachments,
 }: SoftThreadPaneProps) {
   const [pickerOpenLocal, setPickerOpenLocal] = useState(false)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const composerFocus = () => {
+    const el = composerRef && typeof composerRef === 'object' ? composerRef.current : null
+    el?.focus()
+  }
+  // Switching chats drops a file picked for another conversation.
+  useEffect(() => {
+    setPendingFile(null)
+  }, [conversation?.recipientId, conversation?.socialAccountId])
+  const submitComposer = (e: FormEvent) => {
+    if (pendingFile && attachments) {
+      e.preventDefault()
+      const file = pendingFile
+      void attachments.onSendFile(file, messageInput).then((ok) => {
+        if (ok) setPendingFile(null)
+      })
+      return
+    }
+    onSend(e)
+  }
   const pickerOpen = showTemplatePicker ?? pickerOpenLocal
 
   const renderedMessages = useMemo(
@@ -961,7 +990,56 @@ export function SoftThreadPane({
             </div>
           ) : null}
 
-          <form onSubmit={onSend} className={compact ? 'flex items-end gap-2' : 'flex gap-2'}>
+          {pendingFile ? (
+            <div
+              className="mb-2 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[12px] text-slate-700 ring-1 ring-slate-200"
+              data-testid="composer-attachment"
+            >
+              <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{pendingFile.name}</span>
+              <span className="shrink-0 text-slate-500">{(pendingFile.size / (1024 * 1024)).toFixed(1)} MB</span>
+              <button
+                type="button"
+                onClick={() => setPendingFile(null)}
+                disabled={sending}
+                aria-label="Quitar archivo"
+                className="rounded-md p-1 text-slate-500 hover:bg-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF]"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            </div>
+          ) : null}
+
+          <form onSubmit={submitComposer} className={compact ? 'flex items-end gap-2' : 'flex gap-2'}>
+            {attachments && conversation.platform === 'whatsapp' ? (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={attachments.accept}
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null
+                    setPendingFile(file)
+                    e.target.value = ''
+                    if (file) composerFocus()
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending || !composerEnabled}
+                  aria-label="Adjuntar archivo"
+                  title="Adjuntar foto, video, audio o documento"
+                  className={`flex shrink-0 items-center justify-center text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF] disabled:opacity-40 ${
+                    compact ? 'h-11 w-11 rounded-full' : 'h-auto w-11 rounded-xl ring-1 ring-slate-100'
+                  }`}
+                  data-testid="composer-attach"
+                >
+                  <Paperclip className="h-5 w-5" aria-hidden />
+                </button>
+              </>
+            ) : null}
             <textarea
               ref={composerRef}
               rows={1}
@@ -973,11 +1051,14 @@ export function SoftThreadPane({
               onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
                 if (e.key !== 'Enter' || e.shiftKey) return
                 e.preventDefault()
-                if (sending || !composerEnabled || !messageInput.trim()) return
-                onSend(e as unknown as FormEvent)
+                if (sending || !composerEnabled || (!messageInput.trim() && !pendingFile)) return
+                submitComposer(e as unknown as FormEvent)
               }}
+              aria-label={pendingFile ? 'Texto del archivo (opcional)' : 'Mensaje'}
               placeholder={
-                composerEnabled
+                pendingFile
+                  ? 'Agregá un texto al archivo (opcional)'
+                  : composerEnabled
                   ? compact
                     ? 'Escribí un mensaje'
                     : 'Escribí un mensaje… Enter envía · Shift+Enter nueva línea'
@@ -993,7 +1074,7 @@ export function SoftThreadPane({
             <button
               type="submit"
               aria-label="Enviar"
-              disabled={sending || !messageInput.trim() || !composerEnabled}
+              disabled={sending || (!messageInput.trim() && !pendingFile) || !composerEnabled}
               className={
                 compact
                   ? 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#5B6CFF] to-[#7C5CFF] text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40'

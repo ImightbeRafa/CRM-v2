@@ -44,7 +44,9 @@ describe('PR-G mobile chats (CHAT-M01 / CHAT-M02)', () => {
     assert.match(thread, /aria-label="Enviar"/)
     assert.match(thread, /aria-label="Pausar agente"/)
     assert.match(thread, /Tomar\n/)
-    assert.match(thread, /onSubmit=\{onSend\}/)
+    // Composer form submits through submitComposer: a picked file goes to onSendFile, otherwise onSend.
+    assert.match(thread, /onSubmit=\{submitComposer\}/)
+    assert.match(thread, /onSend\(e\)/)
     assert.match(thread, /text-\[16px\]/) // avoids iOS focus zoom
   })
 

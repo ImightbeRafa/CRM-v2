@@ -57,6 +57,7 @@ import {
 import { lineHealth, lineIsDown, summarizeLineCounts } from '@/lib/chat-line-filter'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
+import { WA_OUTBOUND_ACCEPT } from '@/lib/chat-outbound-media'
 import { loadChatAccounts } from '@/components/aurora/config/useChannelsNeedingAction'
 import type { ChatAssignee } from '@/components/chats/ChatAssigneePicker'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
@@ -125,6 +126,7 @@ export function SoftCopilotInboxV2() {
   const [assignees, setAssignees] = useState<ChatAssignee[]>([])
   const [viewerUserId, setViewerUserId] = useState<string | null>(null)
   const [assignBusy, setAssignBusy] = useState(false)
+  const [outboundMedia, setOutboundMedia] = useState(false)
   /** Server search hits for the active query; re-merged after a reconcile replaces the list. */
   const searchHitsRef = useRef<ChatConversationListItemDto[]>([])
   const pollInFlightRef = useRef(false)
@@ -438,6 +440,20 @@ export function SoftCopilotInboxV2() {
     const id = window.setInterval(ageTick, 1000)
     return () => window.clearInterval(id)
   }, [lastSyncAt])
+
+  // Per-business switches (e.g. sending files) — off unless the tenant flag is on.
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/chat/capabilities', { credentials: 'same-origin', cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!cancelled && json?.success) setOutboundMedia(json.outboundMedia === true)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Team for the owner picker (id / name / photo only; same gate as the inbox).
   useEffect(() => {
@@ -999,6 +1015,57 @@ export function SoftCopilotInboxV2() {
     }
   }
 
+  /** Upload + send a file (WhatsApp). Returns true when sent so the composer clears the chip. */
+  async function handleSendFile(file: File, caption: string): Promise<boolean> {
+    if (!selectedConversation || !selectedConversationId || sendInFlightRef.current) return false
+    const conversationId = selectedConversationId
+    sendInFlightRef.current = true
+    setSending(true)
+    setSendError(null)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('socialAccountId', selectedConversation.socialAccountId)
+      form.append('recipient', selectedConversation.recipientId)
+      form.append('caption', caption.trim())
+      form.append('clientRequestId', newClientRequestId())
+      const res = await fetch('/api/chat/send-media', { method: 'POST', credentials: 'same-origin', body: form })
+      const parsed = await parseApiJson<{
+        success?: boolean
+        error?: string
+        message?: Parameters<typeof messageDtoToInbox>[0]
+      }>(res)
+      if (!parsed.ok || !res.ok || !parsed.data.success) {
+        if (selectedConversationIdRef.current === conversationId) {
+          setSendError(
+            humanizeChatSendError(!parsed.ok ? parsed.error : parsed.data.error, !parsed.ok ? parsed.status : res.status),
+          )
+        }
+        return false
+      }
+      if (parsed.data.message) {
+        const persisted = messageDtoToInbox(parsed.data.message)
+        setThreadMessages((prev) => ({
+          ...prev,
+          [conversationId]: reconcileOptimisticOutbound(prev[conversationId] || [], persisted),
+        }))
+      }
+      setMessageInput('')
+      if (selectedConversation.status === 'nuevo') updateStatus('en_curso')
+      await fetchChanges()
+      requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }))
+      return true
+    } catch (err: unknown) {
+      if (selectedConversationIdRef.current === conversationId) {
+        setSendError(humanizeChatSendError(err instanceof Error ? err.message : 'Error al enviar el archivo'))
+      }
+      return false
+    } finally {
+      sendInFlightRef.current = false
+      setSending(false)
+    }
+  }
+
   function handleRetryMessage(messageId: string) {
     const crid = messageId.startsWith('optimistic:')
       ? messageId.slice('optimistic:'.length)
@@ -1095,6 +1162,7 @@ export function SoftCopilotInboxV2() {
     onResumeAi: () => void setAgentControl('resume'),
     onCreateOrder: () => setCreateOrderOpen(true),
     assignment: { assignees, viewerUserId, onAssign: (id: string | null) => void assignTo(id), busy: assignBusy },
+    attachments: outboundMedia ? { accept: WA_OUTBOUND_ACCEPT, onSendFile: handleSendFile } : undefined,
     aiBusy: controlBusy,
     threadLoading: Boolean(selectedConversationId && threadLoadingId === selectedConversationId),
     channelDownMessage: selectedAccountHealth

@@ -48,7 +48,7 @@ test('rejects disguised, unknown, empty and oversized files', () => {
 
 test('file names are stripped of paths, control characters and quotes', () => {
   assert.equal(sanitizeOutboundFilename('C:' + '\\' + 'fakepath' + '\\' + 'Cotización "final".pdf', 'pdf'), 'Cotización final.pdf')
-  assert.equal(sanitizeOutboundFilename('../../etc/passwd', 'txt'), 'passwd')
+  assert.equal(sanitizeOutboundFilename('../../etc/passwd', 'txt'), 'passwd.txt')
   assert.equal(sanitizeOutboundFilename('', 'pdf'), 'archivo.pdf')
 })
 
@@ -88,4 +88,33 @@ test('a sent file is appended to the thread when there is no optimistic bubble',
     { id: 'b', direction: 'outbound', content: '[image]', sentAt: '2026-09-28T00:01:00Z', messageType: 'image' } as any,
   )
   assert.deepEqual(next.map((m) => m.id), ['a', 'b'])
+})
+
+test('MEDIA-P1: the validated extension always survives (long names, bidi, double extensions)', () => {
+  const OLE = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, ...new Array(24).fill(0)])
+  const long = classifyOutboundMedia({ filename: 'a'.repeat(116) + '.msi.doc', bytes: OLE })
+  assert.equal(long.ok, true)
+  assert.match((long as any).filename, /\.doc$/)
+  assert.ok((long as any).filename.length <= 120)
+  const txt = new TextEncoder().encode('hola mundo')
+  const bat = classifyOutboundMedia({ filename: 'x'.repeat(130) + '.bat.txt', bytes: txt })
+  assert.match((bat as any).filename, /\.txt$/)
+  // U+202E (right-to-left override) would make "…fdp.js.txt" display as "…txt.sj.pdf".
+  const rlo = classifyOutboundMedia({ filename: 'factura\u202Efdp.js.txt', bytes: txt })
+  assert.doesNotMatch((rlo as any).filename, /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/)
+  assert.match((rlo as any).filename, /\.txt$/)
+})
+
+test('MEDIA-P1: photos / video / audio are named from their bytes, not the sender name', () => {
+  assert.equal((classifyOutboundMedia({ filename: 'report.html', bytes: JPEG }) as any).filename, 'foto.jpg')
+  assert.equal((classifyOutboundMedia({ filename: 'x.exe', bytes: MP4 }) as any).filename, 'video.mp4')
+})
+
+test('MEDIA-P2: uploads stay under the 10 MB middleware body copy; route needs Content-Length', () => {
+  assert.ok(WA_OUTBOUND_LIMITS.document < 10 * 1024 * 1024)
+  assert.ok(WA_OUTBOUND_LIMITS.video < 10 * 1024 * 1024)
+  const route = readFileSync('src/app/api/chat/send-media/route.ts', 'utf8')
+  assert.match(route, /if \(!declared\) return jsonError\('Falta el tamaño del archivo\.', 411\)/)
+  // client-safe: the composer imports this module
+  assert.doesNotMatch(readFileSync('src/lib/chat-outbound-media.ts', 'utf8'), /from '@\/lib\/chat-media'/)
 })

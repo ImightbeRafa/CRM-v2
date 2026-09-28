@@ -4,7 +4,6 @@
  * the browser-reported MIME type is never trusted.
  */
 
-import { CHAT_MEDIA_MAX_BYTES } from '@/lib/chat-media'
 
 /** Per-business switch (TenantFeatureFlag key). Off until tested on a real line. */
 export const CHAT_OUTBOUND_MEDIA_FLAG = 'chat_outbound_media_v1'
@@ -17,12 +16,17 @@ export type OutboundMediaClassification =
 
 const MB = 1024 * 1024
 
-/** Meta WhatsApp limits, capped by our media cache size. */
+/**
+ * Per-type limits. Next copies request bodies for middleware and truncates them at 10 MB
+ * (middlewareClientMaxBodySize), so uploads stay under 9.5 MB until that is raised on purpose.
+ * Meta itself allows image 5 MB, audio/video 16 MB, documents 100 MB.
+ */
+export const OUTBOUND_UPLOAD_CAP = Math.floor(9.5 * MB)
 export const WA_OUTBOUND_LIMITS: Record<OutboundMediaKind, number> = {
   image: 5 * MB,
-  video: 16 * MB,
-  audio: 16 * MB,
-  document: Math.min(100 * MB, CHAT_MEDIA_MAX_BYTES),
+  video: OUTBOUND_UPLOAD_CAP,
+  audio: OUTBOUND_UPLOAD_CAP,
+  document: OUTBOUND_UPLOAD_CAP,
 }
 
 /** Accept list for the file picker (UI hint only; the server re-validates). */
@@ -78,13 +82,36 @@ function looksLikeText(bytes: Uint8Array): boolean {
   return true
 }
 
-/** Keep a readable name without paths, control characters or quotes. */
-export function sanitizeOutboundFilename(name: string, fallbackExt: string): string {
-  const base = (name.split(/[\\/]/).pop() || '')
+/** Bidi overrides / isolates / marks: they can make "sj.pdf" display for a real ".js". */
+const BIDI_CONTROLS = /[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g
+
+/** Path, control, bidi and reserved characters removed; trailing dots/spaces trimmed. */
+export function cleanFilename(name: string): string {
+  return (name.split(/[\\/]/).pop() || '')
+    .replace(BIDI_CONTROLS, '')
     .replace(/[\u0000-\u001f\u007f"<>:|?*]/g, '')
     .trim()
-    .slice(0, 120)
-  return base || `archivo.${fallbackExt}`
+    .replace(/[.\s]+$/, '')
+}
+
+/** Readable name whose final extension is always `ext` (only the stem is shortened). */
+export function sanitizeOutboundFilename(name: string, ext: string): string {
+  const cleaned = cleanFilename(name)
+  const dot = cleaned.lastIndexOf('.')
+  const stem = (dot > 0 ? cleaned.slice(0, dot) : cleaned).trim() || 'archivo'
+  return `${stem.slice(0, Math.max(1, 120 - ext.length - 1))}.${ext}`
+}
+
+const EXT_BY_MIME: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'video/mp4': 'mp4',
+  'video/3gpp': '3gp',
+  'audio/ogg': 'ogg',
+  'audio/amr': 'amr',
+  'audio/mp4': 'm4a',
+  'audio/mpeg': 'mp3',
+  'audio/aac': 'aac',
 }
 
 export function classifyOutboundMedia(input: {
@@ -93,7 +120,9 @@ export function classifyOutboundMedia(input: {
 }): OutboundMediaClassification {
   const size = input.bytes.length
   if (size === 0) return { ok: false, error: 'El archivo está vacío.' }
-  const ext = (input.filename.split('.').pop() || '').toLowerCase()
+  // Extension from the CLEANED name (bidi / trailing dots removed), never the raw one.
+  const cleanedName = cleanFilename(input.filename)
+  const ext = cleanedName.includes('.') ? (cleanedName.split('.').pop() || '').toLowerCase() : ''
   const sniffed = sniffMediaMime(input.bytes)
 
   let kind: OutboundMediaKind | null = null
@@ -132,7 +161,15 @@ export function classifyOutboundMedia(input: {
   if (size > limit) {
     return { ok: false, error: `El archivo supera el máximo de ${Math.round(limit / MB)} MB para este tipo.` }
   }
-  return { ok: true, kind, mime, size, filename: sanitizeOutboundFilename(input.filename, ext || 'bin') }
+  // Documents keep their (validated) extension; photos / video / audio are named from the bytes.
+  const filename =
+    kind === 'document'
+      ? sanitizeOutboundFilename(input.filename, ext)
+      : sanitizeOutboundFilename(
+          { image: 'foto', video: 'video', audio: 'audio' }[kind] + '.' + (EXT_BY_MIME[mime] || 'bin'),
+          EXT_BY_MIME[mime] || 'bin',
+        )
+  return { ok: true, kind, mime, size, filename }
 }
 
 /** Stored text for the outbound bubble / list preview. */

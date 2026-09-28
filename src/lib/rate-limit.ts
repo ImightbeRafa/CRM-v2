@@ -152,12 +152,19 @@ const exportRedisLimiter = createRedisLimiter({ prefix: 'export', maxRequests: 1
 export function normalizeClientIp(ip: string): string {
   const value = ip.trim().replace(/^\[|\]$/g, '');
   if (!value.includes(':')) return value;
+  // IPv4-mapped IPv6 (::ffff:1.2.3.4) is an IPv4 client.
+  const mapped = /^(?:0*:)*:?ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(value);
+  if (mapped) return mapped[1];
   const [head] = value.split('%');
   const parts = head.split('::');
   const left = parts[0] ? parts[0].split(':') : [];
   const right = parts.length > 1 && parts[1] ? parts[1].split(':') : [];
   const groups = parts.length > 1 ? [...left, ...new Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right] : left;
-  return `${groups.slice(0, 4).map((g) => (g || '0').toLowerCase()).join(':')}::/64`;
+  const canon = (g: string) => {
+    const n = parseInt(g || '0', 16);
+    return Number.isFinite(n) ? n.toString(16) : '0';
+  };
+  return `${groups.slice(0, 4).map(canon).join(':')}::/64`;
 }
 
 export function getClientIP(request: Request): string {

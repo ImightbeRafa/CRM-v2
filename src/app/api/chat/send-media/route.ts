@@ -27,7 +27,8 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const MAX_REQUEST_BYTES = WA_OUTBOUND_LIMITS.document + 512 * 1024
+// Stays below Next's 10 MB middleware body copy (see OUTBOUND_UPLOAD_CAP).
+const MAX_REQUEST_BYTES = WA_OUTBOUND_LIMITS.document + 256 * 1024
 const META_TIMEOUT_MS = 30_000
 
 const chatMediaSendRateLimit = createIdentifierRateLimit({
@@ -75,9 +76,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // A declared size is required: never buffer an unbounded (chunked) body.
     const declared = Number(request.headers.get('content-length') || 0)
-    if (declared && declared > MAX_REQUEST_BYTES) {
-      return jsonError('El archivo es demasiado grande.', 413)
+    if (!declared) return jsonError('Falta el tamaño del archivo.', 411)
+    if (declared > MAX_REQUEST_BYTES) {
+      return jsonError('El archivo supera el máximo de 9 MB.', 413)
     }
 
     let form: FormData
@@ -135,7 +138,7 @@ export async function POST(request: NextRequest) {
     const upload = new FormData()
     upload.append('messaging_product', 'whatsapp')
     upload.append('type', media.mime)
-    upload.append('file', new Blob([bytes], { type: media.mime }), media.filename)
+    upload.append('file', new Blob([bytes], { type: media.mime }), media.filename) // single copy of the bytes
     const uploadUrl = addAppSecretProofToUrl(buildMetaGraphUrl(`${found.accountId}/media`), accessToken, {
       purpose: 'whatsapp',
     })

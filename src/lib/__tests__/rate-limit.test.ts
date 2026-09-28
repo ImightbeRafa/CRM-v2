@@ -68,3 +68,8 @@ test('normalizeClientIp keeps IPv4 and brackets-free IPv6 /64', () => {
   assert.equal(normalizeClientIp('203.0.113.9'), '203.0.113.9')
   assert.equal(normalizeClientIp('[2001:db8::1]'), '2001:db8:0:0::/64')
 })
+
+test('AUTH-P6: IPv4-mapped IPv6 is the IPv4 client; zero-padded groups share a bucket', () => {
+  assert.equal(normalizeClientIp('::ffff:198.51.100.7'), '198.51.100.7')
+  assert.equal(normalizeClientIp('2001:0db8:00ab:0012::1'), normalizeClientIp('2001:db8:ab:12::9'))
+})

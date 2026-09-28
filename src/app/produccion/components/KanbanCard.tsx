@@ -28,7 +28,7 @@ export function KanbanCard({ order, statuses, onClick, onMove, moving }: KanbanC
       <button type="button" className="w-full p-3.5 pt-4 text-left space-y-2.5 hover:bg-white/[0.02]" onClick={onClick}>
         <div className="flex items-center justify-between gap-2">
           <p className="font-semibold text-sm">#{order.orderId}</p>
-          {highPriority && <Badge className="bg-red-500/15 text-red-400 text-[10px]">Urgente</Badge>}
+          {highPriority && <Badge className="bg-red-500/15 text-red-600 text-[10px]">Urgente</Badge>}
         </div>
         <div className="flex items-center text-[13px] font-medium"><User className="h-3 w-3 mr-1.5 shrink-0" /><span className="break-words whitespace-normal">{order.customerName}</span></div>
         {order.phone && <div className="flex items-center text-xs text-muted-foreground"><Phone className="h-3 w-3 mr-1.5 shrink-0" />{order.phone}</div>}

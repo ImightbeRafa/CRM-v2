@@ -499,7 +499,7 @@ export function ExportManager({ orders, onClose, productFieldConfigs = [], busin
             <p className="text-sm text-muted-foreground">
               Se exportarán <strong>{filteredOrders.length}</strong> órdenes en formato <strong>{exportFormat.toUpperCase()}</strong>
             </p>
-            <p className="text-xs text-muted-foreground/70 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Campos incluidos: {Object.entries(includeFields)
                 .filter(([_, included]) => included)
                 .map(([field, _]) => field)

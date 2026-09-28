@@ -781,7 +781,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               </AlertDescription>
             </Alert>
           )}
-          <p className="mb-4 text-[12px] text-slate-500">Los campos con <span className="text-red-500">*</span> son obligatorios.</p>
+          <p className="mb-4 text-[12px] text-slate-500">Los campos con <span className="text-red-600">*</span> son obligatorios.</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Customer Information */}

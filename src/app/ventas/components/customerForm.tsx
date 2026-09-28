@@ -400,7 +400,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
           {/* Common fields */}
           <div data-field="name">
             <label className={sfLabel}>
-              {customerInfo.orderType === 'EA' ? 'Cliente' : 'Nombre'} <span className="text-red-500">*</span>
+              {customerInfo.orderType === 'EA' ? 'Cliente' : 'Nombre'} <span className="text-red-600">*</span>
             </label>
             <input
               type="text"
@@ -415,7 +415,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
             {fieldErrors.name && <p className={sfError}>{fieldErrors.name}</p>}
           </div>
           <div data-field="phone">
-            <label className={sfLabel}>Teléfono <span className="text-red-500">*</span></label>
+            <label className={sfLabel}>Teléfono <span className="text-red-600">*</span></label>
             <input
               type="text"
               name="phone"
@@ -455,7 +455,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
           {customerInfo.orderType === 'EA' && (
             <>
               <div data-field="province">
-                <label className={sfLabel}>Provincia <span className="text-red-500">*</span></label>
+                <label className={sfLabel}>Provincia <span className="text-red-600">*</span></label>
                 <select
                   name="province"
                   className={sfInput(fieldErrors.province)}
@@ -474,7 +474,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                 {fieldErrors.province && <p className={sfError}>{fieldErrors.province}</p>}
               </div>
               <div data-field="canton">
-                <label className={sfLabel}>Cantón <span className="text-red-500">*</span></label>
+                <label className={sfLabel}>Cantón <span className="text-red-600">*</span></label>
                 <div className="space-y-1">
                   <input
                     type="text"
@@ -532,7 +532,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                 )}
               </div>
               <div data-field="district">
-                <label className={sfLabel}>Distrito <span className="text-red-500">*</span></label>
+                <label className={sfLabel}>Distrito <span className="text-red-600">*</span></label>
                 <div className="space-y-1">
                   <input
                     type="text"
@@ -592,7 +592,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                 )}
               </div>
               <div className="col-span-1 sm:col-span-2" data-field="address">
-                <label className={sfLabel}>Dirección <span className="text-red-500">*</span></label>
+                <label className={sfLabel}>Dirección <span className="text-red-600">*</span></label>
                 <textarea
                   name="address"
                   className={sfInput(fieldErrors.address)}

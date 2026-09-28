@@ -92,7 +92,7 @@ export function ShippingMethodSelector({ selectedMethod, onMethodChange, error }
     <div className="flex flex-col space-y-2" data-field="orderShippingMethod">
       <label htmlFor="shippingMethod" className="flex items-center gap-2 text-[13px] font-semibold text-slate-800">
         <Truck className="h-4 w-4 text-au-ink-5b3fe0" />
-        Mensajería <span className="text-red-500">*</span>
+        Mensajería <span className="text-red-600">*</span>
       </label>
       {shippingOptions.length > 0 ? (
         <select

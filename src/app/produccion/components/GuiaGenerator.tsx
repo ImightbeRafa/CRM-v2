@@ -1113,7 +1113,7 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
                               {guia.errorMessage && (
                                 <p className="text-red-500 mt-0.5">{formatGuiaFailureDetail(guia.errorMessage)}</p>
                               )}
-                              <p className="text-muted-foreground/60">
+                              <p className="text-muted-foreground">
                                 {new Date(guia.createdAt).toLocaleString('es-CR')}
                               </p>
                             </div>

@@ -148,7 +148,7 @@ export function AuroraSidebar() {
               {collapsed ? (
                 sectionIndex > 0 ? <div className="mx-3 mb-3 h-px bg-static-white/10" aria-hidden /> : null
               ) : (
-                <p className="mb-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/40">
+                <p className="mb-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55">
                   {section.title}
                 </p>
               )}

@@ -55,6 +55,9 @@ ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 ENV NEXT_PUBLIC_TILOPAY_API_KEY=$NEXT_PUBLIC_TILOPAY_API_KEY
 ENV UPSTASH_REDIS_REST_URL=https://example.upstash.io
 ENV UPSTASH_REDIS_REST_TOKEN=build-only
+# Build worker stability in Docker (SIGSEGV with 32 workers / default heap): bigger heap, 4 CPUs.
+ENV NODE_OPTIONS=--max-old-space-size=8192
+ENV NEXT_BUILD_CPUS=4
 RUN npx prisma generate && npx next build --no-lint
 
 FROM node:20-bookworm-slim AS runner

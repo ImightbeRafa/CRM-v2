@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
     }
 
     if ((request.headers.get('content-type') || '').toLowerCase().startsWith('application/json')) {
+      if (Number(request.headers.get('content-length') || 0) > 8 * 1024) return jsonError('Solicitud demasiado grande.', 413)
       const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
       const sourceMessageId = String(body?.sourceMessageId || '').trim()
       const socialAccountId = String(body?.socialAccountId || '')

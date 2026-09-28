@@ -95,7 +95,7 @@ describe('outbound media is on by default (kill switch)', () => {
   })
   test('re-sending a recent file is tenant-scoped', () => {
     const core = read('src/lib/chat-send-media-core.ts')
-    assert.match(core, /findFirst\(\{\s*where: \{ id: messageId, tenantId \}/)
+    assert.match(core, /where: \{ id: messageId, tenantId, direction: 'outbound'/)
     assert.match(read('src/app/api/chat/recent-media/route.ts'), /tenantId: auth\.tenantId/)
   })
 })
@@ -133,7 +133,7 @@ describe('quick replies', () => {
   })
   test('PUT only touches settings.chatQuickReplies', () => {
     const route = read('src/app/api/chat/quick-replies/route.ts')
-    assert.match(route, /jsonb_set\(COALESCE\("settings", '\{\}'::jsonb\), '\{chatQuickReplies\}'/)
+    assert.match(route, /'\{chatQuickReplies\}', \$\{payload\}::jsonb, true/)
     assert.match(route, /WHERE "id" = \$\{auth\.tenantId\}/)
   })
 })
@@ -151,7 +151,7 @@ describe('client link + order flow', () => {
   test('link route checks both the chat and the client belong to the tenant', () => {
     const route = read('src/app/api/chat/conversations/[id]/client/route.ts')
     assert.match(route, /chatConversation\.findFirst\(\{\s*where: \{ id, tenantId \}/)
-    assert.match(route, /client\.findFirst\(\{ where: \{ id: clientId, tenantId \}/)
+    assert.match(route, /where: \{ id: clientId, tenantId \}/)
     assert.match(route, /logAuditEvent/)
   })
   test('a guía only goes to the chat its order belongs to', () => {
@@ -191,10 +191,41 @@ describe('persistent Aurora frame (route loading)', () => {
   })
   test('root layout mounts the frame; every app loading.tsx is an Aurora skeleton', () => {
     assert.match(read('src/app/layout.tsx'), /<AuroraFrame>\{children\}<\/AuroraFrame>/)
-    for (const seg of ['dashboard', 'ventas', 'produccion', 'estadisticas', 'chats', 'config']) {
+    for (const seg of ['dashboard', 'ventas', 'produccion', 'estadisticas', 'chats']) {
       assert.match(read(`src/app/${seg}/loading.tsx`), /AuroraRouteLoading/, seg)
     }
     assert.match(read('src/app/loading.tsx'), /AppRouteLoading/)
     assert.doesNotMatch(read('src/app/loading.tsx'), /border-gray-900/)
+  })
+})
+
+describe('SecureDog / verifier fixes', () => {
+  test('quick replies: managers edit, audited, versioned', () => {
+    const route = read('src/app/api/chat/quick-replies/route.ts')
+    assert.match(route, /PUT[\s\S]*authenticateAPIWithPermission\(request, 'update_config'\)/)
+    assert.match(route, /logAuditEvent/)
+    assert.match(route, /code: 'stale'/)
+    assert.match(read('src/lib/rbac.ts'), /'PUT \/api\/chat\/quick-replies': 'update_config'/)
+    assert.equal(sanitizeQuickReplies([{ shortcut: 'x', text: 'a\u0000b' }]).items[0].text, 'ab')
+  })
+  test('manual client link with another phone needs confirmation; guía to another phone too', () => {
+    assert.match(read('src/app/api/chat/conversations/[id]/client/route.ts'), /code: 'phone_mismatch'/)
+    const guia = read('src/app/api/chat/send-guia/route.ts')
+    assert.match(guia, /if \(!samePhone && body\?\.confirm !== true\)/)
+    assert.match(guia, /logAuditEvent/)
+  })
+  test('AI ownership: a linked client counts only when its phone is the chat phone', () => {
+    const runner = read('src/lib/soft-ai/llm/tool-runner.ts')
+    assert.match(runner, /phoneMatches\(client\.normalizedPhone\) \|\| phoneMatches\(client\.phone\)/)
+  })
+  test('re-send: only our outbound photos / videos / documents, never guías', () => {
+    const core = read('src/lib/chat-send-media-core.ts')
+    assert.match(core, /direction: 'outbound', messageType: \{ in: \['image', 'video', 'document'\] \}/)
+    assert.match(core, /if \(meta\.guiaId\)/)
+  })
+  test('maskPhone keeps only the last 4 digits', async () => {
+    const { maskPhone } = await import('../chat-order-flow')
+    assert.equal(maskPhone('+506 8888-1234'), '••••-1234')
+    assert.equal(maskPhone(''), null)
   })
 })

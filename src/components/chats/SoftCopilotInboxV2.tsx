@@ -61,6 +61,8 @@ import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { WA_OUTBOUND_ACCEPT } from '@/lib/chat-outbound-media'
 import type { ChatQuickReply } from '@/lib/chat-quick-replies'
 import { hasOrderDraft } from '@/lib/order-draft'
+import { useSession } from 'next-auth/react'
+import { hasSessionPermission } from '@/lib/session-permissions'
 import { loadChatAccounts } from '@/components/aurora/config/useChannelsNeedingAction'
 import type { ChatAssignee } from '@/components/chats/ChatAssigneePicker'
 import { SoftConversationList } from '@/components/chats/SoftConversationList'
@@ -135,6 +137,9 @@ export function SoftCopilotInboxV2() {
   const [assignBusy, setAssignBusy] = useState(false)
   const [outboundMedia, setOutboundMedia] = useState(false)
   const [quickReplyItems, setQuickReplyItems] = useState<ChatQuickReply[]>([])
+  const quickRepliesVersion = useRef(0)
+  const { data: viewerSession } = useSession()
+  const canManageQuickReplies = hasSessionPermission(viewerSession, 'update_config')
   /** Unsent composer text per chat (WhatsApp-style drafts; this tab only). */
   const composerDrafts = useRef(new Map<string, string>())
   const [threadErrorId, setThreadErrorId] = useState<string | null>(null)
@@ -467,7 +472,10 @@ export function SoftCopilotInboxV2() {
     fetch('/api/chat/quick-replies', { credentials: 'same-origin', cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
-        if (!cancelled && json?.success && Array.isArray(json.items)) setQuickReplyItems(json.items)
+        if (!cancelled && json?.success && Array.isArray(json.items)) {
+          setQuickReplyItems(json.items)
+          quickRepliesVersion.current = typeof json.version === 'number' ? json.version : 0
+        }
       })
       .catch(() => {})
     return () => {
@@ -481,10 +489,24 @@ export function SoftCopilotInboxV2() {
         method: 'PUT',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items, version: quickRepliesVersion.current }),
       })
-      const json = (await res.json().catch(() => null)) as { success?: boolean; items?: ChatQuickReply[]; error?: string } | null
-      if (!res.ok || !json?.success) return json?.error || 'No se pudieron guardar las respuestas rápidas.'
+      const json = (await res.json().catch(() => null)) as {
+        success?: boolean
+        items?: ChatQuickReply[]
+        version?: number
+        error?: string
+      } | null
+      if (res.status === 403) return 'Solo administradores pueden editar las respuestas rápidas.'
+      if (!res.ok || !json?.success) {
+        // Someone else saved first: show their list so nothing is overwritten blindly.
+        if (res.status === 409 && Array.isArray(json?.items)) {
+          setQuickReplyItems(json.items)
+          if (typeof json.version === 'number') quickRepliesVersion.current = json.version
+        }
+        return json?.error || 'No se pudieron guardar las respuestas rápidas.'
+      }
+      if (typeof json.version === 'number') quickRepliesVersion.current = json.version
       setQuickReplyItems(Array.isArray(json.items) ? json.items : items)
       return null
     } catch {
@@ -1110,7 +1132,8 @@ export function SoftCopilotInboxV2() {
     if (!pendingFileRequestIds.current.has(requestIdKey)) {
       pendingFileRequestIds.current.set(requestIdKey, newClientRequestId())
     }
-    return postChatMedia({
+    // A retry of a failed send reuses the id (no double send); after success the next pick is new.
+    const sent = await postChatMedia({
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -1122,6 +1145,8 @@ export function SoftCopilotInboxV2() {
         clientRequestId: pendingFileRequestIds.current.get(requestIdKey),
       }),
     })
+    if (sent) pendingFileRequestIds.current.delete(requestIdKey)
+    return sent
   }
 
   async function postChatMedia(init: RequestInit, url = '/api/chat/send-media'): Promise<boolean> {
@@ -1295,7 +1320,7 @@ export function SoftCopilotInboxV2() {
     attachments: outboundMedia
       ? { accept: WA_OUTBOUND_ACCEPT, onSendFile: handleSendFile, onSendRecent: handleSendRecent }
       : undefined,
-    quickReplies: { items: quickReplyItems, onSave: saveQuickReplies },
+    quickReplies: { items: quickReplyItems, onSave: saveQuickReplies, canManage: canManageQuickReplies },
     aiBusy: controlBusy,
     threadLoading: Boolean(selectedConversationId && threadLoadingId === selectedConversationId),
     threadError: Boolean(selectedConversationId && threadErrorId === selectedConversationId),

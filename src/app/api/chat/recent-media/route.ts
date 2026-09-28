@@ -25,13 +25,15 @@ export async function GET(request: NextRequest) {
     },
     orderBy: { sentAt: 'desc' },
     take: MAX_ITEMS * 3,
-    select: { id: true, mediaMimeType: true, mediaFilename: true, mediaSizeBytes: true, sentAt: true, content: true },
+    select: { id: true, mediaMimeType: true, mediaFilename: true, mediaSizeBytes: true, sentAt: true, metadata: true },
   })
 
   // The same file sent to many chats shows once (name + size).
   const seen = new Set<string>()
   const items: Array<{ messageId: string; mimeType: string | null; filename: string | null; sentAt: string }> = []
   for (const row of rows) {
+    // Guía PDFs belong to one customer: never offered for re-use.
+    if ((row.metadata as Record<string, unknown> | null)?.guiaId) continue
     const key = `${row.mediaFilename || ''}:${row.mediaSizeBytes ?? row.id}`
     if (seen.has(key)) continue
     seen.add(key)

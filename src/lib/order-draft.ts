@@ -5,7 +5,7 @@
 
 const AUTOSAVE_KEY = 'betsy_autosave'
 /** Drafts older than this are ignored (and cleaned up) when the form opens. */
-export const DRAFT_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000
+export const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 export function orderDraftStorageKey(draftKey?: string | null): string {
   return draftKey ? `${AUTOSAVE_KEY}:${draftKey}` : AUTOSAVE_KEY

@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
-import { chatSendRateLimit } from '@/lib/rate-limit'
+import { chatSendRateLimit, createIdentifierRateLimit } from '@/lib/rate-limit'
+import { logAuditEvent } from '@/lib/auditLogger'
 import { isTenantFeatureNotDisabled } from '@/lib/feature-flags'
 import { CHAT_OUTBOUND_MEDIA_FLAG } from '@/lib/chat-outbound-media'
 import { normalizeClientPhone } from '@/lib/order-lifecycle'
 import { sendWhatsAppMediaBytes } from '@/lib/chat-send-media-core'
-import { guiaCaption, guiaPdfFilename } from '@/lib/chat-order-flow'
+import { guiaCaption, guiaPdfFilename, maskPhone } from '@/lib/chat-order-flow'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+const guiaSendRateLimit = createIdentifierRateLimit({
+  windowMs: 60 * 1000,
+  maxRequests: 10,
+  identifier: 'chat-send-media',
+})
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status })
@@ -29,12 +36,19 @@ export async function POST(request: NextRequest) {
     if (!(await isTenantFeatureNotDisabled(tenantId, CHAT_OUTBOUND_MEDIA_FLAG))) {
       return jsonError('El envío de archivos está desactivado para este negocio.', 403)
     }
-    const rate = await chatSendRateLimit(`${tenantId}:${userId}`)
-    if (!rate.allowed) {
-      return NextResponse.json({ error: 'Demasiados envíos. Esperá un momento.' }, { status: 429, headers: rate.headers })
+    for (const limiter of [chatSendRateLimit, guiaSendRateLimit]) {
+      const rate = await limiter(`${tenantId}:${userId}`)
+      if (!rate.allowed) {
+        return NextResponse.json({ error: 'Demasiados envíos. Esperá un momento.' }, { status: 429, headers: rate.headers })
+      }
     }
 
-    const body = (await request.json().catch(() => null)) as { conversationId?: unknown; orderId?: unknown } | null
+    const body = (await request.json().catch(() => null)) as {
+      conversationId?: unknown
+      orderId?: unknown
+      confirm?: unknown
+      resend?: unknown
+    } | null
     const conversationId = typeof body?.conversationId === 'string' ? body.conversationId : ''
     const orderId = typeof body?.orderId === 'string' ? body.orderId : ''
     if (!conversationId || !orderId) return jsonError('Faltan el chat o el pedido.', 400)
@@ -64,6 +78,19 @@ export async function POST(request: NextRequest) {
     if (!linkedFromChat && !samePhone && !sameClient) {
       return jsonError('Este pedido no es de este chat.', 403)
     }
+    // The label has the customer's name, address and phone. Links set by hand (order-link,
+    // Cliente) are human claims: another number needs an explicit confirmation in the UI.
+    if (!samePhone && body?.confirm !== true) {
+      return NextResponse.json(
+        {
+          error: 'El teléfono del pedido no es el de este chat. Confirmá antes de enviar la guía.',
+          code: 'confirm_required',
+          customerName: order.customerName,
+          phoneMasked: maskPhone(order.phone),
+        },
+        { status: 409 },
+      )
+    }
 
     const guia = await prisma.shippingGuia.findFirst({
       where: { tenantId, orderId: order.orderId, pdfData: { not: null } },
@@ -81,10 +108,28 @@ export async function POST(request: NextRequest) {
       bytes: new Uint8Array(guia.pdfData),
       filename: guiaPdfFilename(number, order.orderId),
       caption: guiaCaption({ customerName: conversation.peerName || order.customerName, orderNumber: order.orderId, guiaNumber: number }),
-      clientRequestId: `guia:${guia.id}:${conversation.id}`,
+      // Same guía to the same chat is deduplicated (double click); "Reenviar" is a new send.
+      clientRequestId: body?.resend === true ? `guia:${guia.id}:${conversation.id}:${Date.now()}` : `guia:${guia.id}:${conversation.id}`,
       metadata: { guiaId: guia.id, orderId: order.id },
     })
     if (!result.ok) return NextResponse.json({ error: result.error, ...result.extra }, { status: result.status })
+
+    await logAuditEvent({
+      action: 'UPDATE',
+      entityType: 'ChatConversation',
+      entityId: conversation.id,
+      description: `Guía enviada al cliente (pedido ${order.orderId})`,
+      newValues: {
+        orderId: order.id,
+        guiaId: guia.id,
+        match: samePhone ? 'phone' : linkedFromChat ? 'chat_link' : 'client_link',
+        confirmed: !samePhone,
+        duplicate: result.duplicate === true,
+      },
+      userId,
+      userRole: auth.role,
+      tenantId,
+    }).catch(() => {})
 
     // The guía message also links the order to this chat (Chat→pedido stats, rail).
     if (result.message?.id) {

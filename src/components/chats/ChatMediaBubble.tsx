@@ -205,7 +205,7 @@ export function ChatAudioPlayer({
       <audio
         ref={audioRef}
         src={src}
-        preload="metadata"
+        preload="none"
         onLoadedMetadata={(e) => {
           const d = e.currentTarget.duration
           if (Number.isFinite(d)) setDuration(d)
@@ -392,7 +392,7 @@ export function ChatMediaBubble({ msg, outbound }: { msg: ChatInboxMessage; outb
       <video
         controls
         playsInline
-        preload="metadata"
+        preload="none"
         src={src}
         className="mt-1 max-h-72 max-w-full rounded-xl bg-black/5"
         onError={markFailed}

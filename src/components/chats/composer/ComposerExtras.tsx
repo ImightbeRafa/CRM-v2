@@ -233,13 +233,17 @@ export function QuickRepliesManager({
   onSave,
   onClose,
   initialShortcut,
+  canManage = true,
 }: {
   items: ChatQuickReply[]
   onSave: (items: ChatQuickReply[]) => Promise<string | null>
   onClose: () => void
   initialShortcut?: string
+  canManage?: boolean
 }) {
   const [draft, setDraft] = useState<ChatQuickReply[]>(items)
+  // A save conflict reloads the list from the server: show it.
+  useEffect(() => setDraft(items), [items])
   const [editing, setEditing] = useState<{ id: string | null; shortcut: string; text: string } | null>(
     initialShortcut !== undefined ? { id: null, shortcut: initialShortcut, text: '' } : null,
   )
@@ -379,14 +383,21 @@ export function QuickRepliesManager({
                     className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none"
                   />
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setEditing({ id: null, shortcut: '', text: '' })}
-                  className="inline-flex items-center gap-1 rounded-xl bg-[#5B6CFF] px-3 py-2 text-[12.5px] font-semibold text-white"
-                >
-                  <Plus className="h-3.5 w-3.5" aria-hidden /> Nueva
-                </button>
+                {canManage ? (
+                  <button
+                    type="button"
+                    onClick={() => setEditing({ id: null, shortcut: '', text: '' })}
+                    className="inline-flex items-center gap-1 rounded-xl bg-[#5B6CFF] px-3 py-2 text-[12.5px] font-semibold text-white"
+                  >
+                    <Plus className="h-3.5 w-3.5" aria-hidden /> Nueva
+                  </button>
+                ) : null}
               </div>
+              {!canManage ? (
+                <p className="mb-3 rounded-xl bg-slate-50 px-3 py-2 text-[11.5px] text-slate-500">
+                  Solo administradores pueden crear o editar respuestas rápidas.
+                </p>
+              ) : null}
               {visible.length === 0 ? (
                 <p className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-[12.5px] text-slate-500">
                   {draft.length ? 'Sin coincidencias.' : 'Creá respuestas para precios, métodos de pago, envíos o saludos.'}
@@ -399,7 +410,7 @@ export function QuickRepliesManager({
                         /{r.shortcut}
                       </span>
                       <p className="line-clamp-3 min-w-0 flex-1 whitespace-pre-line text-[12.5px] leading-snug text-slate-600">{r.text}</p>
-                      <span className="flex shrink-0 gap-1">
+                      <span className={canManage ? 'flex shrink-0 gap-1' : 'hidden'}>
                         <button
                           type="button"
                           aria-label={`Editar /${r.shortcut}`}

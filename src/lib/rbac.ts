@@ -271,7 +271,7 @@ export const apiPermissions: Record<string, Permission> = {
   'POST /api/chat/send-media': 'update_sales',
   'GET /api/chat/recent-media': 'update_sales',
   'GET /api/chat/quick-replies': 'update_sales',
-  'PUT /api/chat/quick-replies': 'update_sales',
+  'PUT /api/chat/quick-replies': 'update_config',
   'GET /api/chat/conversations/*/client': 'update_sales',
   'PUT /api/chat/conversations/*/client': 'update_sales',
   'POST /api/chat/send-guia': 'update_sales',

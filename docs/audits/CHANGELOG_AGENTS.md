@@ -1,3 +1,47 @@
+## 2026-09-28 — Chats feedback batch (branch `claudio/chat-feedback-batch`, base `rafa/fix-token-health`)
+
+- Source: Rafael's walkthrough doc (bugs + features, 2026-09-28). Decisions: outbound media ON by
+  default (flag = kill switch), quick replies team-wide in `Tenant.settings` (no migration),
+  payment confirmation skipped for now.
+- **Humano by default:** server `aiMode` NULL/unknown = Humano in the UI (`conversationAgentMode`);
+  the composer was locked ("El agente está respondiendo") for chats the agent never answers.
+- **Media:** `/api/chat/media` now serves the downloaded bytes even when the private Blob write
+  fails (was 502 → "No se pudo mostrar" for every image/audio when the cache store is missing),
+  and prefers Graph `mime_type` over a generic CDN content type (octet-stream + nosniff never
+  renders). New `ChatMediaBubble`: voice-note player (waveform, seek, 1×/1.5×/2×, one at a time),
+  image lightbox, document card, fallback that shows the real reason + Reintentar.
+- **Sending:** `chat_outbound_media_v1` default ON (`isTenantFeatureNotDisabled`); send core in
+  `chat-send-media-core.ts`; "Recientes" (`GET /api/chat/recent-media`, JSON re-send by
+  `sourceMessageId`); `POST /api/chat/send-guia` sends the order's Correos PDF (order must belong
+  to the chat: linked message, same client or same phone).
+- **Composer:** auto-grow textarea; emoji picker (in-house, Spanish search, recents); quick
+  replies `/atajo` (`GET/PUT /api/chat/quick-replies`, `jsonb_set` on `chatQuickReplies` only);
+  per-chat unsent text kept when switching chats.
+- **Rail › Cliente** (additive optional tab in `SoftCopilotRail`): link/unlink an existing client
+  (`GET/PUT /api/chat/conversations/[id]/client`, audited), stats, chat orders with
+  Generar guía → Enviar guía.
+- **Crear pedido drafts:** per-chat slot `betsy_autosave:chat:<id>` (debounced + on close,
+  restored on reopen, "Continuar pedido · Borrador"); the chat form no longer overwrites the
+  /ventas draft.
+- **Route loading:** persistent `AuroraFrame` in the root layout (sidebar stays mounted);
+  `loading.tsx` files render Aurora skeletons inside it instead of the pre-Aurora ones.
+- Review: verifier PASS WITH NOTES; SecureDog no Critical/High (2 Medium, fixed before deploy):
+  quick replies PUT needs `update_config`, audited, versioned (409 on stale tab); manual client link
+  to another phone needs confirmation; guía to a non-matching phone needs confirmation and every
+  send is audited; AI `ownershipOk` trusts a linked client only when its phone is the chat's;
+  re-send limited to outbound photos/videos/documents (never guías); media limiter on send-guia;
+  "Reenviar" and repeated "Recientes" really re-send; Enter never sends a half-typed `/atajo`;
+  audio/video `preload="none"`; `/config` loading stays empty (intentional).
+- Open (register): L3 default-ON scope (global env kill switch, legacy .doc/.xls/.ppt), L4 drafts
+  not cleared on sign-out, pre-existing INFRA middleware matcher skips `/api/*.png` header strip,
+  AI `get_shipping_status` filters guías by `order.id`; verifier notes 5 (legacy agentState vs
+  NULL aiMode), 6 (Desvincular re-links on next message for a phone match), 8 (old rows cached as
+  octet-stream).
+- Prove: `test:chat-feedback` 27/0; site-ui 50/0, stats-ui 42/0, config-ui 30/0, pedidos-ui 22/0,
+  chat-mobile 6/0; soft-ai 2, soft-ai-agent 1, security 1, chat-harden 2 failures = base; +1
+  chat-harden in this worktree only (CRLF checkout of untouched chat-linked-orders.ts). tsc clean,
+  eslint 0 errors, clean `next build`.
+
 ## 2026-09-28 — Crear pedido stuck on "Guardando" (branch `rafa/fix-token-health`)
 
 - Symptom: order saved but the drawer kept spinning (and a second click could duplicate the order).

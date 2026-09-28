@@ -253,7 +253,8 @@ export async function loadStoredChatMediaBytes(
 ): Promise<{ ok: true; bytes: Buffer; mime: string | null; filename: string | null } | { ok: false; error: string; status: number }> {
   const db = prisma as any
   const message = await db.chatMessage.findFirst({
-    where: { id: messageId, tenantId },
+    // Only files this business sent (photos / videos / documents), never a customer's upload.
+    where: { id: messageId, tenantId, direction: 'outbound', messageType: { in: ['image', 'video', 'document'] } },
     select: {
       id: true,
       tenantId: true,
@@ -267,6 +268,9 @@ export async function loadStoredChatMediaBytes(
     },
   })
   if (!message) return { ok: false, error: 'Archivo no encontrado', status: 404 }
+  const meta = message.metadata && typeof message.metadata === 'object' ? (message.metadata as Record<string, unknown>) : {}
+  // A guía PDF holds one customer's address: it is only ever sent by /api/chat/send-guia.
+  if (meta.guiaId) return { ok: false, error: 'Las guías se envían desde el pedido.', status: 400 }
   const ref = readMediaBlobRefFromMessage(message)
   if (ref?.mediaCacheStatus === 'ready' && ref.mediaBlobPath) {
     try {

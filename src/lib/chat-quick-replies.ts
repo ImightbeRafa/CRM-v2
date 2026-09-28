@@ -14,6 +14,8 @@ export type ChatQuickReply = {
 }
 
 export const QUICK_REPLIES_SETTINGS_KEY = 'chatQuickReplies'
+/** Optimistic-concurrency counter next to the list (a stale tab gets 409 instead of overwriting). */
+export const QUICK_REPLIES_VERSION_KEY = 'chatQuickRepliesVersion'
 export const QUICK_REPLY_MAX_COUNT = 100
 export const QUICK_REPLY_MAX_TEXT = 1000
 export const QUICK_REPLY_MAX_SHORTCUT = 32
@@ -50,7 +52,17 @@ export function sanitizeQuickReplies(input: unknown): { items: ChatQuickReply[];
     if (!raw || typeof raw !== 'object') continue
     const r = raw as Record<string, unknown>
     const shortcut = normalizeShortcut(r.shortcut)
-    const text = String(r.text ?? '').replace(/\r\n/g, '\n').trim()
+    // No control characters (NUL breaks jsonb) except new lines / tabs.
+    const text = String(r.text ?? '')
+      .replace(/\r\n/g, '\n')
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+      .replace(/[\ud800-\udfff]/g, (c, i: number, all: string) => {
+        const code = all.charCodeAt(i)
+        const pair = code < 0xdc00 ? all.charCodeAt(i + 1) : all.charCodeAt(i - 1)
+        const ok = code < 0xdc00 ? pair >= 0xdc00 && pair <= 0xdfff : pair >= 0xd800 && pair < 0xdc00
+        return ok ? c : ''
+      })
+      .trim()
     if (!shortcut || !text) continue
     if (text.length > QUICK_REPLY_MAX_TEXT) {
       return { items: [], error: `La respuesta /${shortcut} supera ${QUICK_REPLY_MAX_TEXT} caracteres.` }
@@ -63,6 +75,12 @@ export function sanitizeQuickReplies(input: unknown): { items: ChatQuickReply[];
     items.push({ id, shortcut, text })
   }
   return { items }
+}
+
+export function quickRepliesVersionFromSettings(settings: unknown): number {
+  const bag = settings && typeof settings === 'object' && !Array.isArray(settings) ? (settings as Record<string, unknown>) : {}
+  const v = Number(bag[QUICK_REPLIES_VERSION_KEY])
+  return Number.isInteger(v) && v >= 0 ? v : 0
 }
 
 export function quickRepliesFromSettings(settings: unknown): ChatQuickReply[] {

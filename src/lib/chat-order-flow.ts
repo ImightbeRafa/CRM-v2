@@ -6,6 +6,9 @@
 export type ChatFlowOrder = {
   id: string
   orderId: string
+  customerName: string
+  phoneMasked: string | null
+  phoneMatchesChat: boolean
   orderType: string | null
   status: string
   total: number
@@ -23,6 +26,13 @@ export function nextOrderStep(order: Pick<ChatFlowOrder, 'orderType' | 'guia' | 
   if (!order.guia) return 'guia'
   if (!order.guiaSentAt) return 'enviar-guia'
   return 'listo'
+}
+
+/** `8888-1234` → `••••-1234` (enough to recognise the customer without exposing the number). */
+export function maskPhone(raw: string | null | undefined): string | null {
+  const digits = String(raw || '').replace(/\D/g, '')
+  if (digits.length < 4) return null
+  return `••••-${digits.slice(-4)}`
 }
 
 export function guiaPdfFilename(guiaNumber: string | null | undefined, orderNumber: string): string {

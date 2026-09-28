@@ -133,6 +133,8 @@ interface SoftThreadPaneProps {
   quickReplies?: {
     items: ChatQuickReply[]
     onSave: (items: ChatQuickReply[]) => Promise<string | null>
+    /** Owners / admins edit the list; everyone uses it. */
+    canManage?: boolean
   }
   /** Chat owner picker (Asignarme / teammates / Sin asignar). Hidden when absent. */
   assignment?: {
@@ -1162,10 +1164,12 @@ export function SoftThreadPane({
                     setSlashIndex((i) => (e.key === 'ArrowDown' ? (i + 1) % n : (i - 1 + n) % n))
                     return
                   }
-                  if ((e.key === 'Enter' || e.key === 'Tab') && slashMatches.length) {
+                  if (e.key === 'Enter' || e.key === 'Tab') {
+                    // Never send a half-typed "/atajo" to the customer.
+                    if (e.key === 'Tab' && !slashMatches.length) return
                     e.preventDefault()
                     e.stopPropagation()
-                    pickQuickReply(slashMatches[Math.min(slashIndex, slashMatches.length - 1)])
+                    if (slashMatches.length) pickQuickReply(slashMatches[Math.min(slashIndex, slashMatches.length - 1)])
                     return
                   }
                   if (e.key === 'Escape') {
@@ -1224,7 +1228,8 @@ export function SoftThreadPane({
             <QuickRepliesManager
               items={quickReplies.items}
               onSave={quickReplies.onSave}
-              initialShortcut={managerOpen.shortcut}
+              canManage={quickReplies.canManage === true}
+              initialShortcut={quickReplies.canManage ? managerOpen.shortcut : undefined}
               onClose={() => {
                 setManagerOpen(false)
                 composerFocus()

@@ -6,6 +6,7 @@ import { Check, ExternalLink, FileText, Link2, Loader2, Search, Send, ShoppingBa
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext'
 import { pedidoHref } from '@/lib/pedido-url'
 import { nextOrderStep, type ChatFlowOrder } from '@/lib/chat-order-flow'
+import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 
 type ClientInfo = {
   id: string
@@ -102,7 +103,7 @@ export function ChatClientPanel({
     return () => window.clearTimeout(t)
   }, [query, searchOpen, load])
 
-  async function link(clientId: string | null) {
+  async function link(clientId: string | null, confirmPhoneMismatch = false) {
     setBusy(clientId ? `link:${clientId}` : 'unlink')
     setNotice(null)
     try {
@@ -110,9 +111,23 @@ export function ChatClientPanel({
         method: 'PUT',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId }),
+        body: JSON.stringify({ clientId, confirmPhoneMismatch }),
       })
-      const json = (await res.json().catch(() => null)) as { success?: boolean; error?: string } | null
+      const json = (await res.json().catch(() => null)) as {
+        success?: boolean
+        error?: string
+        code?: string
+        clientPhoneMasked?: string | null
+      } | null
+      if (res.status === 409 && json?.code === 'phone_mismatch' && clientId && !confirmPhoneMismatch) {
+        setBusy(null)
+        const ok = await auroraConfirm('¿Vincular a un cliente con otro teléfono?', {
+          description: `El teléfono del cliente (${json.clientPhoneMasked || 'sin teléfono'}) no es el de este chat. Vinculá solo si confirmaste que es la misma persona: vas a ver sus pedidos y podrás enviarle sus guías.`,
+          confirmLabel: 'Sí, es la misma persona',
+        })
+        if (ok) await link(clientId, true)
+        return
+      }
       if (!res.ok || !json?.success) {
         setNotice({ tone: 'error', text: json?.error || 'No se pudo vincular el cliente.' })
         return
@@ -156,7 +171,15 @@ export function ChatClientPanel({
     }
   }
 
-  async function sendGuia(order: ChatFlowOrder) {
+  async function sendGuia(order: ChatFlowOrder, resend = false) {
+    // The label carries the customer's name, address and phone: a different phone needs a look.
+    if (!order.phoneMatchesChat) {
+      const ok = await auroraConfirm('¿Enviar esta guía a este chat?', {
+        description: `El pedido #${order.orderId} es de ${order.customerName || 'otro cliente'} (${order.phoneMasked || 'sin teléfono'}), y este chat es de otro número. La guía incluye nombre, dirección y teléfono.`,
+        confirmLabel: 'Enviar guía',
+      })
+      if (!ok) return
+    }
     setBusy(`send:${order.id}`)
     setNotice(null)
     try {
@@ -164,7 +187,7 @@ export function ChatClientPanel({
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId, orderId: order.id }),
+        body: JSON.stringify({ conversationId, orderId: order.id, confirm: !order.phoneMatchesChat, resend }),
       })
       const json = (await res.json().catch(() => null)) as { success?: boolean; duplicate?: boolean; error?: string } | null
       if (!res.ok || !json?.success) {
@@ -361,6 +384,11 @@ export function ChatClientPanel({
                       <span className="block truncate text-[11px] text-slate-500">
                         {[order.product, shortDate(order.timestamp)].filter(Boolean).join(' · ')}
                       </span>
+                      <span className="block truncate text-[11px] text-slate-400">
+                        {order.customerName}
+                        {order.phoneMasked ? ` · ${order.phoneMasked}` : ''}
+                        {!order.phoneMatchesChat ? ' · otro número' : ''}
+                      </span>
                     </Link>
                     <span className="shrink-0 text-right">
                       <span className="block text-[12px] font-semibold text-slate-800">{formatCurrency(order.total)}</span>
@@ -425,7 +453,7 @@ export function ChatClientPanel({
                         <button
                           type="button"
                           disabled={busy !== null}
-                          onClick={() => void sendGuia(order)}
+                          onClick={() => void sendGuia(order, step === 'listo')}
                           className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold disabled:opacity-50 ${
                             step === 'listo' ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-[#5B6CFF] text-white'
                           }`}

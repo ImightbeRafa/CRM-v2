@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { normalizeClientPhone } from '@/lib/order-lifecycle'
+import { chatSendRateLimit } from '@/lib/rate-limit'
+import { maskPhone } from '@/lib/chat-order-flow'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,6 +28,8 @@ const clientSelect = {
 const orderSelect = {
   id: true,
   orderId: true,
+  customerName: true,
+  phone: true,
   orderType: true,
   status: true,
   total: true,
@@ -99,6 +103,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
     : []
 
   // Guía per order (latest) and whether it was already sent in this chat.
+  const peerPhone =
+    conversation.socialAccount?.platform === 'whatsapp' ? normalizeClientPhone(conversation.peerId) : null
+
   const guias = orders.length
     ? await prisma.shippingGuia.findMany({
         where: { tenantId, orderId: { in: orders.map((o) => o.orderId) }, pdfData: { not: null } },
@@ -160,8 +167,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
       client: client ? clientDto(client) : null,
       orders: orders.map((o) => {
         const g = latestGuia.get(o.orderId)
+        const { phone, ...rest } = o
+        const orderPhone = normalizeClientPhone(phone)
         return {
-          ...o,
+          ...rest,
+          phoneMasked: maskPhone(phone),
+          phoneMatchesChat: Boolean(orderPhone && peerPhone && orderPhone === peerPhone),
           timestamp: o.timestamp.toISOString(),
           guia: g ? { id: g.id, number: g.guiaNumber || g.trackingNumber || null, createdAt: g.createdAt.toISOString() } : null,
           guiaSentAt: g ? sentGuias.get(g.id) ?? null : null,
@@ -183,16 +194,40 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   const conversation = await loadConversation(tenantId, id)
   if (!conversation) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 })
 
-  const body = (await request.json().catch(() => null)) as { clientId?: unknown } | null
+  const rate = await chatSendRateLimit(`${tenantId}:${auth.userId}`)
+  if (!rate.allowed) {
+    return NextResponse.json({ success: false, error: 'Demasiados cambios. Esperá un momento.' }, { status: 429, headers: rate.headers })
+  }
+
+  const body = (await request.json().catch(() => null)) as { clientId?: unknown; confirmPhoneMismatch?: unknown } | null
   if (!body || !('clientId' in body)) {
     return NextResponse.json({ success: false, error: 'Falta el cliente' }, { status: 400 })
   }
   const clientId = body.clientId === null ? null : typeof body.clientId === 'string' ? body.clientId.trim() : ''
   if (clientId === '') return NextResponse.json({ success: false, error: 'Cliente inválido' }, { status: 400 })
 
+  let phoneMismatch = false
   if (clientId) {
-    const exists = await prisma.client.findFirst({ where: { id: clientId, tenantId }, select: { id: true } })
-    if (!exists) return NextResponse.json({ success: false, error: 'Cliente no encontrado' }, { status: 404 })
+    const target = await prisma.client.findFirst({
+      where: { id: clientId, tenantId },
+      select: { id: true, phone: true, normalizedPhone: true },
+    })
+    if (!target) return NextResponse.json({ success: false, error: 'Cliente no encontrado' }, { status: 404 })
+    const peer = conversation.socialAccount?.platform === 'whatsapp' ? normalizeClientPhone(conversation.peerId) : null
+    const clientPhone = target.normalizedPhone || normalizeClientPhone(target.phone)
+    // Instagram chats have no phone to compare: every manual link there is a human claim too.
+    phoneMismatch = !peer || !clientPhone || peer !== clientPhone
+    if (phoneMismatch && body.confirmPhoneMismatch !== true) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'phone_mismatch',
+          error: 'El teléfono del cliente no coincide con este chat.',
+          clientPhoneMasked: maskPhone(target.phone),
+        },
+        { status: 409 },
+      )
+    }
   }
 
   await prisma.chatConversation.updateMany({ where: { id: conversation.id, tenantId }, data: { clientId } })
@@ -203,7 +238,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     entityId: conversation.id,
     description: clientId ? 'Chat vinculado a cliente' : 'Chat desvinculado del cliente',
     oldValues: { clientId: conversation.clientId },
-    newValues: { clientId },
+    newValues: { clientId, phoneMismatch, source: 'manual' },
     userId: auth.userId,
     userRole: auth.role,
     tenantId,

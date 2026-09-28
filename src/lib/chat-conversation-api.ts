@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { staffDisplayName } from '@/lib/display-name'
 import { projectRawMessageForClient } from '@/lib/chat-message-display'
 import type { Prisma } from '@prisma/client'
 import { type SoftTag } from '@/lib/chat-soft-copilot'
@@ -185,7 +186,7 @@ export function mapConversationToListDto(row: ConversationRow): ChatConversation
       ? {
           id: row.assignedUser.id,
           // Never ship an email stored as name; https photos only.
-          name: row.assignedUser.name ? row.assignedUser.name.split('@')[0] : null,
+          name: staffDisplayName(row.assignedUser.name),
           image: /^https:\/\//.test(row.assignedUser.image ?? '') ? row.assignedUser.image ?? null : null,
         }
       : null,

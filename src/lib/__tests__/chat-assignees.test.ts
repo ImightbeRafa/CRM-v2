@@ -7,7 +7,9 @@ test('GET /api/chat/assignees: inbox permission, tenant-scoped, no email or role
   const src = readFileSync('src/app/api/chat/assignees/route.ts', 'utf8')
   assert.match(src, /authenticateAPIWithPermission\(request, 'update_sales'\)/)
   assert.match(src, /where: \{ tenantId: auth\.tenantId, isActive: true, user: \{ active: true \} \}/)
-  assert.doesNotMatch(src, /email: true|role: true/)
+  assert.doesNotMatch(src, /email: true/)
+  // role is read only to filter; the response object carries id / name / image only.
+  assert.match(src, /\.map\(\(\{ user \}\) => \(\{\s*id: user\.id,\s*name: .+,\s*image: safeImage\(user\.image\),\s*\}\)\)/)
   assert.match(readFileSync('src/lib/rbac.ts', 'utf8'), /'GET \/api\/chat\/assignees': 'update_sales'/)
 })
 

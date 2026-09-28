@@ -35,7 +35,8 @@ export async function enrichConversationDtosWithLinkedOrders(
         tenantId,
         conversationId: { in: items.map((item) => item.id) },
         orderId: { not: null },
-        order: { tenantId },
+        // Nested relation filters bypass the activeOrderReads extension: exclude archived orders here.
+        order: { tenantId, deletedAt: null },
       },
       orderBy: { sentAt: 'desc' },
       take: 500,

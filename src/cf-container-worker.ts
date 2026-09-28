@@ -234,7 +234,11 @@ async function runCronPaths(
 
 export default {
   async fetch(request: Request, env: Env) {
-    return getContainer(env.BETSY_CRM_CONTAINER).fetch(request);
+    // Clients must not choose the container port (@cloudflare/containers reads this header).
+    // Copying the headers keeps cf-connecting-ip for rate limits.
+    const headers = new Headers(request.headers);
+    headers.delete("cf-container-target-port");
+    return getContainer(env.BETSY_CRM_CONTAINER).fetch(new Request(request, { headers }));
   },
 
   async scheduled(

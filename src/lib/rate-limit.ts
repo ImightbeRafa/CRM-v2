@@ -31,22 +31,34 @@ function createRedisLimiter(config: { prefix: string; maxRequests: number; windo
 interface RateLimitEntry {
   count: number;
   resetTime: number;
+  /** Max requests for this key's window: entries over it are "blocking" and kept longest. */
+  limit: number;
 }
 
 const memoryStore = new Map<string, RateLimitEntry>();
 const MEMORY_STORE_MAX = 10_000;
 
-/** Drop expired entries (and, if still huge, the oldest ones) so unique IPs cannot grow the map forever. */
-function pruneMemoryStore(now: number) {
-  if (memoryStore.size < MEMORY_STORE_MAX) return;
-  for (const [key, entry] of memoryStore) {
-    if (now > entry.resetTime) memoryStore.delete(key);
+/**
+ * Keep the map bounded without letting a flood of junk keys evict a live block (e.g. a locked
+ * login): expired entries go first, then entries that are not blocking anyone; blocked entries
+ * are only dropped if the map is still full of them (then the oldest first).
+ */
+export function pruneMemoryStore(now: number, store: Map<string, RateLimitEntry> = memoryStore, max = MEMORY_STORE_MAX) {
+  if (store.size < max) return;
+  for (const [key, entry] of store) {
+    if (now > entry.resetTime) store.delete(key);
   }
-  if (memoryStore.size >= MEMORY_STORE_MAX) {
-    let excess = memoryStore.size - Math.floor(MEMORY_STORE_MAX / 2);
-    for (const key of memoryStore.keys()) {
-      if (excess-- <= 0) break;
-      memoryStore.delete(key);
+  const target = Math.floor(max / 2);
+  if (store.size >= max) {
+    for (const [key, entry] of store) {
+      if (store.size <= target) break;
+      if (entry.count < entry.limit) store.delete(key);
+    }
+  }
+  if (store.size >= max) {
+    for (const key of store.keys()) {
+      if (store.size <= target) break;
+      store.delete(key);
     }
   }
 }
@@ -61,7 +73,7 @@ function memoryRateLimit(
   const entry = memoryStore.get(key);
   if (!entry || now > entry.resetTime) {
     pruneMemoryStore(now);
-    memoryStore.set(key, { count: 1, resetTime: now + config.windowMs });
+    memoryStore.set(key, { count: 1, resetTime: now + config.windowMs, limit: config.maxRequests });
     return {
       allowed: true,
       headers: {
@@ -102,9 +114,9 @@ export function rateLimit(
 
 // --- Async rate limit using Redis when available ---
 
-async function rateLimitAsync(
+export async function rateLimitAsync(
   identifier: string,
-  limiter: Ratelimit | null,
+  limiter: Pick<Ratelimit, 'limit'> | null,
   fallbackConfig: { maxRequests: number; windowMs: number; prefix: string }
 ): Promise<{ allowed: boolean; headers: Record<string, string> }> {
   if (limiter) {
@@ -136,13 +148,26 @@ const authRedisLimiter = createRedisLimiter({ prefix: 'auth', maxRequests: 5, wi
 const generalRedisLimiter = createRedisLimiter({ prefix: 'general', maxRequests: 100, windowMs: 15 * 60 * 1000 });
 const exportRedisLimiter = createRedisLimiter({ prefix: 'export', maxRequests: 10, windowMs: 60 * 60 * 1000 });
 
+/** IPv6 clients are bucketed by /64 (one customer network), so rotating addresses inside it does not reset limits. */
+export function normalizeClientIp(ip: string): string {
+  const value = ip.trim().replace(/^\[|\]$/g, '');
+  if (!value.includes(':')) return value;
+  const [head] = value.split('%');
+  const parts = head.split('::');
+  const left = parts[0] ? parts[0].split(':') : [];
+  const right = parts.length > 1 && parts[1] ? parts[1].split(':') : [];
+  const groups = parts.length > 1 ? [...left, ...new Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right] : left;
+  return `${groups.slice(0, 4).map((g) => (g || '0').toLowerCase()).join(':')}::/64`;
+}
+
 export function getClientIP(request: Request): string {
   // Set by the deploy (cf-container-worker → cf-connecting-ip). When present, it is the
   // only header we trust: X-Forwarded-For's first entry is client-controlled behind a proxy.
   const trusted = (process.env.TRUSTED_IP_HEADER || '').trim().toLowerCase();
   if (trusted) {
     const value = request.headers.get(trusted)?.split(',')[0]?.trim();
-    if (value) return value;
+    // Fail closed: when the edge header is missing, never fall back to spoofable headers.
+    return value ? normalizeClientIp(value) : 'trusted-header-missing';
   }
 
   const forwarded = request.headers.get('x-forwarded-for');

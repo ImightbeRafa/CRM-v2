@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { staffDisplayName } from '@/lib/display-name'
+import { hasPermission, type Role } from '@/lib/rbac'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 
@@ -25,15 +27,16 @@ export async function GET(request: NextRequest) {
 
   const memberships = await prisma.membership.findMany({
     where: { tenantId: auth.tenantId, isActive: true, user: { active: true } },
-    select: { user: { select: { id: true, name: true, username: true, image: true } } },
+    select: { role: true, user: { select: { id: true, name: true, username: true, image: true } } },
     take: 200,
   })
 
   const assignees = memberships
+    // Only people who can open the chats inbox (same rule as the PATCH check).
+    .filter((m) => hasPermission(m.role as Role, 'update_sales'))
     .map(({ user }) => ({
       id: user.id,
-      // Some accounts store the email as name/username: never send it, show the part before "@".
-      name: (user.name || user.username || '').split('@')[0].trim() || 'Sin nombre',
+      name: staffDisplayName(user.name, user.username) || 'Sin nombre',
       image: safeImage(user.image),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'es'))

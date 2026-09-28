@@ -20,7 +20,7 @@ test('newest linked message per conversation wins; rows without an order are ign
 test('enrichment query is tenant-scoped on the message and the order', () => {
   const src = readFileSync('src/lib/chat-linked-orders.ts', 'utf8')
   assert.match(src, /tenantId,\n\s+conversationId: \{ in:/)
-  assert.match(src, /order: \{ tenantId \}/)
+  assert.match(src, /order: \{ tenantId, deletedAt: null \}/)
   for (const route of ['src/app/api/chat/conversations/route.ts', 'src/app/api/chat/conversations/changes/route.ts']) {
     assert.match(readFileSync(route, 'utf8'), /enrichConversationDtosWithLinkedOrders\(\s*auth\.tenantId/)
   }

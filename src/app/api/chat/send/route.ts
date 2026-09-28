@@ -131,6 +131,14 @@ export async function POST(request: NextRequest) {
       return jsonError('Destinatario inválido. Selecciona una conversación con un cliente real.', 400)
     }
 
+    // Links must point at this business's own records (ids are global cuids).
+    if (orderId && !(await db.order.findFirst({ where: { id: orderId, tenantId }, select: { id: true } }))) {
+      return jsonError('Pedido no encontrado', 404)
+    }
+    if (clientId && !(await db.client.findFirst({ where: { id: clientId, tenantId }, select: { id: true } }))) {
+      return jsonError('Cliente no encontrado', 404)
+    }
+
     let account: {
       id: string
       platform: string

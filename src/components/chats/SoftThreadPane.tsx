@@ -12,7 +12,7 @@ import {
   type Ref,
 } from 'react'
 import Link from 'next/link'
-import { Check, CheckCheck, ChevronLeft, Hand, Info, Paperclip, Pause, Play, Send, ShoppingBag, Smile, Sparkles, User, X, Zap } from 'lucide-react'
+import { Check, CheckCheck, ChevronLeft, Hand, Info, PanelRight, Paperclip, Pause, Play, Send, ShoppingBag, Smile, Sparkles, User, X, Zap } from 'lucide-react'
 import {
   initialsFromName,
   isWhatsAppWindowOpen,
@@ -126,6 +126,8 @@ interface SoftThreadPaneProps {
   onCreateOrder?: () => void
   /** An unfinished order is saved for this chat: the button reads "Continuar pedido". */
   orderDraftPending?: boolean
+  /** Desktop: show / hide the details panel (Detalle · Cliente · Agente). Shortcut: ]. */
+  detailsPanel?: { open: boolean; onToggle: () => void }
   /** Attach + send a file (WhatsApp, flag-gated). Hidden when absent. */
   attachments?: {
     accept: string
@@ -271,6 +273,7 @@ export function SoftThreadPane({
   agentActionsToday = 0,
   onCreateOrder,
   orderDraftPending,
+  detailsPanel,
   assignment,
   attachments,
   quickReplies,
@@ -656,8 +659,25 @@ export function SoftThreadPane({
                     <ShoppingBag className="h-3.5 w-3.5" aria-hidden />
                     {orderDraftPending ? 'Continuar pedido' : 'Crear pedido'}
                     {orderDraftPending ? (
-                      <span className="rounded bg-white/25 px-1.5 py-px text-[10px] font-semibold">Borrador</span>
+                      <span className="rounded bg-static-white/25 px-1.5 py-px text-[10px] font-semibold">Borrador</span>
                     ) : null}
+                  </button>
+                ) : null}
+                {detailsPanel ? (
+                  <button
+                    type="button"
+                    onClick={detailsPanel.onToggle}
+                    aria-pressed={detailsPanel.open}
+                    aria-label={detailsPanel.open ? 'Ocultar detalles' : 'Mostrar detalles'}
+                    title={`${detailsPanel.open ? 'Ocultar' : 'Mostrar'} detalles  ( ] )`}
+                    className={`flex h-[30px] w-[30px] items-center justify-center rounded-lg ring-1 transition-colors ${
+                      detailsPanel.open
+                        ? 'bg-au-tint-eef0ff text-au-ink-4a46e5 ring-[#5B6CFF]/25'
+                        : 'bg-white text-slate-500 ring-slate-200 hover:bg-slate-50 hover:text-slate-800'
+                    }`}
+                    data-testid="toggle-details-panel"
+                  >
+                    <PanelRight className="h-4 w-4" aria-hidden />
                   </button>
                 ) : null}
                 <button

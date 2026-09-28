@@ -300,3 +300,26 @@ describe('quick replies with files', () => {
     assert.match(inbox, /caption: i === 0 && captionFits \? caption : ''/)
   })
 })
+
+describe('calmer chat layout', () => {
+  test('Bandeja column is gone on desktop: views, search and tags live in the list header', () => {
+    const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')
+    assert.doesNotMatch(inbox, /<SoftInboxBuckets/)
+    const list = read('src/components/chats/SoftConversationList.tsx')
+    assert.match(list, /<ChatViewMenu bucket=\{bucket\}/)
+    assert.match(list, /<ChatTagFilter /)
+    assert.match(list, /data-chat-search/)
+  })
+  test('details panel: toggle in the header, "]" shortcut, remembered, overlay below 1536 px', () => {
+    const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')
+    assert.match(inbox, /detailsPanel=\{\{ open: detailsOpen, onToggle: toggleDetails \}\}/)
+    assert.match(inbox, /e\.key !== '\]'/)
+    assert.match(inbox, /DETAILS_PANEL_KEY = 'betsy\.chat\.detailsPanel\.v1'/)
+    assert.match(inbox, /matchMedia\('\(min-width: 1536px\)'\)/)
+  })
+  test('sidebar collapses to an icon rail; Chats defaults to icons', async () => {
+    const { sidebarScope, defaultCollapsed } = await import('../../components/aurora/AuroraSidebar')
+    assert.equal(defaultCollapsed(sidebarScope('/chats')), true)
+    assert.equal(defaultCollapsed(sidebarScope('/ventas')), false)
+  })
+})

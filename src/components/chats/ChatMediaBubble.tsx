@@ -272,7 +272,7 @@ export function ChatAudioPlayer({
           ))}
         </div>
         <div className="mt-0.5 flex items-center justify-between text-[10.5px] tabular-nums text-slate-500">
-          <span>{formatClock(playing || current > 0 ? current : duration)}</span>
+          <span>{playing || current > 0 ? formatClock(current) : duration > 0 ? formatClock(duration) : 'Nota de voz'}</span>
           <span className="flex items-center gap-2">
             <button
               type="button"

@@ -25,7 +25,9 @@ describe('PR-G mobile chats (CHAT-M01 / CHAT-M02)', () => {
   })
 
   it('desktop layout from PR-C is preserved (md: split + desktop header hidden on mobile)', () => {
-    assert.match(inbox, /className="hidden min-h-0 min-w-0 flex-1 md:flex"/)
+    // 2026-09-28: the split is `relative` so the details panel can float over the thread < 1536 px.
+    assert.match(inbox, /className="relative hidden min-h-0 min-w-0 flex-1 md:flex"/)
+    assert.match(inbox, /data-testid="chat-details-panel"/)
     assert.match(inbox, /className="flex min-h-0 min-w-0 flex-1 md:hidden"/)
     assert.match(inbox, /<header className="hidden shrink-0[^"]*md:flex"/)
     assert.match(read('src/components/chats/SoftCopilotRail.tsx'), /hidden h-full w-\[268px\][^']*xl:flex/)

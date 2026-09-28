@@ -57,7 +57,6 @@ import {
 } from '@/lib/soft-ai/agent-state'
 import { lineHealth, lineIsDown, summarizeLineCounts } from '@/lib/chat-line-filter'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
-import { SoftInboxBuckets } from '@/components/chats/SoftInboxBuckets'
 import { WA_OUTBOUND_ACCEPT } from '@/lib/chat-outbound-media'
 import { WA_CAPTION_MAX, type ChatQuickReply, type QuickReplyMedia } from '@/lib/chat-quick-replies'
 import { hasOrderDraft } from '@/lib/order-draft'
@@ -80,6 +79,7 @@ import type { CreatedOrderRef } from '@/app/ventas/components/EnhancedSalesForm'
 import { useToast } from '@/app/hooks/use-toast'
 
 const TAG_FILTERS: SoftTag[] = ['Envío', 'VIP', 'Nuevo']
+const DETAILS_PANEL_KEY = 'betsy.chat.detailsPanel.v1'
 
 function softKey(c: SoftConversation) {
   return conversationStorageKey(c.socialAccountId, c.recipientId)
@@ -112,6 +112,9 @@ export function SoftCopilotInboxV2() {
   const [sendError, setSendError] = useState<string | null>(null)
   const [failedOutboundId, setFailedOutboundId] = useState<string | null>(null)
   const [railTab, setRailTab] = useState<RailTab>('copilot')
+  /** Details panel (Detalle · Cliente · Agente): remembered; wide screens start open. */
+  const [detailsOpen, setDetailsOpen] = useState(true)
+  const [wideScreen, setWideScreen] = useState(true)
   /** Bumped after an order / guía changes so the Cliente tab refetches. */
   const [clientPanelRev, setClientPanelRev] = useState(0)
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null)
@@ -546,6 +549,44 @@ export function SoftCopilotInboxV2() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1536px)')
+    const sync = () => setWideScreen(mq.matches)
+    sync()
+    let stored: string | null = null
+    try {
+      stored = window.localStorage.getItem(DETAILS_PANEL_KEY)
+    } catch {
+      // ignore
+    }
+    setDetailsOpen(stored === null ? mq.matches : stored === '1')
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
+  const toggleDetails = useCallback(() => {
+    setDetailsOpen((prev) => {
+      const next = !prev
+      try {
+        window.localStorage.setItem(DETAILS_PANEL_KEY, next ? '1' : '0')
+      } catch {
+        // ignore
+      }
+      return next
+    })
+  }, [])
+  // "]" toggles the details panel (never while typing).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== ']' || e.metaKey || e.ctrlKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
+      e.preventDefault()
+      toggleDetails()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [toggleDetails])
 
   // ⌘K / Ctrl+K focuses the visible chat search (desktop rail or mobile list).
   useEffect(() => {
@@ -1404,19 +1445,7 @@ export function SoftCopilotInboxV2() {
       </header>
       <SoftTokenHealthBanners accounts={accounts} />
       <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-white">
-        <SoftInboxBuckets
-          bucket={bucket}
-          onBucketChange={setBucket}
-          search={search}
-          onSearchChange={setSearch}
-          whatsappCount={whatsappCount}
-          instagramCount={instagramCount}
-          monitor={monitorStats}
-          tags={TAG_FILTERS}
-          activeTag={activeTag}
-          onTagClick={(tag) => setActiveTag((prev) => (prev === tag ? null : tag))}
-        />
-        <div className="hidden min-h-0 min-w-0 flex-1 md:flex">
+        <div className="relative hidden min-h-0 min-w-0 flex-1 md:flex">
           <SoftConversationList
             conversations={visibleConversations}
             selectedKey={selectedKey}
@@ -1437,28 +1466,58 @@ export function SoftCopilotInboxV2() {
             hasMoreConversations={Boolean(listNextCursor)}
             loadingMoreConversations={loadingMoreConversations}
             onLoadMoreConversations={() => void loadMoreConversations()}
+            bucket={bucket}
+            onBucketChange={setBucket}
+            search={search}
+            onSearchChange={setSearch}
+            monitor={monitorStats}
+            tags={TAG_FILTERS}
+            activeTag={activeTag}
+            onTagClick={(tag) => setActiveTag((prev) => (prev === tag ? null : tag))}
           />
           <SoftThreadPane
             {...threadSharedProps}
+            detailsPanel={{ open: detailsOpen, onToggle: toggleDetails }}
             onClose={() => {
               setSelectedConversationId(null)
               setMobileView('list')
             }}
           />
           {railConversation ? (
-            <SoftCopilotRail
-              conversation={railConversation}
-              tab={railTab}
-              onTabChange={setRailTab}
-              onStatusChange={updateStatus}
-              onToggleTag={toggleTag}
-              agentMode={threadSharedProps.agentMode}
-              toolLog={selectedAgentState.toolLog}
-              onTakeOver={() => void setAgentControl('take_over')}
-              onPauseAi={() => void setAgentControl('pause')}
-              onResumeAi={() => void setAgentControl('resume')}
-              clientPanel={clientPanel}
-            />
+            detailsOpen ? (
+              <>
+                {/* Below 1536 px the panel floats over the thread instead of squeezing it. */}
+                {!wideScreen ? (
+                  <button
+                    type="button"
+                    aria-label="Cerrar detalles"
+                    onClick={toggleDetails}
+                    className="absolute inset-0 z-20 bg-slate-900/20 backdrop-blur-[1px] 2xl:hidden"
+                  />
+                ) : null}
+                <div
+                  className={`flex h-full w-[300px] shrink-0 flex-col border-l border-slate-200/70 bg-white ${
+                    wideScreen ? '' : 'absolute inset-y-0 right-0 z-30 shadow-2xl motion-safe:animate-in motion-safe:slide-in-from-right-8 motion-safe:duration-200'
+                  }`}
+                  data-testid="chat-details-panel"
+                >
+                  <SoftCopilotRail
+                    sheet
+                    conversation={railConversation}
+                    tab={railTab}
+                    onTabChange={setRailTab}
+                    onStatusChange={updateStatus}
+                    onToggleTag={toggleTag}
+                    agentMode={threadSharedProps.agentMode}
+                    toolLog={selectedAgentState.toolLog}
+                    onTakeOver={() => void setAgentControl('take_over')}
+                    onPauseAi={() => void setAgentControl('pause')}
+                    onResumeAi={() => void setAgentControl('resume')}
+                    clientPanel={clientPanel}
+                  />
+                </div>
+              </>
+            ) : null
           ) : (
             // SoftCopilotRail is a locked file: the no-chat state lives here instead.
             <aside

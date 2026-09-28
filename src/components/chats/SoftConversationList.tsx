@@ -1,13 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Clock, Search, Sparkles, X } from 'lucide-react'
 import {
   formatRelativeEs,
   initialsFromName,
   type ChannelFilter,
   type InboxBucket,
+  type SoftAiMonitorStats,
   type SoftConversation,
+  type SoftTag,
   type SoftSocialAccount,
 } from '@/lib/chat-soft-copilot'
 import type { LineCounts } from '@/lib/chat-line-filter'
@@ -16,6 +18,7 @@ import { AuroraLineFilter } from '@/components/chats/AuroraLineFilter'
 import { chatPreviewText } from '@/lib/chat-message-display'
 import { AuroraAvatar } from '@/components/aurora/shell/AuroraAvatar'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
+import { ChatTagFilter, ChatViewMenu } from '@/components/chats/ChatViewMenu'
 import {
   AuroraEmptyState,
   AuroraErrorState,
@@ -56,6 +59,11 @@ interface SoftConversationListProps {
   onBucketChange?: (bucket: InboxBucket) => void
   search?: string
   onSearchChange?: (value: string) => void
+  /** Desktop header: agent summary in the views menu + tag filter button. */
+  monitor?: SoftAiMonitorStats
+  tags?: SoftTag[]
+  activeTag?: SoftTag | null
+  onTagClick?: (tag: SoftTag) => void
 }
 
 /** CHAT-M01 segmented tabs → existing inbox buckets (no new staffing model). */
@@ -119,7 +127,16 @@ export function SoftConversationList({
   onBucketChange,
   search,
   onSearchChange,
+  monitor,
+  tags,
+  activeTag,
+  onTagClick,
 }: SoftConversationListProps) {
+  // ⌘K on Mac, Ctrl K elsewhere (set after mount so SSR and client markup match).
+  const [shortcutHint, setShortcutHint] = useState('Ctrl K')
+  useEffect(() => {
+    if (/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent)) setShortcutHint('⌘K')
+  }, [])
   const [searchOpen, setSearchOpen] = useState(false)
   const chips: Array<{ id: ChannelFilter; label: string; activeClass: string; idleClass: string }> = [
     {
@@ -172,14 +189,37 @@ export function SoftConversationList({
           </div>
         </div>
       ) : (
-        <div className="flex items-start justify-between gap-2 px-4 pt-4">
-          <div>
-            <h2 className="text-[15px] font-semibold text-slate-900">{`Abiertos · ${openCount}`}</h2>
-            {syncAgeSeconds != null ? (
-              <p className="mt-0.5 text-[10px] text-slate-400">Sincronizado hace {syncAgeSeconds}s</p>
-            ) : null}
+        <div className="px-4 pt-4">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              {bucket && onBucketChange ? (
+                <ChatViewMenu bucket={bucket} onBucketChange={onBucketChange} count={openCount} monitor={monitor} />
+              ) : (
+                <h2 className="text-[15px] font-semibold text-slate-900">{`Abiertos · ${openCount}`}</h2>
+              )}
+              {syncAgeSeconds != null ? (
+                <p className="mt-0.5 text-[10px] text-slate-400">Sincronizado hace {syncAgeSeconds}s</p>
+              ) : null}
+            </div>
+            <span className="pt-1 text-[11px] text-slate-500">Más nuevos</span>
           </div>
-          <span className="text-[11px] text-slate-500">Más nuevos</span>
+          {onSearchChange ? (
+            <label className="relative mt-3 block">
+              <span className="sr-only">Buscar chats</span>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden />
+              <input
+                value={search ?? ''}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder="Buscar chats…"
+                data-chat-search
+                aria-keyshortcuts="Control+K Meta+K"
+                className="w-full rounded-xl border-0 bg-slate-50 py-2 pl-8 pr-14 text-[12.5px] text-slate-800 outline-none ring-1 ring-slate-200/70 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-[#5B6CFF]/40"
+              />
+              <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 ring-1 ring-slate-200">
+                {shortcutHint}
+              </kbd>
+            </label>
+          ) : null}
         </div>
       )}
 
@@ -255,7 +295,7 @@ export function SoftConversationList({
         </div>
       ) : null}
 
-      <div className={`mt-2 flex-wrap gap-1.5 px-4 ${compact ? 'hidden' : 'flex'}`}>
+      <div className={`mt-2 flex-wrap items-center gap-1.5 px-4 ${compact ? 'hidden' : 'flex'}`}>
         {chips.map((chip) => {
           const active = channelFilter === chip.id
           return (
@@ -271,6 +311,11 @@ export function SoftConversationList({
             </button>
           )
         })}
+        {tags && tags.length && onTagClick ? (
+          <span className="ml-auto">
+            <ChatTagFilter tags={tags} activeTag={activeTag ?? null} onTagClick={onTagClick} />
+          </span>
+        ) : null}
       </div>
 
       <div className={`min-h-0 flex-1 overflow-y-auto ${compact ? 'mt-3 px-2' : 'mt-3'}`}>

@@ -137,7 +137,8 @@ export function classifyOutboundMedia(input: {
 
 /** Stored text for the outbound bubble / list preview. */
 export function outboundMediaContent(kind: OutboundMediaKind, caption: string): string {
-  const trimmed = caption.trim()
+  // WhatsApp audio has no caption: never store text the customer did not receive.
+  const trimmed = kind === 'audio' ? '' : caption.trim()
   if (trimmed) return trimmed
   return { image: '[image]', video: '[video]', audio: '[audio]', document: '[document]' }[kind]
 }

@@ -958,6 +958,14 @@ export default function SocialConfigPage() {
             </div>
           </div>
 
+          {accountsLoadError && ownerAccounts.length > 0 ? (
+            <div role="status" className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-amber-50 px-4 py-2.5 text-[13px] text-amber-900 ring-1 ring-amber-200">
+              <span>No se pudo actualizar la lista; puede estar desactualizada.</span>
+              <button type="button" onClick={() => void fetchAccounts()} className="shrink-0 font-semibold underline-offset-2 hover:underline">
+                Reintentar
+              </button>
+            </div>
+          ) : null}
           <ChannelsTable
             accounts={visibleAccounts}
             loading={loading}

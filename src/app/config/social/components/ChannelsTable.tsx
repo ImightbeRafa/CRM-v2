@@ -76,7 +76,7 @@ export function ChannelsTable(props: ChannelsTableProps) {
                 Cargando canales…
               </td>
             </tr>
-          ) : loadError && accounts.length === 0 ? (
+          ) : loadError && totalCount === 0 ? (
             <tr>
               <td colSpan={5} className="px-5 py-6">
                 <AuroraErrorState

@@ -491,7 +491,8 @@ export function SoftThreadPane({
             busy={assignment.busy}
           />
         </div>
-      ) : (
+      ) : null}
+      {!compact ? (
         <header className="shrink-0 border-b border-slate-200/70 px-4 py-3 sm:px-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -580,7 +581,7 @@ export function SoftThreadPane({
             ) : null}
           </div>
         </header>
-      )}
+      ) : null}
 
       {compact ? (
         <div className="shrink-0 bg-[#F5F4F0] px-3 pt-3" data-testid="soft-agent-banner">
@@ -1074,7 +1075,9 @@ export function SoftThreadPane({
               aria-label={pendingFile ? 'Texto del archivo (opcional)' : 'Mensaje'}
               placeholder={
                 pendingFile
-                  ? 'Agregá un texto al archivo (opcional)'
+                  ? /\.(mp3|m4a|aac|amr|ogg|opus)$/i.test(pendingFile.name)
+                    ? 'Los audios se envían sin texto'
+                    : 'Agregá un texto al archivo (opcional)'
                   : composerEnabled
                   ? compact
                     ? 'Escribí un mensaje'

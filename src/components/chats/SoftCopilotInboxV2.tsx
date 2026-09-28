@@ -92,7 +92,8 @@ export function SoftCopilotInboxV2() {
   const [dtoMap, setDtoMap] = useState<Map<string, ChatConversationListItemDto>>(new Map())
   const [threadMessages, setThreadMessages] = useState<Record<string, ChatInboxMessage[]>>({})
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
-  const [bucket, setBucket] = useState<InboxBucket>('tus_chats')
+  // Default = every open chat: new inbound chats have no owner until someone replies.
+  const [bucket, setBucket] = useState<InboxBucket>('abiertos')
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>('todos')
   const [accountFilter, setAccountFilter] = useState<string | 'all'>('all')
   const [search, setSearch] = useState('')
@@ -128,6 +129,7 @@ export function SoftCopilotInboxV2() {
   const [assignBusy, setAssignBusy] = useState(false)
   const [outboundMedia, setOutboundMedia] = useState(false)
   const [threadErrorId, setThreadErrorId] = useState<string | null>(null)
+  const pendingFileRequestIds = useRef(new Map<string, string>())
   /** Server search hits for the active query; re-merged after a reconcile replaces the list. */
   const searchHitsRef = useRef<ChatConversationListItemDto[]>([])
   const pollInFlightRef = useRef(false)
@@ -355,6 +357,9 @@ export function SoftCopilotInboxV2() {
     setThreadLoadingId(conversationId)
     try {
       await fetchThreadMessages(conversationId)
+    } catch {
+      // Offline / network error: show the thread error state (not "Sin mensajes").
+      setThreadErrorId(conversationId)
     } finally {
       setThreadLoadingId((cur) => (cur === conversationId ? null : cur))
     }
@@ -1050,18 +1055,30 @@ export function SoftCopilotInboxV2() {
       form.append('socialAccountId', selectedConversation.socialAccountId)
       form.append('recipient', selectedConversation.recipientId)
       form.append('caption', caption.trim())
-      form.append('clientRequestId', newClientRequestId())
+      // One id per picked file: a retry of the same file is deduplicated by the server.
+      const requestIdKey = `${file.name}:${file.size}:${file.lastModified}`
+      if (!pendingFileRequestIds.current.has(requestIdKey)) {
+        pendingFileRequestIds.current.set(requestIdKey, newClientRequestId())
+      }
+      form.append('clientRequestId', pendingFileRequestIds.current.get(requestIdKey)!)
       const res = await fetch('/api/chat/send-media', { method: 'POST', credentials: 'same-origin', body: form })
       const parsed = await parseApiJson<{
         success?: boolean
         error?: string
+        sent?: boolean
         message?: Parameters<typeof messageDtoToInbox>[0]
       }>(res)
       if (!parsed.ok || !res.ok || !parsed.data.success) {
+        const alreadySent = parsed.ok && parsed.data.sent === true
         if (selectedConversationIdRef.current === conversationId) {
           setSendError(
             humanizeChatSendError(!parsed.ok ? parsed.error : parsed.data.error, !parsed.ok ? parsed.status : res.status),
           )
+        }
+        // The customer already got it: clear the chip so nobody re-sends it.
+        if (alreadySent) {
+          await fetchChanges()
+          return true
         }
         return false
       }
@@ -1189,7 +1206,7 @@ export function SoftCopilotInboxV2() {
     threadLoading: Boolean(selectedConversationId && threadLoadingId === selectedConversationId),
     threadError: Boolean(selectedConversationId && threadErrorId === selectedConversationId),
     onRetryThread: () => {
-      if (selectedConversationId) void fetchThreadMessages(selectedConversationId)
+      if (selectedConversationId) void loadThreadMessages(selectedConversationId)
     },
     channelDownMessage: selectedAccountHealth
       ? `${accountDisplayLabel(selectedAccountHealth.account)} · ${selectedAccountHealth.health.label.toLowerCase()}. Los mensajes de este chat pueden no enviarse.`

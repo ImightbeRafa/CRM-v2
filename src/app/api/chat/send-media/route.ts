@@ -103,6 +103,22 @@ export async function POST(request: NextRequest) {
     const media = classifyOutboundMedia({ filename, bytes })
     if (!media.ok) return jsonError(media.error, 400)
 
+    // Retry of a file that already went out (same pending file → same clientRequestId): no re-send.
+    if (clientRequestId) {
+      const already = await db.chatMessage.findFirst({
+        where: {
+          tenantId,
+          socialAccountId,
+          direction: 'outbound',
+          sentAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+          metadata: { path: ['clientRequestId'], equals: clientRequestId },
+        },
+      })
+      if (already) {
+        return NextResponse.json({ success: true, duplicate: true, message: mapMessageToDto(already), clientRequestId })
+      }
+    }
+
     const found = await db.socialAccount.findFirst({ where: { id: socialAccountId, tenantId } })
     if (!found) return jsonError('Línea no encontrada', 404)
     if (found.platform !== 'whatsapp') {
@@ -196,7 +212,7 @@ export async function POST(request: NextRequest) {
       suppressSoftAi: true,
     })
     if (!isPersistedDualWrite(write)) {
-      return jsonError('El archivo se envió pero no se pudo guardar en Betsy.', 500)
+      return jsonError('El archivo se envió pero no se pudo guardar en Betsy.', 500, { sent: true })
     }
 
     // 4) Private copy for the thread (the uploaded media id also works for ~30 days).

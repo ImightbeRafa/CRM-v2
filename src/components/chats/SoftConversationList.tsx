@@ -347,6 +347,7 @@ export function SoftConversationList({
                     <button
                       type="button"
                       data-soft-conv-key={key}
+                      aria-current={selected ? 'true' : undefined}
                       onClick={() => onSelect(conv)}
                       className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors ${
                         selected ? 'bg-white shadow-[0_1px_4px_rgba(15,23,42,0.08)]' : 'active:bg-white/70'
@@ -369,7 +370,7 @@ export function SoftConversationList({
                           <p className="truncate text-[16px] font-semibold text-slate-900">{name}</p>
                           <span
                             className={`shrink-0 text-[12px] ${
-                              unread > 0 ? 'font-semibold text-[#5B3FE0]' : 'text-slate-400'
+                              unread > 0 ? 'font-semibold text-[#5B3FE0]' : 'text-slate-500'
                             }`}
                           >
                             {formatRelativeEs(conv.lastMessageAt)}
@@ -434,6 +435,7 @@ export function SoftConversationList({
                   <button
                     type="button"
                     data-soft-conv-key={key}
+                    aria-current={selected ? 'true' : undefined}
                     onClick={() => onSelect(conv)}
                     className={`flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors ${
                       selected ? 'bg-[#F1F3FF] ring-1 ring-inset ring-[#5B6CFF]/20' : 'hover:bg-slate-50/80'
@@ -449,7 +451,7 @@ export function SoftConversationList({
                         <p className="truncate text-[13px] font-semibold text-slate-900">
                           {conversationDisplayName(conv)}
                         </p>
-                        <span className="shrink-0 text-[11px] text-slate-400">
+                        <span className="shrink-0 text-[11px] text-slate-500">
                           {formatRelativeEs(conv.lastMessageAt)}
                         </span>
                       </div>
@@ -457,7 +459,7 @@ export function SoftConversationList({
                         {chatPreviewText(conv.lastMessage) || '—'}
                       </p>
                       <div className="mt-1 flex items-center justify-between gap-2">
-                        <p className="flex min-w-0 items-center gap-1 truncate text-[11px] text-slate-400">
+                        <p className="flex min-w-0 items-center gap-1 truncate text-[11px] text-slate-500">
                           {isDemo ? (
                             <span className="mr-1 rounded bg-amber-100 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-amber-900">
                               Demo

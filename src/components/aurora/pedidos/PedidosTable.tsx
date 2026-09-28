@@ -137,7 +137,7 @@ export function PedidosTable({
                 <td className="px-3 py-3">
                   <CanalCell canal={canalLabel(o, lines?.[o.id ?? o.orderId])} />
                 </td>
-                <td className="whitespace-nowrap px-3 py-3 text-[12px] text-slate-400">
+                <td className="whitespace-nowrap px-3 py-3 text-[12px] text-slate-500">
                   {formatPedidoDate(o.timestamp)}
                 </td>
                 <td className="py-3 pl-3 pr-5 text-right">

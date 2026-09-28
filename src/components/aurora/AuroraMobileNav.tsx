@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
@@ -47,10 +47,40 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
     setMoreOpen(false)
   }, [pathname])
 
+  const moreTriggerRef = useRef<HTMLButtonElement>(null)
+  const moreSheetRef = useRef<HTMLDivElement>(null)
+  const wasMoreOpen = useRef(false)
+
+  // Modal sheet: focus moves in on open, Tab stays inside, Esc closes, focus returns to "Más".
   useEffect(() => {
-    if (!moreOpen) return
+    if (!moreOpen) {
+      if (wasMoreOpen.current) moreTriggerRef.current?.focus()
+      wasMoreOpen.current = false
+      return
+    }
+    wasMoreOpen.current = true
+    const focusables = () =>
+      Array.from(
+        moreSheetRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [],
+      )
+    requestAnimationFrame(() => focusables()[0]?.focus())
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMoreOpen(false)
+      if (e.key === 'Escape') {
+        setMoreOpen(false)
+        return
+      }
+      if (e.key !== 'Tab') return
+      const items = focusables()
+      if (!items.length) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -130,6 +160,7 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
           type="button"
           aria-haspopup="dialog"
           aria-expanded={moreOpen}
+          ref={moreTriggerRef}
           onClick={() => setMoreOpen(true)}
           className={tabClass(moreActive || moreOpen)}
         >
@@ -148,7 +179,7 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
             className="absolute inset-0 bg-slate-900/40"
             onClick={() => setMoreOpen(false)}
           />
-          <div className="absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-3xl bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_32px_rgba(15,23,42,0.18)]">
+          <div ref={moreSheetRef} className="absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-3xl bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_32px_rgba(15,23,42,0.18)]">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-[15px] font-semibold text-slate-900">Más</h2>
               <button

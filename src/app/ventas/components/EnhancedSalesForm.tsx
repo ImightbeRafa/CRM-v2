@@ -778,13 +778,14 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {businessInfoFields.map((field) => (
                     <div key={field.id} data-field={field.name}>
-                      <label className={sfLabel}>
+                      <label htmlFor={`bizfield-${field.id}`} className={sfLabel}>
                         {field.label}
                         {field.required && <span className="text-red-500 ml-1">*</span>}
                       </label>
                       {field.type === 'text' && (
                         <input
                           type="text"
+                          id={`bizfield-${field.id}`}
                           value={orderInfo.customerInfo[field.name] || ''}
                           onChange={(e) => handleCustomerInfoChange({
                             ...orderInfo.customerInfo,
@@ -797,6 +798,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                       )}
                       {field.type === 'textarea' && (
                         <textarea
+                          id={`bizfield-${field.id}`}
                           value={orderInfo.customerInfo[field.name] || ''}
                           onChange={(e) => handleCustomerInfoChange({
                             ...orderInfo.customerInfo,
@@ -810,6 +812,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                       )}
                       {field.type === 'dropdown' && (
                         <select
+                          id={`bizfield-${field.id}`}
                           value={orderInfo.customerInfo[field.name] || ''}
                           onChange={(e) => handleCustomerInfoChange({
                             ...orderInfo.customerInfo,
@@ -827,6 +830,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                       {field.type === 'date' && (
                         <input
                           type="date"
+                          id={`bizfield-${field.id}`}
                           value={orderInfo.customerInfo[field.name] || ''}
                           onChange={(e) => handleCustomerInfoChange({
                             ...orderInfo.customerInfo,

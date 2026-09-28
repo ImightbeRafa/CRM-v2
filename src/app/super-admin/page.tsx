@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { AuroraClassicPage } from '@/components/aurora/AuroraClassicPage';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { prisma as globalPrisma } from '@/lib/db';
@@ -22,8 +23,8 @@ export default async function SuperAdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted">
+    <AuroraClassicPage title="Super admin" subtitle="Administración de la plataforma" maxWidthClass="max-w-none" testId="super-admin-aurora">
       <SuperAdminDashboard />
-    </div>
+    </AuroraClassicPage>
   );
 }

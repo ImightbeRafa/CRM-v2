@@ -1,6 +1,8 @@
 'use client'
 
 import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react'
+import { AuthShell } from '@/components/aurora/auth/AuthShell'
+import { auroraBtnPrimary, auroraBtnSecondary, auroraInputClass, auroraLabelClass } from '@/components/aurora/ui/aurora-form'
 import { signIn, useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -85,74 +87,78 @@ function AcceptInviteInner() {
 
   const headline = useMemo(() => {
     if (!preview) return 'Aceptar invitación'
-    return `Únete a ${preview.tenantName}`
+    return `Unite a ${preview.tenantName}`
   }, [preview])
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-bold text-slate-900">{headline}</h1>
-        {preview ? (
-          <p className="mt-2 text-sm text-slate-600">
-            Invitación para <strong>{preview.email}</strong> · rol <strong>{preview.role}</strong>
-          </p>
-        ) : null}
-        {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
+    <AuthShell
+      title={headline}
+      subtitle={
+        preview ? `Invitación para ${preview.email} · rol ${preview.role}` : 'Revisando tu invitación…'
+      }
+    >
+      {error ? (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-[13px] text-red-700">
+          {error}
+        </p>
+      ) : null}
 
-        {!error && preview ? (
-          <div className="mt-6 space-y-4">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() =>
-                signIn('google', { callbackUrl: `/auth/accept-invite?token=${encodeURIComponent(token)}` })
-              }
-              className="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-            >
-              Continuar con Google
-            </button>
+      {!error && preview ? (
+        <div className="space-y-4">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              signIn('google', { callbackUrl: `/auth/accept-invite?token=${encodeURIComponent(token)}` })
+            }
+            className={`${auroraBtnSecondary} w-full`}
+          >
+            Continuar con Google
+          </button>
 
-            <div className="relative py-2 text-center text-xs uppercase tracking-wide text-slate-400">
-              <span className="bg-white px-2">o email</span>
+          <div className="relative py-1 text-center text-[11px] uppercase tracking-wide text-slate-400">
+            <span className="bg-white px-2">o con email</span>
+          </div>
+
+          <form onSubmit={onCredentials} className="space-y-3">
+            <div>
+              <label htmlFor="invite-email" className={auroraLabelClass}>
+                Email
+              </label>
+              <input id="invite-email" type="email" value={email} readOnly className={`${auroraInputClass} bg-slate-50`} />
             </div>
-
-            <form onSubmit={onCredentials} className="space-y-3">
+            <div>
+              <label htmlFor="invite-password" className={auroraLabelClass}>
+                Contraseña
+              </label>
               <input
-                type="email"
-                value={email}
-                readOnly
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
-              />
-              <input
+                id="invite-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Tu contraseña (si ya tienes cuenta)"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                placeholder="Tu contraseña (si ya tenés cuenta)"
+                autoComplete="current-password"
+                className={auroraInputClass}
               />
-              <button
-                type="submit"
-                disabled={busy || !password}
-                className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-              >
-                Entrar y unirme
-              </button>
-            </form>
+            </div>
+            <button type="submit" disabled={busy || !password} className={`${auroraBtnPrimary} w-full`}>
+              Entrar y unirme
+            </button>
+          </form>
 
-            {status === 'authenticated' ? (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void acceptWhileLoggedIn()}
-                className="w-full rounded-lg border border-indigo-200 px-4 py-2 text-sm text-indigo-700"
-              >
-                Ya iniciaste sesión — unirme ahora
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    </div>
+          {status === 'authenticated' ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void acceptWhileLoggedIn()}
+              className={`${auroraBtnSecondary} w-full`}
+            >
+              Ya iniciaste sesión — unirme ahora
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </AuthShell>
   )
 }
 

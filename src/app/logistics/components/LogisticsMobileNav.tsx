@@ -45,7 +45,7 @@ export function LogisticsMobileNav({ userEmail }: { userEmail?: string | null })
 
     const drawer = open && mounted
         ? createPortal(
-            <>
+            <div className="theme-static">
                 <button
                     type="button"
                     className="lm-mobile-drawer-backdrop"
@@ -106,7 +106,7 @@ export function LogisticsMobileNav({ userEmail }: { userEmail?: string | null })
                         Volver a Betsy
                     </Link>
                 </nav>
-            </>,
+            </div>,
             document.body,
         )
         : null;

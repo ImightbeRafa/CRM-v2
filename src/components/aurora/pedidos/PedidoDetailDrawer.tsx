@@ -258,7 +258,7 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
           <p className="text-[14px] font-semibold text-slate-900">{sale.customerName || sale.username || 'Sin nombre'}</p>
           <div className="mt-1.5 space-y-1 text-[13px] text-slate-600">
             {sale.phone ? (
-              <a href={`tel:${sale.phone}`} className="inline-flex items-center gap-1.5 hover:text-[#5B3FE0]">
+              <a href={`tel:${sale.phone}`} className="inline-flex items-center gap-1.5 hover:text-au-ink-5b3fe0">
                 <Phone className="h-3.5 w-3.5 text-slate-400" aria-hidden />
                 {sale.phone}
               </a>
@@ -273,7 +273,7 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
               {canal.detail ? <span className="text-slate-400">· {canal.detail}</span> : null}
             </span>
             {line ? (
-              <Link href="/chats" className="inline-flex items-center gap-1 font-medium text-[#5B3FE0] hover:underline">
+              <Link href="/chats" className="inline-flex items-center gap-1 font-medium text-au-ink-5b3fe0 hover:underline">
                 <MessageSquare className="h-3.5 w-3.5" aria-hidden />
                 Abrir chats
               </Link>
@@ -290,7 +290,7 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
           ) : productsState === 'error' ? (
             <div role="alert" className="text-[13px] text-slate-500">
               No pudimos cargar el detalle de productos.{' '}
-              <button type="button" onClick={loadProducts} className="font-medium text-[#5B3FE0] hover:underline">
+              <button type="button" onClick={loadProducts} className="font-medium text-au-ink-5b3fe0 hover:underline">
                 Reintentar
               </button>
             </div>
@@ -403,7 +403,7 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
             <ol className="space-y-3">
               {timeline.map((item, i) => (
                 <li key={i} className="flex gap-3 text-[13px]">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#F1EEFF] text-[#5B3FE0]">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-au-tint-f1eeff text-au-ink-5b3fe0">
                     <Check className="h-3 w-3" aria-hidden />
                   </span>
                   <span className="min-w-0">

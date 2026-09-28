@@ -95,7 +95,7 @@ export function AuroraLineFilter({
           aria-haspopup="listbox"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center gap-3 rounded-2xl bg-[#F1EEFF] px-3.5 py-2.5 text-left ring-1 ring-[#A48BFF]/40"
+          className="flex w-full items-center gap-3 rounded-2xl bg-au-tint-f1eeff px-3.5 py-2.5 text-left ring-1 ring-[#A48BFF]/40"
         >
           {selected ? (
             <ChannelLogo platform={selected.platform} size={22} className="shrink-0" />
@@ -105,7 +105,7 @@ export function AuroraLineFilter({
             </span>
           )}
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[14px] font-semibold text-[#3B2A9E]">
+            <span className="block truncate text-[14px] font-semibold text-au-ink-3b2a9e">
               {selected ? accountDisplayLabel(selected) : 'Todas las líneas'}
             </span>
             <span className="block truncate text-[11px] text-slate-500">
@@ -117,7 +117,7 @@ export function AuroraLineFilter({
           {selectedDown ? (
             <span aria-label="Línea caída" className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
           ) : null}
-          <ChevronDown className="h-4 w-4 shrink-0 text-[#5B3FE0]" aria-hidden />
+          <ChevronDown className="h-4 w-4 shrink-0 text-au-ink-5b3fe0" aria-hidden />
         </button>
       ) : (
         <button
@@ -127,7 +127,7 @@ export function AuroraLineFilter({
           onClick={() => setOpen((v) => !v)}
           className={`flex w-full items-center gap-2 rounded-full px-3 py-1.5 text-left text-[12px] font-medium ring-1 transition-colors ${
             selected
-              ? 'bg-[#EEF0FF] text-[#4A46E5] ring-[#5B6CFF]/25'
+              ? 'bg-au-tint-eef0ff text-au-ink-4a46e5 ring-[#5B6CFF]/25'
               : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50'
           }`}
         >
@@ -173,7 +173,7 @@ export function AuroraLineFilter({
               onClick={() => pick('all')}
               className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[13px] ${
                 selectedAccountId === 'all'
-                  ? 'bg-[#EEF0FF] font-semibold text-[#4A46E5]'
+                  ? 'bg-au-tint-eef0ff font-semibold text-au-ink-4a46e5'
                   : 'text-slate-800 hover:bg-slate-50'
               }`}
             >
@@ -206,14 +206,14 @@ export function AuroraLineFilter({
                       data-line-id={acc.id}
                       onClick={() => pick(acc.id)}
                       className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left ${
-                        active ? 'bg-[#EEF0FF]' : 'hover:bg-slate-50'
+                        active ? 'bg-au-tint-eef0ff' : 'hover:bg-slate-50'
                       }`}
                     >
                       <ChannelLogo platform={acc.platform} size={22} className="shrink-0" />
                       <span className="min-w-0 flex-1">
                         <span
                           className={`block truncate text-[13px] font-semibold ${
-                            active ? 'text-[#4A46E5]' : 'text-slate-900'
+                            active ? 'text-au-ink-4a46e5' : 'text-slate-900'
                           }`}
                         >
                           {accountDisplayLabel(acc)}

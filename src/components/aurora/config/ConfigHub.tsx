@@ -76,7 +76,7 @@ function ReadinessCard({ onOpenTab }: { onOpenTab: (tab: string) => void }) {
         <p className="bg-gradient-to-r from-[#5B6CFF] to-[#DD2A7B] bg-clip-text text-[44px] font-bold leading-none text-transparent">
           {pct}%
         </p>
-        <p className="mt-3 text-[16px] font-semibold text-[#0E0D17]">{headline}</p>
+        <p className="mt-3 text-[16px] font-semibold text-au-ink-0e0d17">{headline}</p>
         {missing > 0 && (
           <p className="mt-1 text-[13px] text-slate-500">
             Falta{missing === 1 ? '' : 'n'} {missing} {missing === 1 ? 'paso' : 'pasos'} para terminar la configuración base.
@@ -89,7 +89,7 @@ function ReadinessCard({ onOpenTab }: { onOpenTab: (tab: string) => void }) {
       <ul className="divide-y divide-slate-100 self-center">
         {status.items.map((item) => (
           <li key={item.id}>
-            <Link href={item.href} className="flex items-center gap-3 py-2.5 text-[14px] hover:text-[#5B3FE0]">
+            <Link href={item.href} className="flex items-center gap-3 py-2.5 text-[14px] hover:text-au-ink-5b3fe0">
               <span
                 className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
                   item.completed ? 'bg-emerald-500 text-white' : 'border-2 border-amber-400'
@@ -141,11 +141,11 @@ function GroupCard({
   return (
     <ConfigCard className="p-5" data-testid={`config-hub-group-${group.title.toLowerCase()}`}>
       <div className="mb-3 flex items-center gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#F1EEFF] text-[#5B3FE0]">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-au-tint-f1eeff text-au-ink-5b3fe0">
           <Icon className="h-4 w-4" aria-hidden />
         </span>
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold text-[#0E0D17]">{group.title}</h2>
+          <h2 className="text-[15px] font-semibold text-au-ink-0e0d17">{group.title}</h2>
           {meta ? <p className="truncate text-[12px] text-slate-500">{meta.subtitle}</p> : null}
         </div>
       </div>
@@ -161,7 +161,7 @@ function GroupCard({
                 onOpenTab(item.tab)
                 e.preventDefault()
               }}
-              className="flex items-center gap-3 rounded-lg py-2.5 text-[14px] text-slate-800 hover:text-[#5B3FE0]"
+              className="flex items-center gap-3 rounded-lg py-2.5 text-[14px] text-slate-800 hover:text-au-ink-5b3fe0"
             >
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
               {hints[item.tab] ? <span className="shrink-0 text-[12px] text-slate-500">{hints[item.tab]}</span> : null}

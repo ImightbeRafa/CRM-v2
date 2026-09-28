@@ -166,7 +166,7 @@ export function InviteMemberModal({ open, onOpenChange, onDone, editingUser = nu
                   if (opt.value && role === 'OWNER') setRole('VIEWER')
                 }}
                 className={`flex-1 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
-                  inviteMode === opt.value ? 'bg-white text-[#5B3FE0] shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                  inviteMode === opt.value ? 'bg-white text-au-ink-5b3fe0 shadow-sm' : 'text-slate-500 hover:text-slate-800'
                 }`}
                 data-testid={opt.value ? 'invite-mode-email' : 'invite-mode-password'}
               >
@@ -264,7 +264,7 @@ export function InviteMemberModal({ open, onOpenChange, onDone, editingUser = nu
             type="checkbox"
             checked={active}
             onChange={(e) => setActive(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-[#5B3FE0] focus:ring-[#7C5CFF]"
+            className="h-4 w-4 rounded border-slate-300 text-au-ink-5b3fe0 focus:ring-[#7C5CFF]"
           />
           Persona activa
         </label>

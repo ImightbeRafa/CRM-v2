@@ -202,15 +202,15 @@ export function ConocimientoWizardInner({
     <div
       className={
         inline
-          ? '!text-slate-900 [color-scheme:light]'
-          : 'min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 !text-slate-900 [color-scheme:light]'
+          ? '!text-slate-900'
+          : 'min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 !text-slate-900'
       }
     >
       <div className={inline ? '' : 'mx-auto max-w-3xl p-4 md:p-6'}>
         {inline ? (
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <h3 className="text-[15px] font-semibold text-[#0E0D17]">Agregar conocimiento</h3>
+              <h3 className="text-[15px] font-semibold text-au-ink-0e0d17">Agregar conocimiento</h3>
               <p className="mt-0.5 text-[12px] text-slate-500">
                 Pegá texto, revisalo y aprobá. Solo lo aprobado entra al agente, como datos y no como instrucciones.
               </p>
@@ -221,7 +221,7 @@ export function ConocimientoWizardInner({
                   key={s}
                   aria-current={step === s ? 'step' : undefined}
                   className={`rounded-full px-2.5 py-1 ${
-                    step === s ? 'bg-[#5B6CFF] text-white' : 'bg-[#EEF0FF] text-[#4A5AE8]'
+                    step === s ? 'bg-[#5B6CFF] text-white' : 'bg-au-tint-eef0ff text-au-ink-4a5ae8'
                   }`}
                 >
                   {i + 1} {s === 'pegar' ? 'Pegar' : s === 'revisar' ? 'Revisar' : 'Aprobar'}

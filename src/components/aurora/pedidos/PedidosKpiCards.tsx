@@ -5,7 +5,7 @@ import type { PedidosKpis } from '@/lib/pedidos-aurora'
 type Accent = 'brand' | 'blue' | 'amber' | 'teal'
 
 const ACCENT: Record<Accent, { bar: string; tile: string }> = {
-  brand: { bar: 'from-[#5B6CFF] to-[#A855F7]', tile: 'bg-[#EEF0FF] text-[#5B6CFF]' },
+  brand: { bar: 'from-[#5B6CFF] to-[#A855F7]', tile: 'bg-au-tint-eef0ff text-au-ink-5b6cff' },
   blue: { bar: 'from-[#5B6CFF] to-[#38BDF8]', tile: 'bg-sky-50 text-sky-600' },
   amber: { bar: 'from-amber-400 to-orange-400', tile: 'bg-amber-50 text-amber-600' },
   teal: { bar: 'from-sky-400 to-[#5B6CFF]', tile: 'bg-sky-50 text-sky-600' },

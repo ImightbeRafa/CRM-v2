@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { ThemeSegmented } from './theme/ThemeChoice'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
@@ -95,12 +96,12 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
   })).filter((s) => s.items.length > 0)
 
   function tabClass(active: boolean) {
-    return `${TAB_BASE} ${active ? 'text-[#5B3FE0]' : 'text-slate-500'}`
+    return `${TAB_BASE} ${active ? 'text-au-ink-5b3fe0' : 'text-slate-500'}`
   }
 
   function pill(active: boolean) {
     return `relative flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-150 ${
-      active ? 'bg-[#E9E5FF]' : ''
+      active ? 'bg-au-tint-e9e5ff' : ''
     }`
   }
 
@@ -202,6 +203,10 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
                 </p>
               </div>
             </div>
+            <div className="mb-3 px-1" data-testid="aurora-mobile-theme">
+              <p className="pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Apariencia</p>
+              <ThemeSegmented />
+            </div>
             <div className="mb-3">
               <button
                 type="button"
@@ -242,7 +247,7 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
                           href={item.href}
                           aria-current={active ? 'page' : undefined}
                           className={`flex items-center gap-3 rounded-lg px-2 py-3 text-[14px] font-medium transition-colors duration-150 ${FOCUS} ${
-                            active ? 'bg-[#F1EEFF] text-[#5B3FE0]' : 'text-slate-800 hover:bg-slate-50'
+                            active ? 'bg-au-tint-f1eeff text-au-ink-5b3fe0' : 'text-slate-800 hover:bg-slate-50'
                           }`}
                         >
                           <Icon className="h-5 w-5 shrink-0" aria-hidden />

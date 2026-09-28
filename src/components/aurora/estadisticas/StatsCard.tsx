@@ -38,7 +38,7 @@ export function StatsCard({
     <section className={`${CARD} p-4 md:p-5 ${className}`} aria-busy={state === 'loading'}>
       <header className="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold text-[#0E0D17]">{title}</h2>
+          <h2 className="text-[15px] font-semibold text-au-ink-0e0d17">{title}</h2>
           {subtitle ? <p className="mt-0.5 text-[12px] text-slate-400">{subtitle}</p> : null}
         </div>
         {state === 'ready' ? right : null}

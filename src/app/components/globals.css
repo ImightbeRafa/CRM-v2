@@ -54,40 +54,43 @@
     --warning-foreground: 0 0% 100%;
   }
 
+  /* Dark theme (Config › General › Apariencia). Surface ladder: canvas #0D0D14 · card #16161F ·
+     popover #1D1D28 · border #262635. Palette variables live in src/app/theme-palette.css. */
   .dark {
     color-scheme: dark;
-    --background: 235 35% 3.5%;
-    --foreground: 210 20% 95%;
+    --aurora-canvas: #0D0D14;
+    --background: 240 21.2% 6.5%;
+    --foreground: 240 15.2% 93.5%;
 
-    --card: 236 32% 7%;
-    --card-foreground: 210 20% 95%;
+    --card: 240 17% 10.4%;
+    --card-foreground: 240 15.2% 93.5%;
 
-    --popover: 236 32% 7%;
-    --popover-foreground: 210 20% 95%;
+    --popover: 240 15.9% 13.5%;
+    --popover-foreground: 240 15.2% 93.5%;
 
-    --primary: 217 91% 60%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 234 100% 67.8%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 234 28% 11%;
-    --secondary-foreground: 210 20% 88%;
+    --secondary: 240 17.1% 16.1%;
+    --secondary-foreground: 240 15.2% 93.5%;
 
-    --muted: 234 28% 9%;
-    --muted-foreground: 215 16% 55%;
+    --muted: 240 16.9% 12.7%;
+    --muted-foreground: 215 20.2% 65.1%;
 
-    --accent: 234 28% 11%;
-    --accent-foreground: 210 20% 88%;
+    --accent: 240 17.1% 16.1%;
+    --accent-foreground: 240 15.2% 93.5%;
 
-    --destructive: 0 62% 50%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 72% 56%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 234 24% 13%;
-    --input: 234 24% 13%;
-    --ring: 217 91% 60%;
+    --border: 240 16.5% 17.8%;
+    --input: 240 16.5% 17.8%;
+    --ring: 234 100% 67.8%;
 
     --brand-gradient: linear-gradient(135deg, hsl(217 91% 65%), hsl(263 70% 58%), hsl(330 81% 65%));
 
-    --color-surface-elevated: 236 28% 8%;
-    --color-text-secondary: 215 16% 55%;
+    --color-surface-elevated: 240 15.9% 13.5%;
+    --color-text-secondary: 215 20.2% 65.1%;
     --color-accent-glow: 263 70% 58%;
 
     --success: 160 60% 45%;
@@ -96,8 +99,11 @@
     --warning-foreground: 0 0% 100%;
   }
 
-  /* Aurora Config panel: keep shadcn tokens light even under `html.dark`. */
-  .aurora-light {
+  /* Light islands: `.aurora-light` (legacy panels) only matters in the light theme now; the
+     dark theme styles them through the palette. `.theme-light` stays light in any theme
+     (QR codes, logo chips, print previews). */
+  html:not(.dark) .aurora-light,
+  .theme-light {
     color-scheme: light;
     --background: 40 20% 98.5%;
     --foreground: 230 25% 10%;
@@ -122,6 +128,38 @@
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
+    --aurora-canvas: #F6F5F2;
+  }
+
+  /* Print is always light. */
+  @media print {
+    html.dark {
+      color-scheme: light;
+      --aurora-canvas: #F6F5F2;
+      --background: 40 20% 98.5%;
+      --foreground: 230 25% 10%;
+      --card: 0 0% 100%;
+      --card-foreground: 230 25% 10%;
+      --popover: 0 0% 100%;
+      --popover-foreground: 230 25% 10%;
+      --primary: 222.2 47.4% 11.2%;
+      --primary-foreground: 210 40% 98%;
+      --secondary: 210 40% 96.1%;
+      --secondary-foreground: 222.2 47.4% 11.2%;
+      --muted: 220 14% 95%;
+      --muted-foreground: 215.4 16.3% 46.9%;
+      --accent: 210 40% 96.1%;
+      --accent-foreground: 222.2 47.4% 11.2%;
+      --destructive: 0 84.2% 60.2%;
+      --destructive-foreground: 210 40% 98%;
+      --border: 220 20% 91%;
+      --input: 220 20% 91%;
+      --ring: 222.2 84% 4.9%;
+      --success: 152 76% 40%;
+      --success-foreground: 0 0% 100%;
+      --warning: 38 92% 50%;
+      --warning-foreground: 0 0% 100%;
+    }
   }
 }
  
@@ -423,4 +461,19 @@
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
+}
+/* Dark theme details: selection, autofill, native controls. */
+html.dark ::selection {
+  background: rgb(91 108 255 / 0.35);
+}
+html.dark input:-webkit-autofill,
+html.dark textarea:-webkit-autofill,
+html.dark select:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px #16161F inset;
+  -webkit-text-fill-color: #ECECF1;
+  caret-color: #ECECF1;
+}
+.theme-light,
+.theme-light * {
+  color-scheme: light;
 }

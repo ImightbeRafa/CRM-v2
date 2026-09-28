@@ -80,7 +80,7 @@ export function SoftCopilotRail({
             onClick={() => onTabChange('detalle')}
             className={`flex-1 rounded-lg py-1.5 text-xs transition-colors ${
               activeTab === 'detalle'
-                ? 'bg-white font-semibold text-[#4A46E5] shadow-sm'
+                ? 'bg-white font-semibold text-au-ink-4a46e5 shadow-sm'
                 : 'text-slate-400'
             }`}
           >
@@ -93,7 +93,7 @@ export function SoftCopilotRail({
               data-testid="rail-tab-cliente"
               className={`flex-1 rounded-lg py-1.5 text-xs transition-colors ${
                 activeTab === 'cliente'
-                  ? 'bg-white font-semibold text-[#4A46E5] shadow-sm'
+                  ? 'bg-white font-semibold text-au-ink-4a46e5 shadow-sm'
                   : 'text-slate-400'
               }`}
             >
@@ -105,7 +105,7 @@ export function SoftCopilotRail({
             onClick={() => onTabChange('copilot')}
             className={`flex-1 rounded-lg py-1.5 text-xs transition-colors ${
               activeTab === 'copilot'
-                ? 'bg-white font-semibold text-[#4A46E5] shadow-sm'
+                ? 'bg-white font-semibold text-au-ink-4a46e5 shadow-sm'
                 : 'text-slate-400'
             }`}
           >
@@ -281,7 +281,7 @@ export function SoftCopilotRail({
               </>
             ) : (
               <div className="px-1 py-8 text-center">
-                <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-[#EEF0FF] text-sm font-semibold text-[#5B6CFF]">
+                <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-au-tint-eef0ff text-sm font-semibold text-au-ink-5b6cff">
                   i
                 </div>
                 <p className="text-xs text-slate-400">Seleccioná un chat para ver el detalle.</p>

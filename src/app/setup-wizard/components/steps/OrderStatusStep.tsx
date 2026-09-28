@@ -144,7 +144,7 @@ export function OrderStatusStep({ onNext, markCompleted }: WizardStepProps) {
     <div className="space-y-6">
       <div className="prose max-w-none">
         <h3 className="text-lg font-semibold flex items-center gap-2">
-          <Tags className="h-5 w-5 text-[#5B6CFF]" />
+          <Tags className="h-5 w-5 text-au-ink-5b6cff" />
           Estados de Pedidos
         </h3>
         <p className="text-gray-600">

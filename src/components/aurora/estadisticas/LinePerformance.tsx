@@ -90,7 +90,7 @@ export function LinePerformanceBody({ lines, symbol = '₡' }: { lines: LineRow[
           {sorted.map((line) => (
             <tr key={line.socialAccountId} className="border-t border-slate-100">
               <td className="py-3.5">
-                <span className="flex items-center gap-2.5 font-medium text-[#0E0D17]">
+                <span className="flex items-center gap-2.5 font-medium text-au-ink-0e0d17">
                   <PlatformDot platform={line.platform} />
                   <span className="truncate">{line.title}</span>
                   {!line.isActive ? (
@@ -114,7 +114,7 @@ export function LinePerformanceBody({ lines, symbol = '₡' }: { lines: LineRow[
       <ul className="space-y-2 md:hidden">
         {sorted.map((line) => (
           <li key={line.socialAccountId} className="rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5">
-            <div className="flex items-center gap-2 text-[13px] font-medium text-[#0E0D17]">
+            <div className="flex items-center gap-2 text-[13px] font-medium text-au-ink-0e0d17">
               <PlatformDot platform={line.platform} />
               <span className="min-w-0 flex-1 truncate">{line.title}</span>
               {!line.isActive ? <span className="text-[10px] text-slate-400">Inactiva</span> : null}

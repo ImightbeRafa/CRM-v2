@@ -227,7 +227,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
         {orderInfo.products.length === 0 ? (
           <Card className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 shadow-none">
             <CardContent className="flex flex-col items-center justify-center py-8">
-              <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-[#F1EEFF] text-[#5B3FE0]">
+              <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-au-tint-f1eeff text-au-ink-5b3fe0">
                 <Plus className="h-5 w-5" />
               </div>
               <p className="text-center text-[13px] font-medium text-slate-700">
@@ -388,7 +388,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
 
       {/* Order Summary */}
       {orderInfo.products.length > 0 && (
-        <Card className="rounded-xl border-0 bg-gradient-to-br from-[#F6F4FF] to-white shadow-none ring-1 ring-[#E4DEFF]">
+        <Card className="rounded-xl border-0 bg-gradient-to-br from-au-tint-f6f4ff to-white shadow-none ring-1 ring-au-line-e4deff">
           <CardHeader>
             <CardTitle className="text-[14px] font-semibold text-slate-900">Resumen del Pedido</CardTitle>
           </CardHeader>
@@ -434,7 +434,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
               </div>
               <div className="flex flex-col space-y-1">
                 <span className="text-sm text-muted-foreground">Total:</span>
-                <p className="text-xl font-bold text-[#5B3FE0]">{formatCurrency(orderTotals.total)}</p>
+                <p className="text-xl font-bold text-au-ink-5b3fe0">{formatCurrency(orderTotals.total)}</p>
               </div>
             </div>
           </CardContent>

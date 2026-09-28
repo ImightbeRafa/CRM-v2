@@ -5,7 +5,7 @@ import type { CardLoad } from './StatsCard'
 type Accent = 'brand' | 'blue' | 'green' | 'amber'
 
 const ACCENT: Record<Accent, { bar: string; tile: string }> = {
-  brand: { bar: 'from-[#5B6CFF] to-[#A855F7]', tile: 'bg-[#EEF0FF] text-[#5B6CFF]' },
+  brand: { bar: 'from-[#5B6CFF] to-[#A855F7]', tile: 'bg-au-tint-eef0ff text-au-ink-5b6cff' },
   blue: { bar: 'from-[#5B6CFF] to-[#38BDF8]', tile: 'bg-sky-50 text-sky-600' },
   green: { bar: 'from-emerald-400 to-[#5B6CFF]', tile: 'bg-emerald-50 text-emerald-600' },
   amber: { bar: 'from-amber-400 to-orange-400', tile: 'bg-amber-50 text-amber-600' },
@@ -59,7 +59,7 @@ export function KpiCard({
           <button
             type="button"
             onClick={onRetry}
-            className="mt-1 text-[12px] font-medium text-[#5B3FE0] hover:underline"
+            className="mt-1 text-[12px] font-medium text-au-ink-5b3fe0 hover:underline"
           >
             ↻ Reintentar
           </button>
@@ -68,7 +68,7 @@ export function KpiCard({
         <>
           <p
             className={`mt-3 text-[26px] font-semibold leading-none tracking-tight ${
-              value === '—' ? 'text-slate-300' : 'text-[#0E0D17]'
+              value === '—' ? 'text-slate-300' : 'text-au-ink-0e0d17'
             }`}
           >
             {value}

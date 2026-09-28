@@ -243,7 +243,7 @@ export const PedidosBoard = React.memo(function PedidosBoard({
                 }`}
               >
                 {t.label}
-                <span className={`text-[11px] ${tab === t.key ? 'text-[#5B6CFF]' : 'text-slate-400'}`}>
+                <span className={`text-[11px] ${tab === t.key ? 'text-au-ink-5b6cff' : 'text-slate-400'}`}>
                   {tabCounts[t.key]}
                 </span>
               </button>
@@ -371,7 +371,7 @@ export const PedidosBoard = React.memo(function PedidosBoard({
                 <button
                   type="button"
                   onClick={() => openOrder(sale.orderId)}
-                  className="mt-1 ml-auto block px-1 py-1 text-[12px] font-medium text-[#5B3FE0]"
+                  className="mt-1 ml-auto block px-1 py-1 text-[12px] font-medium text-au-ink-5b3fe0"
                 >
                   Ver detalle
                 </button>

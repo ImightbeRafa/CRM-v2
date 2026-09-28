@@ -47,6 +47,7 @@ const IntegrationsPanel = dynamic(
 const PAGE_PANEL_BLEED = '-mx-4 -my-5 md:-mx-10 md:-my-8'
 const KEEP_ALIVE_TABS = ['social', 'agentes', 'integrations'] as const
 
+const AppearanceSettings = lazy(() => import('@/components/aurora/theme/AppearanceSettings').then(m => ({ default: m.AppearanceSettings })))
 const BusinessProfileSettings = lazy(() => import('./components/BusinessProfileSettings').then(m => ({ default: m.BusinessProfileSettings })))
 
 
@@ -548,7 +549,10 @@ function ConfigPageInner() {
 
           {/* Business Profile Tab */}
           {activeTab === 'profile' && (
-            <BusinessProfileSettings />
+            <>
+              <AppearanceSettings />
+              <BusinessProfileSettings />
+            </>
           )}
 
           {/* Fields Tab */}

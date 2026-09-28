@@ -83,7 +83,7 @@ export function PedidosTable({
                 key={o.orderId}
                 onClick={() => onOpen(o.orderId)}
                 className={`cursor-pointer border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/70 ${
-                  selectedId === o.orderId ? 'bg-[#F6F5FF]' : ''
+                  selectedId === o.orderId ? 'bg-au-tint-f6f5ff' : ''
                 }`}
               >
                 <td className="whitespace-nowrap py-3 pl-5 pr-3">
@@ -93,7 +93,7 @@ export function PedidosTable({
                       e.stopPropagation()
                       onOpen(o.orderId)
                     }}
-                    className="font-semibold text-slate-900 hover:text-[#5B6CFF]"
+                    className="font-semibold text-slate-900 hover:text-au-ink-5b6cff"
                   >
                     {o.orderId}
                   </button>

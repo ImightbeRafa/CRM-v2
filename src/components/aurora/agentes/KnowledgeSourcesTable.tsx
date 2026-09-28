@@ -48,12 +48,12 @@ export function KnowledgeSourcesTable({
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white" data-testid="knowledge-sources">
       <header className="flex items-center justify-between gap-3 px-4 py-4 md:px-5">
-        <h3 className="text-[15px] font-semibold text-[#0E0D17]">Fuentes</h3>
+        <h3 className="text-[15px] font-semibold text-au-ink-0e0d17">Fuentes</h3>
         {canEdit ? (
           <button
             type="button"
             onClick={onPasteText}
-            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-medium text-[#0E0D17] hover:bg-slate-50"
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-medium text-au-ink-0e0d17 hover:bg-slate-50"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden />
             Pegar texto
@@ -94,11 +94,11 @@ export function KnowledgeSourcesTable({
                 <tr key={s.id} className="border-b border-slate-100 last:border-0">
                   <td className="px-5 py-3">
                     <span className="flex items-center gap-3">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#F1EEFF] text-[#7C5CFF]" aria-hidden>
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-au-tint-f1eeff text-au-ink-7c5cff" aria-hidden>
                         <FileText className="h-4 w-4" />
                       </span>
                       <span className="min-w-0">
-                        <span className="block truncate font-medium text-[#0E0D17]">{s.name}</span>
+                        <span className="block truncate font-medium text-au-ink-0e0d17">{s.name}</span>
                         <span className="block text-[11px] text-slate-400">
                           {KIND_LABELS[s.kind as keyof typeof KIND_LABELS] ?? s.kind} · v{s.version}
                           {s.status === 'approved' && !boundIds.has(s.id) ? ' · sin vincular a este agente' : ''}
@@ -118,11 +118,11 @@ export function KnowledgeSourcesTable({
           <ul className="divide-y divide-slate-100 border-t border-slate-100 md:hidden">
             {sources.map((s) => (
               <li key={s.id} className="flex items-start gap-3 px-4 py-3">
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#F1EEFF] text-[#7C5CFF]" aria-hidden>
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-au-tint-f1eeff text-au-ink-7c5cff" aria-hidden>
                   <FileText className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-[#0E0D17]">{s.name}</span>
+                  <span className="block truncate text-[13px] font-medium text-au-ink-0e0d17">{s.name}</span>
                   <span className="block text-[11px] text-slate-400">
                     {sourceTopic(s.name, s.kind)} · {relativeUpdated(s.updatedAt)}
                   </span>

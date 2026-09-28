@@ -155,7 +155,7 @@ export function ChannelsTable(props: ChannelsTableProps) {
                               type="button"
                               onClick={() => props.onSaveRename(acc)}
                               disabled={props.renamingBusy}
-                              className="text-xs font-medium text-[#5B6CFF] disabled:opacity-50"
+                              className="text-xs font-medium text-au-ink-5b6cff disabled:opacity-50"
                             >
                               {props.renamingBusy ? 'Guardando…' : 'Guardar'}
                             </button>
@@ -182,7 +182,7 @@ export function ChannelsTable(props: ChannelsTableProps) {
                   </td>
                   <td className="px-3 py-3.5">
                     {agentName ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-md bg-[#F1EEFF] px-2 py-1 text-[12px] font-medium text-[#6D4AE8]">
+                      <span className="inline-flex items-center gap-1.5 rounded-md bg-au-tint-f1eeff px-2 py-1 text-[12px] font-medium text-au-ink-6d4ae8">
                         <Bot className="h-3 w-3" aria-hidden />
                         {agentName}
                       </span>

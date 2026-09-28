@@ -186,7 +186,7 @@ function VerifyPhoneInner() {
     <AuthShell
       brandPanel={false}
       icon={
-        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#F1EEFF] text-[#5B3FE0]">
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-au-tint-f1eeff text-au-ink-5b3fe0">
           <ShieldCheck className="h-6 w-6" aria-hidden />
         </span>
       }
@@ -222,14 +222,14 @@ function VerifyPhoneInner() {
 
         {/* Status messages */}
         {status === 'verifying' && (
-          <div className="flex items-center justify-center gap-2 text-[#5B3FE0]">
+          <div className="flex items-center justify-center gap-2 text-au-ink-5b3fe0">
             <Loader2 className="h-4 w-4 animate-spin" />
             <span className="text-[13px]">Verificando código...</span>
           </div>
         )}
 
         {status === 'sending' && (
-          <div className="flex items-center justify-center gap-2 text-[#5B3FE0]">
+          <div className="flex items-center justify-center gap-2 text-au-ink-5b3fe0">
             <Loader2 className="h-4 w-4 animate-spin" />
             <span className="text-[13px]">Enviando código...</span>
           </div>
@@ -288,7 +288,7 @@ export default function VerifyPhonePage() {
       fallback={
         <AuthShell
           brandPanel={false}
-          icon={<Loader2 className="h-10 w-10 animate-spin text-[#5B6CFF]" aria-hidden />}
+          icon={<Loader2 className="h-10 w-10 animate-spin text-au-ink-5b6cff" aria-hidden />}
           title="Cargando..."
         >
           <span className="sr-only" role="status">Cargando</span>

@@ -23,7 +23,7 @@ export function agentModeLabel(mode: string): string {
 
 export function AgentModeChip({ mode }: { mode: string }) {
   return (
-    <span className={`${CHIP} bg-[#EEF0FF] text-[#5B6CFF] ring-[#5B6CFF]/15`}>
+    <span className={`${CHIP} bg-au-tint-eef0ff text-au-ink-5b6cff ring-[#5B6CFF]/15`}>
       {agentModeLabel(mode)}
     </span>
   )

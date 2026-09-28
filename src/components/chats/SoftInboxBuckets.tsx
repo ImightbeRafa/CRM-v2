@@ -75,13 +75,13 @@ export function SoftInboxBuckets({
               onClick={() => onBucketChange(item.id)}
               className={`w-full rounded-lg px-3 py-2 text-left text-[13px] transition-colors ${
                 active
-                  ? 'bg-[#EEF0FF] font-semibold text-[#4A46E5]'
+                  ? 'bg-au-tint-eef0ff font-semibold text-au-ink-4a46e5'
                   : 'text-slate-600 hover:bg-slate-50'
               }`}
             >
               {item.label}
               {item.id === 'ia_manejando' && monitor.aiActive > 0 ? (
-                <span className="ml-1 text-[11px] text-[#5B6CFF]">· {monitor.aiActive}</span>
+                <span className="ml-1 text-[11px] text-au-ink-5b6cff">· {monitor.aiActive}</span>
               ) : null}
             </button>
           )
@@ -117,8 +117,8 @@ export function SoftInboxBuckets({
         })}
       </div>
 
-      <div className="mt-6 rounded-xl bg-[#F5F6FF] p-3 ring-1 ring-[#5B6CFF]/10">
-        <p className="text-[11px] font-semibold text-[#5b6cff]">✦ Agentes</p>
+      <div className="mt-6 rounded-xl bg-au-tint-f5f6ff p-3 ring-1 ring-[#5B6CFF]/10">
+        <p className="text-[11px] font-semibold text-au-ink-5b6cff">✦ Agentes</p>
         <ul className="mt-2 space-y-1 text-[11px] text-slate-600">
           <li>
             <span className="mr-1 inline-block w-3">●</span>

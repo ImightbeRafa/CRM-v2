@@ -125,7 +125,7 @@ export function SoftConversationList({
     {
       id: 'todos',
       label: 'Todos',
-      activeClass: 'bg-[#EEF0FF] text-[#4A46E5] ring-1 ring-[#5B6CFF]/25',
+      activeClass: 'bg-au-tint-eef0ff text-au-ink-4a46e5 ring-1 ring-[#5B6CFF]/25',
       idleClass: 'bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50',
     },
     {
@@ -146,7 +146,7 @@ export function SoftConversationList({
     <section
       className={`flex h-full min-h-0 flex-col ${
         compact
-          ? 'w-full bg-[#F5F4F0]'
+          ? 'w-full bg-au-tint-f5f4f0'
           : 'w-full border-r border-slate-200/70 bg-white md:w-[300px] lg:w-[320px]'
       } shrink-0`}
     >
@@ -233,7 +233,7 @@ export function SoftConversationList({
         <div
           role="tablist"
           aria-label="Bandeja"
-          className="mx-4 mt-3 grid grid-cols-4 gap-0.5 rounded-2xl bg-[#EAE8E2] p-1"
+          className="mx-4 mt-3 grid grid-cols-4 gap-0.5 rounded-2xl bg-au-tint-eae8e2 p-1"
         >
           {MOBILE_TABS.map((tab) => {
             const active = bucket === tab.id
@@ -361,7 +361,7 @@ export function SoftConversationList({
                         >
                           {initialsFromName(conv.recipientName)}
                         </div>
-                        <span className="absolute -bottom-0.5 -right-0.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white ring-2 ring-[#F5F4F0]">
+                        <span className="absolute -bottom-0.5 -right-0.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white ring-2 ring-au-line-f5f4f0">
                           <ChannelLogo platform={conv.platform} size={14} />
                         </span>
                       </div>
@@ -370,7 +370,7 @@ export function SoftConversationList({
                           <p className="truncate text-[16px] font-semibold text-slate-900">{name}</p>
                           <span
                             className={`shrink-0 text-[12px] ${
-                              unread > 0 ? 'font-semibold text-[#5B3FE0]' : 'text-slate-500'
+                              unread > 0 ? 'font-semibold text-au-ink-5b3fe0' : 'text-slate-500'
                             }`}
                           >
                             {formatRelativeEs(conv.lastMessageAt)}
@@ -396,7 +396,7 @@ export function SoftConversationList({
                           ) : null}
                           {aiHandled ? (
                             <span
-                              className="flex shrink-0 items-center gap-1 rounded-lg bg-[#F1EEFF] px-2 py-1 text-[12px] font-semibold text-[#5B3FE0]"
+                              className="flex shrink-0 items-center gap-1 rounded-lg bg-au-tint-f1eeff px-2 py-1 text-[12px] font-semibold text-au-ink-5b3fe0"
                               data-testid="soft-agent-dot"
                             >
                               <Sparkles className="h-3 w-3" aria-hidden />
@@ -438,7 +438,7 @@ export function SoftConversationList({
                     aria-current={selected ? 'true' : undefined}
                     onClick={() => onSelect(conv)}
                     className={`flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors ${
-                      selected ? 'bg-[#F1F3FF] ring-1 ring-inset ring-[#5B6CFF]/20' : 'hover:bg-slate-50/80'
+                      selected ? 'bg-au-tint-f1f3ff ring-1 ring-inset ring-[#5B6CFF]/20' : 'hover:bg-slate-50/80'
                     }`}
                   >
                     <div

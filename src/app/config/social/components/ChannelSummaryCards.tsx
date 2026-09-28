@@ -48,8 +48,8 @@ export function ChannelSummaryCards({ summary }: { summary: ChannelSummary }) {
   return (
     <div className="grid gap-3 md:grid-cols-3" data-testid="channel-summary-cards">
       <Card
-        icon={<Radio className="h-5 w-5 text-[#5B6CFF]" aria-hidden />}
-        iconClass="bg-[#EEF0FF]"
+        icon={<Radio className="h-5 w-5 text-au-ink-5b6cff" aria-hidden />}
+        iconClass="bg-au-tint-eef0ff"
         label="Canales conectados"
         value={summary.connected}
         hint={`${summary.connectedWhatsApp} WhatsApp · ${summary.connectedInstagram} Instagram`}

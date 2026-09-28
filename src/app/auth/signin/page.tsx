@@ -176,8 +176,8 @@ function SignInPageInner() {
       footer={<>© {new Date().getFullYear()} BetsyCRM. Todos los derechos reservados.</>}
     >
       {intendedPlan && intendedPlan !== 'free' && isRegistering && (
-        <div className="mb-4 rounded-xl border border-[#D9D2FF] bg-[#F1EEFF] p-3">
-          <p className="text-[13px] text-[#4B36B8]">
+        <div className="mb-4 rounded-xl border border-au-line-d9d2ff bg-au-tint-f1eeff p-3">
+          <p className="text-[13px] text-au-ink-4b36b8">
             ✨ Después del registro, serás redirigido al pago seguro de Tilopay
           </p>
         </div>

@@ -1,0 +1,166 @@
+{
+  "ink-0e0d17": {
+    "light": "#0E0D17",
+    "dark": "#F1F1F5"
+  },
+  "ink-3b2a9e": {
+    "light": "#3B2A9E",
+    "dark": "#9A8EE1"
+  },
+  "ink-3f2bb8": {
+    "light": "#3F2BB8",
+    "dark": "#988BE4"
+  },
+  "ink-4a46e5": {
+    "light": "#4A46E5",
+    "dark": "#8D8BEF"
+  },
+  "ink-4a5ae8": {
+    "light": "#4A5AE8",
+    "dark": "#8994F0"
+  },
+  "ink-4b36b8": {
+    "light": "#4B36B8",
+    "dark": "#9D91DF"
+  },
+  "ink-5b3fe0": {
+    "light": "#5B3FE0",
+    "dark": "#9D8DED"
+  },
+  "ink-5b6cff": {
+    "light": "#5B6CFF",
+    "dark": "#818DF8"
+  },
+  "ink-6d4ae8": {
+    "light": "#6D4AE8",
+    "dark": "#A089F0"
+  },
+  "ink-6d4aff": {
+    "light": "#6D4AFF",
+    "dark": "#A08BF9"
+  },
+  "ink-7c5cff": {
+    "light": "#7C5CFF",
+    "dark": "#A08BF9"
+  },
+  "line-c9bfff": {
+    "light": "#C9BFFF",
+    "dark": "#2F2762"
+  },
+  "line-d9d2ff": {
+    "light": "#D9D2FF",
+    "dark": "#2F2762"
+  },
+  "line-e4deff": {
+    "light": "#E4DEFF",
+    "dark": "#312762"
+  },
+  "line-f1eeff": {
+    "light": "#F1EEFF",
+    "dark": "#312762"
+  },
+  "line-f5f4f0": {
+    "light": "#F5F4F0",
+    "dark": "#262635"
+  },
+  "tint-c4b2f5": {
+    "light": "#C4B2F5",
+    "dark": "#261F40"
+  },
+  "tint-d6a8ff": {
+    "light": "#D6A8FF",
+    "dark": "#2D1F40"
+  },
+  "tint-d9fdd3": {
+    "light": "#D9FDD3",
+    "dark": "#223926"
+  },
+  "tint-ddd3f7": {
+    "light": "#DDD3F7",
+    "dark": "#261F40"
+  },
+  "tint-e2e5ff": {
+    "light": "#E2E5FF",
+    "dark": "#1F2140"
+  },
+  "tint-e8ecff": {
+    "light": "#E8ECFF",
+    "dark": "#1F2340"
+  },
+  "tint-e8f0fe": {
+    "light": "#E8F0FE",
+    "dark": "#1F2840"
+  },
+  "tint-e9e4ff": {
+    "light": "#E9E4FF",
+    "dark": "#231F40"
+  },
+  "tint-e9e5ff": {
+    "light": "#E9E5FF",
+    "dark": "#231F40"
+  },
+  "tint-eae8e2": {
+    "light": "#EAE8E2",
+    "dark": "#1B1B26"
+  },
+  "tint-eeeaff": {
+    "light": "#EEEAFF",
+    "dark": "#241F40"
+  },
+  "tint-eef0ff": {
+    "light": "#EEF0FF",
+    "dark": "#1F2240"
+  },
+  "tint-efeae2": {
+    "light": "#EFEAE2",
+    "dark": "#392F26"
+  },
+  "tint-f0eeff": {
+    "light": "#F0EEFF",
+    "dark": "#221F40"
+  },
+  "tint-f1eeff": {
+    "light": "#F1EEFF",
+    "dark": "#231F40"
+  },
+  "tint-f1efe9": {
+    "light": "#F1EFE9",
+    "dark": "#1B1B26"
+  },
+  "tint-f1efea": {
+    "light": "#F1EFEA",
+    "dark": "#1B1B26"
+  },
+  "tint-f1f3ff": {
+    "light": "#F1F3FF",
+    "dark": "#1F2240"
+  },
+  "tint-f4f6fa": {
+    "light": "#F4F6FA",
+    "dark": "#1F2740"
+  },
+  "tint-f5f4f0": {
+    "light": "#F5F4F0",
+    "dark": "#1B1B26"
+  },
+  "tint-f5f4ff": {
+    "light": "#F5F4FF",
+    "dark": "#211F40"
+  },
+  "tint-f5f6ff": {
+    "light": "#F5F6FF",
+    "dark": "#1F2140"
+  },
+  "tint-f6f4ff": {
+    "light": "#F6F4FF",
+    "dark": "#231F40"
+  },
+  "tint-f6f5ff": {
+    "light": "#F6F5FF",
+    "dark": "#211F40"
+  },
+  "tint-fafbfc": {
+    "light": "#FAFBFC",
+    "dark": "#1F2C40"
+  }
+}

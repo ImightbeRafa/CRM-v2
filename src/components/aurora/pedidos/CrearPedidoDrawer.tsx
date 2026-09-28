@@ -17,7 +17,7 @@ function FormSkeleton() {
       <div className="h-24 rounded-2xl bg-white" />
       <div className="h-24 rounded-2xl bg-white" />
       <div className="h-40 rounded-2xl bg-white" />
-      <div className="flex items-center gap-2 text-[#5B6CFF]">
+      <div className="flex items-center gap-2 text-au-ink-5b6cff">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
         <span className="text-[13px]">Cargando formulario…</span>
       </div>

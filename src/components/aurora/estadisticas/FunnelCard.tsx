@@ -16,9 +16,9 @@ export function FunnelBody({
   ordersCreated: number
 }) {
   const rows: FunnelRow[] = [
-    { label: 'Chats abiertos', value: chatsOpened, tone: 'bg-[#DDD3F7]' },
-    { label: 'Respondidos por IA', value: aiResponded, tone: 'bg-[#C4B2F5]' },
-    { label: 'Con intención de compra', value: null, tone: 'bg-[#C4B2F5]' },
+    { label: 'Chats abiertos', value: chatsOpened, tone: 'bg-au-tint-ddd3f7' },
+    { label: 'Respondidos por IA', value: aiResponded, tone: 'bg-au-tint-c4b2f5' },
+    { label: 'Con intención de compra', value: null, tone: 'bg-au-tint-c4b2f5' },
     {
       label: 'Pedidos creados',
       value: safeCount(ordersCreated),
@@ -39,10 +39,10 @@ export function FunnelBody({
             {r.value === null ? (
               <span className="text-[12px] font-medium text-slate-400">Sin datos</span>
             ) : (
-              <span className="font-semibold tabular-nums text-[#0E0D17]">{safeCount(r.value)}</span>
+              <span className="font-semibold tabular-nums text-au-ink-0e0d17">{safeCount(r.value)}</span>
             )}
           </div>
-          <div className="h-3 overflow-hidden rounded-lg bg-[#F1EFE9]">
+          <div className="h-3 overflow-hidden rounded-lg bg-au-tint-f1efe9">
             {r.value === null ? null : (
               <div className={`h-full rounded-lg ${r.tone}`} style={{ width: `${barPercent(r.value, max)}%` }} />
             )}

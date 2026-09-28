@@ -98,11 +98,11 @@ function MediaFallback({
           <button
             type="button"
             onClick={onRetry}
-            className="inline-flex items-center gap-1 font-semibold text-[#5B6CFF] hover:underline"
+            className="inline-flex items-center gap-1 font-semibold text-au-ink-5b6cff hover:underline"
           >
             <RotateCcw className="h-3 w-3" aria-hidden /> Reintentar
           </button>
-          <a href={src} download className="inline-flex items-center gap-1 font-semibold text-[#5B6CFF] hover:underline">
+          <a href={src} download className="inline-flex items-center gap-1 font-semibold text-au-ink-5b6cff hover:underline">
             <Download className="h-3 w-3" aria-hidden /> Descargar
           </a>
         </span>
@@ -402,12 +402,12 @@ export function ChatMediaBubble({ msg, outbound }: { msg: ChatInboxMessage; outb
   const name = msg.mediaFilename || (type === 'document' || (msg.mediaMimeType || '').includes('pdf') ? 'Documento' : 'Archivo')
   return (
     <div className="mt-1 flex w-[240px] max-w-full items-center gap-3 rounded-xl bg-white/70 px-3 py-2.5 ring-1 ring-slate-200/70">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#5B6CFF]/10 text-[#5B6CFF]">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#5B6CFF]/10 text-au-ink-5b6cff">
         <FileText className="h-4 w-4" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[12.5px] font-medium text-slate-800">{name}</span>
-        <span className="mt-0.5 flex gap-3 text-[11px] font-semibold text-[#5B6CFF]">
+        <span className="mt-0.5 flex gap-3 text-[11px] font-semibold text-au-ink-5b6cff">
           <a href={src} target="_blank" rel="noreferrer" className="hover:underline">
             Abrir
           </a>

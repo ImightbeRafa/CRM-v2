@@ -91,7 +91,7 @@ export function ChatAssigneePicker({
           className="absolute right-0 z-40 mt-1 max-h-80 w-60 overflow-y-auto rounded-xl bg-white p-1.5 shadow-xl ring-1 ring-slate-200"
         >
           {viewerUserId && current?.id !== viewerUserId ? (
-            <button type="button" role="menuitem" onClick={() => choose(viewerUserId)} className={`${item} font-semibold text-[#5B3FE0]`}>
+            <button type="button" role="menuitem" onClick={() => choose(viewerUserId)} className={`${item} font-semibold text-au-ink-5b3fe0`}>
               <UserRound className="h-4 w-4" aria-hidden />
               Asignarme
             </button>
@@ -108,7 +108,7 @@ export function ChatAssigneePicker({
                 {a.name}
                 {a.id === viewerUserId ? <span className="text-slate-400"> (vos)</span> : null}
               </span>
-              {current?.id === a.id ? <Check className="h-4 w-4 text-[#5B3FE0]" aria-hidden /> : null}
+              {current?.id === a.id ? <Check className="h-4 w-4 text-au-ink-5b3fe0" aria-hidden /> : null}
             </button>
           ))}
           {current ? (

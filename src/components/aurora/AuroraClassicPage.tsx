@@ -32,7 +32,7 @@ export function AuroraClassicPage({
     <AuroraShell fullBleed bottomNav={<AuroraMobileNav />}>
       <AuroraPageHeader title={title} subtitle={subtitle} actions={actions} />
       <div
-        className="aurora-light min-h-0 flex-1 overflow-y-auto bg-[var(--aurora-canvas)] text-slate-900 [color-scheme:light]"
+        className="aurora-light min-h-0 flex-1 overflow-y-auto bg-[var(--aurora-canvas)] text-slate-900"
         data-testid={testId}
       >
         <main className={`mx-auto w-full ${maxWidthClass} space-y-4 px-3 py-4 sm:px-6`}>{children}</main>

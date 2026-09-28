@@ -23,6 +23,8 @@
     "test:stats-ui": "npx tsx --test src/lib/__tests__/statistics-aurora.test.ts src/lib/__tests__/stats-aurora.test.ts",
     "test:chat-mobile": "npx tsx --test src/lib/__tests__/chat-mobile-aurora.test.ts",
     "test:chat-feedback": "npx tsx --import ./scripts/shim-server-only.mjs --test src/lib/__tests__/chat-feedback-batch.test.ts",
+    "test:theme": "npx tsx --test src/lib/__tests__/dark-palette.test.ts",
+    "theme:gen": "node scripts/gen-theme-palette.cjs",
     "test:site-ui": "npx tsx --test src/lib/__tests__/aurora-no-native-dialogs.test.ts src/lib/__tests__/aurora-remaining-pages.test.ts src/lib/__tests__/aurora-site-rest.test.ts src/lib/__tests__/order-channel-line.test.ts src/lib/__tests__/chat-order-link.test.ts src/lib/__tests__/aurora-alerts.test.ts src/lib/__tests__/pedido-url.test.ts",
     "test:pedidos-ui": "npx tsx --test src/lib/__tests__/pedidos-aurora.test.ts src/lib/__tests__/order-submit-flow.test.ts",
     "test:lifecycle": "npx tsx --test src/lib/__tests__/order-lifecycle.test.ts",

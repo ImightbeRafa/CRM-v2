@@ -1,10 +1,15 @@
 import type { Config } from "tailwindcss"
 import { fontFamily } from "tailwindcss/defaultTheme"
+// Betsy theme palette (light = Tailwind defaults, dark = CSS variables). See the file header.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const palette = require("./src/lib/theme/palette.cjs")
+const themed = palette.tailwindExtend()
 
 const config = {
-  // Same as the "class" strategy, except `dark:` utilities never apply inside `.aurora-light`
-  // (Aurora panels, drawers and modals stay light even when the app theme is dark).
-  darkMode: ["variant", "&:is(.dark *):not(:is(.aurora-light, .aurora-light *))"],
+  // Same as the "class" strategy, except `dark:` utilities never apply inside `.theme-light`
+  // islands (QR codes, logo chips, print previews). Aurora pages follow the theme through the
+  // palette variables (src/lib/theme/palette.cjs), so `.aurora-light` no longer blocks dark.
+  darkMode: ["variant", "&:is(.dark *):not(:is(.theme-light, .theme-light *))"],
   content: [
     './src/pages/**/*.{ts,tsx}',
     './src/components/**/*.{ts,tsx}',
@@ -42,7 +47,21 @@ const config = {
         sans: ['var(--font-display)', ...fontFamily.sans],
         display: ['var(--font-display)', ...fontFamily.sans],
       },
+      backgroundColor: themed.backgroundColor,
+      gradientColorStops: themed.gradientColorStops,
+      borderColor: themed.borderColor,
+      ringColor: themed.ringColor,
+      ringOffsetColor: themed.ringOffsetColor,
+      divideColor: themed.divideColor,
+      outlineColor: themed.outlineColor,
+      textColor: themed.textColor,
+      placeholderColor: themed.placeholderColor,
+      fill: themed.fill,
+      stroke: themed.stroke,
       colors: {
+        au: themed.colors.au,
+        // Always-white highlights on always-dark surfaces (sidebar): never themed.
+        "static-white": "#ffffff",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

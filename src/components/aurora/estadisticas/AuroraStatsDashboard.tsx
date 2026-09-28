@@ -226,7 +226,7 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
             if ((e.currentTarget as HTMLDetailsElement).open) setReportOpen(true)
           }}
         >
-          <summary className="cursor-pointer select-none px-4 py-3.5 text-[14px] font-semibold text-[#0E0D17] md:px-5">
+          <summary className="cursor-pointer select-none px-4 py-3.5 text-[14px] font-semibold text-au-ink-0e0d17 md:px-5">
             Informe detallado
             <span className="ml-2 text-[12px] font-normal text-slate-400">
               Rango personalizado, reporte por día y clientes

@@ -48,7 +48,7 @@ export function ConfigTopbar({
               return (
                 <span key={`${i}-${crumb}`} className={`flex min-w-0 items-center gap-1.5 ${last ? '' : 'hidden sm:flex'}`}>
                   <span
-                    className={`min-w-0 truncate ${last ? 'font-semibold text-[#0E0D17]' : 'text-slate-500'}`}
+                    className={`min-w-0 truncate ${last ? 'font-semibold text-au-ink-0e0d17' : 'text-slate-500'}`}
                     aria-current={last ? 'page' : undefined}
                   >
                     {crumb}
@@ -59,7 +59,7 @@ export function ConfigTopbar({
             })}
           </>
         ) : (
-          <span className="min-w-0 truncate font-semibold text-[#0E0D17]" aria-current="page">
+          <span className="min-w-0 truncate font-semibold text-au-ink-0e0d17" aria-current="page">
             {label}
           </span>
         )}

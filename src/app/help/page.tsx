@@ -23,7 +23,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 const CATEGORY_TINT: Record<string, string> = {
-  'getting-started': 'bg-[#F1EEFF] text-[#5B3FE0]',
+  'getting-started': 'bg-au-tint-f1eeff text-au-ink-5b3fe0',
   'shipping': 'bg-orange-50 text-orange-700',
   'api': 'bg-violet-50 text-violet-700',
   'config': 'bg-slate-100 text-slate-600',
@@ -113,10 +113,10 @@ export default function HelpIndex() {
                 <Link
                   key={doc.slug}
                   href={`/help/${doc.slug}`}
-                  className="group flex items-start gap-3 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm transition-all hover:border-[#C9BFFF] hover:shadow-md"
+                  className="group flex items-start gap-3 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm transition-all hover:border-au-line-c9bfff hover:shadow-md"
                 >
                   <div className="min-w-0 flex-1">
-                    <h3 className="mb-1 text-sm font-medium text-slate-900 transition-colors group-hover:text-[#5B3FE0]">
+                    <h3 className="mb-1 text-sm font-medium text-slate-900 transition-colors group-hover:text-au-ink-5b3fe0">
                       {doc.title}
                     </h3>
                     <p className="line-clamp-2 text-xs text-slate-500">{doc.description}</p>

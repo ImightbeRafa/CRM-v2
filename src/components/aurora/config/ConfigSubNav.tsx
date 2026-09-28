@@ -63,11 +63,11 @@ function NavLink({
       aria-current={active ? 'page' : undefined}
       className={`${itemBase} ${
         active
-          ? 'bg-[#F1EEFF] text-[#3F2BB8]'
+          ? 'bg-au-tint-f1eeff text-au-ink-3f2bb8'
           : 'text-slate-600 hover:bg-slate-100'
       }`}
     >
-      <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-[#5B3FE0]' : 'text-slate-400'}`} aria-hidden />
+      <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-au-ink-5b3fe0' : 'text-slate-400'}`} aria-hidden />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {badge ? <ChannelsBadge /> : null}
     </Link>

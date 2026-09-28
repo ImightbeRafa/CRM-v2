@@ -511,7 +511,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                                 canton: result.canton,
                               });
                             }}
-                            className="w-full px-3 py-2 text-left text-sm transition-colors hover:bg-[#F1EEFF]"
+                            className="w-full px-3 py-2 text-left text-sm transition-colors hover:bg-au-tint-f1eeff"
                           >
                             <div className="font-medium text-foreground">{result.canton}</div>
                             <div className="text-xs text-muted-foreground">{result.province}</div>
@@ -566,7 +566,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
                               event.preventDefault();
                               applyDistrictMatch(result);
                             }}
-                            className="w-full px-3 py-2 text-left text-sm transition-colors hover:bg-[#F1EEFF]"
+                            className="w-full px-3 py-2 text-left text-sm transition-colors hover:bg-au-tint-f1eeff"
                           >
                             <div className="font-medium text-foreground">{result.district}</div>
                             <div className="text-xs text-muted-foreground">

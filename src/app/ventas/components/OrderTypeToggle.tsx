@@ -14,7 +14,7 @@ const OrderTypeToggle: React.FC<OrderTypeToggleProps> = ({ orderType, onOrderTyp
         aria-checked={orderType === 'EA'}
         className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold transition-all ${
           orderType === 'EA'
-            ? 'bg-white text-[#5B3FE0] shadow-sm'
+            ? 'bg-white text-au-ink-5b3fe0 shadow-sm'
             : 'text-slate-500 hover:text-slate-800'
         }`}
         onClick={() => onOrderTypeChange('EA')}
@@ -27,7 +27,7 @@ const OrderTypeToggle: React.FC<OrderTypeToggleProps> = ({ orderType, onOrderTyp
         aria-checked={orderType === 'RA'}
         className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold transition-all ${
           orderType === 'RA'
-            ? 'bg-white text-[#5B3FE0] shadow-sm'
+            ? 'bg-white text-au-ink-5b3fe0 shadow-sm'
             : 'text-slate-500 hover:text-slate-800'
         }`}
         onClick={() => onOrderTypeChange('RA')}

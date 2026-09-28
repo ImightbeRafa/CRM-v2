@@ -46,7 +46,7 @@ function UserAvatar({ user }: { user: UsersPanelUser }) {
         alt={label}
         referrerPolicy="no-referrer"
         onError={() => setBroken(true)}
-        className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-[#F1EEFF]"
+        className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-au-line-f1eeff"
         data-testid="config-user-avatar"
       />
     )
@@ -128,7 +128,7 @@ export function UsersPanel({
                     </div>
                   </div>
                   <span className="justify-self-end md:justify-self-start">
-                    <span className="inline-flex rounded-full bg-[#F1EEFF] px-2.5 py-1 text-[12px] font-medium text-[#5B3FE0]">
+                    <span className="inline-flex rounded-full bg-au-tint-f1eeff px-2.5 py-1 text-[12px] font-medium text-au-ink-5b3fe0">
                       {ROLE_LABEL[user.role] ?? user.role}
                     </span>
                   </span>
@@ -145,7 +145,7 @@ export function UsersPanel({
                     <button
                       type="button"
                       onClick={() => onEdit(user)}
-                      className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-[#5B3FE0] hover:bg-[#F1EEFF]"
+                      className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-au-ink-5b3fe0 hover:bg-au-tint-f1eeff"
                     >
                       Editar
                     </button>

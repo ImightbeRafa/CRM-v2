@@ -42,7 +42,7 @@ export function AuroraModal({
         <Dialog.Overlay className="fixed inset-0 z-[60] bg-slate-900/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <Dialog.Content
           role={role}
-          className={`aurora-light fixed inset-0 z-[61] flex flex-col bg-white text-slate-900 shadow-xl outline-none [color-scheme:light] md:inset-auto md:left-1/2 md:top-1/2 md:max-h-[86dvh] md:w-[calc(100%-2rem)] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl ${
+          className={`aurora-light fixed inset-0 z-[61] flex flex-col bg-white text-slate-900 shadow-xl outline-none md:inset-auto md:left-1/2 md:top-1/2 md:max-h-[86dvh] md:w-[calc(100%-2rem)] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl ${
             size === 'sm' ? 'md:max-w-[440px]' : 'md:max-w-[560px]'
           } ${className}`}
         >

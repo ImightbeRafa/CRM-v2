@@ -64,7 +64,7 @@ export function AgentDetailHeader({
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-[22px] font-semibold leading-tight text-[#0E0D17]">{name}</h2>
+              <h2 className="truncate text-[22px] font-semibold leading-tight text-au-ink-0e0d17">{name}</h2>
               <AgentStatusPill status={status} />
               {mode ? <AgentModeChip mode={mode} /> : null}
             </div>
@@ -83,7 +83,7 @@ export function AgentDetailHeader({
             <button
               type="button"
               onClick={onProbar}
-              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 text-[13px] font-medium text-[#0E0D17] hover:bg-slate-50"
+              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 text-[13px] font-medium text-au-ink-0e0d17 hover:bg-slate-50"
             >
               <FlaskConical className="h-4 w-4" aria-hidden />
               Probar

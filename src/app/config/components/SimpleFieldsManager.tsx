@@ -701,7 +701,7 @@ export function SimpleFieldsManager() {
 
                 {/* Show option set selector when type is 'select' */}
                 {newFieldType === 'select' && (
-                  <div className="bg-[#F1EEFF] border border-[#5B3FE0]/30 rounded-xl p-5 space-y-4">
+                  <div className="bg-au-tint-f1eeff border border-[#5B3FE0]/30 rounded-xl p-5 space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <label className="block text-sm font-semibold text-muted-foreground mb-1">

@@ -151,7 +151,7 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
                           )}
                         </div>
                       </div>
-                      <Button size="sm" variant="outline" className="ml-2 rounded-lg border-[#7C5CFF]/30 text-[#5B3FE0] hover:bg-[#F1EEFF]">
+                      <Button size="sm" variant="outline" className="ml-2 rounded-lg border-[#7C5CFF]/30 text-au-ink-5b3fe0 hover:bg-au-tint-f1eeff">
                         Agregar
                       </Button>
                     </div>
@@ -172,7 +172,7 @@ const EnhancedSmartSuggestions: React.FC<EnhancedSmartSuggestionsProps> = ({
           <div className="flex flex-wrap items-center gap-3">
             <Button
               variant="outline"
-              className="rounded-xl border-[#7C5CFF]/30 text-[#5B3FE0] hover:bg-[#F1EEFF]"
+              className="rounded-xl border-[#7C5CFF]/30 text-au-ink-5b3fe0 hover:bg-au-tint-f1eeff"
               onClick={() => setShowSuggestions(true)}
             >
               <Package className="h-4 w-4 mr-2" />

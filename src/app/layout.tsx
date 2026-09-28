@@ -1,4 +1,5 @@
 import '@/app/components/globals.css'
+import '@/app/theme-palette.css'
 import '@/app/globals-mobile.css'
 import { Plus_Jakarta_Sans, Space_Grotesk } from 'next/font/google'
 import SessionProvider from "./components/Sessionprovider"

@@ -7,7 +7,7 @@ const NAV_ICON =
 
 export function SoftSlimNav() {
   return (
-    <aside className="hidden h-full w-16 shrink-0 flex-col items-center bg-[#f4f6fa] py-5 md:flex">
+    <aside className="hidden h-full w-16 shrink-0 flex-col items-center bg-au-tint-f4f6fa py-5 md:flex">
       <Link
         href="/dashboard"
         className="mb-8 flex h-8 w-8 items-center justify-center rounded-[10px] bg-[#5b6cff] text-sm font-bold text-white"
@@ -17,7 +17,7 @@ export function SoftSlimNav() {
       </Link>
 
       <nav className="flex flex-1 flex-col items-center gap-3">
-        <Link href="/chats" className={`${NAV_ICON} bg-[#e8ecff] text-[#5b6cff]`} title="Chats">
+        <Link href="/chats" className={`${NAV_ICON} bg-au-tint-e8ecff text-au-ink-5b6cff`} title="Chats">
           <span aria-hidden>💬</span>
         </Link>
         <Link
@@ -38,7 +38,7 @@ export function SoftSlimNav() {
 
       <Link
         href="/config/social"
-        className="mt-auto flex flex-col items-center gap-1 text-[#5b6cff]"
+        className="mt-auto flex flex-col items-center gap-1 text-au-ink-5b6cff"
         title="Cuentas conectadas"
       >
         <span className="text-base" aria-hidden>

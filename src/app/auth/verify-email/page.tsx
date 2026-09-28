@@ -162,7 +162,7 @@ function VerifyEmailPageInner() {
     return (
       <AuthShell
         brandPanel={false}
-        icon={<Loader2 className="h-10 w-10 animate-spin text-[#5B6CFF]" aria-hidden />}
+        icon={<Loader2 className="h-10 w-10 animate-spin text-au-ink-5b6cff" aria-hidden />}
         title="Verificando Email..."
         subtitle="Espera mientras verificamos tu dirección de correo."
       >
@@ -175,7 +175,7 @@ function VerifyEmailPageInner() {
     <AuthShell
       brandPanel={false}
       icon={
-        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#F1EEFF] text-[#5B3FE0]">
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-au-tint-f1eeff text-au-ink-5b3fe0">
           <Mail className="h-6 w-6" aria-hidden />
         </span>
       }
@@ -187,9 +187,9 @@ function VerifyEmailPageInner() {
       }
     >
       <div className="space-y-4">
-        <div className="rounded-xl border border-[#D9D2FF] bg-[#F1EEFF] p-4">
-          <p className="text-[13px] font-medium text-[#4B36B8]">Pasos a seguir:</p>
-          <ol className="mt-2 list-inside list-decimal space-y-1 text-[13px] text-[#4B36B8]">
+        <div className="rounded-xl border border-au-line-d9d2ff bg-au-tint-f1eeff p-4">
+          <p className="text-[13px] font-medium text-au-ink-4b36b8">Pasos a seguir:</p>
+          <ol className="mt-2 list-inside list-decimal space-y-1 text-[13px] text-au-ink-4b36b8">
             <li>Revisa tu bandeja de entrada (y la carpeta de spam)</li>
             <li>Haz clic en el enlace de verificación del email</li>
             <li>Serás redirigido de vuelta para completar la verificación</li>
@@ -211,7 +211,7 @@ export default function VerifyEmailPage() {
     <Suspense fallback={
       <AuthShell
         brandPanel={false}
-        icon={<Loader2 className="h-10 w-10 animate-spin text-[#5B6CFF]" aria-hidden />}
+        icon={<Loader2 className="h-10 w-10 animate-spin text-au-ink-5b6cff" aria-hidden />}
         title="Cargando..."
       >
         <span className="sr-only" role="status">Cargando</span>

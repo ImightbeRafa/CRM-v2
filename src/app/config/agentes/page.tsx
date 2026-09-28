@@ -84,7 +84,7 @@ const HINT_CLASS = 'text-[11px] text-slate-600'
 
 const CARD = 'rounded-2xl border border-slate-200/70 bg-white p-4 md:p-5'
 const PILL =
-  'rounded-full bg-[#EEF0FF] px-2.5 py-0.5 text-[11px] font-medium text-[#4A5AE8] ring-1 ring-[#5B6CFF]/15'
+  'rounded-full bg-au-tint-eef0ff px-2.5 py-0.5 text-[11px] font-medium text-au-ink-4a5ae8 ring-1 ring-[#5B6CFF]/15'
 const CHIP_SM = 'shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ring-1'
 
 const DEFAULT_KNOWLEDGE_CARDS: KnowledgeCard[] = [
@@ -640,7 +640,7 @@ export default function AgentesConfigPage() {
         </header>
       )}
 
-      <div className="mx-auto w-full max-w-[1200px] space-y-4 px-4 py-5 !text-slate-900 [color-scheme:light] md:px-6">
+      <div className="mx-auto w-full max-w-[1200px] space-y-4 px-4 py-5 !text-slate-900 md:px-6">
         {!schemaReady ? (
           <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-100">
             Los agentes todavía no están habilitados para esta cuenta: la pantalla es de solo lectura y no se
@@ -747,7 +747,7 @@ export default function AgentesConfigPage() {
                         <button
                           type="button"
                           onClick={() => goTab('personalidad')}
-                          className="text-[12px] font-medium text-[#5B6CFF]"
+                          className="text-[12px] font-medium text-au-ink-5b6cff"
                         >
                           Editar
                         </button>
@@ -763,7 +763,7 @@ export default function AgentesConfigPage() {
                           </span>
                         ))}
                       </div>
-                      <p className="mt-3 line-clamp-4 rounded-xl bg-[#F5F4FF] px-3 py-2.5 text-[12px] leading-relaxed text-slate-700 ring-1 ring-[#5B6CFF]/10">
+                      <p className="mt-3 line-clamp-4 rounded-xl bg-au-tint-f5f4ff px-3 py-2.5 text-[12px] leading-relaxed text-slate-700 ring-1 ring-[#5B6CFF]/10">
                         {selected.systemInstructions?.trim() || 'Sin instrucciones de voz todavía.'}
                       </p>
                     </div>
@@ -774,7 +774,7 @@ export default function AgentesConfigPage() {
                         <button
                           type="button"
                           onClick={() => goTab('canales')}
-                          className="text-[12px] font-medium text-[#5B6CFF]"
+                          className="text-[12px] font-medium text-au-ink-5b6cff"
                         >
                           {canEdit ? 'Elegir líneas' : 'Ver líneas'}
                         </button>
@@ -827,7 +827,7 @@ export default function AgentesConfigPage() {
                         <button
                           type="button"
                           onClick={() => goTab('conocimiento')}
-                          className="text-[12px] font-medium text-[#5B6CFF]"
+                          className="text-[12px] font-medium text-au-ink-5b6cff"
                         >
                           Ver conocimiento
                         </button>
@@ -982,14 +982,14 @@ export default function AgentesConfigPage() {
                         {(selected.introductionNames || []).map((n) => (
                           <span
                             key={n}
-                            className="inline-flex items-center gap-1 rounded-full bg-[#EEF0FF] px-2.5 py-1 text-sm font-medium text-[#4A5AE8] ring-1 ring-[#5B6CFF]/15"
+                            className="inline-flex items-center gap-1 rounded-full bg-au-tint-eef0ff px-2.5 py-1 text-sm font-medium text-au-ink-4a5ae8 ring-1 ring-[#5B6CFF]/15"
                           >
                             {n}
                             {canEdit ? (
                               <button
                                 type="button"
                                 disabled={saving}
-                                className="ml-0.5 text-[#5B6CFF] hover:text-[#4A5AE8] disabled:opacity-50"
+                                className="ml-0.5 text-au-ink-5b6cff hover:text-au-ink-4a5ae8 disabled:opacity-50"
                                 aria-label={`Quitar ${n}`}
                                 onClick={() => {
                                   const next = (selected.introductionNames || []).filter(

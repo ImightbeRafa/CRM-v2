@@ -26,7 +26,7 @@ export function StatusBreakdownBody({ rows }: { rows: StatusRow[] }) {
         return (
           <li key={r.status}>
             <div className="mb-1.5 flex items-center justify-between gap-3 text-[13px]">
-              <span className="flex min-w-0 items-center gap-2 font-medium text-[#0E0D17]">
+              <span className="flex min-w-0 items-center gap-2 font-medium text-au-ink-0e0d17">
                 <span
                   className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
                   style={{ backgroundColor: r.color || '#6B7280' }}
@@ -35,7 +35,7 @@ export function StatusBreakdownBody({ rows }: { rows: StatusRow[] }) {
                 <span className="truncate">{r.status}</span>
               </span>
               <span className="shrink-0 tabular-nums text-slate-500">
-                <span className="font-semibold text-[#0E0D17]">{r.count}</span> · {pct}%
+                <span className="font-semibold text-au-ink-0e0d17">{r.count}</span> · {pct}%
               </span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">

@@ -160,7 +160,7 @@ function DeliveryTicks({ status }: { status?: string | null }) {
   return (
     <Icon
       aria-label={status === 'read' ? 'Leído' : status === 'delivered' ? 'Entregado' : 'Enviado'}
-      className={`h-3 w-3 ${status === 'read' ? 'text-[#5B3FE0]' : 'text-slate-400'}`}
+      className={`h-3 w-3 ${status === 'read' ? 'text-au-ink-5b3fe0' : 'text-slate-400'}`}
     />
   )
 }
@@ -204,7 +204,7 @@ function SoftThreadNotice({ notice }: { notice: ChatMessageNotice }) {
           href={notice.href}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-1 inline-block text-[12px] font-semibold text-[#5B6CFF] underline-offset-2 hover:underline"
+          className="mt-1 inline-block text-[12px] font-semibold text-au-ink-5b6cff underline-offset-2 hover:underline"
         >
           {notice.hrefLabel || 'Abrir'}
         </a>
@@ -379,7 +379,7 @@ export function SoftThreadPane({
 
   if (!conversation) {
     return (
-      <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-[#FAFBFC] px-6 text-center">
+      <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-au-tint-fafbfc px-6 text-center">
         <AuroraEmptyState
           icon="💬"
           title="Seleccioná un chat"
@@ -477,7 +477,7 @@ export function SoftThreadPane({
       {dragActive ? (
         <div
           className={`pointer-events-none absolute inset-2 z-50 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed backdrop-blur-[2px] ${
-            canAttach ? 'border-[#5B6CFF] bg-[#EEF0FF]/85 text-[#4A46E5]' : 'border-slate-300 bg-slate-50/90 text-slate-500'
+            canAttach ? 'border-[#5B6CFF] bg-au-tint-eef0ff/85 text-au-ink-4a46e5' : 'border-slate-300 bg-slate-50/90 text-slate-500'
           }`}
           data-testid="soft-thread-drop-overlay"
         >
@@ -523,7 +523,7 @@ export function SoftThreadPane({
               type="button"
               onClick={onCreateOrder}
               aria-label={orderDraftPending ? 'Continuar pedido (borrador)' : 'Crear pedido'}
-              className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F1EEFF] text-[#5B3FE0]"
+              className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-au-tint-f1eeff text-au-ink-5b3fe0"
             >
               <ShoppingBag className="h-5 w-5" aria-hidden />
               {orderDraftPending ? (
@@ -536,7 +536,7 @@ export function SoftThreadPane({
               type="button"
               onClick={onOpenDetails}
               aria-label="Detalles del chat"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F1EFEA] text-slate-800"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-au-tint-f1efea text-slate-800"
             >
               <User className="h-5 w-5" aria-hidden />
             </button>
@@ -567,7 +567,7 @@ export function SoftThreadPane({
                 <button
                   type="button"
                   onClick={onBack}
-                  className="mb-1 text-xs font-medium text-[#5B6CFF]"
+                  className="mb-1 text-xs font-medium text-au-ink-5b6cff"
                 >
                   ← Chats
                 </button>
@@ -597,7 +597,7 @@ export function SoftThreadPane({
                 >
                   {statusLabel(conversation.status)}
                 </span>
-                <span className="rounded-md bg-[#EEF0FF] px-2 py-0.5 text-[10px] font-medium text-[#4A46E5]">
+                <span className="rounded-md bg-au-tint-eef0ff px-2 py-0.5 text-[10px] font-medium text-au-ink-4a46e5">
                   {agentModeLabel(agentMode)}
                 </span>
                 {conversation.tags.map(tagChip)}
@@ -654,7 +654,7 @@ export function SoftThreadPane({
       ) : null}
 
       {compact ? (
-        <div className="shrink-0 bg-[#F5F4F0] px-3 pt-3" data-testid="soft-agent-banner">
+        <div className="shrink-0 bg-au-tint-f5f4f0 px-3 pt-3" data-testid="soft-agent-banner">
           <div className="rounded-2xl bg-gradient-to-r from-[#5B6CFF] via-[#A855F7] to-[#EC4899] p-[1.5px]">
             <div className="flex items-center gap-3 rounded-[14.5px] bg-white px-3 py-2.5">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#5B6CFF] to-[#EC4899] text-white">
@@ -715,7 +715,7 @@ export function SoftThreadPane({
         ref={messagesContainerRef}
         onScroll={onMessagesScroll}
         className={`min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-5 ${
-          compact ? 'bg-[#F5F4F0]' : 'bg-[#FAFBFC]'
+          compact ? 'bg-au-tint-f5f4f0' : 'bg-au-tint-fafbfc'
         }`}
       >
         {hasMoreMessages && onLoadOlder ? (
@@ -793,8 +793,8 @@ export function SoftThreadPane({
                     className={`rounded-[14px] px-3.5 py-2.5 ${compact ? 'text-[15px] leading-snug' : 'text-[13px]'} ${
                       outbound
                         ? softAi
-                          ? 'bg-[#F0EEFF] text-slate-900 ring-1 ring-[#5B6CFF]/15'
-                          : 'bg-[#E8F0FE] text-slate-900 ring-1 ring-blue-200/60'
+                          ? 'bg-au-tint-f0eeff text-slate-900 ring-1 ring-[#5B6CFF]/15'
+                          : 'bg-au-tint-e8f0fe text-slate-900 ring-1 ring-blue-200/60'
                         : 'bg-white text-slate-900 ring-1 ring-slate-200/80'
                     }`}
                   >
@@ -810,7 +810,7 @@ export function SoftThreadPane({
                     {compact ? (
                       <p
                         className={`mt-1 flex items-center gap-1 text-[11px] ${
-                          outbound ? 'justify-start text-[#5B3FE0]' : 'text-slate-400'
+                          outbound ? 'justify-start text-au-ink-5b3fe0' : 'text-slate-400'
                         }`}
                         data-testid="soft-thread-message-meta"
                       >
@@ -851,7 +851,7 @@ export function SoftThreadPane({
                               if (onRetryMessage) onRetryMessage(msg.id)
                               else onRetry?.()
                             }}
-                            className="font-semibold text-[#5B6CFF] underline-offset-2 hover:underline"
+                            className="font-semibold text-au-ink-5b6cff underline-offset-2 hover:underline"
                           >
                             Reintentar
                           </button>
@@ -889,7 +889,7 @@ export function SoftThreadPane({
               {conversation.orderNumber ? (
                 <span className="font-semibold text-slate-900">#{conversation.orderNumber}</span>
               ) : null}
-              <Link href={`/ventas?pedido=${encodeURIComponent(conversation.orderId)}`} className="font-semibold text-[#5B3FE0]">
+              <Link href={`/ventas?pedido=${encodeURIComponent(conversation.orderId)}`} className="font-semibold text-au-ink-5b3fe0">
                 Ver
               </Link>
             </span>
@@ -898,7 +898,7 @@ export function SoftThreadPane({
 
         {conversation.pendingSuggestionText ? (
           <div
-            className="rounded-2xl bg-[#F0EEFF] px-4 py-3 text-[12px] text-slate-900 ring-1 ring-[#5B6CFF]/15"
+            className="rounded-2xl bg-au-tint-f0eeff px-4 py-3 text-[12px] text-slate-900 ring-1 ring-[#5B6CFF]/15"
             data-testid="soft-ai-suggestion"
           >
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
@@ -1173,7 +1173,7 @@ export function SoftThreadPane({
                 title="Emojis"
                 className={`flex items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF] disabled:opacity-40 ${
                   compact ? 'h-10 w-9' : 'h-9 w-9'
-                } ${emojiOpen ? 'bg-slate-100 text-[#5B6CFF]' : ''}`}
+                } ${emojiOpen ? 'bg-slate-100 text-au-ink-5b6cff' : ''}`}
                 data-testid="composer-emoji"
               >
                 <Smile className="h-5 w-5" aria-hidden />
@@ -1220,7 +1220,7 @@ export function SoftThreadPane({
                     title="Adjuntar foto, video, audio o documento"
                     className={`flex items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF] disabled:opacity-40 ${
                       compact ? 'h-10 w-9' : 'h-9 w-9'
-                    } ${attachMenuOpen ? 'bg-slate-100 text-[#5B6CFF]' : ''}`}
+                    } ${attachMenuOpen ? 'bg-slate-100 text-au-ink-5b6cff' : ''}`}
                     data-testid="composer-attach"
                   >
                     <Paperclip className="h-5 w-5" aria-hidden />
@@ -1293,7 +1293,7 @@ export function SoftThreadPane({
               data-testid="composer-textarea"
               className={
                 compact
-                  ? 'min-h-[44px] min-w-0 flex-1 resize-none overflow-hidden rounded-3xl border-0 bg-[#F1EFEA] px-4 py-3 text-[16px] leading-snug text-slate-900 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/35 disabled:opacity-60'
+                  ? 'min-h-[44px] min-w-0 flex-1 resize-none overflow-hidden rounded-3xl border-0 bg-au-tint-f1efea px-4 py-3 text-[16px] leading-snug text-slate-900 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/35 disabled:opacity-60'
                   : 'min-h-[46px] min-w-0 flex-1 resize-none overflow-hidden rounded-xl border-0 bg-slate-50 px-3.5 py-3 text-[13px] leading-[1.45] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#5B6CFF]/35 disabled:opacity-60'
               }
             />

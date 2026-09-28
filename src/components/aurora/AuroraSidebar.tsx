@@ -12,7 +12,7 @@ import { AuroraProfileMenu } from './shell/AuroraProfileMenu'
 import { useAuroraViewer } from './shell/useAuroraViewer'
 
 const FOCUS_RING =
-  'outline-none focus-visible:ring-2 focus-visible:ring-[#8F7BFF]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0E0D17]'
+  'outline-none focus-visible:ring-2 focus-visible:ring-[#8F7BFF]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-au-sidebar'
 
 const ROLE_LABELS: Record<string, string> = {
   OWNER: 'Owner',
@@ -35,7 +35,7 @@ export function AuroraSidebar() {
   const activeHref = getActiveAuroraHref(pathname)
 
   return (
-    <aside className="hidden h-full w-[176px] shrink-0 flex-col bg-[#0E0D17] text-white md:flex lg:w-[200px]">
+    <aside className="hidden h-full w-[176px] shrink-0 flex-col bg-au-sidebar text-white md:flex lg:w-[200px]">
       {/* Same left inset as the tenant block below (mx-3 + 1px border + px-2.5). */}
       <div className="mx-3 flex h-16 shrink-0 items-center gap-2 px-[calc(0.625rem+1px)]">
         <Link
@@ -44,12 +44,12 @@ export function AuroraSidebar() {
         >
           Betsy
         </Link>
-        <span className="rounded-md bg-white/10 px-1.5 py-1 text-[9px] font-semibold uppercase leading-none tracking-wide text-white/70">
+        <span className="rounded-md bg-static-white/10 px-1.5 py-1 text-[9px] font-semibold uppercase leading-none tracking-wide text-white/70">
           CRM
         </span>
       </div>
 
-      <div className="mx-3 mb-5 flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-2 motion-safe:transition-colors motion-safe:duration-200 hover:bg-white/[0.07]">
+      <div className="mx-3 mb-5 flex items-center gap-2.5 rounded-xl border border-static-white/10 bg-static-white/[0.04] px-2.5 py-2 motion-safe:transition-colors motion-safe:duration-200 hover:bg-static-white/[0.07]">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#5B6CFF] to-[#A855F7] text-[11px] font-bold">
           {avatarInitials(tenantName)}
         </span>
@@ -78,8 +78,8 @@ export function AuroraSidebar() {
                         aria-current={active ? 'page' : undefined}
                         className={`group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors duration-150 motion-reduce:transition-none ${FOCUS_RING} ${
                           active
-                            ? 'bg-white/10 text-white'
-                            : 'text-white/60 hover:bg-white/[0.06] hover:text-white'
+                            ? 'bg-static-white/10 text-white'
+                            : 'text-white/60 hover:bg-static-white/[0.06] hover:text-white'
                         }`}
                       >
                         <span
@@ -108,8 +108,8 @@ export function AuroraSidebar() {
         })}
       </nav>
 
-      <div className="border-t border-white/10 p-3">
-        <div className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 motion-safe:transition-colors motion-safe:duration-200 hover:bg-white/[0.05]">
+      <div className="border-t border-static-white/10 p-3">
+        <div className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 motion-safe:transition-colors motion-safe:duration-200 hover:bg-static-white/[0.05]">
           <AuroraAvatar name={userName} image={image} className="h-8 w-8 text-[11px]" />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[12px] font-semibold leading-tight">{userName}</span>

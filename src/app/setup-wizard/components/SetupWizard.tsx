@@ -378,7 +378,7 @@ export function SetupWizard() {
     return (
       <div className="aurora-light flex min-h-dvh items-center justify-center bg-[var(--aurora-canvas)] text-slate-900">
         <div className="rounded-2xl border border-slate-200/70 bg-white px-8 py-7 text-center shadow-sm">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-[#5B6CFF]" />
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-au-ink-5b6cff" />
           <p className="mt-3 text-sm text-slate-500">Cargando tu guía de configuración…</p>
         </div>
       </div>
@@ -386,7 +386,7 @@ export function SetupWizard() {
   }
 
   return (
-    <div className="aurora-light min-h-dvh bg-[var(--aurora-canvas)] text-slate-900 [color-scheme:light]">
+    <div className="aurora-light min-h-dvh bg-[var(--aurora-canvas)] text-slate-900">
       {/* Header */}
       <div className="sticky top-0 z-40 border-b border-slate-200/70 bg-white">
         <div className="max-w-5xl mx-auto px-4 py-3">

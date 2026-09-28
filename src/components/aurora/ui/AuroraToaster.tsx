@@ -22,12 +22,12 @@ export function AuroraToaster() {
       {toasts.map(({ id, title, description, variant, action, ...props }) => {
         const tone = variant === 'destructive' ? 'danger' : variant === 'success' ? 'success' : 'info'
         const Icon = tone === 'danger' ? AlertCircle : tone === 'success' ? CheckCircle2 : Info
-        const iconClass = tone === 'danger' ? 'text-red-500' : tone === 'success' ? 'text-emerald-500' : 'text-[#5B6CFF]'
+        const iconClass = tone === 'danger' ? 'text-red-500' : tone === 'success' ? 'text-emerald-500' : 'text-au-ink-5b6cff'
         return (
           <Toast
             key={id}
             {...props}
-            className="aurora-light items-start gap-3 rounded-xl border-slate-200 bg-white p-4 pr-8 text-slate-900 shadow-lg [color-scheme:light]"
+            className="aurora-light items-start gap-3 rounded-xl border-slate-200 bg-white p-4 pr-8 text-slate-900 shadow-lg"
           >
             <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${iconClass}`} aria-hidden />
             <div className="min-w-0 flex-1 space-y-0.5">

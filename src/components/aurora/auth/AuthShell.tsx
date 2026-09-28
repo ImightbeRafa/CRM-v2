@@ -21,7 +21,7 @@ type AuthShellProps = {
  */
 export function AuthShell({ title, subtitle, children, footer, brandPanel = true, icon, wide = false }: AuthShellProps) {
   return (
-    <div className="aurora-light flex min-h-dvh bg-[var(--aurora-canvas)] text-slate-900 [color-scheme:light]">
+    <div className="aurora-light flex min-h-dvh bg-[var(--aurora-canvas)] text-slate-900">
       {brandPanel ? (
         <aside className="relative hidden w-[42%] max-w-[560px] shrink-0 flex-col justify-between overflow-hidden bg-[#0E0D17] p-10 text-white lg:flex">
           <BetsyWordmark tone="dark" />
@@ -69,6 +69,6 @@ export const authPrimaryButtonClass =
   'inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF] px-4 py-2.5 text-[14px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
 export const authSecondaryButtonClass =
   'inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[14px] font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
-export const authLinkClass = 'font-medium text-[#5B3FE0] hover:underline'
+export const authLinkClass = 'font-medium text-au-ink-5b3fe0 hover:underline'
 export const authErrorClass = 'rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700'
 export const authSuccessClass = 'rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-800'

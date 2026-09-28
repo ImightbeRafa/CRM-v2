@@ -119,10 +119,10 @@ const RecurringCustomers: React.FC<RecurringCustomersProps> = ({
   };
 
   return (
-    <div className="mb-5 space-y-3 rounded-xl bg-gradient-to-br from-[#F6F4FF] to-white p-3 ring-1 ring-[#E4DEFF] sm:p-4">
+    <div className="mb-5 space-y-3 rounded-xl bg-gradient-to-br from-au-tint-f6f4ff to-white p-3 ring-1 ring-au-line-e4deff sm:p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Users className="h-4 w-4 text-[#5B3FE0]" />
+          <Users className="h-4 w-4 text-au-ink-5b3fe0" />
           <h4 className="text-[13px] font-semibold text-slate-800">Clientes Recurrentes</h4>
         </div>
         <Button
@@ -162,7 +162,7 @@ const RecurringCustomers: React.FC<RecurringCustomersProps> = ({
                 key={client.id}
                 type="button"
                 onClick={() => handleSelectClient(client)}
-                className="w-full border-b border-slate-100 p-3 text-left transition-colors last:border-0 hover:bg-[#F6F4FF]"
+                className="w-full border-b border-slate-100 p-3 text-left transition-colors last:border-0 hover:bg-au-tint-f6f4ff"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
@@ -202,11 +202,11 @@ const RecurringCustomers: React.FC<RecurringCustomersProps> = ({
                 key={client.id}
                 type="button"
                 onClick={() => handleSelectClient(client)}
-                className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[13px] text-slate-700 shadow-sm ring-1 ring-slate-200 transition-all hover:-translate-y-px hover:text-[#5B3FE0] hover:ring-[#7C5CFF]/40"
+                className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[13px] text-slate-700 shadow-sm ring-1 ring-slate-200 transition-all hover:-translate-y-px hover:text-au-ink-5b3fe0 hover:ring-[#7C5CFF]/40"
               >
                 {client.isFavorite && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />}
                 <span>{client.name}</span>
-                <span className="rounded-full bg-[#F1EEFF] px-1.5 text-[11px] font-semibold text-[#5B3FE0]">
+                <span className="rounded-full bg-au-tint-f1eeff px-1.5 text-[11px] font-semibold text-au-ink-5b3fe0">
                   {client.totalOrders}
                 </span>
               </button>

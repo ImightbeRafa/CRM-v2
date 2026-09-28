@@ -65,7 +65,7 @@ export function AgentListPanel({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-[15px] font-semibold text-[#0E0D17]">{a.name}</span>
+                    <span className="truncate text-[15px] font-semibold text-au-ink-0e0d17">{a.name}</span>
                     <AgentStatusPill status={a.status} />
                   </div>
                   <p className="mt-0.5 truncate text-[12px] text-slate-500">
@@ -90,7 +90,7 @@ export function AgentListPanel({
                 <button
                   type="button"
                   onClick={() => onProbar(a.id)}
-                  className="inline-flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-medium text-[#0E0D17] hover:bg-slate-50"
+                  className="inline-flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-medium text-au-ink-0e0d17 hover:bg-slate-50"
                 >
                   <FlaskConical className="h-3.5 w-3.5" aria-hidden />
                   Probar
@@ -105,7 +105,7 @@ export function AgentListPanel({
               type="button"
               onClick={onCreate}
               disabled={createDisabled}
-              className="flex h-full min-h-[132px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-slate-300 py-6 text-[13px] font-medium text-slate-500 hover:border-[#5B6CFF]/40 hover:text-[#5B6CFF] disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-full min-h-[132px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-slate-300 py-6 text-[13px] font-medium text-slate-500 hover:border-[#5B6CFF]/40 hover:text-au-ink-5b6cff disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" aria-hidden />
               {creating ? 'Creando…' : 'Crear agente'}

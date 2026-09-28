@@ -61,7 +61,7 @@ function SalesSectionTitle({
 }) {
   return (
     <div className="mb-4 flex items-start gap-3">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#EEF0FF] to-[#F6F4FF] text-[#5B3FE0] ring-1 ring-[#E4DEFF]">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-au-tint-eef0ff to-au-tint-f6f4ff text-au-ink-5b3fe0 ring-1 ring-au-line-e4deff">
         <Icon className="h-4 w-4" />
       </span>
       <div className="min-w-0">
@@ -934,11 +934,11 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
                       aria-pressed={selected}
                       className={`rounded-xl p-3 text-left transition-all ${
                         selected
-                          ? 'bg-[#F6F4FF] shadow-sm ring-2 ring-[#7C5CFF]'
+                          ? 'bg-au-tint-f6f4ff shadow-sm ring-2 ring-[#7C5CFF]'
                           : 'bg-white ring-1 ring-slate-200 hover:-translate-y-px hover:ring-slate-300'
                       }`}
                     >
-                      <span className={`flex items-center gap-2 text-[13px] font-semibold ${selected ? 'text-[#5B3FE0]' : 'text-slate-800'}`}>
+                      <span className={`flex items-center gap-2 text-[13px] font-semibold ${selected ? 'text-au-ink-5b3fe0' : 'text-slate-800'}`}>
                         <span
                           className={`flex h-4 w-4 items-center justify-center rounded-full ring-2 ${selected ? 'bg-[#7C5CFF] ring-[#7C5CFF]' : 'ring-slate-300'}`}
                           aria-hidden

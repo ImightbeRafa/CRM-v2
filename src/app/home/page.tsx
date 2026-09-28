@@ -1,5 +1,10 @@
 import LandingPage from './components/LandingPage';
 
 export default function Landing() {
-  return <LandingPage />;
+  // The landing keeps its own look in any theme.
+  return (
+    <div className="theme-static">
+      <LandingPage />
+    </div>
+  );
 }

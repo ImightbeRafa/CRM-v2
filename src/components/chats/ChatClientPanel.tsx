@@ -208,7 +208,7 @@ export function ChatClientPanel({
     return (
       <div className="rounded-xl bg-white p-3 text-xs text-slate-500 ring-1 ring-slate-100">
         No se pudo cargar el cliente.{' '}
-        <button type="button" onClick={() => void load()} className="font-semibold text-[#5B6CFF] hover:underline">
+        <button type="button" onClick={() => void load()} className="font-semibold text-au-ink-5b6cff hover:underline">
           Reintentar
         </button>
       </div>
@@ -241,7 +241,7 @@ export function ChatClientPanel({
                 type="button"
                 disabled={busy !== null}
                 onClick={() => void link(c.id)}
-                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#EEF0FF] px-2 py-1 text-[11px] font-semibold text-[#4A46E5] hover:bg-[#E2E5FF] disabled:opacity-50"
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-au-tint-eef0ff px-2 py-1 text-[11px] font-semibold text-au-ink-4a46e5 hover:bg-au-tint-e2e5ff disabled:opacity-50"
               >
                 {busy === `link:${c.id}` ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Link2 className="h-3 w-3" aria-hidden />}
                 Vincular
@@ -253,7 +253,7 @@ export function ChatClientPanel({
     ) : null
 
   return (
-    <div className="aurora-light space-y-4 text-slate-900 [color-scheme:light]" data-testid="chat-client-panel">
+    <div className="aurora-light space-y-4 text-slate-900" data-testid="chat-client-panel">
       {notice ? (
         <p
           role="status"
@@ -266,7 +266,7 @@ export function ChatClientPanel({
       {client ? (
         <div className="rounded-xl bg-white p-3 ring-1 ring-slate-100" data-testid="chat-client-linked">
           <div className="flex items-start gap-2.5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EEF0FF] text-[#5B6CFF]">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-au-tint-eef0ff text-au-ink-5b6cff">
               <UserRound className="h-4 w-4" aria-hidden />
             </span>
             <span className="min-w-0 flex-1">
@@ -302,7 +302,7 @@ export function ChatClientPanel({
           <div className="mt-2 flex items-center justify-between">
             <Link
               href={`/ventas?buscar=${encodeURIComponent(client.phone || client.name)}`}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#5B6CFF] hover:underline"
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-au-ink-5b6cff hover:underline"
             >
               Ver pedidos <ExternalLink className="h-3 w-3" aria-hidden />
             </Link>
@@ -362,7 +362,7 @@ export function ChatClientPanel({
             <button
               type="button"
               onClick={onCreateOrder}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#5B6CFF] hover:underline"
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-au-ink-5b6cff hover:underline"
             >
               <ShoppingBag className="h-3 w-3" aria-hidden /> Crear pedido
             </button>

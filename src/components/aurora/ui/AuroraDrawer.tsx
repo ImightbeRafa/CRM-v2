@@ -40,7 +40,7 @@ export function AuroraDrawer({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-[60] bg-slate-900/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <Dialog.Content
-          className={`aurora-light fixed inset-0 z-[61] flex flex-col bg-[var(--aurora-canvas)] text-slate-900 shadow-2xl outline-none [color-scheme:light] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right md:inset-y-0 md:left-auto md:right-0 md:w-full ${widthClass}`}
+          className={`aurora-light fixed inset-0 z-[61] flex flex-col bg-[var(--aurora-canvas)] text-slate-900 shadow-2xl outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right md:inset-y-0 md:left-auto md:right-0 md:w-full ${widthClass}`}
         >
           <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200/70 bg-white px-5 py-4">
             <div className="min-w-0">

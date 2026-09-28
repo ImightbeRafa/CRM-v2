@@ -26,7 +26,7 @@ export default function SetupTenantPage() {
   return (
     <AuthShell
       brandPanel={false}
-      icon={<Loader2 className="h-10 w-10 animate-spin text-[#5B6CFF]" aria-hidden />}
+      icon={<Loader2 className="h-10 w-10 animate-spin text-au-ink-5b6cff" aria-hidden />}
       title="Redirigiendo..."
     >
       <span className="sr-only" role="status">Redirigiendo</span>

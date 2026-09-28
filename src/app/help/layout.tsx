@@ -16,7 +16,7 @@ export default function HelpLayout({ children }: { children: React.ReactNode }) 
         className="items-center"
       />
 
-      <div className="aurora-light flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--aurora-canvas)] text-slate-900 [color-scheme:light]">
+      <div className="aurora-light flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--aurora-canvas)] text-slate-900">
         {children}
       </div>
     </AuroraShell>

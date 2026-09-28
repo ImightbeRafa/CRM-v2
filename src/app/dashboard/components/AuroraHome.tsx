@@ -107,7 +107,7 @@ function CardTitle({ icon, children, action }: { icon: ReactNode; children: Reac
   return (
     <div className="flex items-center justify-between gap-2">
       <div className="flex items-center gap-2">
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#EEEAFF] text-[#6D4AFF]">{icon}</span>
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-au-tint-eeeaff text-au-ink-6d4aff">{icon}</span>
         <h2 className="text-[14px] font-semibold text-slate-900">{children}</h2>
       </div>
       {action}
@@ -174,7 +174,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
   const hasDaily = dailyMax > 0
 
   const quick = [
-    { href: '/ventas?nuevo=1', label: 'Crear pedido', icon: <Plus className="h-4 w-4" />, tone: 'bg-[#EEEAFF] text-[#6D4AFF]' },
+    { href: '/ventas?nuevo=1', label: 'Crear pedido', icon: <Plus className="h-4 w-4" />, tone: 'bg-au-tint-eeeaff text-au-ink-6d4aff' },
     { href: '/config?tab=inventory', label: 'Inventario', icon: <Warehouse className="h-4 w-4" />, tone: 'bg-blue-50 text-blue-600' },
     ...(isLogisticsAdmin
       ? [{ href: '/logistics/guias', label: 'Generar guías', icon: <FileText className="h-4 w-4" />, tone: 'bg-sky-50 text-sky-600' }]
@@ -188,7 +188,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
     {
       label: 'Ventas semana',
       icon: <TrendingUp className="h-4 w-4" />,
-      tone: 'bg-[#EEEAFF] text-[#6D4AFF]',
+      tone: 'bg-au-tint-eeeaff text-au-ink-6d4aff',
       value: crcCompact(stats.weeklyRevenue),
       foot: <Delta pct={stats.revenueChange} label="vs semana pasada" />,
     },
@@ -279,7 +279,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
         <div className="mb-5">
           <div className="mb-2 flex items-center gap-2">
             <h2 className="text-[14px] font-semibold text-slate-900">Necesita tu atención</h2>
-            <span className="rounded-full bg-[#EEEAFF] px-2 py-px text-[11px] font-semibold text-[#6D4AFF]">
+            <span className="rounded-full bg-au-tint-eeeaff px-2 py-px text-[11px] font-semibold text-au-ink-6d4aff">
               {attention.length}
             </span>
           </div>
@@ -290,7 +290,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold text-slate-900">{a.title}</p>
                   <p className="text-[12px] text-slate-500">{a.detail}</p>
-                  <Link href={a.href} className="mt-1 inline-flex items-center gap-0.5 text-[12px] font-semibold text-[#6D4AFF] hover:underline">
+                  <Link href={a.href} className="mt-1 inline-flex items-center gap-0.5 text-[12px] font-semibold text-au-ink-6d4aff hover:underline">
                     {a.cta}
                     <ChevronRight className="h-3 w-3" aria-hidden />
                   </Link>
@@ -336,11 +336,11 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
                 const wd = WEEKDAYS[new Date(`${d.date}T12:00:00Z`).getUTCDay()]
                 return (
                   <div key={d.date} className="flex h-full min-w-0 flex-1 flex-col justify-end text-center">
-                    <span className={`mb-1 truncate text-[10px] ${last ? 'font-semibold text-[#6D4AFF]' : 'text-slate-400'}`}>
+                    <span className={`mb-1 truncate text-[10px] ${last ? 'font-semibold text-au-ink-6d4aff' : 'text-slate-400'}`}>
                       {d.total > 0 ? crcAxis(d.total) : ''}
                     </span>
                     <div
-                      className={`w-full rounded-t-lg ${last ? 'bg-gradient-to-b from-[#7C4DFF] to-[#5B6CFF]' : 'bg-[#E9E4FF]'}`}
+                      className={`w-full rounded-t-lg ${last ? 'bg-gradient-to-b from-[#7C4DFF] to-[#5B6CFF]' : 'bg-au-tint-e9e4ff'}`}
                       style={{ height: `${pct * 0.75}%` }}
                       title={`${wd} ${d.date}: ${crc(d.total)}`}
                     />
@@ -357,8 +357,8 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
         </Card>
 
         {/* Agentes — runtime on hold, no metrics API yet */}
-        <Card className="border-[#C9BFFF] p-5">
-          <CardTitle icon={<Bot className="h-4 w-4" />} action={<Link href="/config?tab=agentes" className="text-[12px] font-semibold text-[#6D4AFF] hover:underline">Ver agentes</Link>}>
+        <Card className="border-au-line-c9bfff p-5">
+          <CardTitle icon={<Bot className="h-4 w-4" />} action={<Link href="/config?tab=agentes" className="text-[12px] font-semibold text-au-ink-6d4aff hover:underline">Ver agentes</Link>}>
             Agentes esta semana
           </CardTitle>
           <div className="mt-6 flex flex-col items-start gap-2">
@@ -375,7 +375,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
         <Card className="p-5 lg:col-span-2">
           <CardTitle
             icon={<Package className="h-4 w-4" />}
-            action={<Link href="/ventas" className="text-[12px] font-semibold text-[#6D4AFF] hover:underline">Ver todos</Link>}
+            action={<Link href="/ventas" className="text-[12px] font-semibold text-au-ink-6d4aff hover:underline">Ver todos</Link>}
           >
             Pedidos recientes
           </CardTitle>
@@ -391,7 +391,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
               <button
                 type="button"
                 onClick={() => void refetchRecentOrders()}
-                className="mt-2 text-[12px] font-semibold text-[#5B3FE0] underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF]"
+                className="mt-2 text-[12px] font-semibold text-au-ink-5b3fe0 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF]"
               >
                 Reintentar
               </button>
@@ -406,7 +406,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
                 const pill = statusPill(o)
                 return (
                   <li key={o.id} className="flex items-center gap-3 py-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EEEAFF] text-[11px] font-bold text-[#6D4AFF]">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-au-tint-eeeaff text-[11px] font-bold text-au-ink-6d4aff">
                       {initialsOf(o.customerName)}
                     </span>
                     <div className="min-w-0 flex-1">

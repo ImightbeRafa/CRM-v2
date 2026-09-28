@@ -84,7 +84,7 @@ export function EmojiPickerPopover({ onPick, onClose }: { onPick: (emoji: string
       ref={ref}
       role="dialog"
       aria-label="Emojis"
-      className="aurora-light text-slate-900 [color-scheme:light] absolute bottom-full left-0 z-40 mb-2 w-[min(340px,calc(100vw-2rem))] overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
+      className="aurora-light text-slate-900 absolute bottom-full left-0 z-40 mb-2 w-[min(340px,calc(100vw-2rem))] overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
       data-testid="composer-emoji-picker"
     >
       <div className="border-b border-slate-100 p-2">
@@ -132,7 +132,7 @@ export function EmojiPickerPopover({ onPick, onClose }: { onPick: (emoji: string
             aria-label={c.label}
             title={c.label}
             className={`flex h-8 flex-1 items-center justify-center rounded-lg text-[17px] transition ${
-              c.id === category && !query ? 'bg-[#EEF0FF]' : 'opacity-70 hover:bg-slate-50 hover:opacity-100'
+              c.id === category && !query ? 'bg-au-tint-eef0ff' : 'opacity-70 hover:bg-slate-50 hover:opacity-100'
             }`}
           >
             {c.icon}
@@ -182,21 +182,21 @@ export function QuickReplySuggestions({
   }, [activeIndex])
   return (
     <div
-      className="aurora-light text-slate-900 [color-scheme:light] absolute bottom-full left-0 right-0 z-40 mb-2 overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
+      className="aurora-light text-slate-900 absolute bottom-full left-0 right-0 z-40 mb-2 overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
       data-testid="composer-quick-replies"
     >
       <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
         <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
           <Zap className="h-3 w-3" aria-hidden /> Respuestas rápidas
         </p>
-        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onManage} className="text-[11px] font-semibold text-[#5B6CFF] hover:underline">
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onManage} className="text-[11px] font-semibold text-au-ink-5b6cff hover:underline">
           Administrar
         </button>
       </div>
       {items.length === 0 ? (
         <div className="px-3 py-4 text-[12px] text-slate-500">
           {query ? `No hay un atajo /${query}.` : 'Todavía no hay respuestas rápidas.'}{' '}
-          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onManage} className="font-semibold text-[#5B6CFF] hover:underline">
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onManage} className="font-semibold text-au-ink-5b6cff hover:underline">
             Crear una
           </button>
         </div>
@@ -209,7 +209,7 @@ export function QuickReplySuggestions({
                 onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={() => onHover(i)}
                 onClick={() => onPick(item)}
-                className={`flex w-full items-start gap-3 px-3 py-2 text-left ${i === activeIndex ? 'bg-[#EEF0FF]' : 'hover:bg-slate-50'}`}
+                className={`flex w-full items-start gap-3 px-3 py-2 text-left ${i === activeIndex ? 'bg-au-tint-eef0ff' : 'hover:bg-slate-50'}`}
               >
                 <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[11.5px] font-semibold text-slate-700">
                   /{item.shortcut}
@@ -300,14 +300,14 @@ export function QuickRepliesManager({
         role="dialog"
         aria-modal="true"
         aria-label="Respuestas rápidas"
-        className="aurora-light text-slate-900 [color-scheme:light] flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl"
+        className="aurora-light text-slate-900 flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
         data-testid="quick-replies-manager"
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
             <h2 className="flex items-center gap-2 text-[15px] font-semibold text-slate-900">
-              <Zap className="h-4 w-4 text-[#5B6CFF]" aria-hidden /> Respuestas rápidas
+              <Zap className="h-4 w-4 text-au-ink-5b6cff" aria-hidden /> Respuestas rápidas
             </h2>
             <p className="mt-0.5 text-[12px] text-slate-500">
               Escribí <span className="font-mono font-semibold">/atajo</span> en el chat para usarlas. Compartidas con todo el equipo.
@@ -480,7 +480,7 @@ export function RecentMediaPopover({
       ref={ref}
       role="dialog"
       aria-label="Adjuntar"
-      className="aurora-light text-slate-900 [color-scheme:light] absolute bottom-full left-0 z-40 mb-2 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
+      className="aurora-light text-slate-900 absolute bottom-full left-0 z-40 mb-2 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
       data-testid="composer-recent-media"
     >
       <button
@@ -488,7 +488,7 @@ export function RecentMediaPopover({
         onClick={onUpload}
         className="flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50"
       >
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#5B6CFF]/10 text-[#5B6CFF]">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#5B6CFF]/10 text-au-ink-5b6cff">
           <Plus className="h-4 w-4" aria-hidden />
         </span>
         <span>

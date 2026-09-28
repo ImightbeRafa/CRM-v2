@@ -37,7 +37,7 @@ function BubbleView({ bubble }: { bubble: WaBubble }) {
         <div className={`flex ${customer ? 'justify-end' : 'justify-start'}`}>
           <div
             className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm !text-slate-900 ${
-              customer ? 'bg-[#d9fdd3]' : 'bg-white ring-1 ring-slate-200'
+              customer ? 'bg-au-tint-d9fdd3' : 'bg-white ring-1 ring-slate-200'
             }`}
           >
             {bubble.label ? <p className="text-[10px] font-medium text-slate-700">{bubble.label}</p> : null}
@@ -257,7 +257,7 @@ export function AgentTestSandbox({
           ))}
         </div>
       ) : null}
-      <div className="mt-3 min-h-48 space-y-2 rounded-lg bg-[#efeae2] p-3">
+      <div className="mt-3 min-h-48 space-y-2 rounded-lg bg-au-tint-efeae2 p-3">
         {history.length === 0 ? (
           <p className="text-sm text-slate-700">Escribí como cliente para ver la respuesta.</p>
         ) : (

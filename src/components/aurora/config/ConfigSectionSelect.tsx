@@ -51,7 +51,7 @@ export function ConfigSectionSelect({ activeTab, onSelectTab }: { activeTab: str
 
   const rowCls = (active: boolean) =>
     `flex items-center gap-3 rounded-xl px-2 py-3 text-[14px] font-medium ${
-      active ? 'bg-[#F1EEFF] text-[#5B3FE0]' : 'text-slate-800'
+      active ? 'bg-au-tint-f1eeff text-au-ink-5b3fe0' : 'text-slate-800'
     }`
 
   return (

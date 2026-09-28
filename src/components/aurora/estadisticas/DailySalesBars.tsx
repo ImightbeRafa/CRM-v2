@@ -51,7 +51,7 @@ export function DailySalesBars({ series, symbol }: { series: PairedDailyPoint[];
                 aria-label={`${formatDayLabel(p.date)}: ${formatCompactMoney(p.revenue, symbol)}, anterior ${formatCompactMoney(p.prevRevenue, symbol)}`}
               >
                 <span
-                  className="w-full max-w-[22px] rounded-t-md bg-[#E9E5FF]"
+                  className="w-full max-w-[22px] rounded-t-md bg-au-tint-e9e5ff"
                   style={{ height: `${barPercent(p.prevRevenue, max)}%` }}
                 />
                 <span
@@ -98,7 +98,7 @@ export function DailyLegend({ current, previous }: { current: string; previous: 
         {current}
       </span>
       <span className="flex items-center gap-1.5">
-        <span className="h-2 w-2 rounded-full bg-[#E9E5FF]" aria-hidden />
+        <span className="h-2 w-2 rounded-full bg-au-tint-e9e5ff" aria-hidden />
         {previous}
       </span>
     </div>

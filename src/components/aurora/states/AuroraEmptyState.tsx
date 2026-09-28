@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 type Tone = 'brand' | 'neutral' | 'danger'
 
 const TONE_CLASS: Record<Tone, string> = {
-  brand: 'bg-[#EEF0FF] text-[#5B6CFF] ring-[#5B6CFF]/15',
+  brand: 'bg-au-tint-eef0ff text-au-ink-5b6cff ring-[#5B6CFF]/15',
   neutral: 'bg-slate-100 text-slate-500 ring-slate-200/60',
   danger: 'bg-red-50 text-red-600 ring-red-100',
 }

@@ -31,7 +31,7 @@ export function PeriodSegmented({
             aria-selected={active}
             onClick={() => onChange(p)}
             className={`min-h-[36px] shrink-0 snap-start whitespace-nowrap rounded-lg px-3.5 text-[13px] font-medium transition-colors ${
-              active ? 'bg-white text-[#0E0D17] shadow-sm' : 'text-slate-500 hover:text-slate-800'
+              active ? 'bg-white text-au-ink-0e0d17 shadow-sm' : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             {AURORA_PERIOD_LABELS[p]}
@@ -55,7 +55,7 @@ export function StatsHeader({ period, onPeriod }: { period: AuroraPeriod; onPeri
       className="flex shrink-0 flex-col gap-3 border-b border-slate-200/70 bg-white px-4 py-3 md:flex-row md:items-center md:justify-between md:px-8"
     >
       <div className="min-w-0">
-        <h1 className="text-[18px] font-semibold leading-tight text-[#0E0D17]">Estadísticas</h1>
+        <h1 className="text-[18px] font-semibold leading-tight text-au-ink-0e0d17">Estadísticas</h1>
         <p className="text-[12px] text-slate-400">Ventas, conversación y rendimiento por línea</p>
       </div>
       <div className="flex min-w-0 items-center gap-2">
@@ -65,7 +65,7 @@ export function StatsHeader({ period, onPeriod }: { period: AuroraPeriod; onPeri
         {canExport ? (
           <Link
             href="/exports"
-            className="inline-flex min-h-[40px] shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-[13px] font-medium text-[#0E0D17] hover:bg-slate-50"
+            className="inline-flex min-h-[40px] shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-[13px] font-medium text-au-ink-0e0d17 hover:bg-slate-50"
           >
             <Download className="h-4 w-4" aria-hidden />
             <span className="hidden sm:inline">Exportar</span>

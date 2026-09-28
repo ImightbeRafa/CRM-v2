@@ -13,8 +13,8 @@ const BAR: Record<CardState, { fill: string; width: string }> = {
 }
 
 const TEXT_TONE: Record<CardState, string> = {
-  approved: 'text-[#5B3FE0]',
-  inventory: 'text-[#5B3FE0]',
+  approved: 'text-au-ink-5b3fe0',
+  inventory: 'text-au-ink-5b3fe0',
   draft: 'text-amber-700',
   empty: 'text-red-600',
 }
@@ -118,7 +118,7 @@ export function AgentKnowledgeTab({
               } ${selected ? 'ring-2 ring-[#5B6CFF]/40' : ''}`}
             >
               <span className="flex items-center justify-between gap-2">
-                <span className="text-[14px] font-semibold text-[#0E0D17]">{card.title}</span>
+                <span className="text-[14px] font-semibold text-au-ink-0e0d17">{card.title}</span>
                 <span className={`text-[12px] font-semibold ${TEXT_TONE[state]}`}>{CARD_STATE_TEXT[state]}</span>
               </span>
               <span className="mt-2.5 block h-1.5 overflow-hidden rounded-full bg-slate-100">

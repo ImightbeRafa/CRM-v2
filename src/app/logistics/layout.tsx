@@ -28,7 +28,7 @@ export default async function LogisticsLayout({ children }: { children: React.Re
     if (!session) redirect('/dashboard');
 
     return (
-        <div className={`lm-root ${inter.className}`} style={{
+        <div className={`lm-root theme-static ${inter.className}`} style={{
             display: 'flex',
             minHeight: '100vh',
             background: '#0D0D0D',

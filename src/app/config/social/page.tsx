@@ -950,7 +950,7 @@ export default function SocialConfigPage() {
                   }`}
                 >
                   {tab.label}{' '}
-                  <span className={activeTab === tab.key ? 'text-[#5B6CFF]' : 'text-slate-400'}>
+                  <span className={activeTab === tab.key ? 'text-au-ink-5b6cff' : 'text-slate-400'}>
                     {tab.count}
                   </span>
                 </button>
@@ -1003,7 +1003,7 @@ export default function SocialConfigPage() {
                   disabled={addLineDisabled}
                   title={addLineTitle}
                   aria-label="Agregar otra línea de WhatsApp"
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-[#5B6CFF]/50 text-[#5B6CFF] disabled:opacity-50"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-[#5B6CFF]/50 text-au-ink-5b6cff disabled:opacity-50"
                 >
                   <Plus className="h-4 w-4" aria-hidden />
                 </button>
@@ -1013,7 +1013,7 @@ export default function SocialConfigPage() {
                     onClick={handleAddWhatsApp}
                     disabled={addLineDisabled}
                     title={addLineTitle}
-                    className="text-[13px] font-medium text-[#5B6CFF] disabled:opacity-50"
+                    className="text-[13px] font-medium text-au-ink-5b6cff disabled:opacity-50"
                   >
                     Agregar otra línea de WhatsApp
                   </button>
@@ -1101,7 +1101,7 @@ export default function SocialConfigPage() {
           </ChannelsTable>
         </section>
 
-        <p className="text-[12px] text-[#5B6CFF]">
+        <p className="text-[12px] text-au-ink-5b6cff">
           ✦ Inbox de clientes en{' '}
           <a className="underline" href="/chats">
             Chats

@@ -57,9 +57,10 @@ test('Embedded Signup page only changed its header copy; agentes page keeps its 
   assert.ok(!/WHATSAPP_/.test(agentes))
 })
 
-test('.aurora-light keeps shadcn tokens light under html.dark', () => {
+test('Config panel: light tokens in the light theme, follows the dark theme (Apariencia)', () => {
   const css = read('src/app/components/globals.css')
-  assert.match(css, /\.aurora-light \{/)
+  // Dark mode (2026-09-28): .aurora-light only pins light tokens when html is not dark.
+  assert.match(css, /html:not\(\.dark\) \.aurora-light,/)
   assert.match(read('src/components/aurora/config/ConfigShell.tsx'), /aurora-light/)
 })
 

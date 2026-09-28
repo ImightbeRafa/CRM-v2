@@ -50,7 +50,7 @@ export function NewAgentForm({
   if (tab === 'resumen') {
     return (
       <div className={CARD} data-testid="new-agent-resumen">
-        <h3 className="text-[15px] font-semibold text-[#0E0D17]">Datos del agente</h3>
+        <h3 className="text-[15px] font-semibold text-au-ink-0e0d17">Datos del agente</h3>
         <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
           <div>
             <label htmlFor="new-agent-name" className="text-xs font-medium text-slate-700">
@@ -102,7 +102,7 @@ export function NewAgentForm({
   if (tab === 'personalidad') {
     return (
       <div className={CARD} data-testid="new-agent-personalidad">
-        <h3 className="text-[15px] font-semibold text-[#0E0D17]">Voz</h3>
+        <h3 className="text-[15px] font-semibold text-au-ink-0e0d17">Voz</h3>
         <p className="mt-3 text-xs font-medium text-slate-700">Tono</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {TONES.map((t) => (
@@ -151,7 +151,7 @@ export function NewAgentForm({
 
   return (
     <div className={CARD} data-testid="new-agent-lineas">
-      <h3 className="text-[15px] font-semibold text-[#0E0D17]">Líneas</h3>
+      <h3 className="text-[15px] font-semibold text-au-ink-0e0d17">Líneas</h3>
       <p className="mt-2 rounded-xl bg-slate-50 px-3 py-3 text-[13px] text-slate-600">
         Guardá el agente para elegir qué líneas atiende. Lista vacía = no atiende a nadie.
       </p>

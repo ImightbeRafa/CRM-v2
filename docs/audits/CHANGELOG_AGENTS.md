@@ -1,3 +1,18 @@
+## 2026-09-28 — Browser walkthrough + release plan (PR #88)
+
+- Railway preview auto-deploy enabled (Rafael); Linux build of the final code: Success.
+- Walkthrough as PeterTesting on the preview (desktop + 745 px mobile): Inicio, Chats (Abiertos
+  default, empty rail state), Pedidos, Crear pedido drawer, Producción (Aurora, list renders),
+  Estadísticas, Config › Equipo + invite modal (email invite default, no Owner), Canales, Exportar,
+  Respaldos, Ayuda. Fixes in 3dbdbde: feedback panel light scope, staff names never an email (menu,
+  sidebar, Equipo), Respaldos readable error, Exportar in Spanish, "Más" sheet above the banner —
+  all re-verified on the redeployed preview.
+- Preview rate-limit probe (unknown email, no side effects): Railway overwrites X-Forwarded-For →
+  AUTH-04 not exploitable (Notion: Won't fix).
+- INFRA-03: `workers_dev` / `preview_urls` false (effective at next wrangler deploy); ops smoke on www.
+- Release runbook: `docs/ops/aurora-release-plan.md` (Docker + CLOUDFLARE_API_TOKEN on the deploy
+  machine, record current version, `wrangler deploy`, smoke, `wrangler rollback <id>`).
+
 ## 2026-09-28 — Final review round on `rafa/aurora-on-live` (PR #88)
 
 - Verifier (Opus xhigh): PASS WITH NOTES → all 7 notes fixed in 1511d9c (default inbox view "Abiertos",

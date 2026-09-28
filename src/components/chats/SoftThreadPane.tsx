@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent,
   type FormEvent,
   type KeyboardEvent,
   type Ref,
@@ -44,6 +45,7 @@ import {
   useAutoGrowTextarea,
   type RecentMediaItem,
 } from '@/components/chats/composer/ComposerExtras'
+import { acceptsAttachment, fileFromClipboard, hasDraggedFiles } from '@/lib/chat-attachment-drop'
 import {
   applyQuickReply,
   filterQuickReplies,
@@ -279,6 +281,17 @@ export function SoftThreadPane({
   /** `false` = closed; string = open (optionally pre-filling a new shortcut). */
   const [managerOpen, setManagerOpen] = useState<false | { shortcut?: string }>(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [dragActive, setDragActive] = useState(false)
+  const [dropError, setDropError] = useState<string | null>(null)
+  const dragDepth = useRef(0)
+  // Thumbnail for a dropped / pasted / picked image.
+  const pendingPreview = useMemo(
+    () => (pendingFile && pendingFile.type.startsWith('image/') ? URL.createObjectURL(pendingFile) : null),
+    [pendingFile],
+  )
+  useEffect(() => () => {
+    if (pendingPreview) URL.revokeObjectURL(pendingPreview)
+  }, [pendingPreview])
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const setTextareaRef = useCallback(
     (el: HTMLTextAreaElement | null) => {
@@ -296,6 +309,9 @@ export function SoftThreadPane({
   useEffect(() => {
     setPendingFile(null)
     setPendingRecent(null)
+    setDropError(null)
+    setDragActive(false)
+    dragDepth.current = 0
     setSlash(null)
     setEmojiOpen(false)
     setAttachMenuOpen(false)
@@ -401,6 +417,49 @@ export function SoftThreadPane({
   const canCreateOrder = Boolean(onCreateOrder) && !conversation.orderId && !conversation.isDemo
   // F37-03: unlock composer whenever paused / human takeover (incl. DEMO).
   const composerEnabled = isSoftHumanComposerEnabled(agentMode)
+  const canAttach = Boolean(attachments) && conversation.platform === 'whatsapp' && composerEnabled && !sending
+
+  /** Stage a dropped / pasted file like the paperclip does (preview + optional caption). */
+  function stageFile(file: File) {
+    if (!attachments) return
+    const check = acceptsAttachment(file, attachments.accept)
+    if (!check.ok) {
+      setDropError(check.error)
+      return
+    }
+    setDropError(null)
+    setPendingRecent(null)
+    setPendingFile(file)
+    composerFocus()
+  }
+  const dropHandlers = {
+    onDragEnter: (e: DragEvent<HTMLElement>) => {
+      if (!hasDraggedFiles(e.dataTransfer)) return
+      e.preventDefault()
+      dragDepth.current += 1
+      setDragActive(true)
+    },
+    onDragOver: (e: DragEvent<HTMLElement>) => {
+      if (!hasDraggedFiles(e.dataTransfer)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = canAttach ? 'copy' : 'none'
+    },
+    onDragLeave: (e: DragEvent<HTMLElement>) => {
+      if (!hasDraggedFiles(e.dataTransfer)) return
+      dragDepth.current = Math.max(0, dragDepth.current - 1)
+      if (dragDepth.current === 0) setDragActive(false)
+    },
+    onDrop: (e: DragEvent<HTMLElement>) => {
+      if (!hasDraggedFiles(e.dataTransfer)) return
+      e.preventDefault()
+      dragDepth.current = 0
+      setDragActive(false)
+      if (!canAttach) return
+      const files = Array.from(e.dataTransfer.files || [])
+      if (files.length > 1) setDropError('Se envía un archivo a la vez: tomamos el primero.')
+      if (files[0]) stageFile(files[0])
+    },
+  }
 
   function openPicker() {
     onClearError()
@@ -414,7 +473,21 @@ export function SoftThreadPane({
   }
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+    <section className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-white" {...dropHandlers} data-testid="soft-thread-drop-zone">
+      {dragActive ? (
+        <div
+          className={`pointer-events-none absolute inset-2 z-50 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed backdrop-blur-[2px] ${
+            canAttach ? 'border-[#5B6CFF] bg-[#EEF0FF]/85 text-[#4A46E5]' : 'border-slate-300 bg-slate-50/90 text-slate-500'
+          }`}
+          data-testid="soft-thread-drop-overlay"
+        >
+          <Paperclip className="h-8 w-8" aria-hidden />
+          <p className="text-[14px] font-semibold">
+            {canAttach ? 'Soltá la imagen para adjuntarla' : conversation.platform !== 'whatsapp' ? 'Por ahora solo se envían archivos por WhatsApp' : 'Tomá control del chat para enviar archivos'}
+          </p>
+          {canAttach ? <p className="text-[12px] opacity-80">Foto, video, audio o documento · máx. 9 MB</p> : null}
+        </div>
+      ) : null}
       {channelDownMessage ? <ChannelDownBanner message={channelDownMessage} /> : null}
       {compact ? (
         <header className="flex shrink-0 items-center gap-3 border-b border-slate-200/70 bg-white px-3 py-2.5">
@@ -1006,6 +1079,11 @@ export function SoftThreadPane({
             </div>
           ) : null}
 
+          {dropError ? (
+            <p role="alert" className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-900" data-testid="composer-drop-error">
+              {dropError}
+            </p>
+          ) : null}
           {pendingFile || pendingRecent ? (
             <div
               className="mb-2 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[12px] text-slate-700 ring-1 ring-slate-200"
@@ -1019,7 +1097,12 @@ export function SoftThreadPane({
                   className="h-9 w-9 shrink-0 rounded-md object-cover ring-1 ring-slate-200"
                 />
               ) : (
-                <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+                pendingPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={pendingPreview} alt="" className="h-9 w-9 shrink-0 rounded-md object-cover ring-1 ring-slate-200" />
+                ) : (
+                  <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+                )
               )}
               <span className="min-w-0 flex-1 truncate">
                 {pendingRecent ? pendingRecent.filename || 'Imagen reciente' : pendingFile?.name}
@@ -1032,6 +1115,7 @@ export function SoftThreadPane({
                 onClick={() => {
                   setPendingFile(null)
                   setPendingRecent(null)
+                  setDropError(null)
                 }}
                 disabled={sending}
                 aria-label="Quitar archivo"
@@ -1155,6 +1239,13 @@ export function SoftThreadPane({
               }}
               onSelect={(e) => updateSlash(e.currentTarget.value, e.currentTarget.selectionStart)}
               onBlur={() => setSlash(null)}
+              onPaste={(e) => {
+                // Screenshot / copied image: attach it instead of pasting nothing.
+                const file = fileFromClipboard(e.clipboardData)
+                if (!file || !canAttach) return
+                e.preventDefault()
+                stageFile(file)
+              }}
               onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
                 if (slash && quickReplies) {
                   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {

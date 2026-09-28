@@ -1,3 +1,11 @@
+## 2026-09-28 — Chats: drag & drop + paste images (branch `claudio/chat-feedback-batch`)
+
+- Drop a file anywhere on the open chat (overlay "Soltá la imagen para adjuntarla") or paste a
+  screenshot (Ctrl/⌘V) in the composer: it is staged like the paperclip (thumbnail + optional
+  caption, then Enviar). Same gate as the paperclip (WhatsApp, Humano/pausa, not sending); client
+  checks accept list + 9 MB, server still validates bytes. `src/lib/chat-attachment-drop.ts`.
+- Prove: `test:chat-feedback` 31/0, soft-ai baseline (2), chat-mobile 6/0, tsc clean, eslint 0 errors.
+
 ## 2026-09-28 — Chats feedback batch (branch `claudio/chat-feedback-batch`, base `rafa/fix-token-health`)
 
 - Source: Rafael's walkthrough doc (bugs + features, 2026-09-28). Decisions: outbound media ON by

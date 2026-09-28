@@ -229,3 +229,33 @@ describe('SecureDog / verifier fixes', () => {
     assert.equal(maskPhone(''), null)
   })
 })
+
+describe('drag & drop / paste images into a chat', () => {
+  test('only file drags count (not text or links)', async () => {
+    const { hasDraggedFiles } = await import('../chat-attachment-drop')
+    assert.equal(hasDraggedFiles({ types: ['Files'] }), true)
+    assert.equal(hasDraggedFiles({ types: ['text/plain', 'text/uri-list'] }), false)
+    assert.equal(hasDraggedFiles(null), false)
+  })
+  test('accept list, size cap and a clear message for unsupported photos', async () => {
+    const { acceptsAttachment } = await import('../chat-attachment-drop')
+    const { WA_OUTBOUND_ACCEPT } = await import('../chat-outbound-media')
+    assert.deepEqual(acceptsAttachment({ name: 'Foto.JPG', size: 1000, type: 'image/jpeg' }, WA_OUTBOUND_ACCEPT), { ok: true })
+    assert.match((acceptsAttachment({ name: 'a.webp', size: 10, type: 'image/webp' }, WA_OUTBOUND_ACCEPT) as any).error, /JPG o PNG/)
+    assert.match((acceptsAttachment({ name: 'a.exe', size: 10 }, WA_OUTBOUND_ACCEPT) as any).error, /no se puede enviar/)
+    assert.match((acceptsAttachment({ name: 'a.png', size: 20 * 1024 * 1024 }, WA_OUTBOUND_ACCEPT) as any).error, /9 MB/)
+  })
+  test('a pasted nameless screenshot gets a .png name', async () => {
+    const { fileFromClipboard } = await import('../chat-attachment-drop')
+    const blob = new File([new Uint8Array([1, 2])], '', { type: 'image/png' })
+    const file = fileFromClipboard({ files: [blob] })
+    assert.match(file?.name || '', /^captura-.*\.png$/)
+    assert.equal(fileFromClipboard({ files: [], items: [] }), null)
+  })
+  test('the thread pane is a drop zone gated like the paperclip', () => {
+    const pane = read('src/components/chats/SoftThreadPane.tsx')
+    assert.match(pane, /data-testid="soft-thread-drop-zone"/)
+    assert.match(pane, /const canAttach = Boolean\(attachments\) && conversation\.platform === 'whatsapp' && composerEnabled && !sending/)
+    assert.match(pane, /onPaste=/)
+  })
+})

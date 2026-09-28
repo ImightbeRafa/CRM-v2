@@ -1,3 +1,19 @@
+## 2026-09-28 — Final review round on `rafa/aurora-on-live` (PR #88)
+
+- Verifier (Opus xhigh): PASS WITH NOTES → all 7 notes fixed in 1511d9c (default inbox view "Abiertos",
+  thread network-error state, send-media retry dedupe, audio caption, stale-data banners on Canales /
+  Producción, no double header on compact).
+- SecureDog (Opus max): OK for deploy; all batch-2 findings VERIFIED fixed. New notes fixed in 3953235:
+  MEDIA-08 filename/extension bypass (dormant, flag off), MEDIA-09 10 MB middleware body cap (uploads
+  ≤ 9.5 MB, Content-Length required), DATA-02 sender label never an email, IPv4-mapped/canonical IPv6,
+  worker strips internal identity headers. Notion register statuses updated.
+- `chat_outbound_media_v1` stays OFF for every tenant until tested on a real WhatsApp line.
+- Prove: `tsc --noEmit --incremental false` 0 errors outside tests; chat-harden 336/2, security 136/1
+  (pre-existing baseline); site-ui 50, config-ui 30, channels-ui 10, agentes-ui 34, pedidos-ui 15,
+  tenant-ui 9, backups 8, chat-mobile 6 — all green. Clean `next build` passed at e34b96e; later local
+  builds hit a native webpack-worker crash (0xC0000005) that also reproduces on the previous commit
+  (environment, not code). Confirm with the Linux build on Railway / the Cloudflare image.
+
 ## 2026-09-28 — Release batch 3 on `rafa/aurora-on-live` (PR #88)
 
 - Chats: send photos / videos / audio / documents on WhatsApp (`/api/chat/send-media`, magic-byte

@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { Resend } from 'resend';
 import { escapeHtml, generateResetToken, hashResetToken, RESET_TOKEN_TTL_MS } from '@/lib/password-reset';
-import { authRateLimit } from '@/lib/rate-limit';
+import { authRateLimit, getClientIP } from '@/lib/rate-limit';
+import { verifyTurnstile } from '@/lib/turnstile';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -11,7 +12,13 @@ export async function POST(request: Request) {
   if (rateLimitResult instanceof Response) return rateLimitResult;
 
   try {
-    const { email } = await request.json();
+    const { email, turnstileToken } = await request.json();
+
+    // Bot check before any lookup (no-op until Turnstile keys are set).
+    const human = await verifyTurnstile(turnstileToken, getClientIP(request));
+    if (!human.ok) {
+      return NextResponse.json({ error: human.error, code: 'turnstile' }, { status: 400 });
+    }
 
     if (!email || typeof email !== 'string') {
       return NextResponse.json(

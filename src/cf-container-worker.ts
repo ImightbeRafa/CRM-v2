@@ -115,6 +115,8 @@ interface Env {
   BACKUP_API_KEY?: string;
   BACKUP_RETENTION_DAYS?: string;
   BETSY_API_URL?: string;
+  TURNSTILE_SITE_KEY?: string;
+  TURNSTILE_SECRET_KEY?: string;
   // NEXT_PUBLIC_* — client bundle is build-time; server process.env can still
   // read these at runtime for Embedded Signup / Meta helpers.
   NEXT_PUBLIC_FB_LOGIN_CONFIG_ID?: string;
@@ -192,6 +194,9 @@ const CONTAINER_ENV_KEYS = [
   "BACKUP_API_KEY",
   "BACKUP_RETENTION_DAYS",
   "BETSY_API_URL",
+  // Bot check on signup / password reset (src/lib/turnstile.ts): off until both are set.
+  "TURNSTILE_SITE_KEY",
+  "TURNSTILE_SECRET_KEY",
   "NEXT_PUBLIC_FB_LOGIN_CONFIG_ID",
   "NEXT_PUBLIC_IG_LOGIN_CONFIG_ID",
   "NEXT_PUBLIC_META_APP_ID",

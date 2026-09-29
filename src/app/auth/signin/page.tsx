@@ -7,6 +7,7 @@ import Link from "next/link"
 import { Eye, EyeOff } from "lucide-react"
 import { trackMetaEvent } from "@/app/components/MetaPixel"
 import { safeReturnPath } from "@/lib/safe-return-path"
+import { TurnstileWidget } from "@/components/aurora/auth/TurnstileWidget"
 import {
   AuthShell,
   authInputClass,
@@ -26,6 +27,8 @@ function SignInPageInner() {
   const [showPassword, setShowPassword] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
   const [needsVerification, setNeedsVerification] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const [turnstileReset, setTurnstileReset] = useState(0)
   const [resendNote, setResendNote] = useState<string | null>(null)
 
   // Codes thrown by the credentials authorize gates (src/lib/auth-gates.ts).
@@ -100,13 +103,14 @@ function SignInPageInner() {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Event-Id': eventId },
-        body: JSON.stringify({ email, password, name: name || email.split('@')[0] })
+        body: JSON.stringify({ email, password, name: name || email.split('@')[0], turnstileToken })
       })
       
       const data = await res.json()
       
       if (!res.ok) {
         setError(data.error || 'Error al registrarse')
+        if (data.code === 'turnstile') setTurnstileReset((n) => n + 1)
         setLoading(false)
         return
       }
@@ -266,6 +270,7 @@ function SignInPageInner() {
             </div>
           )}
         </div>
+        {isRegistering ? <TurnstileWidget onToken={setTurnstileToken} resetKey={turnstileReset} /> : null}
         {error && <p className={authErrorClass} role="alert">{error}</p>}
         {needsVerification && email ? (
           <p className="text-center text-[13px] text-slate-600">

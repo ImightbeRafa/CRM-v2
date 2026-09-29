@@ -4,7 +4,8 @@ import { prisma } from '@/lib/db';
 import { hashPassword, validatePasswordStrength, verifyPassword, isBcryptHash } from '@/lib/password';
 import { sendVerificationEmail } from '@/lib/email';
 import { withoutTenantIsolation } from '@/lib/tenantContext';
-import { authRateLimit } from '@/lib/rate-limit';
+import { authRateLimit, getClientIP } from '@/lib/rate-limit';
+import { verifyTurnstile } from '@/lib/turnstile';
 import { sendCAPIEvent } from '@/lib/meta-capi';
 import { provisionOwnedTenantForExistingUser } from '@/lib/tenant-provisioning';
 import { acceptTeamInviteForUser, findPendingInviteForEmail } from '@/lib/team-invite-service';
@@ -31,7 +32,13 @@ export async function POST(request: Request) {
   if (rateLimitResult instanceof Response) return rateLimitResult;
 
   try {
-    const { name, email, password, businessName, phone, country, province, inviteToken } = await request.json();
+    const { name, email, password, businessName, phone, country, province, inviteToken, turnstileToken } = await request.json();
+
+    // Bot check (no-op until TURNSTILE_SITE_KEY + TURNSTILE_SECRET_KEY are set).
+    const human = await verifyTurnstile(turnstileToken, getClientIP(request));
+    if (!human.ok) {
+      return NextResponse.json({ error: human.error, code: 'turnstile' }, { status: 400 });
+    }
 
     if (!name || !email || !password) {
       return NextResponse.json(

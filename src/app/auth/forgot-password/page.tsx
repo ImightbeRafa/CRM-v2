@@ -11,12 +11,15 @@ import {
   authErrorClass,
   authSuccessClass,
 } from '@/components/aurora/auth/AuthShell'
+import { TurnstileWidget } from '@/components/aurora/auth/TurnstileWidget'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const [turnstileReset, setTurnstileReset] = useState(0)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -27,10 +30,16 @@ export default function ForgotPasswordPage() {
       const res = await fetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: email.trim(), turnstileToken }),
       })
 
       if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        if (data?.code === 'turnstile') {
+          setError(data.error || 'Completa la verificación de seguridad.')
+          setTurnstileReset((n) => n + 1)
+          return
+        }
         throw new Error('Error de red')
       }
 
@@ -74,6 +83,7 @@ export default function ForgotPasswordPage() {
             />
           </div>
 
+          <TurnstileWidget onToken={setTurnstileToken} resetKey={turnstileReset} />
           {error && <p className={authErrorClass} role="alert">{error}</p>}
 
           <button type="submit" disabled={loading} className={authPrimaryButtonClass}>

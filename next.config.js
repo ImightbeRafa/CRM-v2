@@ -72,19 +72,22 @@ const nextConfig = {
           },
           {
             key: 'Referrer-Policy',
-            value: 'origin-when-cross-origin'
+            value: 'strict-origin-when-cross-origin'
           },
           {
+            // The ONLY Content-Security-Policy (middleware used to send a second, different one;
+            // browsers enforce both, so the effective policy was their intersection).
+            // challenges.cloudflare.com = Turnstile (only loaded when its keys are configured).
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://vercel.live https://app.tilopay.com https://accounts.google.com https://www.googletagmanager.com https://api.tokenex.com https://storage.googleapis.com https://connect.facebook.net https://staticxx.facebook.com https://www.facebook.com https://static.cloudflareinsights.com",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://app.tilopay.com https://accounts.google.com https://www.googletagmanager.com https://api.tokenex.com https://storage.googleapis.com https://connect.facebook.net https://staticxx.facebook.com https://www.facebook.com https://static.cloudflareinsights.com https://challenges.cloudflare.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "img-src 'self' data: https: blob: https://*.facebook.com https://*.fbcdn.net https://storage.googleapis.com https://vercel.com https://vercel.live https://*.vercel.app https://*.vercel-storage.com",
+              "img-src 'self' data: https: blob:",
               "font-src 'self' data: https://fonts.gstatic.com",
-              "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://api.tokenex.com https://vercel.live https://*.vercel-storage.com https://accounts.google.com https://connect.facebook.net https://graph.facebook.com https://www.facebook.com https://static.cloudflareinsights.com https://*.ingest.us.sentry.io",
+              "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://api.tokenex.com https://*.vercel-storage.com https://accounts.google.com https://connect.facebook.net https://graph.facebook.com https://www.facebook.com https://static.cloudflareinsights.com https://*.ingest.us.sentry.io https://challenges.cloudflare.com",
               "worker-src 'self' blob:",
-              "frame-src 'self' https://app.tilopay.com https://api.tokenex.com https://accounts.google.com https://www.facebook.com https://web.facebook.com",
+              "frame-src 'self' https://app.tilopay.com https://api.tokenex.com https://accounts.google.com https://www.facebook.com https://web.facebook.com https://challenges.cloudflare.com",
               "object-src 'none'",
               "base-uri 'self'",
               "form-action 'self'",
@@ -183,7 +186,9 @@ export default withSentryConfig(bundleAnalyzer(nextConfig), {
   project: "javascript-nextjs",
   silent: !process.env.CI,
   widenClientFileUpload: true,
-  ...(process.env.SENTRY_TUNNEL_ROUTE ? { tunnelRoute: process.env.SENTRY_TUNNEL_ROUTE } : {}),
+  // Browser events go through our own domain (/monitoring, public in middleware): no Sentry
+  // Allowed-Domains 403s and no ad-blocker drops. Was env-gated and unset in the CF image build.
+  tunnelRoute: process.env.SENTRY_TUNNEL_ROUTE || '/monitoring',
   webpack: {
     automaticVercelMonitors: true,
     treeshake: { removeDebugLogging: true },

@@ -7,20 +7,7 @@ import { cronsDisabled } from '@/lib/cron-kill-switch';
 import { canAccessLogistics } from '@/lib/logistics-access';
 import { INTERNAL_AUTH_HEADERS, setSignedAuthHeaders } from '@/lib/internal-auth-context';
 
-const CSP_HEADER = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://vercel.live https://app.tilopay.com https://accounts.google.com https://www.googletagmanager.com https://api.tokenex.com https://storage.googleapis.com https://connect.facebook.net https://staticxx.facebook.com https://www.facebook.com https://static.cloudflareinsights.com",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' data: https://fonts.gstatic.com",
-  "img-src 'self' data: https: blob: https://*.facebook.com https://*.fbcdn.net https://storage.googleapis.com https://vercel.com https://vercel.live https://*.vercel.app https://*.vercel-storage.com",
-  "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://api.tokenex.com https://vercel.live https://*.vercel-storage.com https://accounts.google.com https://connect.facebook.net https://graph.facebook.com https://www.facebook.com https://static.cloudflareinsights.com https://*.ingest.us.sentry.io",
-  "worker-src 'self' blob:",
-  "frame-src 'self' https://app.tilopay.com https://api.tokenex.com https://accounts.google.com https://www.facebook.com https://web.facebook.com",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self' https://www.facebook.com",
-  "frame-ancestors 'self'",
-].join('; ');
+// Content-Security-Policy is set once, in next.config.js headers() (single source).
 
 const PUBLIC_ROUTES = [
   '/auth/signin',
@@ -400,7 +387,6 @@ async function handleAppRoute(
     async () => {
       const response = NextResponse.next(fwd);
       response.headers.set('x-tenant-id', tenantId);
-      response.headers.set('Content-Security-Policy', CSP_HEADER);
       return response;
     }
   );

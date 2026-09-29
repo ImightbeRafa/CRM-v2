@@ -7,7 +7,8 @@ Sentry.init({
 
   integrations: [
     Sentry.browserTracingIntegration(),
-    Sentry.replayIntegration(),
+    // Explicit (defaults today): never record customer text or media in replays (Ley 8968).
+    Sentry.replayIntegration({ maskAllText: true, maskAllInputs: true, blockAllMedia: true }),
     Sentry.consoleLoggingIntegration({ levels: ["warn", "error"] }),
   ],
   tracePropagationTargets: ["localhost", /^https:\/\/(www\.)?betsycrm\.com\/api/],

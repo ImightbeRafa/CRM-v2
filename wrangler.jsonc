@@ -24,7 +24,8 @@
       "image": "./Dockerfile",
       // Next.js + Prisma + optional Chromium needs >> lite (256MiB / 1/16 vCPU).
       "instance_type": "standard-2",
-      "max_instances": 1,
+      // 2: lets a fresh instance start while a stuck one still holds a slot (2026-09-29 outage).
+      "max_instances": 2,
       // Build-time NEXT_PUBLIC_* (public Meta Embedded Signup IDs). Runtime secrets stay on Worker.
       "image_vars": {
         "NEXT_PUBLIC_APP_URL": "https://www.betsycrm.com",

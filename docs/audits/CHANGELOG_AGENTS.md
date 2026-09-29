@@ -1,3 +1,18 @@
+## 2026-09-29 — Chat files → Supabase Storage; quick-reply saves atomic; Workers Logs on
+
+- Root cause (found via Workers Logs): Cloudflare's `BLOB_READ_WRITE_TOKEN` was rejected by Vercel
+  ("Access denied") → quick-reply uploads failed, chat media never cached, backups at risk.
+- Chat files now on Supabase Storage (`src/lib/chat-storage.ts`): private bucket `betsy-chat` in the
+  same project as the DB, service role only, hard timeouts, privacy verified on every start, https
+  `*.supabase.co` only, no redirects, legacy Vercel reads/deletes. No schema change (same paths in
+  `ChatMessage.mediaBlobPath` / settings). Backups stay on Vercel Blob (off-site) — verify 14:00 UTC run.
+- Quick replies: POST `{op: upsert|delete}` in a transaction with `SELECT … FOR UPDATE` (the version
+  check produced false "Alguien más cambió"). Upload 60 s client timeout.
+- Workers Logs enabled (`observability` in wrangler.jsonc): container console + exceptions queryable.
+- Secrets set (Rafael GO): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY. Live: 61c5b7ea; Rafael's test
+  upload + save at 03:16 UTC succeeded. SecureDog: OK (M-1 verified live: bucket private, only bucket).
+- Open: rotate to a revocable `sb_secret_` key (L-4); register SecureDog items in Notion; confirm backups.
+
 ## 2026-09-29 — Outage: www 1101 for ~25 min (container stuck) + failover
 
 - 00:21 UTC Cloudflare recreated the single container instance (`cf-singleton-container`); it stayed

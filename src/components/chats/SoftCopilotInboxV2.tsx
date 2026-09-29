@@ -812,8 +812,8 @@ export function SoftCopilotInboxV2() {
     status?: ConversationStatus
     tags?: SoftTag[]
     assignedUserId?: string | null
-  }) {
-    if (!selectedConversationId) return
+  }): Promise<boolean> {
+    if (!selectedConversationId) return false
     const res = await fetch(
       `/api/chat/conversations/${encodeURIComponent(selectedConversationId)}`,
       {
@@ -843,7 +843,9 @@ export function SoftCopilotInboxV2() {
           : incoming
         return mergeListDtoIntoMap(prev, [merged])
       })
+      return true
     }
+    return false
   }
 
   async function assignTo(userId: string | null) {
@@ -856,7 +858,9 @@ export function SoftCopilotInboxV2() {
   }
 
   function updateStatus(status: ConversationStatus) {
-    void patchConversation({ status })
+    void patchConversation({ status }).catch(() => false).then((ok) => {
+      if (!ok) toast({ variant: 'destructive', title: 'No se pudo cambiar la etapa', description: 'Probá de nuevo o recargá la página.' })
+    })
   }
 
   function toggleTag(tag: SoftTag) {

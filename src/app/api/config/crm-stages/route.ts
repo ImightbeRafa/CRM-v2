@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPI, authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { hasPermission } from '@/lib/rbac'
 import { loadStages, saveStages } from '@/lib/crm-stages-server'
 import { validateStageList, type StagePipeline } from '@/lib/crm-stages'
 import { logAuditEvent } from '@/lib/auditLogger'
@@ -16,6 +17,10 @@ function pipelineOf(value: unknown): StagePipeline | null {
 export async function GET(request: NextRequest) {
   const auth = await authenticateAPI(request)
   if (!auth.ok) return auth.response
+  // People who work chats or see config (SecureDog AUTH-37: not every member).
+  if (!hasPermission(auth.role, 'update_sales') && !hasPermission(auth.role, 'view_config')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
+  }
   const pipeline = pipelineOf(request.nextUrl.searchParams.get('pipeline'))
   if (!pipeline) return NextResponse.json({ success: false, error: 'pipeline debe ser chat o client' }, { status: 400 })
   const result = await loadStages(auth.tenantId, pipeline)

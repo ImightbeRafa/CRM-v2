@@ -133,7 +133,8 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    const { stages: chatStages } = await loadStages(auth.tenantId, 'chat')
+    // Only when something changed (most 5 s polls return no rows).
+    const chatStages = rows.length ? (await loadStages(auth.tenantId, 'chat')).stages : []
     const conversations = await enrichConversationDtosWithLinkedOrders(
       auth.tenantId,
       await enrichConversationDtosWithAgents(

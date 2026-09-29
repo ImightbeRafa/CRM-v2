@@ -31,7 +31,7 @@ export const importLocalStateBodySchema = z.object({
       z.object({
         conversationKey: z.string().min(3).max(256),
         status: CHAT_CONVERSATION_STATUS.optional(),
-        tags: z.array(z.string()).max(20).optional(),
+        tags: z.array(z.string().min(1).max(40)).max(20).optional(),
       }),
     )
     .max(500),

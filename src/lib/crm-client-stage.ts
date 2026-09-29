@@ -3,18 +3,22 @@
  * so it is idempotent and needs no event stream (17+ code paths write orders; hooking them all
  * would miss some). Computed lazily where a human looks, stored only when it changes.
  *
- * Rules v1 (rulesVersion 1; tunable later via CrmStage.entryRules):
- * - an open order (not delivered / cancelled) → its stage: Enviado (guía or "enviado"),
- *   En producción, Pagado (paid or cash on delivery), else Esperando pago;
+ * Rules v2 (tunable later via CrmStage.entryRules):
+ * - an open order → its stage: Enviado (successful guía or "enviado"), En producción, Pagado
+ *   (paid or cash on delivery), else Esperando pago. "Open" = not finished (delivered, or a
+ *   status the business marked terminal), not cancelled, NEWER than the client's last finished
+ *   order and younger than 45 days (STALE_OPEN_DAYS) — a forgotten old order never pins it;
  * - no open order and ≥ 2 purchases → Recurrente (Rafael: "a client that purchases multiple
  *   times");
- * - one delivered order → Entregado;
+ * - one finished purchase → Entregado (an abandoned unpaid order falls back to the rules below);
  * - no orders: Cotizando once someone on the team replied in chat, else Nuevo lead.
  * A manual choice sticks until the evidence changes (fingerprint).
  */
 import { derivePaymentState } from '@/lib/order-payment-status'
 
-export const CLIENT_STAGE_RULES_VERSION = 1
+export const CLIENT_STAGE_RULES_VERSION = 2
+/** Open orders older than this stop driving the stage (abandoned / never closed). */
+export const STALE_OPEN_DAYS = 45
 
 export type ClientStageKey =
   | 'nuevo_lead'
@@ -33,7 +37,10 @@ export type StageOrder = {
   contraEntrega?: boolean | null
   cePaymentConfirmed?: boolean | null
   customFields?: unknown
+  /** A successful guía exists (failed attempts do not count). */
   hasGuia: boolean
+  /** The business classified this status as terminal (finished). */
+  terminal?: boolean
 }
 
 export type ClientStageSnapshot = {
@@ -46,6 +53,8 @@ export type DerivedClientStage = {
   fingerprint: string
   evidenceAt: Date | null
   reason: string
+  /** 2+ purchases: shown as "Cliente recurrente" even while a new order is in progress. */
+  repeatCustomer: boolean
 }
 
 const CANCELLED = new Set(['cancelado', 'cancelada', 'cancelled', 'canceled', 'anulado', 'rechazado', 'devuelto'])
@@ -63,10 +72,10 @@ function norm(status: string | null | undefined): string {
 
 export type OrderPhase = 'cancelled' | 'delivered' | 'shipped' | 'production' | 'pending'
 
-export function orderPhase(order: Pick<StageOrder, 'status' | 'hasGuia'>): OrderPhase {
+export function orderPhase(order: Pick<StageOrder, 'status' | 'hasGuia' | 'terminal'>): OrderPhase {
   const s = norm(order.status)
   if (CANCELLED.has(s)) return 'cancelled'
-  if (DELIVERED.has(s)) return 'delivered'
+  if (DELIVERED.has(s) || order.terminal) return 'delivered'
   if (SHIPPED.has(s) || order.hasGuia) return 'shipped'
   if (PRODUCTION.has(s)) return 'production'
   return 'pending'
@@ -79,12 +88,19 @@ function isPurchase(order: StageOrder, phase: OrderPhase): boolean {
   return pay === 'pagado' || pay === 'contra_entrega'
 }
 
-export function deriveClientStage(snapshot: ClientStageSnapshot): DerivedClientStage {
+export function deriveClientStage(snapshot: ClientStageSnapshot, now: Date = new Date()): DerivedClientStage {
   const orders = [...snapshot.orders].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
   const phased = orders.map((o) => ({ o, phase: orderPhase(o) }))
   const live = phased.filter((x) => x.phase !== 'cancelled')
   const purchases = live.filter((x) => isPurchase(x.o, x.phase)).length
-  const open = live.find((x) => x.phase !== 'delivered')
+  const lastDone = live.find((x) => x.phase === 'delivered')
+  const staleBefore = now.getTime() - STALE_OPEN_DAYS * 24 * 60 * 60 * 1000
+  const open = live.find(
+    (x) =>
+      x.phase !== 'delivered' &&
+      x.o.timestamp.getTime() >= staleBefore &&
+      (!lastDone || x.o.timestamp.getTime() > lastDone.o.timestamp.getTime()),
+  )
 
   let key: ClientStageKey
   let reason: string
@@ -113,7 +129,8 @@ export function deriveClientStage(snapshot: ClientStageSnapshot): DerivedClientS
     key = 'recurrente'
     reason = `${purchases} compras`
     evidenceAt = live[0]?.o.timestamp ?? null
-  } else if (live.length > 0) {
+  } else if (lastDone || purchases > 0) {
+    // Something was actually bought (an abandoned unpaid order is not a delivery).
     key = 'entregado'
     reason = 'Pedido entregado'
     evidenceAt = live[0].o.timestamp
@@ -136,7 +153,7 @@ export function deriveClientStage(snapshot: ClientStageSnapshot): DerivedClientS
     live.length,
     snapshot.humanReplied ? 1 : 0,
   ].join('|')
-  return { key, fingerprint, evidenceAt, reason }
+  return { key, fingerprint, evidenceAt, reason, repeatCustomer: purchases >= 2 }
 }
 
 export type StoredClientStage = {

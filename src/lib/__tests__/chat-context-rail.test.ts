@@ -29,7 +29,8 @@ test('Cliente tab: chat stage + tags from the catalog, client panel with stage c
   assert.match(rail, /onStatusChange\(s\.key\)/)
   const panel = read('src/components/chats/ChatClientPanel.tsx')
   assert.match(panel, /<ClientStageChip/)
-  assert.match(panel, /<ChatNotesPanel conversationId=\{conversationId\}/)
+  // Keyed on the client so linking / unlinking reloads the notes.
+  assert.match(panel, /<ChatNotesPanel key=\{client\?\.id \?\? 'none'\} conversationId=\{conversationId\}/)
   assert.doesNotMatch(panel, /Cliente recurrente<\/p>/, 'the stage replaces the old badge')
   assert.match(read('src/components/chats/ChatNotesPanel.tsx'), /el cliente no la ve/)
 })

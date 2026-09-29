@@ -75,9 +75,9 @@ test('tags: legacy keys kept, custom allowed, duplicates refused', () => {
 test('wiring: PATCH validates the key per business; list maps categories; custom tags pass through', () => {
   const patch = read('src/app/api/chat/conversations/[id]/route.ts')
   assert.match(patch, /isAllowedChatStage\(auth\.tenantId, body\.status\)/)
-  for (const f of ['src/app/api/chat/conversations/route.ts', 'src/app/api/chat/conversations/changes/route.ts']) {
-    assert.match(read(f), /const \{ stages: chatStages \} = await loadStages\(auth\.tenantId, 'chat'\)/, f)
-  }
+  assert.match(read('src/app/api/chat/conversations/route.ts'), /const \{ stages: chatStages \} = await loadStages\(auth\.tenantId, 'chat'\)/)
+  // The changes poll only loads stages when something changed.
+  assert.match(read('src/app/api/chat/conversations/changes/route.ts'), /const chatStages = rows\.length \? \(await loadStages\(auth\.tenantId, 'chat'\)\)\.stages : \[\]/)
   assert.doesNotMatch(read('src/lib/chat-inbox-v2-client.ts'), /coerceSoftTags/)
   const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')
   assert.doesNotMatch(inbox, /status !== 'hecho'/)

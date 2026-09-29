@@ -13,8 +13,12 @@ import 'server-only'
 import { prisma } from '@/lib/db'
 import { isMissingRelation } from '@/lib/db-missing-relation'
 import { recordActivity } from '@/lib/activity'
+import { staffDisplayName } from '@/lib/display-name'
 
 export const NOTE_MAX_LENGTH = 4000
+
+/** Before migration 035: remember "table missing" for 5 minutes instead of failing every view. */
+let notesMissingUntil = 0
 
 export type NoteDto = {
   id: string
@@ -65,7 +69,8 @@ async function authorNames(ids: string[]): Promise<Map<string, string>> {
     where: { id: { in: unique } },
     select: { id: true, name: true, username: true },
   })
-  return new Map(users.map((u) => [u.id, u.name || u.username || 'Equipo']))
+  // Same rule as the rest of the inbox: an email stored as a name is never sent to the browser.
+  return new Map(users.map((u) => [u.id, staffDisplayName(u.name, u.username) || 'Equipo']))
 }
 
 function toDto(row: NoteRow, names: Map<string, string>, viewer: NoteViewer): NoteDto {
@@ -115,6 +120,7 @@ export async function listNotes(args: {
   if (args.clientId) or.push({ clientId: args.clientId })
   if (args.conversationId) or.push({ conversationId: args.conversationId })
   if (!or.length) return { available: true, notes: [] }
+  if (Date.now() < notesMissingUntil) return { available: false, notes: [] }
   try {
     const rows = await prisma.crmNote.findMany({
       where: { tenantId: args.tenantId, deletedAt: null, kind: 'note', OR: or },
@@ -125,7 +131,10 @@ export async function listNotes(args: {
     const names = await authorNames(rows.map((r) => r.authorUserId || ''))
     return { available: true, notes: sortNotes(rows).map((r) => toDto(r, names, args.viewer)) }
   } catch (error) {
-    if (isMissingRelation(error)) return { available: false, notes: [] }
+    if (isMissingRelation(error)) {
+      notesMissingUntil = Date.now() + 5 * 60_000
+      return { available: false, notes: [] }
+    }
     throw error
   }
 }
@@ -243,7 +252,9 @@ export async function deleteNote(args: { tenantId: string; viewer: NoteViewer; n
     if (!canDeleteNote(args.viewer, existing.authorUserId)) {
       return { ok: false, status: 403, error: 'Solo quien escribió la nota, un Owner o un Admin pueden borrarla.' }
     }
-    await prisma.crmNote.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })
+    // The text is wiped, not just hidden: "deleted" sensitive data must not live on in the DB /
+    // backups (SecureDog DATA-10).
+    await prisma.crmNote.update({ where: { id: existing.id }, data: { deletedAt: new Date(), body: '[borrada]', mentionUserIds: [] } })
     void recordActivity({
       tenantId: args.tenantId,
       actorUserId: args.viewer.userId,

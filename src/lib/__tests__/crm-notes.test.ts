@@ -55,20 +55,58 @@ function walk(dir: string, out: string[] = []): string[] {
   return out
 }
 
-test('internal notes never reach the AI or outbound message paths', () => {
-  const roots = ['src/lib/soft-ai', 'src/lib/bot', 'src/app/api/chat/send', 'src/app/api/chat/send-media', 'src/app/api/chat/webhook']
+test('internal notes never reach the AI, Meta or outbound message paths (INT-03)', () => {
+  const roots = [
+    'src/lib/soft-ai',
+    'src/lib/bot',
+    'src/app/api/chat/send',
+    'src/app/api/chat/send-media',
+    'src/app/api/chat/send-guia',
+    'src/app/api/chat/soft-ai',
+    'src/app/api/chat/webhook',
+    'src/app/api/cron/chat-automation',
+    'src/lib/meta-api.ts',
+    'src/lib/meta-capi.ts',
+    'src/lib/meta-chat.ts',
+  ]
+  let checked = 0
   for (const root of roots) {
+    const abs = path.join(process.cwd(), root)
     let files: string[] = []
     try {
-      files = walk(path.join(process.cwd(), root))
+      files = statSync(abs).isDirectory() ? walk(abs) : [abs]
     } catch {
       continue
     }
     for (const f of files) {
       const src = readFileSync(f, 'utf8')
+      checked++
       assert.doesNotMatch(src, /crm-notes|crmNote/, f)
+      // Nor the legacy Client.notes free text (select or include).
+      assert.doesNotMatch(src, /\bnotes:\s*true/, f)
     }
   }
+  assert.ok(checked > 20, `only ${checked} files checked`)
+})
+
+test('deleting a note wipes its text; author names never leak emails', () => {
+  const src = read('src/lib/crm-notes.ts')
+  assert.match(src, /deletedAt: new Date\(\), body: '\[borrada\]'/)
+  assert.match(src, /staffDisplayName\(u\.name, u\.username\)/)
+})
+
+test('workspace writes use their own rate limit bucket', () => {
+  for (const f of ['src/app/api/chat/conversations/[id]/notes/route.ts', 'src/app/api/crm/notes/[id]/route.ts', 'src/app/api/crm/clients/[id]/stage/route.ts']) {
+    assert.match(read(f), /workspaceWriteRateLimit\(/, f)
+  }
+  assert.equal((read('src/app/api/crm/notes/[id]/route.ts').match(/await limited\(/g) || []).length, 2)
+})
+
+test('suggestions and search results never carry the legacy client note', () => {
+  const src = read('src/app/api/chat/conversations/[id]/client/route.ts')
+  const base = src.slice(src.indexOf('const clientSelect'), src.indexOf('} as const'))
+  assert.doesNotMatch(base, /notes/)
+  assert.equal((src.match(/select: linkedClientSelect/g) || []).length, 1)
 })
 
 test('routes need update_sales and are registered', () => {

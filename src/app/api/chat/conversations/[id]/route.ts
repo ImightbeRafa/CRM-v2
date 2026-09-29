@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { recordActivity } from '@/lib/activity'
-import { isAllowedChatStage, loadStages } from '@/lib/crm-stages-server'
+import { isAllowedChatStage, loadStages, loadTags } from '@/lib/crm-stages-server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import {
@@ -41,6 +41,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const body = parsed.data
     if (body.status !== undefined && !(await isAllowedChatStage(auth.tenantId, body.status))) {
       return NextResponse.json({ success: false, error: 'Etapa inválida para este negocio' }, { status: 400 })
+    }
+    if (body.tags !== undefined) {
+      // New tags must come from the business's catalog (Config › Chats, update_config); tags the
+      // chat already has may stay (e.g. one archived later). SecureDog DATA-07.
+      const allowed = new Set((await loadTags(auth.tenantId)).tags.filter((t) => !t.archived).map((t) => t.key))
+      const had = new Set(existing.tags ?? [])
+      const unknown = body.tags.filter((t) => !allowed.has(t) && !had.has(t))
+      if (unknown.length) {
+        return NextResponse.json({ success: false, error: 'Etiqueta inválida para este negocio' }, { status: 400 })
+      }
     }
 
     if (body.assignedUserId) {

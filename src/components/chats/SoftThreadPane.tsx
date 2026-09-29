@@ -172,13 +172,13 @@ function DeliveryTicks({ status }: { status?: string | null }) {
   )
 }
 
-function tagChip(tag: SoftTag) {
+function tagChip(tag: SoftTag, label: string = tag, color: string | null = null) {
   return (
     <span
       key={tag}
-      className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900"
+      className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${color ? stageChipClass(color) : 'bg-amber-100 text-amber-900'}`}
     >
-      {tag}
+      {label}
     </span>
   )
 }
@@ -268,7 +268,7 @@ export function SoftThreadPane({
   quickReplies,
 }: SoftThreadPaneProps) {
   // Stage labels / colours from Config › Chats (custom stages).
-  const { chatStages, chatStageLabel } = useCrmCatalog()
+  const { chatStages, chatStageLabel, tags: tagDefs } = useCrmCatalog()
   const stageColor = (key: string) => chatStages.find((s) => s.key === key)?.color ?? null
   const [pickerOpenLocal, setPickerOpenLocal] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
@@ -627,7 +627,10 @@ export function SoftThreadPane({
                 <span className="rounded-md bg-au-tint-eef0ff px-2 py-0.5 text-[10px] font-medium text-au-ink-4a46e5">
                   {agentModeLabel(agentMode)}
                 </span>
-                {conversation.tags.map(tagChip)}
+                {conversation.tags.map((t) => {
+                  const def = tagDefs.find((d) => d.key === t)
+                  return tagChip(t, def?.label ?? t, def?.color ?? null)
+                })}
               </div>
             </div>
             {!compact ? (

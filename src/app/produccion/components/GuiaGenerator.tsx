@@ -69,6 +69,8 @@ interface GuiaGeneratorProps {
   orders: Sale[];
   onClose: () => void;
   onUpdateOrder: (orderId: string, updatedData: Partial<Sale>) => Promise<Sale>;
+  /** Where the guía was generated from (activity log): produccion (default), pedidos or chats. */
+  surface?: 'produccion' | 'pedidos' | 'chats';
 }
 
 interface GuiaStatus {
@@ -337,7 +339,7 @@ function LocationRow({
 
 // ─── Main Component ─────────────────────────────────────────
 
-export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGeneratorProps) {
+export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 'produccion' }: GuiaGeneratorProps) {
   const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
   const [orderGuias, setOrderGuias] = useState<OrderGuiaData[]>([]);
   const [shippingConfigs, setShippingConfigs] = useState<ShippingConfig[]>([]);
@@ -492,6 +494,7 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder }: GuiaGene
         credentials: 'include',
         body: JSON.stringify({
           orderIds: verifiedOrders.map((o) => o.orderId),
+          surface,
           carrier: selectedCarrier,
           deliveryType,
           verifiedLocations: verifiedOrders.map((o) => ({

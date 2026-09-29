@@ -143,6 +143,18 @@ export function ChatNotesPanel({
     }
   }
 
+  // Before migration 035: no notes yet, but the client's original note still shows (read-only).
+  if (available === false && legacyNote) {
+    return (
+      <section className="space-y-2" data-testid="chat-notes-panel" aria-label="Notas internas">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Notas</h3>
+        <p className="whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-2.5 py-2 text-[12.5px] text-slate-700 ring-1 ring-slate-100" data-testid="chat-note-legacy">
+          {legacyNote}
+        </p>
+        <p className="text-[10.5px] text-slate-400">Nota original del cliente</p>
+      </section>
+    )
+  }
   if (available !== true) return null
 
   return (

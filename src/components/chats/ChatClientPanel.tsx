@@ -38,6 +38,8 @@ type ClientStage = {
   source: 'auto' | 'manual'
   reason: string
   enteredAt: string | null
+  repeatCustomer?: boolean
+  editable?: boolean
 }
 
 type PanelData = {
@@ -85,8 +87,10 @@ export function ChatClientPanel({
   const [searchOpen, setSearchOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
-  const { data: session } = useSession()
+  const { data: session, status: sessionStatus } = useSession()
   const canGenerateGuia = hasSessionPermission(session, 'update_production')
+  // No "your role cannot" hint while the session is still loading (it flashed for Producción users).
+  const sessionReady = sessionStatus !== 'loading'
   const [guiaSale, setGuiaSale] = useState<Sale | null>(null)
   const requestSeq = useRef(0)
 
@@ -460,7 +464,7 @@ export function ChatClientPanel({
                         {busy === `guia:${order.id}` ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <FileText className="h-3 w-3" aria-hidden />}
                         Generar guía
                       </button>
-                    ) : (
+                    ) : !sessionReady ? null : (
                       <p className="mt-2.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-500">
                         Tu rol no genera guías: pedísela a Producción. Cuando esté lista, la enviás desde acá.
                       </p>
@@ -494,7 +498,8 @@ export function ChatClientPanel({
         )}
       </div>
 
-      <ChatNotesPanel conversationId={conversationId} hasClient={Boolean(client)} legacyNote={client?.notes ?? null} />
+      {/* Keyed on the client: linking / unlinking reloads the notes (client notes join the chat's). */}
+      <ChatNotesPanel key={client?.id ?? 'none'} conversationId={conversationId} hasClient={Boolean(client)} legacyNote={client?.notes ?? null} />
 
       {guiaSale ? (
         <Suspense fallback={null}>
@@ -507,6 +512,7 @@ export function ChatClientPanel({
               void load()
             }}
             onUpdateOrder={updateOrder}
+            surface="chats"
           />
         </Suspense>
       ) : null}
@@ -563,21 +569,29 @@ function ClientStageChip({
   return (
     <div className="mt-2" data-testid="client-stage">
       <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${stageChipClass(stage.color)}`}
-          title={stage.reason}
-        >
-          {stage.label}
-          {saving ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
-        </button>
+        <span className="inline-flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            disabled={stage.editable === false}
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold disabled:cursor-default ${stageChipClass(stage.color)}`}
+            title={stage.reason}
+          >
+            {stage.label}
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+          </button>
+          {stage.repeatCustomer && stage.key !== 'recurrente' ? (
+            <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700" data-testid="client-repeat-badge">
+              Cliente recurrente
+            </span>
+          ) : null}
+        </span>
         <span className="truncate text-[10.5px] text-slate-400">
           {stage.source === 'manual' ? 'Elegida por el equipo' : stage.reason}
         </span>
       </div>
-      {open ? (
+      {open && stage.editable !== false ? (
         <div className="mt-1.5 flex flex-wrap gap-1 rounded-lg bg-slate-50 p-1.5 ring-1 ring-slate-100" role="listbox" aria-label="Etapa del cliente">
           {activeClientStages.map((s) => (
             <button

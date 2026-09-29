@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { getClientStage, setClientStageManually } from '@/lib/crm-client-stage-server'
-import { prisma } from '@/lib/db'
+import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -12,9 +12,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const auth = await authenticateAPIWithPermission(request, 'update_sales')
   if (!auth.ok) return auth.response
   const { id } = await context.params
-  const client = await prisma.client.findFirst({ where: { id, tenantId: auth.tenantId }, select: { id: true } })
-  if (!client) return NextResponse.json({ success: false, error: 'Cliente no encontrado' }, { status: 404 })
-  const stage = await getClientStage(auth.tenantId, client.id, auth.userId)
+  const stage = await getClientStage(auth.tenantId, id)
+  if (!stage) return NextResponse.json({ success: false, error: 'Cliente no encontrado' }, { status: 404 })
   return NextResponse.json({ success: true, stage }, { headers: { 'Cache-Control': 'no-store' } })
 }
 
@@ -22,6 +21,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
 export async function PUT(request: NextRequest, context: RouteContext) {
   const auth = await authenticateAPIWithPermission(request, 'update_sales')
   if (!auth.ok) return auth.response
+  const rate = await workspaceWriteRateLimit(`${auth.tenantId}:${auth.userId}`)
+  if (!rate.allowed) {
+    return NextResponse.json({ success: false, error: 'Demasiados cambios seguidos. Esperá un momento.' }, { status: 429, headers: rate.headers })
+  }
   const { id } = await context.params
   const json = (await request.json().catch(() => null)) as { stageKey?: unknown } | null
   if (typeof json?.stageKey !== 'string') return NextResponse.json({ success: false, error: 'Falta la etapa' }, { status: 400 })

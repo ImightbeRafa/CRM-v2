@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { isAllowedChatStage, loadTags } from '@/lib/crm-stages-server'
 import {
   importLocalStateBodySchema,
   parseConversationKey,
@@ -50,8 +51,13 @@ export async function POST(request: NextRequest) {
       const statusStillDefault = existing.status === 'nuevo'
       const tagsStillDefault = !existing.tags.length
 
-      if (item.status && statusStillDefault) data.status = item.status
-      if (item.tags?.length && tagsStillDefault) data.tags = item.tags
+      // Same rules as PATCH: only the business's active stages / tags (SecureDog DATA-07).
+      if (item.status && statusStillDefault && (await isAllowedChatStage(auth.tenantId, item.status))) data.status = item.status
+      if (item.tags?.length && tagsStillDefault) {
+        const allowed = new Set((await loadTags(auth.tenantId)).tags.filter((t) => !t.archived).map((t) => t.key))
+        const tags = item.tags.filter((t) => allowed.has(t))
+        if (tags.length) data.tags = tags
+      }
 
       if (!Object.keys(data).length) {
         skipped += 1

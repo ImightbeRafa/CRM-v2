@@ -25,9 +25,11 @@ const clientSelect = {
   totalSpent: true,
   lastOrder: true,
   isFavorite: true,
-  // Legacy free-text note on the client: shown read-only as "Nota original" in the rail.
-  notes: true,
 } as const
+
+// Legacy free-text note on the client: shown read-only as "Nota original" in the rail, only for
+// the linked client (never in suggestions / search results of other clients).
+const linkedClientSelect = { ...clientSelect, notes: true } as const
 
 const orderSelect = {
   id: true,
@@ -83,7 +85,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const q = (new URL(request.url).searchParams.get('q') || '').trim().slice(0, 60)
 
   const client = conversation.clientId
-    ? await prisma.client.findFirst({ where: { id: conversation.clientId, tenantId }, select: clientSelect })
+    ? await prisma.client.findFirst({ where: { id: conversation.clientId, tenantId }, select: linkedClientSelect })
     : null
 
   // Orders created from this chat (ChatMessage.orderId) + the client's own orders.
@@ -169,7 +171,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   let stage: ClientStageDto | null = null
   if (client) {
     try {
-      stage = await getClientStage(tenantId, client.id, auth.userId)
+      stage = await getClientStage(tenantId, client.id)
     } catch (error) {
       console.warn('[chat client] stage unavailable', error instanceof Error ? error.message : error)
     }

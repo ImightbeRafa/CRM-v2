@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, Filter, Pause, Sparkles, User, Wrench } from 'lucide-react'
 import type { InboxBucket, SoftAiMonitorStats, SoftTag } from '@/lib/chat-soft-copilot'
+import { useCrmCatalog } from '@/components/chats/useCrmCatalog'
 
 export const INBOX_VIEWS: Array<{ id: InboxBucket; label: string }> = [
   { id: 'tus_chats', label: 'Tus chats' },
@@ -119,6 +120,8 @@ export function ChatTagFilter({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useOutside(open, () => setOpen(false))
+  // Filters use the stored key; the button shows the name set in Config › Chats.
+  const { tagLabel } = useCrmCatalog()
   return (
     <div ref={ref} className="relative">
       <button
@@ -132,7 +135,7 @@ export function ChatTagFilter({
         data-testid="chat-tag-filter"
       >
         <Filter className="h-3 w-3" aria-hidden />
-        {activeTag ?? 'Etiquetas'}
+        {activeTag ? tagLabel(activeTag) : 'Etiquetas'}
       </button>
       {open ? (
         <div role="menu" className="absolute right-0 top-full z-40 mt-1.5 w-[160px] rounded-xl bg-white p-1 shadow-xl ring-1 ring-slate-200">
@@ -152,7 +155,7 @@ export function ChatTagFilter({
                   active ? 'bg-amber-50 font-semibold text-amber-900' : 'text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                <span className="flex-1">{t}</span>
+                <span className="flex-1">{tagLabel(t)}</span>
                 {active ? <Check className="h-3.5 w-3.5" aria-hidden /> : null}
               </button>
             )

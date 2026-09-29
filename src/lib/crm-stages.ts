@@ -106,7 +106,8 @@ export function validateStageList(
   input: unknown,
 ): { ok: true; stages: StageDef[] } | { ok: false; error: string } {
   if (!Array.isArray(input) || input.length === 0) return { ok: false, error: 'La lista de etapas está vacía.' }
-  if (input.length > 30) return { ok: false, error: 'Máximo 30 etapas.' }
+  if (input.length > 100) return { ok: false, error: 'Demasiadas etapas.' }
+  if ((input as StageInput[]).filter((r) => r?.archived !== true).length > 30) return { ok: false, error: 'Máximo 30 etapas activas.' }
   const defaults = defaultStages(pipeline)
   const seen = new Set<string>()
   const out: StageDef[] = []
@@ -115,7 +116,18 @@ export function validateStageList(
     if (!label || label.length > 40) return { ok: false, error: `Etapa ${i + 1}: el nombre debe tener entre 1 y 40 caracteres.` }
     const key = typeof raw?.key === 'string' && raw.key ? raw.key : stageKeyFromLabel(label)
     if (!STAGE_KEY_RE.test(key)) return { ok: false, error: `Etapa "${label}": clave inválida.` }
-    if (seen.has(key)) return { ok: false, error: `Etapa "${label}": está repetida.` }
+    if (seen.has(key)) {
+      // Re-adding a stage that was archived earlier brings the archived one back (no dead end).
+      const prev = out.findIndex((o) => o.key === key)
+      const incomingArchived = raw?.archived === true
+      if (prev >= 0 && out[prev].archived && !incomingArchived) {
+        out.splice(prev, 1)
+      } else if (prev >= 0 && incomingArchived) {
+        continue
+      } else {
+        return { ok: false, error: `Etapa "${label}": está repetida.` }
+      }
+    }
     seen.add(key)
     const sys = defaults.find((d) => d.key === key)
     const category: StageCategory =
@@ -125,8 +137,9 @@ export function validateStageList(
     const t = raw?.targetMinutes
     const targetMinutes = typeof t === 'number' && Number.isInteger(t) && t > 0 && t <= 60 * 24 * 365 ? t : null
     const archived = sys ? false : raw?.archived === true
-    out.push({ key, label, color, position: i, category, targetMinutes, isSystem: Boolean(sys), archived })
+    out.push({ key, label, color, position: out.length, category, targetMinutes, isSystem: Boolean(sys), archived })
   }
+  out.forEach((s, i) => (s.position = i))
   for (const d of defaults) {
     if (!seen.has(d.key)) return { ok: false, error: `La etapa del sistema "${d.label}" no se puede borrar (sí renombrar).` }
   }
@@ -136,7 +149,8 @@ export function validateStageList(
 
 export function validateTagList(input: unknown): { ok: true; tags: TagDef[] } | { ok: false; error: string } {
   if (!Array.isArray(input)) return { ok: false, error: 'Lista de etiquetas inválida.' }
-  if (input.length > 50) return { ok: false, error: 'Máximo 50 etiquetas.' }
+  if (input.length > 150) return { ok: false, error: 'Demasiadas etiquetas.' }
+  if ((input as Array<{ archived?: unknown }>).filter((r) => r?.archived !== true).length > 50) return { ok: false, error: 'Máximo 50 etiquetas activas.' }
   const seen = new Set<string>()
   const out: TagDef[] = []
   for (const [i, raw] of (input as Array<{ key?: unknown; label?: unknown; color?: unknown; archived?: unknown }>).entries()) {
@@ -144,11 +158,21 @@ export function validateTagList(input: unknown): { ok: true; tags: TagDef[] } | 
     if (!label || label.length > 40) return { ok: false, error: `Etiqueta ${i + 1}: el nombre debe tener entre 1 y 40 caracteres.` }
     // Tag keys are what ChatConversation.tags stores: legacy keys ('Envío', 'VIP', 'Nuevo') stay.
     const key = typeof raw?.key === 'string' && raw.key.trim() ? raw.key.trim().slice(0, 40) : label
-    if (seen.has(key.toLowerCase())) return { ok: false, error: `Etiqueta "${label}": está repetida.` }
+    if (seen.has(key.toLowerCase())) {
+      const prev = out.findIndex((o) => o.key.toLowerCase() === key.toLowerCase())
+      if (prev >= 0 && out[prev].archived && raw?.archived !== true) {
+        out.splice(prev, 1)
+      } else if (prev >= 0 && raw?.archived === true) {
+        continue
+      } else {
+        return { ok: false, error: `Etiqueta "${label}": está repetida.` }
+      }
+    }
     seen.add(key.toLowerCase())
     const color = typeof raw?.color === 'string' && (STAGE_COLORS as readonly string[]).includes(raw.color) ? raw.color : null
     const isSystem = DEFAULT_CHAT_TAGS.some((d) => d.key === key)
-    out.push({ key, label, color, position: i, isSystem, archived: raw?.archived === true })
+    out.push({ key, label, color, position: out.length, isSystem, archived: raw?.archived === true })
   }
+  out.forEach((t, i) => (t.position = i))
   return { ok: true, tags: out }
 }

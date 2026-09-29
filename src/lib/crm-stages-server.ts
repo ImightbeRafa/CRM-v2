@@ -17,6 +17,9 @@ import {
 const TTL_MS = 60_000
 const stageCache = new Map<string, { at: number; stages: StageDef[]; customized: boolean }>()
 const tagCache = new Map<string, { at: number; tags: TagDef[]; customized: boolean }>()
+/** Before migration 035 the tables do not exist: remember it (5 min) instead of failing every poll. */
+let tablesMissingUntil = 0
+const MISSING_TTL_MS = 5 * 60_000
 
 export function forgetTenantStages(tenantId: string) {
   for (const k of stageCache.keys()) if (k.startsWith(`${tenantId}|`)) stageCache.delete(k)
@@ -27,6 +30,7 @@ export async function loadStages(tenantId: string, pipeline: StagePipeline): Pro
   const key = `${tenantId}|${pipeline}`
   const hit = stageCache.get(key)
   if (hit && Date.now() - hit.at < TTL_MS) return { stages: hit.stages, customized: hit.customized, available: true }
+  if (Date.now() < tablesMissingUntil) return { stages: defaultStages(pipeline), customized: false, available: false }
   try {
     const rows = await prisma.crmStage.findMany({
       where: { tenantId, pipeline },
@@ -47,7 +51,10 @@ export async function loadStages(tenantId: string, pipeline: StagePipeline): Pro
     stageCache.set(key, { at: Date.now(), stages, customized: rows.length > 0 })
     return { stages, customized: rows.length > 0, available: true }
   } catch (error) {
-    if (isMissingRelation(error)) return { stages: defaultStages(pipeline), customized: false, available: false }
+    if (isMissingRelation(error)) {
+      tablesMissingUntil = Date.now() + MISSING_TTL_MS
+      return { stages: defaultStages(pipeline), customized: false, available: false }
+    }
     throw error
   }
 }
@@ -94,6 +101,7 @@ export async function saveStages(tenantId: string, pipeline: StagePipeline, stag
 export async function loadTags(tenantId: string): Promise<{ tags: TagDef[]; customized: boolean; available: boolean }> {
   const hit = tagCache.get(tenantId)
   if (hit && Date.now() - hit.at < TTL_MS) return { tags: hit.tags, customized: hit.customized, available: true }
+  if (Date.now() < tablesMissingUntil) return { tags: DEFAULT_CHAT_TAGS.map((t) => ({ ...t })), customized: false, available: false }
   try {
     const rows = await prisma.crmTag.findMany({ where: { tenantId }, orderBy: { position: 'asc' } })
     const tags: TagDef[] = rows.length
@@ -102,7 +110,10 @@ export async function loadTags(tenantId: string): Promise<{ tags: TagDef[]; cust
     tagCache.set(tenantId, { at: Date.now(), tags, customized: rows.length > 0 })
     return { tags, customized: rows.length > 0, available: true }
   } catch (error) {
-    if (isMissingRelation(error)) return { tags: DEFAULT_CHAT_TAGS.map((t) => ({ ...t })), customized: false, available: false }
+    if (isMissingRelation(error)) {
+      tablesMissingUntil = Date.now() + MISSING_TTL_MS
+      return { tags: DEFAULT_CHAT_TAGS.map((t) => ({ ...t })), customized: false, available: false }
+    }
     throw error
   }
 }

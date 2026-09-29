@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { prisma } from '@/lib/db';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
@@ -32,18 +32,28 @@ export async function POST(request: NextRequest) {
         concurrency: 3,
         timeoutMs: 20_000,
       });
-      for (const result of batch.results) {
-        if (!result.success) continue;
-        void recordActivity({
-          tenantId,
-          actorUserId: userId,
-          verb: 'guia.generate',
-          entityType: 'Order',
-          entityId: result.orderId,
-          orderId: result.orderId,
-          surface: typeof body.surface === 'string' ? body.surface.slice(0, 20) : 'produccion',
-          props: { carrier: String(carrier).slice(0, 20), deliveryType },
-        });
+      // Activity: internal Order.id (same id every other event uses), allow-listed enums only.
+      const okNumbers = batch.results.filter((r) => r.success).map((r) => r.orderId);
+      if (okNumbers.length) {
+        const idByNumber = new Map(
+          (await prisma.order.findMany({ where: { tenantId, orderId: { in: okNumbers } }, select: { id: true, orderId: true } }))
+            .map((o) => [o.orderId, o.id]),
+        );
+        const surface = ['chats', 'pedidos', 'produccion'].includes(body.surface) ? body.surface : 'produccion';
+        for (const number of okNumbers) {
+          const id = idByNumber.get(number);
+          if (!id) continue;
+          void recordActivity({
+            tenantId,
+            actorUserId: userId,
+            verb: 'guia.generate',
+            entityType: 'Order',
+            entityId: id,
+            orderId: id,
+            surface,
+            props: { carrier: carrier === 'correos_cr' ? 'correos_cr' : 'other', deliveryType },
+          });
+        }
       }
       return NextResponse.json({
         status: 'success',
@@ -67,25 +77,25 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/**
+ * Guía metadata. Security (AUTH-38, 2026-09-29): was raw getToken (no permission, no revocation)
+ * and returned the label PDFs (customer name / address / phone) in bulk. Now: view_production,
+ * revocation-aware, and never the PDF bytes (downloads go through /api/shipping/guias/download).
+ */
 export async function GET(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const tenantId = (token as any).tenantId as string;
-    if (!tenantId) return NextResponse.json({ error: 'Tenant not found' }, { status: 400 });
-
-    const userId = (token as any)?.sub as string | undefined;
-    const userName = (token as any)?.name || (token as any)?.email || 'System';
-    const userRole = (token as any)?.membershipRole;
+    const auth = await authenticateAPIWithPermission(request, 'view_production');
+    if (!auth.ok) return auth.response;
+    const { tenantId, userId, role: userRole } = auth;
     const orderId = new URL(request.url).searchParams.get('orderId');
 
-    return withTenantContext({ tenantId, userId, role: userRole, userRole, userName }, async () => {
+    return withTenantContext({ tenantId, userId, role: userRole, userRole, userName: 'Authenticated user' }, async () => {
       const tenantPrisma = getTenantPrisma(tenantId);
       if (orderId) {
-        const guia = await tenantPrisma.shippingGuia.findFirst({ where: { orderId }, orderBy: { createdAt: 'desc' } });
+        const guia = await tenantPrisma.shippingGuia.findFirst({ where: { tenantId, orderId }, orderBy: { createdAt: 'desc' }, omit: { pdfData: true } });
         return NextResponse.json({ status: 'success', data: guia });
       }
-      const guias = await tenantPrisma.shippingGuia.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
+      const guias = await tenantPrisma.shippingGuia.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 100, omit: { pdfData: true } });
       return NextResponse.json({ status: 'success', data: guias });
     });
   } catch (error) {

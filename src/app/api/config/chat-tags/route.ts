@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPI, authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { hasPermission } from '@/lib/rbac'
 import { loadTags, saveTags } from '@/lib/crm-stages-server'
 import { validateTagList } from '@/lib/crm-stages'
 import { logAuditEvent } from '@/lib/auditLogger'
@@ -11,6 +12,10 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   const auth = await authenticateAPI(request)
   if (!auth.ok) return auth.response
+  // People who work chats or see config (SecureDog AUTH-37: not every member).
+  if (!hasPermission(auth.role, 'update_sales') && !hasPermission(auth.role, 'view_config')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
+  }
   const result = await loadTags(auth.tenantId)
   return NextResponse.json({ success: true, ...result }, { headers: { 'Cache-Control': 'no-store' } })
 }

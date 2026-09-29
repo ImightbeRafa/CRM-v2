@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { createNote, listNotes } from '@/lib/crm-notes'
-import { chatSendRateLimit } from '@/lib/rate-limit'
+import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const conversation = await conversationFor(auth.tenantId, id)
   if (!conversation) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 })
 
-  const rate = await chatSendRateLimit(`${auth.tenantId}:${auth.userId}`)
+  const rate = await workspaceWriteRateLimit(`${auth.tenantId}:${auth.userId}`)
   if (!rate.allowed) {
     return NextResponse.json({ success: false, error: 'Demasiadas notas seguidas. Esperá un momento.' }, { status: 429, headers: rate.headers })
   }

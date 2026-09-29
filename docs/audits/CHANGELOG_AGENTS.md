@@ -1,3 +1,29 @@
+## 2026-09-29 — Phase 2a review fixes (branch claudio/phase2-workspace; 035 NOT applied, not deployed)
+
+Verifier (S1–S7, N1–N10) and SecureDog (Lows + AUTH-38 Medium) findings on the workspace slice:
+- **Client stage engine v2:** open orders older than 45 days or older than the last finished order
+  no longer pin a client; statuses the business marked terminal count as finished; "Completado"
+  is production; only successful guías count (failed Correos attempts ignored); `repeatCustomer`
+  keeps the "Cliente recurrente" badge while a new order is in progress; an abandoned unpaid order
+  is never "Entregado". "Team replied" check goes through the client's conversations (index).
+- **Tenant safety:** lifecycle writes are `updateMany` by clientId+tenantId then create (DATA-08);
+  `getClientStage` re-checks the client's tenant; PATCH / import-local-state validate stage keys and
+  tags against the business catalog (DATA-07).
+- **Before 035:** "table missing" memoized 5 min for stages / tags / lifecycle / notes (INFRA-09);
+  stage chip read-only and legacy "Nota original" still shown.
+- **Notes:** delete wipes the text (DATA-10); author names via `staffDisplayName` (DATA-09); own
+  `workspaceWriteRateLimit` bucket for notes POST/PATCH/DELETE and client stage PUT (INFRA-10);
+  legacy client note only for the linked client, not suggestions/search; INT-03 guard widened to
+  Meta / send-guia / soft-ai routes / chat-automation cron and bans `notes: true` there.
+- **Permissions:** GET stage / tag lists need update_sales or view_config (AUTH-37); GET
+  `/api/shipping/generate-guia` needs view_production, is tenant-filtered and never returns PDFs
+  (AUTH-38). Guía activity uses `Order.id` and an allow-listed surface.
+- **UI:** toast on a failed stage change; renamed tag labels in the filter and thread chips; notes
+  reload when a client is linked; no "your role cannot" guía hint while the session loads; config
+  archive → re-add restores the archived stage/tag; 30 active stages / 50 active tags.
+- 035 header: quiet-window + rollback note. Proof: Phase 2a tests 37/37; chat-harden, security,
+  soft-ai at baseline; config-ui, site-ui, pedidos-ui, chat-mobile, theme green; lint 0 errors.
+
 ## 2026-09-29 — Phase 1 security SHIPPED (034 applied, a21c2eb1 live)
 
 - Pre-check (read-only, 19:37 UTC): no long transactions; 45 users; 0 members of inactive tenants;

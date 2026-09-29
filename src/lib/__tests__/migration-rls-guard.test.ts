@@ -12,12 +12,25 @@ test('migrations ≥ 033 enable RLS on every table they create', () => {
     const n = parseInt(file, 10)
     if (!(n >= 33)) continue
     const sql = readFileSync(`${dir}/${file}`, 'utf8')
-    const created = [...sql.matchAll(/CREATE TABLE IF NOT EXISTS\s+public\."?([A-Za-z_]+)"?/g)].map((m) => m[1])
+    // `IF NOT EXISTS` optional: a plain CREATE TABLE must not skip the guard.
+    const created = [...sql.matchAll(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(?:public\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?/gi)].map((m) => m[1])
     for (const table of created) {
-      const rls = new RegExp(`ALTER TABLE\s+public\."?${table}"?\s+ENABLE ROW LEVEL SECURITY`)
+      // String.raw: in a plain template literal `\s` would silently become `s`.
+      const rls = new RegExp(String.raw`ALTER TABLE\s+(?:public\.)?"?${table}"?\s+ENABLE ROW LEVEL SECURITY`, 'i')
       assert.match(sql, rls, `${file}: ${table} is created without ENABLE ROW LEVEL SECURITY`)
     }
   }
+})
+
+test('the guard itself catches a table without RLS and accepts one with it', () => {
+  const check = (sql: string) => {
+    const created = [...sql.matchAll(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(?:public\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?/gi)].map((m) => m[1])
+    return created.every((t) => new RegExp(String.raw`ALTER TABLE\s+(?:public\.)?"?${t}"?\s+ENABLE ROW LEVEL SECURITY`, 'i').test(sql))
+  }
+  assert.equal(check('CREATE TABLE public."CrmNote" (id text);\nALTER TABLE public."CrmNote" ENABLE ROW LEVEL SECURITY;'), true)
+  assert.equal(check('CREATE TABLE IF NOT EXISTS public."A" (id text);\nALTER TABLE public."A"\n  ENABLE ROW LEVEL SECURITY;'), true)
+  assert.equal(check('CREATE TABLE public."Leaky" (id text);'), false)
+  assert.equal(check('CREATE TABLE "Leaky2" (id text);'), false)
 })
 
 test('033 locks down the 7 tables found exposed', () => {

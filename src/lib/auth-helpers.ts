@@ -17,6 +17,7 @@ import { authOptions } from './auth-options';
 import { Permission, Role, hasPermission } from './rbac';
 import { guardTenantWrite } from './billing-access';
 import { readVerifiedAuthContext } from './internal-auth-context';
+import { sessionStillValid } from './session-revocation';
 
 export { getSessionRole, getSessionTenantId, hasSessionPermission } from './session-permissions';
 
@@ -118,6 +119,13 @@ export async function authenticateAPI(request: NextRequest) {
   const ctx = await readVerifiedAuthContext(request.headers);
 
   if (ctx?.tenantId) {
+    // Deactivated user or revoked session (password reset): cached 60 s per process.
+    if (!(await sessionStillValid(ctx.userId, ctx.sv))) {
+      return {
+        ok: false as const,
+        response: NextResponse.json({ error: 'Unauthorized', code: 'session_revoked' }, { status: 401 }),
+      };
+    }
     const auth = {
       ok: true as const,
       session: null,

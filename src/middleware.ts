@@ -137,8 +137,9 @@ export default async function middleware(request: Request) {
       return redirectToLogin(url);
     }
 
-    // Reject sessions cleared after user deactivation (JWT refresh sets error)
-    if ((token as { error?: string; active?: boolean }).error === 'inactive_user' ||
+    // Reject sessions cleared after deactivation or revocation (JWT refresh sets error)
+    const tokenError = (token as { error?: string }).error;
+    if (tokenError === 'inactive_user' || tokenError === 'session_revoked' ||
         (token as { active?: boolean }).active === false) {
       if (pathname.startsWith('/api/')) {
         return NextResponse.json(
@@ -176,6 +177,7 @@ export default async function middleware(request: Request) {
       tenantId: tenantId ?? null,
       role,
       email: typeof token.email === 'string' ? token.email : null,
+      sv: Number((token as { sv?: number }).sv) || 0,
     }, secret);
 
     // Logistics — DeepSleep members who are logistics admins only

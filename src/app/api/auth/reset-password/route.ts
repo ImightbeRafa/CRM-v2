@@ -4,6 +4,7 @@ import { hashPassword, validatePasswordStrength } from '@/lib/password';
 import { authRateLimit } from '@/lib/rate-limit';
 import { hashResetToken, legacyRawResetToken } from '@/lib/password-reset';
 import { clearLoginFailures, clientIpFromHeaders } from '@/lib/auth-gates';
+import { revokeUserSessions } from '@/lib/session-revocation';
 
 export async function POST(request: Request) {
   const rateLimitResult = await authRateLimit(request);
@@ -59,6 +60,9 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    // New password: every existing session of this account ends (no-op before migration 034).
+    await revokeUserSessions(users[0].id).catch((e) => console.error('[reset-password] revoke failed', e));
 
     await clearLoginFailures(
       users[0].email.toLowerCase(),

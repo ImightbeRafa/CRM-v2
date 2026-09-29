@@ -28,6 +28,7 @@
  * 032 performance indexes (pg_trgm + ChatMessage orderId) gated the same way
  * (BETSY_V2_APPLY_FILES=032). Apply in the madrugada; index builds briefly block writes.
  * 033 security: enable RLS (deny-all) on 7 data-API-exposed tables (BETSY_V2_APPLY_FILES=033).
+ * 034 security: User.sessionVersion + passwordChangedAt for session revocation (BETSY_V2_APPLY_FILES=034).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

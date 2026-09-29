@@ -14,6 +14,7 @@ import {
   loginLocked,
   recordLoginFailure,
 } from './auth-gates'
+import { loadUserAuthState, sessionMatches } from './session-revocation'
 import { selectActiveTenantId } from './membership-lifecycle'
 import { provisionOwnedTenantForExistingUser } from './tenant-provisioning'
 import { canAutoAcceptInvite, shouldJoinInviteInsteadOfProvisioning } from './team-invite'
@@ -714,6 +715,12 @@ export const authOptions: NextAuthOptions = {
         token.email_verified = (user as any).email_verified || false;
         token.active = (user as any).active !== false;
         token.lastDbSync = Date.now();
+        // Session version at sign-in; a password reset bumps it and ends this session.
+        try {
+          (token as any).sv = (await loadUserAuthState(user.id))?.sessionVersion ?? 0;
+        } catch {
+          (token as any).sv = 0;
+        }
 
         try {
           const dbUser = await prisma.user.findUnique({
@@ -875,8 +882,14 @@ export const authOptions: NextAuthOptions = {
           });
 
           if (dbUser) {
-            // Deactivated users must not keep a valid session after DB sync
-            if (!dbUser.active) {
+            let revoked = false;
+            try {
+              revoked = dbUser.active && !sessionMatches(await loadUserAuthState(dbUser.id), (token as any).sv);
+            } catch {
+              revoked = false; // auth-state hiccup: keep the session (next sync retries)
+            }
+            // Deactivated users / revoked sessions must not stay valid after DB sync
+            if (!dbUser.active || revoked) {
               console.log(`[JWT] ❌ Clearing session for inactive user: ${dbUser.email}`);
               // Force middleware to treat this as unauthenticated on next request
               const cleared = { ...token } as JWT & { error?: string; active?: boolean };
@@ -888,7 +901,7 @@ export const authOptions: NextAuthOptions = {
               cleared.allTenantIds = [];
               cleared.tenantId = null;
               cleared.active = false;
-              cleared.error = 'inactive_user';
+              cleared.error = revoked ? 'session_revoked' : 'inactive_user';
               return cleared;
             }
 

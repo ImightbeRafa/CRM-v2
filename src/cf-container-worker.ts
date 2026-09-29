@@ -295,7 +295,7 @@ export default {
     const headers = new Headers(request.headers);
     headers.delete("cf-container-target-port");
     // Defence in depth: internal identity headers are only ever set by the app's middleware.
-    for (const name of ["x-user-id", "x-user-role", "x-user-email", "x-tenant-id", "x-betsy-ctx-sig", "x-middleware-subrequest"]) {
+    for (const name of ["x-user-id", "x-user-role", "x-user-email", "x-tenant-id", "x-betsy-sv", "x-betsy-ctx-sig", "x-middleware-subrequest"]) {
       headers.delete(name);
     }
     return fetchWithFailover(env, new Request(request, { headers }));

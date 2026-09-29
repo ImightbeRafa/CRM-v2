@@ -12,7 +12,7 @@ import {
 } from '../internal-auth-context'
 
 const SECRET = 'test-nextauth-secret-0123456789'
-const ctx = { userId: 'user_1', tenantId: 'tenant_A', role: 'ADMIN', email: 'a@b.cr' }
+const ctx = { userId: 'user_1', tenantId: 'tenant_A', role: 'ADMIN', email: 'a@b.cr', sv: 3 }
 
 test('middleware-signed context is accepted', async () => {
   const h = new Headers()
@@ -33,7 +33,7 @@ test('a garbage or wrong-length signature is rejected', async () => {
 })
 
 test('changing any signed value after signing is rejected', async () => {
-  for (const [name, value] of [['x-tenant-id', 'tenant_B'], ['x-user-role', 'OWNER'], ['x-user-id', 'user_2'], ['x-user-email', 'x@y.cr']]) {
+  for (const [name, value] of [['x-tenant-id', 'tenant_B'], ['x-user-role', 'OWNER'], ['x-user-id', 'user_2'], ['x-user-email', 'x@y.cr'], ['x-betsy-sv', '0']]) {
     const h = new Headers()
     await setSignedAuthHeaders(h, ctx, SECRET)
     h.set(name, value)
@@ -60,8 +60,8 @@ test('no secret: nothing is set and nothing is trusted (falls back to the sessio
 })
 
 test('the signed string is unambiguous across field boundaries', () => {
-  const a = canonicalAuthContext({ userId: 'a|b', tenantId: 'c', role: 'R', email: null })
-  const b = canonicalAuthContext({ userId: 'a', tenantId: 'b|c', role: 'R', email: null })
+  const a = canonicalAuthContext({ userId: 'a|b', tenantId: 'c', role: 'R', email: null, sv: 0 })
+  const b = canonicalAuthContext({ userId: 'a', tenantId: 'b|c', role: 'R', email: null, sv: 0 })
   assert.notEqual(a, b)
 })
 

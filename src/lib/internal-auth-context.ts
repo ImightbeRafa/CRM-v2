@@ -11,7 +11,7 @@
  * otherwise they fall back to the full session check. Web Crypto only: runs on edge and Node.
  */
 
-export const AUTH_CONTEXT_HEADERS = ['x-user-id', 'x-user-role', 'x-tenant-id', 'x-user-email'] as const
+export const AUTH_CONTEXT_HEADERS = ['x-user-id', 'x-user-role', 'x-tenant-id', 'x-user-email', 'x-betsy-sv'] as const
 export const AUTH_CONTEXT_SIG_HEADER = 'x-betsy-ctx-sig'
 /** Every header a client must never be able to set (stripped by middleware and the CF worker). */
 export const INTERNAL_AUTH_HEADERS = [...AUTH_CONTEXT_HEADERS, AUTH_CONTEXT_SIG_HEADER] as const
@@ -23,6 +23,8 @@ export type AuthContext = {
   tenantId: string | null
   role: string
   email: string | null
+  /** Session version from the JWT (0 when absent); see src/lib/session-revocation.ts. */
+  sv: number
 }
 
 const encoder = new TextEncoder()
@@ -48,7 +50,7 @@ function keyFor(secret: string): Promise<CryptoKey> {
 
 /** Unambiguous: every field is length-prefixed, so `a|b` + `c` never equals `a` + `b|c`. */
 export function canonicalAuthContext(ctx: AuthContext): string {
-  return [ctx.userId, ctx.tenantId ?? '', ctx.role, ctx.email ?? '']
+  return [ctx.userId, ctx.tenantId ?? '', ctx.role, ctx.email ?? '', String(ctx.sv || 0)]
     .map((v) => `${v.length}:${v}`)
     .join('|')
 }
@@ -79,6 +81,7 @@ export async function setSignedAuthHeaders(headers: Headers, ctx: AuthContext, s
   headers.set('x-user-role', ctx.role)
   if (ctx.tenantId) headers.set('x-tenant-id', ctx.tenantId)
   if (ctx.email) headers.set('x-user-email', ctx.email)
+  headers.set('x-betsy-sv', String(ctx.sv || 0))
   headers.set(AUTH_CONTEXT_SIG_HEADER, sig)
 }
 
@@ -102,6 +105,7 @@ export async function readVerifiedAuthContext(
     role,
     tenantId: headers.get('x-tenant-id') || null,
     email: headers.get('x-user-email') || null,
+    sv: Number(headers.get('x-betsy-sv')) || 0,
   }
   try {
     // crypto.subtle.verify compares in constant time.

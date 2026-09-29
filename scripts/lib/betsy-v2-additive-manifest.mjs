@@ -20,6 +20,7 @@ export const FILES = {
   '031': '031_chat_message_sender_user.sql',
   '032': '032_perf_indexes.sql',
   '033': '033_security_rls_lockdown.sql',
+  '034': '034_user_session_version.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -60,6 +61,7 @@ export const EXPECTED_TABLES = {
 
 export const EXPECTED_COLUMNS = {
   '031': [['ChatMessage', 'senderUserId']],
+  '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],
   '027b': [['ChatAgent', 'introductionNames']],
   '019': [
     ['Order', 'clientId'],

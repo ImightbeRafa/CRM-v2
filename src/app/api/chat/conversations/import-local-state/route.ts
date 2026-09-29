@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 import { isAllowedChatStage, loadTags } from '@/lib/crm-stages-server'
 import {
   importLocalStateBodySchema,
@@ -14,6 +15,10 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_sales')
     if (!auth.ok) return auth.response
+    const rate = await workspaceWriteRateLimit(`${auth.tenantId}:${auth.userId}`)
+    if (!rate.allowed) {
+      return NextResponse.json({ success: false, error: 'Demasiados cambios seguidos. Esperá un momento.' }, { status: 429, headers: rate.headers })
+    }
 
     const json = await request.json().catch(() => null)
     const parsed = importLocalStateBodySchema.safeParse(json)

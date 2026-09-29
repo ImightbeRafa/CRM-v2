@@ -224,7 +224,11 @@ export async function updateNote(args: {
     }
     if (!verb) return { ok: false, status: 400, error: 'Nada que actualizar' }
 
-    const row = await prisma.crmNote.update({ where: { id: existing.id }, data, select: noteSelect })
+    // Conditional on not deleted: an edit racing a delete must not put text back (DATA-11).
+    const done = await prisma.crmNote.updateMany({ where: { id: existing.id, tenantId: args.tenantId, deletedAt: null }, data })
+    if (done.count === 0) return { ok: false, status: 404, error: 'Nota no encontrada' }
+    const row = await prisma.crmNote.findFirst({ where: { id: existing.id, tenantId: args.tenantId }, select: noteSelect })
+    if (!row) return { ok: false, status: 404, error: 'Nota no encontrada' }
     void recordActivity({
       tenantId: args.tenantId,
       actorUserId: args.viewer.userId,
@@ -252,9 +256,13 @@ export async function deleteNote(args: { tenantId: string; viewer: NoteViewer; n
     if (!canDeleteNote(args.viewer, existing.authorUserId)) {
       return { ok: false, status: 403, error: 'Solo quien escribió la nota, un Owner o un Admin pueden borrarla.' }
     }
-    // The text is wiped, not just hidden: "deleted" sensitive data must not live on in the DB /
-    // backups (SecureDog DATA-10).
-    await prisma.crmNote.update({ where: { id: existing.id }, data: { deletedAt: new Date(), body: '[borrada]', mentionUserIds: [] } })
+    // The text is wiped, not just hidden (SecureDog DATA-10). Older logical backups keep it until
+    // they expire (BACKUP_RETENTION_DAYS).
+    const done = await prisma.crmNote.updateMany({
+      where: { id: existing.id, tenantId: args.tenantId, deletedAt: null },
+      data: { deletedAt: new Date(), body: '[borrada]', mentionUserIds: [] },
+    })
+    if (done.count === 0) return { ok: false, status: 404, error: 'Nota no encontrada' }
     void recordActivity({
       tenantId: args.tenantId,
       actorUserId: args.viewer.userId,

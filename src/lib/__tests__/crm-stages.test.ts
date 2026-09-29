@@ -85,3 +85,28 @@ test('wiring: PATCH validates the key per business; list maps categories; custom
   assert.match(cfg, /authenticateAPIWithPermission\(request, 'update_config'\)/)
   assert.match(read('src/lib/crm-stages-server.ts'), /Stages removed from the list are archived, never deleted/)
 })
+
+test('SecureDog regressions: AUTH-37 list reads, AUTH-38 guía GET, DATA-07 tag/stage writes', () => {
+  for (const f of ['src/app/api/config/crm-stages/route.ts', 'src/app/api/config/chat-tags/route.ts']) {
+    assert.match(read(f), /!hasPermission\(auth\.role, 'update_sales'\) && !hasPermission\(auth\.role, 'view_config'\)/, f)
+  }
+  const guia = read('src/app/api/shipping/generate-guia/route.ts')
+  assert.match(guia, /authenticateAPIWithPermission\(request, 'view_production'\)/)
+  assert.match(guia, /omit: \{ pdfData: true \}/)
+  assert.match(guia, /shippingGuia\.findMany\(\{ where: \{ tenantId \}/)
+  const patch = read('src/app/api/chat/conversations/[id]/route.ts')
+  assert.match(patch, /loadTags\(auth\.tenantId\)/)
+  assert.match(patch, /workspaceWriteRateLimit\(/)
+  const imp = read('src/app/api/chat/conversations/import-local-state/route.ts')
+  assert.match(imp, /isAllowedChatStage\(/)
+  assert.match(imp, /loadTags\(/)
+  assert.match(imp, /workspaceWriteRateLimit\(/)
+  const server = read('src/lib/crm-stages-server.ts')
+  assert.equal((server.match(/Date\.now\(\) < tablesMissingUntil/g) || []).length, 2, 'INFRA-09 memo on stages and tags')
+})
+
+test('DATA-11: note edits and deletes only touch a live note of this business', () => {
+  const src = read('src/lib/crm-notes.ts')
+  assert.equal((src.match(/updateMany\(\{\s*where: \{ id: existing\.id, tenantId: args\.tenantId, deletedAt: null \}/g) || []).length, 2)
+  assert.doesNotMatch(src, /crmNote\.update\(/)
+})

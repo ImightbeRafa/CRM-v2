@@ -13,7 +13,7 @@ function pipelineOf(value: unknown): StagePipeline | null {
   return value === 'chat' || value === 'client' ? value : null
 }
 
-/** Any member of the business can read the lists (the inbox needs them). */
+/** People who work chats (update_sales) or see config (view_config) can read the lists. */
 export async function GET(request: NextRequest) {
   const auth = await authenticateAPI(request)
   if (!auth.ok) return auth.response

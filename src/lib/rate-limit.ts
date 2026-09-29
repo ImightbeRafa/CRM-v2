@@ -257,14 +257,15 @@ export const workClockPunchRateLimit = createRateLimit({
   identifier: 'work-clock-punch',
 });
 
-/** Soft Copilot / chats outbound send — per tenant:user. */
-/** Workspace writes (notes, client stage): own bucket, so they never eat the send quota. */
+/** Workspace writes (notes, client stage, chat stage/tags/assign, link client): own bucket per
+ * tenant:user, so they never eat the send quota. */
 export const workspaceWriteRateLimit = createIdentifierRateLimit({
   windowMs: 60 * 1000,
   maxRequests: 60,
   identifier: 'workspace-write',
 });
 
+/** Soft Copilot / chats outbound send — per tenant:user. */
 export const chatSendRateLimit = createIdentifierRateLimit({
   windowMs: 60 * 1000,
   maxRequests: 30,

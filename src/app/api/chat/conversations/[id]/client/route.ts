@@ -5,7 +5,7 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { recordActivity } from '@/lib/activity'
 import { getClientStage, type ClientStageDto } from '@/lib/crm-client-stage-server'
 import { normalizeClientPhone } from '@/lib/order-lifecycle'
-import { chatSendRateLimit } from '@/lib/rate-limit'
+import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 import { maskPhone } from '@/lib/chat-order-flow'
 
 export const runtime = 'nodejs'
@@ -211,7 +211,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   const conversation = await loadConversation(tenantId, id)
   if (!conversation) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 })
 
-  const rate = await chatSendRateLimit(`${tenantId}:${auth.userId}`)
+  const rate = await workspaceWriteRateLimit(`${tenantId}:${auth.userId}`)
   if (!rate.allowed) {
     return NextResponse.json({ success: false, error: 'Demasiados cambios. Esperá un momento.' }, { status: 429, headers: rate.headers })
   }

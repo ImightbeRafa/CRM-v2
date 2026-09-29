@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { recordActivity } from '@/lib/activity'
 import { isAllowedChatStage, loadStages, loadTags } from '@/lib/crm-stages-server'
@@ -19,6 +20,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_sales')
     if (!auth.ok) return auth.response
+    const rate = await workspaceWriteRateLimit(`${auth.tenantId}:${auth.userId}`)
+    if (!rate.allowed) {
+      return NextResponse.json({ success: false, error: 'Demasiados cambios seguidos. Esperá un momento.' }, { status: 429, headers: rate.headers })
+    }
 
     const { id } = await context.params
     const existing = await loadConversationForTenant({

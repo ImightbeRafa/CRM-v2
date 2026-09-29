@@ -21,6 +21,13 @@ Verifier (S1–S7, N1–N10) and SecureDog (Lows + AUTH-38 Medium) findings on t
 - **UI:** toast on a failed stage change; renamed tag labels in the filter and thread chips; notes
   reload when a client is linked; no "your role cannot" guía hint while the session loads; config
   archive → re-add restores the archived stage/tag; 30 active stages / 50 active tags.
+- **Re-check round (Verifier + SecureDog on 7f7e6c5):** my 035 comment tripped the RLS guard
+  (phantom table "takes") — I had wrongly logged test:security as baseline; guard now strips SQL
+  comments (both directions, self-tested). "Completado" = finished (walk-in / picked-up), feminine
+  cancel forms, manual pick retried on P2002, tag toggle toast, Pedidos guías logged as `pedidos`.
+  Notes edit/delete are conditional `updateMany` on live notes (DATA-11). workspaceWriteRateLimit
+  also on PATCH conversation, import-local-state and link/unlink. Regression tests for AUTH-37/38,
+  DATA-07, DATA-11, INFRA-09. Still open (tracked Low): ActivityEvent retention cron.
 - 035 header: quiet-window + rollback note. Proof: Phase 2a tests 37/37; chat-harden, security,
   soft-ai at baseline; config-ui, site-ui, pedidos-ui, chat-mobile, theme green; lint 0 errors.
 

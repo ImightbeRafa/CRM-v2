@@ -1,3 +1,17 @@
+## 2026-09-29 — Phase 1 security SHIPPED (034 applied, a21c2eb1 live)
+
+- Pre-check (read-only, 19:37 UTC): no long transactions; 45 users; 0 members of inactive tenants;
+  0 never-activated accounts (AUTH-32 closed).
+- 034 applied with Rafael's GO via the gated script (`ok 034`); postcheck: sessionVersion int
+  default 0 (all 45 at 0 → no logouts), passwordChangedAt, "User_email_lower_idx", RLS still on.
+- Deploy `npx wrangler deploy --keep-vars` from claudio/dark-mode @ 16e351e → Worker a21c2eb1;
+  container rolled in ~40 s (rollback target 560d10ee).
+- Live smoke: single CSP incl. Turnstile host, Referrer strict-origin-when-cross-origin,
+  /api/auth/turnstile-config {siteKey:null} (Turnstile off), /monitoring junk → 400,
+  forged identity headers on /api/orders/x.png → 401 (was reaching the handler), signin/home 200.
+  wrangler tail: 74 requests, all ok, 0 exceptions.
+- Security Register: AUTH-08 Verified (034 applied); nothing blocks prod.
+
 ## 2026-09-29 — Phase 1 security code (S1–S7; branch claudio/dark-mode, not deployed)
 
 Advisor plan → slices, each with tests in `test:security` (195/196; the 1 failure is baseline):

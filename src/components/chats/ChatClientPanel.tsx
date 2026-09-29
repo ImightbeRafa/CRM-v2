@@ -7,6 +7,8 @@ import { useTenantSettings } from '@/app/contexts/TenantSettingsContext'
 import { pedidoHref } from '@/lib/pedido-url'
 import { nextOrderStep, type ChatFlowOrder } from '@/lib/chat-order-flow'
 import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
+import { ChatNotesPanel } from '@/components/chats/ChatNotesPanel'
+import { stageChipClass, useCrmCatalog } from '@/components/chats/useCrmCatalog'
 
 type ClientInfo = {
   id: string
@@ -20,10 +22,23 @@ type ClientInfo = {
   totalSpent: number
   lastOrder: string
   isFavorite: boolean
+  /** Legacy free-text note (read-only "Nota original"). */
+  notes?: string | null
+}
+
+type ClientStage = {
+  key: string
+  label: string
+  category: 'open' | 'won' | 'lost'
+  color: string | null
+  source: 'auto' | 'manual'
+  reason: string
+  enteredAt: string | null
 }
 
 type PanelData = {
   client: ClientInfo | null
+  stage: ClientStage | null
   orders: ChatFlowOrder[]
   suggestions: ClientInfo[]
   results: ClientInfo[]
@@ -81,7 +96,7 @@ export function ChatClientPanel({
           return
         }
         setLoadError(false)
-        setData({ client: json.client, orders: json.orders ?? [], suggestions: json.suggestions ?? [], results: json.results ?? [] })
+        setData({ client: json.client, stage: json.stage ?? null, orders: json.orders ?? [], suggestions: json.suggestions ?? [], results: json.results ?? [] })
       } catch {
         if (seq === requestSeq.current) setLoadError(true)
       }
@@ -223,7 +238,7 @@ export function ChatClientPanel({
     )
   }
 
-  const { client, orders, suggestions, results } = data
+  const { client, stage, orders, suggestions, results } = data
   const pickList = (list: ClientInfo[], label: string) =>
     list.length ? (
       <div>
@@ -296,8 +311,12 @@ export function ChatClientPanel({
               <p className="text-[10px] text-slate-500">Último</p>
             </div>
           </div>
-          {client.totalOrders > 1 ? (
-            <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium text-amber-900">Cliente recurrente</p>
+          {stage ? (
+            <ClientStageChip
+              clientId={client.id}
+              stage={stage}
+              onChanged={(next) => setData((prev) => (prev ? { ...prev, stage: next } : prev))}
+            />
           ) : null}
           <div className="mt-2 flex items-center justify-between">
             <Link
@@ -470,6 +489,93 @@ export function ChatClientPanel({
           </ul>
         )}
       </div>
+
+      <ChatNotesPanel conversationId={conversationId} hasClient={Boolean(client)} legacyNote={client?.notes ?? null} />
+    </div>
+  )
+}
+
+/**
+ * Lifecycle stage of the client (computed from orders; see src/lib/crm-client-stage.ts). The team
+ * can pin another stage: it sticks until new evidence (order, payment, guía) moves the client.
+ */
+function ClientStageChip({
+  clientId,
+  stage,
+  onChanged,
+}: {
+  clientId: string
+  stage: ClientStage
+  onChanged: (stage: ClientStage) => void
+}) {
+  const { activeClientStages } = useCrmCatalog()
+  const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function choose(key: string) {
+    if (key === stage.key) {
+      setOpen(false)
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/crm/clients/${encodeURIComponent(clientId)}/stage`, {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stageKey: key }),
+      })
+      const json = (await res.json().catch(() => null)) as { success?: boolean; stage?: ClientStage; error?: string } | null
+      if (!res.ok || !json?.success || !json.stage) {
+        setError(json?.error || 'No se pudo cambiar la etapa.')
+        return
+      }
+      onChanged(json.stage)
+      setOpen(false)
+    } catch {
+      setError('Sin conexión.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-2" data-testid="client-stage">
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${stageChipClass(stage.color)}`}
+          title={stage.reason}
+        >
+          {stage.label}
+          {saving ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+        </button>
+        <span className="truncate text-[10.5px] text-slate-400">
+          {stage.source === 'manual' ? 'Elegida por el equipo' : stage.reason}
+        </span>
+      </div>
+      {open ? (
+        <div className="mt-1.5 flex flex-wrap gap-1 rounded-lg bg-slate-50 p-1.5 ring-1 ring-slate-100" role="listbox" aria-label="Etapa del cliente">
+          {activeClientStages.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              role="option"
+              aria-selected={s.key === stage.key}
+              disabled={saving}
+              onClick={() => void choose(s.key)}
+              className={`rounded-full px-2 py-0.5 text-[10.5px] font-medium ${stageChipClass(s.color, s.key === stage.key)}`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {error ? <p className="mt-1 text-[11px] text-red-600">{error}</p> : null}
     </div>
   )
 }

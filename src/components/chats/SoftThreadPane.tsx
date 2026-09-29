@@ -16,7 +16,6 @@ import { Check, CheckCheck, ChevronLeft, Hand, Info, PanelRight, Paperclip, Paus
 import {
   initialsFromName,
   isWhatsAppWindowOpen,
-  type ConversationStatus,
   type SoftConversation,
   type SoftTag,
 } from '@/lib/chat-soft-copilot'
@@ -71,6 +70,7 @@ import {
   outboundDeliveryLabel,
   type ChatInboxMessage,
 } from '@/lib/chat-inbox'
+import { stageChipClass, useCrmCatalog } from '@/components/chats/useCrmCatalog'
 
 export type SoftWaTemplateOption = {
   name: string
@@ -127,7 +127,7 @@ interface SoftThreadPaneProps {
   onCreateOrder?: () => void
   /** An unfinished order is saved for this chat: the button reads "Continuar pedido". */
   orderDraftPending?: boolean
-  /** Desktop: show / hide the details panel (Detalle · Cliente · Agente). Shortcut: ]. */
+  /** Desktop: show / hide the details panel (Cliente · Agente). Shortcut: ]. */
   detailsPanel?: { open: boolean; onToggle: () => void }
   /** Attach + send a file (WhatsApp, flag-gated). Hidden when absent. */
   attachments?: {
@@ -170,18 +170,6 @@ function DeliveryTicks({ status }: { status?: string | null }) {
       className={`h-3 w-3 ${status === 'read' ? 'text-au-ink-5b3fe0' : 'text-slate-400'}`}
     />
   )
-}
-
-function statusLabel(status: ConversationStatus) {
-  if (status === 'nuevo') return 'Nuevo'
-  if (status === 'hecho') return 'Hecho'
-  return 'En curso'
-}
-
-function statusChipClass(status: ConversationStatus) {
-  if (status === 'nuevo') return 'bg-slate-100 text-slate-600'
-  if (status === 'hecho') return 'bg-emerald-50 text-emerald-800'
-  return 'bg-blue-100 text-blue-800'
 }
 
 function tagChip(tag: SoftTag) {
@@ -279,6 +267,9 @@ export function SoftThreadPane({
   attachments,
   quickReplies,
 }: SoftThreadPaneProps) {
+  // Stage labels / colours from Config › Chats (custom stages).
+  const { chatStages, chatStageLabel } = useCrmCatalog()
+  const stageColor = (key: string) => chatStages.find((s) => s.key === key)?.color ?? null
   const [pickerOpenLocal, setPickerOpenLocal] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [pendingRecent, setPendingRecent] = useState<RecentMediaItem | null>(null)
@@ -444,7 +435,7 @@ export function SoftThreadPane({
         ? conversation.channelAddress?.replace(/^@/, '')
         : null,
   })
-  const metaLine = [channelMeta, statusLabel(conversation.status), windowLabel]
+  const metaLine = [channelMeta, chatStageLabel(conversation.status), windowLabel]
     .filter(Boolean)
     .join(' · ')
 
@@ -629,9 +620,9 @@ export function SoftThreadPane({
 
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <span
-                  className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${statusChipClass(conversation.status)}`}
+                  className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${stageChipClass(stageColor(conversation.status))}`}
                 >
-                  {statusLabel(conversation.status)}
+                  {chatStageLabel(conversation.status)}
                 </span>
                 <span className="rounded-md bg-au-tint-eef0ff px-2 py-0.5 text-[10px] font-medium text-au-ink-4a46e5">
                   {agentModeLabel(agentMode)}

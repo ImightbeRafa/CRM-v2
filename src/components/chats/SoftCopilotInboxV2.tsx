@@ -72,7 +72,8 @@ import {
   type SoftWaTemplateOption,
 } from '@/components/chats/SoftThreadPane'
 import { SoftTokenHealthBanners } from '@/components/chats/SoftTokenHealthBanners'
-import { SoftCopilotRail, type RailTab } from '@/components/chats/SoftCopilotRail'
+import { ChatContextRail, normalizeRailTab, type ContextRailTab } from '@/components/chats/ChatContextRail'
+import { useCrmCatalog } from '@/components/chats/useCrmCatalog'
 import { ChatClientPanel } from '@/components/chats/ChatClientPanel'
 import { AuroraMobileNav } from '@/components/aurora/AuroraMobileNav'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
@@ -80,7 +81,7 @@ import dynamic from 'next/dynamic'
 import type { CreatedOrderRef } from '@/app/ventas/components/EnhancedSalesForm'
 import { useToast } from '@/app/hooks/use-toast'
 
-const TAG_FILTERS: SoftTag[] = ['Envío', 'VIP', 'Nuevo']
+const RAIL_TAB_KEY = 'betsy.chat.railTab.v2'
 const DETAILS_PANEL_KEY = 'betsy.chat.detailsPanel.v1'
 
 function softKey(c: SoftConversation) {
@@ -113,8 +114,25 @@ export function SoftCopilotInboxV2() {
   const [messageInput, setMessageInput] = useState('')
   const [sendError, setSendError] = useState<string | null>(null)
   const [failedOutboundId, setFailedOutboundId] = useState<string | null>(null)
-  const [railTab, setRailTab] = useState<RailTab>('copilot')
-  /** Details panel (Detalle · Cliente · Agente): remembered; wide screens start open. */
+  // Cliente · Agente (Phase 2a). Remembered; old 'detalle' / 'copilot' values map onto them.
+  const [railTab, setRailTabState] = useState<ContextRailTab>('cliente')
+  useEffect(() => {
+    try {
+      setRailTabState(normalizeRailTab(window.localStorage.getItem(RAIL_TAB_KEY)))
+    } catch {
+      // private mode: default tab
+    }
+  }, [])
+  const setRailTab = useCallback((tab: ContextRailTab) => {
+    setRailTabState(tab)
+    try {
+      window.localStorage.setItem(RAIL_TAB_KEY, tab)
+    } catch {
+      // private mode: not remembered
+    }
+  }, [])
+  const { activeTags } = useCrmCatalog()
+  /** Details panel (Cliente · Agente): remembered; wide screens start open. */
   const [detailsOpen, setDetailsOpen] = useState(true)
   const [wideScreen, setWideScreen] = useState(true)
   /** Bumped after an order / guía changes so the Cliente tab refetches. */
@@ -1462,7 +1480,7 @@ export function SoftCopilotInboxV2() {
             search={search}
             onSearchChange={setSearch}
             monitor={monitorStats}
-            tags={TAG_FILTERS}
+            tags={activeTags.map((t) => t.key)}
             activeTag={activeTag}
             onTagClick={(tag) => setActiveTag((prev) => (prev === tag ? null : tag))}
           />
@@ -1492,8 +1510,7 @@ export function SoftCopilotInboxV2() {
                   }`}
                   data-testid="chat-details-panel"
                 >
-                  <SoftCopilotRail
-                    sheet
+                  <ChatContextRail
                     conversation={railConversation}
                     tab={railTab}
                     onTabChange={setRailTab}
@@ -1510,7 +1527,7 @@ export function SoftCopilotInboxV2() {
               </>
             ) : null
           ) : (
-            // SoftCopilotRail is a locked file: the no-chat state lives here instead.
+            // No chat selected: the empty state for the details column.
             <aside
               className="hidden h-full w-[268px] shrink-0 flex-col items-center justify-center border-l border-slate-200/70 bg-white px-6 text-center xl:flex"
               data-testid="rail-empty"
@@ -1580,8 +1597,7 @@ export function SoftCopilotInboxV2() {
                   Cerrar
                 </button>
               </div>
-              <SoftCopilotRail
-                sheet
+              <ChatContextRail
                 conversation={railConversation}
                 tab={railTab}
                 onTabChange={setRailTab}

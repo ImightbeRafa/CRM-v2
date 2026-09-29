@@ -116,9 +116,6 @@ export function AuroraSidebar() {
           >
             Betsy
           </Link>
-          <span className="rounded-md bg-static-white/10 px-1.5 py-1 text-[9px] font-semibold uppercase leading-none tracking-wide text-white/70">
-            CRM
-          </span>
           <span className="ml-auto">{toggleButton}</span>
         </div>
       )}

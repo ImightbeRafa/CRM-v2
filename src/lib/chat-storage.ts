@@ -228,8 +228,12 @@ export async function chatStorageRemove(pathnames: string[]): Promise<void> {
   })
   if (!res.ok && res.status !== 404) throw await failure(res, 'delete')
   // Files uploaded before the switch live in Vercel Blob: remove them there too (best effort).
+  // Hard 5 s cap: the legacy store must never hold a request open (it hung for > 1 min).
   if (process.env.BLOB_READ_WRITE_TOKEN) {
-    await vercelDel(safe, { token: process.env.BLOB_READ_WRITE_TOKEN }).catch(() => undefined)
+    await Promise.race([
+      vercelDel(safe, { token: process.env.BLOB_READ_WRITE_TOKEN }).catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, 5_000)),
+    ])
   }
 }
 

@@ -82,7 +82,8 @@ export async function PUT(request: NextRequest) {
     const kept = quickReplyMediaPaths(items)
     const removed = [...quickReplyMediaPaths(quickRepliesFromSettings(before?.settings))].filter((p) => !kept.has(p) && isQuickReplyMediaPath(p, auth.tenantId))
     if (removed.length) {
-      await deleteChatBlobs(removed).catch((err) => console.warn('[chat/quick-replies] blob cleanup failed', err))
+      // Background: the list change is already committed; file cleanup never delays the answer.
+      void deleteChatBlobs(removed).catch((err) => console.warn('[chat/quick-replies] blob cleanup failed', err))
     }
 
     await logAuditEvent({
@@ -175,7 +176,8 @@ export async function POST(request: NextRequest) {
     const kept = quickReplyMediaPaths(result.items)
     const removed = [...quickReplyMediaPaths(result.beforeItems)].filter((p) => !kept.has(p) && isQuickReplyMediaPath(p, auth.tenantId))
     if (removed.length) {
-      await deleteChatBlobs(removed).catch((err) => console.warn('[chat/quick-replies] file cleanup failed', err))
+      // Background: the list change is already committed; file cleanup never delays the answer.
+      void deleteChatBlobs(removed).catch((err) => console.warn('[chat/quick-replies] file cleanup failed', err))
     }
     await logAuditEvent({
       action: body.op === 'delete' ? 'DELETE' : 'UPDATE',

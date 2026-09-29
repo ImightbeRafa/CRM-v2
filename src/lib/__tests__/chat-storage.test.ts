@@ -129,3 +129,12 @@ describe('quick replies: one change per request, applied under a row lock', () =
     assert.match(w, /"SUPABASE_URL",\n\s+"SUPABASE_SERVICE_ROLE_KEY",/)
   })
 })
+
+describe('delete never hangs (2026-09-29: requests stuck 70–116 s)', () => {
+  test('file cleanup runs in the background and the legacy store is capped at 5 s', () => {
+    const route = readFileSync('src/app/api/chat/quick-replies/route.ts', 'utf8')
+    assert.equal((route.match(/void deleteChatBlobs\(removed\)/g) || []).length, 2)
+    assert.doesNotMatch(route, /await deleteChatBlobs\(removed\)/)
+    assert.match(readFileSync('src/lib/chat-storage.ts', 'utf8'), /setTimeout\(resolve, 5_000\)/)
+  })
+})

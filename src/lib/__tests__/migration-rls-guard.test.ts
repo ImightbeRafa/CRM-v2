@@ -43,6 +43,15 @@ test('the guard itself catches a table without RLS and accepts one with it', () 
   assert.equal(check('CREATE TABLE public."C" (id text);\n/* ALTER TABLE public."C" ENABLE ROW LEVEL SECURITY; */'), false)
 })
 
+test('additive migrations ≥ 034 pass the apply script destructive-SQL check (comments included)', () => {
+  // Same regex as scripts/apply-betsy-v2-additive-sql.mjs, which scans the raw file.
+  const destructive = /\b(DROP TABLE|TRUNCATE|ALTER TABLE\b[\s\S]{0,80}DROP COLUMN)/i
+  for (const file of readdirSync('supabase/migrations')) {
+    if (!(parseInt(file, 10) >= 34)) continue
+    assert.doesNotMatch(readFileSync(`supabase/migrations/${file}`, 'utf8'), destructive, file)
+  }
+})
+
 test('033 locks down the 7 tables found exposed', () => {
   const sql = readFileSync('supabase/migrations/033_security_rls_lockdown.sql', 'utf8')
   for (const t of ['TenantInvite', 'lm_retiro_stock', 'lm_private_delivery_confirmations']) assert.match(sql, new RegExp(`'${t}'`))

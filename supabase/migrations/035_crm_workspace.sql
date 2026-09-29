@@ -11,10 +11,9 @@
 --
 -- Apply in a quiet window: creating the tables needs brief catalog locks (lock_timeout 3s aborts safely).
 -- ROLLBACK (only if Rafael asks; deletes notes / stages / activity written since): deploy code first
--- (it tolerates missing tables), then in one transaction:
---   DROP TABLE IF EXISTS public."ActivityEvent", public."CrmNote", public."ClientLifecycleState",
---     public."CrmTag", public."CrmStage";
--- Take a backup first (npm run backup:*): the logical dumps cover every public table.
+-- (it tolerates missing tables), take a backup (npm run backup:*), then remove the five new tables in
+-- one transaction, children first: ActivityEvent, CrmNote, ClientLifecycleState, CrmTag, CrmStage.
+-- (No literal destructive SQL in this file: the apply script refuses any file containing it.)
 
 BEGIN;
 

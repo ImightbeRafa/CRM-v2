@@ -171,7 +171,8 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
     assert.match(cron, /claimBatch\(2\)/)
     assert.match(cron, /maxDuration = 60/)
     assert.match(wrangler, /"\*\/1 \* \* \* \*"/)
-    assert.match(worker, /"\*\/1 \* \* \* \*": \["\/api\/cron\/chat-automation"\]/)
+    // chat-automation runs first in the */1 list (Phase 2b's chat-workspace sweep follows it).
+    assert.match(worker, /"\*\/1 \* \* \* \*": \["\/api\/cron\/chat-automation"(, "\/api\/cron\/chat-workspace")?\]/)
   })
 
   it('prisma schema mirrors ChatAutomationJob + media columns + Tenant relation', () => {

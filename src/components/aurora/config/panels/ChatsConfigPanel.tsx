@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { ArrowDown, ArrowUp, Loader2, Plus, Trash2 } from 'lucide-react'
 import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader'
 import { ConfigCard } from '@/components/aurora/config/panels/ConfigCard'
+import { ChatRulesEditor } from '@/components/aurora/config/panels/ChatRulesEditor'
 import { refreshCrmCatalog, stageChipClass } from '@/components/chats/useCrmCatalog'
 import {
   STAGE_COLORS,
@@ -319,7 +320,7 @@ function TagListEditor() {
   )
 }
 
-/** Config › Chats: chat stages, client lifecycle stages and tags (Phase 2a). */
+/** Config › Chats: stages, client lifecycle stages, tags (2a) and assignment / hours / auto-close (2b). */
 export function ChatsConfigPanel() {
   return (
     <div className="space-y-4" data-testid="chats-config-panel">
@@ -338,6 +339,7 @@ export function ChatsConfigPanel() {
         subtitle="Se mueven solas según los pedidos, pagos y guías. El equipo puede fijar otra desde el chat."
       />
       <TagListEditor />
+      <ChatRulesEditor />
     </div>
   )
 }

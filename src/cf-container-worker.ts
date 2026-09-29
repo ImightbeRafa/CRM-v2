@@ -216,7 +216,8 @@ const CRON_PATHS: Record<string, readonly string[]> = {
   ],
   "0 14 * * *": ["/api/cron/backup/hot"],
   "*/5 * * * *": ["/api/cron/bot-inbox"],
-  "*/1 * * * *": ["/api/cron/chat-automation"],
+  // chat-workspace (Phase 2b): assignment rules / auto-close / reopen; no-op unless a business turned them on.
+  "*/1 * * * *": ["/api/cron/chat-automation", "/api/cron/chat-workspace"],
   "30 3 * * *": ["/api/cron/chat-agent-retention"],
   "0 5 * * *": ["/api/cron/logistics-report"],
   "0 18 * * SUN": ["/api/cron/logistics-finalize"],

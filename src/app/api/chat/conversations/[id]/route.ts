@@ -3,6 +3,8 @@ import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { recordActivity } from '@/lib/activity'
 import { isAllowedChatStage, loadStages, loadTags } from '@/lib/crm-stages-server'
+import { isClosedCategory, stageCategoryOf } from '@/lib/crm-stages'
+import { markClosed } from '@/lib/chat-workspace-sweep'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import {
@@ -96,6 +98,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const base = { tenantId: auth.tenantId, actorUserId: auth.userId, conversationId: existing.id, entityType: 'ChatConversation', entityId: existing.id, surface: 'chats' }
     if (body.status !== undefined && body.status !== existing.status) {
       void recordActivity({ ...base, verb: 'chat.stage.set', props: { from: existing.status ?? null, to: body.status } })
+      // Phase 2b: remember when a human closed it (reopen-on-inbound compares against this).
+      const closedNow = isClosedCategory(stageCategoryOf((await loadStages(auth.tenantId, 'chat')).stages, body.status))
+      void markClosed(auth.tenantId, existing.id, closedNow ? 'human' : null)
     }
     if (body.tags !== undefined) {
       const before = new Set(existing.tags ?? [])

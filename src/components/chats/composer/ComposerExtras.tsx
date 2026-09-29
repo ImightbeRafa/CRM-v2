@@ -8,6 +8,7 @@ import {
   normalizeShortcut,
   QUICK_REPLY_MAX_MEDIA,
   type ChatQuickReply,
+  type QuickReplyChange,
   type QuickReplyMedia,
 } from '@/lib/chat-quick-replies'
 
@@ -264,13 +265,13 @@ export function QuickReplySuggestions({
 /** Create / edit / delete the team's quick replies (saved for everyone in the business). */
 export function QuickRepliesManager({
   items,
-  onSave,
+  onChange,
   onClose,
   initialShortcut,
   canManage = true,
 }: {
   items: ChatQuickReply[]
-  onSave: (items: ChatQuickReply[]) => Promise<string | null>
+  onChange: (change: QuickReplyChange) => Promise<string | null>
   onClose: () => void
   initialShortcut?: string
   canManage?: boolean
@@ -292,7 +293,13 @@ export function QuickRepliesManager({
     try {
       const form = new FormData()
       form.append('file', file)
-      const res = await fetch('/api/chat/quick-replies/media', { method: 'POST', credentials: 'same-origin', body: form })
+      const res = await fetch('/api/chat/quick-replies/media', {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: form,
+        // Never spin forever: a stuck upload ends with a clear message.
+        signal: AbortSignal.timeout(60_000),
+      })
       const json = (await res.json().catch(() => null)) as { success?: boolean; media?: QuickReplyMedia; error?: string } | null
       if (!res.ok || !json?.success || !json.media) {
         setError(res.status === 403 ? 'Solo administradores pueden adjuntar archivos.' : json?.error || 'No se pudo subir el archivo.')
@@ -304,8 +311,12 @@ export function QuickRepliesManager({
           ? { ...prev, media: [...prev.media, media].slice(0, QUICK_REPLY_MAX_MEDIA) }
           : prev,
       )
-    } catch {
-      setError('Sin conexión. Probá de nuevo.')
+    } catch (err) {
+      setError(
+        err instanceof Error && err.name === 'TimeoutError'
+          ? 'La subida tardó demasiado. Probá con una imagen más liviana o de nuevo.'
+          : 'Sin conexión. Probá de nuevo.',
+      )
     } finally {
       setUploading(false)
     }
@@ -322,16 +333,16 @@ export function QuickRepliesManager({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const persist = async (next: ChatQuickReply[]) => {
+  // One change at a time; the list shown comes back from the server (items prop).
+  const persist = async (change: QuickReplyChange) => {
     setSaving(true)
     setError(null)
-    const err = await onSave(next)
+    const err = await onChange(change)
     setSaving(false)
     if (err) {
       setError(err)
       return false
     }
-    setDraft(next)
     return true
   }
 
@@ -348,10 +359,8 @@ export function QuickRepliesManager({
       setError(`Ya existe /${shortcut}.`)
       return
     }
-    const next = editing.id
-      ? draft.map((r) => (r.id === editing.id ? { ...r, shortcut, text, media } : r))
-      : [...draft, { id: `qr_${Date.now().toString(36)}`, shortcut, text, media }]
-    if (await persist(next)) setEditing(null)
+    const item: ChatQuickReply = { id: editing.id ?? `qr_${Date.now().toString(36)}`, shortcut, text, media }
+    if (await persist({ op: 'upsert', item })) setEditing(null)
   }
 
   const visible = filter.trim()
@@ -539,7 +548,7 @@ export function QuickRepliesManager({
                           type="button"
                           aria-label={`Borrar /${r.shortcut}`}
                           disabled={saving}
-                          onClick={() => void persist(draft.filter((x) => x.id !== r.id))}
+                          onClick={() => void persist({ op: 'delete', id: r.id })}
                           className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
                         >
                           <Trash2 className="h-3.5 w-3.5" aria-hidden />

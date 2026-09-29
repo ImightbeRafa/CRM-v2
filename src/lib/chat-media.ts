@@ -3,7 +3,7 @@
  * Never import bot modules; never persist Meta CDN URLs on ChatMessage.
  */
 
-import { del, get, list, put, type BlobAccessType } from '@vercel/blob'
+import { chatStorageGet, chatStoragePut, chatStorageRemove, chatStorageUsage, ChatStorageError } from '@/lib/chat-storage'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 
 // WhatsApp caps video/audio at 16 MB; 25 MB leaves headroom. Documents above this
@@ -242,74 +242,33 @@ export async function downloadMetaMediaWithCap(opts: {
   return { bytes: Buffer.concat(chunks), contentType }
 }
 
-function isPublicStorePrivateError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err)
-  return /private access on a public store/i.test(msg)
-}
-
+/**
+ * Private copy of a chat file (Supabase Storage, see chat-storage.ts). The name is kept from the
+ * Vercel Blob era so callers and tests stay unchanged.
+ */
 export async function putChatMediaToBlob(opts: {
   tenantId: string
   messageId: string
   bytes: Buffer
   contentType: string
-  token?: string
   /** Explicit private path (quick-reply files); default `chat-media/<tenant>/<message>`. */
   pathname?: string
 }): Promise<{ pathname: string; size: number }> {
-  const token = opts.token ?? process.env.BLOB_READ_WRITE_TOKEN
-  if (!token) throw new Error('BLOB_READ_WRITE_TOKEN is required for chat media cache')
-
-  // Only chat folders: this store also holds the database backups.
   if (opts.pathname && !/^(chat-media|chat-quick-replies)\//.test(opts.pathname)) {
     throw new Error('Refusing to write outside the chat media folders')
   }
   const pathname = opts.pathname ?? chatMediaBlobPath(opts.tenantId, opts.messageId)
-  const access: BlobAccessType = 'private'
-  try {
-    const result = await put(pathname, opts.bytes, {
-      access,
-      token,
-      contentType: opts.contentType,
-      addRandomSuffix: false,
-      // Quick-reply files get fresh random names: never overwrite one.
-      allowOverwrite: !opts.pathname,
-    })
-    return { pathname: result.pathname, size: opts.bytes.length }
-  } catch (err) {
-    if (isPublicStorePrivateError(err)) {
-      throw new Error(
-        'Chat media cache requires a private Vercel Blob store (BLOB_READ_WRITE_TOKEN).',
-      )
-    }
-    throw err
-  }
+  // The media cache may re-write the same message file; quick-reply files get fresh names.
+  return chatStoragePut(pathname, opts.bytes, opts.contentType, { overwrite: !opts.pathname })
 }
 
 export async function readChatMediaFromBlob(opts: {
   pathname: string
-  token?: string
 }): Promise<{ bytes: Buffer; contentType: string | null }> {
-  const token = opts.token ?? process.env.BLOB_READ_WRITE_TOKEN
-  if (!token) throw new Error('BLOB_READ_WRITE_TOKEN is required for chat media cache')
   if (isMetaCdnUrl(opts.pathname)) {
     throw new Error('Refusing to read Meta CDN path as blob')
   }
-
-  const result = await get(opts.pathname, { access: 'private', token })
-  if (!result || result.statusCode !== 200 || !result.stream) {
-    throw new Error(`Blob not found or unreadable: ${opts.pathname}`)
-  }
-  const chunks: Buffer[] = []
-  const reader = result.stream.getReader()
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    chunks.push(Buffer.from(value))
-  }
-  return {
-    bytes: Buffer.concat(chunks),
-    contentType: result.blob?.contentType ?? null,
-  }
+  return chatStorageGet(opts.pathname)
 }
 
 /**
@@ -563,28 +522,14 @@ export function parseSingleByteRange(
   return { start, end }
 }
 
-/** Count / bytes of private blobs under a prefix (quota checks). */
-export async function chatBlobUsage(prefix: string, token = process.env.BLOB_READ_WRITE_TOKEN): Promise<{ count: number; bytes: number }> {
-  if (!token) throw new Error('BLOB_READ_WRITE_TOKEN is required')
-  let cursor: string | undefined
-  let count = 0
-  let bytes = 0
-  do {
-    const page = await list({ prefix, cursor, limit: 1000, token })
-    for (const b of page.blobs) {
-      count += 1
-      bytes += b.size
-    }
-    cursor = page.hasMore ? page.cursor : undefined
-  } while (cursor)
-  return { count, bytes }
+/** Count / bytes of stored chat files in a folder (quota checks). */
+export async function chatBlobUsage(prefix: string): Promise<{ count: number; bytes: number }> {
+  return chatStorageUsage(prefix)
 }
 
-/** Delete chat blobs (only chat folders; best-effort). */
-export async function deleteChatBlobs(pathnames: string[], token = process.env.BLOB_READ_WRITE_TOKEN): Promise<void> {
-  const safe = pathnames.filter((p) => /^(chat-media|chat-quick-replies)\//.test(p))
-  if (!safe.length || !token) return
-  await del(safe, { token })
+/** Delete chat files (only chat folders). */
+export async function deleteChatBlobs(pathnames: string[]): Promise<void> {
+  await chatStorageRemove(pathnames)
 }
 
 /**
@@ -592,6 +537,18 @@ export async function deleteChatBlobs(pathnames: string[], token = process.env.B
  */
 export function describeBlobError(error: unknown): { code: string; message: string; detail: string } {
   const raw = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+  if (error instanceof ChatStorageError) {
+    const detail = raw.slice(0, 300)
+    const byCode: Record<string, string> = {
+      not_configured: 'falta configurar el almacenamiento.',
+      not_found: 'el archivo no existe en el almacenamiento.',
+      rejected: 'el almacenamiento rechazó la credencial.',
+      timeout: 'el almacenamiento tardó demasiado, probá de nuevo.',
+      network: 'no hubo conexión con el almacenamiento, probá de nuevo.',
+      failed: 'error del almacenamiento.',
+    }
+    return { code: `storage_${error.code}`, message: byCode[error.code] ?? 'error del almacenamiento.', detail }
+  }
   const detail = raw.replace(/vercel_blob_rw_[A-Za-z0-9_]+/g, '[token]').slice(0, 300)
   const m = raw.toLowerCase()
   if (m.includes('blob_read_write_token is required') || m.includes('no token found')) {

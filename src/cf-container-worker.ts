@@ -26,11 +26,16 @@ function unavailableResponse(request: Request): Response {
  * as-is; only thrown exceptions fail over.
  */
 async function fetchWithFailover(env: Env, request: Request): Promise<Response> {
-  const retry = request.clone();
+  // Only small / bodiless requests are copied for a retry: cloning a large upload tees its
+  // stream, and an unread branch can stall the original on Workers.
+  const size = Number(request.headers.get("content-length") || 0);
+  const replayable = !request.body || (size > 0 && size <= 1024 * 1024);
+  const retry = replayable ? request.clone() : null;
   try {
     return await getContainer(env.BETSY_CRM_CONTAINER, CONTAINER_INSTANCE_NAME).fetch(request);
   } catch (primaryError) {
     console.error("[container] primary failed, trying standby", String(primaryError));
+    if (!retry) return unavailableResponse(request);
     try {
       return await getContainer(env.BETSY_CRM_CONTAINER, STANDBY_INSTANCE_NAME).fetch(retry);
     } catch (standbyError) {
@@ -84,6 +89,9 @@ interface Env {
   FB_LOGIN_REDIRECT_URI?: string;
   // Blob / Telegram / Tilopay / Correos / Finance
   BLOB_READ_WRITE_TOKEN?: string;
+  SUPABASE_URL?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
+  CHAT_STORAGE_BUCKET?: string;
   BLOB_STORE_ID?: string;
   BLOB_WEBHOOK_PUBLIC_KEY?: string;
   TELEGRAM_BOT_TOKEN?: string;
@@ -157,6 +165,10 @@ const CONTAINER_ENV_KEYS = [
   "WHATSAPP_WEBHOOK_SECRET",
   "FB_LOGIN_REDIRECT_URI",
   "BLOB_READ_WRITE_TOKEN",
+  // Chat file storage (Supabase Storage, src/lib/chat-storage.ts).
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "CHAT_STORAGE_BUCKET",
   "BLOB_STORE_ID",
   "BLOB_WEBHOOK_PUBLIC_KEY",
   "TELEGRAM_BOT_TOKEN",

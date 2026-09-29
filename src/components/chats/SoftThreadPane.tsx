@@ -52,6 +52,7 @@ import {
   filterQuickReplies,
   slashQueryAt,
   type ChatQuickReply,
+  type QuickReplyChange,
   type QuickReplyMedia,
 } from '@/lib/chat-quick-replies'
 import {
@@ -140,7 +141,7 @@ interface SoftThreadPaneProps {
   /** Team quick replies: `/atajo` in the composer. Hidden when absent. */
   quickReplies?: {
     items: ChatQuickReply[]
-    onSave: (items: ChatQuickReply[]) => Promise<string | null>
+    onChange: (change: QuickReplyChange) => Promise<string | null>
     /** Owners / admins edit the list; everyone uses it. */
     canManage?: boolean
   }
@@ -1389,7 +1390,7 @@ export function SoftThreadPane({
           {managerOpen && quickReplies ? (
             <QuickRepliesManager
               items={quickReplies.items}
-              onSave={quickReplies.onSave}
+              onChange={quickReplies.onChange}
               canManage={quickReplies.canManage === true}
               initialShortcut={quickReplies.canManage ? managerOpen.shortcut : undefined}
               onClose={() => {

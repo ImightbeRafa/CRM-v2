@@ -343,7 +343,8 @@ describe('quick-reply files: SecureDog M-1 / L-3 / L-4', () => {
   test('blob writes / deletes stay inside the chat folders (backups share the store)', () => {
     const m = read('src/lib/chat-media.ts')
     assert.match(m, /Refusing to write outside the chat media folders/)
-    assert.match(m, /allowOverwrite: !opts\.pathname/)
+    // 2026-09-29: storage is Supabase (chat-storage.ts); quick-reply files are never overwritten.
+    assert.match(m, /\{ overwrite: !opts\.pathname \}/)
   })
 })
 

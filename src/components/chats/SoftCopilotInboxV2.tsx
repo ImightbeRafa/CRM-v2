@@ -58,7 +58,7 @@ import {
 import { lineHealth, lineIsDown, summarizeLineCounts } from '@/lib/chat-line-filter'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { WA_OUTBOUND_ACCEPT } from '@/lib/chat-outbound-media'
-import { WA_CAPTION_MAX, type ChatQuickReply, type QuickReplyMedia } from '@/lib/chat-quick-replies'
+import { WA_CAPTION_MAX, type ChatQuickReply, type QuickReplyChange, type QuickReplyMedia } from '@/lib/chat-quick-replies'
 import { hasOrderDraft } from '@/lib/order-draft'
 import { useSession } from 'next-auth/react'
 import { hasSessionPermission } from '@/lib/session-permissions'
@@ -140,7 +140,6 @@ export function SoftCopilotInboxV2() {
   const [assignBusy, setAssignBusy] = useState(false)
   const [outboundMedia, setOutboundMedia] = useState(false)
   const [quickReplyItems, setQuickReplyItems] = useState<ChatQuickReply[]>([])
-  const quickRepliesVersion = useRef(0)
   const { data: viewerSession } = useSession()
   const canManageQuickReplies = hasSessionPermission(viewerSession, 'update_config')
   /** Unsent composer text per chat (WhatsApp-style drafts; this tab only). */
@@ -477,7 +476,6 @@ export function SoftCopilotInboxV2() {
       .then((json) => {
         if (!cancelled && json?.success && Array.isArray(json.items)) {
           setQuickReplyItems(json.items)
-          quickRepliesVersion.current = typeof json.version === 'number' ? json.version : 0
         }
       })
       .catch(() => {})
@@ -486,34 +484,25 @@ export function SoftCopilotInboxV2() {
     }
   }, [])
 
-  const saveQuickReplies = useCallback(async (items: ChatQuickReply[]): Promise<string | null> => {
+  /** One change (add / edit / delete); the server applies it atomically and returns the list. */
+  const changeQuickReplies = useCallback(async (change: QuickReplyChange): Promise<string | null> => {
     try {
       const res = await fetch('/api/chat/quick-replies', {
-        method: 'PUT',
+        method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items, version: quickRepliesVersion.current }),
+        body: JSON.stringify(change),
+        signal: AbortSignal.timeout(20_000),
       })
-      const json = (await res.json().catch(() => null)) as {
-        success?: boolean
-        items?: ChatQuickReply[]
-        version?: number
-        error?: string
-      } | null
+      const json = (await res.json().catch(() => null)) as { success?: boolean; items?: ChatQuickReply[]; error?: string } | null
       if (res.status === 403) return 'Solo administradores pueden editar las respuestas rápidas.'
-      if (!res.ok || !json?.success) {
-        // Someone else saved first: show their list so nothing is overwritten blindly.
-        if (res.status === 409 && Array.isArray(json?.items)) {
-          setQuickReplyItems(json.items)
-          if (typeof json.version === 'number') quickRepliesVersion.current = json.version
-        }
-        return json?.error || 'No se pudieron guardar las respuestas rápidas.'
-      }
-      if (typeof json.version === 'number') quickRepliesVersion.current = json.version
-      setQuickReplyItems(Array.isArray(json.items) ? json.items : items)
+      if (!res.ok || !json?.success) return json?.error || 'No se pudieron guardar las respuestas rápidas.'
+      if (Array.isArray(json.items)) setQuickReplyItems(json.items)
       return null
-    } catch {
-      return 'Sin conexión. Probá de nuevo.'
+    } catch (error) {
+      return error instanceof Error && error.name === 'TimeoutError'
+        ? 'El servidor tardó demasiado. Probá de nuevo.'
+        : 'Sin conexión. Probá de nuevo.'
     }
   }, [])
 
@@ -1413,7 +1402,7 @@ export function SoftCopilotInboxV2() {
           onSendQuickReplyMedia: handleSendQuickReplyMedia,
         }
       : undefined,
-    quickReplies: { items: quickReplyItems, onSave: saveQuickReplies, canManage: canManageQuickReplies },
+    quickReplies: { items: quickReplyItems, onChange: changeQuickReplies, canManage: canManageQuickReplies },
     aiBusy: controlBusy,
     threadLoading: Boolean(selectedConversationId && threadLoadingId === selectedConversationId),
     threadError: Boolean(selectedConversationId && threadErrorId === selectedConversationId),

@@ -76,6 +76,9 @@ function sanitizeMedia(raw: unknown, tenantId?: string): QuickReplyMedia[] {
   return out
 }
 
+/** One change to the team list (applied server-side in a locked transaction). */
+export type QuickReplyChange = { op: 'upsert'; item: ChatQuickReply } | { op: 'delete'; id: string }
+
 export const QUICK_REPLIES_SETTINGS_KEY = 'chatQuickReplies'
 /** Optimistic-concurrency counter next to the list (a stale tab gets 409 instead of overwriting). */
 export const QUICK_REPLIES_VERSION_KEY = 'chatQuickRepliesVersion'

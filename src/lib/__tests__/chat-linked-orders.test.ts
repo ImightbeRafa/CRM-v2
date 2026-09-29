@@ -19,7 +19,8 @@ test('newest linked message per conversation wins; rows without an order are ign
 
 test('enrichment query is tenant-scoped on the message and the order', () => {
   const src = readFileSync('src/lib/chat-linked-orders.ts', 'utf8')
-  assert.match(src, /tenantId,\n\s+conversationId: \{ in:/)
+  // \r?\n: the checkout may use Windows line endings.
+  assert.match(src, /tenantId,\r?\n\s+conversationId: \{ in:/)
   assert.match(src, /order: \{ tenantId, deletedAt: null \}/)
   for (const route of ['src/app/api/chat/conversations/route.ts', 'src/app/api/chat/conversations/changes/route.ts']) {
     assert.match(readFileSync(route, 'utf8'), /enrichConversationDtosWithLinkedOrders\(\s*auth\.tenantId/)
@@ -28,7 +29,7 @@ test('enrichment query is tenant-scoped on the message and the order', () => {
 
 test('order-link bumps the conversation revision with a tenant-scoped update', () => {
   const src = readFileSync('src/app/api/chat/order-link/route.ts', 'utf8')
-  assert.match(src, /chatConversation\s*\n?\s*\.updateMany\(\{ where: \{ id: conversation\.id, tenantId \}/)
+  assert.match(src, /chatConversation\s*\r?\n?\s*\.updateMany\(\{ where: \{ id: conversation\.id, tenantId \}/)
 })
 
 test('client uses the server linkedOrder when the linking message is not loaded', () => {

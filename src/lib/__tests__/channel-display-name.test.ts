@@ -97,8 +97,10 @@ describe('channel-display-name', () => {
       value: 'Forge',
       reset: false,
     })
-    assert.equal(validateDisplayNameInput('').reset, true)
-    assert.equal(validateDisplayNameInput('   ').reset, true)
+    for (const blank of ['', '   ']) {
+      const r = validateDisplayNameInput(blank)
+      assert.ok(r.ok && r.reset, `blank ${JSON.stringify(blank)} resets to the default name`)
+    }
     assert.equal(validateDisplayNameInput('a'.repeat(40)).ok, true)
     assert.equal(validateDisplayNameInput('a'.repeat(41)).ok, false)
     assert.equal(validateDisplayNameInput('Bad\nname').ok, false)

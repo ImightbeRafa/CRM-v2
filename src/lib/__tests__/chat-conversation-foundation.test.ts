@@ -244,7 +244,7 @@ describe('backfill planner resumability', () => {
 
     const apply = parseChatBackfillOptions(
       ['--apply', '--tenant=t1', '--batch-size=5000'],
-      { CHAT_INBOX_BACKFILL_CONFIRM_HOST: 'db.example.supabase.co' },
+      { CHAT_INBOX_BACKFILL_CONFIRM_HOST: 'db.example.supabase.co' } as unknown as NodeJS.ProcessEnv,
     )
     assert.equal(apply.apply, true)
     assert.equal(apply.tenantId, 't1')

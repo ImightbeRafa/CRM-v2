@@ -9,14 +9,16 @@ const ISOLATED = 'cmteijij70000jsoyedmtfnl1';
 const OTHER = 'cm-other-store-tenant';
 
 describe('preview feature unlock', () => {
+  // Writable view: Next types NODE_ENV as read-only, but these tests must toggle it.
+  const env = process.env as Record<string, string | undefined>;
   const originalVercel = process.env.VERCEL_ENV;
   const originalNode = process.env.NODE_ENV;
 
   function restore() {
     if (originalVercel === undefined) delete process.env.VERCEL_ENV;
     else process.env.VERCEL_ENV = originalVercel;
-    if (originalNode === undefined) delete process.env.NODE_ENV;
-    else process.env.NODE_ENV = originalNode;
+    if (originalNode === undefined) delete env.NODE_ENV;
+    else env.NODE_ENV = originalNode;
   }
 
   function setEnv(overrides: {
@@ -25,8 +27,8 @@ describe('preview feature unlock', () => {
   }) {
     if (overrides.vercel === undefined) delete process.env.VERCEL_ENV;
     else process.env.VERCEL_ENV = overrides.vercel;
-    if (overrides.node === undefined) delete process.env.NODE_ENV;
-    else process.env.NODE_ENV = overrides.node;
+    if (overrides.node === undefined) delete env.NODE_ENV;
+    else env.NODE_ENV = overrides.node;
   }
 
   it('never unlocks on Vercel production', () => {

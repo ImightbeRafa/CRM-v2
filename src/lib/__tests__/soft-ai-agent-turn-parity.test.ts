@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { parseBrandFactsSafe, parseReplyStyleSafe } from '../soft-ai/brand-facts'
 import { decideInbound } from '../soft-ai/inbound-decision'
 import {
@@ -172,8 +172,10 @@ describe('agent turn parity', () => {
       const src = readFileSync(file, 'utf8')
       if (!src.includes('runSoftAiLlmRuntime(')) continue
       if (file.endsWith(`${join('llm', 'runtime.ts')}`)) continue
-      callers.push(relative(ROOT, file))
-      assert.doesNotMatch(src, /runSoftAiLlmRuntime\(\s*\{/, relative(ROOT, file))
+      // POSIX separators so the list compares the same on Windows and Linux.
+      const rel = relative(ROOT, file).split(sep).join('/')
+      callers.push(rel)
+      assert.doesNotMatch(src, /runSoftAiLlmRuntime\(\s*\{/, rel)
     }
     assert.deepEqual(callers, ['src/lib/soft-ai/agent-turn.ts'])
     const turn = readFileSync(join(ROOT, 'src/lib/soft-ai/agent-turn.ts'), 'utf8')

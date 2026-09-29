@@ -155,7 +155,10 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
   it('webhook persists job before 200 and voids processJobById; cron is separate safety net', () => {
     const webhook = read('src/app/api/chat/webhook/route.ts')
     const cron = read('src/app/api/cron/chat-automation/route.ts')
-    const vercel = read('vercel.json')
+    // Production runs on Cloudflare: the */1 safety-net cron lives in wrangler.jsonc and the Worker
+    // maps it to this route (vercel.json crons are empty since the move).
+    const wrangler = read('wrangler.jsonc')
+    const worker = read('src/cf-container-worker.ts')
     assert.match(webhook, /enqueueSoftAiAfterInbound/)
     assert.match(webhook, /processJobById/)
     const enqueueAt = webhook.indexOf('enqueueSoftAiAfterInbound')
@@ -167,8 +170,8 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
     assert.match(cron, /Bearer/)
     assert.match(cron, /claimBatch\(2\)/)
     assert.match(cron, /maxDuration = 60/)
-    assert.match(vercel, /\/api\/cron\/chat-automation/)
-    assert.match(vercel, /\*\/1 \* \* \* \*/)
+    assert.match(wrangler, /"\*\/1 \* \* \* \*"/)
+    assert.match(worker, /"\*\/1 \* \* \* \*": \["\/api\/cron\/chat-automation"\]/)
   })
 
   it('prisma schema mirrors ChatAutomationJob + media columns + Tenant relation', () => {

@@ -379,11 +379,29 @@ test('WA exchange returns accessToken on waitingForPhoneNumber (ES code handoff)
   assert.match(source, /Using existing SocialAccount phone for WABA reconnect/)
 })
 
+test('Embedded Signup single-use code is only spent once FINISH assets exist', async () => {
+  const { waSignupReadyToExchange } = await import('../whatsapp-embedded-signup')
+  // No credential, or credential without FINISH phone/WABA assets: never exchange.
+  assert.equal(waSignupReadyToExchange({}), false)
+  assert.equal(waSignupReadyToExchange({ code: 'c1' }), false)
+  assert.equal(waSignupReadyToExchange({ code: 'c1', message: { data: {} } } as never), false)
+  // FINISH with a phone number id, or only a WABA id (coexistence): ready.
+  assert.equal(waSignupReadyToExchange({ code: 'c1', message: { data: { phone_number_id: '123', waba_id: '9' } } } as never), true)
+  assert.equal(waSignupReadyToExchange({ accessToken: 't', message: { data: { waba_id: '9' } } } as never), true)
+})
+
 test('social page retries Embedded Signup exchange after in-flight FINISH race', async () => {
-  const source = await readFile('src/app/config/social/page.tsx', 'utf8')
-  assert.match(source, /retryAfter/)
-  assert.match(source, /exchangeData\.accessToken/)
-  assert.match(source, /for \(let i = 0; i < 20; i\+\+\)/)
-  // Must not burn code at a fixed 800ms without waiting for FINISH.
-  assert.doesNotMatch(source, /setTimeout\(r, 800\)/)
+  // CRLF-safe: the checkout may use Windows line endings.
+  const source = (await readFile('src/app/config/social/page.tsx', 'utf8')).replace(/\r\n/g, '\n')
+  // FINISH arriving mid-exchange is remembered instead of starting a second exchange…
+  assert.match(source, /if \(pending\.exchanging\) \{[\s\S]{0,300}pending\.retryAfter = true\s*\n\s*return/)
+  // …the code is never spent before FINISH assets exist…
+  assert.match(source, /if \(!waSignupReadyToExchange\(pending\)\) return/)
+  // …a burned code's business token is kept for the later FINISH…
+  assert.match(source, /pending\.accessToken = exchangeData\.accessToken\s*\n\s*pending\.code = null/)
+  // …and once the in-flight call ends, it retries exactly when FINISH came in and is ready.
+  assert.match(source, /const canRetry = Boolean\(again\.retryAfter\) && waSignupReadyToExchange\(again\)/)
+  assert.match(source, /if \(canRetry\) \{\s*\n\s*void tryExchangeWhatsAppSignupRef\.current\(\)/)
+  // Never burns the code on a fixed timer without waiting for FINISH.
+  assert.doesNotMatch(source, /setTimeout\(r, \d+\)/)
 })

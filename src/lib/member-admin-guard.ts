@@ -20,6 +20,8 @@ export type MemberChange = {
   newRole?: string | null
   /** true = deactivate / remove from the business */
   remove?: boolean
+  /** true = turn an inactive membership back on */
+  reactivate?: boolean
   /** active OWNER memberships in the business right now (including the target) */
   activeOwnerCount: number
 }
@@ -31,11 +33,13 @@ export function checkMemberChange(c: MemberChange): GuardResult {
   if (c.newRole != null && !(MEMBER_ROLES as readonly string[]).includes(c.newRole)) {
     return { ok: false, error: 'Rol inválido', status: 400 }
   }
-  if (!roleChanges && !c.remove) return { ok: true }
+  const reactivates = Boolean(c.reactivate) && !c.targetActive
+  if (!roleChanges && !c.remove && !reactivates) return { ok: true }
 
   if (c.actorUserId === c.targetUserId) {
     return { ok: false, error: 'No puedes cambiar tu propio rol ni removerte a ti mismo.', status: 403 }
   }
+  // Reactivating a removed Owner makes them an Owner again (AUTH-25): Owner-only too.
   const touchesOwner = c.targetRole === 'OWNER' || c.newRole === 'OWNER'
   if (touchesOwner && c.actorRole !== 'OWNER') {
     return { ok: false, error: 'Solo un Owner puede asignar o cambiar el rol Owner.', status: 403 }

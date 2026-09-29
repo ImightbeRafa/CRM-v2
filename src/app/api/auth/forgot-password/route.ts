@@ -44,13 +44,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // OAuth-only accounts cannot reset password
-    if (user.provider && user.provider !== 'credentials') {
-      return NextResponse.json(
-        { message: 'Si el correo existe, recibirás un enlace para restablecer tu contraseña.' },
-        { status: 200 }
-      );
-    }
+    // Google-linked accounts may set a password too: the emailed link is the proof of the
+    // mailbox (a first Google sign-in drops a squatted password; this is the way back, AUTH-30).
 
     // Only the hash is stored; the raw token lives in the email link.
     const token = generateResetToken();

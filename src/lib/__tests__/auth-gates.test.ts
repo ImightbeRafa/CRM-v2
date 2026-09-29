@@ -113,7 +113,7 @@ test('authorize wiring: reserve before lookup, exact lookup, equal timing, versi
   assert.ok(at('reserveLoginAttempt(') < at('findUserIdByEmail('))
   assert.doesNotMatch(body, /mode: 'insensitive'/, 'no ILIKE lookup')
   assert.match(body, /!user \|\| !user\.active \|\| !user\.password \|\| !isBcryptHash\(user\.password\)\) \{[\s\S]{0,200}burnPasswordCheck\(password\)/)
-  assert.ok(at('loadUserAuthState(user.id)') < at('verifyPassword(password'), 'version read before the password check (M1)')
+  assert.ok(at('loadUserAuthState(userId)') < at('prisma.user.findUnique'), 'version read before the password hash (AUTH-12)')
   assert.ok(at('verifyPassword(password') < at('emailVerificationBlocks(user)'))
   assert.ok(at('emailVerificationBlocks(user)') < at('releaseLoginAttempt('))
   assert.match(body, /sv: sessionVersion,/)
@@ -146,4 +146,16 @@ test('reset routes: hash stored, single atomic consume, escaped name, inactive r
   assert.doesNotMatch(fallback, /emailVerified/, 'pre-034 fallback never verifies (sessions could not be ended)')
   assert.ok(reset.indexOf('const live = await prisma.$queryRaw') < reset.indexOf('await hashPassword(password)'), 'no bcrypt for dead links')
   assert.equal(escapeHtml(`<img src=x onerror="a">&'`), '&lt;img src=x onerror=&quot;a&quot;&gt;&amp;&#39;')
+})
+
+test('a caller blocked by its own buckets does not spend the account budget (AUTH-27)', async () => {
+  const email = `target-${Date.now()}@x.cr`
+  // One IP hammering one email: its email+IP bucket locks after 5, the account budget stays low.
+  for (let i = 0; i < 100; i++) await reserveLoginAttempt(email, '10.66.66.66')
+  assert.equal((await reserveLoginAttempt(email, '10.77.0.1')).locked, false, 'the owner on another network still gets in')
+})
+
+test('EMAIL_NOT_VERIFIED gives the attempt back (right password is not a failure)', () => {
+  const src = read('src/lib/auth-options.ts')
+  assert.match(src, /if \(emailVerificationBlocks\(user\)\) \{[\s\S]{0,200}await releaseLoginAttempt\(normalizedEmail, ip\)\s*throw new Error\(LOGIN_ERRORS\.emailNotVerified\)/)
 })

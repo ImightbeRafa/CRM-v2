@@ -50,3 +50,29 @@ test('sessions follow the membership: removal and downgrade end them, promotion 
   assert.equal(roleCovers('SALES', 'VIEWER'), true, 'VIEWER is the middleware fallback')
   assert.equal(roleCovers('ADMIN', 'OWNER'), false, 'the MASTER→OWNER fallback cannot escalate')
 })
+
+test('reactivating a removed OWNER is Owner-only (AUTH-25); actor role comes from the DB (AUTH-28)', () => {
+  const removedOwner = { ...base, targetUserId: 'o2', targetRole: 'OWNER', targetActive: false, reactivate: true }
+  assert.equal(checkMemberChange(removedOwner).ok, false, 'an ADMIN cannot bring an Owner back')
+  assert.equal(checkMemberChange({ ...removedOwner, actorRole: 'OWNER', actorUserId: 'o1' }).ok, true)
+  assert.equal(checkMemberChange({ ...base, targetActive: false, reactivate: true }).ok, true, 'normal members can be reactivated')
+  for (const f of ['src/app/api/users/route.ts', 'src/app/api/users/[id]/route.ts']) {
+    const src = read(f)
+    assert.match(src, /actorRole: actor\?\.role \?\? 'NONE'/, f)
+    assert.match(src, /reactivate: active === true/, f)
+  }
+})
+
+test('logistics API re-reads the grant and honours revocation (AUTH-26)', () => {
+  const src = read('src/lib/logistics-auth.ts')
+  assert.match(src, /await getLiveToken\(\{ req, secret: secret \|\| '' \}\)/)
+  assert.match(src, /isLogisticsAdmin: current\.isLogisticsAdmin === true/)
+  assert.doesNotMatch(src, /from 'next-auth\/jwt'/)
+})
+
+test('regressions guarded: inactive businesses not blocked here, Google-linked accounts can reset, invite accept idempotent', () => {
+  assert.doesNotMatch(read('src/lib/session-revocation.ts'), /"Tenant"/, 'billing decides about inactive businesses')
+  assert.doesNotMatch(read('src/app/api/auth/forgot-password/route.ts'), /provider !== 'credentials'/)
+  const accept = read('src/app/api/invites/accept/route.ts')
+  assert.equal((accept.match(/findInviteAcceptedBy\(token, session/g) || []).length, 2)
+})

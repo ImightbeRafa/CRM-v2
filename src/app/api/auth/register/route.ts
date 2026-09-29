@@ -125,7 +125,7 @@ export async function POST(request: Request) {
       if (pending) {
         // Only the holder of the emailed invite link joins right away (the accept-invite page sets
         // the cookie). Anyone else who merely knows the address gets an unverified account with no
-        // business; the invite waits until they verify the mailbox (verify-email accepts it).
+        // business; to join they must open the emailed invite link (nothing joins automatically).
         const presentedToken = (typeof inviteToken === 'string' && inviteToken) || cookieValue(request, TEAM_INVITE_COOKIE);
         // The invite this token names (not simply the newest one for the address).
         const held = await findInviteForPresentedToken(presentedToken, normalizedEmail);

@@ -38,7 +38,9 @@ async function readInviteTokenCookie(): Promise<string | null> {
   try {
     const { cookies } = await import('next/headers')
     return (await cookies()).get(TEAM_INVITE_COOKIE)?.value ?? null
-  } catch {
+  } catch (error) {
+    // Loud on purpose: if this ever breaks, Google invitees would silently stop joining.
+    console.warn('[OAuth] invite cookie unreadable', error instanceof Error ? error.message : error)
     return null
   }
 }
@@ -146,6 +148,19 @@ export const authOptions: NextAuthOptions = {
 
           // Exact case-insensitive match (no ILIKE wildcards; see user-lookup.ts)
           const userId = await findUserIdByEmail(normalizedEmail)
+
+          // Session version read BEFORE the password hash (AUTH-12): if a reset commits between the
+          // two reads, the hash is the new one and the old password fails; if it commits after
+          // both, this session carries the old version and the reset has already revoked it.
+          let sessionVersion = 0
+          if (userId) {
+            try {
+              sessionVersion = (await loadUserAuthState(userId))?.sessionVersion ?? 0
+            } catch {
+              sessionVersion = 0
+            }
+          }
+
           const user = !userId ? null : await prisma.user.findUnique({
             where: { id: userId },
             select: {
@@ -172,15 +187,6 @@ export const authOptions: NextAuthOptions = {
             return null
           }
 
-          // Session version read BEFORE the password check: a reset that lands mid-login bumps
-          // the version after this read, so the session this login creates is already revoked.
-          let sessionVersion = 0
-          try {
-            sessionVersion = (await loadUserAuthState(user.id))?.sessionVersion ?? 0
-          } catch {
-            sessionVersion = 0
-          }
-
           const passwordValid = await verifyPassword(password, user.password)
           if (!passwordValid) {
             return null
@@ -189,6 +195,8 @@ export const authOptions: NextAuthOptions = {
           // Only after the password checks out (never reveals verification state to a guesser).
           // OFF until EMAIL_VERIFICATION_ENFORCE_FROM is set; accounts older than it are exempt.
           if (emailVerificationBlocks(user)) {
+            // The password was right: not a failure (never LOCKED for trying to log in unverified).
+            await releaseLoginAttempt(normalizedEmail, ip)
             throw new Error(LOGIN_ERRORS.emailNotVerified)
           }
           await releaseLoginAttempt(normalizedEmail, ip)

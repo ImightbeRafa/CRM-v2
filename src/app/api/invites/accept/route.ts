@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
-import { acceptTeamInviteForUser, findAcceptableInviteByToken } from '@/lib/team-invite-service'
+import { acceptTeamInviteForUser, findAcceptableInviteByToken, findInviteAcceptedBy } from '@/lib/team-invite-service'
 import { TEAM_INVITE_COOKIE } from '@/lib/team-invite'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get('token') || ''
-  const invite = token ? await findAcceptableInviteByToken(token) : null
+  let invite = token ? await findAcceptableInviteByToken(token) : null
+  if (!invite && token) {
+    // Already joined by this same user (e.g. during sign-in): show it, not "invalid".
+    const session = await getServerSession(authOptions)
+    const mine = await findInviteAcceptedBy(token, session?.user?.id)
+    if (mine) invite = mine as unknown as NonNullable<typeof invite>
+  }
   if (!invite) {
     return NextResponse.json({ status: 'error', error: 'Invitación no válida o expirada' }, { status: 404 })
   }
@@ -44,6 +50,14 @@ export async function POST(request: NextRequest) {
     })
 
     if (!result.ok) {
+      const mine = await findInviteAcceptedBy(token, session.user.id)
+      if (mine) {
+        return NextResponse.json({
+          status: 'success',
+          message: `Ya eres parte de ${mine.tenant.name}`,
+          data: { tenantId: mine.tenantId, role: mine.role },
+        })
+      }
       return NextResponse.json({ status: 'error', error: result.error }, { status: result.status })
     }
 

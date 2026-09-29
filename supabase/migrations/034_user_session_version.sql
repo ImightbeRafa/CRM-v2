@@ -21,4 +21,8 @@ ALTER TABLE public."User"
   ADD COLUMN IF NOT EXISTS "sessionVersion" integer NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS "passwordChangedAt" timestamp(3) NULL;
 
+-- Exact case-insensitive email lookups (src/lib/user-lookup.ts: lower(email) = lower($1)) run on
+-- every login / register / reset: without this they scan "User". Small table, brief lock.
+CREATE INDEX IF NOT EXISTS "User_email_lower_idx" ON public."User" (lower(email));
+
 COMMIT;

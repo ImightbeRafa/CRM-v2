@@ -1,8 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 
 // One-time tokens (reset / verification / invite links) must never leave in a URL.
-const scrubTokens = (value: string) => value.replace(/([?&#](?:token|code)=)[^&#\s"]+/gi, "$1[redacted]");
-const scrubEvent = <T,>(event: T): T => JSON.parse(scrubTokens(JSON.stringify(event))) as T;
+import { scrubEvent } from "./src/lib/sentry-scrub";
 
 Sentry.init({
   dsn: "https://34154b8e86072342dbf9c6e55236e963@o4511109425725440.ingest.us.sentry.io/4511109427494912",

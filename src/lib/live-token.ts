@@ -11,7 +11,8 @@ import { sessionStillValid } from '@/lib/session-revocation'
 // `req` as NextAuth's getToken accepts it (NextRequest / Request / API request).
 export async function getLiveToken(params: { req: Request | { headers: unknown }; secret?: string }): Promise<JWT | null> {
   const token = (await getToken({ req: params.req as never, secret: params.secret })) as JWT | null
-  if (!token?.sub) return token
+  // No token, or one cleared by deactivation / revocation (no sub): not signed in.
+  if (!token?.sub) return null
   if ((token as { error?: string }).error) return null
   const t = token as { sv?: number; tenantId?: string | null; currentTenant?: { role?: string } | null }
   const valid = await sessionStillValid(token.sub, t.sv, { tenantId: t.tenantId ?? null, role: t.currentTenant?.role ?? null })

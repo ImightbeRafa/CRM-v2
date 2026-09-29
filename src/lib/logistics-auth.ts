@@ -1,17 +1,10 @@
 import { getServerSession } from 'next-auth';
-import { getToken } from 'next-auth/jwt';
+import { getLiveToken } from './live-token';
+import { prisma } from './db';
 import { authOptions } from './auth-options';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { canAccessLogistics } from './logistics-access';
-
-function membershipTenantIdsFromToken(token: any): string[] {
-  const fromMemberships = Array.isArray(token?.memberships)
-    ? token.memberships.map((m: any) => m?.tenantId || m?.tenant?.id).filter(Boolean)
-    : []
-  const fromAll = Array.isArray(token?.allTenantIds) ? token.allTenantIds.filter(Boolean) : []
-  return Array.from(new Set([...fromMemberships, ...fromAll]))
-}
 
 /**
  * Server component / layout guard.
@@ -41,11 +34,23 @@ export async function guardLogisticsApi(req: NextRequest): Promise<NextResponse 
     if (!secret && process.env.NODE_ENV === 'production') {
         return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
     }
-    const token = await getToken({ req, secret: secret || '' });
+    // Revocation-aware (reset / deactivation end access) and the grant itself is re-read from
+    // the database: a token minted before isLogisticsAdmin was removed must not keep payroll /
+    // costs access for up to 24 h (AUTH-26).
+    const token = await getLiveToken({ req, secret: secret || '' });
+    const current = token?.sub
+      ? await prisma.user.findUnique({
+          where: { id: token.sub },
+          select: {
+            isLogisticsAdmin: true,
+            memberships: { where: { isActive: true }, select: { tenantId: true } },
+          },
+        })
+      : null;
 
-    if (!token || !canAccessLogistics({
-      isLogisticsAdmin: Boolean(token.isLogisticsAdmin),
-      membershipTenantIds: membershipTenantIdsFromToken(token),
+    if (!token || !current || !canAccessLogistics({
+      isLogisticsAdmin: current.isLogisticsAdmin === true,
+      membershipTenantIds: current.memberships.map((m) => m.tenantId),
     })) {
         return NextResponse.json(
             { error: 'Forbidden', message: 'DeepSleep logistics access required' },

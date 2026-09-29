@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { parseExcelSheet, mapInventoryRow, validateXlsxUpload } from '@/lib/import-helpers';
-import { xlsxArchiveProblem } from '@/lib/xlsx-guard';
+import { acquireXlsxParseSlot, xlsxArchiveProblem } from '@/lib/xlsx-guard';
 import { rateLimit } from '@/lib/rate-limit';
 
 export const maxDuration = 60;
@@ -51,7 +51,16 @@ export async function POST(request: NextRequest) {
 
     // Parse Excel
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer as any);
+    // Bounded parallel parsing per process (memory), whatever the number of businesses.
+    const releaseSlot = acquireXlsxParseSlot();
+    if (!releaseSlot) {
+      return NextResponse.json({ error: 'Hay otras importaciones en curso. Intenta de nuevo en unos segundos.' }, { status: 503 });
+    }
+    try {
+      await workbook.xlsx.load(buffer as any);
+    } finally {
+      releaseSlot();
+    }
 
     // Get sheet names
     const sheets = workbook.worksheets.map((ws, idx) => ({

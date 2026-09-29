@@ -29,7 +29,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     });
     if (!membership) return createErrorResponse('Usuario no encontrado en este tenant', 404);
 
-    const guard = await guardMemberChange(auth, membership, { newRole: role ?? null, remove: active === false });
+    const guard = await guardMemberChange(auth, membership, { newRole: role ?? null, remove: active === false, reactivate: active === true });
     if (!guard.ok) return createErrorResponse(guard.error, guard.status);
 
     const updated = await prisma.membership.update({
@@ -84,19 +84,25 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
 async function guardMemberChange(
   auth: { userId: string; role: string; tenantId: string },
   target: { userId: string; role: string; isActive: boolean },
-  change: { newRole?: string | null; remove?: boolean },
+  change: { newRole?: string | null; remove?: boolean; reactivate?: boolean },
 ) {
-  const activeOwnerCount = await prisma.membership.count({
-    where: { tenantId: auth.tenantId, role: 'OWNER', isActive: true },
-  })
+  const [activeOwnerCount, actor] = await Promise.all([
+    prisma.membership.count({ where: { tenantId: auth.tenantId, role: 'OWNER', isActive: true } }),
+    // The actor's CURRENT role, not the session's (a just-demoted Owner, AUTH-28).
+    prisma.membership.findFirst({
+      where: { userId: auth.userId, tenantId: auth.tenantId, isActive: true },
+      select: { role: true },
+    }),
+  ])
   return checkMemberChange({
     actorUserId: auth.userId,
-    actorRole: auth.role,
+    actorRole: actor?.role ?? 'NONE',
     targetUserId: target.userId,
     targetRole: target.role,
     targetActive: target.isActive,
     newRole: change.newRole,
     remove: change.remove,
+    reactivate: change.reactivate,
     activeOwnerCount,
   })
 }

@@ -74,11 +74,14 @@ export function isLockedOut(counts: { emailIp: number; ip: number; email?: numbe
 export async function reserveLoginAttempt(email: string, ip: string): Promise<{ locked: boolean }> {
   if (lockoutDisabled()) return { locked: false }
   const k = lockoutKeys(email, ip)
-  const [emailIp, ipCount, emailCount] = await Promise.all([
+  const [emailIp, ipCount] = await Promise.all([
     recordFailure(k.emailIp, WINDOW_MS, LOCKOUT.emailIpMax),
     recordFailure(k.ip, WINDOW_MS, LOCKOUT.ipMax),
-    recordFailure(k.email, WINDOW_MS, LOCKOUT.emailMax),
   ])
+  // A caller already blocked by its own buckets does not also spend the account's budget, so one
+  // network cannot lock someone else's account (AUTH-27): that takes ≥ 8 separate IP buckets.
+  if (isLockedOut({ emailIp, ip: ipCount })) return { locked: true }
+  const emailCount = await recordFailure(k.email, WINDOW_MS, LOCKOUT.emailMax)
   return { locked: isLockedOut({ emailIp, ip: ipCount, email: emailCount }) }
 }
 

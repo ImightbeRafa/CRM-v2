@@ -12,7 +12,7 @@ import {
   validateXlsxUpload,
   type ImportResult,
 } from '@/lib/import-helpers';
-import { xlsxArchiveProblem } from '@/lib/xlsx-guard';
+import { acquireXlsxParseSlot, xlsxArchiveProblem } from '@/lib/xlsx-guard';
 import { rateLimit } from '@/lib/rate-limit';
 import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags';
 import { createLifecycleOrder } from '@/lib/order-lifecycle';
@@ -330,7 +330,16 @@ export async function POST(request: NextRequest) {
     // Parse Excel
     console.log('📄 Parsing Excel file...');
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer as any);
+    // Bounded parallel parsing per process (memory), whatever the number of businesses.
+    const releaseSlot = acquireXlsxParseSlot();
+    if (!releaseSlot) {
+      return NextResponse.json({ error: 'Hay otras importaciones en curso. Intenta de nuevo en unos segundos.' }, { status: 503 });
+    }
+    try {
+      await workbook.xlsx.load(buffer as any);
+    } finally {
+      releaseSlot();
+    }
 
     if (workbook.worksheets.length === 0) {
       return NextResponse.json({ error: 'El archivo Excel no contiene hojas' }, { status: 400 });

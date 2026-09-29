@@ -20,13 +20,23 @@ const BAD = 'El archivo Excel no es válido o es demasiado grande al descomprimi
 /** An error message, or null when the archive is safe to hand to ExcelJS. */
 export function xlsxArchiveProblem(buf: Uint8Array): string | null {
   try {
-    return inspect(buf)
+    return inspect(buf, [])
   } catch {
     return BAD
   }
 }
 
-function inspect(buf: Uint8Array): string | null {
+/** Entry names the guard inspected (null when refused). For differential tests against JSZip. */
+export function xlsxInspectedEntryNames(buf: Uint8Array): string[] | null {
+  const names: string[] = []
+  try {
+    return inspect(buf, names) === null ? names : null
+  } catch {
+    return null
+  }
+}
+
+function inspect(buf: Uint8Array, names: string[]): string | null {
   if (buf.length < 22) return BAD
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength)
   let eocd = -1
@@ -58,6 +68,7 @@ function inspect(buf: Uint8Array): string | null {
     const commentLen = view.getUint16(p + 32, true)
     const local = view.getUint32(p + 42, true)
     if (flags & 0x1) return BAD // encrypted
+    names.push(new TextDecoder().decode(buf.subarray(p + 46, p + 46 + nameLen)))
     if (compressed === 0xffffffff || declared === 0xffffffff || local === 0xffffffff) return BAD
 
     if (local + 30 > cdOffset || view.getUint32(local, true) !== 0x04034b50) return BAD
@@ -86,5 +97,26 @@ function inspect(buf: Uint8Array): string | null {
     if (total > XLSX_MAX_UNCOMPRESSED_BYTES) return BAD
     p += 46 + nameLen + extraLen + commentLen
   }
+  // Every byte of the directory was an entry we inspected: nothing hidden after the last one.
+  if (p !== eocd) return BAD
   return null
+}
+
+/**
+ * At most N xlsx parses at once per process (each can hold ~40 MB of XML plus ExcelJS's model),
+ * whatever the number of businesses. Returns a release function, or null when busy.
+ */
+const MAX_CONCURRENT_PARSES = 2
+let activeParses = 0
+
+export function acquireXlsxParseSlot(): (() => void) | null {
+  if (activeParses >= MAX_CONCURRENT_PARSES) return null
+  activeParses++
+  let released = false
+  return () => {
+    if (!released) {
+      released = true
+      activeParses--
+    }
+  }
 }

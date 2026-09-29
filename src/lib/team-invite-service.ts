@@ -100,6 +100,26 @@ export async function findInviteForPresentedToken(token: unknown, email: string 
   return invite && inviteEmailsMatch(invite.email, email) ? invite : null
 }
 
+/**
+ * An invite this same user already accepted (sign-in / register joined through the cookie, then the
+ * accept-invite page asks again): treated as success, never as "invalid" (idempotent accept).
+ */
+export async function findInviteAcceptedBy(token: unknown, userId: string | null | undefined) {
+  if (typeof token !== 'string' || token.length < 16 || !userId) return null
+  const invite = await (prisma as any).tenantInvite.findUnique({
+    where: { token },
+    include: { tenant: { select: { id: true, name: true, slug: true, isActive: true } } },
+  })
+  if (!invite?.acceptedAt || invite.acceptedUserId !== userId) return null
+  return invite as {
+    tenantId: string
+    email: string
+    role: TeamInviteRole
+    expiresAt: Date
+    tenant: { id: string; name: string }
+  }
+}
+
 export async function findAcceptableInviteByToken(token: string) {
   if (!token || token.length < 16) return null
   const invite = await (prisma as any).tenantInvite.findUnique({

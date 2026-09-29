@@ -77,13 +77,14 @@ export function membershipAllows(state: MembershipState, claimedRole: string | n
 }
 
 async function loadMembership(userId: string, tenantId: string): Promise<MembershipState> {
-  const rows = await prisma.$queryRaw<Array<{ isActive: boolean; role: string; tenantActive: boolean }>>`
-    SELECT m."isActive", m.role::text AS role, t."isActive" AS "tenantActive"
-    FROM "Membership" m JOIN "Tenant" t ON t.id = m."tenantId"
+  // Membership only: what an inactive / unpaid business may do is billing-access's job, not ours.
+  const rows = await prisma.$queryRaw<Array<{ isActive: boolean; role: string }>>`
+    SELECT m."isActive", m.role::text AS role
+    FROM "Membership" m
     WHERE m."userId" = ${userId} AND m."tenantId" = ${tenantId}
     LIMIT 1`
   if (!rows.length) return null
-  return { active: rows[0].isActive === true && rows[0].tenantActive !== false, role: rows[0].role }
+  return { active: rows[0].isActive === true, role: rows[0].role }
 }
 
 function remember<T>(map: Map<string, { state: T; at: number }>, key: string, state: T, now: number) {

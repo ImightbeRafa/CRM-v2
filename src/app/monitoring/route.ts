@@ -19,8 +19,9 @@ export async function POST(request: Request) {
   const declared = Number(request.headers.get('content-length') || 0);
   if (declared > MAX_ENVELOPE_BYTES) return new NextResponse(null, { status: 413 });
 
-  const body = new Uint8Array(await request.arrayBuffer());
-  if (body.byteLength === 0 || body.byteLength > MAX_ENVELOPE_BYTES) return new NextResponse(null, { status: 413 });
+  // Streamed with a byte counter: a chunked upload without Content-Length stops at the cap.
+  const body = await readCapped(request, MAX_ENVELOPE_BYTES);
+  if (!body || body.byteLength === 0) return new NextResponse(null, { status: 413 });
 
   const target = sentryEnvelopeTarget(body);
   if (!target) return new NextResponse(null, { status: 400 });
@@ -38,4 +39,28 @@ export async function POST(request: Request) {
   } catch {
     return new NextResponse(null, { status: 502 });
   }
+}
+
+async function readCapped(request: Request, max: number): Promise<Uint8Array | null> {
+  if (!request.body) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
 }

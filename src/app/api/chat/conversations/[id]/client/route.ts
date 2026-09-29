@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { recordActivity } from '@/lib/activity'
+import { getClientStage, type ClientStageDto } from '@/lib/crm-client-stage-server'
 import { normalizeClientPhone } from '@/lib/order-lifecycle'
 import { chatSendRateLimit } from '@/lib/rate-limit'
 import { maskPhone } from '@/lib/chat-order-flow'
@@ -164,10 +165,21 @@ export async function GET(request: NextRequest, context: RouteContext) {
     })
   }
 
+  // Lifecycle stage (computed from orders; stored only when it changes). Never breaks the panel.
+  let stage: ClientStageDto | null = null
+  if (client) {
+    try {
+      stage = await getClientStage(tenantId, client.id, auth.userId)
+    } catch (error) {
+      console.warn('[chat client] stage unavailable', error instanceof Error ? error.message : error)
+    }
+  }
+
   return NextResponse.json(
     {
       success: true,
       client: client ? clientDto(client) : null,
+      stage,
       orders: orders.map((o) => {
         const g = latestGuia.get(o.orderId)
         const { phone, ...rest } = o

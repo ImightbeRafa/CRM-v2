@@ -60,7 +60,7 @@ test('buckets and counters use the closed flag (custom closed stages leave Abier
     { ...(base as object), id: '3', status: 'hecho' },
   ] as never[]
   const open = filterSoftConversations(convs, { bucket: 'abiertos', channel: 'all', accountId: 'all', search: '' } as never)
-  assert.deepEqual((open as Array<{ id: string }>).map((c) => c.id), ['2'])
+  assert.deepEqual((open as unknown as Array<{ id: string }>).map((c) => c.id), ['2'])
   assert.equal(isConversationClosed({ status: 'hecho' }), true, 'legacy fallback')
   assert.equal(summarizeLineCounts(convs as never).total.open, 1)
 })

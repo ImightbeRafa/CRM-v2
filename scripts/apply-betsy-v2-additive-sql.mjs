@@ -27,6 +27,7 @@
  * (BETSY_V2_APPLY_FILES=030,031). Never part of DEFAULT_APPLY_FILES.
  * 032 performance indexes (pg_trgm + ChatMessage orderId) gated the same way
  * (BETSY_V2_APPLY_FILES=032). Apply in the madrugada; index builds briefly block writes.
+ * 033 security: enable RLS (deny-all) on 7 data-API-exposed tables (BETSY_V2_APPLY_FILES=033).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -38,6 +39,7 @@ import {
   EXPECTED_INDEXES_024,
   EXPECTED_INDEXES_025,
   EXPECTED_INDEXES_032,
+  EXPECTED_RLS_033,
   EXPECTED_SEQUENCE_024,
   EXPECTED_TABLES,
   EXPECTED_TRIGGER_024,
@@ -187,10 +189,22 @@ async function verify(id) {
       if (rows[0].indisvalid !== true) fail(`Postcondition failed: index ${indexName} is invalid.`);
     }
   }
-  const flags = await sql`
-    SELECT COUNT(*)::int AS n FROM public."TenantFeatureFlag" WHERE enabled = true
-  `.catch(() => [{ n: 0 }]);
-  if (flags[0]?.n) fail('Unexpected enabled TenantFeatureFlag row after apply.');
+  if (id === '033') {
+    for (const table of EXPECTED_RLS_033) {
+      const rows = await sql`
+        SELECT c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relname = ${table} AND c.relkind IN ('r', 'p')
+      `;
+      if (rows.length === 1 && rows[0].relrowsecurity !== true) fail(`Postcondition failed: RLS off on ${table} after 033.`);
+    }
+  }
+  // Only the original rollout (018–024) expects every flag off; later files run on a live DB.
+  if (['018', '019', '020', '021', '022', '023', '024'].includes(id)) {
+    const flags = await sql`
+      SELECT COUNT(*)::int AS n FROM public."TenantFeatureFlag" WHERE enabled = true
+    `.catch(() => [{ n: 0 }]);
+    if (flags[0]?.n) fail('Unexpected enabled TenantFeatureFlag row after apply.');
+  }
 }
 
 async function main() {

@@ -19,6 +19,7 @@ export const FILES = {
   '030': '030_tenant_invites.sql',
   '031': '031_chat_message_sender_user.sql',
   '032': '032_perf_indexes.sql',
+  '033': '033_security_rls_lockdown.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -263,4 +264,15 @@ export const VERIFY_CATALOG_COLUMNS = [
   ['ChatMessage', 'mediaBlobPath'],
   ['ChatMessage', 'mediaCacheStatus'],
   ['ChatMessage', 'senderUserId'],
+];
+
+/** 033: tables that must have row-level security after apply (skipped if absent). */
+export const EXPECTED_RLS_033 = [
+  'TenantInvite',
+  'lm_private_delivery_confirmations',
+  'lm_retiro_handoffs',
+  'lm_retiro_order_allocations',
+  'lm_retiro_product_aliases',
+  'lm_retiro_stock',
+  'lm_retiro_stock_movements',
 ];

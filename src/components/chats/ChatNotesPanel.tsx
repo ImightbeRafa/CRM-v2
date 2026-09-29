@@ -40,7 +40,8 @@ export function ChatNotesPanel({
   legacyNote?: string | null
 }) {
   const [notes, setNotes] = useState<Note[] | null>(null)
-  const [available, setAvailable] = useState(true)
+  // Unknown until the first answer: nothing renders before we know notes exist (035 applied).
+  const [available, setAvailable] = useState<boolean | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
@@ -142,7 +143,7 @@ export function ChatNotesPanel({
     }
   }
 
-  if (!available) return null
+  if (available !== true) return null
 
   return (
     <section className="space-y-2" data-testid="chat-notes-panel" aria-label="Notas internas">

@@ -46,7 +46,7 @@ const IntegrationsPanel = dynamic(
 )
 // These two pages keep their own sticky white header; let it span the panel width.
 const PAGE_PANEL_BLEED = '-mx-4 -my-5 md:-mx-10 md:-my-8'
-const KEEP_ALIVE_TABS = ['social', 'agentes', 'integrations'] as const
+const KEEP_ALIVE_TABS = ['social', 'chats', 'agentes', 'integrations'] as const
 
 const AppearanceSettings = lazy(() => import('@/components/aurora/theme/AppearanceSettings').then(m => ({ default: m.AppearanceSettings })))
 const BusinessProfileSettings = lazy(() => import('./components/BusinessProfileSettings').then(m => ({ default: m.BusinessProfileSettings })))

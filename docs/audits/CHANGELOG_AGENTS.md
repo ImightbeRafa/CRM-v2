@@ -21,6 +21,25 @@ Advisor plan → slices, each with tests in `test:security` (195/196; the 1 fail
   needs `create_sales`.
 - **S7 web:** single CSP (next.config.js), Sentry tunnel `/monitoring` always on (the 403), replay
   masking explicit, Turnstile scaffold OFF until `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY`.
+- **Review rounds** (SecureDog ×2, Verifier): fixed in db9e70f, e228964, 8a99432:
+  - AUTH-07 (Critical, pre-existing): `/api/bulk/*` type `users` wrote any column of any global User
+    row (email, password, isSuperAdmin) or deleted it, for any owner of any tenant → refused.
+  - AUTH-23 (High, pre-existing): ADMIN could grant OWNER / remove the OWNER → role hierarchy +
+    last-owner guard (`src/lib/member-admin-guard.ts`).
+  - AUTH-08/09: invites join only with the emailed token (never "newest invite for the address").
+  - AUTH-10 (H1): right-most X-Forwarded-For hop (preview could rotate the first hop).
+  - DATA-03 (H2): xlsx guard inflates for real with a cap (`src/lib/xlsx-guard.ts`).
+  - AUTH-11/12 (H3/M1): reset = one UPDATE incl. sessionVersion; verifies email only post-034.
+  - AUTH-13 (M2): every API request re-checks membership + role (cached 60 s).
+  - AUTH-14/15/16: atomic attempt reservation, per-email cap, IPv6 /48, Redis TTL-safe counters.
+  - INFRA-05 (M6): Sentry tunnel is our own allow-listed relay (the rewrite forwarded cookies).
+  - Lows: exact `lower(email)` lookups (Prisma insensitive equals = ILIKE wildcards), timing,
+    Sentry token scrub, SQL export `*/`, CORS preflights, non-ASCII email header.
+  - 29 cookie-only routes use `getLiveToken` (revocation + membership).
+- **Deploy order: apply 034 BEFORE this code reaches prod** (revocation / squatter protection are
+  inert without it; the code itself runs either way).
+- Gotcha: local `tsc` crashes natively on node 24 (even `--jitless`); run it in Docker:
+  `docker run --rm -v "D:/Coder/CRM-v2-chatfix:/app:ro" -w /app node:20-slim node node_modules/typescript/bin/tsc --noEmit -p . --incremental false`.
 - Deferred: S8 TOTP for owners/admins (own migration), automated tenant deletion (legal review).
 - Gotcha: `tsc` showing ~280 "not callable" errors = stale `tsconfig.tsbuildinfo`; delete it.
 - `supabase/migrations/*` is gitignored: migration files must be `git add -f` (033 was untracked).

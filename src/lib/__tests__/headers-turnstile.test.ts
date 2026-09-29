@@ -103,3 +103,13 @@ test('Turnstile guards signup and password reset; worker forwards the keys', () 
   const w = read('src/cf-container-worker.ts')
   assert.match(w, /"TURNSTILE_SITE_KEY",\n\s+"TURNSTILE_SECRET_KEY",/)
 })
+
+test('Meta Pixel never loads on a URL carrying a one-time token; no automatic SPA pageviews (INT-01)', () => {
+  const src = read('src/app/components/MetaPixel.tsx')
+  assert.match(src, /\(function \(\) \{\s*if \(\/\(\?:\[\?&#\]\|%3F\|%26\|%23\)\(\?:token\|code\)\(\?:=\|%3D\)\/i\.test\(window\.location\.href\)\) \{ return; \}/)
+  assert.match(src, /fbq\.disablePushState = true;/)
+  const guard = /(?:[?&#]|%3F|%26|%23)(?:token|code)(?:=|%3D)/i
+  assert.ok(guard.test('https://www.betsycrm.com/auth/reset-password?token=abc'))
+  assert.ok(guard.test('https://www.betsycrm.com/auth/signin?callbackUrl=%2Fauth%2Fverify-email%3Ftoken%3Dabc'))
+  assert.ok(!guard.test('https://www.betsycrm.com/home?plan=pro'))
+})

@@ -22,6 +22,10 @@ export default function MetaPixel() {
     <>
       <Script id="meta-pixel" strategy="afterInteractive">
         {`
+          // One-time tokens (reset / verification / invite links, also URL-encoded inside
+          // callbackUrl) must never reach Meta: no pixel on such a page (INT-01).
+          (function () {
+          if (/(?:[?&#]|%3F|%26|%23)(?:token|code)(?:=|%3D)/i.test(window.location.href)) { return; }
           !function(f,b,e,v,n,t,s)
           {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
           n.callMethod.apply(n,arguments):n.queue.push(arguments)};
@@ -30,8 +34,11 @@ export default function MetaPixel() {
           t.src=v;s=b.getElementsByTagName(e)[0];
           s.parentNode.insertBefore(t,s)}(window, document,'script',
           'https://connect.facebook.net/en_US/fbevents.js');
+          // No automatic pageviews on client-side navigation (a later URL could carry a token).
+          fbq.disablePushState = true;
           fbq('init', '${META_PIXEL_ID}');
           fbq('track', 'PageView');
+          })();
         `}
       </Script>
       <noscript>

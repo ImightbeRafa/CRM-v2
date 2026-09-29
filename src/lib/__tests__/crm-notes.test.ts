@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
-import { canDeleteNote, canEditNote, normalizeNoteBody, NOTE_MAX_LENGTH, sortNotes } from '../crm-notes'
+import { canDeleteNote, canEditNote, normalizeNoteBody, noteScopeOf, NOTE_MAX_LENGTH, parseNoteScope, sortNotes } from '../crm-notes'
 
 const read = (f: string) => readFileSync(path.join(process.cwd(), f), 'utf8').replace(/\r\n/g, '\n')
 
@@ -43,7 +43,32 @@ test('every query and write is tenant-scoped; references are checked against the
   assert.equal((src.match(/where: \{ id: args\.noteId, tenantId: args\.tenantId, deletedAt: null \}/g) || []).length, 2)
   const route = read('src/app/api/chat/conversations/[id]/notes/route.ts')
   assert.match(route, /where: \{ id, tenantId \}/)
-  assert.match(route, /clientId: conversation\.clientId,\s*conversationId: conversation\.id/)
+  // The client comes from the conversation of THIS business (never from the body), only for
+  // "todo el cliente" notes; the default scope stays "client".
+  assert.match(route, /clientId: scope === 'client' \? conversation\.clientId : null,\s*conversationId: conversation\.id/)
+  assert.match(route, /json\?\.scope === undefined \? 'client' : parseNoteScope\(json\.scope\)/)
+})
+
+test('note scope: derived from the row, parsed strictly', () => {
+  assert.equal(noteScopeOf({ clientId: 'c1' }), 'client')
+  assert.equal(noteScopeOf({ clientId: null }), 'chat')
+  assert.equal(parseNoteScope('client'), 'client')
+  assert.equal(parseNoteScope('chat'), 'chat')
+  for (const bad of ['CLIENT', '', null, undefined, 1, {}]) assert.equal(parseNoteScope(bad), null)
+})
+
+test('changing scope: author / OWNER / ADMIN only, client re-derived from the chat of this business', () => {
+  const src = read('src/lib/crm-notes.ts')
+  const block = src.slice(src.indexOf('if (args.scope !== undefined)'), src.indexOf("if (!verb) return { ok: false, status: 400, error: 'Nada que actualizar' }"))
+  assert.match(block, /if \(!canDeleteNote\(args\.viewer, existing\.authorUserId\)\)/)
+  assert.match(block, /prisma\.chatConversation\.findFirst\(\{\s*where: \{ id: existing\.conversationId, tenantId: args\.tenantId \}/)
+  assert.match(block, /if \(!conv\?\.clientId\) return \{ ok: false, status: 400/)
+  // Written through the same conditional update as edits (DATA-11), never a plain update.
+  assert.match(src, /updateMany\(\{ where: \{ id: existing\.id, tenantId: args\.tenantId, deletedAt: null \}, data \}\)/)
+  // Chat-only notes are only listed for their own chat: the list ORs clientId / conversationId,
+  // and a chat-only note has no clientId.
+  assert.match(src, /if \(args\.clientId\) or\.push\(\{ clientId: args\.clientId \}\)/)
+  assert.match(read('src/app/api/crm/notes/[id]/route.ts'), /scope: json\?\.scope,/)
 })
 
 function walk(dir: string, out: string[] = []): string[] {

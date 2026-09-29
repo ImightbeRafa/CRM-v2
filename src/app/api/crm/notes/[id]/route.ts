@@ -13,20 +13,21 @@ export const dynamic = 'force-dynamic'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
-/** Edit (author only) and pin / unpin (anyone who works chats). */
+/** Edit (author only), pin / unpin (anyone who works chats), scope chat ↔ client (author / OWNER / ADMIN). */
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const auth = await authenticateAPIWithPermission(request, 'update_sales')
   if (!auth.ok) return auth.response
   const tooMany = await limited(auth.tenantId, auth.userId)
   if (tooMany) return tooMany
   const { id } = await context.params
-  const json = (await request.json().catch(() => null)) as { body?: unknown; pinned?: unknown } | null
+  const json = (await request.json().catch(() => null)) as { body?: unknown; pinned?: unknown; scope?: unknown } | null
   const result = await updateNote({
     tenantId: auth.tenantId,
     viewer: { userId: auth.userId, role: auth.role },
     noteId: id,
     body: json?.body,
     pinned: json?.pinned,
+    scope: json?.scope,
   })
   if (!result.ok) return NextResponse.json({ success: false, error: result.error }, { status: result.status })
   return NextResponse.json({ success: true, note: result.note })

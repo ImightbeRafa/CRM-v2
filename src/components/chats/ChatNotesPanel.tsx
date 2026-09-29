@@ -1,12 +1,16 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, Pencil, Pin, PinOff, StickyNote, Trash2 } from 'lucide-react'
+import { Loader2, Lock, Pencil, Pin, PinOff, StickyNote, Trash2, Users } from 'lucide-react'
 import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
+
+type NoteScope = 'client' | 'chat'
 
 type Note = {
   id: string
   body: string
+  scope?: NoteScope
+  canChangeScope?: boolean
   clientId: string | null
   conversationId: string | null
   author: { id: string | null; name: string }
@@ -44,6 +48,8 @@ export function ChatNotesPanel({
   const [available, setAvailable] = useState<boolean | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  // "Todo el cliente" by default when the chat has a client; otherwise a note is chat-only anyway.
+  const [scope, setScope] = useState<NoteScope>('client')
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState<{ id: string; body: string } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -84,7 +90,7 @@ export function ChatNotesPanel({
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body }),
+        body: JSON.stringify({ body, scope: hasClient ? scope : 'chat' }),
       })
       const json = (await res.json().catch(() => null)) as { success?: boolean; note?: Note; error?: string } | null
       if (!res.ok || !json?.success || !json.note) {
@@ -100,7 +106,7 @@ export function ChatNotesPanel({
     }
   }
 
-  async function patch(id: string, payload: { body?: string; pinned?: boolean }) {
+  async function patch(id: string, payload: { body?: string; pinned?: boolean; scope?: NoteScope }) {
     setBusyId(id)
     setError(null)
     try {
@@ -181,8 +187,31 @@ export function ChatNotesPanel({
           className="w-full resize-none rounded-lg bg-slate-50 px-2.5 py-2 text-[12.5px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-au-ink-5b6cff"
           aria-label="Nueva nota"
         />
-        <div className="mt-1.5 flex items-center justify-between">
-          <span className="text-[10.5px] text-slate-400">Ctrl + Enter para guardar</span>
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          {hasClient ? (
+            <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-[10.5px] font-medium" role="radiogroup" aria-label="Quién ve la nota" data-testid="note-scope-toggle">
+              {(
+                [
+                  ['client', 'Todo el cliente', Users],
+                  ['chat', 'Solo este chat', Lock],
+                ] as const
+              ).map(([key, label, Icon]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="radio"
+                  aria-checked={scope === key}
+                  onClick={() => setScope(key)}
+                  className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 ${scope === key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  <Icon className="h-3 w-3" aria-hidden />
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="text-[10.5px] text-slate-400">Ctrl + Enter para guardar</span>
+          )}
           <button
             type="button"
             disabled={!draft.trim() || saving}
@@ -244,6 +273,23 @@ export function ChatNotesPanel({
                       {n.conversationId !== conversationId ? ' · otro chat' : ''}
                     </span>
                     <span className="flex shrink-0 items-center gap-0.5">
+                      {n.scope === 'chat' ? (
+                        <span className="mr-0.5 inline-flex items-center gap-0.5 rounded bg-slate-100 px-1 py-px text-[10px] text-slate-500" data-testid="note-scope-chat">
+                          <Lock className="h-2.5 w-2.5" aria-hidden /> Solo este chat
+                        </span>
+                      ) : null}
+                      {n.canChangeScope && n.conversationId === conversationId && (n.scope === 'client' || hasClient) ? (
+                        <button
+                          type="button"
+                          disabled={busyId === n.id}
+                          onClick={() => void patch(n.id, { scope: n.scope === 'chat' ? 'client' : 'chat' })}
+                          className="rounded p-1 hover:bg-slate-100 hover:text-slate-700"
+                          aria-label={n.scope === 'chat' ? 'Compartir con todo el cliente' : 'Dejar solo en este chat'}
+                          title={n.scope === 'chat' ? 'Compartir con todo el cliente' : 'Dejar solo en este chat'}
+                        >
+                          {n.scope === 'chat' ? <Users className="h-3 w-3" aria-hidden /> : <Lock className="h-3 w-3" aria-hidden />}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         disabled={busyId === n.id}

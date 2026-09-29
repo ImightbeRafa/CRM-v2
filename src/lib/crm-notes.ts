@@ -20,9 +20,27 @@ export const NOTE_MAX_LENGTH = 4000
 /** Before migration 035: remember "table missing" for 5 minutes instead of failing every view. */
 let notesMissingUntil = 0
 
+/**
+ * Who sees a note (Phase 2b). Derived from the row, no extra column:
+ * - 'client': stored with the client → shows in every chat and page of that client;
+ * - 'chat':   stored with the conversation only → shows only in the chat it was written in.
+ */
+export type NoteScope = 'client' | 'chat'
+
+export function noteScopeOf(row: { clientId: string | null }): NoteScope {
+  return row.clientId ? 'client' : 'chat'
+}
+
+export function parseNoteScope(value: unknown): NoteScope | null {
+  return value === 'client' || value === 'chat' ? value : null
+}
+
 export type NoteDto = {
   id: string
   body: string
+  scope: NoteScope
+  /** Author or OWNER / ADMIN may move a note between "solo este chat" and "todo el cliente". */
+  canChangeScope: boolean
   clientId: string | null
   conversationId: string | null
   author: { id: string | null; name: string }
@@ -77,6 +95,8 @@ function toDto(row: NoteRow, names: Map<string, string>, viewer: NoteViewer): No
   return {
     id: row.id,
     body: row.body,
+    scope: noteScopeOf(row),
+    canChangeScope: canDeleteNote(viewer, row.authorUserId),
     clientId: row.clientId,
     conversationId: row.conversationId,
     author: { id: row.authorUserId, name: row.authorUserId ? names.get(row.authorUserId) || 'Equipo' : 'Equipo' },
@@ -196,6 +216,7 @@ export async function updateNote(args: {
   noteId: string
   body?: unknown
   pinned?: unknown
+  scope?: unknown
 }): Promise<NoteResult> {
   try {
     const existing = await prisma.crmNote.findFirst({
@@ -222,6 +243,34 @@ export async function updateNote(args: {
       data.pinnedByUserId = args.pinned ? args.viewer.userId : null
       verb = verb || (args.pinned ? 'note.pin' : 'note.unpin')
     }
+    let scopeChanged = false
+    if (args.scope !== undefined) {
+      const scope = parseNoteScope(args.scope)
+      if (!scope) return { ok: false, status: 400, error: 'scope debe ser "client" o "chat"' }
+      if (!canDeleteNote(args.viewer, existing.authorUserId)) {
+        return { ok: false, status: 403, error: 'Solo quien escribió la nota, un Owner o un Admin pueden cambiar quién la ve.' }
+      }
+      if (scope !== noteScopeOf(existing)) {
+        if (!existing.conversationId) return { ok: false, status: 400, error: 'Esta nota no se escribió en un chat.' }
+        if (scope === 'chat') {
+          data.clientId = null
+        } else {
+          // Always the chat's CURRENT linked client, of this business.
+          const conv = await prisma.chatConversation.findFirst({
+            where: { id: existing.conversationId, tenantId: args.tenantId },
+            select: { clientId: true },
+          })
+          if (!conv?.clientId) return { ok: false, status: 400, error: 'Vinculá el chat a un cliente primero.' }
+          data.clientId = conv.clientId
+        }
+        scopeChanged = true
+        verb = verb || 'note.scope.set'
+      } else if (!verb) {
+        // Same scope as before and nothing else to change: answer with the note as it is.
+        const names = await authorNames([existing.authorUserId || ''])
+        return { ok: true, note: toDto(existing, names, args.viewer) }
+      }
+    }
     if (!verb) return { ok: false, status: 400, error: 'Nada que actualizar' }
 
     // Conditional on not deleted: an edit racing a delete must not put text back (DATA-11).
@@ -235,8 +284,9 @@ export async function updateNote(args: {
       verb,
       entityType: 'CrmNote',
       entityId: row.id,
-      clientId: row.clientId,
+      clientId: row.clientId ?? existing.clientId,
       conversationId: row.conversationId,
+      ...(scopeChanged ? { props: { scope: noteScopeOf(row) } } : {}),
     })
     const names = await authorNames([row.authorUserId || ''])
     return { ok: true, note: toDto(row, names, args.viewer) }

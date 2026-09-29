@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
-import { createNote, listNotes } from '@/lib/crm-notes'
+import { createNote, listNotes, parseNoteScope } from '@/lib/crm-notes'
 import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -45,12 +45,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ success: false, error: 'Demasiadas notas seguidas. Esperá un momento.' }, { status: 429, headers: rate.headers })
   }
 
-  const json = (await request.json().catch(() => null)) as { body?: unknown } | null
+  const json = (await request.json().catch(() => null)) as { body?: unknown; scope?: unknown } | null
+  // "todo el cliente" (default, stored with the linked client) or "solo este chat".
+  const scope = json?.scope === undefined ? 'client' : parseNoteScope(json.scope)
+  if (!scope) return NextResponse.json({ success: false, error: 'scope debe ser "client" o "chat"' }, { status: 400 })
   const result = await createNote({
     tenantId: auth.tenantId,
     viewer: { userId: auth.userId, role: auth.role },
     body: json?.body,
-    clientId: conversation.clientId,
+    clientId: scope === 'client' ? conversation.clientId : null,
     conversationId: conversation.id,
   })
   if (!result.ok) return NextResponse.json({ success: false, error: result.error }, { status: result.status })

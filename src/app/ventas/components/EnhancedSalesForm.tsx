@@ -81,9 +81,16 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   const { user } = useCurrentUser();
   // The business this form writes into: drafts are tagged with it and only restored in it.
   const { data: sessionData, status: sessionStatus } = useSession();
-  const businessId = ((sessionData?.user as { tenantId?: string } | undefined)?.tenantId) || null;
-  const businessIdRef = useRef(businessId);
-  businessIdRef.current = businessId;
+  const sessionBusiness = ((sessionData?.user as { tenantId?: string } | undefined)?.tenantId) || null;
+  // Frozen at the first known business: if another tab switches, this form never re-tags what was
+  // typed for business A as B (L2); writes stop until the tab reloads.
+  const businessIdRef = useRef<string | null>(null);
+  if (!businessIdRef.current && sessionStatus === 'authenticated' && sessionBusiness) businessIdRef.current = sessionBusiness;
+  const businessId = businessIdRef.current;
+  // Refs, not closures: the autosave callbacks are long-lived and must see the CURRENT session.
+  const sessionBusinessRef = useRef(sessionBusiness);
+  sessionBusinessRef.current = sessionBusiness;
+  const draftWritable = () => Boolean(businessIdRef.current) && sessionBusinessRef.current === businessIdRef.current;
   const { getState } = useConfig();
   const fieldsState = getState<any[]>('fields');
   const productFieldConfigs = fieldsState.data ?? [];
@@ -167,7 +174,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     if (cached) {
       try {
         const { data, timestamp, businessId: cachedBusiness } = JSON.parse(cached);
-        if (Date.now() - timestamp < 300000 && cachedBusiness && cachedBusiness === businessIdRef.current) { // 5 minutes, same business
+        if (Date.now() - timestamp < 300000 && cachedBusiness && cachedBusiness === sessionBusinessRef.current) { // 5 minutes, same business
           setBusinessInfoFields(data);
         } else {
           sessionStorage.removeItem('businessInfoFields');
@@ -177,17 +184,20 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       }
     }
 
-    // Fetch business info fields
+    // Fetch business info fields (cache tagged with the business known when the request left)
+    const requestedFor = sessionBusinessRef.current
     fetch('/api/config/business-info', { credentials: 'include' })
       .then(res => res.json())
       .then(data => {
         if (data.status === 'success') {
           setBusinessInfoFields(data.data);
-          sessionStorage.setItem('businessInfoFields', JSON.stringify({
-            data: data.data,
-            timestamp: Date.now(),
-            businessId: businessIdRef.current,
-          }));
+          if (requestedFor && requestedFor === sessionBusinessRef.current) {
+            sessionStorage.setItem('businessInfoFields', JSON.stringify({
+              data: data.data,
+              timestamp: Date.now(),
+              businessId: requestedFor,
+            }));
+          }
         }
       })
       .catch(error => console.error('Error fetching business info fields:', error));
@@ -220,7 +230,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       };
 
       // Save to localStorage for now (can be enhanced to save to server)
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && draftWritable()) {
         localStorage.setItem(storageKeyRef.current, JSON.stringify(autoSaveData));
         setLastAutoSave(new Date());
         setAutoSaveStatus('saved');
@@ -249,7 +259,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   const submittedRef = useRef(false);
   const writeChatDraft = useCallback(() => {
     const latest = latestDraftRef.current;
-    if (!draftKey || submittedRef.current || !latest) return;
+    if (!draftKey || submittedRef.current || !latest || !draftWritable()) return;
     if (latest.products.length === 0 && !latest.customerInfo.address && !latest.customerInfo.province) return;
     try {
       localStorage.setItem(
@@ -269,7 +279,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
   // Load auto-saved data on component mount
   useEffect(() => {
-    if (!isClient || sessionStatus === 'loading') return;
+    if (!isClient || sessionStatus !== 'authenticated' || !businessId) return;
     // A prefilled form without its own draft slot starts fresh so another customer's draft
     // never leaks in. A chat's own slot (`draftKey`) always belongs to that chat.
     if (prefillRef.current && !draftKey) return;

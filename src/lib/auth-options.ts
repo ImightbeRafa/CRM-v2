@@ -495,12 +495,12 @@ export const authOptions: NextAuthOptions = {
 
               // No pending invite — use existing tenant memberships.
               if (updatedUser.memberships.length > 0) {
-                const hasOwnerRole = updatedUser.memberships.some(m => m.role === 'OWNER');
-                (user as any).role = hasOwnerRole ? 'MASTER' : 'REGULAR';
                 const selectedTenantId = selectActiveTenantId(
                   updatedUser.defaultTenantId,
                   updatedUser.memberships.map((m) => m.tenantId),
                 );
+                // Legacy MASTER = OWNER of the SELECTED business (same as credentials login).
+                (user as any).role = updatedUser.memberships.find((m) => m.tenantId === selectedTenantId)?.role === 'OWNER' ? 'MASTER' : 'REGULAR';
                 (user as any).tenantId = selectedTenantId;
                 (user as any).memberships = updatedUser.memberships;
                 console.log(`[OAuth] ✅ User logged in with tenant: ${selectedTenantId} (${updatedUser.memberships.length} active membership(s))`);
@@ -915,6 +915,8 @@ export const authOptions: NextAuthOptions = {
               defaultTenantId: true,
               memberships: {
                 where: { isActive: true },
+                // Deterministic fallback when the default is gone: the oldest membership first.
+                orderBy: { joinedAt: 'asc' },
                 include: {
                   tenant: {
                     select: {
@@ -976,13 +978,17 @@ export const authOptions: NextAuthOptions = {
               // The active business belongs to THIS session (SecureDog M1): a periodic re-sync keeps
               // it while the membership is still active; only an explicit switch (update()) or a
               // lost membership re-reads the default. Another device switching never moves this one.
+              // Businesses that are themselves active (a deactivated business is never kept or picked
+              // while another active one exists; SecureDog N2).
+              const liveTenantIds = memberships.filter((m) => m.tenant?.isActive !== false).map((m) => m.tenantId);
+              const selectable = liveTenantIds.length ? liveTenantIds : activeTenantIds;
               const keepCurrent =
                 trigger !== 'update' &&
                 typeof token.tenantId === 'string' &&
-                activeTenantIds.includes(token.tenantId);
+                selectable.includes(token.tenantId);
               const selectedTenantId = keepCurrent
                 ? (token.tenantId as string)
-                : selectActiveTenantId(dbUser.defaultTenantId, activeTenantIds);
+                : selectActiveTenantId(dbUser.defaultTenantId, selectable);
               // Legacy MASTER = OWNER of the SELECTED business (L4; login already did this).
               token.role = memberships.find((m) => m.tenantId === selectedTenantId)?.role === 'OWNER' ? 'MASTER' : 'REGULAR';
 

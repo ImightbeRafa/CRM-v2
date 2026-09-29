@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   const json = (await request.json().catch(() => null)) as { tenantId?: unknown } | null
   const target = typeof json?.tenantId === 'string' && ID_RE.test(json.tenantId) ? json.tenantId : null
   if (!target) return NextResponse.json({ success: false, error: 'Negocio inválido' }, { status: 400 })
-  if (target === auth.tenantId) return NextResponse.json({ success: true, tenantId: target, unchanged: true })
+  if (target === auth.unverifiedTenantId) return NextResponse.json({ success: true, tenantId: target, unchanged: true })
 
   const membership = await getSelectedTenantMembership(auth.userId, target)
   // Same answer for "not yours" and "does not exist": no probing of other businesses.
@@ -67,8 +67,11 @@ export async function POST(request: NextRequest) {
     userAgent: request.headers.get('user-agent')?.slice(0, 300) ?? null,
   }
   // Each business only sees that the user left / joined it, with its own role (no other ids).
-  if (auth.tenantId) {
-    await logAuditEvent({ ...common, userRole: auth.role, tenantId: auth.tenantId, oldValues: { active: true }, newValues: { active: false } }).catch(() => {})
+  // The "left" row only if the user is STILL an active member there (a removed member never
+  // writes into that business's log).
+  const previous = auth.unverifiedTenantId ? await getSelectedTenantMembership(auth.userId, auth.unverifiedTenantId) : null
+  if (previous) {
+    await logAuditEvent({ ...common, userRole: previous.role, tenantId: previous.tenantId, oldValues: { active: true }, newValues: { active: false } }).catch(() => {})
   }
   await logAuditEvent({ ...common, userRole: membership.role, tenantId: target, oldValues: { active: false }, newValues: { active: true } }).catch(() => {})
   void recordActivity({ tenantId: target, actorUserId: auth.userId, verb: 'tenant.switch', entityType: 'User', entityId: auth.userId, surface: 'sidebar' })

@@ -118,8 +118,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Email-invite mode: create TenantInvite (join on accept) — no orphan tenant, no password required.
-    if (invite === true || body.inviteMode === true) {
+    // Email invite (join only on accept). Used for invite mode AND for any EXISTING account: an
+    // account is never attached to another business without its owner accepting (SecureDog N1 —
+    // with the business switcher such a membership would show up one click away).
+    const sendInvite = async () => {
       const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } })
       const inviter = await prisma.user.findUnique({
         where: { id: auth.userId },
@@ -145,6 +147,7 @@ export async function POST(request: NextRequest) {
         result.emailSent ? 'Invitación enviada' : 'Invitación creada (email pendiente de RESEND)',
       )
     }
+    if (invite === true || body.inviteMode === true) return sendInvite()
     
     // Validate password is provided for new users
     if (!password || password.trim().length === 0) {
@@ -201,51 +204,8 @@ export async function POST(request: NextRequest) {
       if (membershipAction === 'conflict') {
         return createErrorResponse('El usuario ya pertenece a este tenant', 409)
       }
-      if (membershipAction === 'reactivate' && existingMembership) {
-        const admission = await prisma.$transaction(async tx => {
-          const usage = await lockAndReadSeatUsage(tx, tenantId)
-          if (usage.currentCount >= usage.limit) return { usage, membership: null }
-          const membership = await tx.membership.update({
-            where: { id: existingMembership.id },
-            data: {
-              isActive: true,
-              role: role as any,
-              joinedAt: new Date(),
-            }
-          })
-          return { usage, membership }
-        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
-        if (!admission.membership) return seatLimitResponse(admission.usage)
-        const reactivated = admission.membership
-
-        if (!existingUser.defaultTenantId) {
-          await prisma.user.update({
-            where: { id: existingUser.id },
-            data: { defaultTenantId: tenantId }
-          })
-        }
-
-        try {
-          await logCreate(request, 'user', existingUser.id, username || normalizedEmail, {
-            email: normalizedEmail,
-            username: username || normalizedEmail,
-            role: role || 'VIEWER',
-            tenantId,
-            reactivated: true,
-          })
-        } catch (auditError) {
-          console.error('Failed to log user reactivation audit:', auditError)
-        }
-
-        return createSuccessResponse(
-          { userId: existingUser.id, email: normalizedEmail, role, membershipId: reactivated.id },
-          'Usuario agregado al tenant'
-        )
-      }
-      
-      // Add existing user to this tenant
-      console.log(`[User API] Adding existing user ${normalizedEmail} to tenant ${tenantId}`)
-      userId = existingUser.id
+      // Existing account (new or former member): they join by accepting an emailed invite (N1).
+      return sendInvite()
     } else {
       // Create new user with provided password
       console.log(`[User API] Creating new user ${normalizedEmail}`)
@@ -283,8 +243,8 @@ export async function POST(request: NextRequest) {
             where: { email: normalizedEmail }
           })
           if (raceConditionUser) {
-            console.log(`[User API] ⚠️ Race condition detected - using existing user ${normalizedEmail}`)
-            userId = raceConditionUser.id
+            // Someone registered this email meanwhile: same rule, an invite they must accept.
+            return sendInvite()
           } else {
             return createErrorResponse('Error: Email ya existe en el sistema', 409)
           }

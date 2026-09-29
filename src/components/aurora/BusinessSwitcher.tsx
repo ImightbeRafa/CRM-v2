@@ -54,7 +54,8 @@ export function BusinessSwitcher({ tenantName, collapsed }: { tenantName: string
     }
   }, [open])
 
-  const canSwitch = (businesses?.length ?? 0) > 1
+  // Any OTHER business to go to (also when the current one was deactivated and is not listed).
+  const canSwitch = Boolean(businesses?.some((b) => !b.current))
 
   async function switchTo(b: Business) {
     if (b.current || busy) return
@@ -70,11 +71,17 @@ export function BusinessSwitcher({ tenantName, collapsed }: { tenantName: string
       const json = (await res.json().catch(() => null)) as { success?: boolean; error?: string } | null
       if (!res.ok || !json?.success) {
         setError(json?.error || 'No se pudo cambiar de negocio.')
+        setBusy(null)
         return
       }
       // Forces the session to re-read the active business from the DB (no payload is trusted),
       // and only navigates when the session really moved (L1).
-      const next = await update()
+      let next = await update()
+      if ((next?.user as { tenantId?: string } | undefined)?.tenantId !== b.id) {
+        // The session re-sync is throttled to once every 2 s: retry once after that window.
+        await new Promise((r) => setTimeout(r, 2200))
+        next = await update()
+      }
       if ((next?.user as { tenantId?: string } | undefined)?.tenantId !== b.id) {
         setError('No se pudo cambiar de negocio. Recargá la página e intentá de nuevo.')
         setBusy(null)

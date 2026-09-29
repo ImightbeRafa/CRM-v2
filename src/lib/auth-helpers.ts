@@ -112,22 +112,15 @@ export async function getSessionWithTenant() {
  * routes that read or write business data.
  */
 export async function authenticateUserOnly(request: NextRequest) {
+  // Signed middleware context only (every /api/* request gets one); no weaker fallback (N3).
   const ctx = await readVerifiedAuthContext(request.headers);
-  if (ctx?.userId) {
-    if (!(await sessionStillValid(ctx.userId, ctx.sv))) {
-      return { ok: false as const, response: NextResponse.json({ error: 'Unauthorized', code: 'session_revoked' }, { status: 401 }) };
-    }
-    return { ok: true as const, userId: ctx.userId, tenantId: ctx.tenantId || null, role: (ctx.role || 'VIEWER') as Role };
+  if (!ctx?.userId) return { ok: false as const, response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  if (!(await sessionStillValid(ctx.userId, ctx.sv))) {
+    return { ok: false as const, response: NextResponse.json({ error: 'Unauthorized', code: 'session_revoked' }, { status: 401 }) };
   }
-  const session = await getServerSession(authOptions);
-  const userId = session?.user?.id;
-  if (!userId) return { ok: false as const, response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
-  return {
-    ok: true as const,
-    userId,
-    tenantId: ((session.user as any).tenantId as string | undefined) || null,
-    role: (((session.user as any).membershipRole as string | undefined) || 'VIEWER') as Role,
-  };
+  // The business / role below are what the session CLAIMS; they are not re-checked here. Only
+  // for labelling (audit rows), never for authorization.
+  return { ok: true as const, userId: ctx.userId, unverifiedTenantId: ctx.tenantId || null, unverifiedRole: (ctx.role || 'VIEWER') as Role };
 }
 
 /**

@@ -13,13 +13,22 @@ export function orderDraftStorageKey(draftKey?: string | null): string {
 
 /**
  * A draft is only ever restored in the business that wrote it (SecureDog L2: drafts hold customer
- * name / phone / address). Drafts saved before this tag existed carry no business and are accepted
- * (they came from the only business the session had, and a switch clears them).
+ * name / phone / address). Untagged drafts are accepted only if written before tagging existed
+ * (they came from the only business the session had; a switch clears them); a NEW untagged draft
+ * (written while the session was unknown) is refused.
  */
-export function draftBelongsTo(parsed: { businessId?: unknown } | null | undefined, businessId: string | null | undefined): boolean {
-  if (!parsed) return false
-  if (!parsed.businessId) return true
-  return Boolean(businessId) && parsed.businessId === businessId
+export const DRAFT_TAGGING_SINCE = new Date('2026-09-30T00:00:00Z')
+
+export function draftBelongsTo(
+  parsed: { businessId?: unknown; timestamp?: unknown } | null | undefined,
+  businessId: string | null | undefined,
+): boolean {
+  if (!parsed || !businessId) return false
+  if (!parsed.businessId) {
+    const t = new Date(typeof parsed.timestamp === 'string' ? parsed.timestamp : 0).getTime()
+    return t > 0 && t < DRAFT_TAGGING_SINCE.getTime()
+  }
+  return parsed.businessId === businessId
 }
 
 /** True when an unfinished order is saved for this slot (drives the "Borrador" badge). */

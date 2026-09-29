@@ -5,6 +5,13 @@ import { authRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
+// One answer for every case (unknown, verified, deactivated, sent, send failed): the response
+// never tells a caller whether an account exists for an address.
+const GENERIC = {
+  success: true,
+  message: 'Si existe una cuenta con ese email, te enviamos un nuevo enlace de verificación.',
+};
+
 export async function POST(request: NextRequest) {
   const rateLimitResult = await authRateLimit(request);
   if (rateLimitResult instanceof Response) return rateLimitResult;
@@ -12,76 +19,31 @@ export async function POST(request: NextRequest) {
   try {
     const { email } = await request.json();
 
-    // Validate input
     if (!email || typeof email !== 'string') {
-      return NextResponse.json(
-        { error: 'Email is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Email is required' }, { status: 400 });
     }
 
-    // Check if user exists
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        emailVerified: true,
-        active: true
-      }
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+      select: { id: true, email: true, username: true, emailVerified: true, active: true },
     });
 
-    if (!user) {
-      // Don't reveal if user exists or not for security
-      return NextResponse.json(
-        { 
-          success: true,
-          message: 'If an account exists with this email, a verification email has been sent.' 
-        },
-        { status: 200 }
-      );
+    // Deactivated accounts get nothing (verifying never re-enables them anyway).
+    if (!user || user.emailVerified || user.active === false) {
+      return NextResponse.json(GENERIC, { status: 200 });
     }
 
-    if (user.emailVerified) {
-      return NextResponse.json(
-        { 
-          success: true,
-          message: 'If an account exists with this email, a verification email has been sent.' 
-        },
-        { status: 200 }
-      );
-    }
-
-    // Resend verification email
-    console.log(`🔄 Resending verification email to: ${user.email}`);
     const emailResult = await sendVerificationEmail({
       email: user.email,
-      name: user.username || undefined
+      name: user.username || undefined,
     });
-
     if (!emailResult.success) {
-      console.error('❌ Failed to send verification email:', emailResult.error);
-      return NextResponse.json(
-        { 
-          error: emailResult.error || 'Failed to send verification email. Please try again later.' 
-        },
-        { status: 500 }
-      );
+      console.error('[resend-verification] send failed:', emailResult.error);
     }
-
-    console.log(`✅ Verification email sent successfully to: ${user.email}`);
-    return NextResponse.json({
-      success: true,
-      message: 'Verification email sent! Please check your inbox.'
-    });
-
+    return NextResponse.json(GENERIC, { status: 200 });
   } catch (error) {
     console.error('Resend verification error:', error);
-    return NextResponse.json(
-      { error: 'Failed to process request' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to process request' }, { status: 500 });
   }
 }
-

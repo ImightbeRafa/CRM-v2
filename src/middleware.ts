@@ -5,6 +5,7 @@ import { TenantError } from '@/lib/errors';
 import { isIntegrationOriginAllowed } from '@/lib/integration-cors';
 import { cronsDisabled } from '@/lib/cron-kill-switch';
 import { canAccessLogistics } from '@/lib/logistics-access';
+import { INTERNAL_AUTH_HEADERS, setSignedAuthHeaders } from '@/lib/internal-auth-context';
 
 const CSP_HEADER = [
   "default-src 'self'",
@@ -77,10 +78,7 @@ export default async function middleware(request: Request) {
   // Strip internal auth headers to prevent client-side spoofing.
   // Only middleware may set these after JWT validation.
   const sanitizedHeaders = new Headers(request.headers);
-  sanitizedHeaders.delete('x-user-id');
-  sanitizedHeaders.delete('x-user-role');
-  sanitizedHeaders.delete('x-tenant-id');
-  sanitizedHeaders.delete('x-user-email');
+  for (const name of INTERNAL_AUTH_HEADERS) sanitizedHeaders.delete(name);
   const cleanFwd = { request: { headers: sanitizedHeaders } };
 
   const origin = sanitizedHeaders.get('origin');
@@ -183,11 +181,15 @@ export default async function middleware(request: Request) {
       return redirectToLogin(url);
     }
 
-    // Inject auth context as request headers so route handlers can skip getToken()
+    // Inject auth context as request headers so route handlers can skip getToken().
+    // Signed (x-betsy-ctx-sig): handlers ignore context headers the middleware did not set.
     const requestHeaders = new Headers(sanitizedHeaders);
-    requestHeaders.set('x-user-id', userId);
-    requestHeaders.set('x-user-role', role);
-    if (tenantId) requestHeaders.set('x-tenant-id', tenantId);
+    await setSignedAuthHeaders(requestHeaders, {
+      userId,
+      tenantId: tenantId ?? null,
+      role,
+      email: typeof token.email === 'string' ? token.email : null,
+    }, secret);
 
     // Logistics — DeepSleep members who are logistics admins only
     if (pathname.startsWith('/logistics') || pathname.startsWith('/api/logistics/')) {
@@ -407,5 +409,8 @@ async function handleAppRoute(
 export const config = {
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|public/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)',
+    // Every API path, including ones ending in an image extension (/api/orders/x.png): the
+    // middleware must always strip client-sent identity headers before a handler runs.
+    '/api/:path*',
   ],
 };

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma as globalPrisma } from '@/lib/db';
+import { readVerifiedAuthContext } from '@/lib/internal-auth-context';
 
 type ApiToken = {
   sub?: string | null;
@@ -8,7 +9,8 @@ type ApiToken = {
 };
 
 export async function resolveTenantId(req: NextRequest, token: ApiToken | null): Promise<string | null> {
-  const selectedTenantId = req.headers.get('x-tenant-id')
+  const ctx = await readVerifiedAuthContext(req.headers);
+  const selectedTenantId = (ctx && ctx.userId === token?.sub ? ctx.tenantId : null)
     || (typeof token?.tenantId === 'string' ? token.tenantId : null)
     || (typeof token?.currentTenant?.id === 'string' ? token.currentTenant.id : null);
 

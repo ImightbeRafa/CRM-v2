@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { requireAdmin } from '@/lib/apiAuth'
 import { createErrorResponse, handleApiError } from '@/lib/apiUtils'
 import { neutralizeCsvFormula, PII_NO_STORE_HEADERS } from '@/lib/security'
+import { readVerifiedAuthContext } from '@/lib/internal-auth-context'
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Always scope to caller's tenant (defense-in-depth even if requireAdmin is widened later)
-    const tenantId = request.headers.get('x-tenant-id')
+    const tenantId = (await readVerifiedAuthContext(request.headers))?.tenantId
     if (!tenantId) {
       return createErrorResponse('Tenant context required', 400)
     }

@@ -8,7 +8,7 @@ import { withoutTenantIsolation } from './tenantContext'
 import { rateLimit } from './rate-limit'
 import { selectActiveTenantId } from './membership-lifecycle'
 import { provisionOwnedTenantForExistingUser } from './tenant-provisioning'
-import { shouldJoinInviteInsteadOfProvisioning } from './team-invite'
+import { canAutoAcceptInvite, shouldJoinInviteInsteadOfProvisioning } from './team-invite'
 import { acceptTeamInviteForUser, findPendingInviteForEmail } from './team-invite-service'
 
 type MemberRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES' | 'PRODUCTION' | 'MEMBER' | 'VIEWER';
@@ -167,13 +167,17 @@ export const authOptions: NextAuthOptions = {
             return null
           }
 
-          // Pending TenantInvite wins even when user already has other memberships.
+          // Pending TenantInvite wins even when user already has other memberships — but only
+          // for a verified mailbox (knowing the address is not proof; see canAutoAcceptInvite).
           let memberships = user.memberships
           let defaultTenantId = user.defaultTenantId
           try {
-            const pending = await findPendingInviteForEmail(user.email)
+            const pending = canAutoAcceptInvite({ viaToken: false, emailVerified: !!user.emailVerified })
+              ? await findPendingInviteForEmail(user.email)
+              : null
             if (pending) {
               const accepted = await acceptTeamInviteForUser({
+                emailProven: false,
                 inviteId: pending.id,
                 token: pending.token,
                 userId: user.id,
@@ -258,6 +262,11 @@ export const authOptions: NextAuthOptions = {
             const email = user.email || '';
             if (!email) {
               console.error('No email provided for OAuth user');
+              return false;
+            }
+            // Accounts are matched by email: never trust an address the provider did not verify.
+            if ((profile as { email_verified?: boolean } | undefined)?.email_verified === false) {
+              console.error('[OAuth] Rejected sign-in: provider reports the email as unverified');
               return false;
             }
 
@@ -379,6 +388,7 @@ export const authOptions: NextAuthOptions = {
               if (decision === 'join_invite' && pending) {
                 try {
                   const accepted = await acceptTeamInviteForUser({
+                    emailProven: true, // Google-verified email (checked at the top of signIn)
                     inviteId: pending.id,
                     token: pending.token,
                     userId: updatedUser.id,
@@ -498,6 +508,7 @@ export const authOptions: NextAuthOptions = {
                   },
                 })
                 const accepted = await acceptTeamInviteForUser({
+                  emailProven: true, // Google-verified email (checked at the top of signIn)
                   inviteId: pendingForNew.id,
                   token: pendingForNew.token,
                   userId: createdForInvite.id,

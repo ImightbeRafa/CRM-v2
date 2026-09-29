@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
       ''
 
     const result = await acceptTeamInviteForUser({
+      emailProven: true, // holds the emailed invite token
       token,
       userId: session.user.id,
       userEmail: session.user.email,

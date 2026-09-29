@@ -13,6 +13,25 @@ const ALLOWED_ROLES = new Set<TeamInviteRole>([
   'VIEWER',
 ])
 
+/** Constant-time invite token comparison (a presented link token vs the stored one). */
+export function inviteTokenMatches(presented: unknown, actual: string | null | undefined): boolean {
+  if (typeof presented !== 'string' || !presented || !actual) return false
+  const a = Buffer.from(presented)
+  const b = Buffer.from(actual)
+  return a.length === b.length && crypto.timingSafeEqual(a, b)
+}
+
+/**
+ * Security (2026-09-28): a pending invite is only auto-accepted by someone who proved they own
+ * the invited mailbox: they hold the emailed invite token, their email is verified, or the
+ * identity provider (Google) verified it. Knowing the address alone is never enough — before
+ * this, registering an invited email with any password joined that business with the invited
+ * role (pre-hijack).
+ */
+export function canAutoAcceptInvite(input: { viaToken: boolean; emailVerified: boolean }): boolean {
+  return input.viaToken || input.emailVerified
+}
+
 export function normalizeInviteEmail(email: string): string {
   return email.trim().toLowerCase()
 }

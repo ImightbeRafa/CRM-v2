@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { authRateLimit } from '@/lib/rate-limit';
+import { acceptTeamInviteForUser, findPendingInviteForEmail } from '@/lib/team-invite-service';
 
 export async function GET(request: Request) {
   const rateLimitResult = await authRateLimit(request);
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
     let user: any = null;
     try {
       user = await prisma.$queryRaw`
-        SELECT id, email, username, "defaultTenantId", "emailVerified" FROM "User" 
+        SELECT id, email, username, active, "defaultTenantId", "emailVerified" FROM "User" 
         WHERE "emailVerificationToken" = ${token}
         AND "emailVerificationTokenExpires" > NOW()
         LIMIT 1
@@ -36,7 +37,7 @@ export async function GET(request: Request) {
       // Fallback to snake_case column names
       try {
         user = await prisma.$queryRaw`
-          SELECT id, email, username, "defaultTenantId", "emailVerified" FROM "User" 
+          SELECT id, email, username, active, "defaultTenantId", "emailVerified" FROM "User" 
           WHERE "email_verification_token" = ${token}
           AND "email_verification_token_expires" > NOW()
           LIMIT 1
@@ -87,6 +88,32 @@ export async function GET(request: Request) {
     }
 
     const userData = Array.isArray(user) ? user[0] : user;
+
+    // A deactivated account stays deactivated: verifying an email never re-enables it.
+    if (userData.active === false) {
+      return NextResponse.json(
+        { error: 'Esta cuenta está desactivada. Contacta al administrador de tu negocio.' },
+        { status: 403 }
+      );
+    }
+
+    // The mailbox is now proven: a pending team invite wins over creating a new business.
+    if (!userData.defaultTenantId) {
+      try {
+        const pending = await findPendingInviteForEmail(userData.email);
+        if (pending) {
+          const accepted = await acceptTeamInviteForUser({
+            emailProven: true,
+            inviteId: pending.id,
+            userId: userData.id,
+            userEmail: userData.email,
+          });
+          if (accepted.ok) userData.defaultTenantId = accepted.tenantId;
+        }
+      } catch (inviteError) {
+        console.warn('[verify-email] pending invite accept skipped:', inviteError);
+      }
+    }
 
     const alreadyHasTenant = !!userData.defaultTenantId;
 
@@ -139,12 +166,11 @@ export async function GET(request: Request) {
       await tx.$executeRaw`
         UPDATE "User" 
         SET 
-          "active" = true,
           "emailVerified" = NOW(),
           "defaultTenantId" = COALESCE("defaultTenantId", ${tenantId}),
           "emailVerificationToken" = NULL,
           "emailVerificationTokenExpires" = NULL
-        WHERE id = ${userData.id}
+        WHERE id = ${userData.id} AND "active" = true
       `;
 
       const updatedUser = await tx.user.findUnique({

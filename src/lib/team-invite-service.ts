@@ -143,6 +143,8 @@ export async function findPendingInviteForEmail(email: string) {
  * Join inviting tenant for an authenticated user. Never creates a new tenant.
  */
 export async function acceptTeamInviteForUser(input: {
+  /** The caller proved mailbox ownership (invite token, email-verification link, verified OAuth email). */
+  emailProven: boolean
   token?: string | null
   inviteId?: string | null
   userId: string
@@ -215,10 +217,10 @@ export async function acceptTeamInviteForUser(input: {
 
     await tx.user.update({
       where: { id: input.userId },
+      // Never flips `active`: an invite must not undo a deactivation.
       data: {
-        active: true,
         defaultTenantId: invite!.tenantId,
-        emailVerified: new Date(),
+        ...(input.emailProven ? { emailVerified: new Date() } : {}),
       },
     })
   })

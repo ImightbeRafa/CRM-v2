@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authOptions } from './auth-options';
 import { Permission, Role, hasPermission } from './rbac';
 import { guardTenantWrite } from './billing-access';
+import { readVerifiedAuthContext } from './internal-auth-context';
 
 export { getSessionRole, getSessionTenantId, hasSessionPermission } from './session-permissions';
 
@@ -112,18 +113,17 @@ export async function getSessionWithTenant() {
  * const { session, tenantId, role } = auth;
  */
 export async function authenticateAPI(request: NextRequest) {
-  // Fast path: read middleware-injected headers (avoids redundant JWT decode)
-  const headerUserId = request.headers.get('x-user-id');
-  const headerRole = request.headers.get('x-user-role');
-  const headerTenantId = request.headers.get('x-tenant-id');
+  // Fast path: middleware-injected headers (avoids a redundant JWT decode), trusted only when
+  // signed by the middleware. Unsigned / forged headers fall through to the session check.
+  const ctx = await readVerifiedAuthContext(request.headers);
 
-  if (headerUserId && headerTenantId) {
+  if (ctx?.tenantId) {
     const auth = {
       ok: true as const,
       session: null,
-      tenantId: headerTenantId,
-      role: (headerRole || 'VIEWER') as Role,
-      userId: headerUserId,
+      tenantId: ctx.tenantId,
+      role: (ctx.role || 'VIEWER') as Role,
+      userId: ctx.userId,
     };
     return applyBillingWriteGuard(request, auth);
   }

@@ -1,10 +1,11 @@
 import { getToken } from "next-auth/jwt"
+import { readVerifiedAuthContext } from "@/lib/internal-auth-context"
 
 export async function requireAdmin(request: Request) {
-  // Prefer middleware-injected header (avoids redundant JWT decode)
-  const headerRole = request.headers.get('x-user-role');
-  if (headerRole) {
-    return { authorized: headerRole === 'MASTER' };
+  // Prefer the middleware-injected context (avoids a redundant JWT decode); only when signed.
+  const ctx = await readVerifiedAuthContext(request.headers);
+  if (ctx) {
+    return { authorized: ctx.role === 'MASTER' };
   }
 
   // Fallback for public routes where middleware skips auth

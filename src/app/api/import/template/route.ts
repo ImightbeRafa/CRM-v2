@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
+import { readVerifiedAuthContext } from '@/lib/internal-auth-context';
 
 export const runtime = 'nodejs';
 
@@ -43,8 +44,8 @@ const templates = {
 };
 
 export async function GET(request: NextRequest) {
-  // Middleware injects x-user-id for authenticated requests
-  if (!request.headers.get('x-user-id')) {
+  // Middleware injects a signed auth context for authenticated requests
+  if (!(await readVerifiedAuthContext(request.headers))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

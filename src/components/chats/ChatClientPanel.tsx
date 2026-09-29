@@ -12,6 +12,7 @@ import { pedidoHref } from '@/lib/pedido-url'
 import { nextOrderStep, type ChatFlowOrder } from '@/lib/chat-order-flow'
 import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 import { ChatNotesPanel } from '@/components/chats/ChatNotesPanel'
+import { ChatTasksPanel } from '@/components/chats/ChatTasksPanel'
 import { stageChipClass, useCrmCatalog } from '@/components/chats/useCrmCatalog'
 
 type ClientInfo = {
@@ -500,6 +501,7 @@ export function ChatClientPanel({
 
       {/* Keyed on the client: linking / unlinking reloads the notes (client notes join the chat's). */}
       <ChatNotesPanel key={client?.id ?? 'none'} conversationId={conversationId} hasClient={Boolean(client)} legacyNote={client?.notes ?? null} />
+      <ChatTasksPanel key={`tasks-${client?.id ?? 'none'}`} conversationId={conversationId} />
 
       {guiaSale ? (
         <Suspense fallback={null}>

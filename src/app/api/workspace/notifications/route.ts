@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { listNotifications, markNotificationsRead } from '@/lib/workspace-notifications'
+import { countOverdueForUser } from '@/lib/crm-tasks'
 import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -10,8 +11,11 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   const auth = await authenticateAPIWithPermission(request, 'update_sales')
   if (!auth.ok) return auth.response
-  const result = await listNotifications(auth.tenantId, auth.userId)
-  return NextResponse.json({ success: true, ...result }, { headers: { 'Cache-Control': 'no-store' } })
+  const [result, overdueTasks] = await Promise.all([
+    listNotifications(auth.tenantId, auth.userId),
+    countOverdueForUser(auth.tenantId, auth.userId),
+  ])
+  return NextResponse.json({ success: true, ...result, overdueTasks }, { headers: { 'Cache-Control': 'no-store' } })
 }
 
 /** POST `{ ids?: string[] }` — mark mine as read (all when no ids). */

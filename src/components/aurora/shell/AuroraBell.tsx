@@ -32,8 +32,8 @@ export function AuroraBell() {
   const notes = useWorkspaceNotifications()
   const close = useCallback(() => setOpen(false), [])
   useDismiss(open, ref, close)
-  const dot = showBellDot(alerts) || notes.unread > 0
-  const total = alerts.length + notes.unread
+  const dot = showBellDot(alerts) || notes.unread > 0 || notes.overdueTasks > 0
+  const total = alerts.length + notes.unread + (notes.overdueTasks > 0 ? 1 : 0)
 
   return (
     <div ref={ref} className="relative">
@@ -75,6 +75,17 @@ export function AuroraBell() {
                 <span className="text-[11px] text-slate-400">{total}</span>
               ) : null}
             </div>
+            {notes.overdueTasks > 0 ? (
+              <Link
+                href="/tareas"
+                onClick={close}
+                className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 text-[13px] font-semibold text-red-700 outline-none hover:bg-red-50 focus-visible:bg-red-50"
+                data-testid="aurora-overdue-tasks"
+              >
+                <ListChecks className="h-4 w-4 shrink-0" aria-hidden />
+                {notes.overdueTasks === 1 ? '1 tarea vencida' : `${notes.overdueTasks} tareas vencidas`}
+              </Link>
+            ) : null}
             {notes.items.length ? (
               <ul className="divide-y divide-slate-100 border-b border-slate-100" data-testid="aurora-notifications">
                 {notes.items.slice(0, 15).map((n) => (

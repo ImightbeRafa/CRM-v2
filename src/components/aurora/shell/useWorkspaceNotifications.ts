@@ -24,15 +24,17 @@ export function useWorkspaceNotifications() {
   const enabled = viewer.can('update_sales')
   const [items, setItems] = useState<WorkspaceNotificationItem[]>([])
   const [unread, setUnread] = useState(0)
+  const [overdueTasks, setOverdueTasks] = useState(0)
 
   const refresh = useCallback(async () => {
     if (!enabled) return
     try {
       const res = await fetch('/api/workspace/notifications', { credentials: 'same-origin', cache: 'no-store' })
-      const json = (await res.json().catch(() => null)) as { success?: boolean; unread?: number; items?: WorkspaceNotificationItem[] } | null
+      const json = (await res.json().catch(() => null)) as { success?: boolean; unread?: number; overdueTasks?: number; items?: WorkspaceNotificationItem[] } | null
       if (!res.ok || !json?.success) return
       setItems(Array.isArray(json.items) ? json.items : [])
       setUnread(typeof json.unread === 'number' ? json.unread : 0)
+      setOverdueTasks(typeof json.overdueTasks === 'number' ? json.overdueTasks : 0)
     } catch {
       /* the bell keeps its derived alerts */
     }
@@ -62,5 +64,5 @@ export function useWorkspaceNotifications() {
     }
   }, [])
 
-  return { enabled, items, unread, refresh, markRead }
+  return { enabled, items, unread, overdueTasks, refresh, markRead }
 }

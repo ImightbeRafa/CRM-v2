@@ -1,6 +1,7 @@
 import {
   Home,
   MessageSquare,
+  ListChecks,
   Bot,
   Radio,
   Package,
@@ -32,6 +33,7 @@ export const AURORA_NAV: AuroraNavSection[] = [
     items: [
       { href: '/dashboard', label: 'Inicio', icon: Home },
       { href: '/chats', label: 'Chats', icon: MessageSquare },
+      { href: '/tareas', label: 'Tareas', icon: ListChecks },
       { href: '/ventas', label: 'Pedidos', icon: Package },
       { href: '/produccion', label: 'Producción', icon: Factory },
       { href: '/estadisticas', label: 'Estadísticas', icon: BarChart3 },

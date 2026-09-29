@@ -5,6 +5,7 @@
 const FRAME_PREFIXES = [
   '/dashboard',
   '/chats',
+  '/tareas',
   '/ventas',
   '/produccion',
   '/estadisticas',
@@ -19,7 +20,7 @@ const FRAME_PREFIXES = [
 const FRAME_EXCLUDED_PREFIXES = ['/config/agentes/conocimiento', '/config/ai-assistant'] as const
 
 /** Pages whose shell scrolls the main area itself (not `fullBleed`). */
-const SCROLLING_PREFIXES = ['/dashboard', '/estadisticas', '/config/agentes'] as const
+const SCROLLING_PREFIXES = ['/dashboard', '/estadisticas', '/config/agentes', '/tareas'] as const
 
 function matches(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`)

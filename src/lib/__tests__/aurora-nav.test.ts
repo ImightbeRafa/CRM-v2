@@ -8,7 +8,7 @@ test('sections are Principal / Atajos / Sistema in Figma order', () => {
   assert.deepEqual(
     AURORA_NAV.map((s) => [s.title, s.items.map((i) => i.label)]),
     [
-      ['Principal', ['Inicio', 'Chats', 'Pedidos', 'Producción', 'Estadísticas']],
+      ['Principal', ['Inicio', 'Chats', 'Tareas', 'Pedidos', 'Producción', 'Estadísticas']],
       ['Atajos', ['Agentes', 'Canales']],
       ['Sistema', ['Configuración', 'Ayuda']],
     ],

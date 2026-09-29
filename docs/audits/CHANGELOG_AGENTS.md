@@ -36,6 +36,9 @@ Advisor plan → slices, each with tests in `test:security` (195/196; the 1 fail
   - Lows: exact `lower(email)` lookups (Prisma insensitive equals = ILIKE wildcards), timing,
     Sentry token scrub, SQL export `*/`, CORS preflights, non-ASCII email header.
   - 29 cookie-only routes use `getLiveToken` (revocation + membership).
+- **Final sign-off (SecureDog, 6f1cb8a):** DATA-03 and AUTH-23/25/28 Verified (xlsx rebuilt from
+  guard-inflated entries; `active` must be boolean). AUTH-08 Verified conditional on 034 first.
+  All findings are in the Notion Security Register; only AUTH-08 still "Blocks prod" (until 034).
 - **Deploy order: apply 034 BEFORE this code reaches prod** (revocation / squatter protection are
   inert without it; the code itself runs either way).
 - Gotcha: local `tsc` crashes natively on node 24 (even `--jitless`); run it in Docker:

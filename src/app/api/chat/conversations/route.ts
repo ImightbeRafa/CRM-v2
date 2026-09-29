@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enrichConversationDtosWithLinkedOrders } from '@/lib/chat-linked-orders'
+import { attachSnoozeState, workStateKnownMissing } from '@/lib/chat-work-state-server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import {
@@ -77,7 +78,7 @@ export async function GET(request: NextRequest) {
     const hasMore = rows.length > limit
     const page = hasMore ? rows.slice(0, limit) : rows
     const { stages: chatStages } = await loadStages(auth.tenantId, 'chat')
-    const conversations = await enrichConversationDtosWithLinkedOrders(
+    const conversations = await attachSnoozeState(auth.tenantId, await enrichConversationDtosWithLinkedOrders(
       auth.tenantId,
       await enrichConversationDtosWithAgents(
       auth.tenantId,
@@ -88,7 +89,7 @@ export async function GET(request: NextRequest) {
         ),
       ),
       ),
-    )
+    ))
 
     const last = page[page.length - 1]
     const nextCursor =
@@ -109,6 +110,8 @@ export async function GET(request: NextRequest) {
       conversations,
       nextCursor,
       maxRevision: (maxRevisionAgg._max.revision ?? BigInt(0)).toString(),
+      // Phase 2b: false until migration 036 is applied (the inbox hides "Posponer").
+      snoozeAvailable: !workStateKnownMissing(),
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid request'

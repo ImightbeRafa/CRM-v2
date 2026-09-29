@@ -95,6 +95,10 @@ export type ChatConversationListItemDto = {
   aiMode: SoftAiAgentMode | null
   assignedUserId: string | null
   assignedUser: { id: string; name: string | null; image: string | null } | null
+  /** Last customer message (snooze wakes up when the customer writes after it was snoozed). */
+  lastInboundAt?: string | null
+  /** Snoozed until (Phase 2b); set by the list/changes routes only while it is in effect. */
+  snooze?: { until: string; at: string } | null
   /** Latest order linked from this chat (internal id + human number); set by the list/changes routes. */
   linkedOrder?: { id: string; orderNumber: string } | null
   channel: {
@@ -183,6 +187,7 @@ export function mapConversationToListDto(row: ConversationRow, stages: StageDef[
     lastMessageAt: row.lastMessageAt.toISOString(),
     lastMessage: row.lastMessagePreview,
     lastMessageDirection: row.lastMessageDirection,
+    lastInboundAt: row.lastInboundAt ? row.lastInboundAt.toISOString() : null,
     waWindowOpen: waWindowOpenFromInbound(platform, row.lastInboundAt),
     aiMode: normalizeAiMode(row.aiMode),
     assignedUserId: row.assignedUserId,

@@ -86,6 +86,7 @@ export function listDtoToSoftConversation(
     closed: dto.stageCategory ? isClosedCategory(dto.stageCategory) : undefined,
     // Custom tags from Config › Chats pass through (the catalog gives them labels / colours).
     tags: (dto.tags || []).filter((t): t is string => typeof t === 'string' && t.length > 0).slice(0, 20),
+    snoozedUntil: dto.snooze?.until ?? null,
     orderId,
     orderNumber,
     assignee: dto.assignedUser

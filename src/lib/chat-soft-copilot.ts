@@ -13,7 +13,7 @@ import {
 /** System keys plus any custom stage key from Config › Chats. */
 export type ConversationStatus = 'nuevo' | 'en_curso' | 'hecho' | (string & {})
 export type ChannelFilter = 'todos' | 'whatsapp' | 'instagram'
-export type InboxBucket = 'tus_chats' | 'abiertos' | 'sin_asignar' | 'ia_manejando' | 'hechos'
+export type InboxBucket = 'tus_chats' | 'abiertos' | 'sin_asignar' | 'ia_manejando' | 'pospuestos' | 'hechos'
 /** Legacy tags plus any custom tag from Config › Chats. */
 export type SoftTag = 'Envío' | 'VIP' | 'Nuevo' | (string & {})
 
@@ -30,6 +30,8 @@ export interface SoftConversation extends ChatConversation {
   /** Stage category won / lost (from the server); falls back to status === 'hecho'. */
   closed?: boolean
   tags: SoftTag[]
+  /** Snoozed until this ISO time (Phase 2b); hidden from the open buckets until then. */
+  snoozedUntil?: string | null
   orderId?: string | null
   /** Human order number (`Order.orderId`) of the linked order, when known; display only. */
   orderNumber?: string | null
@@ -333,6 +335,11 @@ export function enrichConversations(opts: {
   })
 }
 
+/** Snoozed right now (server sends `snooze` only while in effect; time may pass client-side). */
+export function isSnoozedConversation(c: { snoozedUntil?: string | null }, nowMs: number = Date.now()): boolean {
+  return Boolean(c.snoozedUntil && new Date(c.snoozedUntil).getTime() > nowMs)
+}
+
 /** Closed = the stage's category is won or lost ("hecho" and any custom closed stage). */
 export function isConversationClosed(c: { status: string; closed?: boolean }): boolean {
   return c.closed ?? c.status === 'hecho'
@@ -347,10 +354,17 @@ export function filterSoftConversations(
     search: string
     /** When known, "Tus chats" = owned by the viewer and "Sin asignar" = no owner. */
     viewerUserId?: string | null
+    /** Clock for snooze checks (tests); defaults to now. */
+    nowMs?: number
   },
 ): SoftConversation[] {
   const q = opts.search.trim().toLowerCase()
+  const now = opts.nowMs ?? Date.now()
   return conversations.filter((c) => {
+    const snoozed = isSnoozedConversation(c, now)
+    if (opts.bucket === 'pospuestos' && !snoozed) return false
+    // A snoozed chat leaves the working buckets until it wakes up (time passes or customer writes).
+    if (snoozed && opts.bucket !== 'pospuestos' && opts.bucket !== 'hechos') return false
     if (opts.channel === 'whatsapp' && c.platform !== 'whatsapp') return false
     if (opts.channel === 'instagram' && c.platform !== 'instagram') return false
     if (opts.accountId !== 'all' && c.socialAccountId !== opts.accountId) return false

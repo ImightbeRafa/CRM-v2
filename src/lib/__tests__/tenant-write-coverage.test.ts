@@ -16,6 +16,7 @@ const guardedTenantRoutes = [
   'src/app/api/chat/conversations/[id]/notes/route.ts',
   'src/app/api/chat/conversations/[id]/presence/route.ts',
   'src/app/api/workspace/notifications/route.ts',
+  'src/app/api/chat/conversations/[id]/snooze/route.ts',
   'src/app/api/crm/notes/[id]/route.ts',
   'src/app/api/crm/clients/[id]/stage/route.ts',
   'src/app/api/chat/send/route.ts',

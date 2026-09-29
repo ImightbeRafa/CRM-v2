@@ -71,6 +71,7 @@ import {
   type ChatInboxMessage,
 } from '@/lib/chat-inbox'
 import { stageChipClass, useCrmCatalog } from '@/components/chats/useCrmCatalog'
+import { ChatSnoozeButton } from '@/components/chats/ChatSnoozeButton'
 
 export type SoftWaTemplateOption = {
   name: string
@@ -82,6 +83,12 @@ interface SoftThreadPaneProps {
   conversation: SoftConversation | null
   /** Teammates in this chat right now ("Ana está respondiendo…"); empty when nobody. */
   presence?: string
+  /** "Posponer" (Phase 2b). Hidden when absent (e.g. before migration 036). */
+  snooze?: {
+    until: string | null
+    onSnooze: (untilIso: string) => Promise<boolean>
+    onWake: () => Promise<boolean>
+  }
   messageInput: string
   onMessageInput: (value: string) => void
   onSend: (e: FormEvent) => void
@@ -271,6 +278,7 @@ export function SoftThreadPane({
   attachments,
   quickReplies,
   presence,
+  snooze,
 }: SoftThreadPaneProps) {
   // Stage labels / colours from Config › Chats (custom stages).
   const { chatStages, chatStageLabel, tags: tagDefs } = useCrmCatalog()
@@ -681,6 +689,9 @@ export function SoftThreadPane({
                       <span className="rounded bg-static-white/25 px-1.5 py-px text-[10px] font-semibold">Borrador</span>
                     ) : null}
                   </button>
+                ) : null}
+                {snooze && !conversation.isDemo ? (
+                  <ChatSnoozeButton snoozedUntil={snooze.until} onSnooze={snooze.onSnooze} onWake={snooze.onWake} />
                 ) : null}
                 {detailsPanel ? (
                   <button

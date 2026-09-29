@@ -115,6 +115,8 @@ export function SoftCopilotInboxV2() {
   const [messageInput, setMessageInput] = useState('')
   // "Ana está respondiendo…" / "Ana también está viendo este chat" for the open chat.
   const presenceText = useChatPresence(selectedConversationId, messageInput)
+  // Shown once the list says snooze works (false before migration 036 is applied).
+  const [snoozeAvailable, setSnoozeAvailable] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [failedOutboundId, setFailedOutboundId] = useState<string | null>(null)
   // Cliente · Agente (Phase 2a). Remembered; old 'detalle' / 'copilot' values map onto them.
@@ -241,10 +243,12 @@ export function SoftCopilotInboxV2() {
       conversations?: ChatConversationListItemDto[]
       nextCursor?: string | null
       maxRevision?: string
+      snoozeAvailable?: boolean
     }>(res)
     if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.conversations) {
       throw new Error('list_failed')
     }
+    if (typeof parsed.data.snoozeAvailable === 'boolean') setSnoozeAvailable(parsed.data.snoozeAvailable)
     setDtoMap((prev) =>
       opts?.replace
         ? (() => {
@@ -759,6 +763,16 @@ export function SoftCopilotInboxV2() {
     })
   }, [accounts, channelFilter])
 
+  // Snoozed chats wake up on time even when nothing else changes: re-filter every 30 s while any
+  // chat is snoozed (no timer otherwise).
+  const [snoozeTick, setSnoozeTick] = useState(0)
+  const anySnoozed = useMemo(() => conversations.some((c) => Boolean(c.snoozedUntil)), [conversations])
+  useEffect(() => {
+    if (!anySnoozed) return
+    const id = window.setInterval(() => setSnoozeTick((t) => t + 1), 30_000)
+    return () => window.clearInterval(id)
+  }, [anySnoozed])
+
   const visibleConversations = useMemo(() => {
     let list = filterSoftConversations(conversations, {
       bucket,
@@ -777,7 +791,9 @@ export function SoftCopilotInboxV2() {
     }
     if (activeTag) list = list.filter((c) => c.tags.includes(activeTag))
     return list
-  }, [conversations, bucket, channelFilter, accountFilter, search, activeTag, dtoMap, viewerUserId])
+    // snoozeTick: re-evaluate snoozes as time passes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversations, bucket, channelFilter, accountFilter, search, activeTag, dtoMap, viewerUserId, snoozeTick])
 
   const openCount = useMemo(
     () => conversations.filter((c) => !isConversationClosed(c)).length,
@@ -868,6 +884,8 @@ export function SoftCopilotInboxV2() {
               agentEmoji: incoming.agentEmoji ?? before.agentEmoji,
               agentStateDot: incoming.agentStateDot ?? before.agentStateDot,
               pendingSuggestionText: incoming.pendingSuggestionText ?? before.pendingSuggestionText,
+              // PATCH never changes the snooze; keep what the list knew.
+              snooze: incoming.snooze !== undefined ? incoming.snooze : before.snooze,
             }
           : incoming
         return mergeListDtoIntoMap(prev, [merged])
@@ -875,6 +893,38 @@ export function SoftCopilotInboxV2() {
       return true
     }
     return false
+  }
+
+  /** Posponer / despertar the open chat. Updates the list right away; the server bumps the revision. */
+  async function setSnoozeFor(untilIso: string | null): Promise<boolean> {
+    if (!selectedConversationId) return false
+    const id = selectedConversationId
+    try {
+      const res = await fetch(`/api/chat/conversations/${encodeURIComponent(id)}/snooze`, {
+        method: untilIso ? 'POST' : 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        ...(untilIso ? { body: JSON.stringify({ until: untilIso }) } : {}),
+      })
+      const json = (await res.json().catch(() => null)) as { success?: boolean; snooze?: { until: string; at: string } | null; error?: string } | null
+      if (!res.ok || !json?.success) {
+        if (res.status === 503) setSnoozeAvailable(false)
+        toast({ variant: 'destructive', title: json?.error || 'No se pudo posponer el chat' })
+        return false
+      }
+      setDtoMap((prev) => {
+        const row = prev.get(id)
+        if (!row) return prev
+        const next = new Map(prev)
+        next.set(id, { ...row, snooze: json.snooze ?? null })
+        return next
+      })
+      toast({ title: untilIso ? 'Chat pospuesto' : 'Chat de vuelta en tu bandeja' })
+      return true
+    } catch {
+      toast({ variant: 'destructive', title: 'Sin conexión' })
+      return false
+    }
   }
 
   async function assignTo(userId: string | null) {
@@ -1414,6 +1464,13 @@ export function SoftCopilotInboxV2() {
 
   const threadSharedProps = {
     presence: presenceText,
+    snooze: snoozeAvailable
+      ? {
+          until: selectedConversationId ? dtoMap.get(selectedConversationId)?.snooze?.until ?? null : null,
+          onSnooze: (untilIso: string) => setSnoozeFor(untilIso),
+          onWake: () => setSnoozeFor(null),
+        }
+      : undefined,
     conversation: selectedConversation,
     messageInput,
     onMessageInput: setMessageInput,

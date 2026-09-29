@@ -21,6 +21,7 @@ const BUCKETS: Array<{ id: InboxBucket; label: string }> = [
   { id: 'abiertos', label: 'Abiertos' },
   { id: 'ia_manejando', label: 'IA manejando' },
   { id: 'sin_asignar', label: 'Sin asignar' },
+  { id: 'pospuestos', label: 'Pospuestos' },
   { id: 'hechos', label: 'Hechos' },
 ]
 

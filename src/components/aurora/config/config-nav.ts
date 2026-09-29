@@ -14,6 +14,7 @@ import {
   UsersRound,
   CreditCard,
   History,
+  MessagesSquare,
   type LucideIcon,
 } from 'lucide-react'
 import type { Permission } from '@/lib/rbac'
@@ -29,6 +30,7 @@ export type ConfigTabId =
   | 'statuses'
   | 'clients'
   | 'social'
+  | 'chats'
   | 'agentes'
   | 'integrations'
   | 'shipping-config'
@@ -89,6 +91,15 @@ export const CONFIG_NAV: ConfigNavGroup[] = [
         icon: Radio,
         aliases: ['cuentas', 'canales'],
         figmaNode: '191:2900',
+        permission: 'update_config',
+      },
+      {
+        key: 'chats',
+        tab: 'chats',
+        label: 'Chats',
+        icon: MessagesSquare,
+        aliases: ['etapas', 'etiquetas'],
+        figmaNode: 'phase2a-chats',
         permission: 'update_config',
       },
       { key: 'agentes', tab: 'agentes', label: 'Agentes IA', icon: Bot, aliases: [], figmaNode: '191:3475' },

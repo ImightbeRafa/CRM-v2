@@ -29,12 +29,12 @@ test('no owner-facing "Soft" wording in Config nav', () => {
   for (const i of allItems) assert.doesNotMatch(i.label, /soft/i)
 })
 
-test('every item is a tab and all 14 canonical ids exist', () => {
+test('every item is a tab and all 15 canonical ids exist', () => {
   for (const i of allItems) assert.equal(i.key, i.tab)
-  assert.equal(CONFIG_TAB_IDS.length, 14)
+  assert.equal(CONFIG_TAB_IDS.length, 15)
   for (const t of [
     'profile', 'inventory', 'fields', 'statuses', 'clients',
-    'social', 'agentes', 'integrations',
+    'social', 'chats', 'agentes', 'integrations',
     'shipping-config', 'import', 'bulk-delete',
     'users', 'billing', 'audit',
   ]) {
@@ -47,7 +47,7 @@ test('sub-nav labels/order follow the Figma frames', () => {
     CONFIG_NAV.map((g) => [g.title, g.items.map((i) => i.label)]),
     [
       ['Negocio', ['General', 'Productos', 'Campos', 'Estados', 'Clientes']],
-      ['Comunicación', ['Cuentas conectadas', 'Agentes IA', 'Integraciones API']],
+      ['Comunicación', ['Cuentas conectadas', 'Chats', 'Agentes IA', 'Integraciones API']],
       ['Operación', ['Envíos', 'Importar', 'Eliminación masiva']],
       ['Cuenta', ['Equipo', 'Plan', 'Auditoría']],
     ],

@@ -11,6 +11,7 @@ import { ConfigHub } from '@/components/aurora/config/ConfigHub'
 import { ConfigShell } from '@/components/aurora/config/ConfigShell'
 import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader'
 import { PanelGate } from '@/components/aurora/config/panels/PanelGate'
+import { ChatsConfigPanel } from '@/components/aurora/config/panels/ChatsConfigPanel'
 import { UsersPanel } from '@/components/aurora/config/panels/UsersPanel'
 import { InviteMemberModal } from '@/components/aurora/config/InviteMemberModal'
 import { useAuroraConfirm } from '@/components/aurora/ui/AuroraConfirmDialog'
@@ -959,6 +960,13 @@ function ConfigPageInner() {
             <div hidden={activeTab !== 'social'} className={PAGE_PANEL_BLEED}>
               <PanelGate permission="update_config" label="Cuentas conectadas">
                 <SocialPanelPage />
+              </PanelGate>
+            </div>
+          )}
+          {visited.has('chats') && (
+            <div hidden={activeTab !== 'chats'}>
+              <PanelGate permission="update_config" label="Chats">
+                <ChatsConfigPanel />
               </PanelGate>
             </div>
           )}

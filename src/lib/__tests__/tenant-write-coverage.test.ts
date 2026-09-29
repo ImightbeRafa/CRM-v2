@@ -21,6 +21,8 @@ const guardedTenantRoutes = [
   'src/app/api/config/automatic-clients/sync/route.ts',
   'src/app/api/config/automatic-clients/update-from-order/route.ts',
   'src/app/api/config/business-info/route.ts',
+  'src/app/api/config/crm-stages/route.ts',
+  'src/app/api/config/chat-tags/route.ts',
   'src/app/api/config/fields/route.ts',
   'src/app/api/config/frequent-customers/route.ts',
   'src/app/api/config/frequent-products/route.ts',

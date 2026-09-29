@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { recordActivity } from '@/lib/activity'
+import { isAllowedChatStage, loadStages } from '@/lib/crm-stages-server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import {
@@ -38,6 +39,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       )
     }
     const body = parsed.data
+    if (body.status !== undefined && !(await isAllowedChatStage(auth.tenantId, body.status))) {
+      return NextResponse.json({ success: false, error: 'Etapa inválida para este negocio' }, { status: 400 })
+    }
 
     if (body.assignedUserId) {
       const ok = await isAssignableChatMember(auth.tenantId, body.assignedUserId)
@@ -116,7 +120,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({
       success: true,
-      conversation: mapConversationToListDto(row),
+      conversation: mapConversationToListDto(row, (await loadStages(auth.tenantId, 'chat')).stages),
     })
   } catch (error) {
     console.error('[chat/conversations PATCH]', error)

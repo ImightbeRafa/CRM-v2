@@ -1,7 +1,8 @@
 import type { Prisma } from '@prisma/client'
 import { hashCursorScope } from '@/lib/cursor-pagination'
 
-export type SoftConversationStatus = 'nuevo' | 'en_curso' | 'hecho'
+/** A chat stage key (system or custom). */
+export type SoftConversationStatus = string
 
 export interface ChatConversationListQuery {
   platform: string | null
@@ -16,7 +17,7 @@ export interface ChatConversationChangesQuery extends ChatConversationListQuery 
   afterRevision: bigint
 }
 
-const STATUS_VALUES = new Set<SoftConversationStatus>(['nuevo', 'en_curso', 'hecho'])
+const STATUS_KEY = /^[a-z0-9_]{1,40}$/
 
 export function parseConversationListQuery(searchParams: URLSearchParams): ChatConversationListQuery {
   const platform = (searchParams.get('platform') || '').trim() || null
@@ -25,8 +26,8 @@ export function parseConversationListQuery(searchParams: URLSearchParams): ChatC
   }
   const statusRaw = (searchParams.get('status') || '').trim()
   const status = statusRaw
-    ? STATUS_VALUES.has(statusRaw as SoftConversationStatus)
-      ? (statusRaw as SoftConversationStatus)
+    ? STATUS_KEY.test(statusRaw)
+      ? statusRaw
       : (() => {
           throw new Error('Invalid status')
         })()

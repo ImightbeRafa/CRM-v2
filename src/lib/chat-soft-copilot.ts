@@ -10,10 +10,12 @@ import {
   type ChannelLogoKey,
 } from '@/lib/social-account-identity'
 
-export type ConversationStatus = 'nuevo' | 'en_curso' | 'hecho'
+/** System keys plus any custom stage key from Config › Chats. */
+export type ConversationStatus = 'nuevo' | 'en_curso' | 'hecho' | (string & {})
 export type ChannelFilter = 'todos' | 'whatsapp' | 'instagram'
 export type InboxBucket = 'tus_chats' | 'abiertos' | 'sin_asignar' | 'ia_manejando' | 'hechos'
-export type SoftTag = 'Envío' | 'VIP' | 'Nuevo'
+/** Legacy tags plus any custom tag from Config › Chats. */
+export type SoftTag = 'Envío' | 'VIP' | 'Nuevo' | (string & {})
 
 export const SOFT_COPILOT_STATUS_KEY = 'betsy.softCopilot.conversationStatus.v1'
 export const SOFT_COPILOT_TAGS_KEY = 'betsy.softCopilot.conversationTags.v1'
@@ -25,6 +27,8 @@ export interface SoftConversation extends ChatConversation {
   /** Phone or @handle for thread meta (optional). */
   channelAddress?: string | null
   status: ConversationStatus
+  /** Stage category won / lost (from the server); falls back to status === 'hecho'. */
+  closed?: boolean
   tags: SoftTag[]
   orderId?: string | null
   /** Human order number (`Order.orderId`) of the linked order, when known; display only. */
@@ -329,6 +333,11 @@ export function enrichConversations(opts: {
   })
 }
 
+/** Closed = the stage's category is won or lost ("hecho" and any custom closed stage). */
+export function isConversationClosed(c: { status: string; closed?: boolean }): boolean {
+  return c.closed ?? c.status === 'hecho'
+}
+
 export function filterSoftConversations(
   conversations: SoftConversation[],
   opts: {
@@ -345,20 +354,20 @@ export function filterSoftConversations(
     if (opts.channel === 'whatsapp' && c.platform !== 'whatsapp') return false
     if (opts.channel === 'instagram' && c.platform !== 'instagram') return false
     if (opts.accountId !== 'all' && c.socialAccountId !== opts.accountId) return false
-    if (opts.bucket === 'hechos' && c.status !== 'hecho') return false
-    if (opts.bucket === 'abiertos' && c.status === 'hecho') return false
-    if (opts.bucket === 'tus_chats' && c.status === 'hecho') return false
+    if (opts.bucket === 'hechos' && !isConversationClosed(c)) return false
+    if (opts.bucket === 'abiertos' && isConversationClosed(c)) return false
+    if (opts.bucket === 'tus_chats' && isConversationClosed(c)) return false
     if (opts.bucket === 'tus_chats' && opts.viewerUserId && c.assignee?.id !== opts.viewerUserId) return false
     if (opts.bucket === 'sin_asignar') {
       if (opts.viewerUserId) {
-        if (c.assignee || c.status === 'hecho') return false
+        if (c.assignee || isConversationClosed(c)) return false
       } else if (c.status !== 'nuevo') {
         // Legacy (no owner data): treat new chats as unassigned.
         return false
       }
     }
     // IA manejando filtered by SoftCopilotInbox via agentMode map (status still open)
-    if (opts.bucket === 'ia_manejando' && c.status === 'hecho') return false
+    if (opts.bucket === 'ia_manejando' && isConversationClosed(c)) return false
     if (!q) return true
     const hay = `${c.recipientName || ''} ${c.lastMessage || ''} ${c.accountLabel} ${c.recipientId}`.toLowerCase()
     return hay.includes(q)

@@ -4,10 +4,10 @@
  */
 
 import { classifyChannelHealth, type ChannelHealth } from '@/app/config/social/channel-health'
-import type { SoftConversation, SoftSocialAccount } from '@/lib/chat-soft-copilot'
+import { isConversationClosed, type SoftConversation, type SoftSocialAccount } from '@/lib/chat-soft-copilot'
 
 export interface LineCounts {
-  /** Conversations not marked "hecho". */
+  /** Conversations not in a closed stage ("hecho" or a custom won / lost stage). */
   open: number
   unread: number
 }
@@ -35,7 +35,7 @@ export function summarizeLineCounts(conversations: SoftConversation[]): LineCoun
   const byAccount = new Map<string, LineCounts>()
   for (const c of conversations) {
     const row = byAccount.get(c.socialAccountId) ?? { open: 0, unread: 0 }
-    if (c.status !== 'hecho') {
+    if (!isConversationClosed(c)) {
       row.open += 1
       total.open += 1
     }

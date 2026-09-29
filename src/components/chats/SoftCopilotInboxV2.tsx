@@ -20,6 +20,7 @@ import {
   readTagsMap,
   accountDisplayLabel,
   accountChannelAddress,
+  isConversationClosed,
   type ChannelFilter,
   type ConversationStatus,
   type InboxBucket,
@@ -29,6 +30,7 @@ import {
   type SoftTag,
 } from '@/lib/chat-soft-copilot'
 import type { ChatConversationListItemDto } from '@/lib/chat-conversation-api'
+import { isClosedCategory } from '@/lib/crm-stages'
 import {
   advanceRevisionCursor,
   buildChangesPollQuery,
@@ -696,7 +698,7 @@ export function SoftCopilotInboxV2() {
     let human = 0
     let toolActions = 0
     for (const dto of dtoMap.values()) {
-      if (dto.status === 'hecho') continue
+      if (dto.stageCategory ? isClosedCategory(dto.stageCategory) : dto.status === 'hecho') continue
       const mode = dto.aiMode
       if (mode === 'ai_active') aiActive += 1
       else if (mode === 'paused') paused += 1
@@ -728,7 +730,7 @@ export function SoftCopilotInboxV2() {
         const dto = [...dtoMap.values()].find(
           (d) => d.socialAccountId === c.socialAccountId && d.peerId === c.recipientId,
         )
-        return dto?.aiMode === 'ai_active' && c.status !== 'hecho'
+        return dto?.aiMode === 'ai_active' && !isConversationClosed(c)
       })
     }
     if (activeTag) list = list.filter((c) => c.tags.includes(activeTag))
@@ -736,14 +738,14 @@ export function SoftCopilotInboxV2() {
   }, [conversations, bucket, channelFilter, accountFilter, search, activeTag, dtoMap, viewerUserId])
 
   const openCount = useMemo(
-    () => conversations.filter((c) => c.status !== 'hecho').length,
+    () => conversations.filter((c) => !isConversationClosed(c)).length,
     [conversations],
   )
 
   const lineCounts = useMemo(() => summarizeLineCounts(conversations), [conversations])
 
   const unreadChatCount = useMemo(
-    () => conversations.filter((c) => c.status !== 'hecho' && (c.unreadCount || 0) > 0).length,
+    () => conversations.filter((c) => !isConversationClosed(c) && (c.unreadCount || 0) > 0).length,
     [conversations],
   )
   const channelsAlert = useMemo(() => accounts.some((a) => lineIsDown(a)), [accounts])

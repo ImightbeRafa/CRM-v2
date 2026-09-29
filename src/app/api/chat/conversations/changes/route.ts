@@ -15,6 +15,7 @@ import {
   mapRawConversationRow,
   resolveListPlatformIds,
 } from '@/lib/chat-conversation-route-helpers'
+import { loadStages } from '@/lib/crm-stages-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -132,6 +133,7 @@ export async function GET(request: NextRequest) {
       },
     })
 
+    const { stages: chatStages } = await loadStages(auth.tenantId, 'chat')
     const conversations = await enrichConversationDtosWithLinkedOrders(
       auth.tenantId,
       await enrichConversationDtosWithAgents(
@@ -139,6 +141,7 @@ export async function GET(request: NextRequest) {
       rows.map((row) =>
         mapConversationToListDto(
           mapRawConversationRow(row as Parameters<typeof mapRawConversationRow>[0]),
+          chatStages,
         ),
       ),
       ),

@@ -10,8 +10,10 @@ import {
   resolveChannelDisplayName,
   type SocialAccountIdentityFields,
 } from '@/lib/social-account-identity'
+import { DEFAULT_CHAT_STAGES, STAGE_KEY_RE, stageCategoryOf, type StageCategory, type StageDef } from '@/lib/crm-stages'
 
-export const CHAT_CONVERSATION_STATUS = z.enum(['nuevo', 'en_curso', 'hecho'])
+/** A chat stage key (system: nuevo / en_curso / hecho; custom ones from Config › Chats). */
+export const CHAT_CONVERSATION_STATUS = z.string().regex(STAGE_KEY_RE)
 export const CHAT_CONVERSATION_AI_MODE = z.enum(['ai_active', 'paused', 'human'])
 
 export const patchConversationBodySchema = z
@@ -80,7 +82,9 @@ export type ChatConversationListItemDto = {
   peerId: string
   recipientId: string
   recipientName: string | null
-  status: z.infer<typeof CHAT_CONVERSATION_STATUS>
+  status: string
+  /** open / won / lost from the tenant's chat stages: won or lost = closed (was "hecho"). */
+  stageCategory: StageCategory
   tags: string[]
   unreadCount: number
   revision: string
@@ -159,12 +163,11 @@ export function unreadCountForViewer(row: ConversationRow): number {
   return Math.max(0, row.inboundCount - read)
 }
 
-export function mapConversationToListDto(row: ConversationRow): ChatConversationListItemDto {
+export function mapConversationToListDto(row: ConversationRow, stages: StageDef[] = DEFAULT_CHAT_STAGES): ChatConversationListItemDto {
   const account = row.socialAccount
   const platform = account?.platform || 'whatsapp'
-  const status = CHAT_CONVERSATION_STATUS.safeParse(row.status).success
-    ? (row.status as z.infer<typeof CHAT_CONVERSATION_STATUS>)
-    : 'nuevo'
+  // Any valid stage key passes through (custom stages); only malformed values fall back.
+  const status = CHAT_CONVERSATION_STATUS.safeParse(row.status).success ? row.status : 'nuevo'
 
   return {
     id: row.id,
@@ -173,6 +176,7 @@ export function mapConversationToListDto(row: ConversationRow): ChatConversation
     recipientId: row.peerId,
     recipientName: row.peerName,
     status,
+    stageCategory: stageCategoryOf(stages, status),
     tags: row.tags,
     unreadCount: unreadCountForViewer(row),
     revision: row.revision.toString(),

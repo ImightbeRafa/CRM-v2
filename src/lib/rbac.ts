@@ -287,6 +287,8 @@ export const apiPermissions: Record<string, Permission> = {
   'GET /api/chat/conversations/*/messages': 'update_sales',
   'PATCH /api/chat/conversations/*': 'update_sales',
   'GET /api/chat/conversations/*/notes': 'update_sales',
+  'PUT /api/config/crm-stages': 'update_config',
+  'PUT /api/config/chat-tags': 'update_config',
   'POST /api/chat/conversations/*/notes': 'update_sales',
   'PATCH /api/crm/notes/*': 'update_sales',
   'DELETE /api/crm/notes/*': 'update_sales',

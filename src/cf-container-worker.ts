@@ -1,4 +1,11 @@
 import { Container, getContainer } from "@cloudflare/containers";
+
+/**
+ * Named container object (was the library default "cf-singleton-container"). 2026-09-29: that
+ * object's instance got stuck "inactive" on Cloudflare's side (every fetch → internal error, a
+ * redeploy did not reset it). A new name gives a fresh Durable Object + container.
+ */
+const CONTAINER_INSTANCE_NAME = "betsy-main-2";
 import { env } from "cloudflare:workers";
 
 // Cloudflare Worker entry for the daytime smoke deploy (see wrangler.jsonc).
@@ -208,7 +215,7 @@ async function runCronPaths(
     );
   }
 
-  const container = getContainer(env.BETSY_CRM_CONTAINER);
+  const container = getContainer(env.BETSY_CRM_CONTAINER, CONTAINER_INSTANCE_NAME);
   const results: Array<{ path: string; status: number; ok: boolean }> = [];
 
   for (const path of paths) {
@@ -242,7 +249,7 @@ export default {
     for (const name of ["x-user-id", "x-user-role", "x-user-email", "x-tenant-id", "x-middleware-subrequest"]) {
       headers.delete(name);
     }
-    return getContainer(env.BETSY_CRM_CONTAINER).fetch(new Request(request, { headers }));
+    return getContainer(env.BETSY_CRM_CONTAINER, CONTAINER_INSTANCE_NAME).fetch(new Request(request, { headers }));
   },
 
   async scheduled(

@@ -1,3 +1,30 @@
+## 2026-09-29 — Phase 2b workspace SHIPPED (036 applied, 99650237 live) — switcher held back
+
+- Green baseline first (785d4c0): the 4 long-failing tests + 19 test type errors fixed, none
+  removed (Windows CRLF / path separators; vercel.json → wrangler cron; Embedded Signup test rewritten
+  for the current retryAfter design). tsc 0, all 29 offline suites green.
+- Advisor plan → slices S0–S7 on claudio/phase2b-workspace: 036 (ChatConversationWorkState,
+  CrmTask, WorkspaceNotification, ChatWorkspaceSettings; new tables only, RLS); note scope
+  (solo este chat / todo el cliente); quick-reply + first-response activity; presence ("Ana está
+  respondiendo", in-memory 20 s); @mentions + bell notifications + /chats?c= deep link; Posponer +
+  Pospuestos; tasks / reminders + /tareas + overdue in bell; assignment rules (round-robin / least
+  busy), business hours, auto-close, reopen-on-inbound — all OFF by default, per-minute sweep via the
+  Worker */1 cron (also wakes expired snoozes). Plus INFRA-12 retention cron (30 3 * * *) and MEDIA-10.
+- Reviews: Verifier ×2 + SecureDog on 785d4c0..a771a07. Real bugs fixed before prod, e.g. M1 (Prisma
+  NOT drops aiMode NULL → rules would never assign), M2 (deep link dead on /chats), reopen backlog +
+  fail-safe, stale pinned rows, DATA-12 (036 CHECK would have broken the Meta data-deletion callback;
+  fixed in the SQL before apply), AUTH-39, DATA-13/14, INFRA-13. Register updated.
+- 036 applied `ok 036 in 1602ms`. Deploy 99650237 (first wrangler call silently didn't deploy —
+  verified with `wrangler deployments list`, re-ran). Rollout mixes old/new containers for a few
+  minutes: poll /api/cron/<new route> (public path: 404 old → 401 new) before UI checks.
+- Live proof: drive-phase2b.mjs on www (isolated tenant, read-only): snooze button + Pospuestos,
+  tasks panel, notes, presence / tasks / notifications / rules APIs (rules all off), /tareas + nav,
+  bell, Config › Chats rules card — all true (note-scope toggle hidden: test chat has no client).
+  wrangler tail: 0 exceptions; `[cf-cron] ok cron=*/1` with the new sweep.
+- Business switcher (S8, claudio/phase2b-switcher) NOT shipped: SecureDog round 2 left L2 remainder,
+  N1 Medium (/api/users attaches existing accounts as active members without consent — now visible in
+  the switcher), N2, N3. Fixing next.
+
 ## 2026-09-29 — Phase 2a SHIPPED (035 applied, 7bad9641 live)
 
 - 035: first run refused by the apply script — my rollback note in the header contained a literal

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runChatWorkspaceSweep } from '@/lib/chat-workspace-sweep'
 import { cronsDisabled } from '@/lib/cron-kill-switch'
+import { timingSafeEqualString } from '@/lib/security'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -9,7 +10,7 @@ export const maxDuration = 60
 function isAuthorized(request: NextRequest) {
   const secret = (process.env.CRON_SECRET || '').trim()
   if (!secret) return false
-  return request.headers.get('authorization') === `Bearer ${secret}`
+  return timingSafeEqualString(request.headers.get('authorization') || '', `Bearer ${secret}`)
 }
 
 /** Every minute (Worker CRON_PATHS): assignment rules, auto-close, reopen on inbound. */

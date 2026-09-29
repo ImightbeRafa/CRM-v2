@@ -86,7 +86,8 @@ test('guard: the webhook / inbound path never imports the rules or the sweep', (
 
 test('cron + settings API: authenticated, kill switch, admin-only writes, audited', () => {
   const cron = read('src/app/api/cron/chat-workspace/route.ts')
-  assert.match(cron, /Bearer \$\{secret\}/)
+  // Constant-time secret comparison, like the other retention crons.
+  assert.match(cron, /timingSafeEqualString\(request\.headers\.get\('authorization'\) \|\| '', `Bearer \$\{secret\}`\)/)
   assert.match(cron, /cronsDisabled\(process\.env\)/)
   assert.match(read('src/cf-container-worker.ts'), /"\/api\/cron\/chat-automation", "\/api\/cron\/chat-workspace"/)
   const api = read('src/app/api/config/chat-workspace/route.ts')

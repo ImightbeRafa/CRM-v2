@@ -1,5 +1,5 @@
 // Live check of chat storage on Supabase (writes + deletes one tiny test file). No secrets printed.
-//   npx tsx --env-file=.env.local scripts/storage-live-check.ts
+//   npx tsx --import ./scripts/shim-server-only.mjs --env-file=.env.local scripts/storage-live-check.ts
 import { CHAT_STORAGE_BUCKET, chatStorageGet, chatStoragePut, chatStorageRemove, chatStorageUsage } from '../src/lib/chat-storage'
 
 const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4a50000000049454e44ae426082', 'hex')

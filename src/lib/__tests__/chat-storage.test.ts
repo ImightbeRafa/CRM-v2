@@ -13,8 +13,16 @@ delete process.env.BLOB_READ_WRITE_TOKEN
 type Call = { url: string; method: string; headers: Record<string, string>; body?: unknown }
 let calls: Call[] = []
 let responder: (c: Call) => Response | Promise<Response> = () => new Response('{}', { status: 200 })
-beforeEach(() => {
+/** Bucket create / info always answer "private" unless a test overrides it. */
+const bucketAware = (fn: (c: Call) => Response | Promise<Response>) => (c: Call) => {
+  if (c.url.endsWith('/storage/v1/bucket')) return new Response('{"name":"betsy-chat"}', { status: 200 })
+  if (c.url.includes('/storage/v1/bucket/')) return new Response('{"id":"betsy-chat","public":false}', { status: 200 })
+  return fn(c)
+}
+beforeEach(async () => {
   calls = []
+  const { __resetChatStorageForTests } = await import('../chat-storage')
+  __resetChatStorageForTests()
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const c: Call = {
       url: String(input),
@@ -23,7 +31,7 @@ beforeEach(() => {
       body: init?.body,
     }
     calls.push(c)
-    return responder(c)
+    return bucketAware(responder)(c)
   }) as typeof fetch
 })
 
@@ -33,10 +41,11 @@ describe('chat storage (Supabase)', () => {
     responder = () => new Response('{"Key":"x"}', { status: 200 })
     const out = await chatStoragePut('chat-quick-replies/t1/abcdefgh.jpg', new Uint8Array([1, 2, 3]), 'image/jpeg')
     assert.equal(out.size, 3)
-    assert.equal(calls[0].url, `https://proj.supabase.co/storage/v1/object/${CHAT_STORAGE_BUCKET}/chat-quick-replies/t1/abcdefgh.jpg`)
-    assert.equal(calls[0].method, 'POST')
-    assert.equal(calls[0].headers.Authorization, 'Bearer service-key')
-    assert.equal(calls[0].headers['x-upsert'], 'false')
+    const up = calls.find((c) => c.url.includes('/object/'))!
+    assert.equal(up.url, `https://proj.supabase.co/storage/v1/object/${CHAT_STORAGE_BUCKET}/chat-quick-replies/t1/abcdefgh.jpg`)
+    assert.equal(up.method, 'POST')
+    assert.equal(up.headers.Authorization, 'Bearer service-key')
+    assert.equal(up.headers['x-upsert'], 'false')
   })
   test('refuses anything outside the chat folders (backups, traversal)', async () => {
     const { chatStoragePut } = await import('../chat-storage')
@@ -48,8 +57,7 @@ describe('chat storage (Supabase)', () => {
   test('creates the private bucket on first use, then retries the write', async () => {
     const { chatStoragePut } = await import('../chat-storage')
     let n = 0
-    responder = (c) => {
-      if (c.url.endsWith('/storage/v1/bucket')) return new Response('{"name":"betsy-chat"}', { status: 200 })
+    responder = () => {
       n += 1
       return n === 1
         ? new Response('{"statusCode":"404","error":"Bucket not found","message":"Bucket not found"}', { status: 400 })
@@ -79,7 +87,22 @@ describe('chat storage (Supabase)', () => {
     responder = () =>
       new Response(JSON.stringify([{ id: 'a', metadata: { size: 10 } }, { id: 'b', metadata: { size: 5 } }, { id: null }]), { status: 200 })
     assert.deepEqual(await chatStorageUsage('chat-quick-replies/t1'), { count: 2, bytes: 15 })
-    assert.equal(JSON.parse(String(calls[0].body)).prefix, 'chat-quick-replies/t1')
+    assert.equal(JSON.parse(String(calls.find((c) => c.url.includes('/object/list/'))!.body)).prefix, 'chat-quick-replies/t1')
+  })
+  test('a public bucket is refused (privacy checked every time, not only on create)', async () => {
+    const { chatStoragePut } = await import('../chat-storage')
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const u = String(input)
+      if (u.endsWith('/storage/v1/bucket')) return new Response('{"message":"The resource already exists"}', { status: 409 })
+      if (u.includes('/storage/v1/bucket/')) return new Response('{"id":"betsy-chat","public":true}', { status: 200 })
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch
+    await assert.rejects(chatStoragePut('chat-media/t1/m1', new Uint8Array([1]), 'image/png'), /is public/)
+  })
+  test('key only goes to https://*.supabase.co and never follows redirects', () => {
+    const src = readFileSync('src/lib/chat-storage.ts', 'utf8')
+    assert.match(src, /redirect: 'error'/)
+    assert.match(src, /host\.endsWith\('\.supabase\.co'\)/)
   })
   test('chat-media no longer talks to Vercel Blob directly; backups still do (off-site)', () => {
     assert.doesNotMatch(readFileSync('src/lib/chat-media.ts', 'utf8'), /from '@vercel\/blob'/)

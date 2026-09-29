@@ -11,7 +11,8 @@
  * - The bucket is created on first use if it does not exist.
  * - Reads fall back to the legacy Vercel Blob store for files cached before the switch.
  */
-import { get as vercelGet } from '@vercel/blob'
+import 'server-only'
+import { del as vercelDel, get as vercelGet } from '@vercel/blob'
 
 export const CHAT_STORAGE_BUCKET = process.env.CHAT_STORAGE_BUCKET || 'betsy-chat'
 const WRITE_TIMEOUT_MS = 20_000
@@ -36,6 +37,17 @@ function config() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
   if (!url || !key) {
     throw new ChatStorageError('Supabase Storage is not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)', 'not_configured')
+  }
+  // The service key only ever goes to our Supabase project over HTTPS.
+  let host = ''
+  try {
+    const parsed = new URL(url)
+    host = parsed.protocol === 'https:' ? parsed.hostname : ''
+  } catch {
+    host = ''
+  }
+  if (!host.endsWith('.supabase.co')) {
+    throw new ChatStorageError('SUPABASE_URL must be https://<project>.supabase.co', 'not_configured')
   }
   return { url, key }
 }
@@ -64,6 +76,8 @@ async function call(path: string, init: RequestInit & { timeoutMs: number }): Pr
       headers: { Authorization: `Bearer ${key}`, apikey: key, ...(headers || {}) },
       signal: AbortSignal.timeout(timeoutMs),
       cache: 'no-store',
+      // Never follow a redirect: the apikey header would go with it.
+      redirect: 'error',
     })
   } catch (error) {
     const name = error instanceof Error ? error.name : ''
@@ -90,6 +104,11 @@ async function failure(res: Response, what: string): Promise<ChatStorageError> {
 
 let bucketReady: Promise<void> | null = null
 
+/** Tests only: forget the cached bucket check. */
+export function __resetChatStorageForTests() {
+  bucketReady = null
+}
+
 /** Creates the private bucket once per process (idempotent: "already exists" is fine). */
 function ensureBucket(): Promise<void> {
   if (!bucketReady) {
@@ -105,10 +124,17 @@ function ensureBucket(): Promise<void> {
           file_size_limit: 26214400,
         }),
       })
-      if (res.ok) return
-      const err = await failure(res, 'create bucket')
-      if (/already exists|duplicate/i.test(err.message) || res.status === 409) return
-      throw err
+      if (!res.ok) {
+        const err = await failure(res, 'create bucket')
+        if (!(/already exists|duplicate/i.test(err.message) || res.status === 409)) throw err
+      }
+      // Privacy is checked every time, not only on create (a bucket flipped to public is refused).
+      const info = await call(`bucket/${CHAT_STORAGE_BUCKET}`, { method: 'GET', timeoutMs: META_TIMEOUT_MS })
+      if (!info.ok) throw await failure(info, 'bucket info')
+      const bucket = (await info.json()) as { public?: boolean }
+      if (bucket.public !== false) {
+        throw new ChatStorageError(`Bucket ${CHAT_STORAGE_BUCKET} is public: refusing to store chat files`, 'rejected')
+      }
     })().catch((error) => {
       bucketReady = null
       throw error
@@ -132,6 +158,7 @@ async function withBucket<T>(fn: () => Promise<T>): Promise<T> {
 
 export async function chatStoragePut(pathname: string, bytes: Uint8Array, contentType: string, opts: { overwrite?: boolean } = {}) {
   assertPath(pathname)
+  await ensureBucket()
   return withBucket(async () => {
     const res = await call(`object/${CHAT_STORAGE_BUCKET}/${encodePath(pathname)}`, {
       method: 'POST',
@@ -200,6 +227,10 @@ export async function chatStorageRemove(pathnames: string[]): Promise<void> {
     body: JSON.stringify({ prefixes: safe }),
   })
   if (!res.ok && res.status !== 404) throw await failure(res, 'delete')
+  // Files uploaded before the switch live in Vercel Blob: remove them there too (best effort).
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    await vercelDel(safe, { token: process.env.BLOB_READ_WRITE_TOKEN }).catch(() => undefined)
+  }
 }
 
 /** Files directly inside a folder (e.g. `chat-quick-replies/<tenant>`): count + bytes. */

@@ -8,6 +8,7 @@ import {
   QUICK_REPLIES_VERSION_KEY,
   quickRepliesFromSettings,
   quickRepliesVersionFromSettings,
+  isQuickReplyMediaPath,
   quickReplyMediaPaths,
   sanitizeQuickReplies,
 } from '@/lib/chat-quick-replies'
@@ -79,7 +80,7 @@ export async function PUT(request: NextRequest) {
 
     // Files dropped from the list are deleted (never left sendable or billable).
     const kept = quickReplyMediaPaths(items)
-    const removed = [...quickReplyMediaPaths(quickRepliesFromSettings(before?.settings))].filter((p) => !kept.has(p))
+    const removed = [...quickReplyMediaPaths(quickRepliesFromSettings(before?.settings))].filter((p) => !kept.has(p) && isQuickReplyMediaPath(p, auth.tenantId))
     if (removed.length) {
       await deleteChatBlobs(removed).catch((err) => console.warn('[chat/quick-replies] blob cleanup failed', err))
     }
@@ -172,7 +173,7 @@ export async function POST(request: NextRequest) {
     })
 
     const kept = quickReplyMediaPaths(result.items)
-    const removed = [...quickReplyMediaPaths(result.beforeItems)].filter((p) => !kept.has(p))
+    const removed = [...quickReplyMediaPaths(result.beforeItems)].filter((p) => !kept.has(p) && isQuickReplyMediaPath(p, auth.tenantId))
     if (removed.length) {
       await deleteChatBlobs(removed).catch((err) => console.warn('[chat/quick-replies] file cleanup failed', err))
     }

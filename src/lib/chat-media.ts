@@ -538,7 +538,10 @@ export async function deleteChatBlobs(pathnames: string[]): Promise<void> {
 export function describeBlobError(error: unknown): { code: string; message: string; detail: string } {
   const raw = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
   if (error instanceof ChatStorageError) {
-    const detail = raw.slice(0, 300)
+    const detail = raw
+      .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, '[jwt]')
+      .replace(/sb_secret_\w+/g, '[key]')
+      .slice(0, 300)
     const byCode: Record<string, string> = {
       not_configured: 'falta configurar el almacenamiento.',
       not_found: 'el archivo no existe en el almacenamiento.',

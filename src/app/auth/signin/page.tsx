@@ -25,6 +25,30 @@ function SignInPageInner() {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
+  const [needsVerification, setNeedsVerification] = useState(false)
+  const [resendNote, setResendNote] = useState<string | null>(null)
+
+  // Codes thrown by the credentials authorize gates (src/lib/auth-gates.ts).
+  const loginErrorMessage = (code: string | null | undefined) => {
+    if (code === 'EMAIL_NOT_VERIFIED') return 'Verifica tu email para entrar. Te enviamos un enlace al registrarte.'
+    if (code === 'LOCKED') return 'Demasiados intentos fallidos. Espera 15 minutos o restablece tu contraseña.'
+    return 'Credenciales inválidas'
+  }
+
+  const resendVerification = async () => {
+    setResendNote(null)
+    try {
+      const res = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json().catch(() => ({}))
+      setResendNote(res.ok ? (data.message || 'Listo. Revisa tu correo.') : (data.error || 'No se pudo reenviar el enlace'))
+    } catch {
+      setResendNote('No se pudo reenviar el enlace')
+    }
+  }
   const searchParams = useSearchParams()
   const intendedPlan = (searchParams?.get('plan') || '').toLowerCase()
   const signupMode = searchParams?.get('signup') === 'true'
@@ -96,7 +120,9 @@ function SignInPageInner() {
       })
       
       if (!signInRes || signInRes.error) {
-        setError('Registro exitoso. Por favor inicia sesión.')
+        // Registered, but the account cannot enter yet (email verification) or the login failed.
+        setNeedsVerification(true)
+        setError(data.message || 'Registro exitoso. Revisa tu email para verificar la cuenta y luego inicia sesión.')
         setLoading(false)
         setIsRegistering(false)
         return
@@ -142,7 +168,8 @@ function SignInPageInner() {
     })
     setLoading(false)
     if (!res || res.error) {
-      setError('Credenciales inválidas')
+      setNeedsVerification(res?.error === 'EMAIL_NOT_VERIFIED')
+      setError(loginErrorMessage(res?.error))
       return
     }
     if (intendedPlan) {
@@ -240,6 +267,14 @@ function SignInPageInner() {
           )}
         </div>
         {error && <p className={authErrorClass} role="alert">{error}</p>}
+        {needsVerification && email ? (
+          <p className="text-center text-[13px] text-slate-600">
+            <button type="button" onClick={() => void resendVerification()} className="font-medium underline underline-offset-2">
+              Reenviar email de verificación
+            </button>
+            {resendNote ? <span className="mt-1 block" role="status">{resendNote}</span> : null}
+          </p>
+        ) : null}
         <button type="submit" disabled={loading} className={authPrimaryButtonClass}>
           {loading
             ? (isRegistering ? 'Registrando…' : 'Ingresando…')

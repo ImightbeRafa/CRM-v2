@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Eye, EyeOff } from 'lucide-react'
@@ -16,7 +16,13 @@ import {
 
 function ResetPasswordInner() {
   const searchParams = useSearchParams()
-  const token = searchParams?.get('token') || ''
+  // Read once, then drop it from the address bar (history, screenshots, Referer).
+  const [token] = useState(() => searchParams?.get('token') || '')
+  useEffect(() => {
+    if (token && window.location.search.includes('token=')) {
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+  }, [token])
 
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')

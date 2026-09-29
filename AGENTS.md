@@ -71,7 +71,9 @@ cover non-obvious setup/run gotchas.
   (Upstash has an in-memory fallback).
 
 ### Auth / testing
-- Email verification is non-blocking: you can `POST /api/auth/register` and immediately
+- Email verification is non-blocking unless `EMAIL_VERIFICATION_ENFORCE_FROM` (ISO date) is set
+  (then only accounts created after it must verify; see `src/lib/auth-gates.ts`). Locally leave it
+  unset: you can `POST /api/auth/register` and immediately
   log in. Passwords need 8+ chars with upper, lower, and a number.
 - Core end-to-end smoke test: register (or log in), then create an order in `/ventas`
   (the "Retiro (RA)" / pickup option needs the fewest fields).

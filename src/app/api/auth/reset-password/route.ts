@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { hashPassword, validatePasswordStrength } from '@/lib/password';
 import { authRateLimit } from '@/lib/rate-limit';
+import { hashResetToken, legacyRawResetToken } from '@/lib/password-reset';
+import { clearLoginFailures, clientIpFromHeaders } from '@/lib/auth-gates';
 
 export async function POST(request: Request) {
   const rateLimitResult = await authRateLimit(request);
@@ -32,11 +34,23 @@ export async function POST(request: Request) {
       );
     }
 
-    const users: any[] = await prisma.$queryRaw`
-      SELECT id, email FROM "User"
-      WHERE "passwordResetToken" = ${token}
+    const hashedPassword = await hashPassword(password);
+    const tokenHash = hashResetToken(token);
+    const legacy = legacyRawResetToken(token);
+
+    // One statement: check + consume + update, so a link works exactly once (no read-then-write
+    // race). A reset also proves the mailbox, so it verifies the email (recovery path for users
+    // blocked by email verification). Deactivated accounts cannot reset.
+    const users = await prisma.$queryRaw<Array<{ id: string; email: string }>>`
+      UPDATE "User"
+      SET password = ${hashedPassword},
+          "passwordResetToken" = NULL,
+          "passwordResetTokenExpires" = NULL,
+          "emailVerified" = COALESCE("emailVerified", NOW())
+      WHERE ("passwordResetToken" = ${tokenHash} OR (${legacy}::text IS NOT NULL AND "passwordResetToken" = ${legacy}::text))
         AND "passwordResetTokenExpires" > NOW()
-      LIMIT 1
+        AND active = true
+      RETURNING id, email
     `;
 
     if (!users || users.length === 0) {
@@ -46,16 +60,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const user = users[0];
-    const hashedPassword = await hashPassword(password);
-
-    await prisma.$executeRaw`
-      UPDATE "User"
-      SET password = ${hashedPassword},
-          "passwordResetToken" = NULL,
-          "passwordResetTokenExpires" = NULL
-      WHERE id = ${user.id}
-    `;
+    await clearLoginFailures(
+      users[0].email.toLowerCase(),
+      clientIpFromHeaders(Object.fromEntries(request.headers)),
+    ).catch(() => undefined);
 
     return NextResponse.json(
       { message: 'Contraseña actualizada exitosamente.' },

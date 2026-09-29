@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { Resend } from 'resend';
-import { v4 as uuidv4 } from 'uuid';
+import { escapeHtml, generateResetToken, hashResetToken, RESET_TOKEN_TTL_MS } from '@/lib/password-reset';
 import { authRateLimit } from '@/lib/rate-limit';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -26,11 +26,11 @@ export async function POST(request: Request) {
       where: {
         email: { equals: normalizedEmail, mode: 'insensitive' },
       },
-      select: { id: true, email: true, username: true, name: true, provider: true },
+      select: { id: true, email: true, username: true, name: true, provider: true, active: true },
     });
 
     // Always return success to prevent email enumeration (OWASP A07)
-    if (!user) {
+    if (!user || user.active === false) {
       return NextResponse.json(
         { message: 'Si el correo existe, recibirás un enlace para restablecer tu contraseña.' },
         { status: 200 }
@@ -45,13 +45,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const token = uuidv4();
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 1);
+    // Only the hash is stored; the raw token lives in the email link.
+    const token = generateResetToken();
+    const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
 
     await prisma.$executeRaw`
       UPDATE "User"
-      SET "passwordResetToken" = ${token},
+      SET "passwordResetToken" = ${hashResetToken(token)},
           "passwordResetTokenExpires" = ${expiresAt}
       WHERE id = ${user.id}
     `;
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2>Restablecer contraseña</h2>
-          <p>Hola ${user.name || user.username || ''},</p>
+          <p>Hola ${escapeHtml(user.name || user.username || '')},</p>
           <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en BetsyCRM.</p>
           <p>
             <a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; margin: 20px 0; font-weight: bold;">
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
           </p>
           <p>O copia y pega este enlace en tu navegador:</p>
           <p style="word-break: break-all; color: #3b82f6;">${resetUrl}</p>
-          <p>Este enlace expirará en <strong>1 hora</strong>.</p>
+          <p>Este enlace expirará en <strong>30 minutos</strong> y solo sirve una vez.</p>
           <p>Si no solicitaste este cambio, puedes ignorar este correo de forma segura. Tu contraseña no será modificada.</p>
           <p>¡Gracias!<br>El equipo de BetsyCRM</p>
         </div>

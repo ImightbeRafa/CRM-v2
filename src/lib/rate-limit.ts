@@ -274,3 +274,74 @@ export const chatWebhookInvalidSignatureRateLimit = createRateLimit({
   maxRequests: 60,
   identifier: 'chat-webhook-invalid-signature',
 });
+
+// --- Failure counters (login lockout, 2026-09-28) ---
+// Fixed-window counters that only move on failures (a limiter would also count successes).
+// Upstash when configured (shared by every container), otherwise this process's memory store.
+
+const COUNTER_TIMEOUT_MS = 1000;
+
+function withTimeout<T>(p: Promise<T>): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('counter_timeout')), COUNTER_TIMEOUT_MS)),
+  ]);
+}
+
+function memoryCounterGet(key: string): number {
+  const entry = memoryStore.get(`fail:${key}`);
+  if (!entry || Date.now() > entry.resetTime) return 0;
+  return entry.count;
+}
+
+function memoryCounterIncr(key: string, windowMs: number, limit: number): number {
+  const now = Date.now();
+  const k = `fail:${key}`;
+  const entry = memoryStore.get(k);
+  if (!entry || now > entry.resetTime) {
+    pruneMemoryStore(now);
+    memoryStore.set(k, { count: 1, resetTime: now + windowMs, limit });
+    return 1;
+  }
+  entry.count++;
+  return entry.count;
+}
+
+export async function failureCount(key: string): Promise<number> {
+  if (redis) {
+    try {
+      const v = await withTimeout(redis.get<number>(`failcount:${key}`));
+      return Math.max(Number(v) || 0, memoryCounterGet(key));
+    } catch {
+      // fall through
+    }
+  }
+  return memoryCounterGet(key);
+}
+
+/** `limit` only tells the memory store which entries are blocking (kept longest when pruning). */
+export async function recordFailure(key: string, windowMs: number, limit: number): Promise<number> {
+  const local = memoryCounterIncr(key, windowMs, limit);
+  if (redis) {
+    try {
+      const k = `failcount:${key}`;
+      const n = await withTimeout(redis.incr(k));
+      if (n === 1) await withTimeout(redis.pexpire(k, windowMs));
+      return Math.max(n, local);
+    } catch {
+      // memory already counted
+    }
+  }
+  return local;
+}
+
+export async function clearFailures(key: string): Promise<void> {
+  memoryStore.delete(`fail:${key}`);
+  if (redis) {
+    try {
+      await withTimeout(redis.del(`failcount:${key}`));
+    } catch {
+      // best effort
+    }
+  }
+}

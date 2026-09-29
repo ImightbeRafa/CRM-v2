@@ -5,7 +5,15 @@ import GoogleProvider from "next-auth/providers/google"
 import { prisma } from './db'
 import { verifyPassword, isBcryptHash } from './password'
 import { withoutTenantIsolation } from './tenantContext'
-import { rateLimit } from './rate-limit'
+import {
+  LOGIN_ERRORS,
+  burnPasswordCheck,
+  clearLoginFailures,
+  clientIpFromHeaders,
+  emailVerificationBlocks,
+  loginLocked,
+  recordLoginFailure,
+} from './auth-gates'
 import { selectActiveTenantId } from './membership-lifecycle'
 import { provisionOwnedTenantForExistingUser } from './tenant-provisioning'
 import { canAutoAcceptInvite, shouldJoinInviteInsteadOfProvisioning } from './team-invite'
@@ -92,7 +100,7 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       // @ts-ignore - NextAuth authorize type mismatch; runtime works correctly
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         const email = (credentials?.email || "").toString().trim()
         const password = (credentials?.password || "").toString()
         if (!email || !password) return null
@@ -101,15 +109,11 @@ export const authOptions: NextAuthOptions = {
           // Normalize email (trim and lowercase) for consistent lookup
           const normalizedEmail = email.toLowerCase()
 
-          // Per-email rate limit to slow password spraying (memory/Redis via rateLimit)
-          const loginLimit = rateLimit(`credentials:${normalizedEmail}`, {
-            windowMs: 15 * 60 * 1000,
-            maxRequests: 10,
-            identifier: 'credentials-auth',
-          })
-          if (!loginLimit.allowed) {
-            console.log(`[Credentials Auth] Rate limited: ${normalizedEmail}`)
-            return null
+          // Failed-login lockout (email+IP and IP; Upstash when configured). See auth-gates.ts.
+          const ip = clientIpFromHeaders(req?.headers as Record<string, unknown> | undefined)
+          if (await loginLocked(normalizedEmail, ip)) {
+            console.log('[Credentials Auth] Locked out (too many failures)')
+            throw new Error(LOGIN_ERRORS.locked)
           }
 
           // Find user by email (CASE-INSENSITIVE to handle legacy data with mixed casing)
@@ -127,6 +131,7 @@ export const authOptions: NextAuthOptions = {
               password: true,
               active: true,
               emailVerified: true,
+              createdAt: true,
               defaultTenantId: true,
               memberships: {
                 where: { isActive: true },
@@ -135,20 +140,13 @@ export const authOptions: NextAuthOptions = {
             }
           })
 
-          // Check if user exists
-          if (!user) {
-            console.log(`[Credentials Auth] User not found: ${normalizedEmail}`)
+          // Unknown and inactive accounts cost the same bcrypt time and count as failures.
+          if (!user || !user.active) {
+            console.log(`[Credentials Auth] ${user ? 'Inactive user' : 'User not found'}`)
+            await burnPasswordCheck(password)
+            await recordLoginFailure(normalizedEmail, ip)
             return null
           }
-
-          // Check if user is active
-          if (!user.active) {
-            console.log(`[Credentials Auth] User is inactive: ${normalizedEmail}`)
-            return null
-          }
-
-          // Email verification is non-blocking: users can log in immediately
-          // after registration and verify their email later.
 
           // Verify password (bcrypt only - plaintext support removed for security)
           let passwordValid = false;
@@ -164,8 +162,16 @@ export const authOptions: NextAuthOptions = {
           }
 
           if (!passwordValid) {
+            await recordLoginFailure(normalizedEmail, ip)
             return null
           }
+
+          // Only after the password checks out (never reveals verification state to a guesser).
+          // OFF until EMAIL_VERIFICATION_ENFORCE_FROM is set; accounts older than it are exempt.
+          if (emailVerificationBlocks(user)) {
+            throw new Error(LOGIN_ERRORS.emailNotVerified)
+          }
+          await clearLoginFailures(normalizedEmail, ip)
 
           // Pending TenantInvite wins even when user already has other memberships — but only
           // for a verified mailbox (knowing the address is not proof; see canAutoAcceptInvite).
@@ -231,6 +237,10 @@ export const authOptions: NextAuthOptions = {
             }))
           }
         } catch (error) {
+          // Gate errors reach the sign-in page (res.error) so it can explain what to do.
+          if (error instanceof Error && (Object.values(LOGIN_ERRORS) as string[]).includes(error.message)) {
+            throw error
+          }
           console.error('Auth error:', error)
           return null
         }

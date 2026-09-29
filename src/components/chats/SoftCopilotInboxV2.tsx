@@ -74,6 +74,7 @@ import {
 import { SoftTokenHealthBanners } from '@/components/chats/SoftTokenHealthBanners'
 import { ChatContextRail, normalizeRailTab, type ContextRailTab } from '@/components/chats/ChatContextRail'
 import { useCrmCatalog } from '@/components/chats/useCrmCatalog'
+import { useChatPresence } from '@/components/chats/useChatPresence'
 import { ChatClientPanel } from '@/components/chats/ChatClientPanel'
 import { AuroraMobileNav } from '@/components/aurora/AuroraMobileNav'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
@@ -112,6 +113,8 @@ export function SoftCopilotInboxV2() {
   const [threadLoadingId, setThreadLoadingId] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [messageInput, setMessageInput] = useState('')
+  // "Ana está respondiendo…" / "Ana también está viendo este chat" for the open chat.
+  const presenceText = useChatPresence(selectedConversationId, messageInput)
   const [sendError, setSendError] = useState<string | null>(null)
   const [failedOutboundId, setFailedOutboundId] = useState<string | null>(null)
   // Cliente · Agente (Phase 2a). Remembered; old 'detalle' / 'copilot' values map onto them.
@@ -1386,6 +1389,7 @@ export function SoftCopilotInboxV2() {
     ) : null
 
   const threadSharedProps = {
+    presence: presenceText,
     conversation: selectedConversation,
     messageInput,
     onMessageInput: setMessageInput,

@@ -80,6 +80,8 @@ export type SoftWaTemplateOption = {
 
 interface SoftThreadPaneProps {
   conversation: SoftConversation | null
+  /** Teammates in this chat right now ("Ana está respondiendo…"); empty when nobody. */
+  presence?: string
   messageInput: string
   onMessageInput: (value: string) => void
   onSend: (e: FormEvent) => void
@@ -268,6 +270,7 @@ export function SoftThreadPane({
   assignment,
   attachments,
   quickReplies,
+  presence,
 }: SoftThreadPaneProps) {
   // Stage labels / colours from Config › Chats (custom stages).
   const { chatStages, chatStageLabel, tags: tagDefs } = useCrmCatalog()
@@ -620,6 +623,12 @@ export function SoftThreadPane({
               <p className="mt-1 truncate text-[11px] text-slate-500" data-testid="soft-agent-label">
                 {conversation.agentLabel || 'Sin agente'}
               </p>
+              {presence ? (
+                <p className="mt-1 flex items-center gap-1.5 truncate text-[11px] font-medium text-emerald-700" data-testid="chat-presence" aria-live="polite">
+                  <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-emerald-500" aria-hidden />
+                  {presence}
+                </p>
+              ) : null}
 
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <span

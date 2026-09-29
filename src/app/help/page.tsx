@@ -79,7 +79,7 @@ export default function HelpIndex() {
         >
           <div className="flex items-start justify-between">
             <div>
-              <span className="mb-3 inline-block rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium">
+              <span className="mb-3 inline-block rounded-full bg-static-white/20 px-2.5 py-0.5 text-xs font-medium">
                 Comenzá acá
               </span>
               <h2 className="mb-2 text-xl font-bold">{featuredDoc.title}</h2>

@@ -3,10 +3,12 @@ import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { chatSendRateLimit } from '@/lib/rate-limit'
+import { deleteChatBlobs } from '@/lib/chat-media'
 import {
   QUICK_REPLIES_VERSION_KEY,
   quickRepliesFromSettings,
   quickRepliesVersionFromSettings,
+  quickReplyMediaPaths,
   sanitizeQuickReplies,
 } from '@/lib/chat-quick-replies'
 
@@ -73,6 +75,13 @@ export async function PUT(request: NextRequest) {
     `
     if (updated === 0) {
       return NextResponse.json({ error: 'Alguien más cambió las respuestas rápidas. Probá de nuevo.', code: 'stale' }, { status: 409 })
+    }
+
+    // Files dropped from the list are deleted (never left sendable or billable).
+    const kept = quickReplyMediaPaths(items)
+    const removed = [...quickReplyMediaPaths(quickRepliesFromSettings(before?.settings))].filter((p) => !kept.has(p))
+    if (removed.length) {
+      await deleteChatBlobs(removed).catch((err) => console.warn('[chat/quick-replies] blob cleanup failed', err))
     }
 
     await logAuditEvent({

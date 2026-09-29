@@ -347,10 +347,22 @@ export function SoftThreadPane({
     if (!slash) return
     const next = applyQuickReply(messageInput, slash, reply, conversation?.recipientName)
     onMessageInput(next.text)
-    if (next.media.length && attachments?.onSendQuickReplyMedia) {
-      setPendingFile(null)
-      setPendingRecent(null)
-      setPendingQuickMedia(next.media)
+    if (next.media.length) {
+      const filesAllowed =
+        Boolean(attachments?.onSendQuickReplyMedia) &&
+        conversation?.platform === 'whatsapp' &&
+        isSoftHumanComposerEnabled(agentMode)
+      if (filesAllowed) {
+        setPendingFile(null)
+        setPendingRecent(null)
+        setPendingQuickMedia(next.media)
+      } else {
+        setDropError(
+          conversation?.platform !== 'whatsapp'
+            ? 'Los archivos de esta respuesta solo se envían por WhatsApp: se insertó el texto.'
+            : 'El envío de archivos no está disponible: se insertó el texto.',
+        )
+      }
     }
     setSlash(null)
     setCaret(next.caret)

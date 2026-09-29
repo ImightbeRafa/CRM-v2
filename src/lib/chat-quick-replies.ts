@@ -33,11 +33,25 @@ export function quickReplyMediaPrefix(tenantId: string): string {
   return `${QUICK_REPLY_MEDIA_PREFIX}/${tenantId}/`
 }
 
-/** Only files this business uploaded for quick replies (never another tenant's path). */
-export function isQuickReplyMediaPath(path: unknown, tenantId?: string): path is string {
-  if (typeof path !== 'string') return false
-  if (!/^chat-quick-replies\/[A-Za-z0-9_-]{1,64}\/[A-Za-z0-9._-]{1,120}$/.test(path)) return false
-  return tenantId ? path.startsWith(quickReplyMediaPrefix(tenantId)) : true
+/** Exactly the shape the upload route generates: <prefix>/<tenant>/<random>.<jpg|png|pdf|mp4>. */
+const QUICK_REPLY_PATH_RE = /^chat-quick-replies\/[A-Za-z0-9_-]{1,64}\/[a-z0-9]{8,40}\.(jpg|png|pdf|mp4)$/
+
+/** Shape-only check (reading stored settings). Never use it to authorize access. */
+export function isQuickReplyMediaPathShape(path: unknown): path is string {
+  return typeof path === 'string' && QUICK_REPLY_PATH_RE.test(path)
+}
+
+/** Only files this business uploaded for quick replies. Fails closed without a tenant. */
+export function isQuickReplyMediaPath(path: unknown, tenantId: string): path is string {
+  if (!tenantId || !isQuickReplyMediaPathShape(path)) return false
+  return path.startsWith(quickReplyMediaPrefix(tenantId))
+}
+
+/** Every file path referenced by a quick-reply list. */
+export function quickReplyMediaPaths(items: ChatQuickReply[]): Set<string> {
+  const out = new Set<string>()
+  for (const item of items) for (const m of item.media ?? []) out.add(m.path)
+  return out
 }
 
 function sanitizeMedia(raw: unknown, tenantId?: string): QuickReplyMedia[] {
@@ -46,11 +60,13 @@ function sanitizeMedia(raw: unknown, tenantId?: string): QuickReplyMedia[] {
   for (const m of raw) {
     if (!m || typeof m !== 'object') continue
     const r = m as Record<string, unknown>
-    if (!isQuickReplyMediaPath(r.path, tenantId)) continue
+    const path = r.path
+    if (typeof path !== 'string') continue
+    if (tenantId ? !isQuickReplyMediaPath(path, tenantId) : !isQuickReplyMediaPathShape(path)) continue
     const mime = String(r.mime || '').toLowerCase()
     if (!/^(image\/(jpeg|png)|application\/pdf|video\/mp4)$/.test(mime)) continue
     out.push({
-      path: r.path,
+      path,
       mime,
       filename: String(r.filename || 'archivo').replace(/[\u0000-\u001f\u007f"\\/]/g, '').slice(0, 120) || 'archivo',
       size: Math.max(0, Math.min(Number(r.size) || 0, 50 * 1024 * 1024)),

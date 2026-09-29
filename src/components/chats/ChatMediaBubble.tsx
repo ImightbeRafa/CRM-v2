@@ -314,7 +314,7 @@ function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClos
         <a
           href={src}
           download
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-static-white/10 text-white hover:bg-static-white/20"
           aria-label="Descargar imagen"
         >
           <Download className="h-4 w-4" aria-hidden />
@@ -322,7 +322,7 @@ function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClos
         <button
           type="button"
           onClick={onClose}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-static-white/10 text-white hover:bg-static-white/20"
           aria-label="Cerrar"
         >
           <X className="h-4 w-4" aria-hidden />

@@ -286,6 +286,7 @@ export function QuickRepliesManager({
 
   const uploadMedia = async (file: File) => {
     if (!editing) return
+    const target = editing.id ?? '__new__'
     setUploading(true)
     setError(null)
     try {
@@ -298,7 +299,11 @@ export function QuickRepliesManager({
         return
       }
       const media = json.media
-      setEditing((prev) => (prev ? { ...prev, media: [...prev.media, media].slice(0, QUICK_REPLY_MAX_MEDIA) } : prev))
+      setEditing((prev) =>
+        prev && (prev.id ?? '__new__') === target
+          ? { ...prev, media: [...prev.media, media].slice(0, QUICK_REPLY_MAX_MEDIA) }
+          : prev,
+      )
     } catch {
       setError('Sin conexión. Probá de nuevo.')
     } finally {

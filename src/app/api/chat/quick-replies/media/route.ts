@@ -1,16 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomBytes } from 'node:crypto'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
-import { chatSendRateLimit } from '@/lib/rate-limit'
-import { classifyOutboundMedia, WA_OUTBOUND_LIMITS } from '@/lib/chat-outbound-media'
-import { putChatMediaToBlob, readChatMediaFromBlob, safeMediaServeHeaders } from '@/lib/chat-media'
-import { isQuickReplyMediaPath, quickReplyMediaPrefix } from '@/lib/chat-quick-replies'
+import { createIdentifierRateLimit } from '@/lib/rate-limit'
+import { isTenantFeatureNotDisabled } from '@/lib/feature-flags'
+import { logAuditEvent } from '@/lib/auditLogger'
+import { CHAT_OUTBOUND_MEDIA_FLAG, classifyOutboundMedia, WA_OUTBOUND_LIMITS } from '@/lib/chat-outbound-media'
+import { chatBlobUsage, putChatMediaToBlob, readChatMediaFromBlob, safeMediaServeHeaders } from '@/lib/chat-media'
+import { QUICK_REPLY_MAX_COUNT, QUICK_REPLY_MAX_MEDIA, isQuickReplyMediaPath, quickReplyMediaPrefix } from '@/lib/chat-quick-replies'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const MAX_BYTES = WA_OUTBOUND_LIMITS.document + 256 * 1024
-const ALLOWED_KINDS = new Set(['image', 'document', 'video'])
+/** Same set the quick-reply list keeps (photos, PDF, MP4): no Office / macro formats. */
+const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'application/pdf', 'video/mp4'])
+/** Per business: enough for every reply to carry its files, bounded for storage cost. */
+const TENANT_MAX_FILES = QUICK_REPLY_MAX_COUNT * QUICK_REPLY_MAX_MEDIA
+const TENANT_MAX_BYTES = 500 * 1024 * 1024
+
+const uploadRateLimit = createIdentifierRateLimit({
+  windowMs: 60 * 1000,
+  maxRequests: 10,
+  identifier: 'chat-quick-reply-upload',
+})
 
 /**
  * POST /api/chat/quick-replies/media (multipart `file`) — a photo / PDF / video for a quick
@@ -21,7 +33,11 @@ export async function POST(request: NextRequest) {
   const auth = await authenticateAPIWithPermission(request, 'update_config')
   if (!auth.ok) return auth.response
   try {
-    const rate = await chatSendRateLimit(`${auth.tenantId}:${auth.userId}`)
+    if (!(await isTenantFeatureNotDisabled(auth.tenantId, CHAT_OUTBOUND_MEDIA_FLAG))) {
+      return NextResponse.json({ error: 'El envío de archivos está desactivado para este negocio.' }, { status: 403 })
+    }
+    // Per business (not per person): every admin shares one budget.
+    const rate = await uploadRateLimit(auth.tenantId)
     if (!rate.allowed) {
       return NextResponse.json({ error: 'Demasiadas subidas. Esperá un momento.' }, { status: 429, headers: rate.headers })
     }
@@ -36,8 +52,15 @@ export async function POST(request: NextRequest) {
     const filename = typeof (file as File).name === 'string' ? (file as File).name : 'archivo'
     const media = classifyOutboundMedia({ filename, bytes })
     if (!media.ok) return NextResponse.json({ error: media.error }, { status: 400 })
-    if (!ALLOWED_KINDS.has(media.kind)) {
-      return NextResponse.json({ error: 'Adjuntá una foto (JPG/PNG), un PDF o un video.' }, { status: 400 })
+    if (!ALLOWED_MIME.has(media.mime)) {
+      return NextResponse.json({ error: 'Adjuntá una foto (JPG/PNG), un PDF o un video MP4.' }, { status: 400 })
+    }
+    const usage = await chatBlobUsage(quickReplyMediaPrefix(auth.tenantId))
+    if (usage.count >= TENANT_MAX_FILES || usage.bytes + media.size > TENANT_MAX_BYTES) {
+      return NextResponse.json(
+        { error: 'Se alcanzó el espacio para archivos de respuestas rápidas. Quitá archivos que ya no uses.' },
+        { status: 413 },
+      )
     }
 
     const ext = media.filename.split('.').pop() || 'bin'
@@ -49,6 +72,16 @@ export async function POST(request: NextRequest) {
       contentType: media.mime,
       pathname,
     })
+    await logAuditEvent({
+      action: 'CREATE',
+      entityType: 'Tenant',
+      entityId: auth.tenantId,
+      description: 'Archivo de respuesta rápida subido',
+      newValues: { path: pathname, mime: media.mime, size: media.size },
+      userId: auth.userId,
+      userRole: auth.role,
+      tenantId: auth.tenantId,
+    }).catch(() => {})
     return NextResponse.json({
       success: true,
       media: { path: pathname, mime: media.mime, filename: media.filename, size: media.size },
@@ -73,7 +106,7 @@ export async function GET(request: NextRequest) {
     return new NextResponse(new Uint8Array(blob.bytes), {
       headers: {
         ...safeMediaServeHeaders(contentType, path.split('/').pop()),
-        'Cache-Control': 'private, max-age=86400',
+        'Cache-Control': 'private, max-age=3600',
         'X-Content-Type-Options': 'nosniff',
         'Content-Length': String(blob.bytes.length),
       },

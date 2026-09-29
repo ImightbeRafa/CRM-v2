@@ -398,7 +398,7 @@ export function InvoiceGenerator({
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="text-white hover:bg-white/20"
+              className="text-white hover:bg-static-white/20"
             >
               <X className="w-4 h-4" />
             </Button>

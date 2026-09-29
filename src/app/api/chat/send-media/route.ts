@@ -5,7 +5,8 @@ import { isTenantFeatureNotDisabled } from '@/lib/feature-flags'
 import { CHAT_OUTBOUND_MEDIA_FLAG, WA_OUTBOUND_LIMITS } from '@/lib/chat-outbound-media'
 import { filenameForMime, loadStoredChatMediaBytes, sendWhatsAppMediaBytes, type SendMediaResult } from '@/lib/chat-send-media-core'
 import { readChatMediaFromBlob } from '@/lib/chat-media'
-import { isQuickReplyMediaPath } from '@/lib/chat-quick-replies'
+import { isQuickReplyMediaPath, quickRepliesFromSettings, quickReplyMediaPaths } from '@/lib/chat-quick-replies'
+import { prisma } from '@/lib/db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -81,6 +82,11 @@ export async function POST(request: NextRequest) {
       // A file saved with a quick reply (this business's private path only).
       if (quickReplyMediaPath) {
         if (!isQuickReplyMediaPath(quickReplyMediaPath, tenantId)) return jsonError('Archivo no encontrado', 404)
+        // Only files still attached to one of the business's quick replies.
+        const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { settings: true } })
+        if (!quickReplyMediaPaths(quickRepliesFromSettings(tenant?.settings)).has(quickReplyMediaPath)) {
+          return jsonError('Ese archivo ya no está en las respuestas rápidas.', 404)
+        }
         let stored: { bytes: Buffer; contentType: string | null }
         try {
           stored = await readChatMediaFromBlob({ pathname: quickReplyMediaPath })
@@ -97,7 +103,7 @@ export async function POST(request: NextRequest) {
           filename: filenameForMime(String(body?.filename || '').slice(0, 120) || quickReplyMediaPath.split('/').pop(), stored.contentType, 'archivo'),
           caption: String(body?.caption || ''),
           clientRequestId,
-          metadata: { quickReplyMedia: true },
+          metadata: { quickReplyMedia: true, quickReplyMediaPath },
         })
         return toResponse(result, clientRequestId)
       }

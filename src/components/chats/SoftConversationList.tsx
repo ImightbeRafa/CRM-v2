@@ -193,7 +193,7 @@ export function SoftConversationList({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
               {bucket && onBucketChange ? (
-                <ChatViewMenu bucket={bucket} onBucketChange={onBucketChange} count={openCount} monitor={monitor} />
+                <ChatViewMenu bucket={bucket} onBucketChange={onBucketChange} count={conversations.length} monitor={monitor} />
               ) : (
                 <h2 className="text-[15px] font-semibold text-slate-900">{`Abiertos · ${openCount}`}</h2>
               )}

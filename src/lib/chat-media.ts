@@ -3,7 +3,7 @@
  * Never import bot modules; never persist Meta CDN URLs on ChatMessage.
  */
 
-import { get, put, type BlobAccessType } from '@vercel/blob'
+import { del, get, list, put, type BlobAccessType } from '@vercel/blob'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 
 // WhatsApp caps video/audio at 16 MB; 25 MB leaves headroom. Documents above this
@@ -259,6 +259,10 @@ export async function putChatMediaToBlob(opts: {
   const token = opts.token ?? process.env.BLOB_READ_WRITE_TOKEN
   if (!token) throw new Error('BLOB_READ_WRITE_TOKEN is required for chat media cache')
 
+  // Only chat folders: this store also holds the database backups.
+  if (opts.pathname && !/^(chat-media|chat-quick-replies)\//.test(opts.pathname)) {
+    throw new Error('Refusing to write outside the chat media folders')
+  }
   const pathname = opts.pathname ?? chatMediaBlobPath(opts.tenantId, opts.messageId)
   const access: BlobAccessType = 'private'
   try {
@@ -267,7 +271,8 @@ export async function putChatMediaToBlob(opts: {
       token,
       contentType: opts.contentType,
       addRandomSuffix: false,
-      allowOverwrite: true,
+      // Quick-reply files get fresh random names: never overwrite one.
+      allowOverwrite: !opts.pathname,
     })
     return { pathname: result.pathname, size: opts.bytes.length }
   } catch (err) {
@@ -556,4 +561,28 @@ export function parseSingleByteRange(
   if (startRaw !== '' && endRaw !== '' && Number(endRaw) < start) return null
   if (start >= size) return 'unsatisfiable'
   return { start, end }
+}
+
+/** Count / bytes of private blobs under a prefix (quota checks). */
+export async function chatBlobUsage(prefix: string, token = process.env.BLOB_READ_WRITE_TOKEN): Promise<{ count: number; bytes: number }> {
+  if (!token) throw new Error('BLOB_READ_WRITE_TOKEN is required')
+  let cursor: string | undefined
+  let count = 0
+  let bytes = 0
+  do {
+    const page = await list({ prefix, cursor, limit: 1000, token })
+    for (const b of page.blobs) {
+      count += 1
+      bytes += b.size
+    }
+    cursor = page.hasMore ? page.cursor : undefined
+  } while (cursor)
+  return { count, bytes }
+}
+
+/** Delete chat blobs (only chat folders; best-effort). */
+export async function deleteChatBlobs(pathnames: string[], token = process.env.BLOB_READ_WRITE_TOKEN): Promise<void> {
+  const safe = pathnames.filter((p) => /^(chat-media|chat-quick-replies)\//.test(p))
+  if (!safe.length || !token) return
+  await del(safe, { token })
 }

@@ -12,7 +12,7 @@ type BetsyWordmarkProps = {
 export function BetsyWordmark({ tone = 'light', className = '', asText = false }: BetsyWordmarkProps) {
   const gradient =
     tone === 'dark'
-      ? 'from-[#A99BFF] to-au-tint-d6a8ff'
+      ? 'from-[#A99BFF] to-[#D6A8FF]'
       : 'from-[#5B6CFF] to-[#8B5CF6]'
   const cls = `bg-gradient-to-r ${gradient} bg-clip-text text-[28px] font-bold leading-none tracking-tight text-transparent ${className}`
   if (asText) return <span className={cls}>Betsy</span>

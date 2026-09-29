@@ -8,7 +8,8 @@ const { classifyHex } = require('../src/lib/theme/palette.cjs')
 
 const ROOT = path.join(__dirname, '..', 'src')
 const SKIP_DIRS = new Set(['logistics', 'home', '__tests__', 'node_modules'])
-const SKIP_FILES = new Set(['ThemeChoice.tsx'])
+// Brand art drawn on always-dark panels keeps its literal colors.
+const SKIP_FILES = new Set(['ThemeChoice.tsx', 'BetsyWordmark.tsx'])
 const TOKENS_FILE = path.join(ROOT, 'lib', 'theme', 'aurora-hex-tokens.json')
 const CLASS_RE = /\b(bg|text|border|ring|ring-offset|from|via|to|fill|stroke|divide|outline|placeholder|caret|decoration)-\[#([0-9A-Fa-f]{6})\]/g
 

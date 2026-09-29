@@ -263,13 +263,16 @@ describe('drag & drop / paste images into a chat', () => {
 describe('quick replies with files', () => {
   test('only this business’s quick-reply paths are accepted', async () => {
     const { isQuickReplyMediaPath } = await import('../chat-quick-replies')
-    assert.equal(isQuickReplyMediaPath('chat-quick-replies/t1/abc.jpg', 't1'), true)
-    assert.equal(isQuickReplyMediaPath('chat-quick-replies/t2/abc.jpg', 't1'), false)
+    assert.equal(isQuickReplyMediaPath('chat-quick-replies/t1/mg4x0a1b2c3d4e5f.jpg', 't1'), true)
+    assert.equal(isQuickReplyMediaPath('chat-quick-replies/t2/mg4x0a1b2c3d4e5f.jpg', 't1'), false)
     assert.equal(isQuickReplyMediaPath('chat-media/t1/msg', 't1'), false)
-    assert.equal(isQuickReplyMediaPath('chat-quick-replies/t1/../x.jpg', 't1'), false)
+    // SecureDog L-1 / L-2: dot segments, other extensions and a missing tenant are rejected.
+    for (const bad of ['chat-quick-replies/t1/..', 'chat-quick-replies/t1/.', 'chat-quick-replies/t1/...', 'chat-quick-replies/t1/../x.jpg', 'chat-quick-replies/t1/abcdefgh.exe'])
+      assert.equal(isQuickReplyMediaPath(bad, 't1'), false, bad)
+    assert.equal(isQuickReplyMediaPath('chat-quick-replies/t1/mg4x0a1b2c3d4e5f.jpg', ''), false)
   })
   test('sanitize keeps up to 3 valid files, allows image-only replies, drops foreign paths', () => {
-    const media = (n: number, t = 't1') => ({ path: `chat-quick-replies/${t}/f${n}.jpg`, mime: 'image/jpeg', filename: `f${n}.jpg`, size: 10 })
+    const media = (n: number, t = 't1') => ({ path: `chat-quick-replies/${t}/abcdefg${n}.jpg`, mime: 'image/jpeg', filename: `f${n}.jpg`, size: 10 })
     const { items } = sanitizeQuickReplies(
       [
         { shortcut: 'catalogo', text: '', media: [media(1), media(2), media(3), media(4)] },
@@ -293,7 +296,7 @@ describe('quick replies with files', () => {
   test('picking a reply with files stages them; text becomes the first caption when it fits', () => {
     const out = applyQuickReply('/cat', { query: 'cat', start: 0 }, {
       id: 'x', shortcut: 'catalogo', text: 'Catálogo',
-      media: [{ path: 'chat-quick-replies/t/a.jpg', mime: 'image/jpeg', filename: 'a.jpg', size: 1 }],
+      media: [{ path: 'chat-quick-replies/t/abcdefgh.jpg', mime: 'image/jpeg', filename: 'a.jpg', size: 1 }],
     })
     assert.equal(out.media.length, 1)
     const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')
@@ -321,5 +324,25 @@ describe('calmer chat layout', () => {
     const { sidebarScope, defaultCollapsed } = await import('../../components/aurora/AuroraSidebar')
     assert.equal(defaultCollapsed(sidebarScope('/chats')), true)
     assert.equal(defaultCollapsed(sidebarScope('/ventas')), false)
+  })
+})
+
+describe('quick-reply files: SecureDog M-1 / L-3 / L-4', () => {
+  test('uploads: per-business limiter, quota, flag, photo/PDF/MP4 only, audited', () => {
+    const r = read('src/app/api/chat/quick-replies/media/route.ts')
+    assert.match(r, /uploadRateLimit\(auth\.tenantId\)/)
+    assert.match(r, /chatBlobUsage\(quickReplyMediaPrefix\(auth\.tenantId\)\)/)
+    assert.match(r, /isTenantFeatureNotDisabled\(auth\.tenantId, CHAT_OUTBOUND_MEDIA_FLAG\)/)
+    assert.match(r, /ALLOWED_MIME = new Set\(\['image\/jpeg', 'image\/png', 'application\/pdf', 'video\/mp4'\]\)/)
+    assert.match(r, /logAuditEvent/)
+  })
+  test('removed files are deleted; only files still in the list can be sent', () => {
+    assert.match(read('src/app/api/chat/quick-replies/route.ts'), /deleteChatBlobs\(removed\)/)
+    assert.match(read('src/app/api/chat/send-media/route.ts'), /quickReplyMediaPaths\(quickRepliesFromSettings\(tenant\?\.settings\)\)\.has\(quickReplyMediaPath\)/)
+  })
+  test('blob writes / deletes stay inside the chat folders (backups share the store)', () => {
+    const m = read('src/lib/chat-media.ts')
+    assert.match(m, /Refusing to write outside the chat media folders/)
+    assert.match(m, /allowOverwrite: !opts\.pathname/)
   })
 })

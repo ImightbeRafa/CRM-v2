@@ -1706,6 +1706,7 @@ model ChatWorkspaceSettings {
   autoCloseDays       Int?
   autoCloseStageKey   String?
   reopenOnInbound     Boolean   @default(false)
+  reopenEnabledAt     DateTime?
   version             Int       @default(1)
   updatedByUserId     String?
   createdAt           DateTime  @default(now())

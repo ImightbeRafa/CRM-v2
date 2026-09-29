@@ -1,5 +1,7 @@
 'use client'
 
+import { useSearchParams } from 'next/navigation'
+
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   appendOptimisticOutbound,
@@ -173,6 +175,8 @@ export function SoftCopilotInboxV2() {
   const pendingFileRequestIds = useRef(new Map<string, string>())
   /** Server search hits for the active query; re-merged after a reconcile replaces the list. */
   const searchHitsRef = useRef<ChatConversationListItemDto[]>([])
+  /** Rows loaded outside the pages (deep link, Pospuestos): kept when the first page reloads. */
+  const pinnedDtosRef = useRef<ChatConversationListItemDto[]>([])
   const pollInFlightRef = useRef(false)
   const selectedConversationIdRef = useRef<string | null>(null)
   const threadMessagesRef = useRef<Record<string, ChatInboxMessage[]>>({})
@@ -253,7 +257,7 @@ export function SoftCopilotInboxV2() {
       opts?.replace
         ? (() => {
             const fresh = mergeListDtoIntoMap(new Map(), parsed.data.conversations!)
-            const keep = searchHitsRef.current.filter((c) => !fresh.has(c.id))
+            const keep = [...searchHitsRef.current, ...pinnedDtosRef.current].filter((c) => !fresh.has(c.id))
             return keep.length ? mergeListDtoIntoMap(fresh, keep) : fresh
           })()
         : mergeListDtoIntoMap(prev, parsed.data.conversations!),
@@ -685,24 +689,58 @@ export function SoftCopilotInboxV2() {
     })
   }, [dtoMap, threadMessages, accounts])
 
-  // `/chats?c=<id>` (bell notification): open that chat once the list has it. Read once; the id
-  // only selects a chat already returned by this business's list, so it cannot reach another's.
-  const deepLinkRef = useRef<string | null | undefined>(undefined)
-  useEffect(() => {
-    if (deepLinkRef.current === undefined) {
-      try {
-        const c = new URLSearchParams(window.location.search).get('c')
-        deepLinkRef.current = c && /^[A-Za-z0-9_-]{8,64}$/.test(c) ? c : null
-      } catch {
-        deepLinkRef.current = null
+  /** Fetches rows by list query (session tenant) and pins them into the list. */
+  const pinRows = useCallback(async (qs: string): Promise<ChatConversationListItemDto[]> => {
+    try {
+      const res = await fetch(`/api/chat/conversations?${qs}`, { credentials: 'same-origin', cache: 'no-store' })
+      const parsed = await parseApiJson<{ success?: boolean; conversations?: ChatConversationListItemDto[] }>(res)
+      const rows = parsed.ok && res.ok && parsed.data.success ? parsed.data.conversations ?? [] : []
+      if (rows.length) {
+        const ids = new Set(rows.map((r) => r.id))
+        pinnedDtosRef.current = [...pinnedDtosRef.current.filter((r) => !ids.has(r.id)), ...rows].slice(-200)
+        setDtoMap((prev) => {
+          const missing = rows.filter((c) => !prev.has(c.id))
+          return missing.length ? mergeListDtoIntoMap(prev, missing) : prev
+        })
       }
+      return rows
+    } catch {
+      return []
     }
-    const id = deepLinkRef.current
-    if (!id || !dtoMap.has(id)) return
-    deepLinkRef.current = null
-    openConversationById(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot open when the chat appears
-  }, [dtoMap])
+  }, [])
+
+  // `/chats?c=<id>` (bell notification). Reactive to the URL, so it also works when already on
+  // /chats (Next keeps this component mounted). Not in the loaded pages → fetched by id, which the
+  // list route scopes to the session's business (another business's id finds nothing).
+  const searchParams = useSearchParams()
+  const [deepLinkId, setDeepLinkId] = useState<string | null>(null)
+  const deepLinkFetched = useRef<string | null>(null)
+  useEffect(() => {
+    const c = searchParams?.get('c')
+    if (c && /^[A-Za-z0-9_-]{8,64}$/.test(c)) setDeepLinkId(c)
+  }, [searchParams])
+  useEffect(() => {
+    if (!deepLinkId) return
+    if (dtoMap.has(deepLinkId)) {
+      setDeepLinkId(null)
+      openConversationById(deepLinkId)
+      return
+    }
+    if (deepLinkFetched.current === deepLinkId) return
+    deepLinkFetched.current = deepLinkId
+    void pinRows(new URLSearchParams({ id: deepLinkId, limit: '1' }).toString()).then((rows) => {
+      if (!rows.length) {
+        setDeepLinkId(null)
+        toast({ title: 'Ese chat ya no está disponible' })
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- opens once the row is in the map
+  }, [deepLinkId, dtoMap])
+
+  // Pospuestos: snoozed chats can be far down the list; load them all when the bucket opens.
+  useEffect(() => {
+    if (bucket === 'pospuestos' && snoozeAvailable) void pinRows('snoozed=1&limit=50')
+  }, [bucket, snoozeAvailable, pinRows])
 
   const selectedConversation = useMemo(() => {
     if (!selectedConversationId) return null

@@ -7,6 +7,8 @@
 -- connects as the owner and is unaffected). The app tolerates these tables being absent
 -- (features stay hidden), so apply order vs deploy does not matter here.
 --
+-- Requires 035 (foreign key to CrmNote): apply 035 first.
+--
 -- HUMAN APPROVAL REQUIRED BEFORE EXECUTION AGAINST SHARED SUPABASE.
 -- Gated: BETSY_V2_APPLY_FILES=036 — never DEFAULT_APPLY_FILES. DO NOT run prisma db push / migrate.
 --
@@ -66,8 +68,9 @@ CREATE TABLE IF NOT EXISTS public."CrmTask" (
   CONSTRAINT "CrmTask_completedByUserId_fkey" FOREIGN KEY ("completedByUserId") REFERENCES public."User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT "CrmTask_kind_check" CHECK ("kind" IN ('task', 'reminder', 'follow_up')),
   CONSTRAINT "CrmTask_status_check" CHECK ("status" IN ('open', 'done', 'canceled')),
-  CONSTRAINT "CrmTask_title_check" CHECK (char_length("title") BETWEEN 1 AND 200),
-  CONSTRAINT "CrmTask_target_check" CHECK ("conversationId" IS NOT NULL OR "clientId" IS NOT NULL)
+  -- No "chat or client required" CHECK: deleting a chat sets conversationId to NULL and must never
+  -- fail on a task (the app always creates tasks with a chat; orphans simply stop showing).
+  CONSTRAINT "CrmTask_title_check" CHECK (char_length("title") BETWEEN 1 AND 200)
 );
 CREATE INDEX IF NOT EXISTS "CrmTask_tenant_assignee_idx" ON public."CrmTask" ("tenantId", "assigneeUserId", "status", "dueAt");
 CREATE INDEX IF NOT EXISTS "CrmTask_tenant_conversation_idx" ON public."CrmTask" ("tenantId", "conversationId") WHERE "status" = 'open' AND "conversationId" IS NOT NULL;
@@ -115,6 +118,8 @@ CREATE TABLE IF NOT EXISTS public."ChatWorkspaceSettings" (
   "autoCloseDays" integer NULL,
   "autoCloseStageKey" text NULL,
   "reopenOnInbound" boolean NOT NULL DEFAULT false,
+  -- Reopen only applies to customer messages after it was turned on (never the backlog).
+  "reopenEnabledAt" timestamp(3) without time zone NULL,
   "version" integer NOT NULL DEFAULT 1,
   "updatedByUserId" text NULL,
   "createdAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,

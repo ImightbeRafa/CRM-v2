@@ -68,7 +68,7 @@ export function AuroraBell() {
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <h2 className="text-[14px] font-semibold">Avisos</h2>
               {notes.unread > 0 ? (
-                <button type="button" onClick={() => void notes.markRead()} className="text-[11px] font-medium text-[#5B6CFF] hover:underline">
+                <button type="button" onClick={() => void notes.markRead()} className="text-[11px] font-medium text-au-ink-5b6cff hover:underline">
                   Marcar todo leído
                 </button>
               ) : dot ? (
@@ -99,7 +99,7 @@ export function AuroraBell() {
                       className={`flex gap-3 px-4 py-2.5 text-[13px] outline-none transition-colors duration-150 hover:bg-slate-50 focus-visible:bg-slate-50 ${n.read ? 'text-slate-500' : 'text-slate-900'}`}
                     >
                       <span
-                        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${n.read ? 'bg-slate-100 text-slate-400' : 'bg-[#EEF0FF] text-[#5B6CFF]'}`}
+                        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${n.read ? 'bg-slate-100 text-slate-400' : 'bg-au-tint-eef0ff text-au-ink-5b6cff'}`}
                         aria-hidden
                       >
                         {n.kind === 'mention' ? <AtSign className="h-3.5 w-3.5" /> : <ListChecks className="h-3.5 w-3.5" />}

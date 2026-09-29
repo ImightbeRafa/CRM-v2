@@ -24,6 +24,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const result = await updateTask({
     tenantId: auth.tenantId,
     userId: auth.userId,
+    role: auth.role,
     taskId: id,
     status: json?.status,
     title: json?.title,
@@ -41,7 +42,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   const tooMany = await limited(auth.tenantId, auth.userId)
   if (tooMany) return tooMany
   const { id } = await context.params
-  const result = await updateTask({ tenantId: auth.tenantId, userId: auth.userId, taskId: id, status: 'canceled' })
+  const result = await updateTask({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role, taskId: id, status: 'canceled' })
   if (!result.ok) return NextResponse.json({ success: false, error: result.error }, { status: result.status })
   return NextResponse.json({ success: true })
 }

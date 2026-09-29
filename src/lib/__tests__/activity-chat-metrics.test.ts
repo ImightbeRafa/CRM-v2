@@ -28,10 +28,14 @@ test('first response: positive gap only, one dedupe key per chat', () => {
   assert.equal(firstResponseDedupeKey('c1'), 'first_response:c1')
 })
 
-test('only the send that IS the first human reply records it; AI outbound never counts', () => {
+test('only a true first reply of a NEW chat records it; any earlier outbound (app, AI, pre-031) skips', () => {
   const src = read('src/lib/chat-send-metrics.ts')
-  assert.match(src, /direction: 'outbound', senderUserId: \{ not: null \}/)
-  assert.match(src, /if \(!firstHuman \|\| firstHuman\.id !== args\.messageId\) return/)
+  // Only human sends call this (send paths guard on senderUser); here the FIRST outbound of any
+  // kind after the first inbound must be this very message.
+  assert.match(src, /direction: 'outbound', sentAt: \{ gte: firstInbound\.sentAt \}/)
+  assert.match(src, /if \(!firstOutbound \|\| firstOutbound\.id !== args\.messageId\) return settle\(memoKey\)/)
+  assert.match(src, /firstInbound\.sentAt\.getTime\(\) < FIRST_RESPONSE_SINCE\.getTime\(\)\) return settle\(memoKey\)/)
+  assert.match(src, /if \(settledChats\.has\(memoKey\)\) return/, 'settled chats cost no more queries')
   assert.match(src, /dedupeKey,\n\s*\}\)/)
   // Every query is tenant-scoped.
   assert.equal((src.match(/where: \{ tenantId: args\.tenantId,/g) || []).length, 3)

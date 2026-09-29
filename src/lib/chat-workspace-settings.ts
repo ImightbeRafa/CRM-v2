@@ -26,6 +26,7 @@ export function workspaceSettingsKnownMissing(): boolean {
 
 export type StoredWorkspaceSettings = WorkspaceSettingsInput & {
   assignmentEnabledAt: Date | null
+  reopenEnabledAt: Date | null
   rrCursorUserId: string | null
   version: number
 }
@@ -41,6 +42,7 @@ type Row = {
   autoCloseDays: number | null
   autoCloseStageKey: string | null
   reopenOnInbound: boolean
+  reopenEnabledAt?: Date | null
   version: number
 }
 
@@ -55,13 +57,14 @@ export function rowToSettings(row: Row): StoredWorkspaceSettings {
     autoCloseStageKey: row.autoCloseStageKey,
     reopenOnInbound: row.reopenOnInbound,
     assignmentEnabledAt: row.assignmentEnabledAt,
+    reopenEnabledAt: row.reopenEnabledAt ?? null,
     rrCursorUserId: row.rrCursorUserId,
     version: row.version,
   }
 }
 
 export async function loadWorkspaceSettings(tenantId: string): Promise<{ available: boolean; settings: StoredWorkspaceSettings }> {
-  const defaults: StoredWorkspaceSettings = { ...DEFAULT_WORKSPACE_SETTINGS, assignmentEnabledAt: null, rrCursorUserId: null, version: 0 }
+  const defaults: StoredWorkspaceSettings = { ...DEFAULT_WORKSPACE_SETTINGS, assignmentEnabledAt: null, reopenEnabledAt: null, rrCursorUserId: null, version: 0 }
   if (workspaceSettingsKnownMissing()) return { available: false, settings: defaults }
   try {
     const row = await prisma.chatWorkspaceSettings.findUnique({ where: { tenantId } })
@@ -84,11 +87,13 @@ export async function saveWorkspaceSettings(
     return { ok: false, status: 400, error: 'Ninguna de las personas elegidas puede atender chats.' }
   }
   try {
-    const prev = await prisma.chatWorkspaceSettings.findUnique({ where: { tenantId }, select: { assignmentMode: true, assignmentEnabledAt: true } })
+    const prev = await prisma.chatWorkspaceSettings.findUnique({ where: { tenantId }, select: { assignmentMode: true, assignmentEnabledAt: true, reopenOnInbound: true, reopenEnabledAt: true } })
     const wasOn = Boolean(prev && prev.assignmentMode !== 'off')
     const isOn = input.assignmentMode !== 'off'
     // Turning rules on never touches the backlog: only chats whose customer writes after this.
     const assignmentEnabledAt = isOn ? (wasOn && prev?.assignmentEnabledAt ? prev.assignmentEnabledAt : new Date()) : null
+    // Same for reopen: only customers who write after it is turned on reopen their closed chat.
+    const reopenEnabledAt = input.reopenOnInbound ? (prev?.reopenOnInbound && prev.reopenEnabledAt ? prev.reopenEnabledAt : new Date()) : null
     const data = {
       assignmentMode: input.assignmentMode,
       assigneeUserIds: members,
@@ -99,6 +104,7 @@ export async function saveWorkspaceSettings(
       autoCloseDays: input.autoCloseDays,
       autoCloseStageKey: input.autoCloseStageKey,
       reopenOnInbound: input.reopenOnInbound,
+      reopenEnabledAt,
       updatedByUserId: userId,
     }
     const row = await prisma.chatWorkspaceSettings.upsert({

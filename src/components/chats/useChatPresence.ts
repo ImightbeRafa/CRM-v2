@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { presenceLabel, type PresenceState } from '@/lib/chat-presence'
+import { presenceLabel, type PresenceState } from '@/lib/chat-presence-label'
 
 const HEARTBEAT_MS = 15_000
 const POLL_MS = 5_000

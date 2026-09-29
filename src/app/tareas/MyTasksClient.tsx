@@ -48,8 +48,11 @@ export function MyTasksClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: task.status === 'done' ? 'open' : 'done' }),
       })
-      if (!res.ok) setError('No se pudo actualizar la tarea.')
       await load()
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as { error?: string } | null
+        setError(json?.error || 'No se pudo actualizar la tarea.')
+      }
     } finally {
       setBusyId(null)
     }

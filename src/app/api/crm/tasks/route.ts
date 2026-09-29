@@ -24,13 +24,13 @@ export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams
   const includeDone = sp.get('includeDone') === '1'
   if (sp.get('mine') === '1') {
-    const result = await listTasks({ tenantId: auth.tenantId, assigneeUserId: auth.userId, includeDone })
+    const result = await listTasks({ tenantId: auth.tenantId, assigneeUserId: auth.userId, includeDone, viewer: { userId: auth.userId, role: auth.role } })
     return NextResponse.json({ success: true, ...result }, { headers: { 'Cache-Control': 'no-store' } })
   }
   const conversationId = sp.get('conversationId') || ''
   const conversation = await conversationFor(auth.tenantId, conversationId)
   if (!conversation) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 })
-  const result = await listTasks({ tenantId: auth.tenantId, conversationId: conversation.id, clientId: conversation.clientId, includeDone })
+  const result = await listTasks({ tenantId: auth.tenantId, conversationId: conversation.id, clientId: conversation.clientId, includeDone, viewer: { userId: auth.userId, role: auth.role } })
   return NextResponse.json({ success: true, ...result }, { headers: { 'Cache-Control': 'no-store' } })
 }
 

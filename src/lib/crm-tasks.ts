@@ -77,6 +77,8 @@ export type TaskDto = {
   completedAt: string | null
   /** Chat / client name for "Mis tareas". */
   context: string | null
+  /** Viewer may cancel / edit / reassign (creator, assignee, OWNER, ADMIN). */
+  canManage: boolean
 }
 
 const taskSelect = {
@@ -107,7 +109,9 @@ type TaskRow = {
   completedAt: Date | null
 }
 
-async function toDtos(tenantId: string, rows: TaskRow[], now = new Date()): Promise<TaskDto[]> {
+type TaskViewer = { userId: string; role: string }
+
+async function toDtos(tenantId: string, rows: TaskRow[], viewer: TaskViewer | null, now = new Date()): Promise<TaskDto[]> {
   const userIds = [...new Set(rows.flatMap((r) => [r.assigneeUserId, r.createdByUserId]).filter((x): x is string => Boolean(x)))]
   const convIds = [...new Set(rows.map((r) => r.conversationId).filter((x): x is string => Boolean(x)))]
   const clientIds = [...new Set(rows.map((r) => r.clientId).filter((x): x is string => Boolean(x)))]
@@ -133,6 +137,7 @@ async function toDtos(tenantId: string, rows: TaskRow[], now = new Date()): Prom
     createdAt: r.createdAt.toISOString(),
     completedAt: r.completedAt ? r.completedAt.toISOString() : null,
     context: (r.clientId && client.get(r.clientId)) || (r.conversationId && peer.get(r.conversationId)) || null,
+    canManage: viewer ? canManageTask(viewer, r) : false,
   }))
 }
 
@@ -145,6 +150,7 @@ export async function listTasks(args: {
   clientId?: string | null
   assigneeUserId?: string | null
   includeDone?: boolean
+  viewer?: TaskViewer | null
 }): Promise<TaskListResult> {
   if (tasksKnownMissing()) return { available: false, tasks: [] }
   const or: Array<Record<string, string>> = []
@@ -163,7 +169,7 @@ export async function listTasks(args: {
       orderBy: { createdAt: 'desc' },
       take: 200,
     })
-    return { available: true, tasks: await toDtos(args.tenantId, sortTasks(rows)) }
+    return { available: true, tasks: await toDtos(args.tenantId, sortTasks(rows), args.viewer ?? null) }
   } catch (error) {
     if (markMissing(error)) return { available: false, tasks: [] }
     throw error
@@ -255,7 +261,7 @@ export async function createTask(args: {
         clientId: row.clientId,
       })
     }
-    const [task] = await toDtos(args.tenantId, [row])
+    const [task] = await toDtos(args.tenantId, [row], { userId: args.userId, role: 'SELF' })
     return { ok: true, task }
   } catch (error) {
     if (markMissing(error)) return { ok: false, status: 503, error: 'Las tareas aún no están disponibles.' }
@@ -263,10 +269,19 @@ export async function createTask(args: {
   }
 }
 
-/** Complete / reopen / edit / cancel. Anyone who works chats in the business may do it. */
+/**
+ * Who may change what (SecureDog AUTH-39): anyone who works chats may complete / reopen; cancel,
+ * rename, re-date or reassign only the creator, the current assignee, or an OWNER / ADMIN.
+ */
+export function canManageTask(viewer: { userId: string; role: string }, task: { createdByUserId: string | null; assigneeUserId: string | null }): boolean {
+  return viewer.role === 'OWNER' || viewer.role === 'ADMIN' || viewer.userId === task.createdByUserId || viewer.userId === task.assigneeUserId
+}
+
+/** Complete / reopen / edit / cancel. */
 export async function updateTask(args: {
   tenantId: string
   userId: string
+  role: string
   taskId: string
   status?: unknown
   title?: unknown
@@ -277,6 +292,11 @@ export async function updateTask(args: {
   try {
     const existing = await prisma.crmTask.findFirst({ where: { id: args.taskId, tenantId: args.tenantId, status: { not: 'canceled' } }, select: taskSelect })
     if (!existing) return { ok: false, status: 404, error: 'Tarea no encontrada' }
+    const manages = canManageTask({ userId: args.userId, role: args.role }, existing)
+    const needsManage = args.status === 'canceled' || args.title !== undefined || args.dueAt !== undefined || args.assigneeUserId !== undefined
+    if (needsManage && !manages) {
+      return { ok: false, status: 403, error: 'Solo quien la creó, la persona asignada, un Owner o un Admin pueden cambiar esta tarea.' }
+    }
     const data: Record<string, unknown> = {}
     let verb = 'task.edit'
     if (args.status !== undefined) {
@@ -330,7 +350,7 @@ export async function updateTask(args: {
         clientId: row.clientId,
       })
     }
-    const [task] = await toDtos(args.tenantId, [row])
+    const [task] = await toDtos(args.tenantId, [row], { userId: args.userId, role: args.role })
     return { ok: true, task }
   } catch (error) {
     if (markMissing(error)) return { ok: false, status: 503, error: 'Las tareas aún no están disponibles.' }

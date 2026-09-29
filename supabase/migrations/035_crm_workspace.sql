@@ -9,7 +9,7 @@
 -- HUMAN APPROVAL REQUIRED BEFORE EXECUTION AGAINST SHARED SUPABASE.
 -- Gated: BETSY_V2_APPLY_FILES=035 — never DEFAULT_APPLY_FILES. DO NOT run prisma db push / migrate.
 --
--- Apply in a quiet window (CREATE TABLE takes brief catalog locks; lock_timeout 3s aborts safely).
+-- Apply in a quiet window: creating the tables needs brief catalog locks (lock_timeout 3s aborts safely).
 -- ROLLBACK (only if Rafael asks; deletes notes / stages / activity written since): deploy code first
 -- (it tolerates missing tables), then in one transaction:
 --   DROP TABLE IF EXISTS public."ActivityEvent", public."CrmNote", public."ClientLifecycleState",

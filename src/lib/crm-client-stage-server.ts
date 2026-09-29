@@ -153,8 +153,21 @@ async function writeState(tenantId: string, clientId: string, w: StateWrite): Pr
       },
     })
   } catch (error) {
-    // Another reader created it first (same computed value): fine.
     if ((error as { code?: string })?.code !== 'P2002') throw error
+    // Another request created the row between our update and create: apply ours on top once
+    // (otherwise a first-ever manual pick could be lost to a concurrent auto write).
+    await prisma.clientLifecycleState.updateMany({
+      where: { clientId, tenantId },
+      data: {
+        stageKey: w.stageKey,
+        source: w.source,
+        fingerprint: w.fingerprint,
+        rulesVersion: CLIENT_STAGE_RULES_VERSION,
+        evidenceAt: w.evidenceAt,
+        computedAt: now,
+        setByUserId: w.setByUserId,
+      },
+    })
   }
 }
 

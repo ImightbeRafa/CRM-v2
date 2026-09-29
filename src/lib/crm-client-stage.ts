@@ -57,10 +57,11 @@ export type DerivedClientStage = {
   repeatCustomer: boolean
 }
 
-const CANCELLED = new Set(['cancelado', 'cancelada', 'cancelled', 'canceled', 'anulado', 'rechazado', 'devuelto'])
-const DELIVERED = new Set(['entregado', 'entregada', 'delivered'])
+const CANCELLED = new Set(['cancelado', 'cancelada', 'cancelled', 'canceled', 'anulado', 'anulada', 'rechazado', 'rechazada', 'devuelto', 'devuelta'])
+// "Completado" = finished, as in the dashboard, walk-in sales (/api/sales) and picked-up RA orders.
+const DELIVERED = new Set(['entregado', 'entregada', 'delivered', 'completado', 'completada', 'retirado', 'retirada'])
 const SHIPPED = new Set(['enviado', 'enviada', 'shipped', 'en_ruta', 'en-ruta'])
-const PRODUCTION = new Set(['en-proceso', 'en_proceso', 'en proceso', 'urgente', 'completado', 'completada', 'produccion', 'en_produccion', 'listo'])
+const PRODUCTION = new Set(['en-proceso', 'en_proceso', 'en proceso', 'urgente', 'produccion', 'en_produccion', 'listo'])
 
 function norm(status: string | null | undefined): string {
   return String(status ?? '')
@@ -75,6 +76,7 @@ export type OrderPhase = 'cancelled' | 'delivered' | 'shipped' | 'production' | 
 export function orderPhase(order: Pick<StageOrder, 'status' | 'hasGuia' | 'terminal'>): OrderPhase {
   const s = norm(order.status)
   if (CANCELLED.has(s)) return 'cancelled'
+  // A business-terminal status still counts as cancelled if it reads like one (never a purchase).
   if (DELIVERED.has(s) || order.terminal) return 'delivered'
   if (SHIPPED.has(s) || order.hasGuia) return 'shipped'
   if (PRODUCTION.has(s)) return 'production'
@@ -132,7 +134,7 @@ export function deriveClientStage(snapshot: ClientStageSnapshot, now: Date = new
   } else if (lastDone || purchases > 0) {
     // Something was actually bought (an abandoned unpaid order is not a delivery).
     key = 'entregado'
-    reason = 'Pedido entregado'
+    reason = lastDone ? 'Pedido entregado' : 'Compra sin cierre reciente'
     evidenceAt = live[0].o.timestamp
     focusId = live[0].o.id
   } else if (snapshot.humanReplied) {

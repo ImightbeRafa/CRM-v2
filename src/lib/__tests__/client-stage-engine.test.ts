@@ -35,7 +35,6 @@ test('open order drives the stage', () => {
   assert.equal(derive([order({ contraEntrega: true })]).key, 'pagado')
   assert.equal(derive([order({ status: 'En-Proceso' })]).key, 'en_produccion')
   assert.equal(derive([order({ status: 'Urgente' })]).key, 'en_produccion')
-  assert.equal(derive([order({ status: 'Completado' })]).key, 'en_produccion')
   assert.equal(derive([order({ hasGuia: true })]).key, 'enviado')
   assert.equal(derive([order({ status: 'Enviado' })]).key, 'enviado')
 })
@@ -50,6 +49,12 @@ test('Entregado after one delivered order; Recurrente after 2+ purchases (Rafael
   assert.equal(active.key, 'esperando_pago')
   assert.equal(active.repeatCustomer, true)
   assert.equal(derive([order({ status: 'Entregado' })]).repeatCustomer, false)
+})
+
+test('Completado (walk-in sale, picked-up RA) is a finished purchase', () => {
+  assert.equal(derive([order({ status: 'Completado' })]).key, 'entregado')
+  assert.equal(derive([order({ status: 'Completado', daysAgo: 20 }), order({ status: 'Completado', daysAgo: 5 })]).key, 'recurrente')
+  assert.equal(orderPhase({ status: 'Anulada', hasGuia: false, terminal: true }), 'cancelled')
 })
 
 test('a status the business marked terminal counts as finished', () => {

@@ -868,7 +868,9 @@ export function SoftCopilotInboxV2() {
     const nextTags = selectedConversation.tags.includes(tag)
       ? selectedConversation.tags.filter((t) => t !== tag)
       : [...selectedConversation.tags, tag]
-    void patchConversation({ tags: nextTags })
+    void patchConversation({ tags: nextTags }).catch(() => false).then((ok) => {
+      if (!ok) toast({ variant: 'destructive', title: 'No se pudo cambiar la etiqueta', description: 'Puede que la hayan archivado. Recargá la página.' })
+    })
   }
 
   async function setAgentControl(action: 'take_over' | 'pause' | 'resume') {

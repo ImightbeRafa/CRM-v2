@@ -1,3 +1,14 @@
+## 2026-09-29 — Security: Supabase data-API exposure closed (033 applied)
+
+- `scripts/security-rls-check.mjs` (read-only) found 7/75 public tables without RLS and readable by
+  anon/authenticated via PostgREST: TenantInvite (invite tokens) + 6 lm_* retiro/delivery tables.
+  The 19 `lm_* admin only` policies are safe (`lm_is_admin()` needs an auth.uid()).
+- 033_security_rls_lockdown.sql: ENABLE RLS (deny-all, no policies) on the 7; applied 05:0x UTC with
+  Rafael's GO via the gated apply script (postcondition ok). Re-check: 0 exposed, 75/75 RLS.
+  App unaffected (owner connection bypasses RLS); no permission errors in Workers Logs after apply.
+- Guard test: migrations ≥ 033 must ENABLE RLS on every table they create (in test:security).
+- Pending (Rafael, Cloudflare dashboard): enable R2 (backups off Vercel), Turnstile widget keys.
+
 ## 2026-09-29 — Chat files → Supabase Storage; quick-reply saves atomic; Workers Logs on
 
 - Root cause (found via Workers Logs): Cloudflare's `BLOB_READ_WRITE_TOKEN` was rejected by Vercel

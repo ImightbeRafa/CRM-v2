@@ -72,13 +72,19 @@ export function BusinessSwitcher({ tenantName, collapsed }: { tenantName: string
         setError(json?.error || 'No se pudo cambiar de negocio.')
         return
       }
-      // Forces the session to re-read the active business from the DB (no payload is trusted).
-      await update()
+      // Forces the session to re-read the active business from the DB (no payload is trusted),
+      // and only navigates when the session really moved (L1).
+      const next = await update()
+      if ((next?.user as { tenantId?: string } | undefined)?.tenantId !== b.id) {
+        setError('No se pudo cambiar de negocio. Recargá la página e intentá de nuevo.')
+        setBusy(null)
+        return
+      }
       clearBusinessScopedBrowserState()
+      // `busy` stays set while navigating, so a second switch cannot start.
       window.location.assign('/dashboard')
     } catch {
       setError('Sin conexión.')
-    } finally {
       setBusy(null)
     }
   }

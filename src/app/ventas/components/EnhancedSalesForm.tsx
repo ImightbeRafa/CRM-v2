@@ -18,7 +18,8 @@ import { useConfig } from '@/app/contexts/ConfigContext';
 import { paymentChoiceToOrderFields, type ManualPaymentChoice } from '@/lib/order-payment-status';
 import { Building2, Package, UserRound } from 'lucide-react';
 import { sfInput, sfLabel, sfPanel, sfSection } from './sales-form-styles';
-import { DRAFT_MAX_AGE_MS, orderDraftStorageKey } from '@/lib/order-draft';
+import { DRAFT_MAX_AGE_MS, draftBelongsTo, orderDraftStorageKey } from '@/lib/order-draft';
+import { useSession } from 'next-auth/react';
 
 export interface CreatedOrderRef {
   /** `Order.id` (cuid), when the API returned it. */
@@ -78,6 +79,11 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   const storageKeyRef = useRef(storageKey);
   const prefillAppliedRef = useRef(false);
   const { user } = useCurrentUser();
+  // The business this form writes into: drafts are tagged with it and only restored in it.
+  const { data: sessionData, status: sessionStatus } = useSession();
+  const businessId = ((sessionData?.user as { tenantId?: string } | undefined)?.tenantId) || null;
+  const businessIdRef = useRef(businessId);
+  businessIdRef.current = businessId;
   const { getState } = useConfig();
   const fieldsState = getState<any[]>('fields');
   const productFieldConfigs = fieldsState.data ?? [];
@@ -160,8 +166,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     const cached = sessionStorage.getItem('businessInfoFields');
     if (cached) {
       try {
-        const { data, timestamp } = JSON.parse(cached);
-        if (Date.now() - timestamp < 300000) { // 5 minutes
+        const { data, timestamp, businessId: cachedBusiness } = JSON.parse(cached);
+        if (Date.now() - timestamp < 300000 && cachedBusiness && cachedBusiness === businessIdRef.current) { // 5 minutes, same business
           setBusinessInfoFields(data);
         } else {
           sessionStorage.removeItem('businessInfoFields');
@@ -179,7 +185,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
           setBusinessInfoFields(data.data);
           sessionStorage.setItem('businessInfoFields', JSON.stringify({
             data: data.data,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            businessId: businessIdRef.current,
           }));
         }
       })
@@ -208,7 +215,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       const autoSaveData = {
         customerInfo: orderInfo.customerInfo,
         products: orderInfo.products,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        businessId: businessIdRef.current,
       };
 
       // Save to localStorage for now (can be enhanced to save to server)
@@ -246,7 +254,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     try {
       localStorage.setItem(
         storageKeyRef.current,
-        JSON.stringify({ customerInfo: latest.customerInfo, products: latest.products, timestamp: new Date().toISOString() }),
+        JSON.stringify({ customerInfo: latest.customerInfo, products: latest.products, timestamp: new Date().toISOString(), businessId: businessIdRef.current }),
       );
     } catch {
       // ignore (private mode / quota)
@@ -261,7 +269,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
   // Load auto-saved data on component mount
   useEffect(() => {
-    if (!isClient) return;
+    if (!isClient || sessionStatus === 'loading') return;
     // A prefilled form without its own draft slot starts fresh so another customer's draft
     // never leaks in. A chat's own slot (`draftKey`) always belongs to that chat.
     if (prefillRef.current && !draftKey) return;
@@ -270,6 +278,11 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     if (savedData) {
       try {
         const parsed = JSON.parse(savedData);
+        // Another business's draft (customer data) is never restored here, and is dropped.
+        if (!draftBelongsTo(parsed, businessId)) {
+          localStorage.removeItem(storageKeyRef.current);
+          return;
+        }
         const age = Date.now() - new Date(parsed.timestamp || 0).getTime();
         if (draftKey && !(age >= 0 && age < DRAFT_MAX_AGE_MS)) {
           localStorage.removeItem(storageKeyRef.current);
@@ -291,7 +304,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
         console.error('Failed to load auto-saved data:', error);
       }
     }
-  }, [isClient, draftKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once the business is known
+  }, [isClient, draftKey, sessionStatus]);
 
   // Apply the prefill once, only to empty fields
   useEffect(() => {

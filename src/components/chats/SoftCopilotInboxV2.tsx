@@ -1482,8 +1482,8 @@ export function SoftCopilotInboxV2() {
   const waWindowOpen = selectedDto?.waWindowOpen ?? true
   // Re-read when the drawer closes: the form saves the chat's draft on close.
   const orderDraftPending = useMemo(
-    () => (selectedConversationId && !createOrderOpen ? hasOrderDraft(`chat:${selectedConversationId}`) : false),
-    [selectedConversationId, createOrderOpen],
+    () => (selectedConversationId && !createOrderOpen ? hasOrderDraft(`chat:${selectedConversationId}`, (viewerSession?.user as { tenantId?: string } | undefined)?.tenantId) : false),
+    [selectedConversationId, createOrderOpen, viewerSession],
   )
   const clientPanel =
     selectedConversationId && selectedConversation && !selectedConversation.isDemo ? (

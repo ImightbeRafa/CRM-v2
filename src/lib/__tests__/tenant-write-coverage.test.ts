@@ -20,7 +20,6 @@ const guardedTenantRoutes = [
   'src/app/api/crm/tasks/route.ts',
   'src/app/api/crm/tasks/[id]/route.ts',
   'src/app/api/config/chat-workspace/route.ts',
-  'src/app/api/tenant/switch/route.ts',
   'src/app/api/crm/notes/[id]/route.ts',
   'src/app/api/crm/clients/[id]/stage/route.ts',
   'src/app/api/chat/send/route.ts',

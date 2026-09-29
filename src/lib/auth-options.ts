@@ -751,7 +751,8 @@ export const authOptions: NextAuthOptions = {
       // Business switcher (Phase 2b): `update()` from the client only forces the DB re-sync below,
       // which re-reads User.defaultTenantId (set by POST /api/tenant/switch after a membership
       // check). The client payload is NEVER read: a tenant id can't be injected from the browser.
-      if (trigger === 'update') token.lastDbSync = 0
+      // Throttled (I1): a burst of update() calls cannot force a DB re-sync each time.
+      if (trigger === 'update' && Date.now() - (token.lastDbSync || 0) > 2000) token.lastDbSync = 0
 
       // Initial sign in - populate all token fields
       if (user) {
@@ -971,13 +972,19 @@ export const authOptions: NextAuthOptions = {
 
             // Set role based on memberships
             if (memberships.length > 0) {
-              const hasOwnerRole = memberships.some(m => m.role === 'OWNER');
-              token.role = hasOwnerRole ? 'MASTER' : 'REGULAR';
-
-              const selectedTenantId = selectActiveTenantId(
-                dbUser.defaultTenantId,
-                memberships.map((m) => m.tenantId),
-              );
+              const activeTenantIds = memberships.map((m) => m.tenantId);
+              // The active business belongs to THIS session (SecureDog M1): a periodic re-sync keeps
+              // it while the membership is still active; only an explicit switch (update()) or a
+              // lost membership re-reads the default. Another device switching never moves this one.
+              const keepCurrent =
+                trigger !== 'update' &&
+                typeof token.tenantId === 'string' &&
+                activeTenantIds.includes(token.tenantId);
+              const selectedTenantId = keepCurrent
+                ? (token.tenantId as string)
+                : selectActiveTenantId(dbUser.defaultTenantId, activeTenantIds);
+              // Legacy MASTER = OWNER of the SELECTED business (L4; login already did this).
+              token.role = memberships.find((m) => m.tenantId === selectedTenantId)?.role === 'OWNER' ? 'MASTER' : 'REGULAR';
 
               token.tenantId = selectedTenantId;
 

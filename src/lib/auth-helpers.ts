@@ -106,6 +106,31 @@ export async function getSessionWithTenant() {
 }
 
 /**
+ * User-level authentication for routes that only touch the caller's OWN user record (business
+ * switch): signed middleware context + user-level revocation check, no business scope and no billing
+ * write guard (a restricted business must not trap its members; SecureDog L3). Never use it for
+ * routes that read or write business data.
+ */
+export async function authenticateUserOnly(request: NextRequest) {
+  const ctx = await readVerifiedAuthContext(request.headers);
+  if (ctx?.userId) {
+    if (!(await sessionStillValid(ctx.userId, ctx.sv))) {
+      return { ok: false as const, response: NextResponse.json({ error: 'Unauthorized', code: 'session_revoked' }, { status: 401 }) };
+    }
+    return { ok: true as const, userId: ctx.userId, tenantId: ctx.tenantId || null, role: (ctx.role || 'VIEWER') as Role };
+  }
+  const session = await getServerSession(authOptions);
+  const userId = session?.user?.id;
+  if (!userId) return { ok: false as const, response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  return {
+    ok: true as const,
+    userId,
+    tenantId: ((session.user as any).tenantId as string | undefined) || null,
+    role: (((session.user as any).membershipRole as string | undefined) || 'VIEWER') as Role,
+  };
+}
+
+/**
  * API route authentication
  * Returns session and tenant info or error response
  * 

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { authenticateAPI } from '@/lib/auth-helpers'
+import { authenticateUserOnly } from '@/lib/auth-helpers'
 import { getSelectedTenantMembership } from '@/lib/selected-tenant'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { recordActivity } from '@/lib/activity'
-import { createIdentifierRateLimit } from '@/lib/rate-limit'
+import { staffDisplayName } from '@/lib/display-name'
+import { createIdentifierRateLimit, getClientIP } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,12 +16,16 @@ const ID_RE = /^[A-Za-z0-9_-]{8,64}$/
 /**
  * POST `{ tenantId }` — make another of MY businesses the active one (Phase 2b business switcher).
  *
- * Only with an active membership in an active business (same check every request uses). It only
- * writes User.defaultTenantId; the session picks it up on its next DB sync, which the client forces
- * with next-auth `update()` (the jwt callback ignores any payload). Audited in both businesses.
+ * - User-level auth only (it writes the caller's own User row): a billing-restricted current
+ *   business must not trap its members (SecureDog L3).
+ * - Membership re-checked fresh (active user + membership + business) and AGAIN inside the write
+ *   (conditional update, count must be 1 — closes the check/write race, I2).
+ * - The session picks the business up through next-auth `update()`, whose payload is ignored.
+ * - Audited in both businesses with name / IP / user agent and each business's own role (L5).
+ *   Denied attempts go to server logs only (never into a business the caller doesn't belong to).
  */
 export async function POST(request: NextRequest) {
-  const auth = await authenticateAPI(request)
+  const auth = await authenticateUserOnly(request)
   if (!auth.ok) return auth.response
   const rate = await switchRateLimit(auth.userId)
   if (!rate.allowed) return NextResponse.json({ success: false, error: 'Demasiados cambios seguidos.' }, { status: 429, headers: rate.headers })
@@ -32,23 +37,40 @@ export async function POST(request: NextRequest) {
 
   const membership = await getSelectedTenantMembership(auth.userId, target)
   // Same answer for "not yours" and "does not exist": no probing of other businesses.
-  if (!membership) return NextResponse.json({ success: false, error: 'No tenés acceso a ese negocio' }, { status: 403 })
-
-  await prisma.user.updateMany({ where: { id: auth.userId, active: true }, data: { defaultTenantId: target } })
-
-  for (const tenantId of [auth.tenantId, target]) {
-    await logAuditEvent({
-      action: 'UPDATE',
-      entityType: 'User',
-      entityId: auth.userId,
-      description: 'Cambio de negocio activo',
-      oldValues: { tenantId: auth.tenantId },
-      newValues: { tenantId: target },
-      userId: auth.userId,
-      userRole: auth.role,
-      tenantId,
-    }).catch(() => {})
+  if (!membership) {
+    console.warn('[tenant-switch] denied', { userId: auth.userId, reason: 'no_active_membership' })
+    return NextResponse.json({ success: false, error: 'No tenés acceso a ese negocio' }, { status: 403 })
   }
+
+  const written = await prisma.user.updateMany({
+    where: {
+      id: auth.userId,
+      active: true,
+      memberships: { some: { tenantId: target, isActive: true, tenant: { isActive: true } } },
+    },
+    data: { defaultTenantId: target },
+  })
+  if (written.count !== 1) {
+    console.warn('[tenant-switch] denied', { userId: auth.userId, reason: 'membership_changed' })
+    return NextResponse.json({ success: false, error: 'No tenés acceso a ese negocio' }, { status: 403 })
+  }
+
+  const actor = await prisma.user.findUnique({ where: { id: auth.userId }, select: { name: true, username: true } })
+  const common = {
+    action: 'UPDATE' as const,
+    entityType: 'User',
+    entityId: auth.userId,
+    description: 'Cambio de negocio activo',
+    userId: auth.userId,
+    userName: staffDisplayName(actor?.name ?? null, actor?.username ?? null) || 'Usuario',
+    ipAddress: getClientIP(request),
+    userAgent: request.headers.get('user-agent')?.slice(0, 300) ?? null,
+  }
+  // Each business only sees that the user left / joined it, with its own role (no other ids).
+  if (auth.tenantId) {
+    await logAuditEvent({ ...common, userRole: auth.role, tenantId: auth.tenantId, oldValues: { active: true }, newValues: { active: false } }).catch(() => {})
+  }
+  await logAuditEvent({ ...common, userRole: membership.role, tenantId: target, oldValues: { active: false }, newValues: { active: true } }).catch(() => {})
   void recordActivity({ tenantId: target, actorUserId: auth.userId, verb: 'tenant.switch', entityType: 'User', entityId: auth.userId, surface: 'sidebar' })
   return NextResponse.json({ success: true, tenantId: target })
 }

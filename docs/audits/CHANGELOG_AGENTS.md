@@ -1,3 +1,16 @@
+## 2026-09-29 — Phase 2a SHIPPED (035 applied, 7bad9641 live)
+
+- 035: first run refused by the apply script — my rollback note in the header contained a literal
+  `DROP TABLE` (the destructive-SQL check scans comments). Reworded (8305bd6); a guard test now runs
+  the script's regex over every migration ≥ 034. Re-run: `ok 035 in 2039ms`, feature flags off.
+- Deploy `npx wrangler deploy --keep-vars` from claudio/phase2-workspace @ 8305bd6 → Worker
+  7bad9641 (rollback target a21c2eb1; old code ignores the new tables). The container kept serving
+  the old image for a few minutes after the Worker switched (first UI drive saw the old rail).
+- Live smoke: signin/home 200; new endpoints 401 logged out; forged headers on /api/orders/x.png
+  401; CSP + Referrer-Policy intact. verify-betsy drive-phase2a on www: every check true incl.
+  notes panel, Config › Chats (3 editors, client defaults Nuevo lead → … → Recurrente).
+  wrangler tail: 0 exceptions, all ok.
+
 ## 2026-09-29 — Phase 2a review fixes (branch claudio/phase2-workspace; 035 NOT applied, not deployed)
 
 Verifier (S1–S7, N1–N10) and SecureDog (Lows + AUTH-38 Medium) findings on the workspace slice:

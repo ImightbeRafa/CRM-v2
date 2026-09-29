@@ -24,6 +24,8 @@ const clientSelect = {
   totalSpent: true,
   lastOrder: true,
   isFavorite: true,
+  // Legacy free-text note on the client: shown read-only as "Nota original" in the rail.
+  notes: true,
 } as const
 
 const orderSelect = {

@@ -286,6 +286,10 @@ export const apiPermissions: Record<string, Permission> = {
   'GET /api/chat/conversations/changes': 'update_sales',
   'GET /api/chat/conversations/*/messages': 'update_sales',
   'PATCH /api/chat/conversations/*': 'update_sales',
+  'GET /api/chat/conversations/*/notes': 'update_sales',
+  'POST /api/chat/conversations/*/notes': 'update_sales',
+  'PATCH /api/crm/notes/*': 'update_sales',
+  'DELETE /api/crm/notes/*': 'update_sales',
   'POST /api/chat/conversations/*/read': 'update_sales',
   'POST /api/chat/conversations/import-local-state': 'update_sales',
 

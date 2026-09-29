@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth-options';
 import ExcelJS from 'exceljs';
-import { parseExcelSheet, mapInventoryRow, validateXlsxUpload } from '@/lib/import-helpers';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
+import { parseExcelSheet, mapInventoryRow, validateXlsxUpload, xlsxArchiveProblem } from '@/lib/import-helpers';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
@@ -12,16 +11,9 @@ const PREVIEW_RESPONSE_ROW_LIMIT = 500;
 
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const tenantId = (session.user as any).tenantId;
-    if (!tenantId) {
-      return NextResponse.json({ error: 'No tenant ID' }, { status: 400 });
-    }
+    // Same permission as the import itself (any signed-in role could parse uploads before).
+    const auth = await authenticateAPIWithPermission(request, 'create_sales');
+    if (!auth.ok) return auth.response;
 
     // Get form data
     const formData = await request.formData();
@@ -46,6 +38,11 @@ export async function POST(request: NextRequest) {
     // Read file buffer
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
+
+    const archiveProblem = xlsxArchiveProblem(buffer);
+    if (archiveProblem) {
+      return NextResponse.json({ error: archiveProblem }, { status: 400 });
+    }
 
     // Parse Excel
     const workbook = new ExcelJS.Workbook();

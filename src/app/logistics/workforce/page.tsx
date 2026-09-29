@@ -21,6 +21,7 @@ import {
   formatWorkforceDateTime,
   toCostaRicaDateTimeLocal,
 } from '@/lib/workforce-datetime';
+import { csvCell } from '@/lib/csv-safe';
 
 type Tab = 'employees' | 'schedule' | 'schedule-edit' | 'time' | 'payroll' | 'coverage';
 
@@ -187,7 +188,7 @@ function defaultShift(employeeId: string, workDate: string): Shift {
 }
 
 function buildCsv(rows: string[][]) {
-  return rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+  return rows.map((row) => row.map(csvCell).join(',')).join('\n');
 }
 
 function downloadCsv(filename: string, csv: string) {

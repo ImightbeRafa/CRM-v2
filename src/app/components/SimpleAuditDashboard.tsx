@@ -16,6 +16,7 @@ import {
   isNoisyAutoReason,
   normalizeEntityType,
 } from '@/lib/auditPayload'
+import { csvCell } from '@/lib/csv-safe';
 
 interface SimpleAuditDashboardProps {
   isMaster: boolean
@@ -678,7 +679,7 @@ export function SimpleAuditDashboard({ isMaster, canRestore = false }: SimpleAud
         r.entityName || '',
         r.reason || '',
         summarizeDetailForCsv(r),
-      ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      ].map(csvCell).join(','))
 
       const csv = [headers.join(','), ...csvRows].join('\n')
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })

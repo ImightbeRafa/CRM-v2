@@ -22,7 +22,9 @@ export type Permission =
   | 'manage_users'
   | 'invite_users'
   | 'manage_tenant'
-  | 'manage_billing';
+  | 'manage_billing'
+  /** Full-business data dump (orders, clients, users): OWNER + ADMIN only (2026-09-28). */
+  | 'export_tenant_data';
 
 // Role definitions (matching Prisma schema)
 export type Role = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES' | 'PRODUCTION' | 'VIEWER';
@@ -47,6 +49,7 @@ export const rolePermissions: Record<Role, Permission[]> = {
     'invite_users',
     'manage_tenant',
     'manage_billing',
+    'export_tenant_data',
   ],
   ADMIN: [
     // Everything except tenant/billing management
@@ -64,6 +67,7 @@ export const rolePermissions: Record<Role, Permission[]> = {
     'update_config',
     'manage_users',
     'invite_users',
+    'export_tenant_data',
   ],
   MANAGER: [
     // Sales, production, and statistics

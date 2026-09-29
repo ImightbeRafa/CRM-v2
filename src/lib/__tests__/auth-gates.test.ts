@@ -15,7 +15,7 @@ import {
 } from '../auth-gates'
 import { escapeHtml, generateResetToken, hashResetToken, legacyRawResetToken } from '../password-reset'
 
-const read = (f: string) => readFileSync(path.join(process.cwd(), f), 'utf8')
+const read = (f: string) => readFileSync(path.join(process.cwd(), f), 'utf8').replace(/\r\n/g, '\n')
 const cutoff = new Date('2026-10-01T00:00:00Z')
 
 test('email verification: off without a cutoff (ships off)', () => {

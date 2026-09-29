@@ -3,11 +3,17 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { Parser } from 'json2csv';
 import ExcelJS from 'exceljs';
-import { PII_NO_STORE_HEADERS } from '@/lib/security';
+import { neutralizeCsvFormula, PII_NO_STORE_HEADERS } from '@/lib/security';
+import { exportRateLimit } from '@/lib/rate-limit';
+import { logAuditEvent } from '@/lib/auditLogger';
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'view_config');
+    const limited = await exportRateLimit(request);
+    if (limited instanceof Response) return limited;
+
+    // Whole-business dump: OWNER / ADMIN only (was view_config, which SALES and MANAGER have).
+    const auth = await authenticateAPIWithPermission(request, 'export_tenant_data');
     if (!auth.ok) return auth.response;
 
     const { searchParams } = new URL(request.url);
@@ -106,7 +112,9 @@ export async function GET(request: NextRequest) {
         break;
 
       case 'csv': {
-        const csvData = flattenDatabaseData(exportData.data);
+        const csvData = flattenDatabaseData(exportData.data).map((row) =>
+          Object.fromEntries(Object.entries(row).map(([k, v]) => [k, typeof v === 'string' ? neutralizeCsvFormula(v) : v])),
+        );
         const csvParser = new Parser();
         exportContent = csvParser.parse(csvData);
         contentType = 'text/csv';
@@ -148,6 +156,17 @@ export async function GET(request: NextRequest) {
       default:
         throw new Error('Unsupported format');
     }
+
+    await logAuditEvent({
+      action: 'EXPORT',
+      entityType: 'TenantDatabase',
+      entityId: auth.tenantId,
+      description: `Exportación completa (${format})${includeUsers ? ' con usuarios' : ''}`,
+      details: { format, includeUsers, includeSystemData },
+      userId: auth.userId,
+      userRole: auth.role,
+      tenantId: auth.tenantId,
+    }).catch(() => undefined);
 
     return new NextResponse(exportContent, {
       status: 200,
@@ -257,8 +276,10 @@ function normalizeRow(row: Record<string, any>) {
       value instanceof Date
         ? value.toISOString()
         : typeof value === 'object' && value !== null
-          ? JSON.stringify(value)
-          : value,
+          ? neutralizeCsvFormula(JSON.stringify(value))
+          : typeof value === 'string'
+            ? neutralizeCsvFormula(value)
+            : value,
     ])
   );
 }

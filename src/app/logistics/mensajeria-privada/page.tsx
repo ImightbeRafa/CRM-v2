@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { FALLBACK_TENANT_CONFIG, useTenantConfig } from '@/hooks/useTenantConfig';
 import PaymentMethodWizard, { type PaymentConfirmPayload } from '@/app/logistics/components/PaymentMethodWizard';
+import { csvCell } from '@/lib/csv-safe';
 
 const CR_TZ = 'America/Costa_Rica';
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14 } as const;
@@ -105,8 +106,7 @@ function fmtDate(dateKey: string) {
 }
 
 function csvEscape(value: string) {
-    if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-    return value;
+    return csvCell(value);
 }
 
 function downloadCSV(content: string, filename: string) {

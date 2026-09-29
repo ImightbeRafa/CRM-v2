@@ -20,7 +20,7 @@ import { orderDraftStorageKey } from '../order-draft'
 import { isAuroraFrameRoute, isFullBleedAuroraRoute } from '../../components/aurora/aurora-frame-routes'
 import { pushRecentEmoji, searchEmojis } from '../../components/chats/composer/emoji-data'
 
-const read = (p: string) => readFileSync(p, 'utf8')
+const read = (p: string) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
 
 describe('default mode is Humano', () => {
   test('server NULL / unknown / legacy mean Humano; only explicit modes pass through', () => {

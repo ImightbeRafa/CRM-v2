@@ -23,6 +23,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { useToast } from "@/app/hooks/use-toast";
+import { csvCell } from '@/lib/csv-safe';
 
 function escapeHtml(str: string): string {
   if (!str) return '';
@@ -202,34 +203,34 @@ export function ExportManager({ orders, onClose, productFieldConfigs = [], busin
     headers.push('Fecha Creación', 'Fecha Esperada');
 
     const csvContent = [
-      headers.join(','),
+      headers.map(csvCell).join(','),
       ...filteredOrders.map(order => {
         const row = [];
         if (includeFields.customerInfo) {
           row.push(
-            `"${order.orderId}"`,
-            `"${order.customerName}"`,
-            `"${order.phone}"`,
-            `"${order.email || ''}"`,
-            `"${order.business || ''}"`
+            csvCell(order.orderId),
+            csvCell(order.customerName),
+            csvCell(order.phone),
+            csvCell(order.email || ''),
+            csvCell(order.business || '')
           );
         }
         if (includeFields.productInfo) {
           row.push(
-            `"${order.product}"`,
+            csvCell(order.product),
             order.quantity,
-            `"${order.size || ''}"`,
-            `"${order.color || ''}"`,
-            `"${order.packaging || ''}"`,
-            `"${order.customization || ''}"`
+            csvCell(order.size || ''),
+            csvCell(order.color || ''),
+            csvCell(order.packaging || ''),
+            csvCell(order.customization || '')
           );
         }
         if (includeFields.statusInfo) {
           row.push(
-            `"${order.status}"`,
-            `"${order.orderType}"`,
-            `"${order.funnel || ''}"`,
-            `"${(order as any).seller || ''}"`
+            csvCell(order.status),
+            csvCell(order.orderType),
+            csvCell(order.funnel || ''),
+            csvCell((order as any).seller || '')
           );
         }
         if (includeFields.financialInfo) {
@@ -242,27 +243,27 @@ export function ExportManager({ orders, onClose, productFieldConfigs = [], busin
         }
         if (includeFields.locationInfo) {
           row.push(
-            `"${(order as any).address || ''}"`,
-            `"${(order as any).province || ''}"`,
-            `"${(order as any).canton || ''}"`,
-            `"${(order as any).district || ''}"`,
-            `"${(order as any).courier || ''}"`
+            csvCell((order as any).address || ''),
+            csvCell((order as any).province || ''),
+            csvCell((order as any).canton || ''),
+            csvCell((order as any).district || ''),
+            csvCell((order as any).courier || '')
           );
         }
         if (includeFields.comments) {
-          row.push(`"${order.comments || ''}"`);
+          row.push(csvCell(order.comments || ''));
         }
         if (includeFields.customFields && hasCustomFieldConfigs) {
           const cfData = parseOrderCustomFields(order);
           customFieldKeys.forEach(cf => {
             const val = cfData[cf.key];
-            const display = val !== undefined && val !== null ? String(val).replace(/"/g, '""') : '';
-            row.push(`"${display}"`);
+            const display = val !== undefined && val !== null ? String(val) : '';
+            row.push(csvCell(display));
           });
         }
         row.push(
-          `"${new Date(order.timestamp).toLocaleDateString()}"`,
-          `"${(order as any).expectedDate || ''}"`
+          csvCell(new Date(order.timestamp).toLocaleDateString()),
+          csvCell((order as any).expectedDate || '')
         );
         return row.join(',');
       })

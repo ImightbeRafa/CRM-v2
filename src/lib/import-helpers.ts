@@ -445,3 +445,43 @@ export function parseExcelSheet(
 
   return { headers, rows };
 }
+
+/** Limits for what a 10 MB .xlsx may expand to (zip bomb guard, 2026-09-28). */
+export const XLSX_MAX_ENTRIES = 1000;
+export const XLSX_MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
+
+/**
+ * Reads the zip central directory (no decompression) and refuses archives that would expand past
+ * the limits before ExcelJS inflates them in memory. Returns an error message, or null when OK.
+ */
+export function xlsxArchiveProblem(buf: Uint8Array): string | null {
+  const bad = 'El archivo Excel no es válido o es demasiado grande al descomprimir.';
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  // End of central directory: last 22 bytes + up to 64 KB comment.
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) return bad;
+  const entries = view.getUint16(eocd + 10, true);
+  const cdSize = view.getUint32(eocd + 12, true);
+  const cdOffset = view.getUint32(eocd + 16, true);
+  // ZIP64 markers: never needed for a real 10 MB spreadsheet.
+  if (entries === 0xffff || cdOffset === 0xffffffff || cdSize === 0xffffffff) return bad;
+  if (entries === 0 || entries > XLSX_MAX_ENTRIES) return bad;
+  if (cdOffset + cdSize > eocd) return bad;
+  let p = cdOffset;
+  let total = 0;
+  for (let n = 0; n < entries; n++) {
+    if (p + 46 > eocd || view.getUint32(p, true) !== 0x02014b50) return bad;
+    const uncompressed = view.getUint32(p + 24, true);
+    if (uncompressed === 0xffffffff) return bad;
+    total += uncompressed;
+    if (total > XLSX_MAX_UNCOMPRESSED_BYTES) return bad;
+    p += 46 + view.getUint16(p + 28, true) + view.getUint16(p + 30, true) + view.getUint16(p + 32, true);
+  }
+  return null;
+}

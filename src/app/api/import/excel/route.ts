@@ -11,6 +11,7 @@ import {
   mapInventoryRow,
   validateXlsxUpload,
   type ImportResult,
+  xlsxArchiveProblem,
 } from '@/lib/import-helpers';
 import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags';
 import { createLifecycleOrder } from '@/lib/order-lifecycle';
@@ -315,6 +316,11 @@ export async function POST(request: NextRequest) {
     // Read file buffer
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
+
+    const archiveProblem = xlsxArchiveProblem(buffer);
+    if (archiveProblem) {
+      return NextResponse.json({ error: archiveProblem }, { status: 400 });
+    }
 
     // Parse Excel
     console.log('📄 Parsing Excel file...');

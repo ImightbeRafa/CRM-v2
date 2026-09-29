@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { canAutoAcceptInvite, inviteTokenMatches } from '../team-invite'
 
-const read = (f: string) => readFileSync(path.join(process.cwd(), f), 'utf8')
+const read = (f: string) => readFileSync(path.join(process.cwd(), f), 'utf8').replace(/\r\n/g, '\n')
 
 test('an invite is auto-accepted only with proof of the mailbox', () => {
   assert.equal(canAutoAcceptInvite({ viaToken: false, emailVerified: false }), false)

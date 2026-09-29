@@ -13,16 +13,9 @@ export function timingSafeEqualString(a: string, b: string): boolean {
 
 /**
  * Neutralize CSV/Spreadsheet formula injection for exported cell values.
- * Prefixes values that Excel/Sheets would treat as formulas.
+ * Lives in ./csv-safe (client-safe) so browser-side exporters use the same rule.
  */
-export function neutralizeCsvFormula(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const str = String(value);
-  if (/^[=+\-@\t\r]/.test(str)) {
-    return `'${str}`;
-  }
-  return str;
-}
+export { neutralizeCsvFormula } from './csv-safe';
 
 /** Headers for authenticated PII downloads (exports, PDFs, CSV). */
 export const PII_NO_STORE_HEADERS: Record<string, string> = {

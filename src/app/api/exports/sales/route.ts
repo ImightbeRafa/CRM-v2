@@ -3,7 +3,7 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { Parser } from 'json2csv';
 import ExcelJS from 'exceljs';
-import { PII_NO_STORE_HEADERS } from '@/lib/security';
+import { neutralizeCsvFormula, PII_NO_STORE_HEADERS } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -61,7 +61,10 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    const exportData = groupBy === 'none' ? salesData : groupSalesByDate(salesData);
+    // Customer-typed text (names, products) must never run as a spreadsheet formula.
+    const exportData = (groupBy === 'none' ? salesData : groupSalesByDate(salesData)).map((row: Record<string, unknown>) =>
+      Object.fromEntries(Object.entries(row).map(([k, v]) => [k, typeof v === 'string' ? neutralizeCsvFormula(v) : v])),
+    );
     const timestamp = new Date().toISOString().split('T')[0];
 
     let exportContent: string | Buffer;

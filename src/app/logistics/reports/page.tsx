@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import { MANAGED_TENANT_IDS } from '@/lib/logistics-managed-tenants';
+import { csvCell } from '@/lib/csv-safe';
 
 /* ─── Styling constants ────────────────────────────────── */
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14 } as const;
@@ -130,8 +131,7 @@ interface BillingWeek {
 /* ─── Utilities ───────────────────────────────────────── */
 
 function csvEscape(field: string): string {
-    if (/[",\n\r]/.test(field)) return `"${field.replace(/"/g, '""')}"`;
-    return field;
+    return csvCell(field);
 }
 
 function downloadCSV(content: string, filename: string) {

@@ -100,41 +100,41 @@ describe('chat storage (Supabase)', () => {
     await assert.rejects(chatStoragePut('chat-media/t1/m1', new Uint8Array([1]), 'image/png'), /is public/)
   })
   test('key only goes to https://*.supabase.co and never follows redirects', () => {
-    const src = readFileSync('src/lib/chat-storage.ts', 'utf8')
+    const src = readFileSync('src/lib/chat-storage.ts', 'utf8').replace(/\r\n/g, '\n')
     assert.match(src, /redirect: 'error'/)
     assert.match(src, /host\.endsWith\('\.supabase\.co'\)/)
   })
   test('chat-media no longer talks to Vercel Blob directly; backups still do (off-site)', () => {
-    assert.doesNotMatch(readFileSync('src/lib/chat-media.ts', 'utf8'), /from '@vercel\/blob'/)
-    assert.match(readFileSync('src/lib/backups/blob-store.ts', 'utf8'), /from '@vercel\/blob'/)
+    assert.doesNotMatch(readFileSync('src/lib/chat-media.ts', 'utf8').replace(/\r\n/g, '\n'), /from '@vercel\/blob'/)
+    assert.match(readFileSync('src/lib/backups/blob-store.ts', 'utf8').replace(/\r\n/g, '\n'), /from '@vercel\/blob'/)
   })
 })
 
 describe('quick replies: one change per request, applied under a row lock', () => {
   test('POST applies upsert / delete inside a transaction with SELECT … FOR UPDATE', () => {
-    const r = readFileSync('src/app/api/chat/quick-replies/route.ts', 'utf8')
+    const r = readFileSync('src/app/api/chat/quick-replies/route.ts', 'utf8').replace(/\r\n/g, '\n')
     assert.match(r, /export async function POST/)
     assert.match(r, /prisma\.\$transaction\(async \(tx\) =>/)
     assert.match(r, /SELECT "settings" FROM "Tenant" WHERE "id" = \$\{auth\.tenantId\} FOR UPDATE/)
     assert.match(r, /Ya existe \//)
-    assert.match(readFileSync('src/lib/rbac.ts', 'utf8'), /'POST \/api\/chat\/quick-replies': 'update_config'/)
+    assert.match(readFileSync('src/lib/rbac.ts', 'utf8').replace(/\r\n/g, '\n'), /'POST \/api\/chat\/quick-replies': 'update_config'/)
   })
   test('the inbox sends single changes and never a version number', () => {
-    const inbox = readFileSync('src/components/chats/SoftCopilotInboxV2.tsx', 'utf8')
+    const inbox = readFileSync('src/components/chats/SoftCopilotInboxV2.tsx', 'utf8').replace(/\r\n/g, '\n')
     assert.match(inbox, /body: JSON\.stringify\(change\)/)
     assert.doesNotMatch(inbox, /quickRepliesVersion/)
   })
   test('the worker forwards the Supabase storage settings to the container', () => {
-    const w = readFileSync('src/cf-container-worker.ts', 'utf8')
+    const w = readFileSync('src/cf-container-worker.ts', 'utf8').replace(/\r\n/g, '\n')
     assert.match(w, /"SUPABASE_URL",\n\s+"SUPABASE_SERVICE_ROLE_KEY",/)
   })
 })
 
 describe('delete never hangs (2026-09-29: requests stuck 70–116 s)', () => {
   test('file cleanup runs in the background and the legacy store is capped at 5 s', () => {
-    const route = readFileSync('src/app/api/chat/quick-replies/route.ts', 'utf8')
+    const route = readFileSync('src/app/api/chat/quick-replies/route.ts', 'utf8').replace(/\r\n/g, '\n')
     assert.equal((route.match(/void deleteChatBlobs\(removed\)/g) || []).length, 2)
     assert.doesNotMatch(route, /await deleteChatBlobs\(removed\)/)
-    assert.match(readFileSync('src/lib/chat-storage.ts', 'utf8'), /setTimeout\(resolve, 5_000\)/)
+    assert.match(readFileSync('src/lib/chat-storage.ts', 'utf8').replace(/\r\n/g, '\n'), /setTimeout\(resolve, 5_000\)/)
   })
 })

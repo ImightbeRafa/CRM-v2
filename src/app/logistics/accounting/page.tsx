@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Package, TrendingUp, Truck, Mail, FileDown, CheckCircle, Calendar, DollarSign, PlusCircle, Trash2, AlertCircle, Wallet, Save, RefreshCw } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import PaymentMethodWizard, { type PaymentConfirmPayload } from '@/app/logistics/components/PaymentMethodWizard';
+import { csvCell } from '@/lib/csv-safe';
 
 interface Rates { mensajeria_rate: number; correos_rate: number; handling_rate: number; salary_daily_rate: number; }
 
@@ -94,7 +95,7 @@ function ResumenTab({ rates }: { rates: Rates }) {
     function exportCSV() {
         const h = ['Cuenta', 'Total', 'Mensajería', 'Correos', 'Sin Asignar', 'CE', 'Costo Envío', 'Manejo', 'Total'];
         const data = rows.map(r => [r.tenantName, r.total, r.mensajeria, r.correos, r.unassigned, r.contraEntrega, r.mensajeriaCost + r.correosCost, r.handling, r.mensajeriaCost + r.correosCost + r.handling]);
-        const csv = [h, ...data].map(r => r.join(',')).join('\n');
+        const csv = [h, ...data].map(r => r.map(csvCell).join(',')).join('\n');
         const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `contabilidad_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
     }
 

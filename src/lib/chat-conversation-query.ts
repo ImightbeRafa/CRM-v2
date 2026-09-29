@@ -11,6 +11,10 @@ export interface ChatConversationListQuery {
   assigned: 'me' | 'none' | string | null
   tag: string | null
   q: string | null
+  /** One chat by id (bell deep link when it is not in the loaded pages). */
+  id?: string | null
+  /** Only chats snoozed right now (Pospuestos bucket); resolved to ids by the route. */
+  snoozed?: boolean
 }
 
 export interface ChatConversationChangesQuery extends ChatConversationListQuery {
@@ -43,8 +47,12 @@ export function parseConversationListQuery(searchParams: URLSearchParams): ChatC
   const tag = (searchParams.get('tag') || '').trim() || null
   const q = (searchParams.get('q') || '').trim() || null
   const socialAccountId = (searchParams.get('socialAccountId') || '').trim() || null
+  const idRaw = (searchParams.get('id') || '').trim()
+  if (idRaw && !/^[A-Za-z0-9_-]{8,64}$/.test(idRaw)) throw new Error('Invalid id')
+  const id = idRaw || null
+  const snoozed = searchParams.get('snoozed') === '1'
 
-  return { platform, socialAccountId, status, assigned, tag, q }
+  return { platform, socialAccountId, status, assigned, tag, q, id, snoozed }
 }
 
 export function parseConversationChangesQuery(
@@ -71,6 +79,8 @@ export function conversationListCursorScope(
     assigned: input.assigned || '',
     tag: input.tag || '',
     q: (input.q || '').toLowerCase(),
+    id: input.id || '',
+    snoozed: input.snoozed ? '1' : '',
   })
 }
 
@@ -79,8 +89,12 @@ export function buildConversationListWhere(args: {
   input: ChatConversationListQuery
   viewerUserId: string
   platformAccountIds?: string[] | null
+  /** Pre-resolved id set (e.g. snoozed chats of THIS tenant). */
+  restrictIds?: string[] | null
 }): Prisma.ChatConversationWhereInput {
   const and: Prisma.ChatConversationWhereInput[] = [{ tenantId: args.tenantId }]
+  if (args.input.id) and.push({ id: args.input.id })
+  if (args.restrictIds) and.push({ id: { in: args.restrictIds } })
 
   if (args.input.socialAccountId) {
     and.push({ socialAccountId: args.input.socialAccountId })

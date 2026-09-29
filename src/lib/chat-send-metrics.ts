@@ -21,6 +21,16 @@ export function sanitizeQuickReplyShortcut(raw: unknown): string | null {
   return SHORTCUT_RE.test(key) ? key : null
 }
 
+/** Chats whose first customer message is older than this are never measured (see below). */
+export const FIRST_RESPONSE_SINCE = new Date('2026-09-30T00:00:00Z')
+
+/** Bounded per-process memo of chats already measured / not measurable. */
+const settledChats = new Set<string>()
+function settle(key: string): void {
+  if (settledChats.size > 20_000) settledChats.clear()
+  settledChats.add(key)
+}
+
 export function firstResponseDedupeKey(conversationId: string): string {
   return `first_response:${conversationId}`
 }
@@ -57,25 +67,31 @@ export async function recordHumanSendMetrics(args: {
       })
     }
 
+    // Chats already settled in this process (measured, or not measurable): no more queries.
+    const memoKey = `${args.tenantId}:${args.conversationId}`
+    if (settledChats.has(memoKey)) return
     const dedupeKey = firstResponseDedupeKey(args.conversationId)
     // Cheap exit on the unique (tenantId, dedupeKey) index: already measured for this chat.
     const done = await prisma.activityEvent.findFirst({ where: { tenantId: args.tenantId, dedupeKey }, select: { id: true } })
-    if (done) return
-    const [firstInbound, firstHuman] = await Promise.all([
-      prisma.chatMessage.findFirst({
-        where: { tenantId: args.tenantId, conversationId: args.conversationId, direction: 'inbound' },
-        orderBy: { sentAt: 'asc' },
-        select: { sentAt: true },
-      }),
-      prisma.chatMessage.findFirst({
-        where: { tenantId: args.tenantId, conversationId: args.conversationId, direction: 'outbound', senderUserId: { not: null } },
-        orderBy: { sentAt: 'asc' },
-        select: { id: true, sentAt: true },
-      }),
-    ])
-    // Only the send that IS the first human reply records it (a later send finds an earlier one).
-    if (!firstHuman || firstHuman.id !== args.messageId) return
-    const ms = firstResponseMs(firstInbound?.sentAt ?? null, firstHuman.sentAt)
+    if (done) return settle(memoKey)
+    const firstInbound = await prisma.chatMessage.findFirst({
+      where: { tenantId: args.tenantId, conversationId: args.conversationId, direction: 'inbound' },
+      orderBy: { sentAt: 'asc' },
+      select: { sentAt: true },
+    })
+    // Only chats that started after the metric existed (older chats have replies without a
+    // sender — before 031 or from the WhatsApp app — and would record months-long "responses").
+    if (!firstInbound || firstInbound.sentAt.getTime() < FIRST_RESPONSE_SINCE.getTime()) return settle(memoKey)
+    // The first outbound of ANY kind after that inbound must be this very send; if the team (or the
+    // AI, or the phone app) already answered, this is not a first response.
+    const firstOutbound = await prisma.chatMessage.findFirst({
+      where: { tenantId: args.tenantId, conversationId: args.conversationId, direction: 'outbound', sentAt: { gte: firstInbound.sentAt } },
+      orderBy: { sentAt: 'asc' },
+      select: { id: true, sentAt: true },
+    })
+    if (!firstOutbound || firstOutbound.id !== args.messageId) return settle(memoKey)
+    const ms = firstResponseMs(firstInbound.sentAt, firstOutbound.sentAt)
+    settle(memoKey)
     if (ms === null) return
     await recordActivity({
       tenantId: args.tenantId,

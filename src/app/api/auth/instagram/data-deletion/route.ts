@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { purgeChatOnlyWorkspaceData } from '@/lib/workspace-purge'
 import crypto from 'crypto'
 
 export const runtime = 'nodejs'
@@ -68,6 +69,12 @@ export async function POST(request: NextRequest) {
 
     // Delete all SocialAccount records for this Instagram user across all tenants
     const db = prisma as any
+    // Workspace rows that only belong to these chats (chat-only notes / tasks) go with them.
+    const doomedChats = await prisma.chatConversation.findMany({
+      where: { socialAccount: { platform: 'instagram', accountId: String(userId) } },
+      select: { id: true },
+    })
+    await purgeChatOnlyWorkspaceData(doomedChats.map((c) => c.id))
     const deletedAccounts = await db.socialAccount.deleteMany({
       where: {
         platform: 'instagram',

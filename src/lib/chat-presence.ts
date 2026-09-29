@@ -6,7 +6,11 @@
  * simply resets for ~20 s. Nothing is persisted. Keys always include the session tenant, so one
  * business can never see another's presence.
  */
-export type PresenceState = 'viewing' | 'typing'
+import 'server-only'
+import type { PresenceState } from '@/lib/chat-presence-label'
+
+export type { PresenceState }
+export { presenceLabel } from '@/lib/chat-presence-label'
 export type PresenceEntry = { userId: string; name: string; state: PresenceState; at: number }
 
 export const PRESENCE_TTL_MS = 20_000
@@ -82,12 +86,3 @@ export class PresenceStore {
 const g = globalThis as unknown as { __betsyPresence?: PresenceStore }
 export const presenceStore: PresenceStore = g.__betsyPresence ?? (g.__betsyPresence = new PresenceStore())
 
-/** "Ana está respondiendo…" / "Ana y Luis están viendo este chat". Empty when nobody else. */
-export function presenceLabel(people: Array<{ name: string; state: PresenceState }>): string {
-  if (!people.length) return ''
-  const typing = people.filter((p) => p.state === 'typing')
-  const names = (list: typeof people) =>
-    list.length === 1 ? list[0].name : list.length === 2 ? `${list[0].name} y ${list[1].name}` : `${list[0].name} y ${list.length - 1} más`
-  if (typing.length) return `${names(typing)} ${typing.length === 1 ? 'está' : 'están'} respondiendo…`
-  return `${names(people)} ${people.length === 1 ? 'también está viendo' : 'también están viendo'} este chat`
-}

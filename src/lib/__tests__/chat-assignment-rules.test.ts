@@ -64,13 +64,23 @@ test('sweep: conditional writes only, never the backlog, bounded, no-op before 0
   assert.match(src, /where: \{ id: chat\.id, tenantId, assignedUserId: null \},/, 'never takes a chat from someone')
   assert.match(src, /lastInboundAt: \{ gte: s\.assignmentEnabledAt \}/, 'only chats written after rules were enabled')
   assert.match(src, /if \(!isWithinBusinessHours\(s\.businessHours, s\.timezone, now\)\) return 0/)
-  assert.match(src, /NOT: \{ aiMode: 'ai_active' \}/)
+  assert.match(src, /\.\.\.\(s\.skipAiActive \? NOT_AI_ACTIVE : \{\}\)/)
   assert.match(src, /where: \{ id: chat\.id, tenantId, status: chat\.status, lastMessageAt: \{ lt: cutoff \} \},/, 'auto-close only if unchanged')
   assert.match(src, /where: \{ id: c\.id, tenantId, status: c\.status \},/, 'reopen only if still closed')
-  assert.match(src, /if \(isMissingRelation\(error\)\) return \{ \.\.\.summary, skipped: 'tables_missing' \}/)
+  assert.match(src, /lastInboundAt: \{ gte: s\.reopenEnabledAt \}/, 'reopen never touches the backlog')
+  assert.match(src, /return \{ \.\.\.summary, skipped: 'tables_missing' \}/)
   assert.match(src, /const ASSIGN_CAP = 50/)
   assert.match(src, /filterChatMembers\(tenantId, s\.assigneeUserIds\)/, 'inactive teammates stop receiving chats')
-  assert.match(src, /if \(snoozed\.has\(chat\.id\) \|\| busy\.has\(chat\.id\)\) continue/)
+  // Exempt chats are excluded in the query itself (they can never starve the queue).
+  assert.match(src, /\.\.\.\(exempt\.size \? \{ id: \{ notIn: \[\.\.\.exempt\] \} \} : \{\}\)/)
+  assert.match(src, /\.\.\.\(snoozed\.size \? \{ id: \{ notIn: \[\.\.\.snoozed\] \} \} : \{\}\)/)
+  // Snooze rule identical to the inbox (customer writing wakes it).
+  assert.match(src, /isSnoozedNow\(r, inbound\.get\(r\.conversationId\) \?\? null, now\)/)
+})
+
+test('M1: "not handled by the AI" keeps chats whose aiMode is NULL (most chats)', async () => {
+  const { NOT_AI_ACTIVE } = await import('../chat-workspace-sweep')
+  assert.deepEqual(NOT_AI_ACTIVE, { OR: [{ aiMode: null }, { aiMode: { not: 'ai_active' } }] })
 })
 
 test('guard: the webhook / inbound path never imports the rules or the sweep', () => {

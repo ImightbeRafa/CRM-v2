@@ -49,7 +49,9 @@ test('server: recipients re-filtered to chat members of THIS business; no note t
   // Listing and marking are always MY rows of THIS business; deleted notes are hidden.
   assert.match(lib, /where: \{ tenantId, userId \},/)
   assert.match(lib, /where: \{ tenantId, userId, readAt: null, \.\.\.\(idList/)
-  assert.match(lib, /if \(!note \|\| note\.deletedAt\) continue/)
+  // A deleted note is never shown, and its notification stops counting as unread (N4).
+  assert.match(lib, /if \(!note \|\| note\.deletedAt\) \{\n\s*if \(!r\.readAt\) hidden\.push\(r\.id\)\n\s*continue/)
+  assert.match(lib, /unread: Math\.max\(0, unread - hidden\.length\)/)
 })
 
 test('notes: mentions filtered + notified once; edits notify only newly added people', () => {
@@ -62,7 +64,11 @@ test('notes: mentions filtered + notified once; edits notify only newly added pe
   assert.match(route, /markNotificationsRead\(auth\.tenantId, auth\.userId, json\?\.ids\)/)
 })
 
-test('chat deep link only opens a chat already in this business list', () => {
+test('chat deep link opens a chat of this business (loaded, or fetched through the tenant-scoped list)', () => {
   const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')
-  assert.match(inbox, /if \(!id \|\| !dtoMap\.has\(id\)\) return/)
+  assert.match(inbox, /if \(dtoMap\.has\(deepLinkId\)\) \{/)
+  assert.match(inbox, /c && \/\^\[A-Za-z0-9_-\]\{8,64\}\$\/\.test\(c\)/)
+  // The fetch goes through GET /api/chat/conversations?id=…, whose where always starts with the
+  // session tenant (buildConversationListWhere).
+  assert.match(read('src/lib/chat-conversation-query.ts'), /const and: Prisma\.ChatConversationWhereInput\[\] = \[\{ tenantId: args\.tenantId \}\]\n\s*if \(args\.input\.id\) and\.push\(\{ id: args\.input\.id \}\)/)
 })

@@ -48,6 +48,34 @@ export async function attachSnoozeState<T extends { id: string; lastInboundAt?: 
   }
 }
 
+/** Ids of this business's chats snoozed right now (Pospuestos bucket, S5). [] before 036. */
+export async function listSnoozedConversationIds(tenantId: string, now: Date = new Date()): Promise<string[]> {
+  if (workStateKnownMissing()) return []
+  try {
+    const rows = await prisma.chatConversationWorkState.findMany({
+      where: { tenantId, snoozedUntil: { gt: now } },
+      select: { conversationId: true },
+      take: 500,
+    })
+    return rows.map((r) => r.conversationId)
+  } catch (error) {
+    if (markMissing(error)) return []
+    throw error
+  }
+}
+
+/** Cheap availability probe (036 applied?) used when a list page had no rows to test with (N5). */
+export async function probeWorkState(tenantId: string): Promise<boolean> {
+  if (workStateKnownMissing()) return false
+  try {
+    await prisma.chatConversationWorkState.findFirst({ where: { tenantId }, select: { conversationId: true } })
+    return true
+  } catch (error) {
+    if (markMissing(error)) return false
+    throw error
+  }
+}
+
 /** Touch the conversation so its revision bumps (trigger 024) and every open inbox refreshes it. */
 async function bumpConversation(tenantId: string, conversationId: string) {
   await prisma.chatConversation.updateMany({ where: { id: conversationId, tenantId }, data: { updatedAt: new Date() } })

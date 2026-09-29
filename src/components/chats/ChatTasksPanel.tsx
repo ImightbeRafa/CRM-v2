@@ -14,6 +14,7 @@ export type TaskItem = {
   clientId: string | null
   assignee: { id: string; name: string } | null
   context?: string | null
+  canManage?: boolean
 }
 
 type Teammate = { id: string; name: string }
@@ -156,7 +157,11 @@ export function ChatTasksPanel({ conversationId }: { conversationId: string }) {
   async function add() {
     const t = title.trim()
     if (!t || saving) return
-    const dueAt = due === 'custom' ? (customDue ? new Date(customDue).toISOString() : null) : duePreset(due)
+    if (due === 'custom' && !customDue) {
+      setError('Elegí la fecha y hora.')
+      return
+    }
+    const dueAt = due === 'custom' ? new Date(customDue).toISOString() : duePreset(due)
     setSaving(true)
     setError(null)
     try {
@@ -243,7 +248,7 @@ export function ChatTasksPanel({ conversationId }: { conversationId: string }) {
               <option value="task">Tarea</option>
             </select>
             <select value={due} onChange={(e) => setDue(e.target.value)} className="rounded-md bg-slate-50 px-1.5 py-1 ring-1 ring-slate-200" aria-label="Para cuándo">
-              <option value="today">Hoy 17:00</option>
+              {new Date().getHours() < 17 ? <option value="today">Hoy 17:00</option> : null}
               <option value="tomorrow">Mañana 9:00</option>
               <option value="3days">En 3 días</option>
               <option value="week">En una semana</option>
@@ -296,7 +301,7 @@ export function ChatTasksPanel({ conversationId }: { conversationId: string }) {
               task={t}
               busy={busyId === t.id}
               onToggle={() => void change(t, 'PATCH', { status: t.status === 'done' ? 'open' : 'done' })}
-              onCancel={() => void change(t, 'DELETE')}
+              onCancel={t.canManage ? () => void change(t, 'DELETE') : undefined}
             />
           ))}
         </ul>

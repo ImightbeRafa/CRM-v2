@@ -34,6 +34,7 @@ export function validateBusinessHours(input: unknown): { ok: true; hours: Busine
   const out: BusinessHours = {}
   for (const [day, ranges] of Object.entries(input as Record<string, unknown>)) {
     if (!(WEEKDAYS as readonly string[]).includes(day)) return { ok: false, error: `Día inválido: ${day}` }
+    if (ranges === null || ranges === undefined) continue
     if (!Array.isArray(ranges) || ranges.length > 4) return { ok: false, error: 'Máximo 4 franjas por día' }
     const list: Array<[string, string]> = []
     for (const r of ranges) {
@@ -43,7 +44,11 @@ export function validateBusinessHours(input: unknown): { ok: true; hours: Busine
       if (String(r[0]) >= String(r[1])) return { ok: false, error: 'La hora de cierre debe ser después de la de apertura' }
       list.push([String(r[0]), String(r[1])])
     }
-    out[day as Weekday] = list
+    if (list.length) out[day as Weekday] = list
+  }
+  // Hours turned on but every day closed would silently mean "always open": refuse it.
+  if (Object.keys(input as object).length > 0 && Object.keys(out).length === 0) {
+    return { ok: false, error: 'Marcá al menos un día de atención (o apagá el horario).' }
   }
   return { ok: true, hours: out }
 }

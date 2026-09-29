@@ -87,6 +87,7 @@ export function ChatRulesEditor() {
 
   const set = (patch: Partial<Settings>) => setS((prev) => (prev ? { ...prev, ...patch } : prev))
   const hoursOn = Boolean(s && Object.keys(s.businessHours || {}).length)
+  const hoursAllClosed = hoursOn && Boolean(s) && Object.values(s!.businessHours).every((r) => !r || r.length === 0)
 
   async function save() {
     if (!s) return
@@ -186,7 +187,7 @@ export function ChatRulesEditor() {
                           type="checkbox"
                           checked={Boolean(range)}
                           onChange={(e) =>
-                            set({ businessHours: { ...s.businessHours, [day]: e.target.checked ? [['08:00', '17:00']] : undefined } })
+                            set({ businessHours: { ...s.businessHours, [day]: e.target.checked ? [['08:00', '17:00']] : [] } })
                           }
                           className="h-3.5 w-3.5 accent-[#5B6CFF]"
                         />
@@ -254,7 +255,8 @@ export function ChatRulesEditor() {
             ) : null}
             <button
               type="button"
-              disabled={saving}
+              disabled={saving || hoursAllClosed}
+              title={hoursAllClosed ? 'Marcá al menos un día de atención' : undefined}
               onClick={() => void save()}
               className="inline-flex items-center gap-1 rounded-lg bg-au-ink-5b6cff px-3 py-1.5 text-[12.5px] font-semibold text-static-white disabled:opacity-40"
             >

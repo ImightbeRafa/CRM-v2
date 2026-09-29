@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enrichConversationDtosWithLinkedOrders } from '@/lib/chat-linked-orders'
-import { attachSnoozeState, workStateKnownMissing } from '@/lib/chat-work-state-server'
+import { attachSnoozeState, listSnoozedConversationIds, probeWorkState, workStateKnownMissing } from '@/lib/chat-work-state-server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import {
@@ -41,11 +41,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, conversations: [], nextCursor: null, maxRevision: '0' })
     }
 
+    // Pospuestos: only this business's chats snoozed right now (they can be far down the list).
+    const restrictIds = input.snoozed ? await listSnoozedConversationIds(auth.tenantId) : null
+    if (restrictIds && restrictIds.length === 0) {
+      return NextResponse.json({ success: true, conversations: [], nextCursor: null, maxRevision: '0', snoozeAvailable: !workStateKnownMissing() })
+    }
+
     const baseWhere = buildConversationListWhere({
       tenantId: auth.tenantId,
       input,
       viewerUserId: auth.userId,
       platformAccountIds,
+      restrictIds,
     })
 
     const where = cursor
@@ -111,7 +118,7 @@ export async function GET(request: NextRequest) {
       nextCursor,
       maxRevision: (maxRevisionAgg._max.revision ?? BigInt(0)).toString(),
       // Phase 2b: false until migration 036 is applied (the inbox hides "Posponer").
-      snoozeAvailable: !workStateKnownMissing(),
+      snoozeAvailable: conversations.length ? !workStateKnownMissing() : await probeWorkState(auth.tenantId),
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid request'

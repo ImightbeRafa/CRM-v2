@@ -234,7 +234,7 @@ export function ChatNotesPanel({
           value={draft}
           onChange={(e) => onDraftChange(e.target.value, e.target.selectionStart)}
           onKeyDown={(e) => {
-            if (mentionMatches.length) {
+            if (mentionMatches.length && !(e.metaKey || e.ctrlKey)) {
               if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault()
                 const step = e.key === 'ArrowDown' ? 1 : -1

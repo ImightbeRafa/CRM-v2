@@ -65,9 +65,12 @@ export async function notifyUsers(input: {
   conversationId?: string | null
   clientId?: string | null
 }): Promise<number> {
-  const userIds = input.userIds.filter((u) => u && u !== input.actorUserId)
-  if (!userIds.length || notificationsKnownMissing()) return 0
+  const wanted = input.userIds.filter((u) => u && u !== input.actorUserId)
+  if (!wanted.length || notificationsKnownMissing()) return 0
   try {
+    // Defence in depth (DATA-14): only chat members of THIS business, whatever the caller passed.
+    const userIds = await filterChatMembers(input.tenantId, wanted)
+    if (!userIds.length) return 0
     const res = await prisma.workspaceNotification.createMany({
       data: userIds.map((userId) => ({
         tenantId: input.tenantId,
@@ -134,13 +137,17 @@ export async function listNotifications(tenantId: string, userId: string, limit 
     const peer = new Map(convs.map((c) => [c.id, c.peerName]))
 
     const items: NotificationDto[] = []
+    const hidden: string[] = []
     for (const r of rows) {
       const who = (r.actorUserId && actorName.get(r.actorUserId)) || 'Alguien del equipo'
       const where = r.conversationId && peer.get(r.conversationId) ? ` · ${peer.get(r.conversationId)}` : ''
       if (r.kind === 'mention') {
         const note = r.noteId ? noteById.get(r.noteId) : undefined
         // A deleted (wiped) note is never shown again.
-        if (!note || note.deletedAt) continue
+        if (!note || note.deletedAt) {
+          if (!r.readAt) hidden.push(r.id)
+          continue
+        }
         items.push({
           id: r.id,
           kind: 'mention',
@@ -152,7 +159,10 @@ export async function listNotifications(tenantId: string, userId: string, limit 
         })
       } else if (r.kind === 'task_assigned' || r.kind === 'task_due') {
         const task = r.taskId ? taskById.get(r.taskId) : undefined
-        if (!task || task.status === 'canceled') continue
+        if (!task || task.status === 'canceled') {
+          if (!r.readAt) hidden.push(r.id)
+          continue
+        }
         items.push({
           id: r.id,
           kind: r.kind as NotificationKind,
@@ -174,7 +184,11 @@ export async function listNotifications(tenantId: string, userId: string, limit 
         })
       }
     }
-    return { available: true, unread, items }
+    // Notifications that can no longer be shown (deleted note, canceled task) never keep the dot on.
+    if (hidden.length) {
+      void prisma.workspaceNotification.updateMany({ where: { tenantId, userId, id: { in: hidden }, readAt: null }, data: { readAt: new Date() } }).catch(() => undefined)
+    }
+    return { available: true, unread: Math.max(0, unread - hidden.length), items }
   } catch (error) {
     if (markMissing(error)) return { available: false, unread: 0, items: [] }
     throw error

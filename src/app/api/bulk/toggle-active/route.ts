@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
       return createErrorResponse('Active must be a boolean value', 400)
     }
 
-    const validTypes = ['users', 'fields', 'optionSets', 'options', 'shipping', 'sellers']
+    // No 'users' (AUTH-07): deactivating a person is per business, via Config › Equipo.
+    const validTypes = ['fields', 'optionSets', 'options', 'shipping', 'sellers']
     if (!validTypes.includes(type)) {
       return createErrorResponse(`Invalid type. Must be one of: ${validTypes.join(', ')}`, 400)
     }

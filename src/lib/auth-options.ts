@@ -14,11 +14,38 @@ import {
   loginLocked,
   recordLoginFailure,
 } from './auth-gates'
-import { loadUserAuthState, sessionMatches } from './session-revocation'
+import { loadUserAuthState, revokeUserSessions, sessionMatches } from './session-revocation'
+import { TEAM_INVITE_COOKIE } from './team-invite'
+
+/** Invite token from the accept-invite cookie in a raw Cookie header (credentials authorize). */
+function inviteTokenFromCookieHeader(header: unknown): string | null {
+  const raw = Array.isArray(header) ? header.join(';') : typeof header === 'string' ? header : ''
+  for (const part of raw.split(';')) {
+    const [k, ...v] = part.trim().split('=')
+    if (k === TEAM_INVITE_COOKIE) {
+      try {
+        return decodeURIComponent(v.join('='))
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
+
+/** Same cookie inside NextAuth callbacks (Google sign-in runs in the route handler's request). */
+async function readInviteTokenCookie(): Promise<string | null> {
+  try {
+    const { cookies } = await import('next/headers')
+    return (await cookies()).get(TEAM_INVITE_COOKIE)?.value ?? null
+  } catch {
+    return null
+  }
+}
 import { selectActiveTenantId } from './membership-lifecycle'
 import { provisionOwnedTenantForExistingUser } from './tenant-provisioning'
-import { canAutoAcceptInvite, shouldJoinInviteInsteadOfProvisioning } from './team-invite'
-import { acceptTeamInviteForUser, findPendingInviteForEmail } from './team-invite-service'
+import { shouldJoinInviteInsteadOfProvisioning } from './team-invite'
+import { acceptTeamInviteForUser, findInviteForPresentedToken } from './team-invite-service'
 
 type MemberRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES' | 'PRODUCTION' | 'MEMBER' | 'VIEWER';
 
@@ -174,17 +201,18 @@ export const authOptions: NextAuthOptions = {
           }
           await clearLoginFailures(normalizedEmail, ip)
 
-          // Pending TenantInvite wins even when user already has other memberships — but only
-          // for a verified mailbox (knowing the address is not proof; see canAutoAcceptInvite).
+          // A TenantInvite is joined only by whoever holds its emailed link (the accept-invite page
+          // sets the cookie). Knowing the address — even with a verified account — is not enough.
           let memberships = user.memberships
           let defaultTenantId = user.defaultTenantId
           try {
-            const pending = canAutoAcceptInvite({ viaToken: false, emailVerified: !!user.emailVerified })
-              ? await findPendingInviteForEmail(user.email)
-              : null
+            const pending = await findInviteForPresentedToken(
+              inviteTokenFromCookieHeader((req?.headers as Record<string, unknown> | undefined)?.cookie),
+              user.email,
+            )
             if (pending) {
               const accepted = await acceptTeamInviteForUser({
-                emailProven: false,
+                emailProven: true, // holds the emailed invite token
                 inviteId: pending.id,
                 token: pending.token,
                 userId: user.id,
@@ -342,6 +370,9 @@ export const authOptions: NextAuthOptions = {
                   name: user.name || dbUser.name,
                   image: user.image || dbUser.image,
                   emailVerified: dbUser.emailVerified || new Date(),
+                  // First proof of this mailbox (AUTH-08): a password set before anyone proved the
+                  // address may belong to a squatter — drop it (the owner can reset one later).
+                  ...(!dbUser.emailVerified ? { password: null } : {}),
                   active: dbUser.active, // Preserve admin deactivation — don't re-activate disabled users
                   // Update OAuth provider info so user can log in with Google in the future
                   provider: account?.provider || dbUser.provider || 'google',
@@ -385,9 +416,14 @@ export const authOptions: NextAuthOptions = {
 
               // Prefer pending TenantInvite EVEN when the user already has other
               // active memberships (orphan owned tenant must not shadow invite).
-              let pending = null as Awaited<ReturnType<typeof findPendingInviteForEmail>>
+              if (!dbUser.emailVerified) {
+                // …and end every session opened with that password (no-op before migration 034).
+                await revokeUserSessions(dbUser.id).catch(() => undefined)
+              }
+
+              let pending = null as Awaited<ReturnType<typeof findInviteForPresentedToken>>
               try {
-                pending = await findPendingInviteForEmail(updatedUser.email)
+                pending = await findInviteForPresentedToken(await readInviteTokenCookie(), updatedUser.email)
               } catch (inviteLookupError) {
                 console.warn('[OAuth] TenantInvite lookup failed (SQL 030 may be pending):', inviteLookupError)
               }
@@ -497,9 +533,9 @@ export const authOptions: NextAuthOptions = {
             // If we get here, user doesn't exist - prefer joining a pending invite over orphan tenant
             console.log(`[OAuth] Creating new user: ${normalizedEmail}`);
             try {
-              let pendingForNew = null as Awaited<ReturnType<typeof findPendingInviteForEmail>>
+              let pendingForNew = null as Awaited<ReturnType<typeof findInviteForPresentedToken>>
               try {
-                pendingForNew = await findPendingInviteForEmail(normalizedEmail)
+                pendingForNew = await findInviteForPresentedToken(await readInviteTokenCookie(), normalizedEmail)
               } catch (inviteLookupError) {
                 console.warn('[OAuth] TenantInvite lookup failed for new user:', inviteLookupError)
               }

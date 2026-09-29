@@ -94,3 +94,19 @@ test('no handler reads a raw identity header outside the verified helper', () =>
     assert.doesNotMatch(src, /headers\.get\('x-(user-id|user-role|tenant-id)'\)/, file)
   }
 })
+
+test('non-ASCII emails do not break the request (header values must be Latin-1)', async () => {
+  const h = new Headers()
+  const intl = { ...ctx, email: 'łukasz@przykład.pl' }
+  await setSignedAuthHeaders(h, intl, SECRET)
+  assert.deepEqual(await readVerifiedAuthContext(h, SECRET), intl)
+  const ascii = new Headers()
+  await setSignedAuthHeaders(ascii, ctx, SECRET)
+  assert.equal(ascii.get('x-user-email'), 'a@b.cr', 'ASCII emails travel unchanged (logistics actor)')
+})
+
+test('CORS preflight is a fresh 204 without x-middleware-next', () => {
+  const src = readFileSync(path.join(root, 'src/middleware.ts'), 'utf8').replace(/\r\n/g, '\n')
+  assert.match(src, /return new Response\(null, \{ status: 204, headers: preflight \}\)/)
+  assert.doesNotMatch(src, /status: 200, headers: response\.headers/)
+})

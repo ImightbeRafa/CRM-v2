@@ -28,6 +28,21 @@ export type AuthContext = {
 }
 
 const encoder = new TextEncoder()
+
+/** Header values must be Latin-1: non-ASCII emails travel percent-encoded (ASCII ones as-is). */
+export function encodeHeaderEmail(email: string): string {
+  return /^[ -~]*$/.test(email) ? email : encodeURIComponent(email)
+}
+
+export function decodeHeaderEmail(value: string | null): string | null {
+  if (!value) return null
+  if (!value.includes('%')) return value
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
 let cachedKey: { secret: string; key: Promise<CryptoKey> } | null = null
 
 async function hmacKey(secret: string): Promise<CryptoKey> {
@@ -80,7 +95,7 @@ export async function setSignedAuthHeaders(headers: Headers, ctx: AuthContext, s
   headers.set('x-user-id', ctx.userId)
   headers.set('x-user-role', ctx.role)
   if (ctx.tenantId) headers.set('x-tenant-id', ctx.tenantId)
-  if (ctx.email) headers.set('x-user-email', ctx.email)
+  if (ctx.email) headers.set('x-user-email', encodeHeaderEmail(ctx.email))
   headers.set('x-betsy-sv', String(ctx.sv || 0))
   headers.set(AUTH_CONTEXT_SIG_HEADER, sig)
 }
@@ -104,7 +119,7 @@ export async function readVerifiedAuthContext(
     userId,
     role,
     tenantId: headers.get('x-tenant-id') || null,
-    email: headers.get('x-user-email') || null,
+    email: decodeHeaderEmail(headers.get('x-user-email')),
     sv: Number(headers.get('x-betsy-sv')) || 0,
   }
   try {

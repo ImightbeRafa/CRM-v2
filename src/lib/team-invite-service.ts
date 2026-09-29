@@ -87,6 +87,17 @@ export async function createTeamInvite(input: CreateTeamInviteInput) {
   }
 }
 
+/**
+ * The invite the caller actually holds (token from the emailed link) — never "the newest pending
+ * invite for this address" (AUTH-08/09: squatted accounts and rival invites). Null unless the
+ * token is valid and addressed to `email`.
+ */
+export async function findInviteForPresentedToken(token: unknown, email: string | null | undefined) {
+  if (typeof token !== 'string' || !token || !email) return null
+  const invite = await findAcceptableInviteByToken(token)
+  return invite && inviteEmailsMatch(invite.email, email) ? invite : null
+}
+
 export async function findAcceptableInviteByToken(token: string) {
   if (!token || token.length < 16) return null
   const invite = await (prisma as any).tenantInvite.findUnique({

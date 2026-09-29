@@ -8,7 +8,7 @@ import { authRateLimit, getClientIP } from '@/lib/rate-limit';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { sendCAPIEvent } from '@/lib/meta-capi';
 import { provisionOwnedTenantForExistingUser } from '@/lib/tenant-provisioning';
-import { acceptTeamInviteForUser, findPendingInviteForEmail } from '@/lib/team-invite-service';
+import { acceptTeamInviteForUser, findInviteForPresentedToken, findPendingInviteForEmail } from '@/lib/team-invite-service';
 import { TEAM_INVITE_COOKIE, canAutoAcceptInvite, inviteTokenMatches } from '@/lib/team-invite';
 
 function cookieValue(request: Request, name: string): string | null {
@@ -120,7 +120,10 @@ export async function POST(request: Request) {
         // the cookie). Anyone else who merely knows the address gets an unverified account with no
         // business; the invite waits until they verify the mailbox (verify-email accepts it).
         const presentedToken = (typeof inviteToken === 'string' && inviteToken) || cookieValue(request, TEAM_INVITE_COOKIE);
-        const viaToken = inviteTokenMatches(presentedToken, pending.token);
+        // The invite this token names (not simply the newest one for the address).
+        const held = await findInviteForPresentedToken(presentedToken, normalizedEmail);
+        const invite = held ?? pending;
+        const viaToken = !!held && inviteTokenMatches(presentedToken, held.token);
         const invitedUser = await prisma.user.create({
           data: {
             username: name,
@@ -129,7 +132,7 @@ export async function POST(request: Request) {
             password: hashedPassword,
             active: true,
             emailVerified: null,
-            defaultTenantId: viaToken ? pending.tenantId : null,
+            defaultTenantId: viaToken ? invite.tenantId : null,
           },
           select: { id: true, email: true },
         })
@@ -138,13 +141,13 @@ export async function POST(request: Request) {
             await sendVerificationEmail({ email: normalizedEmail, name })
           } catch {}
           return NextResponse.json(
-            { success: true, message: 'Revisa tu email para verificar la cuenta. Al verificarla te unirás al equipo que te invitó.' },
+            { success: true, message: 'Revisa tu email para verificar la cuenta. Para unirte a un equipo, abre el enlace de la invitación.' },
             { status: 201 },
           )
         }
         const accepted = await acceptTeamInviteForUser({
           emailProven: true,
-          token: pending.token,
+          token: invite.token,
           userId: invitedUser.id,
           userEmail: normalizedEmail,
         })

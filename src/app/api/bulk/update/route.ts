@@ -26,7 +26,9 @@ export async function POST(request: NextRequest) {
       return createErrorResponse('Updates object is required', 400)
     }
 
-    const validTypes = ['users', 'orders', 'fields', 'optionSets', 'options', 'shipping', 'sellers']
+    // No 'users': people are managed per business in Config › Equipo (/api/users). Bulk writes to
+    // the global User row let any owner edit or delete accounts of other businesses (AUTH-07).
+    const validTypes = ['orders', 'fields', 'optionSets', 'options', 'shipping', 'sellers']
     if (!validTypes.includes(type)) {
       return createErrorResponse(`Invalid type. Must be one of: ${validTypes.join(', ')}`, 400)
     }

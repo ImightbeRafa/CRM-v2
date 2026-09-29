@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { authRateLimit } from '@/lib/rate-limit';
-import { acceptTeamInviteForUser, findPendingInviteForEmail } from '@/lib/team-invite-service';
 
 export async function GET(request: Request) {
   const rateLimitResult = await authRateLimit(request);
@@ -95,24 +94,6 @@ export async function GET(request: Request) {
         { error: 'Esta cuenta está desactivada. Contacta al administrador de tu negocio.' },
         { status: 403 }
       );
-    }
-
-    // The mailbox is now proven: a pending team invite wins over creating a new business.
-    if (!userData.defaultTenantId) {
-      try {
-        const pending = await findPendingInviteForEmail(userData.email);
-        if (pending) {
-          const accepted = await acceptTeamInviteForUser({
-            emailProven: true,
-            inviteId: pending.id,
-            userId: userData.id,
-            userEmail: userData.email,
-          });
-          if (accepted.ok) userData.defaultTenantId = accepted.tenantId;
-        }
-      } catch (inviteError) {
-        console.warn('[verify-email] pending invite accept skipped:', inviteError);
-      }
     }
 
     const alreadyHasTenant = !!userData.defaultTenantId;

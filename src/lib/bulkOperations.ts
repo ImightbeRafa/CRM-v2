@@ -40,6 +40,10 @@ export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperat
     errors: []
   }
 
+  // Security (AUTH-07): never on the global User table, never without a tenant scope.
+  const refused = refuseUnsafeBulk(type, tenantId, ids.length)
+  if (refused) return refused
+
   console.log(`🗑️ Starting bulk delete: ${ids.length} ${type} for tenant ${tenantId}`);
 
   // If we have a tenantId, use regular prisma with manual tenant filtering
@@ -486,6 +490,9 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
     errors: []
   }
 
+  const refused = refuseUnsafeBulk(type, tenantId, ids.length)
+  if (refused) return refused
+
   try {
     // Validate updates based on type
     const sanitizedUpdates = sanitizeUpdates(updates, type)
@@ -549,9 +556,9 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
         break
 
       case 'options':
-        // Options don't have direct tenantId - they belong to optionSets
+        // ProductOption has its own tenantId: scope it like every other type.
         await prisma.productOption.updateMany({
-          where: { id: { in: ids } },
+          where: buildWhere(),
           data: sanitizedUpdates
         })
         result.success = ids.length
@@ -639,14 +646,27 @@ export async function bulkUpdate(request: BulkUpdateRequest): Promise<BulkOperat
   }
 }
 
-function sanitizeUpdates(updates: Record<string, any>, type: string): Record<string, any> {
+/** Bulk writes are business-scoped config/data only (AUTH-07, 2026-09-29). */
+export function refuseUnsafeBulk(type: string, tenantId: string | undefined, count: number): BulkOperationResult | null {
+  if (type === 'users') {
+    return { success: 0, failed: count, errors: ['Los usuarios se gestionan en Config › Equipo.'] }
+  }
+  if (!tenantId) {
+    return { success: 0, failed: count, errors: ['Tenant context required'] }
+  }
+  return null
+}
+
+export function sanitizeUpdates(updates: Record<string, any>, type: string): Record<string, any> {
   const sanitized: Record<string, any> = {}
-  
-  // Remove dangerous fields
-  const dangerousFields = ['id', 'createdAt', 'updatedAt']
-  
+
+  // Remove dangerous fields: identity, ownership (tenantId / any foreign key) and nested writes.
+  const dangerousFields = ['id', 'createdAt', 'updatedAt', 'tenantId']
+
   for (const [key, value] of Object.entries(updates)) {
     if (dangerousFields.includes(key)) continue
+    if (/Id$/.test(key)) continue
+    if (value !== null && typeof value === 'object' && !(value instanceof Date)) continue
     
     // Sanitize string values
     if (typeof value === 'string') {

@@ -1,3 +1,30 @@
+## 2026-09-29 — Phase 1 security code (S1–S7; branch claudio/dark-mode, not deployed)
+
+Advisor plan → slices, each with tests in `test:security` (195/196; the 1 failure is baseline):
+- **S1 header spoof (High):** middleware skipped paths ending in an image extension, so
+  `/api/<route>/x.png` reached handlers with client-set `x-user-id`/`x-tenant-id`. Matcher now adds
+  `/api/:path*`; middleware signs its context (`x-betsy-ctx-sig`, HMAC from NEXTAUTH_SECRET) and
+  handlers trust only signed headers (`src/lib/internal-auth-context.ts`). Logistics audit actor
+  (`x-user-email`) now set.
+- **S2 invite pre-hijack (High) + self-reactivation (Medium):** registering an invited email joined
+  that business with no mailbox proof. Now only with the emailed invite token, a verified email, or a
+  Google-verified email; verify-email never re-enables deactivated accounts; resend is generic.
+- **S3 login gates:** lockout on failures (email+IP 5/15 min, IP 30/15 min; no global per-email lock),
+  bcrypt timing equalizer, email verification opt-in via `EMAIL_VERIFICATION_ENFORCE_FROM` (only
+  accounts created after it). Kill switch `AUTH_LOCKOUT_DISABLED=1`.
+- **S4 reset links:** 256-bit token, SHA-256 at rest, 30 min, single atomic consume, verifies email;
+  legacy UUID links accepted until they expire.
+- **S5 session revocation:** migration **034 prepared, NOT applied** (`User.sessionVersion`,
+  `passwordChangedAt`). Code works before and after it (raw SQL, missing-column fallback).
+- **S6 data:** full DB export OWNER/ADMIN only (was `view_config` → SALES could dump everything),
+  audited + rate limited; formula guard on every CSV/XLSX exporter; xlsx zip-bomb scan; import preview
+  needs `create_sales`.
+- **S7 web:** single CSP (next.config.js), Sentry tunnel `/monitoring` always on (the 403), replay
+  masking explicit, Turnstile scaffold OFF until `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY`.
+- Deferred: S8 TOTP for owners/admins (own migration), automated tenant deletion (legal review).
+- Gotcha: `tsc` showing ~280 "not callable" errors = stale `tsconfig.tsbuildinfo`; delete it.
+- `supabase/migrations/*` is gitignored: migration files must be `git add -f` (033 was untracked).
+
 ## 2026-09-29 — Security: Supabase data-API exposure closed (033 applied)
 
 - `scripts/security-rls-check.mjs` (read-only) found 7/75 public tables without RLS and readable by

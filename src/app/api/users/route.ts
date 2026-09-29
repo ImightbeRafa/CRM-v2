@@ -242,7 +242,10 @@ export async function POST(request: NextRequest) {
             username: username || normalizedEmail,
             password: hashedPassword,
             active: active !== false, // Default to true if not explicitly set to false
-            emailVerified: new Date(), // Set email as verified for API-created users
+            // Not verified: only the mailbox owner can prove it (verification link, reset or Google).
+            // An admin-chosen password on a "verified" account let the admin keep the account
+            // after the real owner later linked Google (AUTH-08).
+            emailVerified: null,
             defaultTenantId: tenantId
           },
           select: {

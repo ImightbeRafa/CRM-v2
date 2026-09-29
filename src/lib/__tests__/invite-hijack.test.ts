@@ -28,16 +28,28 @@ test('invite token comparison', () => {
 
 test('register: without the invite token the user gets no business and the invite stays pending', () => {
   const src = read('src/app/api/auth/register/route.ts')
-  assert.match(src, /inviteTokenMatches\(presentedToken, pending\.token\)/)
-  assert.match(src, /defaultTenantId: viaToken \? pending\.tenantId : null/)
+  // The invite named by the presented token, not the newest one for the address (AUTH-09).
+  assert.match(src, /const held = await findInviteForPresentedToken\(presentedToken, normalizedEmail\)/)
+  assert.match(src, /const viaToken = !!held && inviteTokenMatches\(presentedToken, held\.token\)/)
+  assert.match(src, /defaultTenantId: viaToken \? invite\.tenantId : null/)
   assert.match(src, /if \(!canAutoAcceptInvite\(\{ viaToken, emailVerified: false \}\)\)/)
   // The tenant name is not revealed to someone who only knows the address.
   assert.doesNotMatch(src.split('canAutoAcceptInvite({ viaToken')[1].split('acceptTeamInviteForUser')[0], /tenantName/)
 })
 
-test('credentials login only auto-accepts for a verified email', () => {
+test('login and Google join an invite only with its emailed token (AUTH-08/09)', () => {
   const src = read('src/lib/auth-options.ts')
-  assert.match(src, /canAutoAcceptInvite\(\{ viaToken: false, emailVerified: !!user\.emailVerified \}\)/)
+  assert.doesNotMatch(src, /findPendingInviteForEmail/, 'no "newest invite for this email" auto-join')
+  assert.match(src, /findInviteForPresentedToken\(\s*inviteTokenFromCookieHeader\(/)
+  assert.equal((src.match(/findInviteForPresentedToken\(await readInviteTokenCookie\(\)/g) || []).length, 2)
+  // First Google proof of an unverified account drops a possibly squatted password + sessions.
+  assert.match(src, /\.\.\.\(!dbUser\.emailVerified \? \{ password: null \} : \{\}\)/)
+  assert.match(src, /if \(!dbUser\.emailVerified\) \{[\s\S]{0,160}revokeUserSessions\(dbUser\.id\)/)
+})
+
+test('verify-email and admin-created accounts never join or pre-verify', () => {
+  assert.doesNotMatch(read('src/app/api/auth/verify-email/route.ts'), /acceptTeamInviteForUser|findPendingInviteForEmail/)
+  assert.match(read('src/app/api/users/route.ts'), /^\s*emailVerified: null,/m)
 })
 
 test('OAuth rejects a provider-unverified email', () => {

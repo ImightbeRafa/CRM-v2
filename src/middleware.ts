@@ -90,7 +90,16 @@ export default async function middleware(request: Request) {
     response.headers.set('Vary', 'Origin');
 
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 200, headers: response.headers });
+      // Only the CORS headers (never NextResponse.next()'s routing headers on a preflight).
+      return new Response(null, {
+        status: 200,
+        headers: {
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, x-api-key',
+          Vary: 'Origin',
+        },
+      });
     }
 
     return response;
@@ -115,7 +124,14 @@ export default async function middleware(request: Request) {
       response.headers.set('Access-Control-Allow-Credentials', 'true');
 
       if (request.method === 'OPTIONS') {
-        return new Response(null, { status: 200, headers: response.headers });
+        // A fresh response with only the CORS headers: re-using NextResponse.next()'s headers
+        // would carry x-middleware-next and let routing continue with unsanitized headers.
+        const preflight = new Headers();
+        for (const name of ['Access-Control-Allow-Origin', 'Access-Control-Allow-Methods', 'Access-Control-Allow-Headers', 'Access-Control-Allow-Credentials']) {
+          const value = response.headers.get(name);
+          if (value) preflight.set(name, value);
+        }
+        return new Response(null, { status: 204, headers: preflight });
       }
     }
   }

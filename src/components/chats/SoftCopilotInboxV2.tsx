@@ -681,6 +681,25 @@ export function SoftCopilotInboxV2() {
     })
   }, [dtoMap, threadMessages, accounts])
 
+  // `/chats?c=<id>` (bell notification): open that chat once the list has it. Read once; the id
+  // only selects a chat already returned by this business's list, so it cannot reach another's.
+  const deepLinkRef = useRef<string | null | undefined>(undefined)
+  useEffect(() => {
+    if (deepLinkRef.current === undefined) {
+      try {
+        const c = new URLSearchParams(window.location.search).get('c')
+        deepLinkRef.current = c && /^[A-Za-z0-9_-]{8,64}$/.test(c) ? c : null
+      } catch {
+        deepLinkRef.current = null
+      }
+    }
+    const id = deepLinkRef.current
+    if (!id || !dtoMap.has(id)) return
+    deepLinkRef.current = null
+    openConversationById(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot open when the chat appears
+  }, [dtoMap])
+
   const selectedConversation = useMemo(() => {
     if (!selectedConversationId) return null
     const dto = dtoMap.get(selectedConversationId)
@@ -793,19 +812,24 @@ export function SoftCopilotInboxV2() {
       (d) => d.socialAccountId === conv.socialAccountId && d.peerId === conv.recipientId,
     )
     if (!dto) return
-    if (selectedConversationId && selectedConversationId !== dto.id) {
+    openConversationById(dto.id)
+  }
+
+  /** Opens a chat by its server id (list click, or a `/chats?c=<id>` link from a notification). */
+  function openConversationById(id: string) {
+    if (selectedConversationId && selectedConversationId !== id) {
       if (messageInput.trim()) composerDrafts.current.set(selectedConversationId, messageInput)
       else composerDrafts.current.delete(selectedConversationId)
     }
-    setSelectedConversationId(dto.id)
+    setSelectedConversationId(id)
     setSendError(null)
     setFailedOutboundId(null)
-    setMessageInput(composerDrafts.current.get(dto.id) ?? '')
+    setMessageInput(composerDrafts.current.get(id) ?? '')
     setTemplatePickerOpen(false)
     setMobileDetailsOpen(false)
     nearBottomRef.current = true
     setMobileView('thread')
-    void loadThreadMessages(dto.id).then(() => {
+    void loadThreadMessages(id).then(() => {
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
         composerRef.current?.focus()

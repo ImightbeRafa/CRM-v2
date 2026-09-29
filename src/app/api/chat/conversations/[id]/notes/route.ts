@@ -45,7 +45,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ success: false, error: 'Demasiadas notas seguidas. Esperá un momento.' }, { status: 429, headers: rate.headers })
   }
 
-  const json = (await request.json().catch(() => null)) as { body?: unknown; scope?: unknown } | null
+  const json = (await request.json().catch(() => null)) as { body?: unknown; scope?: unknown; mentionUserIds?: unknown } | null
   // "todo el cliente" (default, stored with the linked client) or "solo este chat".
   const scope = json?.scope === undefined ? 'client' : parseNoteScope(json.scope)
   if (!scope) return NextResponse.json({ success: false, error: 'scope debe ser "client" o "chat"' }, { status: 400 })
@@ -55,6 +55,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     body: json?.body,
     clientId: scope === 'client' ? conversation.clientId : null,
     conversationId: conversation.id,
+    mentionUserIds: json?.mentionUserIds,
   })
   if (!result.ok) return NextResponse.json({ success: false, error: result.error }, { status: result.status })
   return NextResponse.json({ success: true, note: result.note }, { status: 201 })

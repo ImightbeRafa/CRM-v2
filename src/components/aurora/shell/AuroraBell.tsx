@@ -1,32 +1,51 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
-import { Bell } from 'lucide-react'
+import Link from 'next/link'
+import { AtSign, Bell, ListChecks } from 'lucide-react'
 import { showBellDot } from '@/lib/aurora-alerts'
 import { AuroraAlertsList } from './AuroraAlertsList'
 import { useAuroraAlerts } from './useAuroraAlerts'
 import { useDismiss } from './useDismiss'
+import { useWorkspaceNotifications } from './useWorkspaceNotifications'
+
+function ago(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000))
+  if (mins < 1) return 'ahora'
+  if (mins < 60) return `hace ${mins} min`
+  const h = Math.round(mins / 60)
+  if (h < 24) return `hace ${h} h`
+  return `hace ${Math.round(h / 24)} d`
+}
 
 /**
- * Notifications bell. Alerts are derived from existing signals (no table, no read state);
- * the red dot shows only when there is at least one. Popover on desktop, bottom sheet below `md`.
+ * Notifications bell. Two sources:
+ * - personal notifications (Phase 2b): @mentions and tasks assigned to me, with read state;
+ * - derived alerts from existing signals (no table, no read state).
+ * The red dot shows when there is an alert or an unread notification. Popover on desktop,
+ * bottom sheet below `md`.
  */
 export function AuroraBell() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const { alerts } = useAuroraAlerts()
+  const notes = useWorkspaceNotifications()
   const close = useCallback(() => setOpen(false), [])
   useDismiss(open, ref, close)
-  const dot = showBellDot(alerts)
+  const dot = showBellDot(alerts) || notes.unread > 0
+  const total = alerts.length + notes.unread
 
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (!open) void notes.refresh()
+          setOpen((v) => !v)
+        }}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={dot ? `Avisos (${alerts.length})` : 'Avisos'}
+        aria-label={dot ? `Avisos (${total})` : 'Avisos'}
         className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors duration-150 outline-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#8F7BFF]/60 focus-visible:ring-offset-2"
       >
         <Bell className="h-4 w-4" aria-hidden />
@@ -48,9 +67,44 @@ export function AuroraBell() {
           >
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <h2 className="text-[14px] font-semibold">Avisos</h2>
-              {dot ? <span className="text-[11px] text-slate-400">{alerts.length}</span> : null}
+              {notes.unread > 0 ? (
+                <button type="button" onClick={() => void notes.markRead()} className="text-[11px] font-medium text-[#5B6CFF] hover:underline">
+                  Marcar todo leído
+                </button>
+              ) : dot ? (
+                <span className="text-[11px] text-slate-400">{total}</span>
+              ) : null}
             </div>
-            <AuroraAlertsList alerts={alerts} onNavigate={close} />
+            {notes.items.length ? (
+              <ul className="divide-y divide-slate-100 border-b border-slate-100" data-testid="aurora-notifications">
+                {notes.items.slice(0, 15).map((n) => (
+                  <li key={n.id}>
+                    <Link
+                      href={n.href}
+                      onClick={() => {
+                        if (!n.read) void notes.markRead([n.id])
+                        close()
+                      }}
+                      className={`flex gap-3 px-4 py-2.5 text-[13px] outline-none transition-colors duration-150 hover:bg-slate-50 focus-visible:bg-slate-50 ${n.read ? 'text-slate-500' : 'text-slate-900'}`}
+                    >
+                      <span
+                        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${n.read ? 'bg-slate-100 text-slate-400' : 'bg-[#EEF0FF] text-[#5B6CFF]'}`}
+                        aria-hidden
+                      >
+                        {n.kind === 'mention' ? <AtSign className="h-3.5 w-3.5" /> : <ListChecks className="h-3.5 w-3.5" />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className={`block truncate ${n.read ? '' : 'font-semibold'}`}>{n.title}</span>
+                        {n.snippet ? <span className="block truncate text-[12px] text-slate-500">{n.snippet}</span> : null}
+                        <span className="block text-[11px] text-slate-400">{ago(n.createdAt)}</span>
+                      </span>
+                      {!n.read ? <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-[#5B6CFF]" aria-label="Sin leer" /> : null}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {alerts.length || !notes.items.length ? <AuroraAlertsList alerts={alerts} onNavigate={close} /> : null}
           </div>
         </>
       ) : null}

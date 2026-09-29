@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Lock, Pencil, Pin, PinOff, StickyNote, Trash2, Users } from 'lucide-react'
 import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
+import { activeMentionQuery, insertMention, matchTeammates, mentionIdsFromText, type Teammate } from '@/lib/note-mentions'
 
 type NoteScope = 'client' | 'chat'
 
@@ -54,6 +55,58 @@ export function ChatNotesPanel({
   const [editing, setEditing] = useState<{ id: string; body: string } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const seq = useRef(0)
+  // @mentions: teammates who can work chats (loaded on the first "@"), and the picker state.
+  const [team, setTeam] = useState<{ viewerId: string | null; list: Teammate[] } | null>(null)
+  const [mention, setMention] = useState<{ start: number; query: string } | null>(null)
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const draftRef = useRef<HTMLTextAreaElement>(null)
+  const teamLoading = useRef(false)
+
+  const ensureTeam = useCallback(async () => {
+    if (team || teamLoading.current) return team
+    teamLoading.current = true
+    try {
+      const res = await fetch('/api/chat/assignees', { credentials: 'same-origin', cache: 'no-store' })
+      const json = (await res.json().catch(() => null)) as { success?: boolean; viewerUserId?: string; assignees?: Teammate[] } | null
+      const next = { viewerId: json?.viewerUserId ?? null, list: res.ok && Array.isArray(json?.assignees) ? json!.assignees : [] }
+      setTeam(next)
+      return next
+    } catch {
+      return null
+    } finally {
+      teamLoading.current = false
+    }
+  }, [team])
+
+  const mentionMatches = mention && team ? matchTeammates(team.list, mention.query, team.viewerId) : []
+
+  function onDraftChange(value: string, caret: number) {
+    setDraft(value.slice(0, MAX))
+    const q = activeMentionQuery(value, caret)
+    setMention(q)
+    setMentionIndex(0)
+    if (q) void ensureTeam()
+  }
+
+  function pickMention(t: Teammate) {
+    if (!mention) return
+    const el = draftRef.current
+    const caret = el ? el.selectionStart : draft.length
+    const next = insertMention(draft, mention.start, caret, t)
+    setDraft(next.text.slice(0, MAX))
+    setMention(null)
+    requestAnimationFrame(() => {
+      el?.focus()
+      el?.setSelectionRange(next.caret, next.caret)
+    })
+  }
+
+  /** Ids for the "@Name"s still present in the text (loads the team list if needed). */
+  async function mentionIdsFor(text: string): Promise<string[] | undefined> {
+    if (!text.includes('@')) return []
+    const t = team ?? (await ensureTeam())
+    return t ? mentionIdsFromText(text, t.list, t.viewerId) : undefined
+  }
 
   const load = useCallback(async () => {
     const mine = ++seq.current
@@ -86,11 +139,12 @@ export function ChatNotesPanel({
     setSaving(true)
     setError(null)
     try {
+      const mentionUserIds = await mentionIdsFor(body)
       const res = await fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}/notes`, {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body, scope: hasClient ? scope : 'chat' }),
+        body: JSON.stringify({ body, scope: hasClient ? scope : 'chat', ...(mentionUserIds ? { mentionUserIds } : {}) }),
       })
       const json = (await res.json().catch(() => null)) as { success?: boolean; note?: Note; error?: string } | null
       if (!res.ok || !json?.success || !json.note) {
@@ -110,11 +164,13 @@ export function ChatNotesPanel({
     setBusyId(id)
     setError(null)
     try {
+      // An edit re-reads the "@Name"s in the new text (only newly added people are notified).
+      const mentionUserIds = payload.body !== undefined ? await mentionIdsFor(payload.body) : undefined
       const res = await fetch(`/api/crm/notes/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, ...(mentionUserIds ? { mentionUserIds } : {}) }),
       })
       const json = (await res.json().catch(() => null)) as { success?: boolean; error?: string } | null
       if (!res.ok || !json?.success) {
@@ -172,21 +228,68 @@ export function ChatNotesPanel({
         <span className="text-[10.5px] text-slate-400">{hasClient ? 'Chat y cliente' : 'Este chat'}</span>
       </div>
 
-      <div className="rounded-xl bg-white p-2 ring-1 ring-slate-100">
+      <div className="relative rounded-xl bg-white p-2 ring-1 ring-slate-100">
         <textarea
+          ref={draftRef}
           value={draft}
-          onChange={(e) => setDraft(e.target.value.slice(0, MAX))}
+          onChange={(e) => onDraftChange(e.target.value, e.target.selectionStart)}
           onKeyDown={(e) => {
+            if (mentionMatches.length) {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault()
+                const step = e.key === 'ArrowDown' ? 1 : -1
+                setMentionIndex((i) => (i + step + mentionMatches.length) % mentionMatches.length)
+                return
+              }
+              if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault()
+                pickMention(mentionMatches[Math.min(mentionIndex, mentionMatches.length - 1)])
+                return
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                setMention(null)
+                return
+              }
+            }
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault()
               void add()
             }
           }}
           rows={2}
-          placeholder="Escribí una nota para el equipo (el cliente no la ve)…"
+          placeholder="Escribí una nota para el equipo (el cliente no la ve)… Usá @ para avisarle a alguien."
           className="w-full resize-none rounded-lg bg-slate-50 px-2.5 py-2 text-[12.5px] text-slate-900 outline-none ring-1 ring-slate-100 placeholder:text-slate-400 focus:ring-au-ink-5b6cff"
           aria-label="Nueva nota"
         />
+        {mention && mentionMatches.length ? (
+          <ul
+            role="listbox"
+            aria-label="Mencionar a alguien del equipo"
+            className="absolute left-2 right-2 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg bg-white p-1 shadow-lg ring-1 ring-slate-200"
+            data-testid="note-mention-picker"
+          >
+            {mentionMatches.map((t, i) => (
+              <li key={t.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={i === mentionIndex}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    pickMention(t)
+                  }}
+                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] ${i === mentionIndex ? 'bg-slate-100 text-slate-900' : 'text-slate-700 hover:bg-slate-50'}`}
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-au-tint-eef0ff text-[10px] font-semibold text-au-ink-4a46e5" aria-hidden>
+                    {t.name.charAt(0).toUpperCase()}
+                  </span>
+                  {t.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <div className="mt-1.5 flex items-center justify-between gap-2">
           {hasClient ? (
             <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-[10.5px] font-medium" role="radiogroup" aria-label="Quién ve la nota" data-testid="note-scope-toggle">

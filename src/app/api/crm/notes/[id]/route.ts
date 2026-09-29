@@ -20,7 +20,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const tooMany = await limited(auth.tenantId, auth.userId)
   if (tooMany) return tooMany
   const { id } = await context.params
-  const json = (await request.json().catch(() => null)) as { body?: unknown; pinned?: unknown; scope?: unknown } | null
+  const json = (await request.json().catch(() => null)) as { body?: unknown; pinned?: unknown; scope?: unknown; mentionUserIds?: unknown } | null
   const result = await updateNote({
     tenantId: auth.tenantId,
     viewer: { userId: auth.userId, role: auth.role },
@@ -28,6 +28,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     body: json?.body,
     pinned: json?.pinned,
     scope: json?.scope,
+    mentionUserIds: json?.mentionUserIds,
   })
   if (!result.ok) return NextResponse.json({ success: false, error: result.error }, { status: result.status })
   return NextResponse.json({ success: true, note: result.note })

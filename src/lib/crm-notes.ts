@@ -14,6 +14,7 @@ import { prisma } from '@/lib/db'
 import { isMissingRelation } from '@/lib/db-missing-relation'
 import { recordActivity } from '@/lib/activity'
 import { staffDisplayName } from '@/lib/display-name'
+import { filterChatMembers, normalizeMentionIds, notifyUsers } from '@/lib/workspace-notifications'
 
 export const NOTE_MAX_LENGTH = 4000
 
@@ -128,7 +129,38 @@ const noteSelect = {
   pinnedAt: true,
   editedAt: true,
   createdAt: true,
+  mentionUserIds: true,
 } as const
+
+/** Mentions → notifications for teammates of this business (never throws; 036 optional). */
+async function mentionTeammates(args: {
+  tenantId: string
+  authorUserId: string
+  raw: unknown
+  already?: string[]
+}): Promise<string[]> {
+  const wanted = normalizeMentionIds(args.raw, args.authorUserId)
+  if (!wanted.length) return []
+  try {
+    return await filterChatMembers(args.tenantId, wanted)
+  } catch {
+    return []
+  }
+}
+
+function notifyMentions(tenantId: string, actorUserId: string, row: { id: string; conversationId: string | null; clientId: string | null }, userIds: string[]) {
+  if (!userIds.length) return
+  void notifyUsers({
+    tenantId,
+    actorUserId,
+    kind: 'mention',
+    userIds,
+    dedupeKey: (u) => `mention:${row.id}:${u}`,
+    noteId: row.id,
+    conversationId: row.conversationId,
+    clientId: row.clientId,
+  })
+}
 
 export async function listNotes(args: {
   tenantId: string
@@ -167,9 +199,12 @@ export async function createNote(args: {
   body: unknown
   clientId?: string | null
   conversationId?: string | null
+  /** @mentioned teammates (client-sent ids; filtered to chat members of this business). */
+  mentionUserIds?: unknown
 }): Promise<NoteResult> {
   const body = normalizeNoteBody(args.body)
   if (!body) return { ok: false, status: 400, error: `La nota debe tener entre 1 y ${NOTE_MAX_LENGTH} caracteres.` }
+  const mentions = await mentionTeammates({ tenantId: args.tenantId, authorUserId: args.viewer.userId, raw: args.mentionUserIds })
   // Scope checks: both references must belong to this business.
   if (args.clientId) {
     const client = await prisma.client.findFirst({ where: { id: args.clientId, tenantId: args.tenantId }, select: { id: true } })
@@ -188,6 +223,7 @@ export async function createNote(args: {
         conversationId: args.conversationId ?? null,
         body,
         authorUserId: args.viewer.userId,
+        mentionUserIds: mentions,
       },
       select: noteSelect,
     })
@@ -200,8 +236,9 @@ export async function createNote(args: {
       clientId: row.clientId,
       conversationId: row.conversationId,
       surface: row.conversationId ? 'chats' : 'clients',
-      props: { length: body.length },
+      props: { length: body.length, mentions: mentions.length },
     })
+    notifyMentions(args.tenantId, args.viewer.userId, row, mentions)
     const names = await authorNames([args.viewer.userId])
     return { ok: true, note: toDto(row, names, args.viewer) }
   } catch (error) {
@@ -217,6 +254,8 @@ export async function updateNote(args: {
   body?: unknown
   pinned?: unknown
   scope?: unknown
+  /** With an edit: the full mention list after the edit (only newly added people are notified). */
+  mentionUserIds?: unknown
 }): Promise<NoteResult> {
   try {
     const existing = await prisma.crmNote.findFirst({
@@ -227,6 +266,7 @@ export async function updateNote(args: {
 
     const data: Record<string, unknown> = {}
     let verb = ''
+    let newlyMentioned: string[] = []
     if (args.body !== undefined) {
       if (!canEditNote(args.viewer, existing.authorUserId)) {
         return { ok: false, status: 403, error: 'Solo quien escribió la nota puede editarla.' }
@@ -236,6 +276,13 @@ export async function updateNote(args: {
       data.body = body
       data.editedAt = new Date()
       verb = 'note.edit'
+      if (args.mentionUserIds !== undefined) {
+        const mentions = await mentionTeammates({ tenantId: args.tenantId, authorUserId: args.viewer.userId, raw: args.mentionUserIds })
+        data.mentionUserIds = mentions
+        newlyMentioned = mentions.filter((u) => !existing.mentionUserIds.includes(u))
+      }
+    } else if (args.mentionUserIds !== undefined) {
+      return { ok: false, status: 400, error: 'Las menciones se cambian editando la nota.' }
     }
     if (args.pinned !== undefined) {
       if (typeof args.pinned !== 'boolean') return { ok: false, status: 400, error: 'pinned debe ser true o false' }
@@ -288,6 +335,7 @@ export async function updateNote(args: {
       conversationId: row.conversationId,
       ...(scopeChanged ? { props: { scope: noteScopeOf(row) } } : {}),
     })
+    notifyMentions(args.tenantId, args.viewer.userId, row, newlyMentioned)
     const names = await authorNames([row.authorUserId || ''])
     return { ok: true, note: toDto(row, names, args.viewer) }
   } catch (error) {

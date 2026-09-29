@@ -346,3 +346,15 @@ describe('quick-reply files: SecureDog M-1 / L-3 / L-4', () => {
     assert.match(m, /allowOverwrite: !opts\.pathname/)
   })
 })
+
+describe('outage 2026-09-29: container failover', () => {
+  test('named primary + standby, thrown errors fail over, friendly 503 last', () => {
+    const w = read('src/cf-container-worker.ts')
+    assert.match(w, /CONTAINER_INSTANCE_NAME = "betsy-main-2"/)
+    assert.match(w, /STANDBY_INSTANCE_NAME = "betsy-standby-1"/)
+    assert.match(w, /return fetchWithFailover\(env, new Request\(request, \{ headers \}\)\)/)
+    assert.match(w, /return unavailableResponse\(request\)/)
+    assert.doesNotMatch(w, /getContainer\(env\.BETSY_CRM_CONTAINER\)\./)
+    assert.match(read('wrangler.jsonc'), /"max_instances": 2/)
+  })
+})

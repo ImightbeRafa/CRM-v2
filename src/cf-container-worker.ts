@@ -6,6 +6,39 @@ import { Container, getContainer } from "@cloudflare/containers";
  * redeploy did not reset it). A new name gives a fresh Durable Object + container.
  */
 const CONTAINER_INSTANCE_NAME = "betsy-main-2";
+/** Standby object: only started when the primary throws (max_instances 2 leaves room for it). */
+const STANDBY_INSTANCE_NAME = "betsy-standby-1";
+
+/** Friendly page instead of Cloudflare's raw "Error 1101" when no container answers. */
+function unavailableResponse(request: Request): Response {
+  const headers = { "Retry-After": "30", "Cache-Control": "no-store" };
+  if (new URL(request.url).pathname.startsWith("/api/")) {
+    // Meta and other webhook senders retry on 5xx.
+    return Response.json({ error: "Servicio temporalmente no disponible" }, { status: 503, headers });
+  }
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="30"><title>Betsy · volvemos enseguida</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0E0D17;color:#F1F1F5;font-family:system-ui,-apple-system,Segoe UI,sans-serif}main{max-width:420px;padding:32px;text-align:center}h1{font-size:22px;margin:0 0 8px;color:#B3A6FF}p{margin:0;color:#AEB8C7;line-height:1.5}</style></head><body><main><h1>Betsy</h1><p>Estamos reiniciando el servicio. Esta página se recarga sola en unos segundos.</p></main></body></html>`;
+  return new Response(html, { status: 503, headers: { ...headers, "Content-Type": "text/html; charset=utf-8" } });
+}
+
+/**
+ * Primary container, then the standby once if the platform throws (e.g. "internal error" from
+ * a stuck instance — the 2026-09-29 outage). HTTP error responses from the app are returned
+ * as-is; only thrown exceptions fail over.
+ */
+async function fetchWithFailover(env: Env, request: Request): Promise<Response> {
+  const retry = request.clone();
+  try {
+    return await getContainer(env.BETSY_CRM_CONTAINER, CONTAINER_INSTANCE_NAME).fetch(request);
+  } catch (primaryError) {
+    console.error("[container] primary failed, trying standby", String(primaryError));
+    try {
+      return await getContainer(env.BETSY_CRM_CONTAINER, STANDBY_INSTANCE_NAME).fetch(retry);
+    } catch (standbyError) {
+      console.error("[container] standby failed too", String(standbyError));
+      return unavailableResponse(request);
+    }
+  }
+}
 import { env } from "cloudflare:workers";
 
 // Cloudflare Worker entry for the daytime smoke deploy (see wrangler.jsonc).
@@ -215,7 +248,6 @@ async function runCronPaths(
     );
   }
 
-  const container = getContainer(env.BETSY_CRM_CONTAINER, CONTAINER_INSTANCE_NAME);
   const results: Array<{ path: string; status: number; ok: boolean }> = [];
 
   for (const path of paths) {
@@ -225,7 +257,7 @@ async function runCronPaths(
         Authorization: `Bearer ${secret}`,
       },
     });
-    const response = await container.fetch(request);
+    const response = await fetchWithFailover(env, request);
     results.push({
       path,
       status: response.status,
@@ -249,7 +281,7 @@ export default {
     for (const name of ["x-user-id", "x-user-role", "x-user-email", "x-tenant-id", "x-middleware-subrequest"]) {
       headers.delete(name);
     }
-    return getContainer(env.BETSY_CRM_CONTAINER, CONTAINER_INSTANCE_NAME).fetch(new Request(request, { headers }));
+    return fetchWithFailover(env, new Request(request, { headers }));
   },
 
   async scheduled(

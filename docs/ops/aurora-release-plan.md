@@ -51,3 +51,15 @@ steps 1–2 on www.
 - Rafael merges PR #88 when satisfied (agents never merge).
 - Turn on `chat_outbound_media_v1` only for a tenant with a tested line.
 - Update Notion (Aurora tablero + security register) and `docs/audits/CHANGELOG_AGENTS.md`.
+
+## Outage: Error 1101 / "internal error; reference = …" on every request
+1. `npx wrangler tail betsy-crm-daytime-smoke --format pretty` — if the exception is `internal error;
+   reference = …` the Worker cannot reach its container (platform side, our code never ran).
+2. `npx wrangler containers list` + `npx wrangler containers instances <id>` — look for an instance
+   stuck `inactive`. The Worker fails over to `betsy-standby-1` automatically (since 2026-09-29).
+3. If both are stuck: bump the names in `src/cf-container-worker.ts` (`CONTAINER_INSTANCE_NAME`,
+   `STANDBY_INSTANCE_NAME`) and `npx wrangler deploy` — a new name = a fresh container. A plain
+   redeploy does **not** reset a stuck object.
+4. Still down → Cloudflare support with the reference ids from step 1.
+5. Build crash `Cannot create property '_interopRequireDefault'` during "Collecting build traces" is
+   transient: re-run the deploy.

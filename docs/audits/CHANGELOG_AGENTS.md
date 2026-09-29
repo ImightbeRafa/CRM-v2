@@ -1,3 +1,17 @@
+## 2026-09-29 — Outage: www 1101 for ~25 min (container stuck) + failover
+
+- 00:21 UTC Cloudflare recreated the single container instance (`cf-singleton-container`); it stayed
+  `inactive` and every Worker `container.fetch` threw a Durable Object `internal error` → Error 1101 on
+  every page and webhook. No deploy / code change preceded it (live 73ae0636 since 22:51). A plain
+  redeploy (b3a4dffb) did not reset the stuck object.
+- Fix (8ee63e4e, branch `claudio/hotfix-container`, Rafael deployed 00:46): named container object
+  `betsy-main-2` + `max_instances: 2`. Site back.
+- Prevention (this branch): `fetchWithFailover` — thrown platform errors retry once on a standby object
+  `betsy-standby-1`; if that fails too, a branded 503 page (API: JSON 503, Meta retries). Logged as
+  `[container] primary failed` in `wrangler tail`. Runbook: docs/ops/aurora-release-plan.md › Outage.
+- Separate: one Docker build hit a transient Next build-traces crash (`_interopRequireDefault` on
+  number); the same commit built clean on retry.
+
 ## 2026-09-28 — Chats: drag & drop + paste images (branch `claudio/chat-feedback-batch`)
 
 - Drop a file anywhere on the open chat (overlay "Soltá la imagen para adjuntarla") or paste a

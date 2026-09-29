@@ -12,6 +12,7 @@ import {
 import { mapMessageToDto } from '@/lib/chat-conversation-api'
 import { buildHumanSenderSnapshot, mergeHumanSenderMetadata } from '@/lib/chat-human-attribution'
 import { autoAssignOnFirstHumanReply } from '@/lib/chat-auto-assign'
+import { recordHumanSendMetrics } from '@/lib/chat-send-metrics'
 import {
   buildMediaCacheMetadataPatch,
   cacheProviderMediaToBlob,
@@ -72,6 +73,8 @@ export async function sendWhatsAppMediaBytes(opts: {
   clientRequestId?: string | null
   /** Extra metadata on the stored message (e.g. `{ guiaId }`, `{ reusedFromMessageId }`). */
   metadata?: Record<string, unknown>
+  /** Quick reply shortcut the agent inserted (activity metric only; sanitized server-side). */
+  quickReplyShortcut?: unknown
 }): Promise<SendMediaResult> {
   const db = prisma as any
   const { tenantId, userId, socialAccountId, recipient, bytes } = opts
@@ -237,6 +240,15 @@ export async function sendWhatsAppMediaBytes(opts: {
 
   if (providerMessageId && write.conversationId && senderUser) {
     await autoAssignOnFirstHumanReply(db, { tenantId, conversationId: write.conversationId, userId })
+    // Fire-and-forget activity metrics (never awaited: must not delay the send).
+    void recordHumanSendMetrics({
+      tenantId,
+      conversationId: write.conversationId,
+      userId,
+      messageId: write.messageId,
+      quickReplyShortcut: opts.quickReplyShortcut,
+      media: true,
+    })
   }
 
   const saved = await db.chatMessage.findFirst({ where: { id: write.messageId, tenantId } })

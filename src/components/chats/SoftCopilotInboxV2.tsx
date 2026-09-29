@@ -176,6 +176,8 @@ export function SoftCopilotInboxV2() {
   const nearBottomRef = useRef(true)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const sendInFlightRef = useRef(false)
+  /** Last quick reply inserted, per chat: reported with that chat's next send (usage metric). */
+  const quickReplyUsedRef = useRef<{ conversationId: string; shortcut: string } | null>(null)
 
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId
@@ -1038,6 +1040,13 @@ export function SoftCopilotInboxV2() {
 
     if (!content) return
 
+    // Usage metric: the quick reply inserted in THIS chat since the last send (not on retries).
+    const quickReplyShortcut =
+      !opts?.retryClientRequestId && quickReplyUsedRef.current?.conversationId === conversationId
+        ? quickReplyUsedRef.current.shortcut
+        : undefined
+    quickReplyUsedRef.current = null
+
     sendInFlightRef.current = true
     setSending(true)
     setSendError(null)
@@ -1092,6 +1101,7 @@ export function SoftCopilotInboxV2() {
           recipient,
           content,
           clientRequestId,
+          ...(quickReplyShortcut ? { quickReplyShortcut } : {}),
         }),
       })
       const parsed = await parseApiJson<{
@@ -1188,6 +1198,8 @@ export function SoftCopilotInboxV2() {
    */
   async function handleSendQuickReplyMedia(media: QuickReplyMedia[], text: string): Promise<boolean> {
     if (!selectedConversation || media.length === 0) return false
+    const usedShortcut =
+      quickReplyUsedRef.current?.conversationId === selectedConversationId ? quickReplyUsedRef.current.shortcut : undefined
     const caption = text.trim()
     const captionFits = caption.length > 0 && caption.length <= WA_CAPTION_MAX
     const keys: string[] = []
@@ -1208,6 +1220,7 @@ export function SoftCopilotInboxV2() {
             recipient: selectedConversation.recipientId,
             caption: i === 0 && captionFits ? caption : '',
             clientRequestId: pendingFileRequestIds.current.get(key),
+            ...(i === 0 && usedShortcut ? { quickReplyShortcut: usedShortcut } : {}),
           }),
         },
         '/api/chat/send-media',
@@ -1216,6 +1229,7 @@ export function SoftCopilotInboxV2() {
       if (!ok) return false
     }
     for (const key of keys) pendingFileRequestIds.current.delete(key)
+    if (usedShortcut) quickReplyUsedRef.current = null
     if (caption && !captionFits) {
       await handleSendMessage({ preventDefault() {} } as FormEvent)
     } else {
@@ -1428,7 +1442,14 @@ export function SoftCopilotInboxV2() {
           onSendQuickReplyMedia: handleSendQuickReplyMedia,
         }
       : undefined,
-    quickReplies: { items: quickReplyItems, onChange: changeQuickReplies, canManage: canManageQuickReplies },
+    quickReplies: {
+      items: quickReplyItems,
+      onChange: changeQuickReplies,
+      canManage: canManageQuickReplies,
+      onUsed: (shortcut: string) => {
+        if (selectedConversationId) quickReplyUsedRef.current = { conversationId: selectedConversationId, shortcut }
+      },
+    },
     aiBusy: controlBusy,
     threadLoading: Boolean(selectedConversationId && threadLoadingId === selectedConversationId),
     threadError: Boolean(selectedConversationId && threadErrorId === selectedConversationId),

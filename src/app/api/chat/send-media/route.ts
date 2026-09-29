@@ -104,6 +104,7 @@ export async function POST(request: NextRequest) {
           caption: String(body?.caption || ''),
           clientRequestId,
           metadata: { quickReplyMedia: true, quickReplyMediaPath },
+          quickReplyShortcut: body?.quickReplyShortcut,
         })
         return toResponse(result, clientRequestId)
       }

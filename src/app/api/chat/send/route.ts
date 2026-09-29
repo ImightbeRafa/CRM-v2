@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { autoAssignOnFirstHumanReply } from '@/lib/chat-auto-assign'
+import { recordHumanSendMetrics } from '@/lib/chat-send-metrics'
 import { prisma } from '@/lib/db'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
@@ -461,6 +462,14 @@ export async function POST(request: NextRequest) {
     // First human reply on an unassigned chat makes the sender its owner (delivered sends only).
     if (providerMessageId && write.conversationId && senderUser) {
       await autoAssignOnFirstHumanReply(db, { tenantId, conversationId: write.conversationId, userId })
+      // Fire-and-forget activity metrics (never awaited: must not delay the send).
+      void recordHumanSendMetrics({
+        tenantId,
+        conversationId: write.conversationId,
+        userId,
+        messageId: write.messageId,
+        quickReplyShortcut: body.quickReplyShortcut,
+      })
     }
 
     const saved = await db.chatMessage.findUnique({ where: { id: write.messageId } })

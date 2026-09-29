@@ -144,6 +144,8 @@ interface SoftThreadPaneProps {
     onChange: (change: QuickReplyChange) => Promise<string | null>
     /** Owners / admins edit the list; everyone uses it. */
     canManage?: boolean
+    /** A quick reply was inserted (the next send reports it as a usage metric). */
+    onUsed?: (shortcut: string) => void
   }
   /** Chat owner picker (Asignarme / teammates / Sin asignar). Hidden when absent. */
   assignment?: {
@@ -339,6 +341,7 @@ export function SoftThreadPane({
     if (!slash) return
     const next = applyQuickReply(messageInput, slash, reply, conversation?.recipientName)
     onMessageInput(next.text)
+    quickReplies?.onUsed?.(reply.shortcut)
     if (next.media.length) {
       const filesAllowed =
         Boolean(attachments?.onSendQuickReplyMedia) &&

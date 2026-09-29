@@ -39,3 +39,12 @@ test('thread header shows the business stage label', () => {
   assert.match(pane, /chatStageLabel\(conversation\.status\)/)
   assert.doesNotMatch(pane, /function statusLabel/)
 })
+
+test('guía from chat = the Producción generator (address check, GAM), gated by update_production', () => {
+  const panel = read('src/components/chats/ChatClientPanel.tsx')
+  assert.match(panel, /import\('@\/app\/produccion\/components\/GuiaGenerator'\)/)
+  assert.match(panel, /hasSessionPermission\(session, 'update_production'\)/)
+  assert.match(panel, /\/api\/orders\/details\?id=/)
+  assert.match(panel, /<GuiaGenerator\s+open\s+orders=\{\[guiaSale\]\}/)
+  assert.doesNotMatch(panel, /\/api\/shipping\/generate-guia/, 'no shortcut that skips address verification')
+})

@@ -1,6 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { useSession } from 'next-auth/react'
+import { hasSessionPermission } from '@/lib/session-permissions'
+import { parseOrder } from '@/app/hooks/useSalesStream'
+import type { Sale } from '@/app/produccion/types/sales'
 import Link from 'next/link'
 import { Check, ExternalLink, FileText, Link2, Loader2, Search, Send, ShoppingBag, Star, Unlink, UserRound } from 'lucide-react'
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext'
@@ -44,7 +48,10 @@ type PanelData = {
   results: ClientInfo[]
 }
 
-const DELIVERY_TYPES = ['Domicilio', 'Sucursal', 'Punto de correo'] as const
+// Same generator as Producción: delivery type, address verification, GAM rules, generate.
+const GuiaGenerator = lazy(() =>
+  import('@/app/produccion/components/GuiaGenerator').then((m) => ({ default: m.GuiaGenerator })),
+)
 
 function shortDate(iso: string | null | undefined): string {
   if (!iso) return ''
@@ -78,7 +85,9 @@ export function ChatClientPanel({
   const [searchOpen, setSearchOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
-  const [deliveryType, setDeliveryType] = useState<(typeof DELIVERY_TYPES)[number]>('Domicilio')
+  const { data: session } = useSession()
+  const canGenerateGuia = hasSessionPermission(session, 'update_production')
+  const [guiaSale, setGuiaSale] = useState<Sale | null>(null)
   const requestSeq = useRef(0)
 
   const load = useCallback(
@@ -156,34 +165,36 @@ export function ChatClientPanel({
     }
   }
 
-  async function generateGuia(order: ChatFlowOrder) {
+  /** Loads the full order (same loader as Pedidos) and opens the Producción guía generator. */
+  async function openGuiaGenerator(order: ChatFlowOrder) {
     setBusy(`guia:${order.id}`)
     setNotice(null)
     try {
-      const res = await fetch('/api/shipping/generate-guia', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderIds: [order.orderId], deliveryType }),
-      })
-      const json = (await res.json().catch(() => null)) as {
-        data?: { results?: Array<{ success?: boolean; error?: string; guiaNumber?: string }> }
-        error?: string
-      } | null
-      const result = json?.data?.results?.[0]
-      if (res.status === 403) {
-        setNotice({ tone: 'error', text: 'Tu rol no puede generar guías. Pedíselo a Producción.' })
-      } else if (!res.ok || !result?.success) {
-        setNotice({ tone: 'error', text: result?.error || json?.error || 'No se pudo generar la guía.' })
-      } else {
-        setNotice({ tone: 'ok', text: `Guía ${result.guiaNumber || ''} generada.`.replace('  ', ' ') })
+      const res = await fetch(`/api/orders/details?id=${encodeURIComponent(order.id)}`, { credentials: 'same-origin', cache: 'no-store' })
+      const json = (await res.json().catch(() => null)) as { data?: unknown } | null
+      const sale = res.ok && json?.data ? parseOrder(json.data) : null
+      if (!sale) {
+        setNotice({ tone: 'error', text: 'No se pudo abrir el pedido para generar la guía.' })
+        return
       }
-      await load()
+      setGuiaSale(sale)
     } catch {
       setNotice({ tone: 'error', text: 'Sin conexión. Probá de nuevo.' })
     } finally {
       setBusy(null)
     }
+  }
+
+  async function updateOrder(orderId: string, updatedData: Partial<Sale>): Promise<Sale> {
+    const response = await fetch('/api/orders/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ orderId, ...updatedData }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo actualizar el pedido')
+    return data.data || data
   }
 
   async function sendGuia(order: ChatFlowOrder, resend = false) {
@@ -438,29 +449,22 @@ export function ChatClientPanel({
                   </ol>
 
                   {step === 'guia' ? (
-                    <div className="mt-2.5 flex gap-1.5">
-                      <select
-                        value={deliveryType}
-                        onChange={(e) => setDeliveryType(e.target.value as (typeof DELIVERY_TYPES)[number])}
-                        aria-label="Tipo de entrega"
-                        className="min-w-0 flex-1 rounded-lg bg-slate-50 px-2 py-1.5 text-[11px] text-slate-700 outline-none ring-1 ring-slate-200"
-                      >
-                        {DELIVERY_TYPES.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
+                    canGenerateGuia ? (
                       <button
                         type="button"
                         disabled={busy !== null}
-                        onClick={() => void generateGuia(order)}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#5B6CFF] px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50"
+                        onClick={() => void openGuiaGenerator(order)}
+                        data-testid="chat-open-guia-generator"
+                        className="mt-2.5 inline-flex w-full items-center justify-center gap-1 rounded-lg bg-[#5B6CFF] px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50"
                       >
                         {busy === `guia:${order.id}` ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <FileText className="h-3 w-3" aria-hidden />}
                         Generar guía
                       </button>
-                    </div>
+                    ) : (
+                      <p className="mt-2.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-500">
+                        Tu rol no genera guías: pedísela a Producción. Cuando esté lista, la enviás desde acá.
+                      </p>
+                    )
                   ) : null}
                   {step === 'enviar-guia' || step === 'listo' ? (
                     <div className="mt-2.5 flex items-center justify-between gap-2">
@@ -491,6 +495,21 @@ export function ChatClientPanel({
       </div>
 
       <ChatNotesPanel conversationId={conversationId} hasClient={Boolean(client)} legacyNote={client?.notes ?? null} />
+
+      {guiaSale ? (
+        <Suspense fallback={null}>
+          <GuiaGenerator
+            open
+            orders={[guiaSale]}
+            onClose={() => {
+              setGuiaSale(null)
+              // The order now has its guía: the next step here is "Enviar guía".
+              void load()
+            }}
+            onUpdateOrder={updateOrder}
+          />
+        </Suspense>
+      ) : null}
     </div>
   )
 }

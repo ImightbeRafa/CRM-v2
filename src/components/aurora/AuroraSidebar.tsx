@@ -7,9 +7,9 @@ import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { ArrowUpRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { AURORA_NAV, getActiveAuroraHref } from './aurora-nav'
-import { avatarInitials } from '@/lib/aurora-avatar'
 import { AuroraAvatar } from './shell/AuroraAvatar'
 import { AuroraProfileMenu } from './shell/AuroraProfileMenu'
+import { BusinessSwitcher } from './BusinessSwitcher'
 import { useAuroraViewer } from './shell/useAuroraViewer'
 
 const FOCUS_RING =
@@ -120,21 +120,8 @@ export function AuroraSidebar() {
         </div>
       )}
 
-      <div
-        className={`mb-5 flex items-center rounded-xl border border-static-white/10 bg-static-white/[0.04] motion-safe:transition-colors motion-safe:duration-200 hover:bg-static-white/[0.07] ${
-          collapsed ? 'mx-auto h-11 w-11 justify-center' : 'mx-3 gap-2.5 px-2.5 py-2'
-        }`}
-        title={collapsed ? tenantName : undefined}
-      >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#5B6CFF] to-[#A855F7] text-[11px] font-bold">
-          {avatarInitials(tenantName)}
-        </span>
-        {collapsed ? null : (
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-semibold leading-tight">{tenantName}</span>
-          </span>
-        )}
-      </div>
+      {/* Business header; a switcher when the user belongs to several businesses (Phase 2b). */}
+      <BusinessSwitcher tenantName={tenantName} collapsed={collapsed} />
 
       <nav className={`min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${collapsed ? 'px-2' : 'px-3'}`} aria-label="Navegación principal">
         {AURORA_NAV.map((section, sectionIndex) => {

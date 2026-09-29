@@ -747,7 +747,12 @@ export const authOptions: NextAuthOptions = {
       }
     },
 
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger }) {
+      // Business switcher (Phase 2b): `update()` from the client only forces the DB re-sync below,
+      // which re-reads User.defaultTenantId (set by POST /api/tenant/switch after a membership
+      // check). The client payload is NEVER read: a tenant id can't be injected from the browser.
+      if (trigger === 'update') token.lastDbSync = 0
+
       // Initial sign in - populate all token fields
       if (user) {
         token.id = user.id;

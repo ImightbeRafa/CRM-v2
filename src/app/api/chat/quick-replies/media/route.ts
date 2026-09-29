@@ -105,8 +105,9 @@ export async function POST(request: NextRequest) {
       media: { path: pathname, mime: media.mime, filename: media.filename, size: media.size },
     })
   } catch (error) {
-    console.error('[chat/quick-replies/media POST]', error)
-    return NextResponse.json({ error: 'No se pudo guardar el archivo.' }, { status: 500 })
+    const why = describeBlobError(error)
+    console.error('[chat/quick-replies/media POST]', why.code, why.detail)
+    return NextResponse.json({ error: `No se pudo guardar el archivo: ${why.message}`, code: why.code }, { status: 500 })
   }
 }
 

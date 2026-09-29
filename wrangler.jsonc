@@ -4,6 +4,13 @@
   "preview_urls": false,
   "main": "src/cf-container-worker.ts",
   "compatibility_date": "2026-09-25",
+  // Workers Logs: container console output + exceptions queryable (dashboard / API) — added after
+  // the 2026-09-29 outage and the quick-reply upload 500 were invisible from outside.
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": { "enabled": true, "invocation_logs": true }
+  },
   "triggers": {
     // Unique schedules matching vercel.json (9 paths; "0 2 * * *" fans out to 2).
     // Handler no-ops while DISABLE_CRONS=1 — safe to deploy before DNS flip.

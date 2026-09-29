@@ -37,7 +37,7 @@ test('normal admin work still passes; bogus roles are refused', () => {
 test('all member endpoints run the guard', () => {
   const users = read('src/app/api/users/route.ts')
   assert.equal((users.match(/await guardMemberChange\(auth, membership/g) || []).length, 2)
-  assert.match(users, /role === 'OWNER' && auth\.role !== 'OWNER'/)
+  assert.match(users, /actor\?\.role !== 'OWNER'/, 'POST checks the actor role from the DB')
   assert.equal((read('src/app/api/users/[id]/route.ts').match(/await guardMemberChange\(auth, membership/g) || []).length, 2)
 })
 
@@ -75,4 +75,13 @@ test('regressions guarded: inactive businesses not blocked here, Google-linked a
   assert.doesNotMatch(read('src/app/api/auth/forgot-password/route.ts'), /provider !== 'credentials'/)
   const accept = read('src/app/api/invites/accept/route.ts')
   assert.equal((accept.match(/findInviteAcceptedBy\(token, session/g) || []).length, 2)
+})
+
+test('member routes accept only a real boolean `active` (guard and write see the same value)', () => {
+  const byId = read('src/app/api/users/[id]/route.ts')
+  assert.match(byId, /if \(active !== undefined && typeof active !== 'boolean'\)/)
+  assert.doesNotMatch(byId, /Boolean\(active\)/)
+  assert.match(read('src/app/api/users/route.ts'), /if \(active !== undefined && typeof active !== 'boolean'\)/)
+  // POST: granting OWNER checks the actor's role in the DB (AUTH-28).
+  assert.match(read('src/app/api/users/route.ts'), /if \(role === 'OWNER'\) \{[\s\S]{0,300}actor\?\.role !== 'OWNER'/)
 })

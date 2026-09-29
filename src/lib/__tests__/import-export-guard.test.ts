@@ -121,9 +121,11 @@ test('zip guard: a directory shifted away from its end record is refused', () =>
   assert.ok(xlsxArchiveProblem(shifted))
 })
 
-test('both xlsx loaders run the guard before ExcelJS inflates', () => {
+test('both xlsx loaders hand ExcelJS only the sanitized (rebuilt) archive', () => {
   for (const f of ['src/app/api/import/excel/route.ts', 'src/app/api/import/preview/route.ts']) {
     const src = read(f)
-    assert.ok(src.indexOf('xlsxArchiveProblem(buffer)') > 0 && src.indexOf('xlsxArchiveProblem(buffer)') < src.indexOf('workbook.xlsx.load('), f)
+    assert.ok(src.indexOf('await sanitizeXlsx(buffer)') > 0 && src.indexOf('await sanitizeXlsx(buffer)') < src.indexOf('workbook.xlsx.load('), f)
+    assert.ok(src.includes('workbook.xlsx.load(sanitized.clean as any)'), f)
+    assert.ok(!src.includes('workbook.xlsx.load(buffer'), f)
   }
 })

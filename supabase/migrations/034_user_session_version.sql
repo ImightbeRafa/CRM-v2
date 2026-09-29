@@ -4,8 +4,10 @@
 --
 -- Additive only: two columns on "User", one with a constant default (metadata-only on PG 11+, no
 -- table rewrite) and one nullable. No data is changed; every existing user reads version 0, which
--- is exactly what current sessions carry, so applying this logs nobody out. The app code already
--- tolerates the columns being absent, so apply order vs deploy does not matter.
+-- is exactly what current sessions carry, so applying this logs nobody out. The app code also
+-- runs without these columns (availability), BUT apply this BEFORE deploying the Phase 1 auth code:
+-- without it session revocation is inert, so a password reset / first Google proof cannot end a
+-- squatter's session (Security Register AUTH-08 / AUTH-11).
 -- No new table: row-level security is unchanged.
 --
 -- HUMAN APPROVAL REQUIRED BEFORE EXECUTION AGAINST SHARED SUPABASE.

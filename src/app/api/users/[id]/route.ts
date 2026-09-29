@@ -22,6 +22,11 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     if (role !== undefined && !Object.values(MemberRole).includes(role)) {
       return createErrorResponse('Rol inválido', 400);
     }
+    // Real booleans only: the guard and the write must see the same value ({"active":0} used to
+    // pass the guard as "no change" and still deactivate the last Owner).
+    if (active !== undefined && typeof active !== 'boolean') {
+      return createErrorResponse('active debe ser true o false', 400);
+    }
 
     const membership = await prisma.membership.findFirst({
       where: { userId, tenantId: auth.tenantId },
@@ -36,7 +41,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       where: { id: membership.id },
       data: {
         ...(role !== undefined ? { role } : {}),
-        ...(active !== undefined ? { isActive: Boolean(active) } : {}),
+        ...(active !== undefined ? { isActive: active } : {}),
       },
     });
 

@@ -15,7 +15,8 @@ type InvitePreview = {
 
 function AcceptInviteInner() {
   const params = useSearchParams()
-  const token = params.get('token') || ''
+  // Read once (kept for the Google callback), then dropped from the address bar.
+  const [token] = useState(() => params.get('token') || '')
   const router = useRouter()
   const { data: session, status } = useSession()
   const [preview, setPreview] = useState<InvitePreview | null>(null)
@@ -29,6 +30,7 @@ function AcceptInviteInner() {
       return
     }
     document.cookie = `betsy_team_invite=${encodeURIComponent(token)}; path=/; max-age=${7 * 24 * 3600}; samesite=lax`
+    if (window.location.search) window.history.replaceState(null, '', window.location.pathname)
     fetch(`/api/invites/accept?token=${encodeURIComponent(token)}`)
       .then(async (r) => {
         const json = await r.json()

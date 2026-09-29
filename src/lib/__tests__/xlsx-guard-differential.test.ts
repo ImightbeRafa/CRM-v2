@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import zlib from 'node:zlib'
 import JSZip from 'jszip'
 import ExcelJS from 'exceljs'
-import { acquireXlsxParseSlot, xlsxArchiveProblem, xlsxInspectedEntryNames } from '../xlsx-guard'
+import { acquireXlsxParseSlot, sanitizeXlsx, xlsxArchiveProblem, xlsxInspectedEntryNames } from '../xlsx-guard'
 
 function zip(entries: Array<{ name: string; data: Buffer; method?: 0 | 8 }>, opts: { prefix?: Buffer; gapBeforeEocd?: number; trailingCd?: Buffer } = {}): Buffer {
   const locals: Buffer[] = []
@@ -83,4 +83,38 @@ test('at most 2 parses at once per process; slots are released', () => {
   const c = acquireXlsxParseSlot()
   assert.ok(c)
   b!(); c!()
+})
+
+test('multi-disk / ZIP64 end-record fields are refused (JSZip would read another directory)', () => {
+  const ok = zip([{ name: 'a.xml', data: Buffer.from('<a/>') }])
+  const eocdAt = ok.length - 22
+  for (const [off, value] of [[4, 0xffff], [6, 0xffff], [8, 0xffff], [4, 1], [8, 2]] as const) {
+    const tampered = Buffer.from(ok)
+    tampered.writeUInt16LE(value, eocdAt + off)
+    assert.ok(xlsxArchiveProblem(tampered), `eocd+${off}=${value}`)
+  }
+})
+
+test('sanitizeXlsx rebuilds a clean archive that ExcelJS reads identically', async () => {
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet('Ordenes')
+  ws.addRow(['Cliente', 'Total'])
+  ws.addRow(['Ana ñandú', 5000])
+  const original = Buffer.from(await wb.xlsx.writeBuffer())
+  const result = await sanitizeXlsx(original)
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  const back = new ExcelJS.Workbook()
+  await back.xlsx.load(result.clean as any)
+  assert.equal(back.worksheets[0].name, 'Ordenes')
+  assert.equal(back.worksheets[0].getRow(2).getCell(1).value, 'Ana ñandú')
+  assert.equal(back.worksheets[0].getRow(2).getCell(2).value, 5000)
+  // The rebuilt archive contains exactly the inspected entries.
+  assert.deepEqual([...new Set(xlsxInspectedEntryNames(result.clean))].sort(), [...new Set(xlsxInspectedEntryNames(original))].sort())
+})
+
+test('sanitizeXlsx refuses what the guard refuses', async () => {
+  const bomb = zip([{ name: 'x.xml', data: Buffer.alloc(50 * 1024 * 1024, 0x61) }])
+  const r = await sanitizeXlsx(bomb)
+  assert.equal(r.ok, false)
 })

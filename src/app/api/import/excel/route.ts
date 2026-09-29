@@ -12,7 +12,7 @@ import {
   validateXlsxUpload,
   type ImportResult,
 } from '@/lib/import-helpers';
-import { acquireXlsxParseSlot, xlsxArchiveProblem } from '@/lib/xlsx-guard';
+import { acquireXlsxParseSlot, sanitizeXlsx } from '@/lib/xlsx-guard';
 import { rateLimit } from '@/lib/rate-limit';
 import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags';
 import { createLifecycleOrder } from '@/lib/order-lifecycle';
@@ -322,10 +322,6 @@ export async function POST(request: NextRequest) {
     if (!rateLimit(`xlsx:${auth.tenantId}`, { windowMs: 60_000, maxRequests: 10, identifier: 'xlsx-import' }).allowed) {
       return NextResponse.json({ error: 'Demasiadas importaciones seguidas. Espera un minuto.' }, { status: 429 });
     }
-    const archiveProblem = xlsxArchiveProblem(buffer);
-    if (archiveProblem) {
-      return NextResponse.json({ error: archiveProblem }, { status: 400 });
-    }
 
     // Parse Excel
     console.log('📄 Parsing Excel file...');
@@ -336,7 +332,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Hay otras importaciones en curso. Intenta de nuevo en unos segundos.' }, { status: 503 });
     }
     try {
-      await workbook.xlsx.load(buffer as any);
+      // ExcelJS only ever parses the clean archive rebuilt from the guard's inflated entries.
+      const sanitized = await sanitizeXlsx(buffer);
+      if (!sanitized.ok) {
+        return NextResponse.json({ error: sanitized.error }, { status: 400 });
+      }
+      await workbook.xlsx.load(sanitized.clean as any);
     } finally {
       releaseSlot();
     }

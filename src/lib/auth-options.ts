@@ -361,6 +361,18 @@ export const authOptions: NextAuthOptions = {
                 return false;
               }
 
+              // First proof of this mailbox: end every session opened with a password set before
+              // anyone proved the address (no-op before migration 034). BEFORE the update below: if
+              // the revoke fails we refuse, and the next Google sign-in retries it (AUTH-08).
+              if (!dbUser.emailVerified) {
+                try {
+                  await revokeUserSessions(dbUser.id)
+                } catch (revokeError) {
+                  console.error('[OAuth] session revoke failed; refusing sign-in', revokeError)
+                  return false
+                }
+              }
+
               // Update user with latest info from OAuth provider, including OAuth provider info
               const updatedUser = await prisma.user.update({
                 where: { id: dbUser.id },
@@ -414,11 +426,6 @@ export const authOptions: NextAuthOptions = {
 
               // Prefer pending TenantInvite EVEN when the user already has other
               // active memberships (orphan owned tenant must not shadow invite).
-              if (!dbUser.emailVerified) {
-                // …and end every session opened with that password (no-op before migration 034).
-                await revokeUserSessions(dbUser.id).catch(() => undefined)
-              }
-
               let pending = null as Awaited<ReturnType<typeof findInviteForPresentedToken>>
               try {
                 pending = await findInviteForPresentedToken(await readInviteTokenCookie(), updatedUser.email)

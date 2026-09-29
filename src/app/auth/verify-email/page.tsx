@@ -18,19 +18,22 @@ function VerifyEmailPageInner() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'pending'>('pending')
   const [message, setMessage] = useState<string>('')
   const [resending, setResending] = useState(false)
-  const email = searchParams?.get('email') || ''
-  const token = searchParams?.get('token')
+  // Read once, then drop token / email from the address bar (history, Referer, analytics).
+  const [email] = useState(() => searchParams?.get('email') || '')
+  const [token] = useState(() => searchParams?.get('token') || null)
 
   useEffect(() => {
+    if (window.location.search) window.history.replaceState(null, '', window.location.pathname)
     if (token) {
       verifyEmail(token)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
 
   const verifyEmail = async (verificationToken: string) => {
     setStatus('loading')
     try {
-      const response = await fetch(`/api/auth/verify-email?token=${verificationToken}`)
+      const response = await fetch(`/api/auth/verify-email?token=${encodeURIComponent(verificationToken)}`)
       const data = await response.json()
 
       if (response.ok && data.success) {

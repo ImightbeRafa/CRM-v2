@@ -107,8 +107,15 @@ export async function POST(request: NextRequest) {
     if (!(MEMBER_ROLES as readonly string[]).includes(role)) {
       return createErrorResponse('Rol inválido', 400)
     }
-    if (role === 'OWNER' && auth.role !== 'OWNER') {
-      return createErrorResponse('Solo un Owner puede asignar el rol Owner.', 403)
+    if (role === 'OWNER') {
+      // The actor's CURRENT role from the DB, not the session's (AUTH-28).
+      const actor = await prisma.membership.findFirst({
+        where: { userId: auth.userId, tenantId, isActive: true },
+        select: { role: true },
+      })
+      if (actor?.role !== 'OWNER') {
+        return createErrorResponse('Solo un Owner puede asignar el rol Owner.', 403)
+      }
     }
 
     // Email-invite mode: create TenantInvite (join on accept) — no orphan tenant, no password required.
@@ -335,6 +342,9 @@ export async function PUT(request: NextRequest) {
     
     const { tenantId } = auth
     const { id, username, email, role, active } = await request.json()
+    if (active !== undefined && typeof active !== 'boolean') {
+      return createErrorResponse('active debe ser true o false', 400)
+    }
     
     if (!id) {
       return createErrorResponse('ID de usuario requerido', 400)

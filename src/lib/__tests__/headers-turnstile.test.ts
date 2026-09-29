@@ -113,3 +113,11 @@ test('Meta Pixel never loads on a URL carrying a one-time token; no automatic SP
   assert.ok(guard.test('https://www.betsycrm.com/auth/signin?callbackUrl=%2Fauth%2Fverify-email%3Ftoken%3Dabc'))
   assert.ok(!guard.test('https://www.betsycrm.com/home?plan=pro'))
 })
+
+test('Sentry scrub: tokens redacted raw / encoded / before a JSON escape; unparsable → dropped', async () => {
+  const { scrubTokens, scrubEvent } = await import('../sentry-scrub')
+  assert.equal(scrubTokens('/auth/reset-password?token=abc&x=1'), '/auth/reset-password?token=[redacted]&x=1')
+  assert.match(scrubTokens('callbackUrl=%2Fauth%2Fverify-email%3Ftoken%3Dabc123'), /%3Ftoken%3D\[redacted\]/)
+  const ev = scrubEvent({ message: 'url="/auth/reset-password?token=abc\\"x"' })
+  assert.ok(ev && !JSON.stringify(ev).includes('abc'))
+})

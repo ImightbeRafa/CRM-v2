@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { getLiveToken } from '@/lib/live-token';
 import { CorreosWebService, resolveCorreosWSCredentials } from '@/lib/correos';
 
 export const runtime = 'nodejs';
@@ -14,7 +14,7 @@ export const maxDuration = 30;
  */
 export async function POST(req: NextRequest) {
   try {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+    const token = await getLiveToken({ req, secret: process.env.NEXTAUTH_SECRET });
     if (!token) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }

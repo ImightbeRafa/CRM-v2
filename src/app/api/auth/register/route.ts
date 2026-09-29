@@ -104,7 +104,7 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json(
-        { success: true, message: 'Registration successful! Please check your email to verify your account.' },
+        { success: true, message: 'Registro recibido. Revisa tu email para verificar la cuenta.' },
         { status: 200 }
       );
     }
@@ -141,7 +141,7 @@ export async function POST(request: Request) {
             await sendVerificationEmail({ email: normalizedEmail, name })
           } catch {}
           return NextResponse.json(
-            { success: true, message: 'Revisa tu email para verificar la cuenta. Para unirte a un equipo, abre el enlace de la invitación.' },
+            { success: true, inviteLinkRequired: true, message: 'Cuenta creada. Para unirte al equipo que te invitó, abre el enlace de la invitación que te llegó por email.' },
             { status: 201 },
           )
         }

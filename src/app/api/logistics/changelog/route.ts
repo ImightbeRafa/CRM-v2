@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
-import { getToken } from 'next-auth/jwt';
+import { getLiveToken } from '@/lib/live-token';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   if (guard) return guard;
 
   try {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+    const token = await getLiveToken({ req, secret: process.env.NEXTAUTH_SECRET });
     const userId = (token as any)?.sub || 'system';
 
     const body = await req.json();

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { getLiveToken } from '@/lib/live-token';
 import { prisma } from '@/lib/db';
 import { isSuperAdmin } from '@/lib/super-admin-helpers';
 
@@ -7,7 +7,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ tenantId: string }> },
 ) {
-  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  const token = await getLiveToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
   if (!token?.sub) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   if (!(await isSuperAdmin(token.sub))) {
     return NextResponse.json({ error: 'Super admin access required' }, { status: 403 });

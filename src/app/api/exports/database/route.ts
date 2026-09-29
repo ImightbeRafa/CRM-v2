@@ -276,10 +276,8 @@ function normalizeRow(row: Record<string, any>) {
       value instanceof Date
         ? value.toISOString()
         : typeof value === 'object' && value !== null
-          ? neutralizeCsvFormula(JSON.stringify(value))
-          : typeof value === 'string'
-            ? neutralizeCsvFormula(value)
-            : value,
+          ? JSON.stringify(value)
+          : value, // XLSX string cells are plain text (never evaluated): no apostrophe needed
     ])
   );
 }

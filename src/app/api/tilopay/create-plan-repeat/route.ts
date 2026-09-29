@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { getLiveToken } from '@/lib/live-token';
 import { prisma } from '@/lib/db';
 import { getMembershipForToken } from '@/lib/selected-tenant';
 
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔄 [create-plan-repeat] Starting recurring subscription flow...');
     
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    const token = await getLiveToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     
     if (!token || !token.sub) {
       console.error('❌ [create-plan-repeat] Unauthorized - no token');

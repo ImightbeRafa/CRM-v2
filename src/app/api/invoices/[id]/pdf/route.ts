@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { getLiveToken } from '@/lib/live-token';
 import { prisma } from '@/lib/db';
 import { escapeHtml } from '@/lib/validation';
 import { PII_NO_STORE_HEADERS } from '@/lib/security';
@@ -39,7 +39,7 @@ export async function GET(
   const { id: invoiceId } = await params;
   
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    const token = await getLiveToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     
     if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

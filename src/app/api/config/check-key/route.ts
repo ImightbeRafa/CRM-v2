@@ -1,11 +1,11 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getToken } from 'next-auth/jwt'
+import { getLiveToken } from '@/lib/live-token';
 import { getMembershipForToken } from '@/lib/selected-tenant'
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/apiUtils'
 
 export async function POST(request: NextRequest) {
-  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
+  const token = await getLiveToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
   if (!token?.sub) return createErrorResponse('Unauthorized', 401)
   const membership = await getMembershipForToken(token)
   if (!membership) return createErrorResponse('Selected tenant membership not found', 403)

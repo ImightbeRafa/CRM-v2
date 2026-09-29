@@ -8,6 +8,7 @@ import { Eye, EyeOff } from "lucide-react"
 import { trackMetaEvent } from "@/app/components/MetaPixel"
 import { safeReturnPath } from "@/lib/safe-return-path"
 import { TurnstileWidget } from "@/components/aurora/auth/TurnstileWidget"
+import { loginErrorMessage } from "@/lib/login-error-message"
 import {
   AuthShell,
   authInputClass,
@@ -31,12 +32,6 @@ function SignInPageInner() {
   const [turnstileReset, setTurnstileReset] = useState(0)
   const [resendNote, setResendNote] = useState<string | null>(null)
 
-  // Codes thrown by the credentials authorize gates (src/lib/auth-gates.ts).
-  const loginErrorMessage = (code: string | null | undefined) => {
-    if (code === 'EMAIL_NOT_VERIFIED') return 'Verifica tu email para entrar. Te enviamos un enlace al registrarte.'
-    if (code === 'LOCKED') return 'Demasiados intentos fallidos. Espera 15 minutos o restablece tu contraseña.'
-    return 'Credenciales inválidas'
-  }
 
   const resendVerification = async () => {
     setResendNote(null)
@@ -115,6 +110,14 @@ function SignInPageInner() {
         return
       }
       
+      if (data.inviteLinkRequired) {
+        // Invited address registered without the invite link: joining needs the emailed link.
+        setError(data.message)
+        setLoading(false)
+        setIsRegistering(false)
+        return
+      }
+
       // Auto sign in after registration
       const signInRes = await signIn('credentials', {
         email,

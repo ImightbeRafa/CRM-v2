@@ -40,11 +40,13 @@ test('every client-side CSV exporter goes through csvCell', () => {
   }
 })
 
-test('server exports neutralize text', () => {
-  assert.match(read('src/app/api/exports/sales/route.ts'), /typeof v === 'string' \? neutralizeCsvFormula\(v\) : v/)
+test('server CSV exports neutralize text (JSON / XLSX keep the raw value)', () => {
+  const sales = read('src/app/api/exports/sales/route.ts')
+  assert.match(sales, /csvParser\.parse\(exportData\.map\([\s\S]{0,200}neutralizeCsvFormula\(v\)/)
+  assert.doesNotMatch(sales, /const exportData = \(groupBy/, 'JSON is not neutralized')
   const db = read('src/app/api/exports/database/route.ts')
   assert.match(db, /flattenDatabaseData\(exportData\.data\)\.map/)
-  assert.match(db, /typeof value === 'string'\s*\?\s*neutralizeCsvFormula\(value\)/)
+  assert.doesNotMatch(db.split('function normalizeRow')[1] || '', /neutralizeCsvFormula/, 'XLSX cells are plain text')
 })
 
 test('full business dump: OWNER and ADMIN only, rate limited, audited', () => {

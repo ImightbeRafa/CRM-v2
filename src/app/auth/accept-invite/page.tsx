@@ -5,6 +5,7 @@ import { AuthShell } from '@/components/aurora/auth/AuthShell'
 import { auroraBtnPrimary, auroraBtnSecondary, auroraInputClass, auroraLabelClass } from '@/components/aurora/ui/aurora-form'
 import { signIn, useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { loginErrorMessage } from '@/lib/login-error-message'
 
 type InvitePreview = {
   email: string
@@ -77,7 +78,7 @@ function AcceptInviteInner() {
       redirect: false,
     })
     if (result?.error) {
-      setError('Credenciales inválidas. Si es tu primera vez, usa Google o pide que te creen contraseña.')
+      setError(loginErrorMessage(result.error, 'Credenciales inválidas. Si es tu primera vez, usa Google o pide que te creen contraseña.'))
       setBusy(false)
       return
     }

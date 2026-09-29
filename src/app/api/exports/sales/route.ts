@@ -61,10 +61,7 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Customer-typed text (names, products) must never run as a spreadsheet formula.
-    const exportData = (groupBy === 'none' ? salesData : groupSalesByDate(salesData)).map((row: Record<string, unknown>) =>
-      Object.fromEntries(Object.entries(row).map(([k, v]) => [k, typeof v === 'string' ? neutralizeCsvFormula(v) : v])),
-    );
+    const exportData = groupBy === 'none' ? salesData : groupSalesByDate(salesData);
     const timestamp = new Date().toISOString().split('T')[0];
 
     let exportContent: string | Buffer;
@@ -80,7 +77,10 @@ export async function GET(request: NextRequest) {
 
       case 'csv': {
         const csvParser = new Parser();
-        exportContent = csvParser.parse(exportData);
+        // Customer-typed text (names, products) must never run as a formula when the CSV is opened.
+        exportContent = csvParser.parse(exportData.map((row: Record<string, unknown>) =>
+          Object.fromEntries(Object.entries(row).map(([k, v]) => [k, typeof v === 'string' ? neutralizeCsvFormula(v) : v])),
+        ));
         contentType = 'text/csv';
         filename = `sales-export-${timestamp}.csv`;
         break;

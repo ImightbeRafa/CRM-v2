@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { getLiveToken } from '@/lib/live-token';
 import { evaluateTenantAccess } from '@/lib/billing-access';
 import { getMembershipForToken } from '@/lib/selected-tenant';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  const token = await getLiveToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
   if (!token?.sub) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const membership = await getMembershipForToken(token);

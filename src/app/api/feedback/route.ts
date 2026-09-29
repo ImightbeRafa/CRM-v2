@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
-import { getToken } from 'next-auth/jwt';
+import { getLiveToken } from '@/lib/live-token';
 import { withTenantContext } from '@/lib/tenantContext';
 
 export async function GET(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    const token = await getLiveToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const tenantId = (token as any).currentTenant?.id || (token as any).tenantId;
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    const token = await getLiveToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const tenantId = (token as any).currentTenant?.id || (token as any).tenantId;

@@ -8,8 +8,8 @@ import { getOrderRestoreEligibility } from '@/lib/order-archive'
 
 export async function GET(request: NextRequest) {
   try {
-    const { getToken } = await import('next-auth/jwt')
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
+    const { getLiveToken } = await import('@/lib/live-token')
+    const token = await getLiveToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
     
     if (!token) {
       return createErrorResponse('Unauthorized', 401)

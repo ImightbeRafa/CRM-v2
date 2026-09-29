@@ -10,6 +10,8 @@ import { X, Mail, Lock, User, Eye, EyeOff, Phone, MapPin, Building2, ArrowRight,
 import { signIn } from 'next-auth/react';
 import Link from 'next/link';
 import { trackMetaEvent } from '@/app/components/MetaPixel';
+import { TurnstileWidget } from '@/components/aurora/auth/TurnstileWidget';
+import { loginErrorMessage } from '@/lib/login-error-message';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -47,6 +49,8 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileReset, setTurnstileReset] = useState(0);
   const [formData, setFormData] = useState({
     // Account info (step 1)
     name: '',
@@ -83,7 +87,7 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
       });
 
       if (result?.error) {
-        setError('Email o contraseña incorrectos');
+        setError(loginErrorMessage(result.error, 'Email o contraseña incorrectos'));
       } else {
         onClose();
         window.location.href = '/dashboard';
@@ -180,10 +184,16 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
           phone: formData.phone,
           country: formData.country,
           province: formData.province,
+          turnstileToken,
         }),
       });
 
       const data = await response.json();
+
+      if (response.ok && data.inviteLinkRequired) {
+        setError(data.message);
+        return;
+      }
 
       if (response.ok) {
         const signInResult = await signIn('credentials', {
@@ -193,7 +203,9 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
         });
 
         if (signInResult?.error) {
-          setError('Cuenta creada pero hubo un error al iniciar sesión. Intenta iniciar sesión manualmente.');
+          setError(signInResult.error === 'EMAIL_NOT_VERIFIED'
+            ? 'Cuenta creada. Revisa tu email para verificarla y luego inicia sesión.'
+            : 'Cuenta creada pero hubo un error al iniciar sesión. Intenta iniciar sesión manualmente.');
           return;
         }
 
@@ -202,6 +214,7 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
         window.location.href = '/dashboard';
       } else {
         setError(data.error || 'Error en el registro');
+        if (data.code === 'turnstile') setTurnstileReset((n) => n + 1);
       }
     } catch (error) {
       setError('Ocurrió un error. Por favor intenta de nuevo.');
@@ -484,6 +497,7 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
           {/* Sign Up Form - Step 2: Business Info */}
           {isSignUp && signUpStep === 2 && (
             <form onSubmit={handleSignUp} className="space-y-4">
+              <TurnstileWidget onToken={setTurnstileToken} resetKey={turnstileReset} />
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>

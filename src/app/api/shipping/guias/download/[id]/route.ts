@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { getLiveToken } from '@/lib/live-token';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { prisma as globalPrisma } from '@/lib/db';
@@ -12,7 +12,7 @@ export async function GET(
 ) {
   try {
     const { id: guiaId } = await params;
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    const token = await getLiveToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     
     if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

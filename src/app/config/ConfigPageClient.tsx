@@ -11,6 +11,7 @@ import { ConfigHub } from '@/components/aurora/config/ConfigHub'
 import { ConfigShell } from '@/components/aurora/config/ConfigShell'
 import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader'
 import { PanelGate } from '@/components/aurora/config/panels/PanelGate'
+import { ChatsConfigPanel } from '@/components/aurora/config/panels/ChatsConfigPanel'
 import { UsersPanel } from '@/components/aurora/config/panels/UsersPanel'
 import { InviteMemberModal } from '@/components/aurora/config/InviteMemberModal'
 import { useAuroraConfirm } from '@/components/aurora/ui/AuroraConfirmDialog'
@@ -45,7 +46,7 @@ const IntegrationsPanel = dynamic(
 )
 // These two pages keep their own sticky white header; let it span the panel width.
 const PAGE_PANEL_BLEED = '-mx-4 -my-5 md:-mx-10 md:-my-8'
-const KEEP_ALIVE_TABS = ['social', 'agentes', 'integrations'] as const
+const KEEP_ALIVE_TABS = ['social', 'chats', 'agentes', 'integrations'] as const
 
 const AppearanceSettings = lazy(() => import('@/components/aurora/theme/AppearanceSettings').then(m => ({ default: m.AppearanceSettings })))
 const BusinessProfileSettings = lazy(() => import('./components/BusinessProfileSettings').then(m => ({ default: m.BusinessProfileSettings })))
@@ -959,6 +960,13 @@ function ConfigPageInner() {
             <div hidden={activeTab !== 'social'} className={PAGE_PANEL_BLEED}>
               <PanelGate permission="update_config" label="Cuentas conectadas">
                 <SocialPanelPage />
+              </PanelGate>
+            </div>
+          )}
+          {visited.has('chats') && (
+            <div hidden={activeTab !== 'chats'}>
+              <PanelGate permission="update_config" label="Chats">
+                <ChatsConfigPanel />
               </PanelGate>
             </div>
           )}

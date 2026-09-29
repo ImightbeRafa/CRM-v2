@@ -1,12 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { useSession } from 'next-auth/react'
+import { hasSessionPermission } from '@/lib/session-permissions'
+import { parseOrder } from '@/app/hooks/useSalesStream'
+import type { Sale } from '@/app/produccion/types/sales'
 import Link from 'next/link'
 import { Check, ExternalLink, FileText, Link2, Loader2, Search, Send, ShoppingBag, Star, Unlink, UserRound } from 'lucide-react'
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext'
 import { pedidoHref } from '@/lib/pedido-url'
 import { nextOrderStep, type ChatFlowOrder } from '@/lib/chat-order-flow'
 import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
+import { ChatNotesPanel } from '@/components/chats/ChatNotesPanel'
+import { stageChipClass, useCrmCatalog } from '@/components/chats/useCrmCatalog'
 
 type ClientInfo = {
   id: string
@@ -20,16 +26,34 @@ type ClientInfo = {
   totalSpent: number
   lastOrder: string
   isFavorite: boolean
+  /** Legacy free-text note (read-only "Nota original"). */
+  notes?: string | null
+}
+
+type ClientStage = {
+  key: string
+  label: string
+  category: 'open' | 'won' | 'lost'
+  color: string | null
+  source: 'auto' | 'manual'
+  reason: string
+  enteredAt: string | null
+  repeatCustomer?: boolean
+  editable?: boolean
 }
 
 type PanelData = {
   client: ClientInfo | null
+  stage: ClientStage | null
   orders: ChatFlowOrder[]
   suggestions: ClientInfo[]
   results: ClientInfo[]
 }
 
-const DELIVERY_TYPES = ['Domicilio', 'Sucursal', 'Punto de correo'] as const
+// Same generator as Producción: delivery type, address verification, GAM rules, generate.
+const GuiaGenerator = lazy(() =>
+  import('@/app/produccion/components/GuiaGenerator').then((m) => ({ default: m.GuiaGenerator })),
+)
 
 function shortDate(iso: string | null | undefined): string {
   if (!iso) return ''
@@ -63,7 +87,11 @@ export function ChatClientPanel({
   const [searchOpen, setSearchOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
-  const [deliveryType, setDeliveryType] = useState<(typeof DELIVERY_TYPES)[number]>('Domicilio')
+  const { data: session, status: sessionStatus } = useSession()
+  const canGenerateGuia = hasSessionPermission(session, 'update_production')
+  // No "your role cannot" hint while the session is still loading (it flashed for Producción users).
+  const sessionReady = sessionStatus !== 'loading'
+  const [guiaSale, setGuiaSale] = useState<Sale | null>(null)
   const requestSeq = useRef(0)
 
   const load = useCallback(
@@ -81,7 +109,7 @@ export function ChatClientPanel({
           return
         }
         setLoadError(false)
-        setData({ client: json.client, orders: json.orders ?? [], suggestions: json.suggestions ?? [], results: json.results ?? [] })
+        setData({ client: json.client, stage: json.stage ?? null, orders: json.orders ?? [], suggestions: json.suggestions ?? [], results: json.results ?? [] })
       } catch {
         if (seq === requestSeq.current) setLoadError(true)
       }
@@ -141,34 +169,36 @@ export function ChatClientPanel({
     }
   }
 
-  async function generateGuia(order: ChatFlowOrder) {
+  /** Loads the full order (same loader as Pedidos) and opens the Producción guía generator. */
+  async function openGuiaGenerator(order: ChatFlowOrder) {
     setBusy(`guia:${order.id}`)
     setNotice(null)
     try {
-      const res = await fetch('/api/shipping/generate-guia', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderIds: [order.orderId], deliveryType }),
-      })
-      const json = (await res.json().catch(() => null)) as {
-        data?: { results?: Array<{ success?: boolean; error?: string; guiaNumber?: string }> }
-        error?: string
-      } | null
-      const result = json?.data?.results?.[0]
-      if (res.status === 403) {
-        setNotice({ tone: 'error', text: 'Tu rol no puede generar guías. Pedíselo a Producción.' })
-      } else if (!res.ok || !result?.success) {
-        setNotice({ tone: 'error', text: result?.error || json?.error || 'No se pudo generar la guía.' })
-      } else {
-        setNotice({ tone: 'ok', text: `Guía ${result.guiaNumber || ''} generada.`.replace('  ', ' ') })
+      const res = await fetch(`/api/orders/details?id=${encodeURIComponent(order.id)}`, { credentials: 'same-origin', cache: 'no-store' })
+      const json = (await res.json().catch(() => null)) as { data?: unknown } | null
+      const sale = res.ok && json?.data ? parseOrder(json.data) : null
+      if (!sale) {
+        setNotice({ tone: 'error', text: 'No se pudo abrir el pedido para generar la guía.' })
+        return
       }
-      await load()
+      setGuiaSale(sale)
     } catch {
       setNotice({ tone: 'error', text: 'Sin conexión. Probá de nuevo.' })
     } finally {
       setBusy(null)
     }
+  }
+
+  async function updateOrder(orderId: string, updatedData: Partial<Sale>): Promise<Sale> {
+    const response = await fetch('/api/orders/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ orderId, ...updatedData }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo actualizar el pedido')
+    return data.data || data
   }
 
   async function sendGuia(order: ChatFlowOrder, resend = false) {
@@ -223,7 +253,7 @@ export function ChatClientPanel({
     )
   }
 
-  const { client, orders, suggestions, results } = data
+  const { client, stage, orders, suggestions, results } = data
   const pickList = (list: ClientInfo[], label: string) =>
     list.length ? (
       <div>
@@ -296,8 +326,12 @@ export function ChatClientPanel({
               <p className="text-[10px] text-slate-500">Último</p>
             </div>
           </div>
-          {client.totalOrders > 1 ? (
-            <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium text-amber-900">Cliente recurrente</p>
+          {stage ? (
+            <ClientStageChip
+              clientId={client.id}
+              stage={stage}
+              onChanged={(next) => setData((prev) => (prev ? { ...prev, stage: next } : prev))}
+            />
           ) : null}
           <div className="mt-2 flex items-center justify-between">
             <Link
@@ -419,29 +453,22 @@ export function ChatClientPanel({
                   </ol>
 
                   {step === 'guia' ? (
-                    <div className="mt-2.5 flex gap-1.5">
-                      <select
-                        value={deliveryType}
-                        onChange={(e) => setDeliveryType(e.target.value as (typeof DELIVERY_TYPES)[number])}
-                        aria-label="Tipo de entrega"
-                        className="min-w-0 flex-1 rounded-lg bg-slate-50 px-2 py-1.5 text-[11px] text-slate-700 outline-none ring-1 ring-slate-200"
-                      >
-                        {DELIVERY_TYPES.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
+                    canGenerateGuia ? (
                       <button
                         type="button"
                         disabled={busy !== null}
-                        onClick={() => void generateGuia(order)}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#5B6CFF] px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50"
+                        onClick={() => void openGuiaGenerator(order)}
+                        data-testid="chat-open-guia-generator"
+                        className="mt-2.5 inline-flex w-full items-center justify-center gap-1 rounded-lg bg-[#5B6CFF] px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50"
                       >
                         {busy === `guia:${order.id}` ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <FileText className="h-3 w-3" aria-hidden />}
                         Generar guía
                       </button>
-                    </div>
+                    ) : !sessionReady ? null : (
+                      <p className="mt-2.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-500">
+                        Tu rol no genera guías: pedísela a Producción. Cuando esté lista, la enviás desde acá.
+                      </p>
+                    )
                   ) : null}
                   {step === 'enviar-guia' || step === 'listo' ? (
                     <div className="mt-2.5 flex items-center justify-between gap-2">
@@ -470,6 +497,118 @@ export function ChatClientPanel({
           </ul>
         )}
       </div>
+
+      {/* Keyed on the client: linking / unlinking reloads the notes (client notes join the chat's). */}
+      <ChatNotesPanel key={client?.id ?? 'none'} conversationId={conversationId} hasClient={Boolean(client)} legacyNote={client?.notes ?? null} />
+
+      {guiaSale ? (
+        <Suspense fallback={null}>
+          <GuiaGenerator
+            open
+            orders={[guiaSale]}
+            onClose={() => {
+              setGuiaSale(null)
+              // The order now has its guía: the next step here is "Enviar guía".
+              void load()
+            }}
+            onUpdateOrder={updateOrder}
+            surface="chats"
+          />
+        </Suspense>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Lifecycle stage of the client (computed from orders; see src/lib/crm-client-stage.ts). The team
+ * can pin another stage: it sticks until new evidence (order, payment, guía) moves the client.
+ */
+function ClientStageChip({
+  clientId,
+  stage,
+  onChanged,
+}: {
+  clientId: string
+  stage: ClientStage
+  onChanged: (stage: ClientStage) => void
+}) {
+  const { activeClientStages } = useCrmCatalog()
+  const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function choose(key: string) {
+    if (key === stage.key) {
+      setOpen(false)
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/crm/clients/${encodeURIComponent(clientId)}/stage`, {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stageKey: key }),
+      })
+      const json = (await res.json().catch(() => null)) as { success?: boolean; stage?: ClientStage; error?: string } | null
+      if (!res.ok || !json?.success || !json.stage) {
+        setError(json?.error || 'No se pudo cambiar la etapa.')
+        return
+      }
+      onChanged(json.stage)
+      setOpen(false)
+    } catch {
+      setError('Sin conexión.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-2" data-testid="client-stage">
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            disabled={stage.editable === false}
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold disabled:cursor-default ${stageChipClass(stage.color)}`}
+            title={stage.reason}
+          >
+            {stage.label}
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+          </button>
+          {stage.repeatCustomer && stage.key !== 'recurrente' ? (
+            <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700" data-testid="client-repeat-badge">
+              Cliente recurrente
+            </span>
+          ) : null}
+        </span>
+        <span className="truncate text-[10.5px] text-slate-400">
+          {stage.source === 'manual' ? 'Elegida por el equipo' : stage.reason}
+        </span>
+      </div>
+      {open && stage.editable !== false ? (
+        <div className="mt-1.5 flex flex-wrap gap-1 rounded-lg bg-slate-50 p-1.5 ring-1 ring-slate-100" role="listbox" aria-label="Etapa del cliente">
+          {activeClientStages.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              role="option"
+              aria-selected={s.key === stage.key}
+              disabled={saving}
+              onClick={() => void choose(s.key)}
+              className={`rounded-full px-2 py-0.5 text-[10.5px] font-medium ${stageChipClass(s.color, s.key === stage.key)}`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {error ? <p className="mt-1 text-[11px] text-red-600">{error}</p> : null}
     </div>
   )
 }

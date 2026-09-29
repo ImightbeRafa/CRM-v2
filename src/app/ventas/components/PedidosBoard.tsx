@@ -416,6 +416,7 @@ export const PedidosBoard = React.memo(function PedidosBoard({
         <Suspense fallback={null}>
           <GuiaGenerator
             open
+            surface="pedidos"
             orders={[selectedSale]}
             onClose={() => {
               setGuiaOpen(false)

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { recordActivity } from '@/lib/activity'
 import { chatSendRateLimit, createIdentifierRateLimit } from '@/lib/rate-limit'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { isTenantFeatureNotDisabled } from '@/lib/feature-flags'
@@ -113,6 +114,19 @@ export async function POST(request: NextRequest) {
       metadata: { guiaId: guia.id, orderId: order.id },
     })
     if (!result.ok) return NextResponse.json({ error: result.error, ...result.extra }, { status: result.status })
+
+    void recordActivity({
+      tenantId,
+      actorUserId: userId,
+      verb: 'guia.send_chat',
+      entityType: 'Order',
+      entityId: order.id,
+      orderId: order.id,
+      conversationId: conversation.id,
+      clientId: conversation.clientId ?? order.clientId ?? null,
+      surface: 'chats',
+      props: { match: samePhone ? 'phone' : linkedFromChat ? 'chat_link' : 'client_link' },
+    })
 
     await logAuditEvent({
       action: 'UPDATE',

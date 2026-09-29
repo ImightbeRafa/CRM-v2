@@ -23,7 +23,11 @@ describe('chat-conversations-api', () => {
     assert.equal(parsed.platform, 'whatsapp')
     assert.equal(parsed.status, 'nuevo')
     assert.equal(parsed.assigned, 'me')
-    assert.throws(() => parseConversationListQuery(new URLSearchParams('status=open')))
+    // Any stage key (system or custom, Phase 2a) is accepted; malformed values still throw.
+    assert.equal(parseConversationListQuery(new URLSearchParams('status=esperando_pago')).status, 'esperando_pago')
+    for (const bad of ['Hecho', 'en curso', '../x', 'a'.repeat(41)]) {
+      assert.throws(() => parseConversationListQuery(new URLSearchParams('status=' + encodeURIComponent(bad))), bad)
+    }
   })
 
   it('cursor scope is stable for identical filter sets', () => {

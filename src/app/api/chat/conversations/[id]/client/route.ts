@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { recordActivity } from '@/lib/activity'
+import { getClientStage, type ClientStageDto } from '@/lib/crm-client-stage-server'
 import { normalizeClientPhone } from '@/lib/order-lifecycle'
-import { chatSendRateLimit } from '@/lib/rate-limit'
+import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 import { maskPhone } from '@/lib/chat-order-flow'
 
 export const runtime = 'nodejs'
@@ -24,6 +26,10 @@ const clientSelect = {
   lastOrder: true,
   isFavorite: true,
 } as const
+
+// Legacy free-text note on the client: shown read-only as "Nota original" in the rail, only for
+// the linked client (never in suggestions / search results of other clients).
+const linkedClientSelect = { ...clientSelect, notes: true } as const
 
 const orderSelect = {
   id: true,
@@ -79,7 +85,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const q = (new URL(request.url).searchParams.get('q') || '').trim().slice(0, 60)
 
   const client = conversation.clientId
-    ? await prisma.client.findFirst({ where: { id: conversation.clientId, tenantId }, select: clientSelect })
+    ? await prisma.client.findFirst({ where: { id: conversation.clientId, tenantId }, select: linkedClientSelect })
     : null
 
   // Orders created from this chat (ChatMessage.orderId) + the client's own orders.
@@ -161,10 +167,21 @@ export async function GET(request: NextRequest, context: RouteContext) {
     })
   }
 
+  // Lifecycle stage (computed from orders; stored only when it changes). Never breaks the panel.
+  let stage: ClientStageDto | null = null
+  if (client) {
+    try {
+      stage = await getClientStage(tenantId, client.id)
+    } catch (error) {
+      console.warn('[chat client] stage unavailable', error instanceof Error ? error.message : error)
+    }
+  }
+
   return NextResponse.json(
     {
       success: true,
       client: client ? clientDto(client) : null,
+      stage,
       orders: orders.map((o) => {
         const g = latestGuia.get(o.orderId)
         const { phone, ...rest } = o
@@ -194,7 +211,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   const conversation = await loadConversation(tenantId, id)
   if (!conversation) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 })
 
-  const rate = await chatSendRateLimit(`${tenantId}:${auth.userId}`)
+  const rate = await workspaceWriteRateLimit(`${tenantId}:${auth.userId}`)
   if (!rate.allowed) {
     return NextResponse.json({ success: false, error: 'Demasiados cambios. Esperá un momento.' }, { status: 429, headers: rate.headers })
   }
@@ -243,6 +260,18 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     userRole: auth.role,
     tenantId,
   }).catch(() => {})
+
+  void recordActivity({
+    tenantId,
+    actorUserId: auth.userId,
+    verb: clientId ? 'chat.client.link' : 'chat.client.unlink',
+    entityType: 'ChatConversation',
+    entityId: conversation.id,
+    conversationId: conversation.id,
+    clientId: clientId ?? conversation.clientId ?? null,
+    surface: 'chats',
+    props: { phoneMismatch },
+  })
 
   return NextResponse.json({ success: true, clientId })
 }

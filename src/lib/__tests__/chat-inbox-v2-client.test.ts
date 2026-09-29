@@ -29,6 +29,7 @@ function sampleDto(id: string, at: string): ChatConversationListItemDto {
     recipientId: 'peer1',
     recipientName: 'Ana',
     status: 'nuevo',
+    stageCategory: 'open',
     tags: [],
     unreadCount: 2,
     revision: '1',

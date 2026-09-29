@@ -6,12 +6,17 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import test from 'node:test'
 
+/** SQL without comments: a word in a comment must neither create a phantom table nor satisfy RLS. */
+function stripSqlComments(sql: string): string {
+  return sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ')
+}
+
 test('migrations ≥ 033 enable RLS on every table they create', () => {
   const dir = 'supabase/migrations'
   for (const file of readdirSync(dir)) {
     const n = parseInt(file, 10)
     if (!(n >= 33)) continue
-    const sql = readFileSync(`${dir}/${file}`, 'utf8')
+    const sql = stripSqlComments(readFileSync(`${dir}/${file}`, 'utf8'))
     // `IF NOT EXISTS` optional: a plain CREATE TABLE must not skip the guard.
     const created = [...sql.matchAll(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(?:public\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?/gi)].map((m) => m[1])
     for (const table of created) {
@@ -23,7 +28,8 @@ test('migrations ≥ 033 enable RLS on every table they create', () => {
 })
 
 test('the guard itself catches a table without RLS and accepts one with it', () => {
-  const check = (sql: string) => {
+  const check = (raw: string) => {
+    const sql = stripSqlComments(raw)
     const created = [...sql.matchAll(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(?:public\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?/gi)].map((m) => m[1])
     return created.every((t) => new RegExp(String.raw`ALTER TABLE\s+(?:public\.)?"?${t}"?\s+ENABLE ROW LEVEL SECURITY`, 'i').test(sql))
   }
@@ -31,6 +37,19 @@ test('the guard itself catches a table without RLS and accepts one with it', () 
   assert.equal(check('CREATE TABLE IF NOT EXISTS public."A" (id text);\nALTER TABLE public."A"\n  ENABLE ROW LEVEL SECURITY;'), true)
   assert.equal(check('CREATE TABLE public."Leaky" (id text);'), false)
   assert.equal(check('CREATE TABLE "Leaky2" (id text);'), false)
+  // Comments: no phantom table, and an RLS line that is only commented out does not count.
+  assert.equal(check('-- CREATE TABLE takes brief locks\nSELECT 1;'), true)
+  assert.equal(check('CREATE TABLE public."B" (id text);\n-- ALTER TABLE public."B" ENABLE ROW LEVEL SECURITY;'), false)
+  assert.equal(check('CREATE TABLE public."C" (id text);\n/* ALTER TABLE public."C" ENABLE ROW LEVEL SECURITY; */'), false)
+})
+
+test('additive migrations ≥ 034 pass the apply script destructive-SQL check (comments included)', () => {
+  // Same regex as scripts/apply-betsy-v2-additive-sql.mjs, which scans the raw file.
+  const destructive = /\b(DROP TABLE|TRUNCATE|ALTER TABLE\b[\s\S]{0,80}DROP COLUMN)/i
+  for (const file of readdirSync('supabase/migrations')) {
+    if (!(parseInt(file, 10) >= 34)) continue
+    assert.doesNotMatch(readFileSync(`supabase/migrations/${file}`, 'utf8'), destructive, file)
+  }
 })
 
 test('033 locks down the 7 tables found exposed', () => {

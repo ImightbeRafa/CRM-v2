@@ -6,7 +6,7 @@ import {
   type SoftTag,
 } from '@/lib/chat-soft-copilot'
 import type { ChatConversationListItemDto, ChatMessageItemDto } from '@/lib/chat-conversation-api'
-import { coerceSoftTags } from '@/lib/chat-conversation-api'
+import { isClosedCategory } from '@/lib/crm-stages'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 
 export const CHAT_INBOX_V2_IMPORTED_KEY = 'betsy.softCopilot.inboxV2Imported.v1'
@@ -83,7 +83,9 @@ export function listDtoToSoftConversation(
     accountLabel: dto.channel.displayName,
     channelAddress: dto.channel.address ?? null,
     status: dto.status as ConversationStatus,
-    tags: coerceSoftTags(dto.tags),
+    closed: dto.stageCategory ? isClosedCategory(dto.stageCategory) : undefined,
+    // Custom tags from Config › Chats pass through (the catalog gives them labels / colours).
+    tags: (dto.tags || []).filter((t): t is string => typeof t === 'string' && t.length > 0).slice(0, 20),
     orderId,
     orderNumber,
     assignee: dto.assignedUser

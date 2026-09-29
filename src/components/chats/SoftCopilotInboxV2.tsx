@@ -20,6 +20,7 @@ import {
   readTagsMap,
   accountDisplayLabel,
   accountChannelAddress,
+  isConversationClosed,
   type ChannelFilter,
   type ConversationStatus,
   type InboxBucket,
@@ -29,6 +30,7 @@ import {
   type SoftTag,
 } from '@/lib/chat-soft-copilot'
 import type { ChatConversationListItemDto } from '@/lib/chat-conversation-api'
+import { isClosedCategory } from '@/lib/crm-stages'
 import {
   advanceRevisionCursor,
   buildChangesPollQuery,
@@ -70,7 +72,8 @@ import {
   type SoftWaTemplateOption,
 } from '@/components/chats/SoftThreadPane'
 import { SoftTokenHealthBanners } from '@/components/chats/SoftTokenHealthBanners'
-import { SoftCopilotRail, type RailTab } from '@/components/chats/SoftCopilotRail'
+import { ChatContextRail, normalizeRailTab, type ContextRailTab } from '@/components/chats/ChatContextRail'
+import { useCrmCatalog } from '@/components/chats/useCrmCatalog'
 import { ChatClientPanel } from '@/components/chats/ChatClientPanel'
 import { AuroraMobileNav } from '@/components/aurora/AuroraMobileNav'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
@@ -78,7 +81,7 @@ import dynamic from 'next/dynamic'
 import type { CreatedOrderRef } from '@/app/ventas/components/EnhancedSalesForm'
 import { useToast } from '@/app/hooks/use-toast'
 
-const TAG_FILTERS: SoftTag[] = ['Envío', 'VIP', 'Nuevo']
+const RAIL_TAB_KEY = 'betsy.chat.railTab.v2'
 const DETAILS_PANEL_KEY = 'betsy.chat.detailsPanel.v1'
 
 function softKey(c: SoftConversation) {
@@ -111,8 +114,25 @@ export function SoftCopilotInboxV2() {
   const [messageInput, setMessageInput] = useState('')
   const [sendError, setSendError] = useState<string | null>(null)
   const [failedOutboundId, setFailedOutboundId] = useState<string | null>(null)
-  const [railTab, setRailTab] = useState<RailTab>('copilot')
-  /** Details panel (Detalle · Cliente · Agente): remembered; wide screens start open. */
+  // Cliente · Agente (Phase 2a). Remembered; old 'detalle' / 'copilot' values map onto them.
+  const [railTab, setRailTabState] = useState<ContextRailTab>('cliente')
+  useEffect(() => {
+    try {
+      setRailTabState(normalizeRailTab(window.localStorage.getItem(RAIL_TAB_KEY)))
+    } catch {
+      // private mode: default tab
+    }
+  }, [])
+  const setRailTab = useCallback((tab: ContextRailTab) => {
+    setRailTabState(tab)
+    try {
+      window.localStorage.setItem(RAIL_TAB_KEY, tab)
+    } catch {
+      // private mode: not remembered
+    }
+  }, [])
+  const { activeTags } = useCrmCatalog()
+  /** Details panel (Cliente · Agente): remembered; wide screens start open. */
   const [detailsOpen, setDetailsOpen] = useState(true)
   const [wideScreen, setWideScreen] = useState(true)
   /** Bumped after an order / guía changes so the Cliente tab refetches. */
@@ -696,7 +716,7 @@ export function SoftCopilotInboxV2() {
     let human = 0
     let toolActions = 0
     for (const dto of dtoMap.values()) {
-      if (dto.status === 'hecho') continue
+      if (dto.stageCategory ? isClosedCategory(dto.stageCategory) : dto.status === 'hecho') continue
       const mode = dto.aiMode
       if (mode === 'ai_active') aiActive += 1
       else if (mode === 'paused') paused += 1
@@ -728,7 +748,7 @@ export function SoftCopilotInboxV2() {
         const dto = [...dtoMap.values()].find(
           (d) => d.socialAccountId === c.socialAccountId && d.peerId === c.recipientId,
         )
-        return dto?.aiMode === 'ai_active' && c.status !== 'hecho'
+        return dto?.aiMode === 'ai_active' && !isConversationClosed(c)
       })
     }
     if (activeTag) list = list.filter((c) => c.tags.includes(activeTag))
@@ -736,14 +756,14 @@ export function SoftCopilotInboxV2() {
   }, [conversations, bucket, channelFilter, accountFilter, search, activeTag, dtoMap, viewerUserId])
 
   const openCount = useMemo(
-    () => conversations.filter((c) => c.status !== 'hecho').length,
+    () => conversations.filter((c) => !isConversationClosed(c)).length,
     [conversations],
   )
 
   const lineCounts = useMemo(() => summarizeLineCounts(conversations), [conversations])
 
   const unreadChatCount = useMemo(
-    () => conversations.filter((c) => c.status !== 'hecho' && (c.unreadCount || 0) > 0).length,
+    () => conversations.filter((c) => !isConversationClosed(c) && (c.unreadCount || 0) > 0).length,
     [conversations],
   )
   const channelsAlert = useMemo(() => accounts.some((a) => lineIsDown(a)), [accounts])
@@ -792,8 +812,8 @@ export function SoftCopilotInboxV2() {
     status?: ConversationStatus
     tags?: SoftTag[]
     assignedUserId?: string | null
-  }) {
-    if (!selectedConversationId) return
+  }): Promise<boolean> {
+    if (!selectedConversationId) return false
     const res = await fetch(
       `/api/chat/conversations/${encodeURIComponent(selectedConversationId)}`,
       {
@@ -823,7 +843,9 @@ export function SoftCopilotInboxV2() {
           : incoming
         return mergeListDtoIntoMap(prev, [merged])
       })
+      return true
     }
+    return false
   }
 
   async function assignTo(userId: string | null) {
@@ -836,7 +858,9 @@ export function SoftCopilotInboxV2() {
   }
 
   function updateStatus(status: ConversationStatus) {
-    void patchConversation({ status })
+    void patchConversation({ status }).catch(() => false).then((ok) => {
+      if (!ok) toast({ variant: 'destructive', title: 'No se pudo cambiar la etapa', description: 'Probá de nuevo o recargá la página.' })
+    })
   }
 
   function toggleTag(tag: SoftTag) {
@@ -844,7 +868,9 @@ export function SoftCopilotInboxV2() {
     const nextTags = selectedConversation.tags.includes(tag)
       ? selectedConversation.tags.filter((t) => t !== tag)
       : [...selectedConversation.tags, tag]
-    void patchConversation({ tags: nextTags })
+    void patchConversation({ tags: nextTags }).catch(() => false).then((ok) => {
+      if (!ok) toast({ variant: 'destructive', title: 'No se pudo cambiar la etiqueta', description: 'Puede que la hayan archivado. Recargá la página.' })
+    })
   }
 
   async function setAgentControl(action: 'take_over' | 'pause' | 'resume') {
@@ -1460,7 +1486,7 @@ export function SoftCopilotInboxV2() {
             search={search}
             onSearchChange={setSearch}
             monitor={monitorStats}
-            tags={TAG_FILTERS}
+            tags={activeTags.map((t) => t.key)}
             activeTag={activeTag}
             onTagClick={(tag) => setActiveTag((prev) => (prev === tag ? null : tag))}
           />
@@ -1490,8 +1516,7 @@ export function SoftCopilotInboxV2() {
                   }`}
                   data-testid="chat-details-panel"
                 >
-                  <SoftCopilotRail
-                    sheet
+                  <ChatContextRail
                     conversation={railConversation}
                     tab={railTab}
                     onTabChange={setRailTab}
@@ -1508,7 +1533,7 @@ export function SoftCopilotInboxV2() {
               </>
             ) : null
           ) : (
-            // SoftCopilotRail is a locked file: the no-chat state lives here instead.
+            // No chat selected: the empty state for the details column.
             <aside
               className="hidden h-full w-[268px] shrink-0 flex-col items-center justify-center border-l border-slate-200/70 bg-white px-6 text-center xl:flex"
               data-testid="rail-empty"
@@ -1578,8 +1603,7 @@ export function SoftCopilotInboxV2() {
                   Cerrar
                 </button>
               </div>
-              <SoftCopilotRail
-                sheet
+              <ChatContextRail
                 conversation={railConversation}
                 tab={railTab}
                 onTabChange={setRailTab}

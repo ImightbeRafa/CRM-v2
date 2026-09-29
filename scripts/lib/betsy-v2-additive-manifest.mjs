@@ -21,6 +21,7 @@ export const FILES = {
   '032': '032_perf_indexes.sql',
   '033': '033_security_rls_lockdown.sql',
   '034': '034_user_session_version.sql',
+  '035': '035_crm_workspace.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -38,6 +39,7 @@ export const EXPECTED_INDEXES_032 = [
 ];
 
 export const EXPECTED_TABLES = {
+  '035': ['CrmStage', 'CrmTag', 'ClientLifecycleState', 'CrmNote', 'ActivityEvent'],
   '018': ['TenantFeatureFlag'],
   '019': ['ClientIdentityConflict', 'OrderLifecycleOperation', 'OrderInventoryAllocation'],
   '020': ['TenantOrderStatusClassification'],

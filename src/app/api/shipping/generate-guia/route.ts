@@ -3,6 +3,7 @@ import { getToken } from 'next-auth/jwt';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
+import { recordActivity } from '@/lib/activity';
 import { generateGuiasForOrders } from '@/lib/bot/guia-service';
 
 const DELIVERY_TYPES = ['Domicilio', 'Sucursal', 'Punto de correo'] as const;
@@ -31,6 +32,19 @@ export async function POST(request: NextRequest) {
         concurrency: 3,
         timeoutMs: 20_000,
       });
+      for (const result of batch.results) {
+        if (!result.success) continue;
+        void recordActivity({
+          tenantId,
+          actorUserId: userId,
+          verb: 'guia.generate',
+          entityType: 'Order',
+          entityId: result.orderId,
+          orderId: result.orderId,
+          surface: typeof body.surface === 'string' ? body.surface.slice(0, 20) : 'produccion',
+          props: { carrier: String(carrier).slice(0, 20), deliveryType },
+        });
+      }
       return NextResponse.json({
         status: 'success',
         data: {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { logAuditEvent } from '@/lib/auditLogger'
+import { recordActivity } from '@/lib/activity'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import {
@@ -66,6 +67,38 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         description: body.assignedUserId ? 'Chat asignado' : 'Chat sin asignar',
         oldValues: { assignedUserId: existing.assignedUserId },
         newValues: { assignedUserId: body.assignedUserId },
+        userId: auth.userId,
+        userRole: auth.role,
+        tenantId: auth.tenantId,
+      }).catch(() => {})
+    }
+
+    // Human action log (Phase 2a): one event per changed field, ids / short enums only.
+    const base = { tenantId: auth.tenantId, actorUserId: auth.userId, conversationId: existing.id, entityType: 'ChatConversation', entityId: existing.id, surface: 'chats' }
+    if (body.status !== undefined && body.status !== existing.status) {
+      void recordActivity({ ...base, verb: 'chat.stage.set', props: { from: existing.status ?? null, to: body.status } })
+    }
+    if (body.tags !== undefined) {
+      const before = new Set(existing.tags ?? [])
+      const after = new Set(body.tags)
+      const added = [...after].filter((t) => !before.has(t))
+      const removed = [...before].filter((t) => !after.has(t))
+      if (added.length || removed.length) {
+        void recordActivity({ ...base, verb: 'chat.tags.set', props: { added: added.join(',').slice(0, 80), removed: removed.join(',').slice(0, 80) } })
+      }
+    }
+    if (body.assignedUserId !== undefined && body.assignedUserId !== existing.assignedUserId) {
+      void recordActivity({ ...base, verb: 'chat.assign', props: { to: body.assignedUserId ?? null } })
+    }
+    if (body.aiMode !== undefined && body.aiMode !== existing.aiMode) {
+      void recordActivity({ ...base, verb: 'chat.ai_mode.set', props: { from: existing.aiMode ?? null, to: body.aiMode } })
+      await logAuditEvent({
+        action: 'UPDATE',
+        entityType: 'ChatConversation',
+        entityId: existing.id,
+        description: 'Modo de IA del chat cambiado',
+        oldValues: { aiMode: existing.aiMode },
+        newValues: { aiMode: body.aiMode },
         userId: auth.userId,
         userRole: auth.role,
         tenantId: auth.tenantId,

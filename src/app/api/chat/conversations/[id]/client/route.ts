@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { recordActivity } from '@/lib/activity'
 import { normalizeClientPhone } from '@/lib/order-lifecycle'
 import { chatSendRateLimit } from '@/lib/rate-limit'
 import { maskPhone } from '@/lib/chat-order-flow'
@@ -243,6 +244,18 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     userRole: auth.role,
     tenantId,
   }).catch(() => {})
+
+  void recordActivity({
+    tenantId,
+    actorUserId: auth.userId,
+    verb: clientId ? 'chat.client.link' : 'chat.client.unlink',
+    entityType: 'ChatConversation',
+    entityId: conversation.id,
+    conversationId: conversation.id,
+    clientId: clientId ?? conversation.clientId ?? null,
+    surface: 'chats',
+    props: { phoneMismatch },
+  })
 
   return NextResponse.json({ success: true, clientId })
 }

@@ -1549,3 +1549,98 @@ model ChangelogEntry {
   @@index([category])
   @@index([createdAt])
 }
+
+// ============================================================================
+// PHASE 2a WORKSPACE (supabase/migrations/035_crm_workspace.sql — raw SQL, gated)
+// Scalar-only models: foreign keys live in SQL, so no existing model changes. Code must
+// tolerate these tables being absent until 035 is applied (src/lib/db-missing-relation.ts).
+// ============================================================================
+
+model CrmStage {
+  id              String    @id @default(cuid())
+  tenantId        String
+  pipeline        String
+  key             String
+  label           String
+  color           String?
+  position        Int       @default(0)
+  category        String    @default("open")
+  targetMinutes   Int?
+  entryRules      Json      @default("{}")
+  rulesVersion    Int       @default(1)
+  isSystem        Boolean   @default(false)
+  archivedAt      DateTime?
+  createdByUserId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([tenantId, pipeline, key], map: "CrmStage_tenant_pipeline_key_key")
+  @@index([tenantId, pipeline, position], map: "CrmStage_tenant_pipeline_position_idx")
+}
+
+model CrmTag {
+  id              String    @id @default(cuid())
+  tenantId        String
+  key             String
+  label           String
+  color           String?
+  position        Int       @default(0)
+  isSystem        Boolean   @default(false)
+  archivedAt      DateTime?
+  createdByUserId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([tenantId, key], map: "CrmTag_tenant_key_key")
+}
+
+model ClientLifecycleState {
+  clientId     String    @id
+  tenantId     String
+  stageKey     String
+  source       String    @default("auto")
+  fingerprint  String?
+  rulesVersion Int       @default(1)
+  evidenceAt   DateTime?
+  enteredAt    DateTime  @default(now())
+  computedAt   DateTime  @default(now())
+  setByUserId  String?
+  updatedAt    DateTime  @updatedAt
+}
+
+model CrmNote {
+  id             String    @id @default(cuid())
+  tenantId       String
+  clientId       String?
+  conversationId String?
+  kind           String    @default("note")
+  body           String
+  authorUserId   String?
+  mentionUserIds String[]  @default([])
+  pinnedAt       DateTime?
+  pinnedByUserId String?
+  editedAt       DateTime?
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model ActivityEvent {
+  id              String   @id @default(cuid())
+  tenantId        String
+  actorUserId     String?
+  actorKind       String   @default("human")
+  verb            String
+  entityType      String?
+  entityId        String?
+  conversationId  String?
+  clientId        String?
+  orderId         String?
+  surface         String?
+  clientSessionId String?
+  props           Json     @default("{}")
+  dedupeKey       String?
+  occurredAt      DateTime @default(now())
+
+  @@index([tenantId, occurredAt(sort: Desc)], map: "ActivityEvent_tenant_time_idx")
+}

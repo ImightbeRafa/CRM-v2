@@ -8,10 +8,11 @@ import {
   clearLoginFailures,
   clientIpFromHeaders,
   emailVerificationBlocks,
+  ipBucket,
   isLockedOut,
-  loginLocked,
   parseEnforceFrom,
-  recordLoginFailure,
+  releaseLoginAttempt,
+  reserveLoginAttempt,
 } from '../auth-gates'
 import { escapeHtml, generateResetToken, hashResetToken, legacyRawResetToken } from '../password-reset'
 
@@ -36,45 +37,61 @@ test('email verification: new unverified accounts are blocked; verified ones pas
   assert.equal(emailVerificationBlocks({ emailVerified: new Date(), createdAt: new Date('2026-10-02') }, cutoff), false)
 })
 
-test('lockout thresholds', () => {
-  assert.equal(isLockedOut({ emailIp: LOCKOUT.emailIpMax - 1, ip: 0 }), false)
-  assert.equal(isLockedOut({ emailIp: LOCKOUT.emailIpMax, ip: 0 }), true)
-  assert.equal(isLockedOut({ emailIp: 0, ip: LOCKOUT.ipMax - 1 }), false)
-  assert.equal(isLockedOut({ emailIp: 0, ip: LOCKOUT.ipMax }), true)
+test('lockout thresholds (counts include the attempt being made)', () => {
+  assert.equal(isLockedOut({ emailIp: LOCKOUT.emailIpMax, ip: 0 }), false)
+  assert.equal(isLockedOut({ emailIp: LOCKOUT.emailIpMax + 1, ip: 0 }), true)
+  assert.equal(isLockedOut({ emailIp: 0, ip: LOCKOUT.ipMax + 1 }), true)
+  assert.equal(isLockedOut({ emailIp: 0, ip: 0, email: LOCKOUT.emailMax + 1 }), true)
 })
 
-test('lockout: email+IP locks after 5 failures, other IPs unaffected (no owner lockout), success clears', async () => {
+test('lockout: 5 wrong guesses per email+IP, other IPs unaffected, a correct login gives the attempt back', async () => {
   const email = `victim-${Date.now()}@x.cr`
   for (let i = 0; i < LOCKOUT.emailIpMax; i++) {
-    assert.equal(await loginLocked(email, '10.0.0.1'), false, `attempt ${i}`)
-    await recordLoginFailure(email, '10.0.0.1')
+    assert.equal((await reserveLoginAttempt(email, '10.0.0.1')).locked, false, `attempt ${i}`)
   }
-  assert.equal(await loginLocked(email, '10.0.0.1'), true)
-  assert.equal(await loginLocked(email, '10.0.0.2'), false, 'the real owner on another network still gets in')
-  assert.equal(await loginLocked(email.toUpperCase(), '10.0.0.1'), true, 'case-insensitive')
-  await clearLoginFailures(email, '10.0.0.1')
-  assert.equal(await loginLocked(email, '10.0.0.1'), false)
+  assert.equal((await reserveLoginAttempt(email, '10.0.0.1')).locked, true)
+  assert.equal((await reserveLoginAttempt(email.toUpperCase(), '10.0.0.1')).locked, true, 'case-insensitive')
+  assert.equal((await reserveLoginAttempt(email, '10.0.0.2')).locked, false, 'the real owner elsewhere still gets in')
+  // A correct login from .2 releases its attempt; the email+IP counter for .2 is cleared.
+  await releaseLoginAttempt(email, '10.0.0.2')
 })
 
-test('lockout: unknown emails count too, and one IP spraying many emails is capped', async () => {
+test('lockout: parallel guesses cannot all slip through (reserve is atomic)', async () => {
+  const email = `race-${Date.now()}@x.cr`
+  const results = await Promise.all(Array.from({ length: 20 }, () => reserveLoginAttempt(email, '10.7.7.7')))
+  assert.equal(results.filter((r) => !r.locked).length, LOCKOUT.emailIpMax)
+})
+
+test('lockout: one IP spraying many emails is capped; one email across many IPs is capped', async () => {
   const ip = `10.9.${Date.now() % 250}.7`
-  for (let i = 0; i < LOCKOUT.ipMax; i++) await recordLoginFailure(`nobody-${i}@x.cr`, ip)
-  assert.equal(await loginLocked('someone-else@x.cr', ip), true)
+  let last = { locked: false }
+  for (let i = 0; i <= LOCKOUT.ipMax; i++) last = await reserveLoginAttempt(`nobody-${i}-${Date.now()}@x.cr`, ip)
+  assert.equal(last.locked, true)
+  const email = `botnet-${Date.now()}@x.cr`
+  for (let i = 0; i <= LOCKOUT.emailMax; i++) last = await reserveLoginAttempt(email, `172.16.${i % 250}.${i}`)
+  assert.equal(last.locked, true)
+  await clearLoginFailures(email)
+  assert.equal((await reserveLoginAttempt(email, '172.17.0.1')).locked, false, 'a password reset clears the account cap')
+})
+
+test('IPv6 is bucketed by /48 for the IP counter', () => {
+  assert.equal(ipBucket('2001:db8:1:2::/64'), '2001:db8:1::/48')
+  assert.equal(ipBucket('1.2.3.4'), '1.2.3.4')
 })
 
 test('lockout kill switch', async () => {
   const email = `ks-${Date.now()}@x.cr`
-  for (let i = 0; i < LOCKOUT.emailIpMax; i++) await recordLoginFailure(email, '10.1.1.1')
+  for (let i = 0; i <= LOCKOUT.emailIpMax; i++) await reserveLoginAttempt(email, '10.1.1.1')
   process.env.AUTH_LOCKOUT_DISABLED = '1'
   try {
-    assert.equal(await loginLocked(email, '10.1.1.1'), false)
+    assert.equal((await reserveLoginAttempt(email, '10.1.1.1')).locked, false)
   } finally {
     delete process.env.AUTH_LOCKOUT_DISABLED
   }
 })
 
-test('client IP from NextAuth plain headers honours TRUSTED_IP_HEADER', () => {
-  assert.equal(clientIpFromHeaders({ 'x-forwarded-for': '1.2.3.4, 5.6.7.8' }), '1.2.3.4')
+test('client IP from NextAuth plain headers: right-most X-Forwarded-For hop, or TRUSTED_IP_HEADER', () => {
+  assert.equal(clientIpFromHeaders({ 'x-forwarded-for': '6.6.6.6, 5.6.7.8' }), '5.6.7.8', 'the client-chosen first hop is ignored')
   assert.equal(clientIpFromHeaders({}), 'unknown')
   process.env.TRUSTED_IP_HEADER = 'cf-connecting-ip'
   try {
@@ -85,7 +102,7 @@ test('client IP from NextAuth plain headers honours TRUSTED_IP_HEADER', () => {
   }
 })
 
-test('authorize wiring: lock before lookup, burn bcrypt for unknown, verification after password', () => {
+test('authorize wiring: reserve before lookup, exact lookup, equal timing, version read before password', () => {
   const src = read('src/lib/auth-options.ts')
   const body = src.split('async authorize(credentials, req)')[1].split('GoogleProvider(')[0]
   const at = (s: string) => {
@@ -93,11 +110,14 @@ test('authorize wiring: lock before lookup, burn bcrypt for unknown, verificatio
     assert.ok(i >= 0, s)
     return i
   }
-  assert.ok(at('loginLocked(') < at('prisma.user.findFirst'))
-  assert.ok(at('burnPasswordCheck(password)') < at('verifyPassword(password'))
+  assert.ok(at('reserveLoginAttempt(') < at('findUserIdByEmail('))
+  assert.doesNotMatch(body, /mode: 'insensitive'/, 'no ILIKE lookup')
+  assert.match(body, /!user \|\| !user\.active \|\| !user\.password \|\| !isBcryptHash\(user\.password\)\) \{[\s\S]{0,200}burnPasswordCheck\(password\)/)
+  assert.ok(at('loadUserAuthState(user.id)') < at('verifyPassword(password'), 'version read before the password check (M1)')
   assert.ok(at('verifyPassword(password') < at('emailVerificationBlocks(user)'))
+  assert.ok(at('emailVerificationBlocks(user)') < at('releaseLoginAttempt('))
+  assert.match(body, /sv: sessionVersion,/)
   assert.match(body, /Object\.values\(LOGIN_ERRORS\)[^\n]*includes\(error\.message\)\)\s*\{\s*throw error/)
-  assert.doesNotMatch(body, /rateLimit\(`credentials:/, 'old per-email lock (owner-lockout vector) removed')
 })
 
 test('reset tokens: random, hashed at rest, legacy raw only for UUID shape', () => {
@@ -118,5 +138,12 @@ test('reset routes: hash stored, single atomic consume, escaped name, inactive r
   const reset = read('src/app/api/auth/reset-password/route.ts')
   assert.doesNotMatch(reset, /SELECT id, email FROM "User"/, 'no read-then-write')
   assert.match(reset, /UPDATE "User"[\s\S]*"passwordResetToken" = NULL[\s\S]*AND active = true\s*RETURNING id, email/)
+  // One statement also ends every session; the email is verified only in that statement (H3/M1).
+  const primary = reset.split('async function consumeResetLink')[1].split('} catch (error)')[0]
+  assert.match(primary, /"emailVerified" = COALESCE\("emailVerified", NOW\(\)\)/)
+  assert.match(primary, /"sessionVersion" = "sessionVersion" \+ 1/)
+  const fallback = reset.split('} catch (error)')[1].split('export async function POST')[0]
+  assert.doesNotMatch(fallback, /emailVerified/, 'pre-034 fallback never verifies (sessions could not be ended)')
+  assert.ok(reset.indexOf('const live = await prisma.$queryRaw') < reset.indexOf('await hashPassword(password)'), 'no bcrypt for dead links')
   assert.equal(escapeHtml(`<img src=x onerror="a">&'`), '&lt;img src=x onerror=&quot;a&quot;&gt;&amp;&#39;')
 })

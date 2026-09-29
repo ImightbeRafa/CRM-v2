@@ -80,7 +80,7 @@ test('verify-email refuses deactivated users and never sets active', () => {
 
 test('resend-verification: one generic answer, case-insensitive, skips inactive', () => {
   const src = read('src/app/api/auth/resend-verification/route.ts')
-  assert.match(src, /mode: 'insensitive'/)
+  assert.match(src, /findUserIdByEmail\(normalizedEmail\)/, 'exact lower() match, no ILIKE wildcards')
   assert.match(src, /user\.active === false/)
   assert.doesNotMatch(src, /status: 500 \}\s*\);\s*\}\s*return NextResponse\.json\(\{\s*success: true,\s*message: 'Verification email sent/)
   assert.equal((src.match(/NextResponse\.json\(GENERIC/g) || []).length, 2)

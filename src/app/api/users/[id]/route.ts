@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { createErrorResponse, createSuccessResponse, handleApiError } from '@/lib/apiUtils';
 import { resolveDefaultTenantAfterRemoval } from '@/lib/membership-lifecycle';
+import { checkMemberChange } from '@/lib/member-admin-guard';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -27,6 +28,9 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       include: { user: { select: { id: true, username: true, email: true } } },
     });
     if (!membership) return createErrorResponse('Usuario no encontrado en este tenant', 404);
+
+    const guard = await guardMemberChange(auth, membership, { newRole: role ?? null, remove: active === false });
+    if (!guard.ok) return createErrorResponse(guard.error, guard.status);
 
     const updated = await prisma.membership.update({
       where: { id: membership.id },
@@ -62,6 +66,8 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     });
     if (!membership) return createErrorResponse('Usuario no encontrado en este tenant', 404);
     if (membership.user.isSuperAdmin) return createErrorResponse('No se puede remover al usuario maestro', 400);
+    const guard = await guardMemberChange(auth, membership, { remove: true });
+    if (!guard.ok) return createErrorResponse(guard.error, guard.status);
 
     await prisma.membership.update({
       where: { id: membership.id },
@@ -73,6 +79,26 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
   } catch (error) {
     return handleApiError(error);
   }
+}
+
+async function guardMemberChange(
+  auth: { userId: string; role: string; tenantId: string },
+  target: { userId: string; role: string; isActive: boolean },
+  change: { newRole?: string | null; remove?: boolean },
+) {
+  const activeOwnerCount = await prisma.membership.count({
+    where: { tenantId: auth.tenantId, role: 'OWNER', isActive: true },
+  })
+  return checkMemberChange({
+    actorUserId: auth.userId,
+    actorRole: auth.role,
+    targetUserId: target.userId,
+    targetRole: target.role,
+    targetActive: target.isActive,
+    newRole: change.newRole,
+    remove: change.remove,
+    activeOwnerCount,
+  })
 }
 
 async function repairDefaultTenant(userId: string, removedTenantId: string) {

@@ -11,6 +11,7 @@ import {
   type TeamInviteRole,
 } from '@/lib/team-invite'
 import { sendTeamInviteEmail } from '@/lib/email'
+import { findUserIdByEmail } from '@/lib/user-lookup'
 
 export type CreateTeamInviteInput = {
   tenantId: string
@@ -31,8 +32,9 @@ export async function createTeamInvite(input: CreateTeamInviteInput) {
   }
   const role = input.role as TeamInviteRole
 
-  const existingUser = await prisma.user.findFirst({
-    where: { email: { equals: email, mode: 'insensitive' } },
+  // Exact lower() match (ILIKE would treat _ and % in the address as wildcards).
+  const existingUser = await prisma.user.findUnique({
+    where: { id: (await findUserIdByEmail(email)) ?? '' },
     select: {
       id: true,
       memberships: {

@@ -24,11 +24,13 @@ test('behind Cloudflare, a spoofed X-Forwarded-For cannot pick the rate-limit ke
   }
 })
 
-test('without TRUSTED_IP_HEADER the legacy order is unchanged (Railway / local)', () => {
+test('without TRUSTED_IP_HEADER the right-most X-Forwarded-For hop wins (SecureDog H1)', () => {
   const prev = process.env.TRUSTED_IP_HEADER
   delete process.env.TRUSTED_IP_HEADER
   try {
-    assert.equal(getClientIP(req({ 'x-forwarded-for': '1.1.1.1, 2.2.2.2' })), '1.1.1.1')
+    // The first entry is client-chosen (rotating it reset every limit); the proxy appends the last.
+    assert.equal(getClientIP(req({ 'x-forwarded-for': '6.6.6.6, 2.2.2.2' })), '2.2.2.2')
+    assert.equal(getClientIP(req({ 'x-forwarded-for': '1.1.1.1' })), '1.1.1.1')
     assert.equal(getClientIP(req({})), 'unknown')
   } finally {
     if (prev !== undefined) process.env.TRUSTED_IP_HEADER = prev

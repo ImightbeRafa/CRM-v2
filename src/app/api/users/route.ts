@@ -9,6 +9,7 @@ import { getTenantSeatUsageWithClient } from '@/lib/plan-enforcement'
 import { inviteMembershipAction, resolveDefaultTenantAfterRemoval } from '@/lib/membership-lifecycle'
 import { createTeamInvite } from '@/lib/team-invite-service'
 import { Prisma } from '@prisma/client'
+import { checkMemberChange, MEMBER_ROLES } from '@/lib/member-admin-guard'
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic'
@@ -100,6 +101,14 @@ export async function POST(request: NextRequest) {
     const missingField = validateRequiredFields({ email }, ['email'])
     if (missingField) {
       return createErrorResponse(missingField, 400)
+    }
+
+    // Role hierarchy (AUTH-23): valid roles only; only an Owner adds another Owner.
+    if (!(MEMBER_ROLES as readonly string[]).includes(role)) {
+      return createErrorResponse('Rol inválido', 400)
+    }
+    if (role === 'OWNER' && auth.role !== 'OWNER') {
+      return createErrorResponse('Solo un Owner puede asignar el rol Owner.', 403)
     }
 
     // Email-invite mode: create TenantInvite (join on accept) — no orphan tenant, no password required.
@@ -345,7 +354,11 @@ export async function PUT(request: NextRequest) {
     if (!membership) {
       return createErrorResponse('Usuario no encontrado en este tenant', 404)
     }
-    
+
+    // Role hierarchy + last-owner guard (AUTH-23).
+    const guard = await guardMemberChange(auth, membership, { newRole: role ?? null, remove: active === false })
+    if (!guard.ok) return createErrorResponse(guard.error, guard.status)
+
     // Reactivation consumes a seat. Use the same transaction-scoped advisory
     // lock as POST membership admission and bot-session admission so two
     // channels cannot claim the tenant's last seat concurrently.
@@ -426,7 +439,10 @@ export async function DELETE(request: NextRequest) {
     if (!membership) {
       return createErrorResponse('Usuario no encontrado en este tenant', 404)
     }
-    
+
+    const guard = await guardMemberChange(auth, membership, { remove: true })
+    if (!guard.ok) return createErrorResponse(guard.error, guard.status)
+
     // Remove membership only, NOT the user. Sign-in must not revive this row.
     await prisma.$transaction(async (tx) => {
       await tx.membership.update({
@@ -480,4 +496,24 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
+}
+
+async function guardMemberChange(
+  auth: { userId: string; role: string; tenantId: string },
+  target: { userId: string; role: string; isActive: boolean },
+  change: { newRole?: string | null; remove?: boolean },
+) {
+  const activeOwnerCount = await prisma.membership.count({
+    where: { tenantId: auth.tenantId, role: 'OWNER', isActive: true },
+  })
+  return checkMemberChange({
+    actorUserId: auth.userId,
+    actorRole: auth.role,
+    targetUserId: target.userId,
+    targetRole: target.role,
+    targetActive: target.isActive,
+    newRole: change.newRole,
+    remove: change.remove,
+    activeOwnerCount,
+  })
 }

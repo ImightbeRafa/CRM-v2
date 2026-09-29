@@ -28,7 +28,8 @@ export { getSessionRole, getSessionTenantId, hasSessionPermission } from './sess
 export async function requireAuth() {
   const session = await getServerSession(authOptions);
 
-  if (!session || !session.user) {
+  // A session cleared by deactivation / revocation still has `user`, with an empty id.
+  if (!session || !session.user || !(session.user as { id?: string }).id) {
     redirect('/auth/signin');
   }
 
@@ -119,8 +120,9 @@ export async function authenticateAPI(request: NextRequest) {
   const ctx = await readVerifiedAuthContext(request.headers);
 
   if (ctx?.tenantId) {
-    // Deactivated user or revoked session (password reset): cached 60 s per process.
-    if (!(await sessionStillValid(ctx.userId, ctx.sv))) {
+    // Deactivated user, revoked session (password reset), removed from this business or role
+    // downgraded: cached 60 s per process.
+    if (!(await sessionStillValid(ctx.userId, ctx.sv, { tenantId: ctx.tenantId, role: ctx.role }))) {
       return {
         ok: false as const,
         response: NextResponse.json({ error: 'Unauthorized', code: 'session_revoked' }, { status: 401 }),

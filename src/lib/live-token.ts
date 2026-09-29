@@ -13,5 +13,7 @@ export async function getLiveToken(params: { req: Request | { headers: unknown }
   const token = (await getToken({ req: params.req as never, secret: params.secret })) as JWT | null
   if (!token?.sub) return token
   if ((token as { error?: string }).error) return null
-  return (await sessionStillValid(token.sub, (token as { sv?: number }).sv)) ? token : null
+  const t = token as { sv?: number; tenantId?: string | null; currentTenant?: { role?: string } | null }
+  const valid = await sessionStillValid(token.sub, t.sv, { tenantId: t.tenantId ?? null, role: t.currentTenant?.role ?? null })
+  return valid ? token : null
 }

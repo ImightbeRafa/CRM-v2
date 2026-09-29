@@ -186,9 +186,8 @@ export default withSentryConfig(bundleAnalyzer(nextConfig), {
   project: "javascript-nextjs",
   silent: !process.env.CI,
   widenClientFileUpload: true,
-  // Browser events go through our own domain (/monitoring, public in middleware): no Sentry
-  // Allowed-Domains 403s and no ad-blocker drops. Was env-gated and unset in the CF image build.
-  tunnelRoute: process.env.SENTRY_TUNNEL_ROUTE || '/monitoring',
+  // No tunnelRoute: its rewrite forwarded every header (session cookie included) to Sentry.
+  // Browser events use our own relay, src/app/monitoring/route.ts (Sentry.init tunnel).
   webpack: {
     automaticVercelMonitors: true,
     treeshake: { removeDebugLogging: true },

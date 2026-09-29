@@ -7,7 +7,7 @@ import zlib from 'node:zlib'
 import { csvCell, neutralizeCsvFormula } from '../csv-safe'
 import { neutralizeCsvFormula as serverNeutralize } from '../security'
 import { hasPermission } from '../rbac'
-import { XLSX_MAX_ENTRIES, xlsxArchiveProblem } from '../import-helpers'
+import { XLSX_MAX_ENTRIES, xlsxArchiveProblem } from '../xlsx-guard'
 
 const read = (f: string) => readFileSync(path.join(process.cwd(), f), 'utf8').replace(/\r\n/g, '\n')
 
@@ -102,6 +102,23 @@ test('zip guard: huge declared expansion, too many entries, garbage and zip64 ar
   assert.ok(xlsxArchiveProblem(zip(many)))
   assert.ok(xlsxArchiveProblem(Buffer.from('not a zip at all, just text')))
   assert.ok(xlsxArchiveProblem(zip([{ name: 'a', data: Buffer.from('a'), fakeSize: 0xffffffff }])))
+})
+
+test('zip guard: a small declared size cannot hide a huge real entry (SecureDog H2 PoC)', () => {
+  // ~50 KB compressed, 60 MB real, declared as 100 bytes.
+  const bomb = zip([{ name: 'xl/sharedStrings.xml', data: Buffer.alloc(60 * 1024 * 1024, 0x61), fakeSize: 100 }])
+  assert.ok(bomb.length < 1_000_000)
+  const before = process.memoryUsage().rss
+  assert.ok(xlsxArchiveProblem(bomb))
+  assert.ok(process.memoryUsage().rss - before < 200 * 1024 * 1024, 'inflation stayed bounded')
+})
+
+test('zip guard: a directory shifted away from its end record is refused', () => {
+  const ok = zip([{ name: 'a.xml', data: Buffer.from('<a/>') }])
+  // Insert junk between the central directory and the end record.
+  const eocdAt = ok.length - 22
+  const shifted = Buffer.concat([ok.subarray(0, eocdAt), Buffer.alloc(8), ok.subarray(eocdAt)])
+  assert.ok(xlsxArchiveProblem(shifted))
 })
 
 test('both xlsx loaders run the guard before ExcelJS inflates', () => {

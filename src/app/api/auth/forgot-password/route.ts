@@ -4,6 +4,7 @@ import { Resend } from 'resend';
 import { escapeHtml, generateResetToken, hashResetToken, RESET_TOKEN_TTL_MS } from '@/lib/password-reset';
 import { authRateLimit, getClientIP } from '@/lib/rate-limit';
 import { verifyTurnstile } from '@/lib/turnstile';
+import { findUserIdByEmail } from '@/lib/user-lookup';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -29,10 +30,9 @@ export async function POST(request: Request) {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    const user = await prisma.user.findFirst({
-      where: {
-        email: { equals: normalizedEmail, mode: 'insensitive' },
-      },
+    // Exact match (no ILIKE wildcards), see user-lookup.ts.
+    const user = await prisma.user.findUnique({
+      where: { id: (await findUserIdByEmail(normalizedEmail)) ?? '' },
       select: { id: true, email: true, username: true, name: true, provider: true, active: true },
     });
 

@@ -167,6 +167,11 @@ export function normalizeClientIp(ip: string): string {
   return `${groups.slice(0, 4).map(canon).join(':')}::/64`;
 }
 
+export function rightmostForwarded(xff: string): string {
+  const hops = xff.split(',').map((h) => h.trim()).filter(Boolean);
+  return hops[hops.length - 1] || 'unknown';
+}
+
 export function getClientIP(request: Request): string {
   // Set by the deploy (cf-container-worker → cf-connecting-ip). When present, it is the
   // only header we trust: X-Forwarded-For's first entry is client-controlled behind a proxy.
@@ -181,7 +186,9 @@ export function getClientIP(request: Request): string {
   const realIP = request.headers.get('x-real-ip');
   const cfConnectingIP = request.headers.get('cf-connecting-ip');
 
-  if (forwarded) return forwarded.split(',')[0].trim();
+  // Right-most hop = the one our proxy appended; the first entry is whatever the client sent
+  // (SecureDog H1: rotating a fake first entry reset every per-IP limit on the preview).
+  if (forwarded) return normalizeClientIp(rightmostForwarded(forwarded));
   if (realIP) return realIP.trim();
   if (cfConnectingIP) return cfConnectingIP.trim();
   return 'unknown';
@@ -319,20 +326,44 @@ export async function failureCount(key: string): Promise<number> {
   return memoryCounterGet(key);
 }
 
-/** `limit` only tells the memory store which entries are blocking (kept longest when pruning). */
+/**
+ * Atomically adds one to the counter and returns the new value. `limit` only tells the memory
+ * store which entries are blocking (kept longest when pruning). Redis: the key is created WITH its
+ * expiry (SET NX PX) before INCR, so a timeout between two calls can never leave a counter that
+ * never expires (SecureDog M5: a permanently locked office IP).
+ */
 export async function recordFailure(key: string, windowMs: number, limit: number): Promise<number> {
   const local = memoryCounterIncr(key, windowMs, limit);
   if (redis) {
     try {
       const k = `failcount:${key}`;
+      await withTimeout(redis.set(k, 0, { nx: true, px: windowMs }));
       const n = await withTimeout(redis.incr(k));
-      if (n === 1) await withTimeout(redis.pexpire(k, windowMs));
+      // Belt and braces: a key without TTL (older code, manual edits) gets one now.
+      if (n > 1 && Math.random() < 0.1) {
+        const ttl = await withTimeout(redis.pttl(k));
+        if (ttl === -1) await withTimeout(redis.pexpire(k, windowMs));
+      }
       return Math.max(n, local);
     } catch {
       // memory already counted
     }
   }
   return local;
+}
+
+/** Gives back one reserved attempt (a login that turned out to be correct). */
+export async function releaseAttempt(key: string): Promise<void> {
+  const entry = memoryStore.get(`fail:${key}`);
+  if (entry && entry.count > 0) entry.count--;
+  if (redis) {
+    try {
+      const n = await withTimeout(redis.decr(`failcount:${key}`));
+      if (n <= 0) await withTimeout(redis.del(`failcount:${key}`));
+    } catch {
+      // best effort
+    }
+  }
 }
 
 export async function clearFailures(key: string): Promise<void> {

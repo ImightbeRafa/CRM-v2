@@ -8,13 +8,13 @@ import { withoutTenantIsolation } from './tenantContext'
 import {
   LOGIN_ERRORS,
   burnPasswordCheck,
-  clearLoginFailures,
   clientIpFromHeaders,
   emailVerificationBlocks,
-  loginLocked,
-  recordLoginFailure,
+  releaseLoginAttempt,
+  reserveLoginAttempt,
 } from './auth-gates'
 import { loadUserAuthState, revokeUserSessions, sessionMatches } from './session-revocation'
+import { findUserIdByEmail } from './user-lookup'
 import { TEAM_INVITE_COOKIE } from './team-invite'
 
 /** Invite token from the accept-invite cookie in a raw Cookie header (credentials authorize). */
@@ -137,21 +137,17 @@ export const authOptions: NextAuthOptions = {
           // Normalize email (trim and lowercase) for consistent lookup
           const normalizedEmail = email.toLowerCase()
 
-          // Failed-login lockout (email+IP and IP; Upstash when configured). See auth-gates.ts.
+          // Lockout: this attempt is reserved atomically before any bcrypt (see auth-gates.ts).
           const ip = clientIpFromHeaders(req?.headers as Record<string, unknown> | undefined)
-          if (await loginLocked(normalizedEmail, ip)) {
-            console.log('[Credentials Auth] Locked out (too many failures)')
+          if ((await reserveLoginAttempt(normalizedEmail, ip)).locked) {
+            console.log('[Credentials Auth] Locked out (too many attempts)')
             throw new Error(LOGIN_ERRORS.locked)
           }
 
-          // Find user by email (CASE-INSENSITIVE to handle legacy data with mixed casing)
-          const user = await prisma.user.findFirst({
-            where: {
-              email: {
-                equals: normalizedEmail,
-                mode: 'insensitive'
-              }
-            },
+          // Exact case-insensitive match (no ILIKE wildcards; see user-lookup.ts)
+          const userId = await findUserIdByEmail(normalizedEmail)
+          const user = !userId ? null : await prisma.user.findUnique({
+            where: { id: userId },
             select: {
               id: true,
               username: true,
@@ -168,29 +164,25 @@ export const authOptions: NextAuthOptions = {
             }
           })
 
-          // Unknown and inactive accounts cost the same bcrypt time and count as failures.
-          if (!user || !user.active) {
-            console.log(`[Credentials Auth] ${user ? 'Inactive user' : 'User not found'}`)
+          // Every failing path costs the same bcrypt time (unknown, inactive, Google-only, legacy
+          // non-bcrypt) and keeps its reserved attempt, so none of them can be told apart.
+          if (!user || !user.active || !user.password || !isBcryptHash(user.password)) {
+            console.log(`[Credentials Auth] ${!user ? 'User not found' : !user.active ? 'Inactive user' : 'No usable password'}`)
             await burnPasswordCheck(password)
-            await recordLoginFailure(normalizedEmail, ip)
             return null
           }
 
-          // Verify password (bcrypt only - plaintext support removed for security)
-          let passwordValid = false;
-
-          if (user.password) {
-            if (!isBcryptHash(user.password)) {
-              // Password is not bcrypt hashed - reject login
-              console.error(`[Credentials Auth] User ${normalizedEmail} has non-bcrypt password - login rejected`);
-              return null;
-            }
-            // Password is hashed with bcrypt - verify securely
-            passwordValid = await verifyPassword(password, user.password);
+          // Session version read BEFORE the password check: a reset that lands mid-login bumps
+          // the version after this read, so the session this login creates is already revoked.
+          let sessionVersion = 0
+          try {
+            sessionVersion = (await loadUserAuthState(user.id))?.sessionVersion ?? 0
+          } catch {
+            sessionVersion = 0
           }
 
+          const passwordValid = await verifyPassword(password, user.password)
           if (!passwordValid) {
-            await recordLoginFailure(normalizedEmail, ip)
             return null
           }
 
@@ -199,7 +191,7 @@ export const authOptions: NextAuthOptions = {
           if (emailVerificationBlocks(user)) {
             throw new Error(LOGIN_ERRORS.emailNotVerified)
           }
-          await clearLoginFailures(normalizedEmail, ip)
+          await releaseLoginAttempt(normalizedEmail, ip)
 
           // A TenantInvite is joined only by whoever holds its emailed link (the accept-invite page
           // sets the cookie). Knowing the address — even with a verified account — is not enough.
@@ -259,6 +251,7 @@ export const authOptions: NextAuthOptions = {
             tenantId: selectedTenantId,
             email_verified: !!user.emailVerified,
             active: user.active,
+            sv: sessionVersion,
             memberships: memberships.map(m => ({
               id: m.tenantId,
               role: m.role,
@@ -314,13 +307,10 @@ export const authOptions: NextAuthOptions = {
 
             // CRITICAL: Use case-insensitive search to find existing users
             // This prevents duplicate users when email casing differs (e.g., "User@gmail.com" vs "user@gmail.com")
-            let dbUser = await prisma.user.findFirst({
-              where: {
-                email: {
-                  equals: normalizedEmail,
-                  mode: 'insensitive'
-                }
-              },
+            // Exact lower() match: Prisma's insensitive `equals` is ILIKE, where `_` in a Google
+            // address (a_b@x) could match a different account (axb@x) and merge into it.
+            let dbUser = await prisma.user.findUnique({
+              where: { id: (await findUserIdByEmail(normalizedEmail)) ?? '' },
               select: {
                 id: true,
                 email: true,
@@ -752,10 +742,15 @@ export const authOptions: NextAuthOptions = {
         token.active = (user as any).active !== false;
         token.lastDbSync = Date.now();
         // Session version at sign-in; a password reset bumps it and ends this session.
-        try {
-          (token as any).sv = (await loadUserAuthState(user.id))?.sessionVersion ?? 0;
-        } catch {
-          (token as any).sv = 0;
+        // Credentials logins carry the version read before their password check (race-free).
+        if (typeof (user as any).sv === 'number') {
+          (token as any).sv = (user as any).sv;
+        } else {
+          try {
+            (token as any).sv = (await loadUserAuthState(user.id))?.sessionVersion ?? 0;
+          } catch {
+            (token as any).sv = 0;
+          }
         }
 
         try {

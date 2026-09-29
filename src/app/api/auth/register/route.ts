@@ -6,6 +6,8 @@ import { sendVerificationEmail } from '@/lib/email';
 import { withoutTenantIsolation } from '@/lib/tenantContext';
 import { authRateLimit, getClientIP } from '@/lib/rate-limit';
 import { verifyTurnstile } from '@/lib/turnstile';
+import { findUserIdByEmail } from '@/lib/user-lookup';
+import { burnPasswordCheck, releaseLoginAttempt, reserveLoginAttempt } from '@/lib/auth-gates';
 import { sendCAPIEvent } from '@/lib/meta-capi';
 import { provisionOwnedTenantForExistingUser } from '@/lib/tenant-provisioning';
 import { acceptTeamInviteForUser, findInviteForPresentedToken, findPendingInviteForEmail } from '@/lib/team-invite-service';
@@ -56,13 +58,9 @@ export async function POST(request: Request) {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const existingUser = await prisma.user.findFirst({
-      where: { 
-        email: { 
-          equals: normalizedEmail, 
-          mode: 'insensitive' 
-        } 
-      },
+    // Exact match (no ILIKE wildcards), see user-lookup.ts.
+    const existingUser = await prisma.user.findUnique({
+      where: { id: (await findUserIdByEmail(normalizedEmail)) ?? '' },
       select: {
         id: true,
         email: true,
@@ -79,13 +77,22 @@ export async function POST(request: Request) {
     });
 
     if (existingUser) {
+      // Claiming a business re-checks the password: it goes through the login lockout and always
+      // costs one bcrypt, so this path is neither a password oracle nor a timing oracle (L2).
       const existingPassword = existingUser.password;
+      const ip = getClientIP(request);
+      const locked = (await reserveLoginAttempt(normalizedEmail, ip)).locked;
+      let passwordOk = false;
+      if (!locked && existingPassword && isBcryptHash(existingPassword)) {
+        passwordOk = await verifyPassword(password, existingPassword);
+      } else {
+        await burnPasswordCheck(password);
+      }
+      if (passwordOk) await releaseLoginAttempt(normalizedEmail, ip);
       const canClaimOwnTenant =
         existingUser.active !== false &&
         existingUser.memberships.length === 0 &&
-        !!existingPassword &&
-        isBcryptHash(existingPassword) &&
-        await verifyPassword(password, existingPassword);
+        passwordOk;
 
       if (canClaimOwnTenant) {
         await withoutTenantIsolation(async () => {
@@ -272,7 +279,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: 'Registration successful! You can now log in.',
+      message: 'Registro recibido. Revisa tu email para verificar la cuenta.',
     });
 
   } catch (error: any) {

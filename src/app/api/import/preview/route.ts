@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
-import { parseExcelSheet, mapInventoryRow, validateXlsxUpload, xlsxArchiveProblem } from '@/lib/import-helpers';
+import { parseExcelSheet, mapInventoryRow, validateXlsxUpload } from '@/lib/import-helpers';
+import { xlsxArchiveProblem } from '@/lib/xlsx-guard';
+import { rateLimit } from '@/lib/rate-limit';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
@@ -39,6 +41,9 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
+    if (!rateLimit(`xlsx:${auth.tenantId}`, { windowMs: 60_000, maxRequests: 10, identifier: 'xlsx-import' }).allowed) {
+      return NextResponse.json({ error: 'Demasiadas importaciones seguidas. Espera un minuto.' }, { status: 429 });
+    }
     const archiveProblem = xlsxArchiveProblem(buffer);
     if (archiveProblem) {
       return NextResponse.json({ error: archiveProblem }, { status: 400 });

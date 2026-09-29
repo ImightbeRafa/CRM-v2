@@ -6,13 +6,15 @@
  * - Email verification is OFF until `EMAIL_VERIFICATION_ENFORCE_FROM` (ISO date) is set, and then
  *   only applies to accounts created at/after that instant. Existing unverified users are exempt by
  *   construction. Recovery: resend the verification email, or reset the password (verifies).
- * - Lockout is time-based only (no DB state), keyed on email+IP (5 failures / 15 min) and on IP
- *   (30 / 15 min). There is deliberately no hard per-email lock across all IPs: that would let
- *   anyone lock an owner out by typing wrong passwords for them. A successful login or password
- *   reset clears the email+IP counter. Kill switch: `AUTH_LOCKOUT_DISABLED=1`.
+ * - Lockout is time-based only (no DB state). Every attempt is RESERVED atomically before bcrypt
+ *   (parallel guesses cannot slip past a read-then-write check) and a correct password gives it
+ *   back. Limits per 15 min: 5 per email+IP, 30 per IP bucket (IPv6 /48), 40 per email across all
+ *   IPs (botnet / IPv6 rotation). The per-email cap can be abused to lock an account for 15 min;
+ *   the owner's way back is a password reset, which clears it. Kill switch:
+ *   `AUTH_LOCKOUT_DISABLED=1`.
  * - Failures for emails that do not exist are counted too, so a lock reveals nothing.
  */
-import { normalizeClientIp, clearFailures, failureCount, recordFailure } from '@/lib/rate-limit'
+import { normalizeClientIp, clearFailures, recordFailure, releaseAttempt, rightmostForwarded } from '@/lib/rate-limit'
 import { hashPassword, verifyPassword } from '@/lib/password'
 
 export const LOGIN_ERRORS = {
@@ -24,6 +26,7 @@ const WINDOW_MS = 15 * 60 * 1000
 export const LOCKOUT = {
   emailIpMax: 5,
   ipMax: 30,
+  emailMax: 40,
   windowMs: WINDOW_MS,
 } as const
 
@@ -49,33 +52,47 @@ export function lockoutDisabled(): boolean {
   return process.env.AUTH_LOCKOUT_DISABLED === '1'
 }
 
+/** IPv6 addresses are bucketed by /48 for the per-IP counter (one customer site). */
+export function ipBucket(ip: string): string {
+  const m = /^([0-9a-f]+):([0-9a-f]+):([0-9a-f]+):[0-9a-f]+::\/64$/i.exec(ip)
+  return m ? `${m[1]}:${m[2]}:${m[3]}::/48` : ip
+}
+
 export function lockoutKeys(email: string, ip: string) {
   const e = email.trim().toLowerCase()
-  return { emailIp: `login:ei:${e}|${ip}`, ip: `login:ip:${ip}` }
+  return { emailIp: `login:ei:${e}|${ip}`, ip: `login:ip:${ipBucket(ip)}`, email: `login:e:${e}` }
 }
 
-export function isLockedOut(counts: { emailIp: number; ip: number }): boolean {
-  return counts.emailIp >= LOCKOUT.emailIpMax || counts.ip >= LOCKOUT.ipMax
+export function isLockedOut(counts: { emailIp: number; ip: number; email?: number }): boolean {
+  return counts.emailIp > LOCKOUT.emailIpMax || counts.ip > LOCKOUT.ipMax || (counts.email ?? 0) > LOCKOUT.emailMax
 }
 
-export async function loginLocked(email: string, ip: string): Promise<boolean> {
-  if (lockoutDisabled()) return false
+/**
+ * Counts this attempt up front (atomic INCR) and says whether it is over a limit. Call before
+ * bcrypt; on a correct password call releaseLoginAttempt. Unknown emails count the same.
+ */
+export async function reserveLoginAttempt(email: string, ip: string): Promise<{ locked: boolean }> {
+  if (lockoutDisabled()) return { locked: false }
   const k = lockoutKeys(email, ip)
-  const [emailIp, ipCount] = await Promise.all([failureCount(k.emailIp), failureCount(k.ip)])
-  return isLockedOut({ emailIp, ip: ipCount })
-}
-
-export async function recordLoginFailure(email: string, ip: string): Promise<void> {
-  if (lockoutDisabled()) return
-  const k = lockoutKeys(email, ip)
-  await Promise.all([
+  const [emailIp, ipCount, emailCount] = await Promise.all([
     recordFailure(k.emailIp, WINDOW_MS, LOCKOUT.emailIpMax),
     recordFailure(k.ip, WINDOW_MS, LOCKOUT.ipMax),
+    recordFailure(k.email, WINDOW_MS, LOCKOUT.emailMax),
   ])
+  return { locked: isLockedOut({ emailIp, ip: ipCount, email: emailCount }) }
 }
 
+/** A correct password: the attempt was not a failure. */
+export async function releaseLoginAttempt(email: string, ip: string): Promise<void> {
+  if (lockoutDisabled()) return
+  const k = lockoutKeys(email, ip)
+  await Promise.all([clearFailures(k.emailIp), releaseAttempt(k.ip), releaseAttempt(k.email)])
+}
+
+/** After a password reset: the owner proved the mailbox, so their account counters start over. */
 export async function clearLoginFailures(email: string, ip?: string): Promise<void> {
-  if (ip) await clearFailures(lockoutKeys(email, ip).emailIp)
+  const k = lockoutKeys(email, ip || 'none')
+  await Promise.all([clearFailures(k.email), ip ? clearFailures(k.emailIp) : Promise.resolve()])
 }
 
 /**
@@ -93,7 +110,9 @@ export function clientIpFromHeaders(headers: Record<string, unknown> | undefined
     const value = get(trusted)?.split(',')[0]?.trim()
     return value ? normalizeClientIp(value) : 'trusted-header-missing'
   }
-  const first = get('x-forwarded-for')?.split(',')[0]?.trim() || get('x-real-ip')?.trim() || get('cf-connecting-ip')?.trim()
+  // Right-most X-Forwarded-For hop (appended by our proxy), never the client-chosen first one.
+  const xff = get('x-forwarded-for')
+  const first = (xff ? rightmostForwarded(xff) : '') || get('x-real-ip')?.trim() || get('cf-connecting-ip')?.trim()
   return first ? normalizeClientIp(first) : 'unknown'
 }
 

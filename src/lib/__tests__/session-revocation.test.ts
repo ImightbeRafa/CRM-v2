@@ -32,12 +32,15 @@ test('wiring: signed context carries sv, API fast path checks it, JWT refresh cl
   assert.match(read('src/middleware.ts'), /sv: Number\(\(token as \{ sv\?: number \}\)\.sv\) \|\| 0/)
   assert.match(read('src/middleware.ts'), /tokenError === 'session_revoked'/)
   const helpers = read('src/lib/auth-helpers.ts')
-  assert.ok(helpers.indexOf('sessionStillValid(ctx.userId, ctx.sv)') > 0)
-  assert.ok(helpers.indexOf('sessionStillValid(ctx.userId, ctx.sv)') < helpers.indexOf('return applyBillingWriteGuard(request, auth);'))
+  const check = 'sessionStillValid(ctx.userId, ctx.sv, { tenantId: ctx.tenantId, role: ctx.role })'
+  assert.ok(helpers.indexOf(check) > 0)
+  assert.ok(helpers.indexOf(check) < helpers.indexOf('return applyBillingWriteGuard(request, auth);'))
   const opts = read('src/lib/auth-options.ts')
-  assert.match(opts, /\(token as any\)\.sv = \(await loadUserAuthState\(user\.id\)\)\?\.sessionVersion \?\? 0/)
+  assert.match(opts, /\(token as any\)\.sv = \(user as any\)\.sv;/)
   assert.match(opts, /cleared\.error = revoked \? 'session_revoked' : 'inactive_user'/)
-  assert.match(read('src/app/api/auth/reset-password/route.ts'), /revokeUserSessions\(users\[0\]\.id\)/)
+  // The reset bumps the version inside the same UPDATE that changes the password.
+  assert.match(read('src/app/api/auth/reset-password/route.ts'), /"sessionVersion" = "sessionVersion" \+ 1/)
+  assert.match(read('src/lib/live-token.ts'), /sessionStillValid\(token\.sub, t\.sv, \{ tenantId: t\.tenantId \?\? null, role: t\.currentTenant\?\.role \?\? null \}\)/)
   assert.match(read('src/cf-container-worker.ts'), /"x-betsy-sv"/)
 })
 

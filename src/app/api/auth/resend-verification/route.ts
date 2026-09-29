@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { sendVerificationEmail } from '@/lib/email';
 import { authRateLimit } from '@/lib/rate-limit';
+import { findUserIdByEmail } from '@/lib/user-lookup';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,8 +25,8 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const user = await prisma.user.findFirst({
-      where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+    const user = await prisma.user.findUnique({
+      where: { id: (await findUserIdByEmail(normalizedEmail)) ?? '' },
       select: { id: true, email: true, username: true, emailVerified: true, active: true },
     });
 

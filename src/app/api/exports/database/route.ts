@@ -252,7 +252,8 @@ function generateSQLDump(data: any): string {
     if (Array.isArray(tableData) && tableData.length > 0) {
       sql += `-- ${tableName.toUpperCase()} DATA\n`;
       sql += `-- ${tableData.length} records\n`;
-      sql += `/*\n${JSON.stringify(tableData, null, 2)}\n*/\n\n`;
+      // Customer text containing "*/" must not close the comment (the rest would run as SQL).
+      sql += `/*\n${JSON.stringify(tableData, null, 2).replace(/\*\//g, '*\\/')}\n*/\n\n`;
     }
   });
 

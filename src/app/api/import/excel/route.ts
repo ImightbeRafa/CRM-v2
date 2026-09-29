@@ -11,8 +11,9 @@ import {
   mapInventoryRow,
   validateXlsxUpload,
   type ImportResult,
-  xlsxArchiveProblem,
 } from '@/lib/import-helpers';
+import { xlsxArchiveProblem } from '@/lib/xlsx-guard';
+import { rateLimit } from '@/lib/rate-limit';
 import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags';
 import { createLifecycleOrder } from '@/lib/order-lifecycle';
 
@@ -317,6 +318,10 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
+    // Parsing is memory-heavy: at most 10 imports per business per minute (per container).
+    if (!rateLimit(`xlsx:${auth.tenantId}`, { windowMs: 60_000, maxRequests: 10, identifier: 'xlsx-import' }).allowed) {
+      return NextResponse.json({ error: 'Demasiadas importaciones seguidas. Espera un minuto.' }, { status: 429 });
+    }
     const archiveProblem = xlsxArchiveProblem(buffer);
     if (archiveProblem) {
       return NextResponse.json({ error: archiveProblem }, { status: 400 });

@@ -28,10 +28,25 @@ test('CSP: Turnstile allowed, Vercel preview hosts gone, blob storage kept', () 
   assert.match(cfg, /value: 'strict-origin-when-cross-origin'/)
 })
 
-test('Sentry: tunnel always on, replay masks text and blocks media', () => {
-  assert.match(read('next.config.js'), /tunnelRoute: process\.env\.SENTRY_TUNNEL_ROUTE \|\| '\/monitoring'/)
+test('Sentry: own relay (no cookie-forwarding rewrite), tokens scrubbed, replay masked', () => {
+  assert.doesNotMatch(read('next.config.js'), /^\s*tunnelRoute:/m, 'the rewrite tunnel forwarded cookies (M6)')
   assert.match(read('src/middleware.ts'), /'\/monitoring'/)
-  assert.match(read('instrumentation-client.ts'), /replayIntegration\(\{ maskAllText: true, maskAllInputs: true, blockAllMedia: true \}\)/)
+  const client = read('instrumentation-client.ts')
+  assert.match(client, /tunnel: "\/monitoring"/)
+  assert.match(client, /maskAllText: true,\s*maskAllInputs: true,\s*blockAllMedia: true/)
+  assert.match(client, /beforeSend: \(event\) => scrubEvent\(event\)/)
+  const relay = read('src/app/monitoring/route.ts')
+  assert.match(relay, /headers: \{ 'Content-Type': 'application\/x-sentry-envelope' \}/, 'only the body goes upstream')
+  assert.match(relay, /MAX_ENVELOPE_BYTES/)
+})
+
+test('Sentry relay only accepts this app\'s DSN', async () => {
+  const { sentryEnvelopeTarget, SENTRY_DSN } = await import('../sentry-tunnel')
+  const env = (dsn: string) => new TextEncoder().encode(`${JSON.stringify({ dsn })}\n{"type":"event"}\n{}`)
+  assert.match(sentryEnvelopeTarget(env(SENTRY_DSN)) || '', /^https:\/\/o4511109425725440\.ingest\.us\.sentry\.io\/api\/4511109427494912\/envelope\/$/)
+  assert.equal(sentryEnvelopeTarget(env('https://abc@o1.ingest.us.sentry.io/42')), null)
+  assert.equal(sentryEnvelopeTarget(env('https://34154b8e86072342dbf9c6e55236e963@evil.example/4511109427494912')), null)
+  assert.equal(sentryEnvelopeTarget(new TextEncoder().encode('not json')), null)
 })
 
 function withEnv(env: Record<string, string | undefined>, fn: () => Promise<void> | void) {

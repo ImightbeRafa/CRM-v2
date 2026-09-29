@@ -142,5 +142,6 @@ test('verifier #2: [share]/[story_mention]/[ig_reel] tokens are never shown next
 test('verifier #3: server search hits survive the reconcile replace', () => {
   const src = readFileSync('src/components/chats/SoftCopilotInboxV2.tsx', 'utf8')
   // Search hits (and, since Phase 2b, deep-linked / snoozed rows) survive the replace.
-  assert.match(src, /\[\.\.\.searchHitsRef\.current, \.\.\.pinnedDtosRef\.current\]\.filter\(\(c\) => !fresh\.has\(c\.id\)\)/)
+  // …and the LIVE row wins over the snapshot taken when it was fetched (no stale revert).
+  assert.match(src, /\[\.\.\.searchHitsRef\.current, \.\.\.pinnedDtosRef\.current\]\.map\(\(c\) => prev\.get\(c\.id\) \?\? c\)\.filter\(\(c\) => !fresh\.has\(c\.id\)\)/)
 })

@@ -81,7 +81,9 @@ export async function recordHumanSendMetrics(args: {
     })
     // Only chats that started after the metric existed (older chats have replies without a
     // sender — before 031 or from the WhatsApp app — and would record months-long "responses").
-    if (!firstInbound || firstInbound.sentAt.getTime() < FIRST_RESPONSE_SINCE.getTime()) return settle(memoKey)
+    // No customer message yet (agent wrote first): not settled — the customer may reply later.
+    if (!firstInbound) return
+    if (firstInbound.sentAt.getTime() < FIRST_RESPONSE_SINCE.getTime()) return settle(memoKey)
     // The first outbound of ANY kind after that inbound must be this very send; if the team (or the
     // AI, or the phone app) already answered, this is not a first response.
     const firstOutbound = await prisma.chatMessage.findFirst({

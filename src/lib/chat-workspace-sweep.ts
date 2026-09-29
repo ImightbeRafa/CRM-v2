@@ -35,7 +35,9 @@ const WAKE_CAP = 500
 
 let tablesMissingUntil = 0
 /** One sweep at a time per process (the Worker routes crons to the primary container; INFRA-13). */
-let running = false
+let runningSince = 0
+/** A run older than this is considered hung (e.g. a lock wait) and no longer blocks new runs. */
+const RUN_STALE_MS = 5 * 60_000
 
 export type SweepSummary = { tenants: number; assigned: number; closed: number; reopened: number; woken: number; skipped?: string }
 
@@ -254,8 +256,17 @@ async function reopenForTenant(tenantId: string, s: StoredWorkspaceSettings, clo
   let reopened = 0
   for (const c of convs) {
     if (reopened >= REOPEN_CAP) break
-    const at = closedAt.get(c.id)
-    // No closedAt: closed before this feature and the customer wrote after reopen was enabled → reopen.
+    // When it was closed: closedAt, or (bookkeeping missing / racing) the latest close in the
+    // activity log. Fail-safe (S-B): a close we cannot date after the last inbound is never undone.
+    let at = closedAt.get(c.id) ?? null
+    if (!at) {
+      const ev = await prisma.activityEvent.findFirst({
+        where: { tenantId, conversationId: c.id, verb: { in: ['chat.stage.set', 'chat.auto_close'] } },
+        orderBy: { occurredAt: 'desc' },
+        select: { occurredAt: true },
+      }).catch(() => null)
+      at = ev?.occurredAt ?? null
+    }
     if (at && c.lastInboundAt && c.lastInboundAt.getTime() <= at.getTime()) continue
     const res = await prisma.chatConversation.updateMany({
       where: { id: c.id, tenantId, status: c.status },
@@ -280,12 +291,13 @@ async function reopenForTenant(tenantId: string, s: StoredWorkspaceSettings, clo
 
 export async function runChatWorkspaceSweep(opts: { now?: Date; budgetMs?: number } = {}): Promise<SweepSummary> {
   const summary: SweepSummary = { tenants: 0, assigned: 0, closed: 0, reopened: 0, woken: 0 }
-  if (running) return { ...summary, skipped: 'already_running' }
-  running = true
+  if (runningSince && Date.now() - runningSince < RUN_STALE_MS) return { ...summary, skipped: 'already_running' }
+  const mine = Date.now()
+  runningSince = mine
   try {
     return await sweepOnce(opts, summary)
   } finally {
-    running = false
+    if (runningSince === mine) runningSince = 0
   }
 }
 

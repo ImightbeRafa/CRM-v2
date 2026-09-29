@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { workspaceWriteRateLimit } from '@/lib/rate-limit'
-import { isAllowedChatStage, loadTags } from '@/lib/crm-stages-server'
+import { isAllowedChatStage, loadStages, loadTags } from '@/lib/crm-stages-server'
+import { isClosedCategory, stageCategoryOf } from '@/lib/crm-stages'
+import { markClosed } from '@/lib/chat-workspace-sweep'
 import {
   importLocalStateBodySchema,
   parseConversationKey,
@@ -73,6 +75,10 @@ export async function POST(request: NextRequest) {
         where: { id: existing.id },
         data,
       })
+      // Closed through the import: record it like a human close (reopen-on-inbound compares it).
+      if (data.status && isClosedCategory(stageCategoryOf((await loadStages(auth.tenantId, 'chat')).stages, data.status))) {
+        await markClosed(auth.tenantId, existing.id, 'human')
+      }
       updated += 1
     }
 

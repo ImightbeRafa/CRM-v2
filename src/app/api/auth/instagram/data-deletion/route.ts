@@ -74,7 +74,10 @@ export async function POST(request: NextRequest) {
       where: { socialAccount: { platform: 'instagram', accountId: String(userId) } },
       select: { id: true },
     })
-    await purgeChatOnlyWorkspaceData(doomedChats.map((c) => c.id))
+    // Never let the cleanup block Meta's deletion itself (it must always complete).
+    await purgeChatOnlyWorkspaceData(doomedChats.map((c) => c.id)).catch((error) => {
+      console.error('[instagram/data-deletion] workspace purge failed', error instanceof Error ? error.name : 'unknown')
+    })
     const deletedAccounts = await db.socialAccount.deleteMany({
       where: {
         platform: 'instagram',

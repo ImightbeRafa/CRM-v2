@@ -1,6 +1,6 @@
 'use client'
 
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
@@ -257,7 +257,8 @@ export function SoftCopilotInboxV2() {
       opts?.replace
         ? (() => {
             const fresh = mergeListDtoIntoMap(new Map(), parsed.data.conversations!)
-            const keep = [...searchHitsRef.current, ...pinnedDtosRef.current].filter((c) => !fresh.has(c.id))
+            // Prefer the live row (snooze / PATCH / changes feed) over the snapshot taken when pinned.
+            const keep = [...searchHitsRef.current, ...pinnedDtosRef.current].map((c) => prev.get(c.id) ?? c).filter((c) => !fresh.has(c.id))
             return keep.length ? mergeListDtoIntoMap(fresh, keep) : fresh
           })()
         : mergeListDtoIntoMap(prev, parsed.data.conversations!),
@@ -690,11 +691,13 @@ export function SoftCopilotInboxV2() {
   }, [dtoMap, threadMessages, accounts])
 
   /** Fetches rows by list query (session tenant) and pins them into the list. */
-  const pinRows = useCallback(async (qs: string): Promise<ChatConversationListItemDto[]> => {
+  /** Rows found (possibly none), or null when the request itself failed (network / server). */
+  const pinRows = useCallback(async (qs: string): Promise<ChatConversationListItemDto[] | null> => {
     try {
       const res = await fetch(`/api/chat/conversations?${qs}`, { credentials: 'same-origin', cache: 'no-store' })
       const parsed = await parseApiJson<{ success?: boolean; conversations?: ChatConversationListItemDto[] }>(res)
-      const rows = parsed.ok && res.ok && parsed.data.success ? parsed.data.conversations ?? [] : []
+      if (!parsed.ok || !res.ok || !parsed.data.success) return null
+      const rows = parsed.data.conversations ?? []
       if (rows.length) {
         const ids = new Set(rows.map((r) => r.id))
         pinnedDtosRef.current = [...pinnedDtosRef.current.filter((r) => !ids.has(r.id)), ...rows].slice(-200)
@@ -705,7 +708,7 @@ export function SoftCopilotInboxV2() {
       }
       return rows
     } catch {
-      return []
+      return null
     }
   }, [])
 
@@ -713,6 +716,7 @@ export function SoftCopilotInboxV2() {
   // /chats (Next keeps this component mounted). Not in the loaded pages → fetched by id, which the
   // list route scopes to the session's business (another business's id finds nothing).
   const searchParams = useSearchParams()
+  const router = useRouter()
   const [deepLinkId, setDeepLinkId] = useState<string | null>(null)
   const deepLinkFetched = useRef<string | null>(null)
   useEffect(() => {
@@ -723,14 +727,23 @@ export function SoftCopilotInboxV2() {
     if (!deepLinkId) return
     if (dtoMap.has(deepLinkId)) {
       setDeepLinkId(null)
+      deepLinkFetched.current = null
       openConversationById(deepLinkId)
+      // Handled: drop ?c= so the same notification can be clicked again later.
+      router.replace('/chats', { scroll: false })
       return
     }
     if (deepLinkFetched.current === deepLinkId) return
     deepLinkFetched.current = deepLinkId
     void pinRows(new URLSearchParams({ id: deepLinkId, limit: '1' }).toString()).then((rows) => {
-      if (!rows.length) {
+      if (rows === null) {
+        deepLinkFetched.current = null
         setDeepLinkId(null)
+        router.replace('/chats', { scroll: false })
+        toast({ variant: 'destructive', title: 'No se pudo abrir el chat', description: 'Revisá la conexión e intentá de nuevo.' })
+      } else if (!rows.length) {
+        setDeepLinkId(null)
+        router.replace('/chats', { scroll: false })
         toast({ title: 'Ese chat ya no está disponible' })
       }
     })

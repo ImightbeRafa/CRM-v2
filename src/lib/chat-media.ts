@@ -586,3 +586,29 @@ export async function deleteChatBlobs(pathnames: string[], token = process.env.B
   if (!safe.length || !token) return
   await del(safe, { token })
 }
+
+/**
+ * Safe category for a Vercel Blob failure (shown to admins / logged). Never includes the token.
+ */
+export function describeBlobError(error: unknown): { code: string; message: string; detail: string } {
+  const raw = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+  const detail = raw.replace(/vercel_blob_rw_[A-Za-z0-9_]+/g, '[token]').slice(0, 300)
+  const m = raw.toLowerCase()
+  if (m.includes('blob_read_write_token is required') || m.includes('no token found')) {
+    return { code: 'token_missing', message: 'falta configurar el almacenamiento (token).', detail }
+  }
+  if (m.includes('private access on a public store') || m.includes('requires a private vercel blob store')) {
+    return { code: 'store_public', message: 'el almacenamiento no es privado.', detail }
+  }
+  if (m.includes('access denied') || m.includes('forbidden') || m.includes('unauthorized') || m.includes('invalid token')) {
+    return { code: 'token_rejected', message: 'el almacenamiento rechazó la credencial.', detail }
+  }
+  if (m.includes('suspended') || m.includes('quota') || m.includes('limit')) {
+    return { code: 'store_limit', message: 'el almacenamiento alcanzó su límite.', detail }
+  }
+  if (m.includes('already exists')) return { code: 'exists', message: 'nombre de archivo repetido, probá de nuevo.', detail }
+  if (m.includes('fetch failed') || m.includes('network') || m.includes('timeout') || m.includes('econn')) {
+    return { code: 'network', message: 'no hubo conexión con el almacenamiento, probá de nuevo.', detail }
+  }
+  return { code: 'unknown', message: 'error del almacenamiento.', detail }
+}

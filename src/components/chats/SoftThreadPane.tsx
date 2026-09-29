@@ -970,50 +970,43 @@ export function SoftThreadPane({
           </div>
         ) : null}
 
-        <div
-          className={`sticky bottom-0 rounded-2xl bg-white px-4 py-3 text-[12px] text-slate-800 shadow-[0_-6px_16px_rgba(250,251,252,0.9)] ring-1 ring-[#5B6CFF]/30 ${
-            compact ? 'hidden' : ''
-          }`}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="font-semibold text-slate-900">
-              Agente · {agentModeLabel(agentMode)}
+        {/* Agent status: one discreet line (agents are mostly off for now). */}
+        <div className={`flex justify-center pt-1 ${compact ? 'hidden' : ''}`} data-testid="soft-agent-status">
+          <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1 text-[11px] text-slate-500 ring-1 ring-slate-200/70">
+            <span
+              aria-hidden
+              className={`h-1.5 w-1.5 rounded-full ${
+                agentMode === 'ai_active' ? 'bg-emerald-500' : agentMode === 'paused' ? 'bg-amber-500' : 'bg-slate-400'
+              }`}
+            />
+            <span className="font-medium text-slate-600">
+              {agentMode === 'ai_active' ? 'IA activa' : agentMode === 'paused' ? 'IA en pausa' : 'Humano'}
               {aiBusy ? ' · procesando…' : ''}
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                disabled={agentMode === 'paused'}
-                onClick={onPauseAi}
-                className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-40"
-              >
-                Pausar
-              </button>
-              <button
-                type="button"
-                disabled={agentMode === 'human'}
-                onClick={onTakeOver}
-                className="rounded-lg bg-[#5B6CFF] px-2.5 py-1 text-[11px] font-medium text-white hover:bg-[#4A5AF0] disabled:opacity-40"
-              >
-                Tomar control
-              </button>
-              <button
-                type="button"
-                disabled={agentMode === 'ai_active'}
-                onClick={onResumeAi}
-                className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-100 hover:bg-emerald-100 disabled:opacity-40"
-              >
-                Reanudar IA
-              </button>
-            </div>
+            </span>
+            {agentMode === 'ai_active' ? (
+              <>
+                <span aria-hidden className="text-slate-300">·</span>
+                <button type="button" onClick={onPauseAi} disabled={aiBusy} className="font-medium text-slate-600 hover:text-slate-900 disabled:opacity-40">
+                  Pausar
+                </button>
+                <button type="button" onClick={onTakeOver} disabled={aiBusy} className="font-semibold text-au-ink-5b6cff hover:underline disabled:opacity-40">
+                  Tomar control
+                </button>
+              </>
+            ) : (
+              <>
+                <span aria-hidden className="text-slate-300">·</span>
+                {agentMode === 'paused' ? (
+                  <button type="button" onClick={onTakeOver} disabled={aiBusy} className="font-medium text-slate-600 hover:text-slate-900 disabled:opacity-40">
+                    Tomar control
+                  </button>
+                ) : null}
+                <button type="button" onClick={onResumeAi} disabled={aiBusy} className="font-medium text-slate-600 hover:text-emerald-700 disabled:opacity-40">
+                  {agentMode === 'paused' ? 'Reanudar IA' : 'Activar IA'}
+                </button>
+              </>
+            )}
           </div>
-          <p className="mt-1.5 leading-relaxed text-slate-500">
-            {agentMode === 'ai_active'
-              ? 'El agente responde solo. Pausalo o tomá el control para intervenir.'
-              : agentMode === 'paused'
-                ? 'Agente en pausa — no responde solo. Podés escribir vos o reanudarlo.'
-                : 'Control humano — el agente no responde hasta que lo reanudes.'}
-          </p>
         </div>
 
         <div ref={messagesEndRef} />

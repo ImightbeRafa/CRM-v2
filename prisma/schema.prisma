@@ -1644,3 +1644,70 @@ model ActivityEvent {
 
   @@index([tenantId, occurredAt(sort: Desc)], map: "ActivityEvent_tenant_time_idx")
 }
+
+// Phase 2b (036, additive SQL applied via gated script — never db push). Scalar-only like 035.
+model ChatConversationWorkState {
+  conversationId  String    @id
+  tenantId        String
+  snoozedUntil    DateTime?
+  snoozedAt       DateTime?
+  snoozedByUserId String?
+  closedAt        DateTime?
+  closedBy        String?
+  updatedAt       DateTime  @default(now()) @updatedAt
+}
+
+model CrmTask {
+  id                String    @id @default(cuid())
+  tenantId          String
+  conversationId    String?
+  clientId          String?
+  kind              String    @default("task")
+  title             String
+  assigneeUserId    String?
+  createdByUserId   String?
+  dueAt             DateTime?
+  status            String    @default("open")
+  completedAt       DateTime?
+  completedByUserId String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([tenantId, assigneeUserId, status, dueAt], map: "CrmTask_tenant_assignee_idx")
+}
+
+model WorkspaceNotification {
+  id             String    @id @default(cuid())
+  tenantId       String
+  userId         String
+  actorUserId    String?
+  kind           String
+  noteId         String?
+  taskId         String?
+  conversationId String?
+  clientId       String?
+  dedupeKey      String
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@unique([tenantId, userId, dedupeKey], map: "WorkspaceNotification_tenant_user_dedupe_key")
+  @@index([tenantId, userId, createdAt(sort: Desc)], map: "WorkspaceNotification_tenant_user_time_idx")
+}
+
+model ChatWorkspaceSettings {
+  tenantId            String    @id
+  assignmentMode      String    @default("off")
+  assigneeUserIds     String[]  @default([])
+  skipAiActive        Boolean   @default(true)
+  assignmentEnabledAt DateTime?
+  rrCursorUserId      String?
+  businessHours       Json      @default("{}")
+  timezone            String    @default("America/Costa_Rica")
+  autoCloseDays       Int?
+  autoCloseStageKey   String?
+  reopenOnInbound     Boolean   @default(false)
+  version             Int       @default(1)
+  updatedByUserId     String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}

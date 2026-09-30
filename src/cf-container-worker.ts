@@ -237,9 +237,10 @@ function getContainerEnvVars(source: Env): Record<string, string> {
 
   // One long-lived container serves everyone: Prisma's serverless default of ONE database
   // connection queued every parallel request of every user behind each other (perf review
-  // 2026-09-30: /api/auth/me 3 s p50, pure waiting). 8 per container keeps primary + standby +
-  // the Railway preview far below Supabase's max_connections (60). Override with a Worker var.
-  envVars.PRISMA_CONNECTION_LIMIT = (source.PRISMA_CONNECTION_LIMIT || "").trim() || "8";
+  // 2026-09-30: /api/auth/me 3 s p50, pure waiting). 6 per container: primary + standby + a
+  // container draining during a rollout (18) + Railway + backups + Supabase's own services stay
+  // under max_connections (60). Override with a Worker var.
+  envVars.PRISMA_CONNECTION_LIMIT = (source.PRISMA_CONNECTION_LIMIT || "").trim() || "6";
 
   // Behind Cloudflare the edge sets cf-connecting-ip and overwrites any client value,
   // while X-Forwarded-For keeps client-supplied entries. Rate limits key on this.

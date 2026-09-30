@@ -337,6 +337,25 @@ function orderCreateData(tenantId: string, body: Record<string, unknown>, client
   };
 }
 
+/**
+ * Re-runs a Serializable transaction after a serialization conflict (P2034). With several DB
+ * connections, two orders touching the same inventory row can conflict; the loser rolled back
+ * completely, so running it again is safe (the idempotency key also guards replays). The
+ * transaction itself is written inline at each call site (typing it generically over the extended
+ * Prisma client makes tsc crash). 3 attempts, small jitter.
+ */
+export async function withSerializationRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      const conflict = (error as { code?: unknown } | null)?.code === 'P2034';
+      if (!conflict || attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 25 + Math.floor(Math.random() * 75) * attempt));
+    }
+  }
+}
+
 export async function createLifecycleOrder(input: {
   tenantId: string;
   userId: string;
@@ -351,7 +370,7 @@ export async function createLifecycleOrder(input: {
   if (replay?.order) return { order: replay.order, idempotentReplay: true, unresolvedInventory: [] as string[] };
 
   try {
-    return await prisma.$transaction(async tx => {
+    return await withSerializationRetry(() => prisma.$transaction(async tx => {
       const resolution = await resolveClient(tx, input.tenantId, input.userId, {
         name: input.data.customerName,
         phone: input.data.phone,
@@ -403,7 +422,7 @@ export async function createLifecycleOrder(input: {
         },
       });
       return { order, idempotentReplay: false, unresolvedInventory };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       const raced = await prisma.orderLifecycleOperation.findUnique({
@@ -446,7 +465,7 @@ export async function updateLifecycleOrder(input: {
   expectedStatus?: string;
   expectedUpdatedAt?: string;
 }) {
-  return prisma.$transaction(async tx => {
+  return withSerializationRetry(() => prisma.$transaction(async tx => {
     const existingOperation = await tx.orderLifecycleOperation.findUnique({
       where: { tenantId_adapter_idempotencyKey: { tenantId: input.tenantId, adapter: input.adapter, idempotencyKey: input.idempotencyKey } },
       include: { order: true },
@@ -525,7 +544,7 @@ export async function updateLifecycleOrder(input: {
       data: { tenantId: input.tenantId, adapter: input.adapter, operation: 'update', idempotencyKey: input.idempotencyKey, orderId: order.id, result: { unresolvedInventory } },
     });
     return { order, idempotentReplay: false, unresolvedInventory };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
 }
 
 export async function setLifecycleOrderStatus(input: {

@@ -34,30 +34,25 @@ export async function POST(req: NextRequest) {
         }
 
         // Count affected orders
-        const countResult = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
-            `SELECT COUNT(*)::bigint AS count FROM lm_orders WHERE billed_week_id = $1`,
-            weekId
-        );
-        const affectedCount = Number(countResult[0]?.count ?? 0);
-
-        // Get order IDs for event logging
-        const affectedOrders = await prisma.$queryRawUnsafe<{ crm_order_id: string }[]>(
-            `SELECT crm_order_id FROM lm_orders WHERE billed_week_id = $1`,
-            weekId
-        );
-
         const actor = req.headers.get('x-user-email') ?? 'system';
 
-        await prisma.$executeRawUnsafe('BEGIN');
-        try {
+        // ONE interactive transaction (a single pooled connection); the affected orders are read and
+        // locked inside it. The old raw BEGIN/COMMIT on the shared client only worked while the pool
+        // had exactly one connection (perf review 2026-09-30).
+        const affectedCount = await prisma.$transaction(async (tx) => {
+            const affectedOrders = await tx.$queryRawUnsafe<{ crm_order_id: string }[]>(
+                `SELECT crm_order_id FROM lm_orders WHERE billed_week_id = $1 FOR UPDATE`,
+                weekId
+            );
+
             // Unbill all orders for this week
-            await prisma.$executeRawUnsafe(
+            await tx.$executeRawUnsafe(
                 `UPDATE lm_orders SET billed_week_id = NULL, billed_at = NULL WHERE billed_week_id = $1`,
                 weekId
             );
 
             // Delete the week record
-            await prisma.$executeRawUnsafe(
+            await tx.$executeRawUnsafe(
                 `DELETE FROM lm_billing_weeks WHERE id = $1`,
                 weekId
             );
@@ -74,17 +69,13 @@ export async function POST(req: NextRequest) {
                     return `($${base + 1}, 'billing_reverted', $${base + 2}::jsonb, $${base + 3})`;
                 }).join(', ');
                 const eventParams = affectedOrders.flatMap((o: any) => [o.crm_order_id, payloadJson, actor]);
-                await prisma.$executeRawUnsafe(
+                await tx.$executeRawUnsafe(
                     `INSERT INTO lm_order_events (crm_order_id, event_type, payload, actor) VALUES ${eventValues}`,
                     ...eventParams
                 );
             }
-
-            await prisma.$executeRawUnsafe('COMMIT');
-        } catch (txError) {
-            await prisma.$executeRawUnsafe('ROLLBACK');
-            throw txError;
-        }
+            return affectedOrders.length;
+        }, { timeout: 30_000, maxWait: 10_000 });
 
         return NextResponse.json({
             success: true,

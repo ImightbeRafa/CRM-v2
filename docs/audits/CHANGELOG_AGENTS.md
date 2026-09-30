@@ -1,3 +1,21 @@
+## 2026-09-30 — Business switcher SHIPPED (8abb81ff live) — live line is now claudio/phase2b-switcher
+
+- 5 SecureDog rounds on a5f81cd..69108bd. Fixed before prod: switch was per user (moved other
+  tabs / devices) → per session + BusinessChangeWatcher reload; order drafts could restore in another
+  business → tagged, frozen, stale-tab submit blocked; AUTH-40 POST/PUT /api/users attached EXISTING
+  accounts without consent → invite only; INT-04 (pre-existing, live until now) unescaped names in
+  invite / verification / OTP mails; AUTH-42 invites: rate limits (sequential, hashed, per business +
+  loose global), seat pre-check + Serializable seat-locked accept, a failed invite never blocks
+  Google sign-in; user-only auth for the switch (signed ctx, no billing trap, only importer);
+  inactive businesses never kept; MASTER from the selected business.
+- Staff bot (bot-session) deliberately untouched (Rafael rule); guard test keeps every bot-seat lock
+  site Serializable.
+- Proof: tsc 0; security 257, chat-harden 426, site/pedidos/config/tenant-ui, bot-inbox, soft-ai
+  green. Deploy detected via new JS string on /auth/signin (no public route unique to the build).
+  Live: drive-phase2a + drive-phase2b all true; switcher checks (memberships API, same-business
+  no-op, foreign business 403, static header for 1 business, sign-in error text) all true; tail
+  0 exceptions, crons ok.
+
 ## 2026-09-29 — Phase 2b workspace SHIPPED (036 applied, 99650237 live) — switcher held back
 
 - Green baseline first (785d4c0): the 4 long-failing tests + 19 test type errors fixed, none

@@ -176,6 +176,10 @@ export default function PrivacyPage() {
               <li>Anonymized data used for analytics</li>
               <li>Backup copies (deleted within 90 days)</li>
             </ul>
+            <p className="mt-3">
+              When a business using Betsy removes the personal data of one of its customers, it is removed from the
+              app right away and from our backups within 14 days. Invoices are kept as tax records.
+            </p>
           </section>
 
           <section>

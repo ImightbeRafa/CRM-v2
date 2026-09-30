@@ -434,7 +434,7 @@ test('parseWaDirectOauthMessage and 36008 detection', () => {
 })
 
 test('social page consumes wa_direct_oauth and does not spend the code before assets', () => {
-  const page = readFileSync('src/app/config/social/page.tsx', 'utf8')
+  const page = readFileSync('src/app/config/social/page.tsx', 'utf8').replace(/\r\n/g, '\n')
   assert.match(page, /parseWaDirectOauthMessage/)
   assert.match(page, /isFbSdkEmbeddedSignup36008/)
   assert.match(page, /\/api\/auth\/whatsapp\/direct-oauth/)
@@ -474,7 +474,7 @@ test('WhatsApp connect opens ONE popup per click; 36008 fallback opens only from
   assert.equal(popup.closed, true)
   closeWhatsAppDirectOauthPopup(null)
 
-  const page = readFileSync('src/app/config/social/page.tsx', 'utf8')
+  const page = readFileSync('src/app/config/social/page.tsx', 'utf8').replace(/\r\n/g, '\n')
   const launchAt = page.indexOf('function launchWhatsAppEmbeddedSignup()')
   const loginAt = page.indexOf('FB.login(', launchAt)
   const launchBody = page.slice(launchAt, loginAt)
@@ -519,7 +519,7 @@ test('direct OAuth popup close settles connecting except in-flight exchange', ()
     reason: 'closed',
   })
 
-  const page = readFileSync('src/app/config/social/page.tsx', 'utf8')
+  const page = readFileSync('src/app/config/social/page.tsx', 'utf8').replace(/\r\n/g, '\n')
   assert.match(page, /decideWhatsAppDirectOauthPopupClosed/)
   const assetsWithoutCodeAt = page.indexOf("case 'assets_without_code'")
   const setConnectingAt = page.indexOf('setConnectingWhatsApp(false)', assetsWithoutCodeAt)

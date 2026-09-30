@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { hasSessionPermission } from '@/lib/session-permissions';
 import { notify } from '@/lib/ui-notify';
+import { CustomerErasePanel } from './CustomerErasePanel';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent } from '@/app/components/ui/card';
@@ -65,7 +66,7 @@ async function downloadCustomerData(client: ManagedClient): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function ClientHistory({ client, onClose, canExportData }: { client: ManagedClient; onClose: () => void; canExportData: boolean }) {
+function ClientHistory({ client, onClose, canExportData, onErased }: { client: ManagedClient; onClose: () => void; canExportData: boolean; onErased: () => void }) {
   const [exporting, setExporting] = useState(false);
   const [orders, setOrders] = useState<Array<{ id: string; orderId: string; status: string; total: number; product: string | null; timestamp: string; orderType: string }>>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -97,6 +98,7 @@ function ClientHistory({ client, onClose, canExportData }: { client: ManagedClie
         {loading && <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>}
         {!loading && orders.length === 0 && <p className="text-center text-muted-foreground py-8">No hay pedidos enlazados.</p>}
         {hasMore && <Button variant="outline" className="w-full" disabled={loading} onClick={() => void load(cursor)}>Cargar más historial</Button>}
+        {canExportData && <div className="pt-2 border-t"><CustomerErasePanel clientId={client.id} onErased={onErased} /></div>}
       </CardContent>
     </Card>
   </div>;
@@ -211,6 +213,6 @@ export function PaginatedClientManagement({ onUnavailable }: { onUnavailable: ()
     <div className="space-y-3">{clients.map(client => <Card key={client.id}><CardContent className="p-4 flex flex-col lg:flex-row justify-between gap-4"><button type="button" className="text-left flex-1" onClick={() => setSelected(client)}><div className="flex flex-wrap gap-2 items-center"><strong>{client.name}</strong>{client.isFavorite && <Badge><Star className="h-3 w-3 mr-1" />VIP</Badge>}<Badge variant="outline">{client.totalOrders} pedidos</Badge>{!client.isActive && <Badge variant="destructive">Inactivo</Badge>}</div><div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-muted-foreground mt-3"><span>{client.phone}</span><span className="flex items-center"><Mail className="h-3 w-3 mr-1" />{client.email || 'Sin email'}</span><span className="flex items-center"><MapPin className="h-3 w-3 mr-1" />{client.province}, {client.canton}</span><span>Total: ₡{client.totalSpent.toLocaleString('es-CR')}</span><span>Promedio: ₡{client.averageOrderValue.toLocaleString('es-CR')}</span><span>Último: {new Date(client.lastOrder).toLocaleDateString('es-CR')}</span></div></button><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => openForm(client)}><Edit className="h-4 w-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => void removeClient(client)}><Trash2 className="h-4 w-4" /></Button></div></CardContent></Card>)}</div>
     {!loading && clients.length === 0 && <Card><AuroraEmptyState tone="neutral" title={search.trim() || location !== 'all' || state !== 'all' ? 'Sin resultados' : 'Todavía no hay clientes'} description={search.trim() || location !== 'all' || state !== 'all' ? 'No hay clientes que coincidan con los filtros.' : 'Tus clientes aparecen acá cuando registrás pedidos, o podés agregarlos a mano.'} actions={<Button size="sm" onClick={() => openForm()}><Plus className="h-4 w-4 mr-2" />Agregar cliente</Button>} /></Card>}
     {hasMore && <Button variant="outline" className="w-full" disabled={loadingMore} onClick={() => void loadClients(cursor)}>{loadingMore && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Cargar más clientes</Button>}
-    {selected && <ClientHistory client={selected} canExportData={canExportData} onClose={() => setSelected(null)} />}
+    {selected && <ClientHistory client={selected} canExportData={canExportData} onClose={() => setSelected(null)} onErased={() => { setSelected(null); notify('Datos del cliente eliminados.'); void loadClients(); }} />}
   </div>;
 }

@@ -137,22 +137,26 @@ test('AUTH-45: dedicated key required in production; rotation keeps secrets and 
     assert.equal(mfaCryptoAvailable(), false)
     assert.throws(() => encryptMfaSecret('X', 'u'), /MFA_KEY_MISSING/)
   })
+  // AUTH-55: a weak (short) key in production counts as no key.
+  withEnv({ NODE_ENV: 'production', MFA_ENCRYPTION_KEY: 'short-key' }, () => {
+    assert.equal(mfaCryptoAvailable(), false)
+  })
   let oldCipher = ''
   let oldHash = ''
-  withEnv({ NODE_ENV: 'production', MFA_ENCRYPTION_KEY: 'key-A', MFA_ENCRYPTION_KEY_PREVIOUS: undefined }, () => {
+  withEnv({ NODE_ENV: 'production', MFA_ENCRYPTION_KEY: 'key-A-0123456789abcdef0123456789abcdef', MFA_ENCRYPTION_KEY_PREVIOUS: undefined }, () => {
     assert.equal(mfaCryptoAvailable(), true)
     oldCipher = encryptMfaSecret('SECRET', 'u1')
     oldHash = hashRecoveryCode('abcde-fghjk') as string
   })
   // Rotated WITH the old key kept as previous: still readable; new writes use the new key.
-  withEnv({ NODE_ENV: 'production', MFA_ENCRYPTION_KEY: 'key-B', MFA_ENCRYPTION_KEY_PREVIOUS: 'key-A' }, () => {
+  withEnv({ NODE_ENV: 'production', MFA_ENCRYPTION_KEY: 'key-B-0123456789abcdef0123456789abcdef', MFA_ENCRYPTION_KEY_PREVIOUS: 'key-A-0123456789abcdef0123456789abcdef' }, () => {
     assert.equal(decryptMfaSecretStrict(oldCipher, 'u1'), 'SECRET')
     assert.ok(recoveryCodeHashCandidates('ABCDE FGHJK').includes(oldHash))
     assert.notEqual(hashRecoveryCode('abcde-fghjk'), oldHash)
     assert.notEqual(encryptMfaSecret('SECRET', 'u1').slice(0, 18), oldCipher.slice(0, 18))
   })
   // Rotated WITHOUT keeping the old key: refused loudly (not a wrong-code loop).
-  withEnv({ NODE_ENV: 'production', MFA_ENCRYPTION_KEY: 'key-B', MFA_ENCRYPTION_KEY_PREVIOUS: undefined }, () => {
+  withEnv({ NODE_ENV: 'production', MFA_ENCRYPTION_KEY: 'key-B-0123456789abcdef0123456789abcdef', MFA_ENCRYPTION_KEY_PREVIOUS: undefined }, () => {
     assert.throws(() => decryptMfaSecretStrict(oldCipher, 'u1'), /MFA_KEY_UNKNOWN/)
   })
   // AES and HMAC use different subkeys; challenge / recovery domains differ.

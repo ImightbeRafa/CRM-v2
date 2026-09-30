@@ -12,6 +12,7 @@ import {
   resolvePendingMfa,
   revokedMfaToken,
   safeMfaCallback,
+  mfaPageForInvite,
 } from '../mfa-session'
 
 const FULL = {
@@ -183,52 +184,99 @@ test('2FA routes never read the user from the request body', () => {
   }
 })
 
-test('SecureDog round 1 fixes are wired (AUTH-43/44/48/49/50/51)', () => {
+test('SecureDog rounds 1-2 fixes are wired (AUTH-43/44/48..55)', () => {
   const state = readFileSync('src/lib/mfa-state.ts', 'utf8')
-  // AUTH-43: one conditional UPDATE reserves a guess BEFORE any check (no check-then-act).
-  const reserve = state.slice(state.indexOf('export async function reserveMfaAttempt'), state.indexOf('async function refundMfaAttempts'))
-  assert.match(reserve, /UPDATE "UserTwoFactor" SET[\s\S]*"failCount" < \$\{MFA_WINDOW_LIMIT\}[\s\S]*"dayFailCount" < \$\{MFA_DAY_LIMIT\}/)
-  const verify = state.slice(state.indexOf('export async function verifyMfaChallenge'), state.indexOf('async function checkFactor'))
-  assert.ok(verify.indexOf('reserveMfaAttempt(') < verify.indexOf('checkFactor('), 'budget reserved before the code is checked')
-  const current = state.slice(state.indexOf('export async function verifyCurrentFactor'))
-  assert.ok(current.indexOf('reserveMfaAttempt(') < current.indexOf('checkFactor('))
+  // AUTH-43: one conditional UPDATE per scope reserves a guess (no check-then-act).
+  const reserve = state.slice(state.indexOf('export async function reserveMfaAttempt'), state.indexOf('async function refundMfaAttempt'))
+  assert.match(reserve, /"failCount" < \$\{MFA_WINDOW_LIMIT\}[\s\S]*"dayFailCount" < \$\{MFA_DAY_LIMIT\}/)
+  // AUTH-53: account changes have their own budget.
+  assert.match(reserve, /"mgmtFailCount" < \$\{MFA_MANAGE_LIMIT\}/)
+  // AUTH-55 + AUTH-43: TOTP secret decrypted first, then budget, then compare.
+  const check = state.slice(state.indexOf('async function checkFactor('), state.indexOf('/** Upgrades the session exactly once'))
+  const iDecrypt = check.indexOf('decryptMfaSecretStrict(')
+  const iReserve = check.indexOf('reserveMfaAttempt(userId, scope)')
+  const iVerify = check.indexOf('verifyTotp(secret')
+  assert.ok(iDecrypt > 0 && iDecrypt < iReserve && iReserve < iVerify, 'decrypt → reserve → compare')
+  // AUTH-53: recovery codes are never budgeted (a lock can't take the way back in).
+  const recoveryBranch = check.slice(check.indexOf('if (input.recoveryCode)'))
+  assert.doesNotMatch(recoveryBranch, /reserveMfaAttempt/)
+  // Every caller goes through checkFactor with the right scope.
+  const verify = state.slice(state.indexOf('export async function verifyMfaChallenge'), state.indexOf('/**\n * Checks a TOTP or recovery code'))
+  assert.match(verify, /checkFactor\(args\.userId, \{ code: args\.code, recoveryCode: args\.recoveryCode \}, now, 'signin'\)/)
+  assert.match(state, /checkFactor\(userId, input, Date\.now\(\), 'manage'\)/)
   const setup = state.slice(state.indexOf('export async function completeMfaSetup'))
-  assert.ok(setup.indexOf('reserveMfaAttempt(') < setup.indexOf('verifyTotp('))
-  // Only the newest challenge is live; expired rows go.
+  assert.ok(setup.indexOf('decryptMfaSecretStrict(') < setup.indexOf("reserveMfaAttempt(userId, 'manage')"))
+  assert.ok(setup.indexOf("reserveMfaAttempt(userId, 'manage')") < setup.indexOf('verifyTotp('))
+  // AUTH-54: a success gives back one slot only; the day counter is never reset by it.
+  const refund = state.slice(state.indexOf('async function refundMfaAttempt'), state.indexOf('/** True at most once a day'))
+  assert.match(refund, /GREATEST\(0, "failCount" - 1\)/)
+  assert.doesNotMatch(refund, /dayFailCount/)
+  assert.match(state, /"lockNotifiedAt" < \(now\(\) AT TIME ZONE 'UTC'\) - interval '24 hours'/)
+  assert.match(state, /"wrongCodeNotifiedAt" < \(now\(\) AT TIME ZONE 'UTC'\) - interval '24 hours'/)
+  // AUTH-53: a new sign-in never expires the owner's live challenge; expired rows still go.
   const create = state.slice(state.indexOf('export async function createMfaChallenge'), state.indexOf('export type MfaVerifyResult'))
   assert.match(create, /deleteMany\(\{ where: \{ userId, expiresAt: \{ lte: nowDate \} \} \}\)/)
-  assert.match(create, /updateMany\(\{\s*where: \{ userId, consumedAt: null, verifiedAt: null, expiresAt: \{ gt: nowDate \} \},\s*data: \{ expiresAt: nowDate \}/)
+  assert.doesNotMatch(create, /updateMany/)
   // AUTH-50: an already verified (unconsumed) challenge answers success again.
   assert.match(verify, /verifiedAt: \{ not: null \}, consumedAt: null[\s\S]*method: 'already_verified'/)
-  // AUTH-48: missing tables fail closed once MFA_TABLES_REQUIRED=1.
+  // AUTH-48 / enrolment.
   assert.match(state, /process\.env\.MFA_TABLES_REQUIRED === '1'/)
-  // Only a verified mailbox can enrol.
   assert.match(state, /if \(!owner\?\.emailVerified\) return \{ error: 'email_unverified' \}/)
 
-  // Routes: IP slot reserved before the check, never the old check-then-act helpers.
-  const verifyRoute = readFileSync('src/app/api/auth/2fa/verify/route.ts', 'utf8')
-  assert.ok(verifyRoute.indexOf('reserveMfaIpSlot(') < verifyRoute.indexOf('verifyMfaChallenge({'))
-  assert.doesNotMatch(verifyRoute, /mfaThrottled|recordMfaFailure/)
-  // AUTH-44: setup and disable need the password (or a fresh Google sign-in).
+  // AUTH-52: password proof is limited (reserved first) with one generic message; setup prechecks first.
+  const account = readFileSync('src/lib/mfa-account.ts', 'utf8')
+  const prove = account.slice(account.indexOf('export async function proveAccountOwner'))
+  assert.ok(prove.indexOf('recordFailure(passwordKey(userId)') < prove.indexOf('verifyPassword('))
+  assert.match(prove, /releaseAttempt\(passwordKey\(userId\)\)/)
+  assert.doesNotMatch(account, /Contraseña incorrecta/)
+  assert.match(account, /PASSWORD_PROOF_LIMIT = 5/)
+  const setupRoute = readFileSync('src/app/api/account/2fa/setup/route.ts', 'utf8')
+  assert.ok(setupRoute.indexOf('mfaSetupPrecheck(') < setupRoute.indexOf('proveAccountOwner('))
   for (const f of ['setup', 'disable']) {
     assert.match(readFileSync(`src/app/api/account/2fa/${f}/route.ts`, 'utf8'), /proveAccountOwner\(request, auth\.userId, body\?\.password\)/, f)
   }
-  const account = readFileSync('src/lib/mfa-account.ts', 'utf8')
+  for (const f of ['disable', 'recovery-codes']) {
+    const src = readFileSync(`src/app/api/account/2fa/${f}/route.ts`, 'utf8')
+    assert.ok(src.indexOf('reserveMfaIpSlot(') < src.indexOf('verifyCurrentFactor('), f)
+  }
   assert.match(account, /FRESH_SIGN_IN_MS = 15 \* 60_000/)
-  assert.match(account, /Date\.now\(\) - authAt > FRESH_SIGN_IN_MS/)
-  // AUTH-50: once enabled / disabled, a follow-up hiccup never turns into an error answer.
+  // AUTH-53: password reset lifts the code lock.
+  assert.match(readFileSync('src/app/api/auth/reset-password/route.ts', 'utf8'), /clearMfaBudgets\(users\[0\]\.id\)/)
+  // AUTH-54: first wrong code of the day emails the owner.
+  const verifyRoute = readFileSync('src/app/api/auth/2fa/verify/route.ts', 'utf8')
+  assert.ok(verifyRoute.indexOf('reserveMfaIpSlot(') < verifyRoute.indexOf('verifyMfaChallenge({'))
+  assert.match(verifyRoute, /shouldNotifyWrongCode\(userId\)/)
+  assert.doesNotMatch(verifyRoute, /mfaThrottled|recordMfaFailure/)
+  // AUTH-50.
   const enable = readFileSync('src/app/api/account/2fa/enable/route.ts', 'utf8')
   assert.match(enable, /try \{\s*await revokeUserSessions\(auth\.userId\)\s*\} catch \{\s*sessionsEnded = false/)
-
+  // AUTH-49 + invite page: pending session goes to the code page and comes back.
   const auth = readFileSync('src/lib/auth-options.ts', 'utf8')
-  // AUTH-49: invites wait for the code step for 2FA users.
   assert.match(auth, /if \(pending && !\(await mfaOnOrUnknown\(user\.id\)\)\)/)
   assert.match(auth, /decision === 'join_invite' && pending && !deferInviteFor2fa/)
   assert.match(auth, /\(next as \{ authAt\?: number \}\)\.authAt = Date\.now\(\)/)
-
+  const invite = readFileSync('src/app/auth/accept-invite/page.tsx', 'utf8')
+  assert.equal((invite.match(/window\.location\.assign\(mfaPageForInvite\(token\)\)/g) || []).length, 3)
   const mw = readFileSync('src/middleware.ts', 'utf8')
   assert.match(mw, /tokenError === 'mfa_unavailable'/)
   assert.match(mw, /!tenantId && \(pathname === '\/api\/account\/2fa' \|\| pathname\.startsWith\('\/api\/account\/2fa\/'\)\)/)
-  // AUTH-51: nightly purge of finished challenges.
+  // AUTH-51.
   assert.match(readFileSync('src/app/api/cron/workspace-retention/route.ts', 'utf8'), /purgeOldMfaChallenges\(\)/)
+})
+
+test('invite return path: only a real invite link is let through after the code', () => {
+  const token = 'a'.repeat(64)
+  assert.equal(safeMfaCallback(`/auth/accept-invite?token=${token}`), `/auth/accept-invite?token=${token}`)
+  const page = mfaPageForInvite(token)
+  assert.equal(page, `/auth/2fa?callbackUrl=${encodeURIComponent(`/auth/accept-invite?token=${token}`)}`)
+  assert.equal(safeMfaCallback(new URL(page, 'https://x.test').searchParams.get('callbackUrl')), `/auth/accept-invite?token=${token}`)
+  for (const bad of [
+    '/auth/accept-invite?token=short',
+    `/auth/accept-invite?token=${token}&next=//evil.test`,
+    `/auth/accept-invite?token=${token}#x`,
+    `/auth/accept-invite/../signin?token=${token}`,
+    `//auth/accept-invite?token=${token}`,
+  ]) {
+    assert.equal(safeMfaCallback(bad), '/dashboard', bad)
+  }
 })

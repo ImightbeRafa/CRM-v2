@@ -8,7 +8,8 @@
 -- - UserTwoFactor: one row per user. secretEnc is AES-GCM bound to the user (never plaintext);
 --   enabledAt NULL = setup not finished yet (expires at setupExpiresAt); lastUsedStep blocks replay;
 --   failCount / dayFailCount are the atomic per-user guess budget (15 min / 24 h), reserved BEFORE
---   each code check so parallel requests can't exceed it (SecureDog AUTH-43).
+--   each code check so parallel requests can't exceed it (SecureDog AUTH-43); mgmtFailCount is a
+--   separate budget for account changes, so a session thief can't lock the owner's sign-in (AUTH-53).
 -- - UserRecoveryCode: keyed hashes only, each usable once (usedAt).
 -- - UserTwoFactorChallenge: the "password OK, code pending" step of one sign-in (nonce hash only,
 --   attempt counter, verified / consumed once).
@@ -35,6 +36,9 @@ CREATE TABLE IF NOT EXISTS public."UserTwoFactor" (
   "dayFailCount" integer NOT NULL DEFAULT 0,
   "dayWindowStart" timestamp(3) without time zone NULL,
   "lockNotifiedAt" timestamp(3) without time zone NULL,
+  "mgmtFailCount" integer NOT NULL DEFAULT 0,
+  "mgmtWindowStart" timestamp(3) without time zone NULL,
+  "wrongCodeNotifiedAt" timestamp(3) without time zone NULL,
   "createdAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "UserTwoFactor_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."User"("id") ON DELETE CASCADE ON UPDATE CASCADE,

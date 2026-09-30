@@ -217,6 +217,7 @@ export type SecurityNoticeKind =
   | 'mfa_codes_regenerated'
   | 'mfa_recovery_used'
   | 'mfa_locked'
+  | 'mfa_wrong_code'
 
 const SECURITY_NOTICE_TEXT: Record<SecurityNoticeKind, { subject: string; body: string }> = {
   mfa_enabled: {
@@ -234,6 +235,10 @@ const SECURITY_NOTICE_TEXT: Record<SecurityNoticeKind, { subject: string; body: 
   mfa_recovery_used: {
     subject: 'Se usó un código de recuperación',
     body: 'Alguien inició sesión en tu cuenta de BetsyCRM con uno de tus códigos de recuperación.',
+  },
+  mfa_wrong_code: {
+    subject: 'Código incorrecto al iniciar sesión',
+    body: 'Alguien escribió bien tu contraseña de BetsyCRM pero puso un código de verificación incorrecto. Si no fuiste vos, cambiá tu contraseña ya.',
   },
   mfa_locked: {
     subject: 'Intentos fallidos en tu cuenta',

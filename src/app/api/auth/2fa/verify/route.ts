@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { isMfaPendingToken, pendingMfaNonce, pendingMfaUserId } from '@/lib/mfa-session'
-import { verifyMfaChallenge } from '@/lib/mfa-state'
+import { shouldNotifyWrongCode, verifyMfaChallenge } from '@/lib/mfa-state'
 import { notifyMfaEvent, releaseMfaIpSlot, reserveMfaIpSlot } from '@/lib/mfa-throttle'
 import { PII_NO_STORE_HEADERS } from '@/lib/security'
 
@@ -56,6 +56,14 @@ export async function POST(request: NextRequest) {
     if (result.reason === 'throttled') {
       if (result.firstLock) void notifyMfaEvent(userId, 'mfa_locked')
       return reply(429, { ok: false, code: 'THROTTLED', error: MESSAGES.throttled })
+    }
+    if (result.reason === 'invalid') {
+      // Someone has the password: tell the owner once a day, even below the lock (AUTH-54).
+      void shouldNotifyWrongCode(userId)
+        .then(async (first) => {
+          if (first) await notifyMfaEvent(userId, 'mfa_wrong_code')
+        })
+        .catch(() => undefined)
     }
     const status = result.reason === 'invalid' ? 400 : 401
     const message = result.reason === 'invalid' ? MESSAGES.invalid : result.reason === 'locked' ? MESSAGES.locked : MESSAGES.expired

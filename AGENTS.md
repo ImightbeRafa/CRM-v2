@@ -69,8 +69,10 @@ cover non-obvious setup/run gotchas.
 - `MFA_ENCRYPTION_KEY` — key for two-step login (2FA) secrets and recovery-code hashes. In
   production 2FA stays unavailable (nobody can enrol) until it is set. **Never change it** without
   moving the old value into `MFA_ENCRYPTION_KEY_PREVIOUS` (comma separated): otherwise every
-  enrolled user is locked out. After SQL 038 is applied, set `MFA_TABLES_REQUIRED=1` so a missing
-  2FA table fails closed instead of silently turning 2FA off.
+  enrolled user is locked out. At least 32 random characters (`openssl rand -base64 32`). Every
+  deployment that shares the database (Cloudflare prod AND the Railway preview) must have the SAME
+  `MFA_ENCRYPTION_KEY` / `_PREVIOUS`, or none at all on the preview. After SQL 038 is applied, set
+  `MFA_TABLES_REQUIRED=1` so a missing 2FA table fails closed instead of silently turning 2FA off.
 - All other integrations (Tilopay, Telegram/WhatsApp/Meta, OpenAI/xAI, Upstash Redis,
   Vercel Blob, Correos SOAP) are optional; features degrade gracefully when unset
   (Upstash has an in-memory fallback).

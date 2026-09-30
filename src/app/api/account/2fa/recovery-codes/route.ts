@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { authenticateUserOnly } from '@/lib/auth-helpers'
 import { regenerateRecoveryCodes, verifyCurrentFactor } from '@/lib/mfa-state'
 import { auditMfaChange, mfaReply, readFactorInput } from '@/lib/mfa-account'
-import { notifyMfaEvent } from '@/lib/mfa-throttle'
+import { notifyMfaEvent, releaseMfaIpSlot, reserveMfaIpSlot } from '@/lib/mfa-throttle'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -11,6 +11,9 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: NextRequest) {
   const auth = await authenticateUserOnly(request)
   if (!auth.ok) return auth.response
+  if (!(await reserveMfaIpSlot(request))) {
+    return mfaReply(429, { success: false, error: 'Demasiados intentos. Esperá unos minutos.' })
+  }
   const factor = readFactorInput(await request.json().catch(() => null))
   if (!factor.code && !factor.recoveryCode) {
     return mfaReply(400, { success: false, error: 'Ingresá un código de la app.' })
@@ -29,6 +32,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return mfaReply(503, { success: false, error: 'No disponible en este momento.' })
   }
+  await releaseMfaIpSlot(request)
   await auditMfaChange(auth.userId, 'recovery_codes_regenerated', request)
   void notifyMfaEvent(auth.userId, 'mfa_codes_regenerated')
   return mfaReply(200, { success: true, recoveryCodes })

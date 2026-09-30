@@ -109,5 +109,13 @@ export function isSessionReadingPublicRoute(pathname: string): boolean {
  * tricks, other origins, /auth /api /_next all refused; AUTH-47).
  */
 export function safeMfaCallback(path: string | null | undefined, origin?: string): string {
+  // The one /auth page a 2FA user returns to: accepting an invite after the code step.
+  if (typeof path === 'string' && /^\/auth\/accept-invite\?token=[A-Za-z0-9_-]{16,200}$/.test(path)) return path
   return safeReturnPath(path, { origin, fallback: '/dashboard' })
+}
+
+/** Where the invite page sends a 2FA user whose code is still pending. */
+export function mfaPageForInvite(token: string): string {
+  const back = `/auth/accept-invite?token=${encodeURIComponent(token)}`
+  return `${MFA_PAGE}?callbackUrl=${encodeURIComponent(back)}`
 }

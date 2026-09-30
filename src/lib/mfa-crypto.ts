@@ -33,7 +33,8 @@ function derive(source: string): MfaKey {
 
 function currentSource(): string | null {
   const dedicated = process.env.MFA_ENCRYPTION_KEY?.trim()
-  if (dedicated) return dedicated
+  // Production: at least 32 characters (e.g. `openssl rand -base64 32`), or 2FA stays unavailable.
+  if (dedicated && (process.env.NODE_ENV !== 'production' || dedicated.length >= 32)) return dedicated
   if (process.env.NODE_ENV === 'production') return null
   return process.env.ENCRYPTION_KEY || process.env.NEXTAUTH_SECRET || null
 }

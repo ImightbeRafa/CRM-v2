@@ -4,7 +4,8 @@ import { getToken } from 'next-auth/jwt'
 import { prisma } from '@/lib/db'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { verifyPassword } from '@/lib/password'
-import { getClientIP } from '@/lib/rate-limit'
+import { createHash } from 'crypto'
+import { getClientIP, recordFailure, releaseAttempt } from '@/lib/rate-limit'
 import { PII_NO_STORE_HEADERS } from '@/lib/security'
 
 /** Shared bits of the /api/account/2fa/* routes (the signed-in user managing their own 2FA). */
@@ -55,6 +56,15 @@ export function readFactorInput(body: unknown): { code: string | null; recoveryC
 /** How recently this session signed in (set by the jwt callback at sign-in). */
 export const FRESH_SIGN_IN_MS = 15 * 60_000
 
+/** Wrong passwords on 2FA account changes: 5 per 15 min per user, reserved first (AUTH-52). */
+const PASSWORD_WINDOW_MS = 15 * 60_000
+export const PASSWORD_PROOF_LIMIT = 5
+export const OWNER_PROOF_FAILED = 'Contraseña o código incorrecto.'
+
+function passwordKey(userId: string): string {
+  return `mfa-pw:${createHash('sha256').update(userId).digest('hex').slice(0, 32)}`
+}
+
 /**
  * Proof that the person at the keyboard is the account owner, not just someone holding an open
  * session (SecureDog AUTH-44): the password for password accounts; a sign-in in the last 15 minutes
@@ -68,9 +78,14 @@ export async function proveAccountOwner(
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { password: true } })
   if (!user) return { ok: false, status: 401, error: 'Unauthorized' }
   if (user.password) {
-    if (typeof password !== 'string' || !password || !(await verifyPassword(password, user.password))) {
-      return { ok: false, status: 400, error: 'Contraseña incorrecta.' }
+    if (typeof password !== 'string' || !password) return { ok: false, status: 400, error: OWNER_PROOF_FAILED }
+    // Reserve BEFORE the (costly) bcrypt compare; give the slot back when it was right.
+    const used = await recordFailure(passwordKey(userId), PASSWORD_WINDOW_MS, PASSWORD_PROOF_LIMIT)
+    if (used > PASSWORD_PROOF_LIMIT) {
+      return { ok: false, status: 429, error: 'Demasiados intentos. Esperá unos minutos.' }
     }
+    if (!(await verifyPassword(password, user.password))) return { ok: false, status: 400, error: OWNER_PROOF_FAILED }
+    await releaseAttempt(passwordKey(userId))
     return { ok: true }
   }
   const secret = process.env.NEXTAUTH_SECRET

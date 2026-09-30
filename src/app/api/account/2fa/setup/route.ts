@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateUserOnly } from '@/lib/auth-helpers'
-import { beginMfaSetup, mfaTablesKnownMissing } from '@/lib/mfa-state'
+import { beginMfaSetup, mfaSetupPrecheck, mfaTablesKnownMissing } from '@/lib/mfa-state'
 import { mfaReply, proveAccountOwner } from '@/lib/mfa-account'
 import { otpauthUri } from '@/lib/totp'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
@@ -25,6 +25,17 @@ export async function POST(request: NextRequest) {
   }
   const body = (await request.json().catch(() => null)) as { password?: unknown } | null
   try {
+    // Nothing about the password is revealed or checked unless setup could actually start (AUTH-52).
+    const pre = await mfaSetupPrecheck(auth.userId)
+    if ('error' in pre) {
+      if (pre.error === 'unavailable') {
+        return mfaReply(503, { success: false, error: 'La verificación en dos pasos todavía no está disponible.' })
+      }
+      if (pre.error === 'email_unverified') {
+        return mfaReply(403, { success: false, error: 'Primero verificá tu correo electrónico.' })
+      }
+      return mfaReply(409, { success: false, error: 'La verificación en dos pasos ya está activa.' })
+    }
     const owner = await proveAccountOwner(request, auth.userId, body?.password)
     if (!owner.ok) return mfaReply(owner.status, { success: false, error: owner.error })
     const user = await prisma.user.findUnique({ where: { id: auth.userId }, select: { email: true } })

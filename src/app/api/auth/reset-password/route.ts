@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { clearMfaBudgets } from '@/lib/mfa-state';
 import { prisma } from '@/lib/db';
 import { hashPassword, validatePasswordStrength } from '@/lib/password';
 import { authRateLimit } from '@/lib/rate-limit';
@@ -107,6 +108,8 @@ export async function POST(request: Request) {
       users[0].email.toLowerCase(),
       clientIpFromHeaders(Object.fromEntries(request.headers)),
     ).catch(() => undefined);
+    // The mailbox owner is back in control: lift any 2FA code lock (never 2FA itself; AUTH-53).
+    await clearMfaBudgets(users[0].id).catch(() => undefined);
 
     return NextResponse.json(
       { message: 'Contraseña actualizada exitosamente.' },

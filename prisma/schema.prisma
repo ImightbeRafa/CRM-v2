@@ -1727,6 +1727,9 @@ model UserTwoFactor {
   dayFailCount   Int       @default(0)
   dayWindowStart DateTime?
   lockNotifiedAt DateTime?
+  mgmtFailCount  Int       @default(0)
+  mgmtWindowStart DateTime?
+  wrongCodeNotifiedAt DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 }

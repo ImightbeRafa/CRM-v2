@@ -4,6 +4,7 @@ import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react'
 import { AuthShell } from '@/components/aurora/auth/AuthShell'
 import { auroraBtnPrimary, auroraBtnSecondary, auroraInputClass, auroraLabelClass } from '@/components/aurora/ui/aurora-form'
 import { signIn, useSession } from 'next-auth/react'
+import { mfaPageForInvite } from '@/lib/mfa-session'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { loginErrorMessage } from '@/lib/login-error-message'
 import { clearBusinessScopedBrowserState } from '@/lib/business-switch-client'
@@ -35,6 +36,10 @@ function AcceptInviteInner() {
     fetch(`/api/invites/accept?token=${encodeURIComponent(token)}`)
       .then(async (r) => {
         const json = await r.json()
+        if (r.status === 401 && json?.code === 'MFA_REQUIRED') {
+          window.location.assign(mfaPageForInvite(token))
+          return
+        }
         if (!r.ok) throw new Error(json.error || 'Invitación inválida')
         setPreview(json.data)
       })
@@ -44,6 +49,11 @@ function AcceptInviteInner() {
   const email = preview?.email || ''
 
   async function acceptWhileLoggedIn() {
+    // Password OK but the 2FA code is still pending: verify it first, then come back here.
+    if ((session as { mfa?: string } | null)?.mfa === 'pending') {
+      window.location.assign(mfaPageForInvite(token))
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -53,6 +63,10 @@ function AcceptInviteInner() {
         body: JSON.stringify({ token }),
       })
       const json = await res.json()
+      if (res.status === 401 && json?.code === 'MFA_REQUIRED') {
+        window.location.assign(mfaPageForInvite(token))
+        return
+      }
       if (!res.ok) throw new Error(json.error || 'No se pudo aceptar')
       // Move THIS session into the business just joined (acceptance set it as the default; the
       // session only re-reads it on an explicit update), then start clean in it. The re-sync is

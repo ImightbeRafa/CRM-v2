@@ -48,13 +48,23 @@ export async function isMfaEnabled(userId: string): Promise<boolean> {
   }
 }
 
+export type MfaBudgetScope = 'signin' | 'manage'
+/** Account changes (disable / new codes / setup) have their own window budget (AUTH-53). */
+export const MFA_MANAGE_LIMIT = 10
+
 /**
  * Spends one guess from the user's budget BEFORE a code is checked, in one conditional UPDATE (row
- * lock): parallel requests can't overspend, with or without Upstash. `firstLock` is true for the
- * request that first hits the limit in a window (the caller notifies the user once).
+ * lock): parallel requests can't overspend, with or without Upstash (AUTH-43). Sign-in and account
+ * changes have separate budgets, so exhausting one never locks the other (AUTH-53). `firstLock` is
+ * true at most once a day (the caller emails the user; AUTH-54).
  */
-export async function reserveMfaAttempt(userId: string): Promise<{ ok: true } | { ok: false; firstLock: boolean }> {
-  const reserved = await prisma.$executeRaw`
+export async function reserveMfaAttempt(
+  userId: string,
+  scope: MfaBudgetScope = 'signin',
+): Promise<{ ok: true } | { ok: false; firstLock: boolean }> {
+  const reserved =
+    scope === 'signin'
+      ? await prisma.$executeRaw`
     UPDATE "UserTwoFactor" SET
       "failCount" = CASE WHEN "failWindowStart" IS NULL OR "failWindowStart" < (now() AT TIME ZONE 'UTC') - interval '15 minutes' THEN 1 ELSE "failCount" + 1 END,
       "failWindowStart" = CASE WHEN "failWindowStart" IS NULL OR "failWindowStart" < (now() AT TIME ZONE 'UTC') - interval '15 minutes' THEN (now() AT TIME ZONE 'UTC') ELSE "failWindowStart" END,
@@ -63,24 +73,54 @@ export async function reserveMfaAttempt(userId: string): Promise<{ ok: true } | 
     WHERE "userId" = ${userId}
       AND ("failWindowStart" IS NULL OR "failWindowStart" < (now() AT TIME ZONE 'UTC') - interval '15 minutes' OR "failCount" < ${MFA_WINDOW_LIMIT})
       AND ("dayWindowStart" IS NULL OR "dayWindowStart" < (now() AT TIME ZONE 'UTC') - interval '24 hours' OR "dayFailCount" < ${MFA_DAY_LIMIT})`
+      : await prisma.$executeRaw`
+    UPDATE "UserTwoFactor" SET
+      "mgmtFailCount" = CASE WHEN "mgmtWindowStart" IS NULL OR "mgmtWindowStart" < (now() AT TIME ZONE 'UTC') - interval '15 minutes' THEN 1 ELSE "mgmtFailCount" + 1 END,
+      "mgmtWindowStart" = CASE WHEN "mgmtWindowStart" IS NULL OR "mgmtWindowStart" < (now() AT TIME ZONE 'UTC') - interval '15 minutes' THEN (now() AT TIME ZONE 'UTC') ELSE "mgmtWindowStart" END
+    WHERE "userId" = ${userId}
+      AND ("mgmtWindowStart" IS NULL OR "mgmtWindowStart" < (now() AT TIME ZONE 'UTC') - interval '15 minutes' OR "mgmtFailCount" < ${MFA_MANAGE_LIMIT})`
   if (reserved === 1) return { ok: true }
-  // Locked: tell the user once per 15 min window that someone is trying their codes.
   const notify = await prisma.$executeRaw`
     UPDATE "UserTwoFactor" SET "lockNotifiedAt" = (now() AT TIME ZONE 'UTC')
     WHERE "userId" = ${userId}
-      AND ("lockNotifiedAt" IS NULL OR "lockNotifiedAt" < (now() AT TIME ZONE 'UTC') - interval '15 minutes')`
+      AND ("lockNotifiedAt" IS NULL OR "lockNotifiedAt" < (now() AT TIME ZONE 'UTC') - interval '24 hours')`
   return { ok: false, firstLock: notify === 1 }
 }
 
-/** A proven code gives the budget back (the user is who they say). */
-async function refundMfaAttempts(userId: string): Promise<void> {
-  await prisma.userTwoFactor.updateMany({ where: { userId }, data: { failCount: 0, dayFailCount: 0 } })
+/**
+ * A proven code gives back only the slot it used (AUTH-54): an attacker's earlier guesses in the
+ * window still count, and the day counter is never reset by a success.
+ */
+async function refundMfaAttempt(userId: string, scope: MfaBudgetScope): Promise<void> {
+  if (scope === 'signin') {
+    await prisma.$executeRaw`UPDATE "UserTwoFactor" SET "failCount" = GREATEST(0, "failCount" - 1) WHERE "userId" = ${userId}`
+  } else {
+    await prisma.$executeRaw`UPDATE "UserTwoFactor" SET "mgmtFailCount" = GREATEST(0, "mgmtFailCount" - 1) WHERE "userId" = ${userId}`
+  }
+}
+
+/** True at most once a day: the first wrong code after a correct password is worth an email (AUTH-54). */
+export async function shouldNotifyWrongCode(userId: string): Promise<boolean> {
+  const n = await prisma.$executeRaw`
+    UPDATE "UserTwoFactor" SET "wrongCodeNotifiedAt" = (now() AT TIME ZONE 'UTC')
+    WHERE "userId" = ${userId}
+      AND ("wrongCodeNotifiedAt" IS NULL OR "wrongCodeNotifiedAt" < (now() AT TIME ZONE 'UTC') - interval '24 hours')`
+  return n === 1
+}
+
+/** A successful password reset clears the code budgets (the owner proved the mailbox; AUTH-53). */
+export async function clearMfaBudgets(userId: string): Promise<void> {
+  try {
+    await prisma.userTwoFactor.updateMany({ where: { userId }, data: { failCount: 0, mgmtFailCount: 0 } })
+  } catch (error) {
+    if (!isMissingRelation(error)) throw error
+  }
 }
 
 /**
- * Starts the "code pending" step of one sign-in. Only the newest challenge is live: older unverified
- * ones are expired (a password holder can't mint hundreds of 5-guess challenges), and expired rows
- * of the user are cleaned up. The raw nonce goes only into the encrypted JWT.
+ * Starts the "code pending" step of one sign-in. Several can be live (a second sign-in never kicks
+ * the owner out of theirs; AUTH-53): guessing is bounded by the per-user budget, not by challenges.
+ * Expired rows of the user are cleaned up. The raw nonce goes only into the encrypted JWT.
  */
 export async function createMfaChallenge(userId: string, now = Date.now()): Promise<{ nonce: string; expiresAt: number }> {
   const nonce = randomBytes(32).toString('base64url')
@@ -88,10 +128,6 @@ export async function createMfaChallenge(userId: string, now = Date.now()): Prom
   const nowDate = new Date(now)
   await prisma.$transaction([
     prisma.userTwoFactorChallenge.deleteMany({ where: { userId, expiresAt: { lte: nowDate } } }),
-    prisma.userTwoFactorChallenge.updateMany({
-      where: { userId, consumedAt: null, verifiedAt: null, expiresAt: { gt: nowDate } },
-      data: { expiresAt: nowDate },
-    }),
     prisma.userTwoFactorChallenge.create({
       data: { userId, nonceHash: mfaHash(nonce, 'challenge'), expiresAt: new Date(expiresAt) },
     }),
@@ -147,13 +183,9 @@ export async function verifyMfaChallenge(args: {
     return { ok: false, reason: 'expired' }
   }
 
-  const budget = await reserveMfaAttempt(args.userId)
-  if (!budget.ok) return { ok: false, reason: 'throttled', firstLock: budget.firstLock }
+  const method = await checkFactor(args.userId, { code: args.code, recoveryCode: args.recoveryCode }, now, 'signin')
+  if (!method.ok) return { ok: false, reason: method.reason, firstLock: method.firstLock }
 
-  const method = await checkFactor(args.userId, { code: args.code, recoveryCode: args.recoveryCode }, now)
-  if (!method.ok) return { ok: false, reason: method.reason }
-
-  await refundMfaAttempts(args.userId)
   await prisma.userTwoFactorChallenge.updateMany({
     where: { nonceHash, userId: args.userId, consumedAt: null, verifiedAt: null },
     data: { verifiedAt: nowDate },
@@ -161,16 +193,32 @@ export async function verifyMfaChallenge(args: {
   return { ok: true, method: method.method, recoveryLeft: method.recoveryLeft }
 }
 
+/**
+ * Checks a TOTP or recovery code. TOTP: the secret is decrypted FIRST (a server/key error never
+ * spends the user's budget; AUTH-55), then one guess is reserved, then the code is compared.
+ * Recovery codes (~50 bits, single use) are not budgeted: a lock can never take away the way back
+ * in (AUTH-53); the per-challenge (sign-in) and per-IP caps still apply.
+ */
 async function checkFactor(
   userId: string,
   input: { code?: string | null; recoveryCode?: string | null },
   now: number,
-): Promise<{ ok: true; method: 'totp' | 'recovery'; recoveryLeft?: number } | { ok: false; reason: 'invalid' | 'not_enrolled' }> {
+  scope: MfaBudgetScope,
+): Promise<
+  | { ok: true; method: 'totp' | 'recovery'; recoveryLeft?: number }
+  | { ok: false; reason: 'invalid' | 'not_enrolled' | 'throttled'; firstLock?: boolean }
+> {
   const factor = await prisma.userTwoFactor.findUnique({ where: { userId }, select: { secretEnc: true, enabledAt: true } })
   if (!factor?.enabledAt) return { ok: false, reason: 'not_enrolled' }
   if (input.code) {
-    const step = verifyTotp(decryptMfaSecretStrict(factor.secretEnc, userId), input.code, now)
-    if (step !== null && (await consumeTotpStep(userId, step))) return { ok: true, method: 'totp' }
+    const secret = decryptMfaSecretStrict(factor.secretEnc, userId)
+    const budget = await reserveMfaAttempt(userId, scope)
+    if (!budget.ok) return { ok: false, reason: 'throttled', firstLock: budget.firstLock }
+    const step = verifyTotp(secret, input.code, now)
+    if (step !== null && (await consumeTotpStep(userId, step))) {
+      await refundMfaAttempt(userId, scope)
+      return { ok: true, method: 'totp' }
+    }
     return { ok: false, reason: 'invalid' }
   }
   if (input.recoveryCode) {
@@ -218,13 +266,10 @@ async function consumeRecoveryCode(userId: string, input: string, now: number): 
 
 export type FactorCheck = { ok: true } | { ok: false; reason: 'invalid' | 'not_enrolled' | 'throttled'; firstLock?: boolean }
 
-/** Proves the user still holds the factor (disable / regenerate). Budgeted and replay-safe. */
+/** Proves the user still holds the factor (disable / regenerate). Account-change budget, replay-safe. */
 export async function verifyCurrentFactor(userId: string, input: { code?: string | null; recoveryCode?: string | null }): Promise<FactorCheck> {
-  const budget = await reserveMfaAttempt(userId)
-  if (!budget.ok) return { ok: false, reason: 'throttled', firstLock: budget.firstLock }
-  const result = await checkFactor(userId, input, Date.now())
-  if (!result.ok) return { ok: false, reason: result.reason }
-  await refundMfaAttempts(userId)
+  const result = await checkFactor(userId, input, Date.now(), 'manage')
+  if (!result.ok) return { ok: false, reason: result.reason, firstLock: result.firstLock }
   return { ok: true }
 }
 
@@ -247,6 +292,16 @@ export async function getMfaStatus(userId: string): Promise<MfaStatus> {
     if (markMissing(error)) return off
     throw error
   }
+}
+
+/** Everything setup needs that does NOT involve the password (checked before it; AUTH-52). */
+export async function mfaSetupPrecheck(userId: string): Promise<{ ok: true } | { error: 'unavailable' | 'email_unverified' | 'already_enabled' }> {
+  if (!mfaCryptoAvailable() || mfaTablesKnownMissing()) return { error: 'unavailable' }
+  const owner = await prisma.user.findUnique({ where: { id: userId }, select: { emailVerified: true } })
+  if (!owner?.emailVerified) return { error: 'email_unverified' }
+  const existing = await prisma.userTwoFactor.findUnique({ where: { userId }, select: { enabledAt: true } })
+  if (existing?.enabledAt) return { error: 'already_enabled' }
+  return { ok: true }
 }
 
 /**
@@ -291,8 +346,9 @@ export async function completeMfaSetup(
   })
   if (!row || row.enabledAt) return { error: 'no_setup' }
   if (!row.setupExpiresAt || row.setupExpiresAt.getTime() <= now) return { error: 'expired' }
-  if (!(await reserveMfaAttempt(userId)).ok) return { error: 'throttled' }
-  const step = verifyTotp(decryptMfaSecretStrict(row.secretEnc, userId), code, now)
+  const secret = decryptMfaSecretStrict(row.secretEnc, userId)
+  if (!(await reserveMfaAttempt(userId, 'manage')).ok) return { error: 'throttled' }
+  const step = verifyTotp(secret, code, now)
   if (step === null) return { error: 'invalid' }
 
   const recoveryCodes = generateRecoveryCodes()
@@ -304,7 +360,7 @@ export async function completeMfaSetup(
         setupExpiresAt: null,
         lastUsedStep: BigInt(step),
         failCount: 0,
-        dayFailCount: 0,
+        mgmtFailCount: 0,
       },
     })
     if (done.count !== 1) return false

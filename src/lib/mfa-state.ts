@@ -51,6 +51,7 @@ export async function isMfaEnabled(userId: string): Promise<boolean> {
 export type MfaBudgetScope = 'signin' | 'manage'
 /** Account changes (disable / new codes / setup) have their own window budget (AUTH-53). */
 export const MFA_MANAGE_LIMIT = 10
+export const MFA_MANAGE_DAY_LIMIT = 30
 
 /**
  * Spends one guess from the user's budget BEFORE a code is checked, in one conditional UPDATE (row
@@ -76,9 +77,12 @@ export async function reserveMfaAttempt(
       : await prisma.$executeRaw`
     UPDATE "UserTwoFactor" SET
       "mgmtFailCount" = CASE WHEN "mgmtWindowStart" IS NULL OR "mgmtWindowStart" < (now() AT TIME ZONE 'UTC') - interval '15 minutes' THEN 1 ELSE "mgmtFailCount" + 1 END,
-      "mgmtWindowStart" = CASE WHEN "mgmtWindowStart" IS NULL OR "mgmtWindowStart" < (now() AT TIME ZONE 'UTC') - interval '15 minutes' THEN (now() AT TIME ZONE 'UTC') ELSE "mgmtWindowStart" END
+      "mgmtWindowStart" = CASE WHEN "mgmtWindowStart" IS NULL OR "mgmtWindowStart" < (now() AT TIME ZONE 'UTC') - interval '15 minutes' THEN (now() AT TIME ZONE 'UTC') ELSE "mgmtWindowStart" END,
+      "mgmtDayFailCount" = CASE WHEN "mgmtDayWindowStart" IS NULL OR "mgmtDayWindowStart" < (now() AT TIME ZONE 'UTC') - interval '24 hours' THEN 1 ELSE "mgmtDayFailCount" + 1 END,
+      "mgmtDayWindowStart" = CASE WHEN "mgmtDayWindowStart" IS NULL OR "mgmtDayWindowStart" < (now() AT TIME ZONE 'UTC') - interval '24 hours' THEN (now() AT TIME ZONE 'UTC') ELSE "mgmtDayWindowStart" END
     WHERE "userId" = ${userId}
-      AND ("mgmtWindowStart" IS NULL OR "mgmtWindowStart" < (now() AT TIME ZONE 'UTC') - interval '15 minutes' OR "mgmtFailCount" < ${MFA_MANAGE_LIMIT})`
+      AND ("mgmtWindowStart" IS NULL OR "mgmtWindowStart" < (now() AT TIME ZONE 'UTC') - interval '15 minutes' OR "mgmtFailCount" < ${MFA_MANAGE_LIMIT})
+      AND ("mgmtDayWindowStart" IS NULL OR "mgmtDayWindowStart" < (now() AT TIME ZONE 'UTC') - interval '24 hours' OR "mgmtDayFailCount" < ${MFA_MANAGE_DAY_LIMIT})`
   if (reserved === 1) return { ok: true }
   const notify = await prisma.$executeRaw`
     UPDATE "UserTwoFactor" SET "lockNotifiedAt" = (now() AT TIME ZONE 'UTC')
@@ -88,14 +92,14 @@ export async function reserveMfaAttempt(
 }
 
 /**
- * A proven code gives back only the slot it used (AUTH-54): an attacker's earlier guesses in the
- * window still count, and the day counter is never reset by a success.
+ * A proven code gives back only the slot it used, in the window AND the day counter (AUTH-54 /
+ * AUTH-56): an attacker's earlier guesses still count, and successes never add up to a lock.
  */
 async function refundMfaAttempt(userId: string, scope: MfaBudgetScope): Promise<void> {
   if (scope === 'signin') {
-    await prisma.$executeRaw`UPDATE "UserTwoFactor" SET "failCount" = GREATEST(0, "failCount" - 1) WHERE "userId" = ${userId}`
+    await prisma.$executeRaw`UPDATE "UserTwoFactor" SET "failCount" = GREATEST(0, "failCount" - 1), "dayFailCount" = GREATEST(0, "dayFailCount" - 1) WHERE "userId" = ${userId}`
   } else {
-    await prisma.$executeRaw`UPDATE "UserTwoFactor" SET "mgmtFailCount" = GREATEST(0, "mgmtFailCount" - 1) WHERE "userId" = ${userId}`
+    await prisma.$executeRaw`UPDATE "UserTwoFactor" SET "mgmtFailCount" = GREATEST(0, "mgmtFailCount" - 1), "mgmtDayFailCount" = GREATEST(0, "mgmtDayFailCount" - 1) WHERE "userId" = ${userId}`
   }
 }
 

@@ -1,12 +1,21 @@
 import { NextRequest } from 'next/server'
 import { authenticateUserOnly } from '@/lib/auth-helpers'
-import { disableMfa, verifyCurrentFactor } from '@/lib/mfa-state'
+import { disableMfa, shouldNotifyWrongCode, verifyCurrentFactor } from '@/lib/mfa-state'
 import { auditMfaChange, mfaReply, proveAccountOwner, readFactorInput } from '@/lib/mfa-account'
 import { notifyMfaEvent, releaseMfaIpSlot, reserveMfaIpSlot } from '@/lib/mfa-throttle'
 import { revokeUserSessions } from '@/lib/session-revocation'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+/** First wrong code of the day on an account change emails the owner (AUTH-57). */
+function notifyWrongCode(userId: string) {
+  return shouldNotifyWrongCode(userId)
+    .then(async (first) => {
+      if (first) await notifyMfaEvent(userId, 'mfa_wrong_code')
+    })
+    .catch(() => undefined)
+}
 
 /**
  * Turns 2FA off. Needs a current code (or recovery code) AND the password (fresh Google sign-in for
@@ -33,6 +42,7 @@ export async function POST(request: NextRequest) {
         if (check.firstLock) void notifyMfaEvent(auth.userId, 'mfa_locked')
         return mfaReply(429, { success: false, error: 'Demasiados intentos. Esperá unos minutos.' })
       }
+      if (check.reason === 'invalid') void notifyWrongCode(auth.userId)
       return mfaReply(400, { success: false, error: 'Contraseña o código incorrecto.' })
     }
     await disableMfa(auth.userId)

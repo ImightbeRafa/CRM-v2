@@ -73,6 +73,7 @@ cover non-obvious setup/run gotchas.
   deployment that shares the database (Cloudflare prod AND the Railway preview) must have the SAME
   `MFA_ENCRYPTION_KEY` / `_PREVIOUS`, or none at all on the preview. After SQL 038 is applied, set
   `MFA_TABLES_REQUIRED=1` so a missing 2FA table fails closed instead of silently turning 2FA off.
+  NEVER set it before 038 exists: every sign-in would then fail (`mfa_unavailable`).
 - All other integrations (Tilopay, Telegram/WhatsApp/Meta, OpenAI/xAI, Upstash Redis,
   Vercel Blob, Correos SOAP) are optional; features degrade gracefully when unset
   (Upstash has an in-memory fallback).

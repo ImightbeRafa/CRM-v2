@@ -207,10 +207,17 @@ test('SecureDog rounds 1-2 fixes are wired (AUTH-43/44/48..55)', () => {
   const setup = state.slice(state.indexOf('export async function completeMfaSetup'))
   assert.ok(setup.indexOf('decryptMfaSecretStrict(') < setup.indexOf("reserveMfaAttempt(userId, 'manage')"))
   assert.ok(setup.indexOf("reserveMfaAttempt(userId, 'manage')") < setup.indexOf('verifyTotp('))
-  // AUTH-54: a success gives back one slot only; the day counter is never reset by it.
+  // AUTH-54 / AUTH-56: a success gives back one slot in the window AND the day (never a reset).
   const refund = state.slice(state.indexOf('async function refundMfaAttempt'), state.indexOf('/** True at most once a day'))
-  assert.match(refund, /GREATEST\(0, "failCount" - 1\)/)
-  assert.doesNotMatch(refund, /dayFailCount/)
+  assert.match(refund, /"failCount" = GREATEST\(0, "failCount" - 1\), "dayFailCount" = GREATEST\(0, "dayFailCount" - 1\)/)
+  assert.match(refund, /"mgmtDayFailCount" = GREATEST\(0, "mgmtDayFailCount" - 1\)/)
+  assert.doesNotMatch(refund, /"(day|mgmtDay)?[fF]ailCount" = 0/)
+  // AUTH-57: account changes have a day cap too, and a wrong code there emails the owner.
+  assert.match(reserve, /"mgmtDayFailCount" < \$\{MFA_MANAGE_DAY_LIMIT\}/)
+  for (const f of ['disable', 'recovery-codes']) {
+    assert.match(readFileSync(`src/app/api/account/2fa/${f}/route.ts`, 'utf8'), /shouldNotifyWrongCode\(/, f)
+  }
+  assert.match(readFileSync('src/lib/mfa-throttle.ts', 'utf8'), /ipBucket\(getClientIP\(request\)\)/)
   assert.match(state, /"lockNotifiedAt" < \(now\(\) AT TIME ZONE 'UTC'\) - interval '24 hours'/)
   assert.match(state, /"wrongCodeNotifiedAt" < \(now\(\) AT TIME ZONE 'UTC'\) - interval '24 hours'/)
   // AUTH-53: a new sign-in never expires the owner's live challenge; expired rows still go.

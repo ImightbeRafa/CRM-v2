@@ -1,3 +1,22 @@
+## 2026-09-30 — Phase 1: two-step login (2FA) built on claudio/phase1-2fa (not deployed)
+
+- TOTP authenticator app + 10 single-use recovery codes; Config › Seguridad (all roles).
+- Sign-in gate: while the code is pending the JWT holds NO user (claims held encrypted, restored
+  only by NextAuth update() consuming a verified challenge); middleware serves only /auth/2fa.
+- SecureDog 3 rounds: AUTH-43 (High, parallel guessing) … AUTH-57 fixed; AUTH-46 (lost phone +
+  codes recovery path) open for Rafael. Verdict round 3: safe to ship code + apply 038 with
+  MFA_ENCRYPTION_KEY unset (feature inert). Opening enrolment needs: AUTH-46 decision, the key on
+  Cloudflare (same on any deployment sharing the DB), MFA_TABLES_REQUIRED=1 after 038.
+- SQL 038 (new tables only, RLS on), gated, not applied yet.
+- Proof: tsc 0, eslint 0, security 275, config-ui 30, site-ui 50, chat-harden 443, tenant-ui 9.
+
+## 2026-09-30 — Phase 1: customer data export (Ley 8968) built on claudio/phase1-data-export
+
+- Owner-only "Descargar sus datos" in Config › Clientes; read-only JSON of everything about one
+  customer; every query business-scoped; lm_* only through the business's order ids; audited
+  with counts. Read-only proof on the test business: all queries run, foreign business → null.
+- Erase pending Rafael's decisions (invoices, lm_* notes / labels, backups wording).
+
 ## 2026-09-30 — FIX: chats answered by a teammate kept showing as pending for everyone else
 
 - Cause: unread was per user only (ChatConversationReadState). Mom answering a chat left the badge

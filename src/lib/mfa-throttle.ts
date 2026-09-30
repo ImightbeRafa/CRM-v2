@@ -2,6 +2,7 @@ import 'server-only'
 import { createHash } from 'crypto'
 import { prisma } from '@/lib/db'
 import { getClientIP, recordFailure, releaseAttempt } from '@/lib/rate-limit'
+import { ipBucket } from '@/lib/auth-gates'
 import { sendSecurityNoticeEmail, type SecurityNoticeKind } from '@/lib/email'
 
 /**
@@ -13,7 +14,8 @@ const WINDOW_MS = 15 * 60_000
 export const MFA_IP_LIMIT = 30
 
 function ipKey(request: Request): string {
-  return `mfa:ip:${createHash('sha256').update(getClientIP(request)).digest('hex').slice(0, 32)}`
+  // IPv6 /64s bucketed to /48 (rotating addresses inside one network share the slot).
+  return `mfa:ip:${createHash('sha256').update(ipBucket(getClientIP(request))).digest('hex').slice(0, 32)}`
 }
 
 export async function reserveMfaIpSlot(request: Request): Promise<boolean> {

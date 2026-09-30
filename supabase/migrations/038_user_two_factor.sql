@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS public."UserTwoFactor" (
   "lockNotifiedAt" timestamp(3) without time zone NULL,
   "mgmtFailCount" integer NOT NULL DEFAULT 0,
   "mgmtWindowStart" timestamp(3) without time zone NULL,
+  "mgmtDayFailCount" integer NOT NULL DEFAULT 0,
+  "mgmtDayWindowStart" timestamp(3) without time zone NULL,
   "wrongCodeNotifiedAt" timestamp(3) without time zone NULL,
   "createdAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -1,11 +1,20 @@
 import { NextRequest } from 'next/server'
 import { authenticateUserOnly } from '@/lib/auth-helpers'
-import { regenerateRecoveryCodes, verifyCurrentFactor } from '@/lib/mfa-state'
+import { regenerateRecoveryCodes, shouldNotifyWrongCode, verifyCurrentFactor } from '@/lib/mfa-state'
 import { auditMfaChange, mfaReply, readFactorInput } from '@/lib/mfa-account'
 import { notifyMfaEvent, releaseMfaIpSlot, reserveMfaIpSlot } from '@/lib/mfa-throttle'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+/** First wrong code of the day on an account change emails the owner (AUTH-57). */
+function notifyWrongCode(userId: string) {
+  return shouldNotifyWrongCode(userId)
+    .then(async (first) => {
+      if (first) await notifyMfaEvent(userId, 'mfa_wrong_code')
+    })
+    .catch(() => undefined)
+}
 
 /** New recovery codes (the old ones stop working). Needs a current code. Returned ONCE. */
 export async function POST(request: NextRequest) {
@@ -26,6 +35,7 @@ export async function POST(request: NextRequest) {
         if (check.firstLock) void notifyMfaEvent(auth.userId, 'mfa_locked')
         return mfaReply(429, { success: false, error: 'Demasiados intentos. Esperá unos minutos.' })
       }
+      if (check.reason === 'invalid') void notifyWrongCode(auth.userId)
       return mfaReply(400, { success: false, error: 'Código incorrecto.' })
     }
     recoveryCodes = await regenerateRecoveryCodes(auth.userId)

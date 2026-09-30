@@ -8,5 +8,6 @@ export function loginErrorMessage(code: string | null | undefined, fallback = 'C
   // Google sign-in with an invite that could not be accepted (redirect from the signIn callback).
   if (code === 'invite_seat_limit') return 'El negocio que te invitó llegó a su límite de usuarios. Pedile al dueño que amplíe el plan.'
   if (code === 'invite_invalid') return 'La invitación ya no es válida. Pedí una nueva.'
+  if (code === 'invite_retry') return 'Otra persona se unió al mismo tiempo. Intentá de nuevo.'
   return fallback
 }

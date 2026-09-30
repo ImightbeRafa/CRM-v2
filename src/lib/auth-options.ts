@@ -451,7 +451,7 @@ export const authOptions: NextAuthOptions = {
                     // accepted (e.g. the inviting business is full): log in as usual instead.
                     console.warn(`[OAuth] Invite not accepted for user ${updatedUser.id}:`, accepted.status)
                     if (!updatedUser.memberships.length) {
-                      return `/auth/signin?error=${accepted.status === 402 ? 'invite_seat_limit' : 'invite_invalid'}`
+                      return `/auth/signin?error=${accepted.status === 402 ? 'invite_seat_limit' : accepted.status === 409 ? 'invite_retry' : 'invite_invalid'}`
                     }
                   }
                   if (accepted.ok) {
@@ -563,21 +563,32 @@ export const authOptions: NextAuthOptions = {
                     providerId: account?.providerAccountId,
                     emailVerified: new Date(),
                     active: true,
-                    defaultTenantId: pendingForNew.tenantId,
+                    // Set by the accept transaction; never pointing at a business it isn't in.
+                    defaultTenantId: null,
                   },
                 })
-                const accepted = await acceptTeamInviteForUser({
+                // Only ever removes this just-created account, and only while it has no membership.
+                const undoNewUser = () =>
+                  prisma.user.deleteMany({ where: { id: createdForInvite.id, memberships: { none: {} } } }).catch(() => undefined)
+                let accepted: Awaited<ReturnType<typeof acceptTeamInviteForUser>>
+                try {
+                  accepted = await acceptTeamInviteForUser({
                   emailProven: true, // Google-verified email (checked at the top of signIn)
                   inviteId: pendingForNew.id,
                   token: pendingForNew.token,
                   userId: createdForInvite.id,
                   userEmail: normalizedEmail,
                 })
+                } catch (acceptError) {
+                  console.warn('[OAuth] Invite accept threw for new Google user:', acceptError instanceof Error ? acceptError.name : 'unknown')
+                  await undoNewUser()
+                  return '/auth/signin?error=invite_retry'
+                }
                 if (!accepted.ok) {
                   // Don't leave an account with no business behind (L4 / M1): undo and explain.
                   console.warn('[OAuth] Invite not accepted for new Google user:', accepted.status)
-                  await prisma.user.delete({ where: { id: createdForInvite.id } }).catch(() => undefined)
-                  return `/auth/signin?error=${accepted.status === 402 ? 'invite_seat_limit' : 'invite_invalid'}`
+                  await undoNewUser()
+                  return `/auth/signin?error=${accepted.status === 402 ? 'invite_seat_limit' : accepted.status === 409 ? 'invite_retry' : 'invite_invalid'}`
                 }
                 user.id = createdForInvite.id
                 ;(user as any).email_verified = true

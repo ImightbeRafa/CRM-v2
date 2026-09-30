@@ -74,14 +74,12 @@ export async function createTeamInvite(input: CreateTeamInviteInput) {
   // Counted only once the invite is valid. Keys: this business + inviter; this business + recipient
   // (tight); any business + recipient (loose). Emails hashed in the keys (SecureDog L2).
   const recipientKey = createHash('sha256').update(email).digest('hex').slice(0, 32)
-  const [bySender, byTenantRecipient, byRecipient] = await Promise.all([
-    inviteSenderLimit(`${input.tenantId}:${input.invitedByUserId}`),
-    inviteTenantRecipientLimit(`${input.tenantId}:${recipientKey}`),
-    inviteRecipientLimit(recipientKey),
-  ])
-  if (!bySender.allowed || !byTenantRecipient.allowed || !byRecipient.allowed) {
-    return { ok: false as const, error: 'Demasiadas invitaciones seguidas. Probá más tarde.', status: 429 }
-  }
+  // One after another, stopping at the first refusal: a refused call never spends a slot of the
+  // shared per-recipient limit, so one business can use at most 3 of it per hour.
+  const tooMany = { ok: false as const, error: 'Demasiadas invitaciones seguidas. Probá más tarde.', status: 429 }
+  if (!(await inviteSenderLimit(`${input.tenantId}:${input.invitedByUserId}`)).allowed) return tooMany
+  if (!(await inviteTenantRecipientLimit(`${input.tenantId}:${recipientKey}`)).allowed) return tooMany
+  if (!(await inviteRecipientLimit(recipientKey)).allowed) return tooMany
 
   // Revoke prior pending invites for same tenant+email
   await (prisma as any).tenantInvite.updateMany({

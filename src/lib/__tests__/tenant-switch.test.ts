@@ -143,19 +143,37 @@ test('switching clears drafts / session caches; other tabs reload; drafts only r
 test('round 5: invites never lock anyone out; mails escape names; seats checked before sending', () => {
   const auth = read('src/lib/auth-options.ts')
   // Google sign-in with an unacceptable invite: own businesses still log in; none → explained redirect.
-  assert.match(auth, /return `\/auth\/signin\?error=\$\{accepted\.status === 402 \? 'invite_seat_limit' : 'invite_invalid'\}`/)
-  assert.match(auth, /await prisma\.user\.delete\(\{ where: \{ id: createdForInvite\.id \} \}\)/)
+  assert.match(auth, /return `\/auth\/signin\?error=\$\{accepted\.status === 402 \? 'invite_seat_limit' : accepted\.status === 409 \? 'invite_retry' : 'invite_invalid'\}`/)
+  // New Google user: cleanup is conditional (only this account, only without memberships) and
+  // also runs when the accept throws.
+  assert.match(auth, /prisma\.user\.deleteMany\(\{ where: \{ id: createdForInvite\.id, memberships: \{ none: \{\} \} \} \}\)/)
+  assert.match(auth, /catch \(acceptError\) \{[\s\S]{0,200}await undoNewUser\(\)/)
+  assert.doesNotMatch(auth, /defaultTenantId: pendingForNew\.tenantId/)
   assert.doesNotMatch(auth, /Invite accept failed for \$\{updatedUser\.email\}:`, accepted\.error\)\n\s*return false/)
   const svc = read('src/lib/team-invite-service.ts')
   assert.match(svc, /const seats = await getTenantSeatUsage\(input\.tenantId\)/)
   assert.ok(svc.indexOf('const seats = await getTenantSeatUsage') < svc.indexOf('inviteSenderLimit(`'), 'limits counted only after validation')
   assert.match(svc, /inviteTenantRecipientLimit\(`\$\{input\.tenantId\}:\$\{recipientKey\}`\)/)
+  // Sequential, first refusal stops (a refused call never spends the shared recipient limit).
+  assert.doesNotMatch(svc, /Promise\.all\(\[\n\s*inviteSenderLimit/)
+  assert.ok(svc.indexOf('inviteTenantRecipientLimit(`') < svc.indexOf('inviteRecipientLimit(recipientKey)'))
   assert.match(svc, /createHash\('sha256'\)\.update\(email\)/)
   assert.match(svc, /isolationLevel: Prisma\.TransactionIsolationLevel\.Serializable/)
   const mail = read('src/lib/email.ts')
   assert.doesNotMatch(mail, /Hola \$\{name \|\| ''\}/)
   assert.doesNotMatch(mail, /Hola\$\{name \? ` \$\{name\}` : ''\}/)
-  assert.match(read('src/app/api/invites/accept/route.ts'), /failed\.cookies\.set\(TEAM_INVITE_COOKIE, '', \{ httpOnly: true, path: '\/', maxAge: 0 \}\)/)
+  assert.match(read('src/app/api/invites/accept/route.ts'), /if \(result\.status !== 409\) failed\.cookies\.set\(TEAM_INVITE_COOKIE, '', \{ httpOnly: true, path: '\/', maxAge: 0 \}\)/)
   assert.match(read('src/app/api/auth/register/route.ts'), /data: \{ defaultTenantId: null \}/)
   assert.match(read('src/app/auth/accept-invite/page.tsx'), /if \(joined && \(next\?\.user as \{ tenantId\?: string \} \| undefined\)\?\.tenantId !== joined\)/)
+})
+
+test('every seat admission that takes the bot-seat lock stays Serializable (no over-admission)', () => {
+  const sites = walk('src').filter((f) => !f.includes('__tests__') && read(f).includes('bot-seat:'))
+  assert.ok(sites.length >= 3, sites.join(','))
+  for (const f of sites) {
+    const src = read(f)
+    const locks = (src.match(/pg_advisory_xact_lock\(hashtext\(\$\{`bot-seat:/g) || []).length
+    const serializable = (src.match(/isolationLevel: Prisma\.TransactionIsolationLevel\.Serializable/g) || []).length
+    assert.ok(serializable >= Math.min(locks, 1), `${f}: ${locks} lock(s), ${serializable} Serializable`)
+  }
 })

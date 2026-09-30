@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
       }
       // Terminal failure: drop the invite cookie so later sign-ins are not stuck on this invite.
       const failed = NextResponse.json({ status: 'error', error: result.error }, { status: result.status })
-      failed.cookies.set(TEAM_INVITE_COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 })
+      if (result.status !== 409) failed.cookies.set(TEAM_INVITE_COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 })
       return failed
     }
 

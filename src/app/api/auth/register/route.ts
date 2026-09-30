@@ -161,6 +161,9 @@ export async function POST(request: Request) {
         if (!accepted.ok) {
           // Not stranded: without the invite business, verify-email provisions their own business.
           await prisma.user.update({ where: { id: invitedUser.id }, data: { defaultTenantId: null } }).catch(() => undefined)
+          try {
+            await sendVerificationEmail({ email: normalizedEmail, name })
+          } catch {}
           return NextResponse.json({ error: accepted.error }, { status: accepted.status })
         }
         try {
@@ -172,7 +175,14 @@ export async function POST(request: Request) {
         )
       }
     } catch (inviteErr) {
-      console.warn('[register] TenantInvite lookup/accept skipped:', inviteErr)
+      console.warn('[register] TenantInvite lookup/accept skipped:', inviteErr instanceof Error ? inviteErr.name : 'unknown')
+      // The account may already exist from the invite path above: never leave it pointing at a
+      // business it is not in, and don't fall into owned-business creation (unique email).
+      const created = await prisma.user.findFirst({ where: { email: normalizedEmail }, select: { id: true } }).catch(() => null)
+      if (created) {
+        await prisma.user.updateMany({ where: { id: created.id, memberships: { none: {} } }, data: { defaultTenantId: null } }).catch(() => undefined)
+        return NextResponse.json({ error: 'No pudimos completar el registro. Intentá iniciar sesión o registrate de nuevo en un momento.' }, { status: 503 })
+      }
     }
 
     const tenantSlug = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now();

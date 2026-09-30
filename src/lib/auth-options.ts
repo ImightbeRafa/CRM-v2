@@ -447,9 +447,14 @@ export const authOptions: NextAuthOptions = {
                     userEmail: updatedUser.email,
                   })
                   if (!accepted.ok) {
-                    console.error(`[OAuth] ❌ Invite accept failed for ${updatedUser.email}:`, accepted.error)
-                    return false
+                    // Never lock someone out of their OWN businesses because an invite can't be
+                    // accepted (e.g. the inviting business is full): log in as usual instead.
+                    console.warn(`[OAuth] Invite not accepted for user ${updatedUser.id}:`, accepted.status)
+                    if (!updatedUser.memberships.length) {
+                      return `/auth/signin?error=${accepted.status === 402 ? 'invite_seat_limit' : 'invite_invalid'}`
+                    }
                   }
+                  if (accepted.ok) {
                   const refreshed = await prisma.user.findUnique({
                     where: { id: updatedUser.id },
                     select: {
@@ -487,9 +492,11 @@ export const authOptions: NextAuthOptions = {
                     `[OAuth] ✅ Joined inviting tenant ${accepted.tenantId} via invite (had ${updatedUser.memberships.length} prior membership(s))`,
                   )
                   return true
+                  }
                 } catch (inviteAcceptError) {
                   console.error(`[OAuth] ❌ Invite accept path failed for ${updatedUser.email}:`, inviteAcceptError)
-                  return false
+                  if (!updatedUser.memberships.length) return false
+                  // Has own businesses: fall through and log in normally.
                 }
               }
 
@@ -567,8 +574,10 @@ export const authOptions: NextAuthOptions = {
                   userEmail: normalizedEmail,
                 })
                 if (!accepted.ok) {
-                  console.error('[OAuth] ❌ Failed to accept invite for new Google user:', accepted.error)
-                  return false
+                  // Don't leave an account with no business behind (L4 / M1): undo and explain.
+                  console.warn('[OAuth] Invite not accepted for new Google user:', accepted.status)
+                  await prisma.user.delete({ where: { id: createdForInvite.id } }).catch(() => undefined)
+                  return `/auth/signin?error=${accepted.status === 402 ? 'invite_seat_limit' : 'invite_invalid'}`
                 }
                 user.id = createdForInvite.id
                 ;(user as any).email_verified = true

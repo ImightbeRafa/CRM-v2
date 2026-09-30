@@ -55,8 +55,14 @@ function AcceptInviteInner() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'No se pudo aceptar')
       // Move THIS session into the business just joined (acceptance set it as the default; the
-      // session only re-reads it on an explicit update), then start clean in it.
-      await update()
+      // session only re-reads it on an explicit update), then start clean in it. The re-sync is
+      // throttled to once per 2 s, so retry once if the first update still shows the old business.
+      const joined = json?.data?.tenantId as string | undefined
+      let next = await update()
+      if (joined && (next?.user as { tenantId?: string } | undefined)?.tenantId !== joined) {
+        await new Promise((r) => setTimeout(r, 2200))
+        next = await update()
+      }
       clearBusinessScopedBrowserState()
       window.location.assign('/dashboard')
       return

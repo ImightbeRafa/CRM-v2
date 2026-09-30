@@ -13,7 +13,8 @@ import {
 import { sendTeamInviteEmail } from '@/lib/email'
 import { findUserIdByEmail } from '@/lib/user-lookup'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
-import { getTenantSeatUsageWithClient } from '@/lib/plan-enforcement'
+import { getTenantSeatUsage, getTenantSeatUsageWithClient } from '@/lib/plan-enforcement'
+import { createHash } from 'node:crypto'
 
 class SeatLimitReached extends Error {
   constructor(readonly currentCount: number, readonly limit: number) {
@@ -24,7 +25,10 @@ class SeatLimitReached extends Error {
 // Invites send email from noreply@betsycrm.com: bounded per inviter+business and per recipient
 // (SecureDog: unbounded invites could be used to spam and burn sender reputation).
 const inviteSenderLimit = createIdentifierRateLimit({ windowMs: 60 * 60_000, maxRequests: 30, identifier: 'invite-sender' })
-const inviteRecipientLimit = createIdentifierRateLimit({ windowMs: 60 * 60_000, maxRequests: 5, identifier: 'invite-recipient' })
+// Tight per business+recipient (re-sends), loose across all businesses (one business cannot block
+// a person's invites from everyone else).
+const inviteTenantRecipientLimit = createIdentifierRateLimit({ windowMs: 60 * 60_000, maxRequests: 3, identifier: 'invite-tenant-recipient' })
+const inviteRecipientLimit = createIdentifierRateLimit({ windowMs: 60 * 60_000, maxRequests: 20, identifier: 'invite-recipient' })
 
 export type CreateTeamInviteInput = {
   tenantId: string
@@ -45,14 +49,6 @@ export async function createTeamInvite(input: CreateTeamInviteInput) {
   }
   const role = input.role as TeamInviteRole
 
-  const [bySender, byRecipient] = await Promise.all([
-    inviteSenderLimit(`${input.tenantId}:${input.invitedByUserId}`),
-    inviteRecipientLimit(email),
-  ])
-  if (!bySender.allowed || !byRecipient.allowed) {
-    return { ok: false as const, error: 'Demasiadas invitaciones seguidas. Probá más tarde.', status: 429 }
-  }
-
   // Exact lower() match (ILIKE would treat _ and % in the address as wildcards).
   const existingUser = await prisma.user.findUnique({
     where: { id: (await findUserIdByEmail(email)) ?? '' },
@@ -67,6 +63,24 @@ export async function createTeamInvite(input: CreateTeamInviteInput) {
   })
   if (existingUser?.memberships.length) {
     return { ok: false as const, error: 'El usuario ya pertenece a este tenant', status: 409 }
+  }
+
+  // A full business cannot send invites that could never be accepted.
+  const seats = await getTenantSeatUsage(input.tenantId)
+  if (seats.currentCount >= seats.limit) {
+    return { ok: false as const, error: `Llegaste al límite de usuarios de tu plan (${seats.currentCount}/${seats.limit}). Actualizá el plan para invitar a más personas.`, status: 402 }
+  }
+
+  // Counted only once the invite is valid. Keys: this business + inviter; this business + recipient
+  // (tight); any business + recipient (loose). Emails hashed in the keys (SecureDog L2).
+  const recipientKey = createHash('sha256').update(email).digest('hex').slice(0, 32)
+  const [bySender, byTenantRecipient, byRecipient] = await Promise.all([
+    inviteSenderLimit(`${input.tenantId}:${input.invitedByUserId}`),
+    inviteTenantRecipientLimit(`${input.tenantId}:${recipientKey}`),
+    inviteRecipientLimit(recipientKey),
+  ])
+  if (!bySender.allowed || !byTenantRecipient.allowed || !byRecipient.allowed) {
+    return { ok: false as const, error: 'Demasiadas invitaciones seguidas. Probá más tarde.', status: 429 }
   }
 
   // Revoke prior pending invites for same tenant+email
@@ -285,10 +299,15 @@ export async function acceptTeamInviteForUser(input: {
         ...(input.emailProven ? { emailVerified: new Date() } : {}),
       },
     })
-  })
+  // Same isolation as the other seat admissions (member create, bot session): with all of them
+  // Serializable, a conflicting concurrent admission fails instead of exceeding the seats (L3).
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
   } catch (error) {
     if (error instanceof SeatLimitReached) {
-      return { ok: false as const, error: `Este negocio llegó a su límite de usuarios (${error.currentCount}/${error.limit}). Pedile al dueño que amplíe el plan.`, status: 402 }
+      return { ok: false as const, error: 'Este negocio llegó a su límite de usuarios. Pedile al dueño que amplíe el plan.', status: 402 }
+    }
+    if ((error as { code?: string })?.code === 'P2034') {
+      return { ok: false as const, error: 'Otra persona se unió al mismo tiempo. Intentá de nuevo.', status: 409 }
     }
     throw error
   }

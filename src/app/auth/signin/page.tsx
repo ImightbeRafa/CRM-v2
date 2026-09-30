@@ -31,6 +31,12 @@ function SignInPageInner() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const [turnstileReset, setTurnstileReset] = useState(0)
   const [resendNote, setResendNote] = useState<string | null>(null)
+  // Errors sent back by a redirect (e.g. a Google sign-in whose invite could not be accepted).
+  const errorParams = useSearchParams()
+  useEffect(() => {
+    const code = errorParams?.get("error")
+    if (code) setError(loginErrorMessage(code, "No se pudo iniciar sesión. Intenta de nuevo."))
+  }, [errorParams])
 
 
   const resendVerification = async () => {

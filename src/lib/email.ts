@@ -26,7 +26,7 @@ export async function sendOTPEmail({ email, code, name }: SendOTPEmailParams) {
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #ffffff;">
           <div style="text-align: center; padding: 32px 24px 16px;">
             <h2 style="color: #111827; margin: 0 0 8px; font-size: 22px;">Verifica tu teléfono</h2>
-            <p style="color: #6b7280; margin: 0; font-size: 14px;">Hola${name ? ` ${name}` : ''}, usa este código para verificar tu número de teléfono en BetsyCRM.</p>
+            <p style="color: #6b7280; margin: 0; font-size: 14px;">Hola${name ? ` ${escapeHtml(String(name).slice(0, 80))}` : ''}, usa este código para verificar tu número de teléfono en BetsyCRM.</p>
           </div>
           <div style="text-align: center; padding: 24px;">
             <div style="display: inline-block; background: #f3f4f6; border-radius: 12px; padding: 20px 40px; letter-spacing: 8px; font-size: 36px; font-weight: 700; color: #111827; font-family: 'Courier New', monospace;">
@@ -129,7 +129,7 @@ export async function sendVerificationEmail({ email, name }: SendVerificationEma
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2>¡Bienvenido a BetsyCRM!</h2>
-          <p>Hola ${name || ''},</p>
+          <p>Hola ${escapeHtml(String(name || '').slice(0, 80))},</p>
           <p>Gracias por registrarte en BetsyCRM. Por favor verifica tu dirección de correo electrónico haciendo clic en el siguiente enlace:</p>
           <p>
             <a href="${verificationUrl}" style="display: inline-block; padding: 10px 20px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0;">

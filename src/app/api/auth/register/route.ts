@@ -159,6 +159,8 @@ export async function POST(request: Request) {
           userEmail: normalizedEmail,
         })
         if (!accepted.ok) {
+          // Not stranded: without the invite business, verify-email provisions their own business.
+          await prisma.user.update({ where: { id: invitedUser.id }, data: { defaultTenantId: null } }).catch(() => undefined)
           return NextResponse.json({ error: accepted.error }, { status: accepted.status })
         }
         try {

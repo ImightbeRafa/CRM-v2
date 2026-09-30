@@ -13,6 +13,12 @@
 - Tests: fixed 3 CRLF-sensitive tests (theme, chat-mobile, whatsapp popup) that failed on Windows
   checkouts (baseline failures, now green). Local smoke of the new build: all 11 main pages render,
   same 4xx set as live.
+- Verifier round 1 (FAIL → fixed, round 2 PASS WITH NOTES): billing-week finalize / revert ran raw
+  BEGIN/COMMIT on the shared client (only safe with ONE pooled connection) → one interactive
+  $transaction each (revert locks its orders FOR UPDATE); lifecycle order create/update retry P2034;
+  pool default 6 per container; perf-guards test forbids raw BEGIN/COMMIT anywhere.
+- Full app tsc crashes at random on this machine (segfault / illegal instruction, also on untouched
+  code) → the Docker `next build` type check gates the deploy; changed files checked in isolation.
 - Cost analysis (Cloudflare Containers): ~$45/mo + $5 plan today; memory dominates; a 2nd
   always-on server ≈ +$40/mo → not needed (bottleneck was the DB queue, not CPU).
 

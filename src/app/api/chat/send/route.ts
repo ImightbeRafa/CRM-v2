@@ -22,6 +22,10 @@ import {
   socialTokenSendBlockMessage,
 } from '@/lib/social-account-token-health'
 import { mapMessageToDto } from '@/lib/chat-conversation-api'
+import {
+  buildHumanSenderSnapshot,
+  mergeHumanSenderMetadata,
+} from '@/lib/chat-human-attribution'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -379,6 +383,18 @@ export async function POST(request: NextRequest) {
       return jsonError(`Plataforma no soportada: ${account.platform}`, 400)
     }
 
+    const senderUser = await db.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, username: true, email: true, image: true },
+    })
+    const senderSnapshot = buildHumanSenderSnapshot({
+      userId,
+      name: senderUser?.name,
+      username: senderUser?.username,
+      email: senderUser?.email,
+      image: senderUser?.image,
+    })
+
     const now = new Date()
     const write = await dualWriteChatMessage({
       tenantId,
@@ -394,21 +410,25 @@ export async function POST(request: NextRequest) {
       platform: account.platform,
       clientId: clientId ?? null,
       orderId: orderId ?? null,
-      metadata: {
-        to: recipient,
-        provider: account.platform,
-        platform: account.platform,
-        providerDispatch: dispatchResult,
-        providerResponse,
-        ...(clientRequestId ? { clientRequestId } : {}),
-        ...(isTemplate
-          ? {
-              messageType: 'template',
-              templateName,
-              templateLanguage,
-            }
-          : {}),
-      },
+      senderUserId: userId,
+      metadata: mergeHumanSenderMetadata(
+        {
+          to: recipient,
+          provider: account.platform,
+          platform: account.platform,
+          providerDispatch: dispatchResult,
+          providerResponse,
+          ...(clientRequestId ? { clientRequestId } : {}),
+          ...(isTemplate
+            ? {
+                messageType: 'template',
+                templateName,
+                templateLanguage,
+              }
+            : {}),
+        },
+        senderSnapshot,
+      ),
       suppressSoftAi: true,
     })
 

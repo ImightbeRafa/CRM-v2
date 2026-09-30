@@ -159,3 +159,48 @@ export async function sendVerificationEmail({ email, name }: SendVerificationEma
     };
   }
 }
+
+export async function sendTeamInviteEmail(input: {
+  email: string
+  token: string
+  tenantName: string
+  inviterName?: string | null
+  role: string
+}) {
+  try {
+    if (!process.env.RESEND_API_KEY) {
+      console.warn('[Email] RESEND_API_KEY missing — team invite email skipped')
+      return { success: false, error: 'RESEND_API_KEY missing' }
+    }
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.NEXTAUTH_URL ||
+      (process.env.NODE_ENV === 'production' ? 'https://www.betsycrm.com' : 'http://localhost:3000')
+    const acceptUrl = `${baseUrl}/auth/accept-invite?token=${encodeURIComponent(input.token)}`
+    const inviter = input.inviterName ? ` (${input.inviterName})` : ''
+    await resend.emails.send({
+      from: 'BetsyCRM <noreply@betsycrm.com>',
+      to: input.email,
+      subject: `Te invitaron a ${input.tenantName} en BetsyCRM`,
+      html: `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto;">
+          <h2 style="color:#111827;margin:0 0 12px;">Únete a ${input.tenantName}</h2>
+          <p style="color:#4b5563;font-size:14px;">
+            Te invitaron${inviter} a colaborar en BetsyCRM como <strong>${input.role}</strong>.
+          </p>
+          <p style="margin:28px 0;">
+            <a href="${acceptUrl}" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">
+              Aceptar invitación
+            </a>
+          </p>
+          <p style="color:#6b7280;font-size:13px;">Puedes entrar con Google o con email. Este enlace expira en 7 días.</p>
+          <p style="color:#9ca3af;font-size:12px;word-break:break-all;">${acceptUrl}</p>
+        </div>
+      `,
+    })
+    return { success: true }
+  } catch (error: any) {
+    console.error('[Email] sendTeamInviteEmail error:', error)
+    return { success: false, error: error?.message || 'Failed to send invite email' }
+  }
+}

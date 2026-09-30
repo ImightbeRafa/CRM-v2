@@ -22,6 +22,10 @@ import {
   isSoftAiOutboundMetadata,
   softAiOutboundLabel,
 } from '@/lib/soft-ai/agent-inbox-projection'
+import {
+  humanOutboundLabel,
+  humanOutboundSender,
+} from '@/lib/chat-human-attribution'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
 import { formatThreadChannelMeta, platformFullName } from '@/lib/social-account-identity'
 import {
@@ -350,13 +354,35 @@ export function SoftThreadPane({
                 msg.content === '[document]' ||
                 msg.content === '[video]' ||
                 msg.content === '[sticker]')
+            const humanSender = !softAi && outbound ? humanOutboundSender(msg.metadata) : null
+            const humanLabel = humanSender ? humanOutboundLabel(msg.metadata) : null
             return (
               <div
                 key={msg.id}
                 data-testid="soft-thread-message"
                 className={`flex ${outbound ? 'justify-end' : 'justify-start'}`}
               >
-                <div className="max-w-[85%] sm:max-w-md">
+                <div className={`flex max-w-[85%] items-end gap-2 sm:max-w-md ${outbound ? 'flex-row-reverse' : ''}`}>
+                  {humanSender?.name ? (
+                    humanSender.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={humanSender.image}
+                        alt={humanSender.name}
+                        className="mb-5 h-7 w-7 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
+                        data-testid="soft-thread-sender-avatar"
+                      />
+                    ) : (
+                      <div
+                        className="mb-5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-semibold text-white"
+                        data-testid="soft-thread-sender-avatar"
+                        aria-hidden
+                      >
+                        {humanSender.name.slice(0, 1).toUpperCase()}
+                      </div>
+                    )
+                  ) : null}
+                  <div>
                   <div
                     className={`rounded-[14px] px-3.5 py-2.5 text-[13px] ${
                       outbound
@@ -381,6 +407,7 @@ export function SoftThreadPane({
                           ? 'font-medium text-red-600'
                           : 'text-slate-500'
                       }`}
+                      data-testid="soft-thread-outbound-attribution"
                     >
                       {softAi ? (
                         msg.id?.startsWith('demo-ai-')
@@ -401,10 +428,14 @@ export function SoftThreadPane({
                           </button>
                         </>
                       ) : (
-                        outboundDeliveryLabel(msg.deliveryStatus)
+                        <>
+                          {humanLabel ? `${humanLabel} · ` : null}
+                          {outboundDeliveryLabel(msg.deliveryStatus)}
+                        </>
                       )}
                     </p>
                   ) : null}
+                  </div>
                 </div>
               </div>
             )

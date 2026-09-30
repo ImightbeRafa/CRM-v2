@@ -23,6 +23,7 @@ export const FILES = {
   '034': '034_user_session_version.sql',
   '035': '035_crm_workspace.sql',
   '036': '036_crm_workspace_2b.sql',
+  '037': '037_chat_team_replied.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -66,6 +67,7 @@ export const EXPECTED_TABLES = {
 export const EXPECTED_COLUMNS = {
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],
+  '037': [['ChatConversation', 'repliedInboundCount']],
   '027b': [['ChatAgent', 'introductionNames']],
   '019': [
     ['Order', 'clientId'],
@@ -245,6 +247,7 @@ export const VERIFY_CATALOG_TABLES = [
 ];
 
 export const VERIFY_CATALOG_COLUMNS = [
+  ['ChatConversation', 'repliedInboundCount'],
   ['Order', 'clientId'],
   ['Order', 'lifecycleVersion'],
   ['Order', 'deletedAt'],

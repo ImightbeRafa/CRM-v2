@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { loadConversationForTenant } from '@/lib/chat-conversation-route-helpers'
+import { unreadInboundCount } from '@/lib/chat-conversation-api'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -54,7 +55,7 @@ export async function POST(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({
       success: true,
       readInboundCount: conversation.inboundCount,
-      unreadCount: row ? Math.max(0, row.inboundCount - (row.readInboundCount ?? 0)) : 0,
+      unreadCount: row ? unreadInboundCount(row) : 0,
     })
   } catch (error) {
     console.error('[chat/conversations/read POST]', error)

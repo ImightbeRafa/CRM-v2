@@ -1,3 +1,18 @@
+## 2026-09-30 — FIX: chats answered by a teammate kept showing as pending for everyone else
+
+- Cause: unread was per user only (ChatConversationReadState). Mom answering a chat left the badge
+  on for every other teammate.
+- Fix: SQL 037 adds ChatConversation.repliedInboundCount (team "answered up to here"); unread for a
+  viewer = inboundCount - max(own read, team replied). Set by confirmed replies only (Betsy send once
+  Meta accepts it, WhatsApp Business app echo, AI agent reply), counting only customer messages sent
+  up to that reply (AI: up to the message it answered), non-duplicate, capped, only raises. A later
+  async 'failed' status recomputes it from the last good reply. Backfill from last confirmed reply
+  (20 chats; read-only timed 0.9 s). ALTER and backfill in separate transactions.
+- Verifier: FAIL → 7 findings fixed (build-breaking BigInt test, gitignored SQL, echo/AI/history
+  over-marking, migration lock, verify column, duplicates, async failures) → PASS WITH NOTES; note 1
+  (finalize after async failed) fixed too.
+- Proof: tsc 0, eslint 0, chat-harden 443, soft-ai 166, security 257, bot-inbox 8.
+
 ## 2026-09-30 — HOTFIX: Meta connect popups (WhatsApp + Instagram) — "2 popups, one never loads"
 
 - Cause (since 4dae7d7, 2026-09-26): the WhatsApp click opened a reserved blank window AND

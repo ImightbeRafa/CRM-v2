@@ -940,6 +940,8 @@ model ChatConversation {
   lastInboundAt        DateTime?
   lastOutboundAt       DateTime?
   inboundCount         Int      @default(0)
+  /// Inbound count the TEAM had answered at its last confirmed reply (SQL 037).
+  repliedInboundCount  Int      @default(0)
   messageCount         Int      @default(0)
   revision             BigInt   @default(dbgenerated("nextval('public.\"ChatConversation_revision_seq\"')"))
   createdAt            DateTime @default(now())

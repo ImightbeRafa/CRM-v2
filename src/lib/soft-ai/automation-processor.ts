@@ -91,6 +91,8 @@ async function dispatchLegacy(row: ClaimedChatAutomationJob) {
     peerName: payload.senderName || null,
     providerMessageId: providerMessageId || null,
     messageType: 'text',
+    // Marks the team reply only up to the customer message this turn answered.
+    answersMessageId: row.messageId,
     deliveryStatus: delivery.skipped || providerMessageId ? 'sent' : 'sent',
     platform: payload.platform,
     orderId: turn.orderId || null,

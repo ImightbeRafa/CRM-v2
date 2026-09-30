@@ -70,6 +70,8 @@ export type ConversationRow = {
   lastMessageDirection: string | null
   lastInboundAt: Date | null
   inboundCount: number
+  /** Inbound count the team had answered at its last confirmed reply (SQL 037). */
+  repliedInboundCount?: number
   revision: bigint
   assignedUser?: { id: string; name: string | null; image?: string | null } | null
   socialAccount?: SocialAccountChannelRow | null
@@ -162,9 +164,22 @@ export function waWindowOpenFromInbound(
   return nowMs - lastInboundAt.getTime() < WA_WINDOW_MS
 }
 
+/**
+ * Pending for this viewer = customer messages after BOTH their own last read and the team's last
+ * confirmed reply. Once anyone on the team (Betsy, the WhatsApp Business app or the AI agent)
+ * answers, the chat stops showing as pending for everyone.
+ */
+export function unreadInboundCount(counts: {
+  inboundCount: number
+  readInboundCount?: number | null
+  repliedInboundCount?: number | null
+}): number {
+  const seen = Math.max(counts.readInboundCount ?? 0, counts.repliedInboundCount ?? 0)
+  return Math.max(0, counts.inboundCount - seen)
+}
+
 export function unreadCountForViewer(row: ConversationRow): number {
-  const read = row.readInboundCount ?? 0
-  return Math.max(0, row.inboundCount - read)
+  return unreadInboundCount(row)
 }
 
 export function mapConversationToListDto(row: ConversationRow, stages: StageDef[] = DEFAULT_CHAT_STAGES): ChatConversationListItemDto {
@@ -304,6 +319,7 @@ export function conversationSelect(): Prisma.ChatConversationSelect {
     lastMessageDirection: true,
     lastInboundAt: true,
     inboundCount: true,
+    repliedInboundCount: true,
     revision: true,
     assignedUser: { select: { id: true, name: true, image: true } },
     socialAccount: {

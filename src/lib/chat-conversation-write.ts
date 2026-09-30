@@ -28,6 +28,14 @@ export const DELIVERY_STATUS_RANK = {
 
 export type DeliveryStatus = keyof typeof DELIVERY_STATUS_RANK
 
+/**
+ * Outbound statuses that count as a team reply (Meta accepted it). Never pending / failed; a later
+ * async 'failed' status recomputes the marker (applyDeliveryStatusUpdate).
+ */
+export function isConfirmedReplyStatus(status: string | null | undefined): boolean {
+  return status === 'sent' || status === 'delivered' || status === 'read'
+}
+
 export type DualWriteDirection = 'inbound' | 'outbound'
 
 export interface DualWriteMessageInput {
@@ -53,6 +61,11 @@ export interface DualWriteMessageInput {
   mediaFilename?: string | null
   /** Human agent who sent this outbound (null for Soft AI / webhooks). */
   senderUserId?: string | null
+  /**
+   * AI replies: the inbound message this reply answers. Only customer messages up to that one are
+   * marked answered for the team (a message that arrived while the AI was thinking stays pending).
+   */
+  answersMessageId?: string | null
 }
 
 export type DualWriteResult =
@@ -247,12 +260,28 @@ async function ensureConversation(
   }
 }
 
-async function bumpConversationAfterInsert(
+/** Customer messages (non-duplicate) sent at or before `upTo`, capped by the inbound counter. */
+async function countTeamAnsweredInbound(
+  tx: Prisma.TransactionClient,
+  conversationId: string,
+  upTo: Date,
+  inboundCount: number,
+): Promise<number> {
+  const answered = await tx.chatMessage.count({
+    where: { conversationId, direction: 'inbound', duplicateOfMessageId: null, sentAt: { lte: upTo } },
+  })
+  return Math.max(0, Math.min(inboundCount, answered))
+}
+
+/** Exported for tests only. */
+export async function bumpConversationAfterInsert(
   tx: Prisma.TransactionClient,
   args: {
     conversationId: string
     messageId: string
     direction: DualWriteDirection
+    deliveryStatus: DeliveryStatus
+    answersMessageId?: string | null
     content: string
     sentAt: Date
     peerName: string | null
@@ -272,6 +301,8 @@ async function bumpConversationAfterInsert(
       lastMessageId: true,
       lastInboundAt: true,
       lastOutboundAt: true,
+      inboundCount: true,
+      repliedInboundCount: true,
     },
   })
   if (!current) return
@@ -295,8 +326,25 @@ async function bumpConversationAfterInsert(
     if (shouldAdvanceConversationTimestamp(current.lastInboundAt, args.sentAt)) {
       data.lastInboundAt = args.sentAt
     }
-  } else if (shouldAdvanceConversationTimestamp(current.lastOutboundAt, args.sentAt)) {
-    data.lastOutboundAt = args.sentAt
+  } else {
+    if (shouldAdvanceConversationTimestamp(current.lastOutboundAt, args.sentAt)) {
+      data.lastOutboundAt = args.sentAt
+    }
+    // A confirmed reply answers, for the whole team, the customer messages received up to it (row is
+    // locked). Late echoes / WhatsApp history / AI replies never cover newer messages. A Betsy send
+    // is written 'pending' first and only counts once finalized as sent.
+    if (isConfirmedReplyStatus(args.deliveryStatus) && current.inboundCount > current.repliedInboundCount) {
+      let upTo = args.sentAt
+      if (args.answersMessageId) {
+        const trigger = await tx.chatMessage.findFirst({
+          where: { id: args.answersMessageId, tenantId: args.tenantId, conversationId: args.conversationId, direction: 'inbound' },
+          select: { sentAt: true },
+        })
+        if (trigger && trigger.sentAt < upTo) upTo = trigger.sentAt
+      }
+      const replied = await countTeamAnsweredInbound(tx, args.conversationId, upTo, current.inboundCount)
+      if (replied > current.repliedInboundCount) data.repliedInboundCount = replied
+    }
   }
   if (!args.existingPeerName && args.peerName) {
     data.peerName = args.peerName
@@ -469,6 +517,8 @@ export async function dualWriteChatMessage(
         conversationId: conversation.id,
         messageId: message.id,
         direction: input.direction,
+        deliveryStatus,
+        answersMessageId: input.answersMessageId ?? null,
         content: input.content,
         sentAt: input.sentAt,
         peerName,
@@ -552,6 +602,8 @@ export async function finalizeOutboundDeliveryWithClient(
       deliveryStatus: true,
       metadata: true,
       providerMessageId: true,
+      conversationId: true,
+      sentAt: true,
     },
   })
   if (!existing) return 'missing'
@@ -595,21 +647,39 @@ export async function finalizeOutboundDeliveryWithClient(
     })
   }
 
-  const conversation = await tx.chatConversation.findUnique({
-    where: { id: args.conversationId },
+  if (args.deliveryStatus === 'sent') {
+    await tx.$queryRaw`SELECT 1 FROM "ChatConversation" WHERE id = ${args.conversationId} AND "tenantId" = ${args.tenantId} FOR UPDATE`
+  }
+  const conversation = await tx.chatConversation.findFirst({
+    where: { id: args.conversationId, tenantId: args.tenantId },
     select: {
       inboundCount: true,
+      repliedInboundCount: true,
       lastMessageId: true,
       lastOutboundAt: true,
     },
   })
+  const convData: Prisma.ChatConversationUpdateInput = {}
+  if (conversation && shouldAdvanceConversationTimestamp(conversation.lastOutboundAt, now)) {
+    convData.lastOutboundAt = now
+  }
+  // The row's real status after this call: an async 'failed' that landed first is never overridden.
+  const effectiveStatus = canUpgrade ? args.deliveryStatus : existing.deliveryStatus
   if (
     conversation &&
-    shouldAdvanceConversationTimestamp(conversation.lastOutboundAt, now)
+    args.deliveryStatus === 'sent' &&
+    isConfirmedReplyStatus(effectiveStatus) &&
+    existing.conversationId === args.conversationId
   ) {
+    // The reply answers the customer messages received up to when it was written; later ones stay
+    // pending. Counted from rows, capped by the counter (conservative: never over-marks).
+    const replied = await countTeamAnsweredInbound(tx, args.conversationId, existing.sentAt, conversation.inboundCount)
+    if (replied > conversation.repliedInboundCount) convData.repliedInboundCount = replied
+  }
+  if (conversation && Object.keys(convData).length) {
     await tx.chatConversation.update({
       where: { id: args.conversationId },
-      data: { lastOutboundAt: now },
+      data: convData,
     })
   }
 
@@ -674,6 +744,9 @@ export async function applyDeliveryStatusUpdate(args: {
     },
     select: {
       id: true,
+      tenantId: true,
+      conversationId: true,
+      direction: true,
       deliveryStatus: true,
       deliveredAt: true,
       readAt: true,
@@ -701,8 +774,45 @@ export async function applyDeliveryStatusUpdate(args: {
     data.errorCode = args.errorCode ?? undefined
   }
 
+  if (args.status === 'failed' && message.direction === 'outbound' && message.conversationId) {
+    const conversationId = message.conversationId
+    await prisma.$transaction(async (tx) => {
+      await tx.chatMessage.update({ where: { id: message.id }, data })
+      await recomputeTeamRepliedAfterFailure(tx, conversationId, message.tenantId)
+    })
+    return { updated: true }
+  }
+
   await prisma.chatMessage.update({ where: { id: message.id }, data })
   return { updated: true }
+}
+
+/**
+ * Meta accepted a reply, then reported it failed (e.g. outside the 24 h window): the customer never
+ * got it, so the team marker falls back to the latest reply that did not fail.
+ */
+async function recomputeTeamRepliedAfterFailure(
+  tx: Prisma.TransactionClient,
+  conversationId: string,
+  tenantId: string,
+): Promise<void> {
+  await tx.$queryRaw`SELECT 1 FROM "ChatConversation" WHERE id = ${conversationId} AND "tenantId" = ${tenantId} FOR UPDATE`
+  const conversation = await tx.chatConversation.findFirst({
+    where: { id: conversationId, tenantId },
+    select: { inboundCount: true, repliedInboundCount: true },
+  })
+  if (!conversation) return
+  const lastReply = await tx.chatMessage.findFirst({
+    where: { conversationId, direction: 'outbound', deliveryStatus: { in: ['sent', 'delivered', 'read'] } },
+    orderBy: { sentAt: 'desc' },
+    select: { sentAt: true },
+  })
+  const replied = lastReply
+    ? await countTeamAnsweredInbound(tx, conversationId, lastReply.sentAt, conversation.inboundCount)
+    : 0
+  if (replied < conversation.repliedInboundCount) {
+    await tx.chatConversation.update({ where: { id: conversationId }, data: { repliedInboundCount: replied } })
+  }
 }
 
 /**

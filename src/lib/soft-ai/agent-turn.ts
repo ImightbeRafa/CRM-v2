@@ -862,6 +862,8 @@ async function finishDeliveryOrSuggest(input: {
     peerName: input.payload.senderName || input.conversation.peerName || null,
     providerMessageId: providerMessageId || null,
     messageType: 'text',
+    // Marks the team reply only up to the customer message this turn answered.
+    answersMessageId: input.row.messageId,
     deliveryStatus: 'sent',
     platform: input.payload.platform || 'whatsapp',
     metadata: {

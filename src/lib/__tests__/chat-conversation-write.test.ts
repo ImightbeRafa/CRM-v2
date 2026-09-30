@@ -152,16 +152,22 @@ function createFinalizeTx(opts: {
     deliveryStatus: string
     metadata: unknown
     providerMessageId: string | null
+    conversationId?: string | null
+    sentAt?: Date
   } | null
   conversation?: {
     inboundCount: number
+    repliedInboundCount?: number
     lastMessageId: string | null
     lastOutboundAt: Date | null
   } | null
+  /** Inbound rows sent at or before the outbound (the finalize count query). */
+  answeredInbound?: number
 }) {
   const calls = {
     messageUpdates: [] as Array<{ where: { id: string }; data: Record<string, unknown> }>,
     conversationUpdates: [] as Array<{ where: { id: string }; data: Record<string, unknown> }>,
+    locks: 0,
     readUpserts: [] as Array<{
       where: { conversationId_userId: { conversationId: string; userId: string } }
       create: Record<string, unknown>
@@ -176,17 +182,24 @@ function createFinalizeTx(opts: {
           lastOutboundAt: new Date('2026-09-20T00:00:00.000Z'),
         }
       : opts.conversation
+  const conversationRow = conversation ? { repliedInboundCount: 0, ...conversation } : conversation
 
   const tx = {
+    $queryRaw: async () => {
+      calls.locks += 1
+      return []
+    },
     chatMessage: {
       findFirst: async () => opts.existing,
+      count: async () => opts.answeredInbound ?? 0,
       update: async (args: { where: { id: string }; data: Record<string, unknown> }) => {
         calls.messageUpdates.push(args)
         return args
       },
     },
     chatConversation: {
-      findUnique: async () => conversation,
+      findUnique: async () => conversationRow,
+      findFirst: async () => conversationRow,
       update: async (args: { where: { id: string }; data: Record<string, unknown> }) => {
         calls.conversationUpdates.push(args)
         return args
@@ -302,6 +315,86 @@ test('finalize does not regress lastOutboundAt when echo already has a newer sta
   await finalizeOutboundDeliveryWithClient(tx, FINALIZE_BASE)
   assert.equal(calls.conversationUpdates.length, 0)
   assert.equal(calls.readUpserts.length, 1)
+})
+
+test('finalize sent marks the team reply up to the inbound received before the outbound', async () => {
+  const { tx, calls } = createFinalizeTx({
+    existing: {
+      id: 'msg-new',
+      deliveryStatus: 'pending',
+      metadata: {},
+      providerMessageId: null,
+      conversationId: 'conv-1',
+      sentAt: new Date('2026-09-21T11:59:00.000Z'),
+    },
+    // 4 inbound total, but one arrived after the reply was written: only 3 are answered.
+    conversation: { inboundCount: 4, repliedInboundCount: 1, lastMessageId: 'last-1', lastOutboundAt: null },
+    answeredInbound: 3,
+  })
+  await finalizeOutboundDeliveryWithClient(tx, { ...FINALIZE_BASE, messageId: 'msg-new' })
+  assert.equal(calls.locks, 1)
+  assert.equal(calls.conversationUpdates.length, 1)
+  assert.equal(calls.conversationUpdates[0]?.data.repliedInboundCount, 3)
+})
+
+test('finalize failed never marks the chat answered and takes no lock', async () => {
+  const { tx, calls } = createFinalizeTx({
+    existing: {
+      id: 'msg-new',
+      deliveryStatus: 'pending',
+      metadata: {},
+      providerMessageId: null,
+      conversationId: 'conv-1',
+      sentAt: new Date('2026-09-21T11:59:00.000Z'),
+    },
+    conversation: { inboundCount: 4, repliedInboundCount: 0, lastMessageId: 'last-1', lastOutboundAt: null },
+    answeredInbound: 4,
+  })
+  await finalizeOutboundDeliveryWithClient(tx, { ...FINALIZE_BASE, messageId: 'msg-new', deliveryStatus: 'failed' })
+  assert.equal(calls.locks, 0)
+  assert.equal(calls.conversationUpdates.some((u) => 'repliedInboundCount' in u.data), false)
+})
+
+test('finalize sent never marks answered when an async failed status already landed', async () => {
+  const { tx, calls } = createFinalizeTx({
+    existing: {
+      id: 'msg-media',
+      deliveryStatus: 'failed',
+      metadata: {},
+      providerMessageId: 'wamid.m',
+      conversationId: 'conv-1',
+      sentAt: new Date('2026-09-21T11:59:00.000Z'),
+    },
+    conversation: { inboundCount: 3, repliedInboundCount: 0, lastMessageId: null, lastOutboundAt: new Date('2027-01-01') },
+    answeredInbound: 3,
+  })
+  await finalizeOutboundDeliveryWithClient(tx, { ...FINALIZE_BASE, messageId: 'msg-media' })
+  assert.equal(calls.conversationUpdates.some((u) => 'repliedInboundCount' in u.data), false)
+})
+
+test('finalize never lowers the team reply and never exceeds the inbound counter', async () => {
+  const base = {
+    id: 'msg-new',
+    deliveryStatus: 'pending',
+    metadata: {},
+    providerMessageId: null,
+    conversationId: 'conv-1',
+    sentAt: new Date('2026-09-21T11:59:00.000Z'),
+  }
+  const lower = createFinalizeTx({
+    existing: base,
+    conversation: { inboundCount: 5, repliedInboundCount: 5, lastMessageId: null, lastOutboundAt: new Date('2027-01-01') },
+    answeredInbound: 2,
+  })
+  await finalizeOutboundDeliveryWithClient(lower.tx, { ...FINALIZE_BASE, messageId: 'msg-new' })
+  assert.equal(lower.calls.conversationUpdates.length, 0)
+  const capped = createFinalizeTx({
+    existing: base,
+    conversation: { inboundCount: 2, repliedInboundCount: 0, lastMessageId: null, lastOutboundAt: new Date('2027-01-01') },
+    answeredInbound: 7,
+  })
+  await finalizeOutboundDeliveryWithClient(capped.tx, { ...FINALIZE_BASE, messageId: 'msg-new' })
+  assert.equal(capped.calls.conversationUpdates[0]?.data.repliedInboundCount, 2)
 })
 
 test('025 unique SQL ships gated and is not default-applied', () => {

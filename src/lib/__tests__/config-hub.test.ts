@@ -29,14 +29,14 @@ test('no owner-facing "Soft" wording in Config nav', () => {
   for (const i of allItems) assert.doesNotMatch(i.label, /soft/i)
 })
 
-test('every item is a tab and all 15 canonical ids exist', () => {
+test('every item is a tab and all 16 canonical ids exist', () => {
   for (const i of allItems) assert.equal(i.key, i.tab)
-  assert.equal(CONFIG_TAB_IDS.length, 15)
+  assert.equal(CONFIG_TAB_IDS.length, 16)
   for (const t of [
     'profile', 'inventory', 'fields', 'statuses', 'clients',
     'social', 'chats', 'agentes', 'integrations',
     'shipping-config', 'import', 'bulk-delete',
-    'users', 'billing', 'audit',
+    'users', 'billing', 'audit', 'security',
   ]) {
     assert.ok(CONFIG_TAB_IDS.includes(t as never), `missing tab ${t}`)
   }
@@ -49,7 +49,7 @@ test('sub-nav labels/order follow the Figma frames', () => {
       ['Negocio', ['General', 'Productos', 'Campos', 'Estados', 'Clientes']],
       ['Comunicación', ['Cuentas conectadas', 'Chats', 'Agentes IA', 'Integraciones API']],
       ['Operación', ['Envíos', 'Importar', 'Eliminación masiva']],
-      ['Cuenta', ['Equipo', 'Plan', 'Auditoría']],
+      ['Cuenta', ['Equipo', 'Plan', 'Auditoría', 'Seguridad']],
     ],
   )
 })
@@ -60,5 +60,8 @@ test('Comunicación items are tabs now (single layout), not standalone hrefs', (
   assert.equal(configTabHref('integrations'), '/config?tab=integrations')
   assert.equal(configTabHref(CONFIG_HUB_TAB), '/config')
   assert.equal(configTabHref('users'), '/config?tab=users')
+  // Seguridad (own 2FA) is open to every role: no permission gate.
+  assert.equal(configTabHref('security'), '/config?tab=security')
+  assert.equal((allItems.find((i) => i.tab === 'security') as { permission?: string }).permission, undefined)
   assert.equal((allItems.find((i) => i.tab === 'social') as { href?: string }).href, undefined)
 })

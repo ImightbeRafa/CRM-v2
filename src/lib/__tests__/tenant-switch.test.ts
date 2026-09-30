@@ -64,14 +64,28 @@ test('L3 / N3: user-level auth for the switch only — signed context, no fallba
   assert.doesNotMatch(fn, /getServerSession/, 'no unsigned fallback')
   assert.match(fn, /unverifiedTenantId/)
   assert.doesNotMatch(read('src/lib/__tests__/tenant-write-coverage.test.ts'), /tenant\/switch/)
-  // Only the switch route may use the user-only helper.
+  // Only routes acting on the user's OWN account may use the user-only helper (the switch and the
+  // user's own 2FA settings); never a route that touches business data.
   const users = walk('src').filter((f) => readFileSync(f, 'utf8').includes('authenticateUserOnly')).sort()
-  assert.deepEqual(users, ['src/app/api/tenant/switch/route.ts', 'src/lib/__tests__/tenant-switch.test.ts', 'src/lib/auth-helpers.ts'])
+  assert.deepEqual(users, [
+    'src/app/api/account/2fa/disable/route.ts',
+    'src/app/api/account/2fa/enable/route.ts',
+    'src/app/api/account/2fa/recovery-codes/route.ts',
+    'src/app/api/account/2fa/route.ts',
+    'src/app/api/account/2fa/setup/route.ts',
+    'src/app/api/tenant/switch/route.ts',
+    'src/lib/__tests__/mfa-gate.test.ts',
+    'src/lib/__tests__/tenant-switch.test.ts',
+    'src/lib/auth-helpers.ts',
+  ])
+  for (const f of users.filter((u) => u.startsWith('src/app/api/account/2fa/'))) {
+    assert.doesNotMatch(readFileSync(f, 'utf8'), /unverifiedTenantId|tenantId/, `${f} must not act on business data`)
+  }
 })
 
 test('session: business is per session (M1), never an inactive business (N2); update() throttled; payload never read', () => {
   const src = read('src/lib/auth-options.ts')
-  assert.match(src, /async jwt\(\{ token, user, account, trigger \}\)/)
+  assert.match(src, /async function jwtCore\(\{ token, user, account, trigger \}: JwtParams\)/)
   assert.match(src, /if \(trigger === 'update' && Date\.now\(\) - \(token\.lastDbSync \|\| 0\) > 2000\) token\.lastDbSync = 0/)
   assert.match(src, /const liveTenantIds = memberships\.filter\(\(m\) => m\.tenant\?\.isActive !== false\)\.map\(\(m\) => m\.tenantId\);/)
   assert.match(src, /const keepCurrent =\n\s*trigger !== 'update' &&\n\s*typeof token\.tenantId === 'string' &&\n\s*selectable\.includes\(token\.tenantId\);/)

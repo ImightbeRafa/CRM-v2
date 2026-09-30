@@ -15,6 +15,7 @@ import {
   CreditCard,
   History,
   MessagesSquare,
+  ShieldCheck,
   type LucideIcon,
 } from 'lucide-react'
 import type { Permission } from '@/lib/rbac'
@@ -39,6 +40,7 @@ export type ConfigTabId =
   | 'users'
   | 'billing'
   | 'audit'
+  | 'security'
 
 export type ConfigNavItem = {
   key: ConfigTabId
@@ -141,6 +143,7 @@ export const CONFIG_NAV: ConfigNavGroup[] = [
       { key: 'users', tab: 'users', label: 'Equipo', icon: UsersRound, aliases: ['equipo'], figmaNode: '193:3470' },
       { key: 'billing', tab: 'billing', label: 'Plan', icon: CreditCard, aliases: ['plan'], figmaNode: '193:3956' },
       { key: 'audit', tab: 'audit', label: 'Auditoría', icon: History, aliases: ['auditoria'], figmaNode: '193:4344' },
+      { key: 'security', tab: 'security', label: 'Seguridad', icon: ShieldCheck, aliases: ['seguridad', '2fa'], figmaNode: 'phase1-2fa' },
     ],
   },
 ]

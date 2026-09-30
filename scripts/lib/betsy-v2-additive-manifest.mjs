@@ -24,6 +24,7 @@ export const FILES = {
   '035': '035_crm_workspace.sql',
   '036': '036_crm_workspace_2b.sql',
   '037': '037_chat_team_replied.sql',
+  '038': '038_user_two_factor.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -43,6 +44,7 @@ export const EXPECTED_INDEXES_032 = [
 export const EXPECTED_TABLES = {
   '035': ['CrmStage', 'CrmTag', 'ClientLifecycleState', 'CrmNote', 'ActivityEvent'],
   '036': ['ChatConversationWorkState', 'CrmTask', 'WorkspaceNotification', 'ChatWorkspaceSettings'],
+  '038': ['UserTwoFactor', 'UserRecoveryCode', 'UserTwoFactorChallenge', 'TenantSecurityPolicy'],
   '018': ['TenantFeatureFlag'],
   '019': ['ClientIdentityConflict', 'OrderLifecycleOperation', 'OrderInventoryAllocation'],
   '020': ['TenantOrderStatusClassification'],

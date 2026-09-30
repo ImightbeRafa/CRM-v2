@@ -13,6 +13,7 @@ import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanel
 import { PanelGate } from '@/components/aurora/config/panels/PanelGate'
 import { ChatsConfigPanel } from '@/components/aurora/config/panels/ChatsConfigPanel'
 import { UsersPanel } from '@/components/aurora/config/panels/UsersPanel'
+import { SecurityPanel } from '@/components/aurora/config/panels/SecurityPanel'
 import { InviteMemberModal } from '@/components/aurora/config/InviteMemberModal'
 import { useAuroraConfirm } from '@/components/aurora/ui/AuroraConfirmDialog'
 import { useToast } from '@/app/hooks/use-toast'
@@ -615,6 +616,8 @@ function ConfigPageInner() {
           {activeTab === 'bulk-delete' && (
             <OrderBulkDeleteDashboard isMaster={canManageSensitiveTools} />
           )}
+
+          {activeTab === 'security' && <SecurityPanel />}
 
           {/* Audit Tab */}
           {activeTab === 'audit' && (

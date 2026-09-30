@@ -45,6 +45,8 @@ async function readInviteTokenCookie(): Promise<string | null> {
   }
 }
 import { selectActiveTenantId } from './membership-lifecycle'
+import { holdTokenForMfa, isMfaPendingToken, resolvePendingMfa, revokedMfaToken } from './mfa-session'
+import { consumeVerifiedMfaChallenge, createMfaChallenge, isMfaEnabled } from './mfa-state'
 import { provisionOwnedTenantForExistingUser } from './tenant-provisioning'
 import { shouldJoinInviteInsteadOfProvisioning } from './team-invite'
 import { acceptTeamInviteForUser, findInviteForPresentedToken } from './team-invite-service'
@@ -119,6 +121,294 @@ declare module "next-auth/jwt" {
       profileCompleted?: boolean;
     } | null;
   }
+}
+
+type JwtParams = Parameters<NonNullable<NonNullable<NextAuthOptions['callbacks']>['jwt']>>[0]
+
+/** The session claims logic (sign-in + periodic DB re-sync). Wrapped by the 2FA gate below. */
+async function jwtCore({ token, user, account, trigger }: JwtParams): Promise<JWT> {
+      // Business switcher (Phase 2b): `update()` from the client only forces the DB re-sync below,
+      // which re-reads User.defaultTenantId (set by POST /api/tenant/switch after a membership
+      // check). The client payload is NEVER read: a tenant id can't be injected from the browser.
+      // Throttled (I1): a burst of update() calls cannot force a DB re-sync each time.
+      if (trigger === 'update' && Date.now() - (token.lastDbSync || 0) > 2000) token.lastDbSync = 0
+
+      // Initial sign in - populate all token fields
+      if (user) {
+        token.id = user.id;
+        token.role = (user as any).role || 'REGULAR';
+        token.tenantId = (user as any).tenantId;
+        token.email_verified = (user as any).email_verified || false;
+        token.active = (user as any).active !== false;
+        // 0 = run the DB re-sync right below in this same call: login then applies the same rules as
+        // every later sync (never lands in a deactivated business while an active one exists; N2).
+        token.lastDbSync = 0;
+        // Session version at sign-in; a password reset bumps it and ends this session.
+        // Credentials logins carry the version read before their password check (race-free).
+        if (typeof (user as any).sv === 'number') {
+          (token as any).sv = (user as any).sv;
+        } else {
+          try {
+            (token as any).sv = (await loadUserAuthState(user.id))?.sessionVersion ?? 0;
+          } catch {
+            (token as any).sv = 0;
+          }
+        }
+
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: user.id },
+            select: { isLogisticsAdmin: true, isSuperAdmin: true },
+          });
+          token.isLogisticsAdmin = dbUser?.isLogisticsAdmin ?? false;
+          (token as any).isSuperAdmin = dbUser?.isSuperAdmin ?? false;
+        } catch {
+          token.isLogisticsAdmin = false;
+        }
+
+        const memberships = (user as any).memberships || [];
+        token.memberships = memberships;
+
+        // CRITICAL: Set allTenantIds and currentTenant during initial sign-in
+        if (memberships.length > 0) {
+          token.allTenantIds = memberships.map((m: any) => m.tenantId || m.tenant?.id).filter(Boolean);
+
+          // Resolve one explicit active tenant, then look up only that membership.
+          const userTenantId = (user as any).tenantId;
+          const selectedActiveTenantId = selectActiveTenantId(
+            userTenantId,
+            memberships.map((m: any) => m.tenantId || m.tenant?.id).filter(Boolean),
+          );
+          const currentMembership = memberships.find(
+            (m: any) => (m.tenantId || m.tenant?.id) === selectedActiveTenantId,
+          );
+
+          // CRITICAL: Always set tenantId on token when user has memberships
+          const selectedTenantId = currentMembership?.tenantId || currentMembership?.tenant?.id;
+          if (selectedTenantId) {
+            token.tenantId = selectedTenantId;
+            console.log(`[JWT] ✅ Set tenantId on initial sign-in: ${selectedTenantId}`);
+          }
+
+          if (currentMembership) {
+            const tenant = currentMembership.tenant;
+
+            // If tenant data is not included, fetch it from database
+            if (!tenant && currentMembership.tenantId) {
+              try {
+                const fetchedTenant = await prisma.tenant.findUnique({
+                  where: { id: currentMembership.tenantId },
+                  select: {
+                    id: true,
+                    name: true,
+                    slug: true,
+                    isActive: true,
+                    plan: true,
+
+                    trialEndsAt: true
+                  }
+                });
+
+                if (fetchedTenant) {
+                  token.currentTenant = {
+                    id: fetchedTenant.id,
+                    role: currentMembership.role,
+                    name: fetchedTenant.name,
+                    slug: fetchedTenant.slug,
+                    isActive: fetchedTenant.isActive,
+                    plan: fetchedTenant.plan || 'FREE',
+
+
+                    profileCompleted: false
+                  };
+                  console.log(`[JWT] ✅ Fetched tenant data for initial sign-in: ${fetchedTenant.name}`);
+                }
+              } catch (error) {
+                console.error('[JWT] ❌ Error fetching tenant data:', error);
+                // Fallback to basic tenant info
+                token.currentTenant = {
+                  id: currentMembership.tenantId || selectedTenantId,
+                  role: currentMembership.role,
+                  name: '',
+                  slug: '',
+                  isActive: true,
+                  plan: 'FREE',
+
+
+                  profileCompleted: false
+                };
+              }
+            } else if (tenant) {
+              // Tenant data is already included
+              token.currentTenant = {
+                id: tenant.id,
+                role: currentMembership.role,
+                name: tenant.name,
+                slug: tenant.slug,
+                isActive: tenant.isActive,
+                plan: tenant.plan || 'FREE',
+
+
+                profileCompleted: false
+              };
+              console.log(`[JWT] ✅ Using included tenant data: ${tenant.name}`);
+            } else {
+              // No tenant data available, use minimal fallback
+              token.currentTenant = {
+                id: currentMembership.tenantId || selectedTenantId,
+                role: currentMembership.role,
+                name: '',
+                slug: '',
+                isActive: true,
+                plan: 'FREE',
+
+
+                profileCompleted: false
+              };
+              console.log(`[JWT] ⚠️ Using fallback tenant data for: ${currentMembership.tenantId || selectedTenantId}`);
+            }
+          }
+        } else {
+          token.allTenantIds = [];
+          token.currentTenant = null;
+        }
+      }
+
+      // Only refresh from DB when token data is stale (every 5 minutes)
+      const DB_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
+      const isStale = !token.lastDbSync || (Date.now() - token.lastDbSync > DB_SYNC_INTERVAL);
+
+      if (token.email && isStale) {
+        token.lastDbSync = Date.now();
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { email: token.email },
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              username: true,
+              image: true,
+              emailVerified: true,
+              active: true,
+              isSuperAdmin: true,
+              isLogisticsAdmin: true,
+              defaultTenantId: true,
+              memberships: {
+                where: { isActive: true },
+                // Deterministic fallback when the default is gone: the oldest membership first.
+                orderBy: { joinedAt: 'asc' },
+                include: {
+                  tenant: {
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                      isActive: true,
+                      plan: true,
+
+
+                      createdAt: true
+                    }
+                  }
+                }
+              }
+            }
+          });
+
+          if (dbUser) {
+            let revoked = false;
+            try {
+              revoked = dbUser.active && !sessionMatches(await loadUserAuthState(dbUser.id), (token as any).sv);
+            } catch {
+              revoked = false; // auth-state hiccup: keep the session (next sync retries)
+            }
+            // Deactivated users / revoked sessions must not stay valid after DB sync
+            if (!dbUser.active || revoked) {
+              console.log(`[JWT] ❌ Clearing session for inactive user: ${dbUser.email}`);
+              // Force middleware to treat this as unauthenticated on next request
+              const cleared = { ...token } as JWT & { error?: string; active?: boolean };
+              delete (cleared as { sub?: string }).sub;
+              cleared.id = '';
+              cleared.email = '';
+              cleared.memberships = [];
+              cleared.currentTenant = null;
+              cleared.allTenantIds = [];
+              cleared.tenantId = null;
+              cleared.active = false;
+              cleared.error = revoked ? 'session_revoked' : 'inactive_user';
+              return cleared;
+            }
+
+            // Update token with latest user data
+            token.id = dbUser.id;
+            token.name = dbUser.name;
+            token.email = dbUser.email;
+            token.image = dbUser.image;
+            token.isLogisticsAdmin = dbUser.isLogisticsAdmin ?? false;
+            token.active = dbUser.active;
+
+            // Update memberships and role
+            const memberships = dbUser.memberships || [];
+            // @ts-ignore - Membership type mismatch; runtime works correctly
+            token.memberships = memberships;
+
+            // Set role based on memberships
+            if (memberships.length > 0) {
+              const activeTenantIds = memberships.map((m) => m.tenantId);
+              // The active business belongs to THIS session (SecureDog M1): a periodic re-sync keeps
+              // it while the membership is still active; only an explicit switch (update()) or a
+              // lost membership re-reads the default. Another device switching never moves this one.
+              // Businesses that are themselves active (a deactivated business is never kept or picked
+              // while another active one exists; SecureDog N2).
+              const liveTenantIds = memberships.filter((m) => m.tenant?.isActive !== false).map((m) => m.tenantId);
+              const selectable = liveTenantIds.length ? liveTenantIds : activeTenantIds;
+              const keepCurrent =
+                trigger !== 'update' &&
+                typeof token.tenantId === 'string' &&
+                selectable.includes(token.tenantId);
+              const selectedTenantId = keepCurrent
+                ? (token.tenantId as string)
+                : selectActiveTenantId(dbUser.defaultTenantId, selectable);
+              // Legacy MASTER = OWNER of the SELECTED business (L4; login already did this).
+              token.role = memberships.find((m) => m.tenantId === selectedTenantId)?.role === 'OWNER' ? 'MASTER' : 'REGULAR';
+
+              token.tenantId = selectedTenantId;
+
+              // Store all tenant IDs for easy access
+              token.allTenantIds = memberships.map(m => m.tenantId);
+
+              // Find the membership for the selected tenant
+              const currentMembership = memberships.find(m => m.tenantId === selectedTenantId);
+              if (currentMembership?.tenant) {
+                token.currentTenant = {
+                  id: currentMembership.tenant.id,
+                  role: currentMembership.role,
+                  name: currentMembership.tenant.name,
+                  slug: currentMembership.tenant.slug,
+                  isActive: currentMembership.tenant.isActive,
+                  plan: currentMembership.tenant.plan || 'FREE',
+
+
+                  profileCompleted: false
+                };
+              }
+            } else {
+              // No active memberships found
+              // IMPORTANT: Do NOT auto-create or reactivate tenants here. This runs on every JWT refresh.
+              console.log(`[JWT] ⚠️ User ${dbUser.email} has no active memberships - not reactivating old tenants`);
+              token.role = 'REGULAR';
+              token.tenantId = null;
+              token.allTenantIds = [];
+              token.currentTenant = null;
+            }
+          }
+        } catch (error) {
+          console.error('Error updating token with user data:', error);
+        }
+      }
+
+      return token;
 }
 
 export const authOptions: NextAuthOptions = {
@@ -767,292 +1057,40 @@ export const authOptions: NextAuthOptions = {
       }
     },
 
-    async jwt({ token, user, account, trigger }) {
-      // Business switcher (Phase 2b): `update()` from the client only forces the DB re-sync below,
-      // which re-reads User.defaultTenantId (set by POST /api/tenant/switch after a membership
-      // check). The client payload is NEVER read: a tenant id can't be injected from the browser.
-      // Throttled (I1): a burst of update() calls cannot force a DB re-sync each time.
-      if (trigger === 'update' && Date.now() - (token.lastDbSync || 0) > 2000) token.lastDbSync = 0
-
-      // Initial sign in - populate all token fields
-      if (user) {
-        token.id = user.id;
-        token.role = (user as any).role || 'REGULAR';
-        token.tenantId = (user as any).tenantId;
-        token.email_verified = (user as any).email_verified || false;
-        token.active = (user as any).active !== false;
-        // 0 = run the DB re-sync right below in this same call: login then applies the same rules as
-        // every later sync (never lands in a deactivated business while an active one exists; N2).
-        token.lastDbSync = 0;
-        // Session version at sign-in; a password reset bumps it and ends this session.
-        // Credentials logins carry the version read before their password check (race-free).
-        if (typeof (user as any).sv === 'number') {
-          (token as any).sv = (user as any).sv;
-        } else {
-          try {
-            (token as any).sv = (await loadUserAuthState(user.id))?.sessionVersion ?? 0;
-          } catch {
-            (token as any).sv = 0;
-          }
-        }
-
-        try {
-          const dbUser = await prisma.user.findUnique({
-            where: { id: user.id },
-            select: { isLogisticsAdmin: true, isSuperAdmin: true },
-          });
-          token.isLogisticsAdmin = dbUser?.isLogisticsAdmin ?? false;
-          (token as any).isSuperAdmin = dbUser?.isSuperAdmin ?? false;
-        } catch {
-          token.isLogisticsAdmin = false;
-        }
-
-        const memberships = (user as any).memberships || [];
-        token.memberships = memberships;
-
-        // CRITICAL: Set allTenantIds and currentTenant during initial sign-in
-        if (memberships.length > 0) {
-          token.allTenantIds = memberships.map((m: any) => m.tenantId || m.tenant?.id).filter(Boolean);
-
-          // Resolve one explicit active tenant, then look up only that membership.
-          const userTenantId = (user as any).tenantId;
-          const selectedActiveTenantId = selectActiveTenantId(
-            userTenantId,
-            memberships.map((m: any) => m.tenantId || m.tenant?.id).filter(Boolean),
-          );
-          const currentMembership = memberships.find(
-            (m: any) => (m.tenantId || m.tenant?.id) === selectedActiveTenantId,
-          );
-
-          // CRITICAL: Always set tenantId on token when user has memberships
-          const selectedTenantId = currentMembership?.tenantId || currentMembership?.tenant?.id;
-          if (selectedTenantId) {
-            token.tenantId = selectedTenantId;
-            console.log(`[JWT] ✅ Set tenantId on initial sign-in: ${selectedTenantId}`);
-          }
-
-          if (currentMembership) {
-            const tenant = currentMembership.tenant;
-
-            // If tenant data is not included, fetch it from database
-            if (!tenant && currentMembership.tenantId) {
-              try {
-                const fetchedTenant = await prisma.tenant.findUnique({
-                  where: { id: currentMembership.tenantId },
-                  select: {
-                    id: true,
-                    name: true,
-                    slug: true,
-                    isActive: true,
-                    plan: true,
-
-                    trialEndsAt: true
-                  }
-                });
-
-                if (fetchedTenant) {
-                  token.currentTenant = {
-                    id: fetchedTenant.id,
-                    role: currentMembership.role,
-                    name: fetchedTenant.name,
-                    slug: fetchedTenant.slug,
-                    isActive: fetchedTenant.isActive,
-                    plan: fetchedTenant.plan || 'FREE',
-
-
-                    profileCompleted: false
-                  };
-                  console.log(`[JWT] ✅ Fetched tenant data for initial sign-in: ${fetchedTenant.name}`);
-                }
-              } catch (error) {
-                console.error('[JWT] ❌ Error fetching tenant data:', error);
-                // Fallback to basic tenant info
-                token.currentTenant = {
-                  id: currentMembership.tenantId || selectedTenantId,
-                  role: currentMembership.role,
-                  name: '',
-                  slug: '',
-                  isActive: true,
-                  plan: 'FREE',
-
-
-                  profileCompleted: false
-                };
-              }
-            } else if (tenant) {
-              // Tenant data is already included
-              token.currentTenant = {
-                id: tenant.id,
-                role: currentMembership.role,
-                name: tenant.name,
-                slug: tenant.slug,
-                isActive: tenant.isActive,
-                plan: tenant.plan || 'FREE',
-
-
-                profileCompleted: false
-              };
-              console.log(`[JWT] ✅ Using included tenant data: ${tenant.name}`);
-            } else {
-              // No tenant data available, use minimal fallback
-              token.currentTenant = {
-                id: currentMembership.tenantId || selectedTenantId,
-                role: currentMembership.role,
-                name: '',
-                slug: '',
-                isActive: true,
-                plan: 'FREE',
-
-
-                profileCompleted: false
-              };
-              console.log(`[JWT] ⚠️ Using fallback tenant data for: ${currentMembership.tenantId || selectedTenantId}`);
-            }
-          }
-        } else {
-          token.allTenantIds = [];
-          token.currentTenant = null;
-        }
+    async jwt(params) {
+      const { token, user, trigger } = params
+      // Two-step login pending: the token holds no user until a verified code is consumed.
+      if (!user && isMfaPendingToken(token)) {
+        const resolved = await resolvePendingMfa(token as Record<string, unknown>, trigger, {
+          consume: consumeVerifiedMfaChallenge,
+        })
+        if (resolved.kind === 'stay') return token
+        if (resolved.kind === 'revoked') return resolved.token as JWT
+        // Code proven: restore the held claims and re-sync now (revocation, business, role).
+        return jwtCore({ ...params, token: resolved.token as JWT, user: undefined as unknown as User, trigger: undefined })
       }
-
-      // Only refresh from DB when token data is stale (every 5 minutes)
-      const DB_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
-      const isStale = !token.lastDbSync || (Date.now() - token.lastDbSync > DB_SYNC_INTERVAL);
-
-      if (token.email && isStale) {
-        token.lastDbSync = Date.now();
+      const next = await jwtCore(params)
+      const signedInId = typeof (next as { id?: unknown }).id === 'string' ? ((next as { id: string }).id) : ''
+      if (user && signedInId && !(next as { error?: string }).error) {
         try {
-          const dbUser = await prisma.user.findUnique({
-            where: { email: token.email },
-            select: {
-              id: true,
-              email: true,
-              name: true,
-              username: true,
-              image: true,
-              emailVerified: true,
-              active: true,
-              isSuperAdmin: true,
-              isLogisticsAdmin: true,
-              defaultTenantId: true,
-              memberships: {
-                where: { isActive: true },
-                // Deterministic fallback when the default is gone: the oldest membership first.
-                orderBy: { joinedAt: 'asc' },
-                include: {
-                  tenant: {
-                    select: {
-                      id: true,
-                      name: true,
-                      slug: true,
-                      isActive: true,
-                      plan: true,
-
-
-                      createdAt: true
-                    }
-                  }
-                }
-              }
-            }
-          });
-
-          if (dbUser) {
-            let revoked = false;
-            try {
-              revoked = dbUser.active && !sessionMatches(await loadUserAuthState(dbUser.id), (token as any).sv);
-            } catch {
-              revoked = false; // auth-state hiccup: keep the session (next sync retries)
-            }
-            // Deactivated users / revoked sessions must not stay valid after DB sync
-            if (!dbUser.active || revoked) {
-              console.log(`[JWT] ❌ Clearing session for inactive user: ${dbUser.email}`);
-              // Force middleware to treat this as unauthenticated on next request
-              const cleared = { ...token } as JWT & { error?: string; active?: boolean };
-              delete (cleared as { sub?: string }).sub;
-              cleared.id = '';
-              cleared.email = '';
-              cleared.memberships = [];
-              cleared.currentTenant = null;
-              cleared.allTenantIds = [];
-              cleared.tenantId = null;
-              cleared.active = false;
-              cleared.error = revoked ? 'session_revoked' : 'inactive_user';
-              return cleared;
-            }
-
-            // Update token with latest user data
-            token.id = dbUser.id;
-            token.name = dbUser.name;
-            token.email = dbUser.email;
-            token.image = dbUser.image;
-            token.isLogisticsAdmin = dbUser.isLogisticsAdmin ?? false;
-            token.active = dbUser.active;
-
-            // Update memberships and role
-            const memberships = dbUser.memberships || [];
-            // @ts-ignore - Membership type mismatch; runtime works correctly
-            token.memberships = memberships;
-
-            // Set role based on memberships
-            if (memberships.length > 0) {
-              const activeTenantIds = memberships.map((m) => m.tenantId);
-              // The active business belongs to THIS session (SecureDog M1): a periodic re-sync keeps
-              // it while the membership is still active; only an explicit switch (update()) or a
-              // lost membership re-reads the default. Another device switching never moves this one.
-              // Businesses that are themselves active (a deactivated business is never kept or picked
-              // while another active one exists; SecureDog N2).
-              const liveTenantIds = memberships.filter((m) => m.tenant?.isActive !== false).map((m) => m.tenantId);
-              const selectable = liveTenantIds.length ? liveTenantIds : activeTenantIds;
-              const keepCurrent =
-                trigger !== 'update' &&
-                typeof token.tenantId === 'string' &&
-                selectable.includes(token.tenantId);
-              const selectedTenantId = keepCurrent
-                ? (token.tenantId as string)
-                : selectActiveTenantId(dbUser.defaultTenantId, selectable);
-              // Legacy MASTER = OWNER of the SELECTED business (L4; login already did this).
-              token.role = memberships.find((m) => m.tenantId === selectedTenantId)?.role === 'OWNER' ? 'MASTER' : 'REGULAR';
-
-              token.tenantId = selectedTenantId;
-
-              // Store all tenant IDs for easy access
-              token.allTenantIds = memberships.map(m => m.tenantId);
-
-              // Find the membership for the selected tenant
-              const currentMembership = memberships.find(m => m.tenantId === selectedTenantId);
-              if (currentMembership?.tenant) {
-                token.currentTenant = {
-                  id: currentMembership.tenant.id,
-                  role: currentMembership.role,
-                  name: currentMembership.tenant.name,
-                  slug: currentMembership.tenant.slug,
-                  isActive: currentMembership.tenant.isActive,
-                  plan: currentMembership.tenant.plan || 'FREE',
-
-
-                  profileCompleted: false
-                };
-              }
-            } else {
-              // No active memberships found
-              // IMPORTANT: Do NOT auto-create or reactivate tenants here. This runs on every JWT refresh.
-              console.log(`[JWT] ⚠️ User ${dbUser.email} has no active memberships - not reactivating old tenants`);
-              token.role = 'REGULAR';
-              token.tenantId = null;
-              token.allTenantIds = [];
-              token.currentTenant = null;
-            }
+          if (await isMfaEnabled(signedInId)) {
+            const challenge = await createMfaChallenge(signedInId)
+            return holdTokenForMfa(next as Record<string, unknown>, challenge.nonce, challenge.expiresAt) as JWT
           }
         } catch (error) {
-          console.error('Error updating token with user data:', error);
+          // Fail closed: if we can't tell whether a code is required, no session.
+          console.error('[2FA] sign-in gate unavailable:', error instanceof Error ? error.name : 'unknown')
+          return revokedMfaToken() as JWT
         }
       }
-
-      return token;
+      return next
     },
 
     async session({ session, token }) {
+      // Pending second step: expose nothing but the state (the code page needs it).
+      if (isMfaPendingToken(token)) {
+        return { expires: session.expires, mfa: 'pending' } as unknown as Session
+      }
       if (session.user) {
         session.user.id = token.id;
         session.user.role = token.role;

@@ -6,6 +6,7 @@ import { isIntegrationOriginAllowed } from '@/lib/integration-cors';
 import { cronsDisabled } from '@/lib/cron-kill-switch';
 import { canAccessLogistics } from '@/lib/logistics-access';
 import { INTERNAL_AUTH_HEADERS, setSignedAuthHeaders } from '@/lib/internal-auth-context';
+import { isAllowedDuringMfa, isMfaPendingToken, isSessionReadingPublicRoute, MFA_PAGE } from '@/lib/mfa-session';
 
 // Content-Security-Policy is set once, in next.config.js headers() (single source).
 
@@ -105,6 +106,14 @@ export default async function middleware(request: Request) {
     return response;
   }
 
+  // Two-step login pending: public routes that read the session themselves (NextAuth's own
+  // helpers aside) must not see it. The token holds no user anyway; this is defense in depth.
+  if (isSessionReadingPublicRoute(pathname) && !isAllowedDuringMfa(pathname) && hasSessionCookie(request)) {
+    const secret = process.env.NEXTAUTH_SECRET;
+    const pending = secret ? await getToken({ req: request as any, secret }).catch(() => null) : null;
+    if (pending && isMfaPendingToken(pending)) return mfaRequiredResponse(url);
+  }
+
   // Fast path: skip all work for public routes (no CORS, no auth)
   // Root path must be public so the page.tsx redirect to /home can execute
   if (pathname === '/' || isPublicRoute(pathname)) {
@@ -151,6 +160,12 @@ export default async function middleware(request: Request) {
     // Redirect to login if no token
     if (!token) {
       return redirectToLogin(url);
+    }
+
+    // Password (or Google) OK, code still pending: only the code page answers.
+    if (isMfaPendingToken(token)) {
+      if (pathname === MFA_PAGE) return NextResponse.next(cleanFwd);
+      return mfaRequiredResponse(url);
     }
 
     // Reject sessions cleared after deactivation or revocation (JWT refresh sets error)
@@ -262,6 +277,24 @@ function isPublicRoute(pathname: string): boolean {
  * Redirect to login page with callback URL
  * For API routes, return JSON error instead of redirect
  */
+function hasSessionCookie(request: Request): boolean {
+  const cookie = request.headers.get('cookie') || '';
+  return /(?:^|;\s*)(?:__Secure-)?next-auth\.session-token(?:\.\d+)?=/.test(cookie);
+}
+
+/** Pending second step: APIs get 401 MFA_REQUIRED, pages go to the code page (same-origin return). */
+function mfaRequiredResponse(url: URL): NextResponse {
+  if (url.pathname.startsWith('/api/')) {
+    return NextResponse.json(
+      { error: 'Unauthorized', code: 'MFA_REQUIRED' },
+      { status: 401, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }
+    );
+  }
+  const target = new URL(MFA_PAGE, url.origin);
+  target.searchParams.set('callbackUrl', url.pathname + url.search);
+  return NextResponse.redirect(target);
+}
+
 function redirectToLogin(url: URL): NextResponse {
   const pathname = url.pathname;
 

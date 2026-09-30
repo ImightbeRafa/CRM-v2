@@ -1714,3 +1714,44 @@ model ChatWorkspaceSettings {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 }
+
+// Two-step login (SQL 038). Scalar-only: no relation fields on User / Tenant.
+model UserTwoFactor {
+  userId         String    @id
+  secretEnc      String
+  enabledAt      DateTime?
+  setupExpiresAt DateTime?
+  lastUsedStep   BigInt?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model UserRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([userId, codeHash])
+}
+
+model UserTwoFactorChallenge {
+  id         String    @id @default(cuid())
+  userId     String
+  nonceHash  String    @unique
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model TenantSecurityPolicy {
+  tenantId         String   @id
+  requireTwoFactor Boolean  @default(false)
+  updatedByUserId  String?
+  updatedAt        DateTime @updatedAt
+}

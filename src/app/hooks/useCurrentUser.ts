@@ -15,6 +15,19 @@ let cachedUser: User | null = null;
 let cachedTenantId: string | null = null;
 let cacheTimestamp = 0;
 const CACHE_DURATION = 60000; // 1 minute
+// Components mounted together share ONE request instead of each firing its own (perf review).
+let inflight: { tenantId: string; promise: Promise<any> } | null = null;
+
+function fetchMe(tenantId: string): Promise<any> {
+  if (inflight && inflight.tenantId === tenantId) return inflight.promise;
+  const promise = fetch('/api/auth/me', { credentials: 'include' })
+    .then((response) => response.json())
+    .finally(() => {
+      if (inflight?.promise === promise) inflight = null;
+    });
+  inflight = { tenantId, promise };
+  return promise;
+}
 
 export function useCurrentUser() {
   const { data: session, status } = useSession();
@@ -44,8 +57,7 @@ export function useCurrentUser() {
       }
 
       try {
-        const response = await fetch('/api/auth/me', { credentials: 'include' });
-        const data = await response.json();
+        const data = await fetchMe(sessionTenantId);
         
         if (data.status === 'success') {
           cachedUser = data.data;

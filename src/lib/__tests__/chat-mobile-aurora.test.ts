@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
-const read = (p: string) => readFileSync(p, 'utf8')
+// Checkouts may use CRLF (Windows): the assertions are written for LF.
+const read = (p: string) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
 
 describe('PR-G mobile chats (CHAT-M01 / CHAT-M02)', () => {
   const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')

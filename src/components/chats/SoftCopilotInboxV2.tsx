@@ -145,7 +145,6 @@ export function SoftCopilotInboxV2() {
   /** Bumped after an order / guía changes so the Cliente tab refetches. */
   const [clientPanelRev, setClientPanelRev] = useState(0)
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null)
-  const [syncAgeSeconds, setSyncAgeSeconds] = useState<number | null>(null)
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list')
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
@@ -493,14 +492,6 @@ export function SoftCopilotInboxV2() {
       window.removeEventListener('online', onOnline)
     }
   }, [fetchChanges, fetchListPage])
-
-  useEffect(() => {
-    if (!lastSyncAt) return
-    const ageTick = () => setSyncAgeSeconds(Math.floor((Date.now() - lastSyncAt) / 1000))
-    ageTick()
-    const id = window.setInterval(ageTick, 1000)
-    return () => window.clearInterval(id)
-  }, [lastSyncAt])
 
   // Team quick replies for the composer (`/atajo`).
   useEffect(() => {
@@ -1632,7 +1623,8 @@ export function SoftCopilotInboxV2() {
             totalOpen={lineCounts.total.open}
             loadError={listError}
             onRetryLoad={() => void retryInitialLoad()}
-            syncAgeSeconds={syncAgeSeconds}
+            syncAgeSeconds={null}
+            lastSyncAt={lastSyncAt}
             loading={loading}
             emptyReason={emptyReason}
             hasMoreConversations={Boolean(listNextCursor)}
@@ -1718,7 +1710,8 @@ export function SoftCopilotInboxV2() {
               totalOpen={lineCounts.total.open}
               loadError={listError}
               onRetryLoad={() => void retryInitialLoad()}
-              syncAgeSeconds={syncAgeSeconds}
+              syncAgeSeconds={null}
+              lastSyncAt={lastSyncAt}
               loading={loading}
               emptyReason={emptyReason}
               compact

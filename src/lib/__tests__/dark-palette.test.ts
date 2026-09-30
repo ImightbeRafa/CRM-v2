@@ -12,7 +12,8 @@ const require = createRequire(import.meta.url)
 const palette = require('../theme/palette.cjs')
 const twColors = require('tailwindcss/colors')
 
-const read = (p: string) => readFileSync(p, 'utf8')
+// Checkouts may use CRLF (Windows): the assertions are written for LF.
+const read = (p: string) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
 const DARK = palette.DARK as Record<string, string>
 
 describe('palette source', () => {

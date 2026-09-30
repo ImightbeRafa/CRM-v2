@@ -136,45 +136,9 @@ const nextConfig = {
           })
         )
       }
-      // Optimize chunks only for client builds to avoid SSR runtime issues
-      if (!isServer) {
-        config.optimization = {
-          ...config.optimization,
-          minimize: true,
-          moduleIds: 'deterministic',
-          runtimeChunk: 'single',
-          splitChunks: {
-            chunks: 'all',
-            minSize: 10000,
-            maxSize: 20000000,
-            cacheGroups: {
-              vendor: {
-                name: (module) => {
-                  if (!module.context) return 'vendor.unknown';
-                  const match = module.context.match(
-                    /[\\/]node_modules[\\/](.*?)([\\/]|$)/
-                  );
-                  if (!match || !match[1]) return 'vendor.unknown';
-                  const packageName = match[1];
-                  return `vendor.${packageName.replace('@', '')}`;
-                },
-                test: /[\\/]node_modules[\\/]/,
-                chunks: 'all',
-                priority: 20,
-                reuseExistingChunk: true,
-                enforce: true,
-              },
-              commons: {
-                name: 'commons',
-                minChunks: 2,
-                priority: 10,
-                reuseExistingChunk: true,
-                enforce: true,
-              },
-            },
-          },
-        };
-      }
+      // Client chunking: Next.js defaults (granular per-route chunks). The old override (one
+      // chunk per npm package + an enforced "commons" chunk of everything used by 2+ routes)
+      // made every page download ~700 KB of JS, most of it for other pages (perf 2026-09-30).
     }
 
     return config;

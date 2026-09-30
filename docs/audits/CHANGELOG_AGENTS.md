@@ -1,3 +1,21 @@
+## 2026-09-30 — Performance batch 1 (branch claudio/perf-1)
+
+- Measured live (test tenant): HTML TTFB 0.4-0.8 s fine; API p50 1.5-5 s; ~700 KB JS per page;
+  0% edge caching of static files.
+- Root cause 1: Prisma connection_limit defaulted to 1 in production → every parallel query of
+  every user queued on one DB connection (/api/auth/me 3 s p50 of pure waiting). Worker now passes
+  PRISMA_CONNECTION_LIMIT=8 to the container (override via Worker var); Supabase max_connections 60.
+- Root cause 2: a 2024 webpack splitChunks override (one chunk per npm package + an enforced
+  "commons" chunk) → shared JS 468 → 223 KB, typical page ~700 → ~480 KB with Next defaults.
+- /_next/static/* (immutable) cached at Cloudflare's edge by the Worker.
+- Chat inbox no longer re-renders every second (self-ticking "Sincronizado hace" label, paused in
+  hidden tabs); /api/auth/me shared in-flight request.
+- Tests: fixed 3 CRLF-sensitive tests (theme, chat-mobile, whatsapp popup) that failed on Windows
+  checkouts (baseline failures, now green). Local smoke of the new build: all 11 main pages render,
+  same 4xx set as live.
+- Cost analysis (Cloudflare Containers): ~$45/mo + $5 plan today; memory dominates; a 2nd
+  always-on server ≈ +$40/mo → not needed (bottleneck was the DB queue, not CPU).
+
 ## 2026-09-30 — FIX: chats answered by a teammate kept showing as pending for everyone else
 
 - Cause: unread was per user only (ChatConversationReadState). Mom answering a chat left the badge

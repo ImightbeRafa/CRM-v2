@@ -58,6 +58,7 @@ interface Env {
   NEXTAUTH_SECRET?: string;
   EMPLOYEE_CODE_SECRET?: string;
   DATABASE_URL?: string;
+  PRISMA_CONNECTION_LIMIT?: string;
   DIRECT_URL?: string;
   RESEND_API_KEY?: string;
   ENCRYPTION_KEY?: string;
@@ -234,6 +235,12 @@ function getContainerEnvVars(source: Env): Record<string, string> {
     }
   }
 
+  // One long-lived container serves everyone: Prisma's serverless default of ONE database
+  // connection queued every parallel request of every user behind each other (perf review
+  // 2026-09-30: /api/auth/me 3 s p50, pure waiting). 8 per container keeps primary + standby +
+  // the Railway preview far below Supabase's max_connections (60). Override with a Worker var.
+  envVars.PRISMA_CONNECTION_LIMIT = (source.PRISMA_CONNECTION_LIMIT || "").trim() || "8";
+
   // Behind Cloudflare the edge sets cf-connecting-ip and overwrites any client value,
   // while X-Forwarded-For keeps client-supplied entries. Rate limits key on this.
   envVars.TRUSTED_IP_HEADER = "cf-connecting-ip";
@@ -289,8 +296,34 @@ async function runCronPaths(
   return Response.json({ results }, { status: allOk ? 200 : 502 });
 }
 
+/**
+ * Next.js build files under /_next/static/ are content-hashed and immutable: served from
+ * Cloudflare's edge cache after the first request, so they never cost a container round trip
+ * (the container was serving every JS chunk of every page view).
+ */
+const EDGE_CACHEABLE_PREFIX = "/_next/static/";
+
+async function edgeCachedStatic(request: Request, env: Env, ctx: ExecutionContext): Promise<Response | null> {
+  if (request.method !== "GET") return null;
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith(EDGE_CACHEABLE_PREFIX) || url.pathname.includes("..")) return null;
+  // Cookie-free, query-free key: the same file for every visitor.
+  const key = new Request(`${url.origin}${url.pathname}`, { method: "GET" });
+  const cache = (caches as unknown as { default: Cache }).default;
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  const fresh = await fetchWithFailover(env, new Request(key.url, { method: "GET", headers: { "accept-encoding": request.headers.get("accept-encoding") || "gzip" } }));
+  const cc = fresh.headers.get("cache-control") || "";
+  if (fresh.status === 200 && cc.includes("immutable") && !fresh.headers.has("set-cookie")) {
+    ctx.waitUntil(cache.put(key, fresh.clone()).catch(() => undefined));
+  }
+  return fresh;
+}
+
 export default {
-  async fetch(request: Request, env: Env) {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const cached = await edgeCachedStatic(request, env, ctx).catch(() => null);
+    if (cached) return cached;
     // Clients must not choose the container port (@cloudflare/containers reads this header).
     // Copying the headers keeps cf-connecting-ip for rate limits.
     const headers = new Headers(request.headers);

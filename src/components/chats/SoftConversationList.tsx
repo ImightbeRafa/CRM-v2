@@ -19,6 +19,7 @@ import { chatPreviewText } from '@/lib/chat-message-display'
 import { AuroraAvatar } from '@/components/aurora/shell/AuroraAvatar'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import { ChatTagFilter, ChatViewMenu } from '@/components/chats/ChatViewMenu'
+import { SyncAgeLabel } from '@/components/chats/SyncAgeLabel'
 import {
   AuroraEmptyState,
   AuroraErrorState,
@@ -38,6 +39,8 @@ interface SoftConversationListProps {
   onAccountFilter: (id: string | 'all') => void
   openCount: number
   syncAgeSeconds: number | null
+  /** When set, the list shows a self-ticking age label instead of `syncAgeSeconds`. */
+  lastSyncAt?: number | null
   loading: boolean
   emptyReason: 'no-channels' | 'no-chats' | 'no-results' | null
   compact?: boolean
@@ -109,6 +112,7 @@ export function SoftConversationList({
   onAccountFilter,
   openCount,
   syncAgeSeconds,
+  lastSyncAt,
   loading,
   emptyReason,
   compact,
@@ -197,7 +201,9 @@ export function SoftConversationList({
               ) : (
                 <h2 className="text-[15px] font-semibold text-slate-900">{`Abiertos · ${openCount}`}</h2>
               )}
-              {syncAgeSeconds != null ? (
+              {lastSyncAt !== undefined ? (
+                <SyncAgeLabel lastSyncAt={lastSyncAt} />
+              ) : syncAgeSeconds != null ? (
                 <p className="mt-0.5 text-[10px] text-slate-400">Sincronizado hace {syncAgeSeconds}s</p>
               ) : null}
             </div>

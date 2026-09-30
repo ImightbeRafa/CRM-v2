@@ -120,8 +120,9 @@ export function InviteMemberModal({ open, onOpenChange, onDone, editingUser = nu
   }
 
   const emailInvite = !editing && inviteMode
-  // An emailed invite cannot grant OWNER (same rule as the classic Config form).
-  const roleOptions = emailInvite ? INVITE_ROLES.filter((r) => r.value !== 'OWNER') : INVITE_ROLES
+  // Invites cannot grant OWNER, and an existing account is always invited (even in password mode),
+  // so OWNER is only offered when editing an existing member.
+  const roleOptions = editing ? INVITE_ROLES : INVITE_ROLES.filter((r) => r.value !== 'OWNER')
   const roleHelp = INVITE_ROLES.find((r) => r.value === role)?.help
 
   return (
@@ -199,7 +200,7 @@ export function InviteMemberModal({ open, onOpenChange, onDone, editingUser = nu
             required
             autoFocus
           />
-          <p className="mt-1 text-[11px] text-slate-400">Con este email inicia sesión. Si ya tiene cuenta en Betsy, se suma a tu equipo.</p>
+          <p className="mt-1 text-[11px] text-slate-400">Con este email inicia sesión. Si ya tiene cuenta en Betsy, le llega una invitación para que acepte.</p>
         </div>
         {!emailInvite ? (
         <div>

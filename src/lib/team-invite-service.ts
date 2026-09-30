@@ -12,6 +12,19 @@ import {
 } from '@/lib/team-invite'
 import { sendTeamInviteEmail } from '@/lib/email'
 import { findUserIdByEmail } from '@/lib/user-lookup'
+import { createIdentifierRateLimit } from '@/lib/rate-limit'
+import { getTenantSeatUsageWithClient } from '@/lib/plan-enforcement'
+
+class SeatLimitReached extends Error {
+  constructor(readonly currentCount: number, readonly limit: number) {
+    super('seat_limit')
+  }
+}
+
+// Invites send email from noreply@betsycrm.com: bounded per inviter+business and per recipient
+// (SecureDog: unbounded invites could be used to spam and burn sender reputation).
+const inviteSenderLimit = createIdentifierRateLimit({ windowMs: 60 * 60_000, maxRequests: 30, identifier: 'invite-sender' })
+const inviteRecipientLimit = createIdentifierRateLimit({ windowMs: 60 * 60_000, maxRequests: 5, identifier: 'invite-recipient' })
 
 export type CreateTeamInviteInput = {
   tenantId: string
@@ -31,6 +44,14 @@ export async function createTeamInvite(input: CreateTeamInviteInput) {
     return { ok: false as const, error: 'Rol de invitación inválido', status: 400 }
   }
   const role = input.role as TeamInviteRole
+
+  const [bySender, byRecipient] = await Promise.all([
+    inviteSenderLimit(`${input.tenantId}:${input.invitedByUserId}`),
+    inviteRecipientLimit(email),
+  ])
+  if (!bySender.allowed || !byRecipient.allowed) {
+    return { ok: false as const, error: 'Demasiadas invitaciones seguidas. Probá más tarde.', status: 429 }
+  }
 
   // Exact lower() match (ILIKE would treat _ and % in the address as wildcards).
   const existingUser = await prisma.user.findUnique({
@@ -212,7 +233,15 @@ export async function acceptTeamInviteForUser(input: {
   })
   const action = inviteMembershipAction(existingMembership)
 
+  try {
   await prisma.$transaction(async (tx) => {
+    if (action !== 'conflict') {
+      // Same seat admission as creating a member / a bot session (shared advisory lock): an
+      // accepted invite can never exceed the plan's seats.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`bot-seat:${invite!.tenantId}`}))`
+      const usage = await getTenantSeatUsageWithClient(tx, invite!.tenantId)
+      if (usage.currentCount >= usage.limit) throw new SeatLimitReached(usage.currentCount, usage.limit)
+    }
     if (action === 'conflict' && existingMembership) {
       // Already a member — still mark invite accepted
     } else if (action === 'reactivate' && existingMembership) {
@@ -257,6 +286,12 @@ export async function acceptTeamInviteForUser(input: {
       },
     })
   })
+  } catch (error) {
+    if (error instanceof SeatLimitReached) {
+      return { ok: false as const, error: `Este negocio llegó a su límite de usuarios (${error.currentCount}/${error.limit}). Pedile al dueño que amplíe el plan.`, status: 402 }
+    }
+    throw error
+  }
 
   return {
     ok: true as const,

@@ -294,7 +294,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
           return;
         }
         const age = Date.now() - new Date(parsed.timestamp || 0).getTime();
-        if (draftKey && !(age >= 0 && age < DRAFT_MAX_AGE_MS)) {
+        if (!(age >= 0 && age < DRAFT_MAX_AGE_MS)) {
           localStorage.removeItem(storageKeyRef.current);
           return;
         }
@@ -378,6 +378,12 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    // This form belongs to the business it opened in: never submit into another one (another tab
+    // switched business; this tab reloads in a moment).
+    if (!draftWritable()) {
+      setSubmitStatus({ type: 'error', message: 'Cambiaste de negocio en otra pestaña. Recargá la página antes de guardar.' });
+      return;
+    }
 
     // Auto-assign vendedor before validation if user is loaded and products are missing vendedor
     if (user && orderInfo.products.some(p => !p.vendedor || !p.vendedor.trim())) {

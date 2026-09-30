@@ -1,12 +1,43 @@
 /** Phase 2b S8: business switcher — tenant isolation guards (+ SecureDog review rounds). 2026-09-29. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { execSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { clearBusinessScopedBrowserState } from '../business-switch-client'
 import { draftBelongsTo } from '../order-draft'
 
 const read = (f: string) => readFileSync(f, 'utf8').replace(/\r\n/g, '\n')
+
+/** All .ts / .tsx files under a folder (POSIX paths), no git needed. */
+function walk(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const p = `${dir}/${name}`
+    if (statSync(p).isDirectory()) walk(p, out)
+    else if (/\.(ts|tsx)$/.test(name)) out.push(p)
+  }
+  return out
+}
+
+test('round 4: invite mail escaped + rate limited, no direct reactivation, seats on accept, accept moves session', () => {
+  const mail = read('src/lib/email.ts')
+  assert.match(mail, /const tenantName = escapeHtml\(/)
+  assert.match(mail, /Únete a \$\{tenantName\}/)
+  assert.doesNotMatch(mail, /\$\{input\.tenantName\}/)
+  assert.match(mail, /replace\(\/\[\\r\\n\\t\]\+\/g, ' '\)/)
+  const svc = read('src/lib/team-invite-service.ts')
+  assert.match(svc, /identifier: 'invite-sender'/)
+  assert.match(svc, /identifier: 'invite-recipient'/)
+  assert.match(svc, /if \(usage\.currentCount >= usage\.limit\) throw new SeatLimitReached/)
+  for (const f of ['src/app/api/users/route.ts', 'src/app/api/users/[id]/route.ts']) {
+    assert.match(read(f), /if \(active === true && !membership\.isActive\) \{\n\s*return createErrorResponse\('Esta persona ya no es miembro: enviale una invitación para que vuelva\.', 409\)/, f)
+  }
+  assert.match(read('src/app/api/users/route.ts'), /const existingUserId = await findUserIdByEmail\(normalizedEmail\)/)
+  const accept = read('src/app/auth/accept-invite/page.tsx')
+  assert.match(accept, /await update\(\)\n\s*clearBusinessScopedBrowserState\(\)\n\s*window\.location\.assign\('\/dashboard'\)/)
+  const auth = read('src/lib/auth-options.ts')
+  assert.match(auth, /token\.lastDbSync = 0;\n/, 'login applies the re-sync rules immediately')
+  assert.doesNotMatch(auth, /const hasOwnerRole = memberships\.some\(\(m\) => m\.role === 'OWNER'\)/)
+  assert.match(read('src/app/ventas/components/EnhancedSalesForm.tsx'), /if \(!draftWritable\(\)\) \{\n\s*setSubmitStatus\(/)
+})
 
 test('switch: membership re-checked fresh AND inside a conditional write of my own user row', () => {
   const src = read('src/app/api/tenant/switch/route.ts')
@@ -33,7 +64,7 @@ test('L3 / N3: user-level auth for the switch only — signed context, no fallba
   assert.match(fn, /unverifiedTenantId/)
   assert.doesNotMatch(read('src/lib/__tests__/tenant-write-coverage.test.ts'), /tenant\/switch/)
   // Only the switch route may use the user-only helper.
-  const users = execSync('git grep -l "authenticateUserOnly" -- src', { encoding: 'utf8' }).trim().split(/\r?\n/).sort()
+  const users = walk('src').filter((f) => readFileSync(f, 'utf8').includes('authenticateUserOnly')).sort()
   assert.deepEqual(users, ['src/app/api/tenant/switch/route.ts', 'src/lib/__tests__/tenant-switch.test.ts', 'src/lib/auth-helpers.ts'])
 })
 

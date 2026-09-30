@@ -6,6 +6,7 @@ import { auroraBtnPrimary, auroraBtnSecondary, auroraInputClass, auroraLabelClas
 import { signIn, useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { loginErrorMessage } from '@/lib/login-error-message'
+import { clearBusinessScopedBrowserState } from '@/lib/business-switch-client'
 
 type InvitePreview = {
   email: string
@@ -18,7 +19,7 @@ function AcceptInviteInner() {
   // Read once (kept for the Google callback), then dropped from the address bar.
   const [token] = useState(() => params.get('token') || '')
   const router = useRouter()
-  const { data: session, status } = useSession()
+  const { data: session, status, update } = useSession()
   const [preview, setPreview] = useState<InvitePreview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -53,8 +54,12 @@ function AcceptInviteInner() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'No se pudo aceptar')
-      router.replace('/dashboard')
-      router.refresh()
+      // Move THIS session into the business just joined (acceptance set it as the default; the
+      // session only re-reads it on an explicit update), then start clean in it.
+      await update()
+      clearBusinessScopedBrowserState()
+      window.location.assign('/dashboard')
+      return
     } catch (e: any) {
       setError(e.message || 'Error')
     } finally {

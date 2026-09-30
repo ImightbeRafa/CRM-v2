@@ -33,6 +33,10 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       include: { user: { select: { id: true, username: true, email: true } } },
     });
     if (!membership) return createErrorResponse('Usuario no encontrado en este tenant', 404);
+    // A removed member comes back only by accepting an invite (never re-attached directly).
+    if (active === true && !membership.isActive) {
+      return createErrorResponse('Esta persona ya no es miembro: enviale una invitación para que vuelva.', 409);
+    }
 
     const guard = await guardMemberChange(auth, membership, { newRole: role ?? null, remove: active === false, reactivate: active === true });
     if (!guard.ok) return createErrorResponse(guard.error, guard.status);

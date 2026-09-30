@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { findUserIdByEmail } from '@/lib/user-lookup'
 import { prisma } from '@/lib/db'
 import { hashPassword, validatePasswordStrength } from '@/lib/password'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
@@ -178,16 +179,9 @@ export async function POST(request: NextRequest) {
 
     // CRITICAL: Check if user already exists with this email (normalized)
     // This prevents duplicate users across different tenants
-    let existingUser = await prisma.user.findUnique({
-      where: { email: normalizedEmail }
-    })
-    
-    // If not found, try original email (in case database has different casing)
-    if (!existingUser && email !== normalizedEmail) {
-      existingUser = await prisma.user.findUnique({
-        where: { email: email.trim() }
-      })
-    }
+    // Case-insensitive exact lookup (legacy mixed-case accounts included), same as invites.
+    const existingUserId = await findUserIdByEmail(normalizedEmail)
+    const existingUser = existingUserId ? await prisma.user.findUnique({ where: { id: existingUserId } }) : null
     
     let userId: string
     
@@ -325,6 +319,11 @@ export async function PUT(request: NextRequest) {
       return createErrorResponse('Usuario no encontrado en este tenant', 404)
     }
 
+    // A removed member comes back only by accepting an invite (SecureDog N1 remainder): never
+    // re-attached directly, or the business would reappear in their switcher without consent.
+    if (active === true && !membership.isActive) {
+      return createErrorResponse('Esta persona ya no es miembro: enviale una invitación para que vuelva.', 409)
+    }
     // Role hierarchy + last-owner guard (AUTH-23).
     const guard = await guardMemberChange(auth, membership, { newRole: role ?? null, remove: active === false, reactivate: active === true })
     if (!guard.ok) return createErrorResponse(guard.error, guard.status)

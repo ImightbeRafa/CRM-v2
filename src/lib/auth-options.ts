@@ -472,8 +472,8 @@ export const authOptions: NextAuthOptions = {
                     },
                   })
                   const memberships = refreshed?.memberships || []
-                  const hasOwnerRole = memberships.some((m) => m.role === 'OWNER')
-                  ;(user as any).role = hasOwnerRole ? 'MASTER' : 'REGULAR'
+                  // Legacy MASTER = OWNER of the business just joined (invites never grant OWNER).
+                  ;(user as any).role = memberships.find((m) => m.tenantId === accepted.tenantId)?.role === 'OWNER' ? 'MASTER' : 'REGULAR'
                   // Session + defaultTenantId must land on the inviting tenant.
                   ;(user as any).tenantId = accepted.tenantId
                   ;(user as any).memberships = memberships.length
@@ -761,7 +761,9 @@ export const authOptions: NextAuthOptions = {
         token.tenantId = (user as any).tenantId;
         token.email_verified = (user as any).email_verified || false;
         token.active = (user as any).active !== false;
-        token.lastDbSync = Date.now();
+        // 0 = run the DB re-sync right below in this same call: login then applies the same rules as
+        // every later sync (never lands in a deactivated business while an active one exists; N2).
+        token.lastDbSync = 0;
         // Session version at sign-in; a password reset bumps it and ends this session.
         // Credentials logins carry the version read before their password check (race-free).
         if (typeof (user as any).sv === 'number') {

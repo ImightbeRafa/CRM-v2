@@ -1,6 +1,7 @@
 import { Resend } from 'resend';
 import { prisma } from './db';
 import { v4 as uuidv4 } from 'uuid';
+import { escapeHtml } from './validation';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -177,16 +178,21 @@ export async function sendTeamInviteEmail(input: {
       process.env.NEXTAUTH_URL ||
       (process.env.NODE_ENV === 'production' ? 'https://www.betsycrm.com' : 'http://localhost:3000')
     const acceptUrl = `${baseUrl}/auth/accept-invite?token=${encodeURIComponent(input.token)}`
-    const inviter = input.inviterName ? ` (${input.inviterName})` : ''
+    // Business and inviter names are user-controlled: escaped in the HTML, single-line and capped in
+    // the subject (SecureDog: HTML injection into mail sent as noreply@betsycrm.com).
+    const tenantName = escapeHtml(String(input.tenantName || 'un negocio').slice(0, 80))
+    const subjectName = String(input.tenantName || 'un negocio').replace(/[\r\n\t]+/g, ' ').replace(/[<>]/g, '').slice(0, 60)
+    const inviter = input.inviterName ? ` (${escapeHtml(String(input.inviterName).slice(0, 80))})` : ''
+    const role = escapeHtml(String(input.role).slice(0, 20))
     await resend.emails.send({
       from: 'BetsyCRM <noreply@betsycrm.com>',
       to: input.email,
-      subject: `Te invitaron a ${input.tenantName} en BetsyCRM`,
+      subject: `Te invitaron a ${subjectName} en BetsyCRM`,
       html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto;">
-          <h2 style="color:#111827;margin:0 0 12px;">Únete a ${input.tenantName}</h2>
+          <h2 style="color:#111827;margin:0 0 12px;">Únete a ${tenantName}</h2>
           <p style="color:#4b5563;font-size:14px;">
-            Te invitaron${inviter} a colaborar en BetsyCRM como <strong>${input.role}</strong>.
+            Te invitaron${inviter} a colaborar en BetsyCRM como <strong>${role}</strong>.
           </p>
           <p style="margin:28px 0;">
             <a href="${acceptUrl}" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">
